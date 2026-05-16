@@ -25,6 +25,8 @@ class App:
         self._hotkeys = HotkeyListener(on_invoke=self._on_hotkey)
         self._last_reply: str = ""
         self._intent_picker: IntentOverlay | None = None
+        self._overlay_hwnd: int = 0          # cached after first show
+        self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
 
         # Wire signals
         self._signals.show_intent_picker.connect(self._show_intent_picker)
@@ -35,8 +37,9 @@ class App:
 
     def run(self):
         self._overlay.show()
+        self._overlay_hwnd = int(self._overlay.winId())  # safe: Qt main thread
         self._hotkeys.start()
-        print("[main] AI Assistant Overlay running. Press Ctrl+E to invoke.")
+        print("[main] AI Assistant Overlay running. Press Ctrl+Q to invoke.")
         sys.exit(self._qt.exec())
 
     # ------------------------------------------------------------------
@@ -52,6 +55,22 @@ class App:
     # ------------------------------------------------------------------
 
     def _on_hotkey(self):
+        # 1. Capture FIRST — original app still has focus, so Ctrl+C works.
+        selected = capture.get_selected_text()
+        screenshot_b64 = None
+        if not selected:
+            img = capture.get_screen_snippet()
+            screenshot_b64 = capture.image_to_base64(img)
+        self._pending_capture = (selected, screenshot_b64)
+
+        # 2. Now steal foreground using the pre-cached HWND (thread-safe).
+        if self._overlay_hwnd:
+            try:
+                import ctypes
+                ctypes.windll.user32.SetForegroundWindow(self._overlay_hwnd)
+            except Exception:
+                pass
+
         audio.play_filler()
         self._signals.set_state.emit("listening")
         self._signals.show_intent_picker.emit()
@@ -71,9 +90,11 @@ class App:
 
     def _on_intent_chosen(self, direction: str, prompt: str):
         self._intent_picker = None
+        capture_data = self._pending_capture
+        self._pending_capture = None
         threading.Thread(
             target=self._query_and_speak,
-            args=(prompt,),
+            args=(prompt, capture_data),
             daemon=True,
         ).start()
 
@@ -85,15 +106,18 @@ class App:
     # LLM + TTS pipeline (worker thread)
     # ------------------------------------------------------------------
 
-    def _query_and_speak(self, intent_prompt: str):
+    def _query_and_speak(self, intent_prompt: str, capture_data: tuple | None):
         import queue
 
-        # Capture input
-        selected = capture.get_selected_text()
-        screenshot_b64 = None
-        if not selected:
-            img = capture.get_screen_snippet()
-            screenshot_b64 = capture.image_to_base64(img)
+        # Use pre-captured input from hotkey time (original app still had focus then).
+        if capture_data:
+            selected, screenshot_b64 = capture_data
+        else:
+            selected = capture.get_selected_text()
+            screenshot_b64 = None
+            if not selected:
+                img = capture.get_screen_snippet()
+                screenshot_b64 = capture.image_to_base64(img)
 
         # Build final message
         if selected:
@@ -113,7 +137,7 @@ class App:
                 for chunk in llm.stream_response(user_message, screenshot_b64):
                     full_text += chunk
                     llm_chunk_q.put(chunk)
-                    self._signals.bubble_chunk.emit(chunk)
+                    self._signals.bubble_chunk.emit(chunk)   # buffered by bubble in reveal mode
             finally:
                 llm_chunk_q.put(None)
 
@@ -124,6 +148,12 @@ class App:
                     return
                 yield chunk
 
+        def on_audio_start():
+            # Called from audio thread when first PCM chunk hits the speaker.
+            # Snapshot full_text at this moment; subsequent bubble_chunk calls
+            # will append to the pending word queue inside the bubble.
+            self._signals.bubble_start_reveal.emit(full_text)
+
         def tts_consumer():
             self._signals.set_state.emit("speaking")
             audio.play_tts_stream_from_chunks(
@@ -133,6 +163,7 @@ class App:
                     self._signals.set_state.emit("idle"),
                     self._signals.bubble_finish.emit(),
                 ),
+                on_audio_start=on_audio_start,
             )
 
         threading.Thread(target=llm_producer, daemon=True).start()

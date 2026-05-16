@@ -28,7 +28,8 @@ class OverlaySignals(QObject):
     show_text_popup    = pyqtSignal(str)   # full reply text
     show_intent_picker = pyqtSignal()      # show arrow-key intent chooser
     bubble_thinking    = pyqtSignal()      # show animated dots
-    bubble_chunk       = pyqtSignal(str)   # append streamed text chunk
+    bubble_start_reveal = pyqtSignal(str)  # start word-by-word reveal synced to audio
+    bubble_chunk       = pyqtSignal(str)   # buffer additional streamed text chunk
     bubble_finish      = pyqtSignal()      # response done, start hide countdown
     bubble_clear       = pyqtSignal()      # hide immediately
 
@@ -57,6 +58,7 @@ class DollOverlay(QMainWindow):
         signals.set_state.connect(self._on_state_changed)
         signals.show_text_popup.connect(self._on_show_popup)
         signals.bubble_thinking.connect(self._bubble.start_thinking)
+        signals.bubble_start_reveal.connect(self._bubble.start_word_reveal)
         signals.bubble_chunk.connect(self._bubble.append_chunk)
         signals.bubble_finish.connect(self._bubble.finish)
         signals.bubble_clear.connect(self._bubble.clear)

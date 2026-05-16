@@ -22,9 +22,9 @@ TTS_PROVIDER = os.getenv("TTS_PROVIDER", "cartesia")    # cartesia | elevenlabs 
 CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "")
 
 # --- Hotkeys ---
-HOTKEY_INVOKE = os.getenv("HOTKEY_INVOKE", "ctrl+e")
+HOTKEY_INVOKE = os.getenv("HOTKEY_INVOKE", "ctrl+q")
 
-# Intent shortcut mapping: ctrl+u then arrow key
+# Intent shortcut mapping: ctrl+q then WASD key
 # `label`  — shown on the on-screen picker overlay
 # `prompt` — the actual instruction sent to the LLM (can be more detailed)
 INTENT_SHORTCUTS = {

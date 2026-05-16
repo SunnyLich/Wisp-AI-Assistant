@@ -1,7 +1,7 @@
 """
-ui/intent_overlay.py — Compact intent picker shown on Ctrl+E.
+ui/intent_overlay.py â€” Compact intent picker shown on Ctrl+Q.
 
-Small floating widget centred on screen — no background dim.
+Small floating widget centred on screen ï¿½ no background dim.
 Shows 4 WASD + label rows. Press a key to pick, Escape to cancel.
 S = Custom prompt (opens inline text input).
 """
@@ -9,7 +9,6 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QApplication, QLineEdit
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
-import keyboard
 import config
 
 
@@ -19,9 +18,6 @@ _DIRECTIONS = [
     ("right", "D"),
     ("down",  "S"),
 ]
-
-# Physical key -> logical direction (matches INTENT_SHORTCUTS keys)
-_KEY_MAP = {"w": "up", "a": "left", "d": "right", "s": "down"}
 
 _CUSTOM_DIRECTION = "down"   # S key triggers free-text input
 
@@ -48,10 +44,11 @@ class IntentOverlay(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            | Qt.WindowType.Popup   # auto-focuses on Windows; closes on click-outside
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         n_rows = len(_DIRECTIONS)
         h = _PADDING * 2 + _ROW_H * n_rows + 28   # 28px for ESC hint
@@ -88,14 +85,6 @@ class IntentOverlay(QWidget):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._cancel)
         self._timer.start(_AUTO_CLOSE_MS)
-
-        # Global key hooks -- work regardless of Qt window focus
-        self._hooks: list = []
-        for key in ("w", "a", "s", "d"):
-            self._hooks.append(keyboard.on_press_key(key, self._on_key, suppress=True))
-        self._hooks.append(
-            keyboard.on_press_key("escape", lambda _: QTimer.singleShot(0, self._cancel), suppress=True)
-        )
 
     # ------------------------------------------------------------------
     # Paint
@@ -144,21 +133,12 @@ class IntentOverlay(QWidget):
     # Key input
     # ------------------------------------------------------------------
 
-    def _on_key(self, event):
-        """Called from keyboard library thread -- marshal to Qt main thread."""
-        direction = _KEY_MAP.get(event.name)
-        if direction:
-            QTimer.singleShot(0, lambda: self._select(direction))
-
     def _select(self, direction: str):
         if self._handled:
             return
         if direction == _CUSTOM_DIRECTION:
             self._hovered = direction
-            self._unhook()
-            self._hooks.append(
-                keyboard.on_press_key("escape", lambda _: QTimer.singleShot(0, self._cancel), suppress=True)
-            )
+            self._unhook()  # release grabKeyboard; Qt handles typing in QLineEdit
             QTimer.singleShot(0, self._enter_custom_mode)
             return
         self._handled = True
@@ -206,20 +186,20 @@ class IntentOverlay(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self.activateWindow()
         self.raise_()
+        self.activateWindow()
+        self.setFocus()
+        self.grabKeyboard()
 
     # ------------------------------------------------------------------
     # Cleanup / fire
     # ------------------------------------------------------------------
 
     def _unhook(self):
-        for hook in self._hooks:
-            try:
-                keyboard.unhook(hook)
-            except Exception:
-                pass
-        self._hooks.clear()
+        try:
+            self.releaseKeyboard()
+        except Exception:
+            pass
 
     def _fire(self, direction: str):
         self._unhook()
@@ -229,10 +209,10 @@ class IntentOverlay(QWidget):
         self.close()
 
     def _cancel(self):
-        if self._handled:
-            return
-        self._handled = True
-        self._unhook()
-        self._timer.stop()
-        self.cancelled.emit()
-        self.close()
+            if self._handled:
+                return
+            self._handled = True
+            self._unhook()
+            self._timer.stop()
+            self.cancelled.emit()
+            self.close()

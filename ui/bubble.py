@@ -25,7 +25,9 @@ _FONT_SIZE    = 10
 _DOLL_W       = 80
 _DOLL_H       = 80
 _DOLL_MARGIN  = 20
-_HIDE_DELAY   = 8_000   # ms after finish() before hiding
+_HIDE_DELAY    = 8_000   # ms after finish() before hiding
+_WPM           = 145    # words per minute — approximate TTS speaking speed
+_MS_PER_WORD   = int(60_000 / _WPM)  # ~414 ms
 
 
 class SpeechBubble(QWidget):
@@ -48,6 +50,11 @@ class SpeechBubble(QWidget):
         self._lines: list[str] = []
         self._thinking = False
         self._dot_count = 1
+
+        # Word-reveal mode (syncs text display to audio playback speed)
+        self._reveal_mode = False
+        self._pending_words: list[str] = []
+        self._revealed_count = 0
 
         # Derive size from screen (target: compact but readable)
         screen = QApplication.primaryScreen().availableGeometry()
@@ -74,6 +81,11 @@ class SpeechBubble(QWidget):
         self._hide_timer.setInterval(_HIDE_DELAY)
         self._hide_timer.timeout.connect(self.hide)
 
+        # Word-reveal timer
+        self._reveal_timer = QTimer(self)
+        self._reveal_timer.setInterval(_MS_PER_WORD)
+        self._reveal_timer.timeout.connect(self._reveal_next_word)
+
     # ------------------------------------------------------------------
     # Public API (called via Qt signals from worker thread)
     # ------------------------------------------------------------------
@@ -90,25 +102,52 @@ class SpeechBubble(QWidget):
         self.raise_()
         self.update()
 
+    def start_word_reveal(self, initial_text: str):
+        """Switch to word-reveal mode, showing text at speech rate."""
+        self._thinking = False
+        self._dot_timer.stop()
+        self._reveal_mode = True
+        self._pending_words = initial_text.split()
+        self._revealed_count = 0
+        self._full_text = ""
+        self._lines = []
+        self._reveal_timer.start()
+        self.show()
+        self.update()
+
     def append_chunk(self, chunk: str):
-        """Add a streamed text chunk; switches out of thinking mode on first call."""
+        """Add a streamed text chunk. In reveal mode, buffers words for the timer."""
         if self._thinking:
             self._thinking = False
             self._dot_timer.stop()
+        if self._reveal_mode:
+            self._pending_words.extend(chunk.split())
+            return
         self._full_text += chunk
         self._rewrap()
         self.show()
         self.update()
 
     def finish(self):
-        """Called when the full response has been streamed; starts the hide countdown."""
+        """Called when TTS playback finishes; flushes any remaining words and starts hide."""
         self._dot_timer.stop()
+        self._reveal_timer.stop()
+        if self._reveal_mode:
+            # Flush any words the timer hasn't reached yet
+            self._full_text = " ".join(self._pending_words)
+            self._rewrap()
+            self._reveal_mode = False
+            self.update()
         self._hide_timer.start()
 
     def clear(self):
         """Hard reset — hide immediately."""
         self._hide_timer.stop()
         self._dot_timer.stop()
+        self._reveal_timer.stop()
+        self._reveal_mode = False
+        self._pending_words = []
+        self._revealed_count = 0
         self._thinking = False
         self._full_text = ""
         self._lines = []
@@ -121,6 +160,14 @@ class SpeechBubble(QWidget):
     def _tick_dots(self):
         self._dot_count = (self._dot_count % 3) + 1
         self.update()
+
+    def _reveal_next_word(self):
+        if self._revealed_count < len(self._pending_words):
+            self._revealed_count += 1
+            self._full_text = " ".join(self._pending_words[:self._revealed_count])
+            self._rewrap()
+            self.update()
+        # Timer keeps running until finish() is called (which flushes remaining words)
 
     def _rewrap(self):
         """Word-wrap _full_text to _text_w; keep only the last 2 lines."""

@@ -73,7 +73,8 @@ def play_tts_stream(text: str, on_done: callable | None = None):
     play_tts_stream_from_chunks(iter([text]), on_done=on_done)
 
 
-def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None):
+def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None,
+                                on_audio_start: callable | None = None):
     """
     Stream TTS from an iterable of text chunks (e.g. live LLM stream) and play.
     Non-blocking — runs in a daemon thread.
@@ -81,13 +82,16 @@ def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None):
     Args:
         text_chunks: Iterable[str] of text pieces fed incrementally.
         on_done: Optional callback invoked when playback finishes.
+        on_audio_start: Optional callback invoked when the first audio chunk
+                        is written to the output stream (i.e. audio is audible).
     """
     threading.Thread(
-        target=_stream_and_play_chunks, args=(text_chunks, on_done), daemon=True
+        target=_stream_and_play_chunks, args=(text_chunks, on_done, on_audio_start), daemon=True
     ).start()
 
 
-def _stream_and_play_chunks(text_chunks, on_done: callable | None):
+def _stream_and_play_chunks(text_chunks, on_done: callable | None,
+                            on_audio_start: callable | None):
     chunk_q: queue.Queue[bytes | None] = queue.Queue()
 
     # Producer: fetch TTS audio chunks
@@ -104,7 +108,7 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None):
     sample_rate = tts_module.SAMPLE_RATE
     channels = tts_module.CHANNELS
 
-
+    _audio_started = False
     with sd.RawOutputStream(
         samplerate=sample_rate,
         channels=channels,
@@ -114,6 +118,13 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None):
             chunk = chunk_q.get()
             if chunk is None:
                 break
+            if not _audio_started:
+                _audio_started = True
+                if on_audio_start:
+                    try:
+                        on_audio_start()
+                    except Exception:
+                        pass
             stream.write(chunk)
 
     if on_done:
