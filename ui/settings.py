@@ -110,12 +110,22 @@ class SettingsDialog(QDialog):
         self._fields["OPENAI_API_KEY"] = self._password()
         self._fields["ANTHROPIC_API_KEY"] = self._password()
 
+        self._fields["CHAT_LLM_PROVIDER"] = self._combo(
+            ["groq", "openai", "anthropic"]
+        )
+        self._fields["CHAT_LLM_MODEL"] = QLineEdit()
+        self._fields["CHAT_LLM_MODEL"].setPlaceholderText("Leave blank to use same model as above")
+
         f.addRow("Provider", self._fields["LLM_PROVIDER"])
         f.addRow("Model", self._fields["LLM_MODEL"])
         f.addRow(_sep(), _sep())
         f.addRow("Groq API key", self._fields["GROQ_API_KEY"])
         f.addRow("OpenAI API key", self._fields["OPENAI_API_KEY"])
         f.addRow("Anthropic API key", self._fields["ANTHROPIC_API_KEY"])
+        f.addRow(_sep(), _sep())
+        f.addRow(QLabel("<i>Chat / Elaborate model</i>"), QLabel(""))
+        f.addRow("Chat provider", self._fields["CHAT_LLM_PROVIDER"])
+        f.addRow("Chat model", self._fields["CHAT_LLM_MODEL"])
         return w
 
     def _tab_tts(self) -> QWidget:
@@ -146,21 +156,11 @@ class SettingsDialog(QDialog):
         layout.setSpacing(8)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        layout.addWidget(QLabel("Utility mode system prompt:"))
+        layout.addWidget(QLabel("System prompt:"))
         util = QTextEdit()
         util.setFixedHeight(80)
         self._fields["SYSTEM_PROMPT_UTILITY"] = util
         layout.addWidget(util)
-
-        layout.addWidget(QLabel("Cute mode system prompt:"))
-        cute = QTextEdit()
-        cute.setFixedHeight(80)
-        self._fields["SYSTEM_PROMPT_CUTE"] = cute
-        layout.addWidget(cute)
-
-        cute_mode = QCheckBox("Enable cute mode")
-        self._fields["CUTE_MODE"] = cute_mode
-        layout.addWidget(cute_mode)
         layout.addStretch()
         return w
 
@@ -180,8 +180,14 @@ class SettingsDialog(QDialog):
         for key, title in directions:
             lbl_key    = f"INTENT_{key.upper()}_LABEL"
             prompt_key = f"INTENT_{key.upper()}_PROMPT"
+            key_field  = f"INTENT_{key.upper()}_KEY"
 
             layout.addWidget(QLabel(f"<b>{title}</b>"))
+
+            key_edit = QLineEdit()
+            key_edit.setPlaceholderText("Single key letter, e.g. w")
+            key_edit.setMaxLength(1)
+            self._fields[key_field] = key_edit
 
             label_edit = QLineEdit()
             label_edit.setPlaceholderText("Short label shown on picker")
@@ -194,6 +200,7 @@ class SettingsDialog(QDialog):
 
             f = QFormLayout()
             f.setSpacing(6)
+            f.addRow("Key",    key_edit)
             f.addRow("Label",  label_edit)
             f.addRow("Prompt", prompt_edit)
             layout.addLayout(f)
@@ -216,9 +223,14 @@ class SettingsDialog(QDialog):
         self._fields["HOTKEY_INVOKE"].setPlaceholderText("e.g. ctrl+u")
 
         self._fields["DOLL_AUTO_HIDE"] = QCheckBox("Auto-hide doll (only visible when active)")
+        self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox("Auto-elaborate when opening chat")
+        self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
+        self._fields["CHAT_ELABORATE_PROMPT"].setPlaceholderText("e.g. Please elaborate on that.")
 
         f.addRow("Invoke hotkey", self._fields["HOTKEY_INVOKE"])
         f.addRow("", self._fields["DOLL_AUTO_HIDE"])
+        f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
+        f.addRow("Elaborate prompt", self._fields["CHAT_ELABORATE_PROMPT"])
         return w
 
     # ------------------------------------------------------------------
@@ -244,6 +256,8 @@ class SettingsDialog(QDialog):
 
         _set(self._fields["LLM_PROVIDER"], self._env.get("LLM_PROVIDER", cfg.LLM_PROVIDER))
         _set(self._fields["LLM_MODEL"], self._env.get("LLM_MODEL", cfg.LLM_MODEL))
+        _set(self._fields["CHAT_LLM_PROVIDER"], self._env.get("CHAT_LLM_PROVIDER", cfg.CHAT_LLM_PROVIDER))
+        _set(self._fields["CHAT_LLM_MODEL"], self._env.get("CHAT_LLM_MODEL", cfg.CHAT_LLM_MODEL))
         _set(self._fields["GROQ_API_KEY"], self._env.get("GROQ_API_KEY", ""))
         _set(self._fields["OPENAI_API_KEY"], self._env.get("OPENAI_API_KEY", ""))
         _set(self._fields["ANTHROPIC_API_KEY"], self._env.get("ANTHROPIC_API_KEY", ""))
@@ -256,26 +270,31 @@ class SettingsDialog(QDialog):
         auto_hide = self._env.get("DOLL_AUTO_HIDE", str(cfg.DOLL_AUTO_HIDE)).lower() == "true"
         self._fields["DOLL_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
 
+        auto_elab = self._env.get("CHAT_AUTO_ELABORATE", str(cfg.CHAT_AUTO_ELABORATE)).lower() == "true"
+        self._fields["CHAT_AUTO_ELABORATE"].setChecked(auto_elab)  # type: ignore
+        _set(self._fields["CHAT_ELABORATE_PROMPT"],
+             self._env.get("CHAT_ELABORATE_PROMPT", cfg.CHAT_ELABORATE_PROMPT))
+
         for key in ("up", "down", "left", "right"):
             lbl_key    = f"INTENT_{key.upper()}_LABEL"
             prompt_key = f"INTENT_{key.upper()}_PROMPT"
+            key_field  = f"INTENT_{key.upper()}_KEY"
             _set(self._fields[lbl_key],
                  self._env.get(lbl_key, cfg.INTENT_SHORTCUTS[key]["label"]))
             self._fields[prompt_key].setPlainText(  # type: ignore
                 self._env.get(prompt_key, cfg.INTENT_SHORTCUTS[key]["prompt"]))
+            _set(self._fields[key_field],
+                 self._env.get(key_field, cfg.INTENT_SHORTCUTS[key]["key"]))
 
         util_val = self._env.get("SYSTEM_PROMPT_UTILITY", cfg.SYSTEM_PROMPT_UTILITY)
-        cute_val = self._env.get("SYSTEM_PROMPT_CUTE", cfg.SYSTEM_PROMPT_CUTE)
         self._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(util_val)  # type: ignore
-        self._fields["SYSTEM_PROMPT_CUTE"].setPlainText(cute_val)      # type: ignore
-
-        cute_mode = self._env.get("CUTE_MODE", str(cfg.CUTE_MODE)).lower() == "true"
-        self._fields["CUTE_MODE"].setChecked(cute_mode)  # type: ignore
 
     def _save(self):
         vals = {
             "LLM_PROVIDER":      _get(self._fields["LLM_PROVIDER"]),
             "LLM_MODEL":         _get(self._fields["LLM_MODEL"]),
+            "CHAT_LLM_PROVIDER": _get(self._fields["CHAT_LLM_PROVIDER"]),
+            "CHAT_LLM_MODEL":    _get(self._fields["CHAT_LLM_MODEL"]),
             "GROQ_API_KEY":      _get(self._fields["GROQ_API_KEY"]),
             "OPENAI_API_KEY":    _get(self._fields["OPENAI_API_KEY"]),
             "ANTHROPIC_API_KEY": _get(self._fields["ANTHROPIC_API_KEY"]),
@@ -285,15 +304,17 @@ class SettingsDialog(QDialog):
             "ELEVENLABS_API_KEY": _get(self._fields["ELEVENLABS_API_KEY"]),
             "HOTKEY_INVOKE":     _get(self._fields["HOTKEY_INVOKE"]),
             "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
+            "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
+            "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
-            "SYSTEM_PROMPT_CUTE":    self._fields["SYSTEM_PROMPT_CUTE"].toPlainText(),     # type: ignore
-            "CUTE_MODE":         str(self._fields["CUTE_MODE"].isChecked()),               # type: ignore
         }
         for key in ("up", "down", "left", "right"):
             lbl_key    = f"INTENT_{key.upper()}_LABEL"
             prompt_key = f"INTENT_{key.upper()}_PROMPT"
+            key_field  = f"INTENT_{key.upper()}_KEY"
             vals[lbl_key]    = _get(self._fields[lbl_key])
             vals[prompt_key] = self._fields[prompt_key].toPlainText()  # type: ignore
+            vals[key_field]  = _get(self._fields[key_field])
         _write_env(vals)
         QMessageBox.information(self, "Saved", "Settings saved. Restart the app to apply changes.")
         self.accept()

@@ -18,6 +18,8 @@ from typing import Generator
 # ------------------------------------------------------------------
 _openai_client = None
 _anthropic_client = None
+_chat_openai_client = None
+_chat_anthropic_client = None
 
 
 def _get_openai_client():
@@ -34,12 +36,39 @@ def _get_openai_client():
     return _openai_client
 
 
+def _get_chat_openai_client():
+    """Returns the same singleton as _get_openai_client() when providers match."""
+    if config.CHAT_LLM_PROVIDER.lower() == config.LLM_PROVIDER.lower():
+        return _get_openai_client()
+    global _chat_openai_client
+    if _chat_openai_client is None:
+        from openai import OpenAI
+        if config.CHAT_LLM_PROVIDER.lower() == "groq":
+            _chat_openai_client = OpenAI(
+                api_key=config.GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1",
+            )
+        else:
+            _chat_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+    return _chat_openai_client
+
+
 def _get_anthropic_client():
     global _anthropic_client
     if _anthropic_client is None:
         import anthropic
         _anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     return _anthropic_client
+
+
+def _get_chat_anthropic_client():
+    if config.CHAT_LLM_PROVIDER.lower() == config.LLM_PROVIDER.lower():
+        return _get_anthropic_client()
+    global _chat_anthropic_client
+    if _chat_anthropic_client is None:
+        import anthropic
+        _chat_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    return _chat_anthropic_client
 
 
 def stream_response(
@@ -142,3 +171,43 @@ def _stream_anthropic(
     ) as stream:
         for text in stream.text_stream:
             yield text
+
+
+# ------------------------------------------------------------------
+# Multi-turn (chat window)
+# ------------------------------------------------------------------
+
+def stream_response_with_history(messages: list) -> Generator[str, None, None]:
+    """
+    Stream a response given a pre-built messages list including history.
+    Uses CHAT_LLM_PROVIDER / CHAT_LLM_MODEL (defaults to LLM_PROVIDER / LLM_MODEL).
+    messages: [{"role": "system"|"user"|"assistant", "content": str}, ...]
+    """
+    provider = config.CHAT_LLM_PROVIDER.lower()
+    if provider in ("groq", "openai"):
+        client = _get_chat_openai_client()
+        with client.chat.completions.create(
+            model=config.CHAT_LLM_MODEL,
+            messages=messages,
+            stream=True,
+            max_tokens=1024,
+            temperature=0.7,
+        ) as stream:
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+    elif provider == "anthropic":
+        client = _get_chat_anthropic_client()
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
+        turns = [m for m in messages if m["role"] != "system"]
+        with client.messages.stream(
+            model=config.CHAT_LLM_MODEL,
+            max_tokens=1024,
+            system=system,
+            messages=turns,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+    else:
+        raise ValueError(f"Unknown chat LLM provider: {provider}")

@@ -15,6 +15,7 @@ from core import capture, llm, audio
 from core import tts as tts_module
 from ui.overlay import DollOverlay, OverlaySignals
 from ui.intent_overlay import IntentOverlay
+from ui.chat_window import ChatWindow
 
 
 class App:
@@ -22,9 +23,16 @@ class App:
         self._qt = QApplication(sys.argv)
         self._signals = OverlaySignals()
         self._overlay = DollOverlay(self._signals)
-        self._hotkeys = HotkeyListener(on_invoke=self._on_hotkey)
+        self._hotkeys = HotkeyListener(
+            on_invoke=self._on_hotkey,
+            on_add_context=self._on_add_context,
+            on_clear_context=self._on_clear_context,
+        )
+        self._context_buffer: list[str] = []   # accumulated via Alt+Q
         self._last_reply: str = ""
         self._intent_picker: IntentOverlay | None = None
+        self._chat_window: ChatWindow | None = None
+        self._conversation_history: list = []   # [{"role": ..., "content": ...}]
         self._overlay_hwnd: int = 0          # cached after first show
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
 
@@ -54,6 +62,18 @@ class App:
     # ------------------------------------------------------------------
     # Hotkey → show intent picker (runs in keyboard listener thread)
     # ------------------------------------------------------------------
+
+    def _on_add_context(self):
+        """Alt+Q — capture selected text and append to context buffer."""
+        text = capture.get_selected_text()
+        if text:
+            self._context_buffer.append(text)
+            print(f"[main] Context buffer: {len(self._context_buffer)} item(s) queued.")
+
+    def _on_clear_context(self):
+        """Alt+W — clear the context buffer."""
+        self._context_buffer.clear()
+        print("[main] Context buffer cleared.")
 
     def _on_hotkey(self):
         # 1. Capture FIRST — original app still has focus, so Ctrl+C works.
@@ -124,15 +144,26 @@ class App:
                 img = capture.get_screen_snippet()
                 screenshot_b64 = capture.image_to_base64(img)
 
-        # Build final message
-        if selected:
-            user_message = f"{intent_prompt}\n\n{selected}"
+        # Build final message, incorporating any buffered context items
+        context_items = self._context_buffer.copy()
+        self._context_buffer.clear()
+
+        all_contexts = context_items + ([selected] if selected else [])
+        if len(all_contexts) > 1:
+            labelled = "\n\n".join(
+                f"Context {i + 1}:\n{ctx}" for i, ctx in enumerate(all_contexts)
+            )
+            user_message = f"{intent_prompt}\n\n{labelled}"
+        elif all_contexts:
+            user_message = f"{intent_prompt}\n\n{all_contexts[0]}"
         else:
             user_message = intent_prompt
 
         self._signals.set_state.emit("thinking")
         self._signals.bubble_thinking.emit()
 
+        # Reset conversation for a fresh query (new hotkey invocation)
+        self._conversation_history = []
         full_text = ""
         llm_chunk_q: queue.Queue[str | None] = queue.Queue()
 
@@ -145,6 +176,12 @@ class App:
                     self._signals.bubble_chunk.emit(chunk)   # buffered by bubble in reveal mode
             finally:
                 llm_chunk_q.put(None)
+            # Populate history as soon as the LLM is done (before TTS finishes)
+            # so the chat window always has full context when opened.
+            self._conversation_history = [
+                {"role": "user",      "content": user_message},
+                {"role": "assistant", "content": full_text},
+            ]
 
         def llm_chunk_iter():
             while True:
@@ -183,8 +220,18 @@ class App:
     # ------------------------------------------------------------------
 
     def _on_doll_click(self, event):
-        if self._last_reply:
-            self._signals.show_text_popup.emit(self._last_reply)
+        auto_msg = config.CHAT_ELABORATE_PROMPT if config.CHAT_AUTO_ELABORATE and self._conversation_history else None
+        if self._chat_window is not None:
+            self._chat_window.raise_()
+            self._chat_window.activateWindow()
+            return
+        self._chat_window = ChatWindow(
+            history=self._conversation_history,
+            send_fn=llm.stream_response_with_history,
+            auto_message=auto_msg,
+        )
+        self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
+        self._chat_window.show()
 
 
 def main():

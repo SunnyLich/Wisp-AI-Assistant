@@ -24,3 +24,4 @@ PyQt6>=6.11.0             # overlay window + system tray
 python-dotenv>=1.2.2      # .env config loading
 pynput>=1.8.2             # mouse/keyboard listener (backup)
 pywin32>=311              # Windows-specific APIs (clipboard, window focus)
+comtypes>=1.4.0           # Windows UI Automation (read selected text without clipboard)

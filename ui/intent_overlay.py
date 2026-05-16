@@ -172,13 +172,13 @@ class IntentOverlay(QWidget):
 
     def keyPressEvent(self, event):
         """Fallback for when Qt window has focus."""
-        wasd = {
-            Qt.Key.Key_W: "up",
-            Qt.Key.Key_A: "left",
-            Qt.Key.Key_D: "right",
-            Qt.Key.Key_S: "down",
+        # Build key map dynamically from config so keys are user-configurable.
+        key_map = {
+            getattr(Qt.Key, f"Key_{info['key'].upper()}", None): direction
+            for direction, info in config.INTENT_SHORTCUTS.items()
+            if info.get("key")
         }
-        direction = wasd.get(event.key())
+        direction = key_map.get(event.key())
         if direction:
             self._select(direction)
         elif event.key() == Qt.Key.Key_Escape:
