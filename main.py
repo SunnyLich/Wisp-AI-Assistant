@@ -36,7 +36,8 @@ class App:
         threading.Thread(target=self._prewarm, daemon=True).start()
 
     def run(self):
-        self._overlay.show()
+        if not config.DOLL_AUTO_HIDE:
+            self._overlay.show()
         self._overlay_hwnd = int(self._overlay.winId())  # safe: Qt main thread
         self._hotkeys.start()
         print("[main] AI Assistant Overlay running. Press Ctrl+Q to invoke.")
@@ -72,6 +73,8 @@ class App:
                 pass
 
         audio.play_filler()
+        if config.DOLL_AUTO_HIDE:
+            self._signals.show_doll.emit()
         self._signals.set_state.emit("listening")
         self._signals.show_intent_picker.emit()
 
@@ -101,6 +104,8 @@ class App:
     def _on_intent_cancelled(self):
         self._intent_picker = None
         self._signals.set_state.emit("idle")
+        if config.DOLL_AUTO_HIDE:
+            self._signals.hide_doll.emit()
 
     # ------------------------------------------------------------------
     # LLM + TTS pipeline (worker thread)
@@ -149,10 +154,12 @@ class App:
                 yield chunk
 
         def on_audio_start():
-            # Called from audio thread when first PCM chunk hits the speaker.
-            # Snapshot full_text at this moment; subsequent bubble_chunk calls
-            # will append to the pending word queue inside the bubble.
-            self._signals.bubble_start_reveal.emit(full_text)
+            # Called when first PCM chunk hits the speaker — start word reveal.
+            self._signals.bubble_start_reveal.emit()
+
+        def on_word_timestamps(words, start_ms):
+            # Real word timings from Cartesia — drives precise bubble sync.
+            self._signals.bubble_schedule_words.emit(words, start_ms)
 
         def tts_consumer():
             self._signals.set_state.emit("speaking")
@@ -162,8 +169,10 @@ class App:
                     setattr(self, "_last_reply", full_text),
                     self._signals.set_state.emit("idle"),
                     self._signals.bubble_finish.emit(),
+                    self._signals.hide_doll.emit() if config.DOLL_AUTO_HIDE else None,
                 ),
                 on_audio_start=on_audio_start,
+                on_word_timestamps=on_word_timestamps,
             )
 
         threading.Thread(target=llm_producer, daemon=True).start()

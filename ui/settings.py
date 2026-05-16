@@ -215,7 +215,10 @@ class SettingsDialog(QDialog):
         self._fields["HOTKEY_INVOKE"] = QLineEdit()
         self._fields["HOTKEY_INVOKE"].setPlaceholderText("e.g. ctrl+u")
 
+        self._fields["DOLL_AUTO_HIDE"] = QCheckBox("Auto-hide doll (only visible when active)")
+
         f.addRow("Invoke hotkey", self._fields["HOTKEY_INVOKE"])
+        f.addRow("", self._fields["DOLL_AUTO_HIDE"])
         return w
 
     # ------------------------------------------------------------------
@@ -250,6 +253,9 @@ class SettingsDialog(QDialog):
         _set(self._fields["ELEVENLABS_API_KEY"], self._env.get("ELEVENLABS_API_KEY", ""))
         _set(self._fields["HOTKEY_INVOKE"], self._env.get("HOTKEY_INVOKE", cfg.HOTKEY_INVOKE))
 
+        auto_hide = self._env.get("DOLL_AUTO_HIDE", str(cfg.DOLL_AUTO_HIDE)).lower() == "true"
+        self._fields["DOLL_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
+
         for key in ("up", "down", "left", "right"):
             lbl_key    = f"INTENT_{key.upper()}_LABEL"
             prompt_key = f"INTENT_{key.upper()}_PROMPT"
@@ -278,6 +284,7 @@ class SettingsDialog(QDialog):
             "CARTESIA_VOICE_ID": _get(self._fields["CARTESIA_VOICE_ID"]),
             "ELEVENLABS_API_KEY": _get(self._fields["ELEVENLABS_API_KEY"]),
             "HOTKEY_INVOKE":     _get(self._fields["HOTKEY_INVOKE"]),
+            "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
             "SYSTEM_PROMPT_CUTE":    self._fields["SYSTEM_PROMPT_CUTE"].toPlainText(),     # type: ignore
             "CUTE_MODE":         str(self._fields["CUTE_MODE"].isChecked()),               # type: ignore

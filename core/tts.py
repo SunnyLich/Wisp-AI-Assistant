@@ -72,17 +72,22 @@ def stream_audio(text: str) -> Generator[bytes, None, None]:
     yield from stream_audio_from_chunks(iter([text]))
 
 
-def stream_audio_from_chunks(text_chunks: Iterable[str]) -> Generator[bytes, None, None]:
+def stream_audio_from_chunks(text_chunks: Iterable[str],
+                             on_word_timestamps=None) -> Generator[bytes, None, None]:
     """
     Stream TTS by feeding text pieces incrementally (e.g. from an LLM stream).
     Audio starts arriving before all text is available.
+
+    Args:
+        on_word_timestamps: Optional callback(words: list[str], start_ms: list[int])
+                            called whenever Cartesia returns a timestamps event.
 
     Yields:
         Raw PCM float32 audio bytes.
     """
     provider = config.TTS_PROVIDER.lower()
     if provider == "cartesia":
-        yield from _stream_cartesia(text_chunks)
+        yield from _stream_cartesia(text_chunks, on_word_timestamps)
     elif provider == "elevenlabs":
         # ElevenLabs doesn't support incremental push; collect then stream
         yield from _stream_elevenlabs("".join(text_chunks))
@@ -96,7 +101,8 @@ def stream_audio_from_chunks(text_chunks: Iterable[str]) -> Generator[bytes, Non
 # Cartesia 3.x  (WebSocket, pcm_f32le, sonic-3)
 # ------------------------------------------------------------------
 
-def _stream_cartesia(text_chunks: Iterable[str]) -> Generator[bytes, None, None]:
+def _stream_cartesia(text_chunks: Iterable[str],
+                     on_word_timestamps=None) -> Generator[bytes, None, None]:
     ws = _get_cartesia_ws()
 
     ctx = ws.context(
@@ -108,6 +114,7 @@ def _stream_cartesia(text_chunks: Iterable[str]) -> Generator[bytes, None, None]
             "sample_rate": SAMPLE_RATE,
         },
         language="en",
+        add_timestamps=True,
     )
 
     for piece in text_chunks:
@@ -118,6 +125,11 @@ def _stream_cartesia(text_chunks: Iterable[str]) -> Generator[bytes, None, None]
     for response in ctx.receive():
         if response.type == "chunk" and response.audio:
             yield response.audio
+        elif response.type == "timestamps" and on_word_timestamps:
+            wt = response.word_timestamps
+            if wt and wt.words:
+                start_ms = [int(t * 1000) for t in wt.start]
+                on_word_timestamps(wt.words, start_ms)
 
 
 # ------------------------------------------------------------------

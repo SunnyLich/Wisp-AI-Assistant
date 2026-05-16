@@ -7,7 +7,7 @@ Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QApplication
-from PyQt6.QtCore import Qt, QTimer, QRect
+from PyQt6.QtCore import Qt, QTimer, QRect, QElapsedTimer
 from PyQt6.QtGui import (
     QPainter, QColor, QFont, QFontMetrics,
     QBrush, QPen, QPainterPath,
@@ -26,8 +26,8 @@ _DOLL_W       = 80
 _DOLL_H       = 80
 _DOLL_MARGIN  = 20
 _HIDE_DELAY    = 8_000   # ms after finish() before hiding
-_WPM           = 145    # words per minute — approximate TTS speaking speed
-_MS_PER_WORD   = int(60_000 / _WPM)  # ~414 ms
+_WPM           = 170    # words per minute — approximate TTS speaking speed
+_MS_PER_WORD   = int(60_000 / _WPM)  # ~353 ms
 
 
 class SpeechBubble(QWidget):
@@ -55,6 +55,9 @@ class SpeechBubble(QWidget):
         self._reveal_mode = False
         self._pending_words: list[str] = []
         self._revealed_count = 0
+        self._timestamp_mode = False      # True = driven by Cartesia timestamps
+        self._audio_elapsed = QElapsedTimer()  # measures ms since audio start
+        self._pre_audio_timestamps: list[tuple] = []  # batches that arrived before audio start
 
         # Derive size from screen (target: compact but readable)
         screen = QApplication.primaryScreen().availableGeometry()
@@ -96,48 +99,82 @@ class SpeechBubble(QWidget):
         self._lines = []
         self._thinking = True
         self._dot_count = 1
+        self._pending_words = []
+        self._revealed_count = 0
+        self._reveal_mode = False
+        self._pre_audio_timestamps = []
+        self._reveal_timer.stop()
         self._hide_timer.stop()
         self._dot_timer.start()
         self.show()
         self.raise_()
         self.update()
 
-    def start_word_reveal(self, initial_text: str):
-        """Switch to word-reveal mode, showing text at speech rate."""
+    def start_word_reveal(self):
+        """Start revealing buffered words at speech rate (called when audio begins)."""
         self._thinking = False
         self._dot_timer.stop()
         self._reveal_mode = True
-        self._pending_words = initial_text.split()
+        self._timestamp_mode = False
         self._revealed_count = 0
         self._full_text = ""
         self._lines = []
+        self._audio_elapsed.start()   # t=0 for timestamp scheduling
         self._reveal_timer.start()
+        # Drain any timestamp batches that arrived before audio started
+        for words, start_ms in self._pre_audio_timestamps:
+            self.schedule_words(words, start_ms)
+        self._pre_audio_timestamps = []
         self.show()
         self.update()
 
+    def schedule_words(self, words: list, start_ms: list):
+        """
+        Cartesia timestamp-driven reveal. Cancels the WPM fallback timer and
+        schedules each word to appear at its exact spoken time.
+        """
+        if not self._reveal_mode:
+            # Audio hasn't started yet — buffer for later
+            self._pre_audio_timestamps.append((words, start_ms))
+            return
+        if not self._timestamp_mode:
+            # First timestamp batch: switch modes and cancel the fallback timer.
+            self._reveal_timer.stop()
+            self._timestamp_mode = True
+            self._full_text = ""
+            self._lines = []
+        elapsed = self._audio_elapsed.elapsed()
+        for word, t_ms in zip(words, start_ms):
+            delay = max(0, t_ms - elapsed)
+            QTimer.singleShot(delay, lambda w=word: self._show_word(w))
+
+    def _show_word(self, word: str):
+        if self._full_text:
+            self._full_text += " " + word
+        else:
+            self._full_text = word
+        self._rewrap()
+        self.update()
+
     def append_chunk(self, chunk: str):
-        """Add a streamed text chunk. In reveal mode, buffers words for the timer."""
+        """Buffer incoming LLM chunk. Words are revealed only when the timer ticks."""
         if self._thinking:
             self._thinking = False
             self._dot_timer.stop()
-        if self._reveal_mode:
-            self._pending_words.extend(chunk.split())
-            return
-        self._full_text += chunk
-        self._rewrap()
-        self.show()
-        self.update()
+        self._pending_words.extend(chunk.split())
 
     def finish(self):
         """Called when TTS playback finishes; flushes any remaining words and starts hide."""
         self._dot_timer.stop()
         self._reveal_timer.stop()
-        if self._reveal_mode:
-            # Flush any words the timer hasn't reached yet
+        if self._reveal_mode and not self._timestamp_mode:
+            # Fallback WPM mode: flush remaining buffered words immediately
             self._full_text = " ".join(self._pending_words)
             self._rewrap()
-            self._reveal_mode = False
             self.update()
+        # In timestamp mode all words are already scheduled via singleShot
+        self._reveal_mode = False
+        self._timestamp_mode = False
         self._hide_timer.start()
 
     def clear(self):
@@ -146,8 +183,10 @@ class SpeechBubble(QWidget):
         self._dot_timer.stop()
         self._reveal_timer.stop()
         self._reveal_mode = False
+        self._timestamp_mode = False
         self._pending_words = []
         self._revealed_count = 0
+        self._pre_audio_timestamps = []
         self._thinking = False
         self._full_text = ""
         self._lines = []

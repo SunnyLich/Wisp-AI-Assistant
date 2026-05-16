@@ -28,10 +28,13 @@ class OverlaySignals(QObject):
     show_text_popup    = pyqtSignal(str)   # full reply text
     show_intent_picker = pyqtSignal()      # show arrow-key intent chooser
     bubble_thinking    = pyqtSignal()      # show animated dots
-    bubble_start_reveal = pyqtSignal(str)  # start word-by-word reveal synced to audio
+    bubble_start_reveal = pyqtSignal()     # start word-by-word reveal synced to audio
+    bubble_schedule_words = pyqtSignal(list, list)  # (words, start_ms) from Cartesia timestamps
     bubble_chunk       = pyqtSignal(str)   # buffer additional streamed text chunk
     bubble_finish      = pyqtSignal()      # response done, start hide countdown
     bubble_clear       = pyqtSignal()      # hide immediately
+    show_doll          = pyqtSignal()      # make doll visible
+    hide_doll          = pyqtSignal()      # hide doll after short delay
 
 
 class DollOverlay(QMainWindow):
@@ -59,9 +62,16 @@ class DollOverlay(QMainWindow):
         signals.show_text_popup.connect(self._on_show_popup)
         signals.bubble_thinking.connect(self._bubble.start_thinking)
         signals.bubble_start_reveal.connect(self._bubble.start_word_reveal)
+        signals.bubble_schedule_words.connect(self._bubble.schedule_words)
         signals.bubble_chunk.connect(self._bubble.append_chunk)
         signals.bubble_finish.connect(self._bubble.finish)
         signals.bubble_clear.connect(self._bubble.clear)
+        signals.show_doll.connect(self._show_doll)
+        signals.hide_doll.connect(self._hide_doll)
+
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
 
     # ------------------------------------------------------------------
     # Window setup
@@ -126,6 +136,21 @@ class DollOverlay(QMainWindow):
     def _open_settings(self):
         from ui.settings import open_settings
         open_settings(parent=self)
+
+    # ------------------------------------------------------------------
+    # Doll visibility
+    # ------------------------------------------------------------------
+
+    def _show_doll(self):
+        self._hide_timer.stop()
+        self.show()
+        self.raise_()
+
+    def _hide_doll(self):
+        """Hide doll at the same time the speech bubble hides (after _HIDE_DELAY)."""
+        from ui.bubble import _HIDE_DELAY
+        self._hide_timer.setInterval(_HIDE_DELAY)
+        self._hide_timer.start()
 
     # ------------------------------------------------------------------
     # Mouse

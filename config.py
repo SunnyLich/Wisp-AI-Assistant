@@ -21,6 +21,9 @@ LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "cartesia")    # cartesia | elevenlabs | none
 CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "")
 
+# --- App behaviour ---
+DOLL_AUTO_HIDE = os.getenv("DOLL_AUTO_HIDE", "true").lower() == "true"  # hide doll when idle
+
 # --- Hotkeys ---
 HOTKEY_INVOKE = os.getenv("HOTKEY_INVOKE", "ctrl+q")
 

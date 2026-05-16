@@ -74,7 +74,8 @@ def play_tts_stream(text: str, on_done: callable | None = None):
 
 
 def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None,
-                                on_audio_start: callable | None = None):
+                                on_audio_start: callable | None = None,
+                                on_word_timestamps: callable | None = None):
     """
     Stream TTS from an iterable of text chunks (e.g. live LLM stream) and play.
     Non-blocking — runs in a daemon thread.
@@ -84,20 +85,23 @@ def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None,
         on_done: Optional callback invoked when playback finishes.
         on_audio_start: Optional callback invoked when the first audio chunk
                         is written to the output stream (i.e. audio is audible).
+        on_word_timestamps: Optional callback(words, start_ms) from Cartesia timestamps.
     """
     threading.Thread(
-        target=_stream_and_play_chunks, args=(text_chunks, on_done, on_audio_start), daemon=True
+        target=_stream_and_play_chunks, args=(text_chunks, on_done, on_audio_start, on_word_timestamps), daemon=True
     ).start()
 
 
 def _stream_and_play_chunks(text_chunks, on_done: callable | None,
-                            on_audio_start: callable | None):
+                            on_audio_start: callable | None,
+                            on_word_timestamps: callable | None):
     chunk_q: queue.Queue[bytes | None] = queue.Queue()
 
     # Producer: fetch TTS audio chunks
     def producer():
         try:
-            for chunk in tts_module.stream_audio_from_chunks(text_chunks):
+            for chunk in tts_module.stream_audio_from_chunks(text_chunks,
+                                                              on_word_timestamps=on_word_timestamps):
                 chunk_q.put(chunk)
         finally:
             chunk_q.put(None)  # sentinel
