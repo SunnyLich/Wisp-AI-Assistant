@@ -62,6 +62,11 @@ INTENT_SHORTCUTS = {
     },
 }
 
+# --- UI sizes ---
+BUBBLE_WIDTH = int(os.getenv("BUBBLE_WIDTH", "340"))   # px wide (not including tail)
+BUBBLE_LINES = int(os.getenv("BUBBLE_LINES", "2"))     # max lines shown at once
+DOLL_SIZE    = int(os.getenv("DOLL_SIZE",    "80"))    # doll icon size px (square)
+
 # --- Audio ---
 FILLER_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "assets", "filler")
 FILLER_MAX_DURATION_MS = 1000   # filler clips must be < 1s

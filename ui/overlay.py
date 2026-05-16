@@ -13,6 +13,7 @@ States:
 from __future__ import annotations
 import sys
 import os
+import config
 from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt6.QtGui import QPixmap, QIcon, QAction
@@ -43,7 +44,10 @@ class DollOverlay(QMainWindow):
     no frame. Positioned at bottom-right corner.
     """
 
-    DOLL_SIZE = (80, 80)  # px
+    @property
+    def DOLL_SIZE(self):
+        s = config.DOLL_SIZE
+        return (s, s)
 
     def __init__(self, signals: OverlaySignals):
         super().__init__()

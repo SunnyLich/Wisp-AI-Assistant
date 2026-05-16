@@ -220,17 +220,28 @@ class SettingsDialog(QDialog):
         f.setContentsMargins(12, 12, 12, 12)
 
         self._fields["HOTKEY_INVOKE"] = QLineEdit()
-        self._fields["HOTKEY_INVOKE"].setPlaceholderText("e.g. ctrl+u")
+        self._fields["HOTKEY_INVOKE"].setPlaceholderText("e.g. ctrl+q")
 
         self._fields["DOLL_AUTO_HIDE"] = QCheckBox("Auto-hide doll (only visible when active)")
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox("Auto-elaborate when opening chat")
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
         self._fields["CHAT_ELABORATE_PROMPT"].setPlaceholderText("e.g. Please elaborate on that.")
 
+        self._fields["DOLL_SIZE"] = QLineEdit()
+        self._fields["DOLL_SIZE"].setPlaceholderText("e.g. 80")
+        self._fields["BUBBLE_WIDTH"] = QLineEdit()
+        self._fields["BUBBLE_WIDTH"].setPlaceholderText("e.g. 340")
+        self._fields["BUBBLE_LINES"] = QLineEdit()
+        self._fields["BUBBLE_LINES"].setPlaceholderText("e.g. 2")
+
         f.addRow("Invoke hotkey", self._fields["HOTKEY_INVOKE"])
         f.addRow("", self._fields["DOLL_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
         f.addRow("Elaborate prompt", self._fields["CHAT_ELABORATE_PROMPT"])
+        f.addRow(_sep(), _sep())
+        f.addRow("Doll icon size (px)", self._fields["DOLL_SIZE"])
+        f.addRow("Bubble width (px)", self._fields["BUBBLE_WIDTH"])
+        f.addRow("Bubble lines", self._fields["BUBBLE_LINES"])
         return w
 
     # ------------------------------------------------------------------
@@ -275,6 +286,10 @@ class SettingsDialog(QDialog):
         _set(self._fields["CHAT_ELABORATE_PROMPT"],
              self._env.get("CHAT_ELABORATE_PROMPT", cfg.CHAT_ELABORATE_PROMPT))
 
+        _set(self._fields["DOLL_SIZE"],    self._env.get("DOLL_SIZE",    str(cfg.DOLL_SIZE)))
+        _set(self._fields["BUBBLE_WIDTH"], self._env.get("BUBBLE_WIDTH", str(cfg.BUBBLE_WIDTH)))
+        _set(self._fields["BUBBLE_LINES"], self._env.get("BUBBLE_LINES", str(cfg.BUBBLE_LINES)))
+
         for key in ("up", "down", "left", "right"):
             lbl_key    = f"INTENT_{key.upper()}_LABEL"
             prompt_key = f"INTENT_{key.upper()}_PROMPT"
@@ -306,6 +321,9 @@ class SettingsDialog(QDialog):
             "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
+            "DOLL_SIZE":    _get(self._fields["DOLL_SIZE"]),
+            "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
+            "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
         }
         for key in ("up", "down", "left", "right"):

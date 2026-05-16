@@ -92,6 +92,9 @@ def stream_audio_from_chunks(text_chunks: Iterable[str],
         # ElevenLabs doesn't support incremental push; collect then stream
         yield from _stream_elevenlabs("".join(text_chunks))
     elif provider == "none":
+        # Drain the iterator so the caller's on_done fires only after LLM finishes.
+        for _ in text_chunks:
+            pass
         return
     else:
         raise ValueError(f"Unknown TTS provider: {provider}")

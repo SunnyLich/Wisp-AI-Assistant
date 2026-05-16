@@ -230,7 +230,10 @@ class App:
             send_fn=llm.stream_response_with_history,
             auto_message=auto_msg,
         )
-        self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
+        self._chat_window.destroyed.connect(lambda: (
+            setattr(self, "_chat_window", None),
+            self._qt.quit(),
+        ))
         self._chat_window.show()
 
 

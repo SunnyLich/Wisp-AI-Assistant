@@ -12,6 +12,7 @@ from PyQt6.QtGui import (
     QPainter, QColor, QFont, QFontMetrics,
     QBrush, QPen, QPainterPath,
 )
+import config
 
 _BG           = QColor(28, 28, 36, 220)
 _TEXT         = QColor(230, 230, 230)
@@ -59,18 +60,19 @@ class SpeechBubble(QWidget):
         self._audio_elapsed = QElapsedTimer()  # measures ms since audio start
         self._pre_audio_timestamps: list[tuple] = []  # batches that arrived before audio start
 
-        # Derive size from screen (target: compact but readable)
+        # Derive size from config
         screen = QApplication.primaryScreen().availableGeometry()
-        self._bubble_w = max(200, min(340, screen.width() // 5))
+        self._bubble_w = config.BUBBLE_WIDTH
         self._text_w = self._bubble_w - _PAD * 2
-        self._bubble_h = _PAD * 2 + self._line_h * 2 - _LINE_GAP
+        self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
 
         # Position: left of doll, vertically centered with it
-        doll_x = screen.x() + screen.width()  - _DOLL_W - _DOLL_MARGIN
-        doll_y = screen.y() + screen.height() - _DOLL_H - _DOLL_MARGIN
+        doll_sz = config.DOLL_SIZE
+        doll_x = screen.x() + screen.width()  - doll_sz - _DOLL_MARGIN
+        doll_y = screen.y() + screen.height() - doll_sz - _DOLL_MARGIN
         bx = doll_x - self._bubble_w - _TAIL_W - 6
-        by = doll_y + (_DOLL_H - self._bubble_h) // 2
+        by = doll_y + (config.DOLL_SIZE - self._bubble_h) // 2
         self.move(bx, by)
 
         # Dot animation (while thinking)
@@ -167,12 +169,13 @@ class SpeechBubble(QWidget):
         """Called when TTS playback finishes; flushes any remaining words and starts hide."""
         self._dot_timer.stop()
         self._reveal_timer.stop()
-        if self._reveal_mode and not self._timestamp_mode:
-            # Fallback WPM mode: flush remaining buffered words immediately
+        if not self._timestamp_mode:
+            # TTS=none (reveal never started) OR WPM fallback mode:
+            # flush all buffered words immediately.
             self._full_text = " ".join(self._pending_words)
             self._rewrap()
             self.update()
-        # In timestamp mode all words are already scheduled via singleShot
+        # In timestamp mode words are already scheduled via QTimer.singleShot
         self._reveal_mode = False
         self._timestamp_mode = False
         self._hide_timer.start()
@@ -209,7 +212,7 @@ class SpeechBubble(QWidget):
         # Timer keeps running until finish() is called (which flushes remaining words)
 
     def _rewrap(self):
-        """Word-wrap _full_text to _text_w; keep only the last 2 lines."""
+        """Word-wrap _full_text to _text_w; keep only the last BUBBLE_LINES lines."""
         words = self._full_text.split()
         lines: list[str] = []
         current = ""
@@ -223,7 +226,7 @@ class SpeechBubble(QWidget):
                 current = word
         if current:
             lines.append(current)
-        self._lines = lines[-2:]
+        self._lines = lines[-config.BUBBLE_LINES:]
 
     # ------------------------------------------------------------------
     # Paint
