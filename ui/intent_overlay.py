@@ -1,9 +1,10 @@
 """
 ui/intent_overlay.py — Compact intent picker shown on Ctrl+Q.
 
-Small floating widget centred on screen � no background dim.
-Shows 4 WASD + label rows. Press a key to pick, Escape to cancel.
-S = Custom prompt (opens inline text input).
+Small floating widget centred on screen — no background dim.
+Rows are built dynamically from config.INTENT_ROWS plus a fixed
+Custom Prompt row (config.HOTKEY_CUSTOM_PROMPT_KEY).
+Press the matching key to pick, Escape to cancel.
 """
 from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QApplication, QLineEdit
@@ -12,14 +13,26 @@ from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
 import config
 
 
-_DIRECTIONS = [
-    ("up",    "W"),
-    ("left",  "A"),
-    ("right", "D"),
-    ("down",  "S"),
-]
 
-_CUSTOM_DIRECTION = "down"   # S key triggers free-text input
+def _build_rows() -> list[dict]:
+    """Build the full list of overlay rows from config at show-time."""
+    rows = []
+    for r in config.INTENT_ROWS:
+        rows.append({
+            "glyph":     r["key"].upper() if r["key"] else "?",
+            "label":     r["label"],
+            "prompt":    r["prompt"],
+            "is_custom": False,
+        })
+    # Custom prompt row always appended last
+    rows.append({
+        "glyph":     config.HOTKEY_CUSTOM_PROMPT_KEY.upper(),
+        "label":     "Custom prompt",
+        "prompt":    "",
+        "is_custom": True,
+    })
+    return rows
+
 
 _W             = 230
 _ROW_H         = 36
@@ -50,7 +63,8 @@ class IntentOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        n_rows = len(_DIRECTIONS)
+        self._rows = _build_rows()
+        n_rows = len(self._rows)
         h = _PADDING * 2 + _ROW_H * n_rows + 28   # 28px for ESC hint
         self._normal_h = h
         self.setFixedSize(_W, h)
@@ -61,7 +75,7 @@ class IntentOverlay(QWidget):
             screen.y() + (screen.height() - h)  // 2,
         )
 
-        self._hovered: str | None = None
+        self._hovered: int | None = None
         self._handled = False
         self._custom_mode = False
 
@@ -103,22 +117,21 @@ class IntentOverlay(QWidget):
         hint_font  = QFont("Segoe UI", 8)
 
         y = _PADDING
-        for direction, glyph in _DIRECTIONS:
-            if direction == self._hovered:
+        for i, row in enumerate(self._rows):
+            if i == self._hovered:
                 p.setBrush(QBrush(_ROW_HL))
                 p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(6, y, _W - 12, _ROW_H, 6, 6)
 
             p.setFont(key_font)
             p.setPen(QPen(_ARROW))
-            p.drawText(12, y, 28, _ROW_H, Qt.AlignmentFlag.AlignCenter, glyph)
+            p.drawText(12, y, 28, _ROW_H, Qt.AlignmentFlag.AlignCenter, row["glyph"])
 
-            label = config.INTENT_SHORTCUTS[direction]["label"]
             p.setFont(label_font)
             p.setPen(QPen(_LABEL))
             p.drawText(46, y, _W - 52, _ROW_H,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                       label)
+                       row["label"])
 
             y += _ROW_H
 
@@ -133,18 +146,18 @@ class IntentOverlay(QWidget):
     # Key input
     # ------------------------------------------------------------------
 
-    def _select(self, direction: str):
+    def _select(self, idx: int):
         if self._handled:
             return
-        if direction == _CUSTOM_DIRECTION:
-            self._hovered = direction
+        if self._rows[idx]["is_custom"]:
+            self._hovered = idx
             self._unhook()  # release grabKeyboard; Qt handles typing in QLineEdit
             QTimer.singleShot(0, self._enter_custom_mode)
             return
         self._handled = True
-        self._hovered = direction
+        self._hovered = idx
         self.update()
-        QTimer.singleShot(80, lambda: self._fire(direction))
+        QTimer.singleShot(80, lambda: self._fire(idx))
 
     def _enter_custom_mode(self):
         self._custom_mode = True
@@ -167,20 +180,19 @@ class IntentOverlay(QWidget):
         self._handled = True
         self._unhook()
         self._timer.stop()
-        self.intent_chosen.emit(_CUSTOM_DIRECTION, text)
+        self.intent_chosen.emit(config.HOTKEY_CUSTOM_PROMPT_KEY, text)
         self.close()
 
     def keyPressEvent(self, event):
-        """Fallback for when Qt window has focus."""
-        # Build key map dynamically from config so keys are user-configurable.
-        key_map = {
-            getattr(Qt.Key, f"Key_{info['key'].upper()}", None): direction
-            for direction, info in config.INTENT_SHORTCUTS.items()
-            if info.get("key")
-        }
-        direction = key_map.get(event.key())
-        if direction:
-            self._select(direction)
+        key_map: dict[Qt.Key, int] = {}
+        for i, row in enumerate(self._rows):
+            qt_key = getattr(Qt.Key, f"Key_{row['glyph']}", None)
+            if qt_key is not None:
+                key_map[qt_key] = i
+
+        idx = key_map.get(event.key())
+        if idx is not None:
+            self._select(idx)
         elif event.key() == Qt.Key.Key_Escape:
             self._cancel()
 
@@ -201,18 +213,18 @@ class IntentOverlay(QWidget):
         except Exception:
             pass
 
-    def _fire(self, direction: str):
+    def _fire(self, idx: int):
         self._unhook()
         self._timer.stop()
-        prompt = config.INTENT_SHORTCUTS[direction]["prompt"]
-        self.intent_chosen.emit(direction, prompt)
+        row = self._rows[idx]
+        self.intent_chosen.emit(row["glyph"], row["prompt"])
         self.close()
 
     def _cancel(self):
-            if self._handled:
-                return
-            self._handled = True
-            self._unhook()
-            self._timer.stop()
-            self.cancelled.emit()
-            self.close()
+        if self._handled:
+            return
+        self._handled = True
+        self._unhook()
+        self._timer.stop()
+        self.cancelled.emit()
+        self.close()

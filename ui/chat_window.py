@@ -1,9 +1,8 @@
 """
-ui/chat_window.py — Multi-turn chat window.
+ui/chat_window.py — Multi-turn chat window with conversation history sidebar.
 
-Opened by clicking the doll. Shows conversation history and allows
-follow-up messages. If CHAT_AUTO_ELABORATE is enabled, automatically
-sends an elaboration prompt when first opened.
+Left sidebar lists all past conversations; clicking one shows it read-only.
+The latest conversation is always active (can send new messages).
 
 Send message: Enter (Shift+Enter for newline).
 """
@@ -13,21 +12,23 @@ import config
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QTextEdit, QPushButton, QFrame, QApplication,
-    QSizePolicy,
+    QSizePolicy, QStackedWidget,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
 from PyQt6.QtGui import QFont
 
-_W = 420
-_H = 520
-_BG       = "#1c1c24"
-_TITLE_BG = "#16161f"
-_USER_BG  = "#3a3a5c"
-_AI_BG    = "#26263a"
-_BORDER   = "rgba(255,255,255,20)"
-_TEXT     = "#e6e6e6"
-_HINT     = "#888888"
-_ACCENT   = "#a0a0ff"
+_W          = 680
+_H          = 520
+_BG         = "#1c1c24"
+_SIDEBAR_BG = "#13131a"
+_TITLE_BG   = "#16161f"
+_USER_BG    = "#3a3a5c"
+_AI_BG      = "#26263a"
+_BORDER     = "rgba(255,255,255,20)"
+_TEXT       = "#e6e6e6"
+_HINT       = "#888888"
+_ACCENT     = "#a0a0ff"
+_SEL_BG     = "rgba(160,160,255,18)"
 
 
 class _StreamSignals(QObject):
@@ -36,66 +37,71 @@ class _StreamSignals(QObject):
 
 
 class ChatWindow(QWidget):
-    def __init__(self, history: list, send_fn, auto_message: str | None = None):
+    def __init__(
+        self,
+        conversations: list[list[dict]],
+        send_fn,
+        auto_message: str | None = None,
+    ):
         """
         Args:
-            history:      Existing conversation as list of
-                          {"role": "user"|"assistant", "content": str}.
-            send_fn:      Callable(messages: list) -> Generator[str] — streams
-                          a reply given the full messages list.
-            auto_message: If set, automatically sent when the window opens.
+            conversations: Direct reference to the app's list of all past
+                           conversations. Each item is a list of
+                           {"role": "user"|"assistant", "content": str}.
+            send_fn:       Callable(messages: list) -> Generator[str]
+            auto_message:  If set, automatically sent when the window opens.
         """
         super().__init__()
-        self._history = list(history)
+        self._conversations = conversations  # live reference — NOT a copy
         self._send_fn = send_fn
         self._streaming = False
         self._current_ai_label: QLabel | None = None
         self._current_ai_text = ""
+        self._active_idx = max(0, len(conversations) - 1)
 
         self._signals = _StreamSignals()
         self._signals.chunk.connect(self._on_chunk)
         self._signals.finished.connect(self._on_finished)
 
         self.setWindowTitle("Chat")
-        self.setWindowFlags(
-            Qt.WindowType.Window
-            | Qt.WindowType.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet(f"background: {_BG}; color: {_TEXT};")
         self.setMinimumSize(_W, _H)
         self.resize(_W, _H)
 
         self._build_ui()
-        self._populate_history()
         self._center_on_screen()
 
-        if auto_message:
+        if auto_message and conversations:
             QTimer.singleShot(120, lambda: self._send(auto_message))
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Build
 
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-
         root.addWidget(self._make_title_bar())
-        root.addWidget(self._make_scroll_area(), stretch=1)
-        root.addWidget(self._make_input_area())
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self._make_sidebar())
+        div = QFrame()
+        div.setFrameShape(QFrame.Shape.VLine)
+        div.setStyleSheet(f"color: {_BORDER};")
+        body.addWidget(div)
+        body.addWidget(self._make_right_panel(), stretch=1)
+        root.addLayout(body, stretch=1)
 
     def _make_title_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(38)
         bar.setStyleSheet(f"background: {_TITLE_BG}; border-bottom: 1px solid {_BORDER};")
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(14, 0, 8, 0)
-
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(14, 0, 8, 0)
         title = QLabel("Chat")
         title.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT}; background: transparent;")
-
         close = QPushButton("✕")
         close.setFixedSize(26, 26)
         close.setStyleSheet(
@@ -103,48 +109,173 @@ class ChatWindow(QWidget):
             "QPushButton:hover { color: #e66; }"
         )
         close.clicked.connect(self.close)
-
-        layout.addWidget(title)
-        layout.addStretch()
-        layout.addWidget(close)
+        h.addWidget(title)
+        h.addStretch()
+        h.addWidget(close)
         return bar
 
-    def _make_scroll_area(self) -> QScrollArea:
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet(f"background: {_BG};")
+    # ------------------------------------------------------------------ Sidebar
 
-        self._msg_container = QWidget()
-        self._msg_container.setStyleSheet(f"background: {_BG};")
-        self._msg_layout = QVBoxLayout(self._msg_container)
-        self._msg_layout.setContentsMargins(14, 14, 14, 14)
-        self._msg_layout.setSpacing(10)
-        self._msg_layout.addStretch()
+    def _make_sidebar(self) -> QWidget:
+        sidebar = QWidget()
+        sidebar.setFixedWidth(185)
+        sidebar.setStyleSheet(f"background: {_SIDEBAR_BG};")
+        vl = QVBoxLayout(sidebar)
+        vl.setContentsMargins(0, 0, 0, 0)
+        vl.setSpacing(0)
 
-        self._scroll.setWidget(self._msg_container)
-        return self._scroll
+        hdr = QLabel("  History")
+        hdr.setFixedHeight(32)
+        hdr.setStyleSheet(
+            f"background: {_SIDEBAR_BG}; color: {_HINT}; font-size: 9pt;"
+            f" font-weight: bold; border-bottom: 1px solid {_BORDER};"
+        )
+        vl.addWidget(hdr)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(f"background: {_SIDEBAR_BG};")
+
+        self._sidebar_items = QWidget()
+        self._sidebar_items.setStyleSheet(f"background: {_SIDEBAR_BG};")
+        self._sidebar_layout = QVBoxLayout(self._sidebar_items)
+        self._sidebar_layout.setContentsMargins(0, 4, 0, 4)
+        self._sidebar_layout.setSpacing(1)
+        self._sidebar_btns: list[QPushButton] = []
+        self._rebuild_sidebar()
+
+        scroll.setWidget(self._sidebar_items)
+        vl.addWidget(scroll, stretch=1)
+        return sidebar
+
+    def _rebuild_sidebar(self):
+        while self._sidebar_layout.count():
+            item = self._sidebar_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._sidebar_btns.clear()
+
+        if not self._conversations:
+            lbl = QLabel("  No history yet.")
+            lbl.setStyleSheet(
+                f"color: {_HINT}; font-size: 9pt; padding: 8px; background: transparent;"
+            )
+            self._sidebar_layout.addWidget(lbl)
+        else:
+            for i, conv in enumerate(self._conversations):
+                btn = self._make_sidebar_btn(i, conv)
+                self._sidebar_layout.addWidget(btn)
+                self._sidebar_btns.append(btn)
+        self._sidebar_layout.addStretch()
+
+    def _make_sidebar_btn(self, idx: int, conv: list[dict]) -> QPushButton:
+        raw = next((m["content"] for m in conv if m["role"] == "user"), f"Conversation {idx+1}")
+        title = raw.strip().replace("\n", " ")
+        if len(title) > 42:
+            title = title[:42] + "…"
+        is_latest = (idx == len(self._conversations) - 1)
+        is_active = (idx == self._active_idx)
+        btn = QPushButton(title)
+        btn.setCheckable(True)
+        btn.setChecked(is_active)
+        btn.setFixedHeight(52)
+        btn.setStyleSheet(self._btn_style(is_active, is_latest))
+        btn.clicked.connect(lambda _checked, ix=idx: self._switch(ix))
+        return btn
+
+    def _btn_style(self, active: bool, latest: bool) -> str:
+        bg = _SEL_BG if active else "transparent"
+        c  = _ACCENT if latest else _TEXT
+        return (
+            f"QPushButton {{ background: {bg}; color: {c}; border: none;"
+            f" text-align: left; padding: 6px 10px; font-size: 9pt; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,10); }}"
+            f"QPushButton:checked {{ background: {_SEL_BG}; }}"
+        )
+
+    def _switch(self, idx: int):
+        self._active_idx = idx
+        if idx < self._stack.count():
+            self._stack.setCurrentIndex(idx)
+        is_latest = (idx == len(self._conversations) - 1)
+        self._past_notice.setVisible(not is_latest)
+        self._input_frame.setEnabled(is_latest)
+        for i, btn in enumerate(self._sidebar_btns):
+            btn.setChecked(i == idx)
+            btn.setStyleSheet(self._btn_style(i == idx, i == len(self._conversations) - 1))
+
+    # ------------------------------------------------------------------ Right panel
+
+    def _make_right_panel(self) -> QWidget:
+        panel = QWidget()
+        vl = QVBoxLayout(panel)
+        vl.setContentsMargins(0, 0, 0, 0)
+        vl.setSpacing(0)
+
+        self._stack = QStackedWidget()
+        self._stack.setStyleSheet(f"background: {_BG};")
+        if self._conversations:
+            for i, conv in enumerate(self._conversations):
+                self._stack.addWidget(self._make_page(i, conv))
+        else:
+            ph = QLabel("No conversations yet.\n\nPress Ctrl+Q to ask something.")
+            ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            ph.setStyleSheet(f"color: {_HINT}; background: {_BG};")
+            self._stack.addWidget(ph)
+        self._stack.setCurrentIndex(self._active_idx)
+        vl.addWidget(self._stack, stretch=1)
+
+        self._past_notice = QLabel("  Viewing past conversation")
+        self._past_notice.setFixedHeight(26)
+        self._past_notice.setStyleSheet(
+            f"background: rgba(160,160,255,10); color: {_HINT};"
+            f" font-size: 8pt; border-top: 1px solid {_BORDER};"
+        )
+        self._past_notice.setVisible(False)
+        vl.addWidget(self._past_notice)
+
+        self._input_frame = self._make_input_area()
+        vl.addWidget(self._input_frame)
+        return panel
+
+    def _make_page(self, idx: int, conv: list[dict]) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(f"background: {_BG};")
+
+        container = QWidget()
+        container.setStyleSheet(f"background: {_BG};")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        layout.addStretch()
+
+        for msg in conv:
+            self._bubble(layout, msg["content"], msg["role"])
+
+        scroll._msg_layout = layout  # type: ignore[attr-defined]
+        scroll.setWidget(container)
+        QTimer.singleShot(0, lambda s=scroll: s.verticalScrollBar().setValue(
+            s.verticalScrollBar().maximum()
+        ))
+        return scroll
 
     def _make_input_area(self) -> QWidget:
         frame = QWidget()
         frame.setStyleSheet(f"background: {_TITLE_BG}; border-top: 1px solid {_BORDER};")
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(8)
+        h = QHBoxLayout(frame)
+        h.setContentsMargins(10, 8, 10, 8)
+        h.setSpacing(8)
 
         self._input = QTextEdit()
         self._input.setFixedHeight(62)
         self._input.setPlaceholderText("Message… (Enter to send, Shift+Enter for newline)")
         self._input.setStyleSheet(
-            f"QTextEdit {{"
-            f"  background: rgba(255,255,255,8);"
-            f"  border: 1px solid {_BORDER};"
-            f"  border-radius: 6px;"
-            f"  color: {_TEXT};"
-            f"  padding: 6px 8px;"
-            f"  font-size: 10pt;"
-            f"}}"
+            f"QTextEdit {{ background: rgba(255,255,255,8); border: 1px solid {_BORDER};"
+            f" border-radius: 6px; color: {_TEXT}; padding: 6px 8px; font-size: 10pt; }}"
         )
         self._input.installEventFilter(self)
 
@@ -152,40 +283,30 @@ class ChatWindow(QWidget):
         self._send_btn.setFixedSize(64, 46)
         self._send_btn.setStyleSheet(
             f"QPushButton {{ background: {_ACCENT}; color: #1c1c24; border: none;"
-            f"  border-radius: 6px; font-size: 10pt; font-weight: bold; }}"
+            f" border-radius: 6px; font-size: 10pt; font-weight: bold; }}"
             f"QPushButton:hover {{ background: #b8b8ff; }}"
             f"QPushButton:disabled {{ background: #444; color: #666; }}"
         )
         self._send_btn.clicked.connect(self._on_send_clicked)
-
-        layout.addWidget(self._input)
-        layout.addWidget(self._send_btn)
+        h.addWidget(self._input)
+        h.addWidget(self._send_btn)
         return frame
 
-    # ------------------------------------------------------------------
-    # Message bubbles
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Bubbles
 
-    def _populate_history(self):
-        for msg in self._history:
-            self._add_bubble(msg["content"], msg["role"])
-
-    def _add_bubble(self, text: str, role: str) -> QLabel:
+    def _bubble(self, layout, text: str, role: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setWordWrap(True)
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        bg = _USER_BG if role == "user" else _AI_BG
-        role_color = _HINT
         lbl.setStyleSheet(
-            f"QLabel {{ background: {bg}; color: {_TEXT}; border-radius: 8px;"
-            f"  padding: 8px 11px; font-size: 10pt; }}"
+            f"QLabel {{ background: {'#3a3a5c' if role == 'user' else '#26263a'};"
+            f" color: {_TEXT}; border-radius: 8px; padding: 8px 11px; font-size: 10pt; }}"
         )
         lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        # Role label above bubble
         role_lbl = QLabel("You" if role == "user" else "Assistant")
-        role_lbl.setStyleSheet(f"color: {role_color}; background: transparent; font-size: 8pt;")
+        role_lbl.setStyleSheet(f"color: {_HINT}; background: transparent; font-size: 8pt;")
 
         wrapper = QWidget()
         wrapper.setStyleSheet("background: transparent;")
@@ -194,21 +315,31 @@ class ChatWindow(QWidget):
         wl.setSpacing(2)
         wl.addWidget(role_lbl)
         wl.addWidget(lbl)
-
-        # Insert before the trailing stretch
-        idx = self._msg_layout.count() - 1
-        self._msg_layout.insertWidget(idx, wrapper)
-        QTimer.singleShot(0, self._scroll_to_bottom)
+        layout.insertWidget(layout.count() - 1, wrapper)  # before trailing stretch
         return lbl
 
-    def _scroll_to_bottom(self):
-        self._scroll.verticalScrollBar().setValue(
-            self._scroll.verticalScrollBar().maximum()
-        )
+    def _latest_layout(self):
+        latest_idx = len(self._conversations) - 1
+        if latest_idx < 0 or latest_idx >= self._stack.count():
+            return None
+        page = self._stack.widget(latest_idx)
+        return getattr(page, "_msg_layout", None)
 
-    # ------------------------------------------------------------------
-    # Sending
-    # ------------------------------------------------------------------
+    def _latest_scroll(self) -> QScrollArea | None:
+        latest_idx = len(self._conversations) - 1
+        if latest_idx < 0 or latest_idx >= self._stack.count():
+            return None
+        page = self._stack.widget(latest_idx)
+        return page if isinstance(page, QScrollArea) else None
+
+    def _scroll_bottom(self):
+        scroll = self._latest_scroll()
+        if scroll:
+            QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(
+                scroll.verticalScrollBar().maximum()
+            ))
+
+    # ------------------------------------------------------------------ Sending
 
     def _on_send_clicked(self):
         text = self._input.toPlainText().strip()
@@ -217,22 +348,26 @@ class ChatWindow(QWidget):
             self._send(text)
 
     def _send(self, text: str):
-        if self._streaming:
+        if self._streaming or not self._conversations:
             return
         self._streaming = True
         self._send_btn.setEnabled(False)
 
-        self._add_bubble(text, "user")
-        self._history.append({"role": "user", "content": text})
+        conv = self._conversations[-1]  # always send to latest
+        latest_idx = len(self._conversations) - 1
+        if self._active_idx != latest_idx:
+            self._switch(latest_idx)
 
-        # Streaming placeholder
+        layout = self._latest_layout()
+        if layout:
+            self._bubble(layout, text, "user")
+        conv.append({"role": "user", "content": text})
+
         self._current_ai_text = ""
-        self._current_ai_label = self._add_bubble("…", "assistant")
+        self._current_ai_label = self._bubble(layout, "…", "assistant") if layout else None
+        self._scroll_bottom()
 
-        messages = (
-            [{"role": "system", "content": config.get_system_prompt()}]
-            + self._history
-        )
+        messages = [{"role": "system", "content": config.get_system_prompt()}] + conv
 
         def _stream():
             try:
@@ -247,19 +382,19 @@ class ChatWindow(QWidget):
         self._current_ai_text += chunk
         if self._current_ai_label:
             self._current_ai_label.setText(self._current_ai_text)
-        self._scroll_to_bottom()
+        self._scroll_bottom()
 
     def _on_finished(self):
-        if self._current_ai_text:
-            self._history.append({"role": "assistant", "content": self._current_ai_text})
+        if self._current_ai_text and self._conversations:
+            self._conversations[-1].append(
+                {"role": "assistant", "content": self._current_ai_text}
+            )
         self._current_ai_label = None
         self._current_ai_text = ""
         self._streaming = False
         self._send_btn.setEnabled(True)
 
-    # ------------------------------------------------------------------
-    # Keyboard: Enter to send, Shift+Enter for newline
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Events
 
     def eventFilter(self, obj, event):
         from PyQt6.QtCore import QEvent
@@ -270,9 +405,7 @@ class ChatWindow(QWidget):
                 return True
         return super().eventFilter(obj, event)
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Helpers
 
     def _center_on_screen(self):
         screen = QApplication.primaryScreen().availableGeometry()

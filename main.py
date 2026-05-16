@@ -21,6 +21,7 @@ from ui.chat_window import ChatWindow
 class App:
     def __init__(self):
         self._qt = QApplication(sys.argv)
+        self._qt.setQuitOnLastWindowClosed(False)  # chat/settings closing must not exit the app
         self._signals = OverlaySignals()
         self._overlay = DollOverlay(self._signals)
         self._hotkeys = HotkeyListener(
@@ -32,12 +33,14 @@ class App:
         self._last_reply: str = ""
         self._intent_picker: IntentOverlay | None = None
         self._chat_window: ChatWindow | None = None
-        self._conversation_history: list = []   # [{"role": ..., "content": ...}]
+        self._all_conversations: list[list[dict]] = []  # each item = one full Q&A session
         self._overlay_hwnd: int = 0          # cached after first show
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
 
         # Wire signals
         self._signals.show_intent_picker.connect(self._show_intent_picker)
+        self._signals.settings_applied.connect(self._on_settings_applied)
+        self._signals.show_last_chat.connect(self._on_show_last_chat)
         self._overlay.set_click_handler(self._on_doll_click)
 
         # Pre-warm connections in background
@@ -58,6 +61,21 @@ class App:
     def _prewarm(self):
         tts_module.prewarm()
         print("[main] Connections pre-warmed.")
+
+    # ------------------------------------------------------------------
+    # Settings applied — reload config + re-register hotkeys live
+    # ------------------------------------------------------------------
+
+    def _on_settings_applied(self):
+        config.reload()
+        self._hotkeys.stop()
+        self._hotkeys = HotkeyListener(
+            on_invoke=self._on_hotkey,
+            on_add_context=self._on_add_context,
+            on_clear_context=self._on_clear_context,
+        )
+        self._hotkeys.start()
+        print("[main] Config reloaded and hotkeys re-registered.")
 
     # ------------------------------------------------------------------
     # Hotkey → show intent picker (runs in keyboard listener thread)
@@ -84,11 +102,23 @@ class App:
             screenshot_b64 = capture.image_to_base64(img)
         self._pending_capture = (selected, screenshot_b64)
 
-        # 2. Now steal foreground using the pre-cached HWND (thread-safe).
+        # 2. Steal foreground from the keyboard hook thread.
+        #    Plain SetForegroundWindow fails silently when called from a non-foreground
+        #    thread.  AttachThreadInput borrows the input state of whichever thread
+        #    owns the foreground right now, which unlocks SetForegroundWindow for us.
         if self._overlay_hwnd:
             try:
                 import ctypes
-                ctypes.windll.user32.SetForegroundWindow(self._overlay_hwnd)
+                user32   = ctypes.windll.user32
+                kernel32 = ctypes.windll.kernel32
+                fg_hwnd  = user32.GetForegroundWindow()
+                fg_tid   = user32.GetWindowThreadProcessId(fg_hwnd, None)
+                our_tid  = kernel32.GetCurrentThreadId()
+                if fg_tid and fg_tid != our_tid:
+                    user32.AttachThreadInput(fg_tid, our_tid, True)
+                user32.SetForegroundWindow(self._overlay_hwnd)
+                if fg_tid and fg_tid != our_tid:
+                    user32.AttachThreadInput(fg_tid, our_tid, False)
             except Exception:
                 pass
 
@@ -110,6 +140,14 @@ class App:
         self._intent_picker.intent_chosen.connect(self._on_intent_chosen)
         self._intent_picker.cancelled.connect(self._on_intent_cancelled)
         self._intent_picker.show()
+
+        # Second focus grab from the Qt main thread — by now the picker has a
+        # real HWND and Qt has had a chance to process the show event.
+        try:
+            import ctypes
+            ctypes.windll.user32.SetForegroundWindow(int(self._intent_picker.winId()))
+        except Exception:
+            pass
 
     def _on_intent_chosen(self, direction: str, prompt: str):
         self._intent_picker = None
@@ -176,12 +214,10 @@ class App:
                     self._signals.bubble_chunk.emit(chunk)   # buffered by bubble in reveal mode
             finally:
                 llm_chunk_q.put(None)
-            # Populate history as soon as the LLM is done (before TTS finishes)
-            # so the chat window always has full context when opened.
-            self._conversation_history = [
+            self._all_conversations.append([
                 {"role": "user",      "content": user_message},
                 {"role": "assistant", "content": full_text},
-            ]
+            ])
 
         def llm_chunk_iter():
             while True:
@@ -220,20 +256,30 @@ class App:
     # ------------------------------------------------------------------
 
     def _on_doll_click(self, event):
-        auto_msg = config.CHAT_ELABORATE_PROMPT if config.CHAT_AUTO_ELABORATE and self._conversation_history else None
+        auto_msg = config.CHAT_ELABORATE_PROMPT if config.CHAT_AUTO_ELABORATE and self._all_conversations else None
         if self._chat_window is not None:
             self._chat_window.raise_()
             self._chat_window.activateWindow()
             return
         self._chat_window = ChatWindow(
-            history=self._conversation_history,
+            conversations=self._all_conversations,
             send_fn=llm.stream_response_with_history,
             auto_message=auto_msg,
         )
-        self._chat_window.destroyed.connect(lambda: (
-            setattr(self, "_chat_window", None),
-            self._qt.quit(),
-        ))
+        self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
+        self._chat_window.show()
+
+    def _on_show_last_chat(self):
+        """Tray menu 'Last chat' — open or raise the chat window."""
+        if self._chat_window is not None:
+            self._chat_window.raise_()
+            self._chat_window.activateWindow()
+            return
+        self._chat_window = ChatWindow(
+            conversations=self._all_conversations,
+            send_fn=llm.stream_response_with_history,
+        )
+        self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
         self._chat_window.show()
 
 

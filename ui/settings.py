@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
     QPushButton, QTabWidget, QWidget, QFrame, QMessageBox,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 
 ENV_PATH = Path(__file__).parent.parent / ".env"
@@ -56,8 +56,9 @@ def _write_env(vals: dict[str, str]):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, on_apply=None):
         super().__init__(parent)
+        self._on_apply = on_apply  # callable() fired after a successful apply
         self.setWindowTitle("Settings")
         self.setMinimumWidth(480)
         self.setWindowFlags(
@@ -77,22 +78,28 @@ class SettingsDialog(QDialog):
         root.setSpacing(12)
 
         tabs = QTabWidget()
-        tabs.addTab(self._tab_llm(),     "LLM")
-        tabs.addTab(self._tab_tts(),     "TTS / Voice")
-        tabs.addTab(self._tab_prompt(),  "Prompts")
-        tabs.addTab(self._tab_intents(), "Intents")
-        tabs.addTab(self._tab_app(),     "App")
+        tabs.addTab(self._tab_llm(),       "LLM")
+        tabs.addTab(self._tab_tts(),       "TTS / Voice")
+        tabs.addTab(self._tab_prompt(),    "Prompts")
+        tabs.addTab(self._tab_keybinds(),  "Keybinds")
+        tabs.addTab(self._tab_app(),       "App")
         root.addWidget(tabs)
 
         # Buttons
+        self._status_lbl = QLabel()
+        self._status_lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
         btn_row = QHBoxLayout()
+        btn_row.addWidget(self._status_lbl)
         btn_row.addStretch()
-        save_btn = QPushButton("Save")
+        apply_btn  = QPushButton("Apply")
+        save_btn   = QPushButton("Save")
         cancel_btn = QPushButton("Cancel")
         save_btn.setDefault(True)
+        apply_btn.clicked.connect(self._apply)
         save_btn.clicked.connect(self._save)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(apply_btn)
         btn_row.addWidget(save_btn)
         root.addLayout(btn_row)
 
@@ -164,48 +171,57 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return w
 
-    def _tab_intents(self) -> QWidget:
+    def _tab_keybinds(self) -> QWidget:
         from PyQt6.QtWidgets import QScrollArea, QSizePolicy
         container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setSpacing(14)
-        layout.setContentsMargins(12, 12, 12, 12)
+        self._keybinds_layout = QVBoxLayout(container)
+        self._keybinds_layout.setSpacing(2)
+        self._keybinds_layout.setContentsMargins(12, 12, 12, 12)
 
-        directions = [
-            ("up",    "↑  Up"),
-            ("down",  "↓  Down"),
-            ("left",  "←  Left"),
-            ("right", "→  Right"),
-        ]
-        for key, title in directions:
-            lbl_key    = f"INTENT_{key.upper()}_LABEL"
-            prompt_key = f"INTENT_{key.upper()}_PROMPT"
-            key_field  = f"INTENT_{key.upper()}_KEY"
+        # Column header
+        hdr = QWidget()
+        hdr_h = QHBoxLayout(hdr)
+        hdr_h.setContentsMargins(0, 0, 0, 6)
+        hdr_h.setSpacing(8)
+        for text, w in [("Key", 112), ("Special Function", 142), ("Label", 102), ("Prompt", 0)]:
+            lbl = QLabel(f"<b>{text}</b>")
+            if w:
+                lbl.setFixedWidth(w)
+            else:
+                lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            hdr_h.addWidget(lbl)
+        hdr_h.addSpacing(36)  # align with delete-button column
+        self._keybinds_layout.addWidget(hdr)
 
-            layout.addWidget(QLabel(f"<b>{title}</b>"))
+        # Special rows (in order)
+        self._fields["HOTKEY_INVOKE"]            = self._kb_special_row("Call the app")
+        self._fields["HOTKEY_CUSTOM_PROMPT_KEY"] = self._kb_special_row("Custom prompt")
+        self._fields["HOTKEY_ADD_CONTEXT"]       = self._kb_special_row("Add as prompt")
+        self._fields["HOTKEY_CLEAR_CONTEXT"]     = self._kb_special_row("Clear prompt")
 
-            key_edit = QLineEdit()
-            key_edit.setPlaceholderText("Single key letter, e.g. w")
-            key_edit.setMaxLength(1)
-            self._fields[key_field] = key_edit
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: rgba(128,128,128,80); margin: 4px 0px;")
+        self._keybinds_layout.addWidget(sep)
 
-            label_edit = QLineEdit()
-            label_edit.setPlaceholderText("Short label shown on picker")
-            self._fields[lbl_key] = label_edit
+        # Dynamic user rows area
+        self._user_rows_widget = QWidget()
+        self._user_rows_layout = QVBoxLayout(self._user_rows_widget)
+        self._user_rows_layout.setSpacing(2)
+        self._user_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._keybinds_layout.addWidget(self._user_rows_widget)
+        self._user_bind_rows: list[dict] = []
 
-            prompt_edit = QTextEdit()
-            prompt_edit.setFixedHeight(62)
-            prompt_edit.setPlaceholderText("Full instruction sent to LLM")
-            self._fields[prompt_key] = prompt_edit
-
-            f = QFormLayout()
-            f.setSpacing(6)
-            f.addRow("Key",    key_edit)
-            f.addRow("Label",  label_edit)
-            f.addRow("Prompt", prompt_edit)
-            layout.addLayout(f)
-
-        layout.addStretch()
+        # Add-row button
+        add_btn = QPushButton("+ Add row")
+        add_btn.setFixedWidth(90)
+        add_btn.clicked.connect(lambda: self._add_user_bind_row())
+        btn_wrap = QHBoxLayout()
+        btn_wrap.setContentsMargins(0, 6, 0, 0)
+        btn_wrap.addWidget(add_btn)
+        btn_wrap.addStretch()
+        self._keybinds_layout.addLayout(btn_wrap)
+        self._keybinds_layout.addStretch()
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -213,14 +229,83 @@ class SettingsDialog(QDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         return scroll
 
+    def _kb_special_row(self, special_label: str) -> QLineEdit:
+        """Add one non-deletable special keybind row; return its key QLineEdit."""
+        from PyQt6.QtWidgets import QSizePolicy
+        row_w = QWidget()
+        h = QHBoxLayout(row_w)
+        h.setContentsMargins(0, 2, 0, 2)
+        h.setSpacing(8)
+
+        key_edit = QLineEdit()
+        key_edit.setFixedWidth(112)
+        key_edit.setPlaceholderText("e.g. ctrl+q or s")
+        h.addWidget(key_edit)
+
+        s_lbl = QLabel(special_label)
+        s_lbl.setFixedWidth(142)
+        s_lbl.setStyleSheet("font-style: italic; color: palette(mid);")
+        h.addWidget(s_lbl)
+
+        for fixed_w in [102, 0]:
+            filler = QLineEdit()
+            filler.setEnabled(False)
+            if fixed_w:
+                filler.setFixedWidth(fixed_w)
+            else:
+                filler.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            h.addWidget(filler)
+
+        h.addSpacing(36)  # align with delete-button column of user rows
+        self._keybinds_layout.addWidget(row_w)
+        return key_edit
+
+    def _add_user_bind_row(self, key: str = "", label: str = "", prompt: str = "") -> None:
+        from PyQt6.QtWidgets import QSizePolicy
+        row_w = QWidget()
+        h = QHBoxLayout(row_w)
+        h.setContentsMargins(0, 2, 0, 2)
+        h.setSpacing(8)
+
+        key_edit = QLineEdit(key)
+        key_edit.setFixedWidth(112)
+        key_edit.setPlaceholderText("e.g. w")
+        h.addWidget(key_edit)
+
+        empty_lbl = QLabel()
+        empty_lbl.setFixedWidth(142)
+        h.addWidget(empty_lbl)
+
+        label_edit = QLineEdit(label)
+        label_edit.setFixedWidth(102)
+        label_edit.setPlaceholderText("Short label")
+        h.addWidget(label_edit)
+
+        prompt_edit = QLineEdit(prompt)
+        prompt_edit.setPlaceholderText("Full prompt sent to LLM")
+        prompt_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        h.addWidget(prompt_edit)
+
+        row_info: dict = {"widget": row_w, "key": key_edit, "label": label_edit, "prompt": prompt_edit}
+
+        del_btn = QPushButton("×")
+        del_btn.setFixedWidth(28)
+        del_btn.clicked.connect(lambda: self._delete_user_bind_row(row_info))
+        h.addWidget(del_btn)
+
+        self._user_rows_layout.addWidget(row_w)
+        self._user_bind_rows.append(row_info)
+
+    def _delete_user_bind_row(self, row_info: dict) -> None:
+        if row_info in self._user_bind_rows:
+            self._user_bind_rows.remove(row_info)
+        row_info["widget"].deleteLater()
+
     def _tab_app(self) -> QWidget:
         w = QWidget()
         f = QFormLayout(w)
         f.setSpacing(10)
         f.setContentsMargins(12, 12, 12, 12)
-
-        self._fields["HOTKEY_INVOKE"] = QLineEdit()
-        self._fields["HOTKEY_INVOKE"].setPlaceholderText("e.g. ctrl+q")
 
         self._fields["DOLL_AUTO_HIDE"] = QCheckBox("Auto-hide doll (only visible when active)")
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox("Auto-elaborate when opening chat")
@@ -233,8 +318,9 @@ class SettingsDialog(QDialog):
         self._fields["BUBBLE_WIDTH"].setPlaceholderText("e.g. 340")
         self._fields["BUBBLE_LINES"] = QLineEdit()
         self._fields["BUBBLE_LINES"].setPlaceholderText("e.g. 2")
+        self._fields["BUBBLE_REVEAL_WPM"] = QLineEdit()
+        self._fields["BUBBLE_REVEAL_WPM"].setPlaceholderText("e.g. 170")
 
-        f.addRow("Invoke hotkey", self._fields["HOTKEY_INVOKE"])
         f.addRow("", self._fields["DOLL_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
         f.addRow("Elaborate prompt", self._fields["CHAT_ELABORATE_PROMPT"])
@@ -242,6 +328,7 @@ class SettingsDialog(QDialog):
         f.addRow("Doll icon size (px)", self._fields["DOLL_SIZE"])
         f.addRow("Bubble width (px)", self._fields["BUBBLE_WIDTH"])
         f.addRow("Bubble lines", self._fields["BUBBLE_LINES"])
+        f.addRow("Bubble text speed (WPM)", self._fields["BUBBLE_REVEAL_WPM"])
         return w
 
     # ------------------------------------------------------------------
@@ -276,7 +363,19 @@ class SettingsDialog(QDialog):
         _set(self._fields["CARTESIA_API_KEY"], self._env.get("CARTESIA_API_KEY", ""))
         _set(self._fields["CARTESIA_VOICE_ID"], self._env.get("CARTESIA_VOICE_ID", ""))
         _set(self._fields["ELEVENLABS_API_KEY"], self._env.get("ELEVENLABS_API_KEY", ""))
-        _set(self._fields["HOTKEY_INVOKE"], self._env.get("HOTKEY_INVOKE", cfg.HOTKEY_INVOKE))
+        _set(self._fields["HOTKEY_INVOKE"],            self._env.get("HOTKEY_INVOKE",            cfg.HOTKEY_INVOKE))
+        _set(self._fields["HOTKEY_CUSTOM_PROMPT_KEY"], self._env.get("HOTKEY_CUSTOM_PROMPT_KEY", cfg.HOTKEY_CUSTOM_PROMPT_KEY))
+        _set(self._fields["HOTKEY_ADD_CONTEXT"],       self._env.get("HOTKEY_ADD_CONTEXT",       cfg.HOTKEY_ADD_CONTEXT))
+        _set(self._fields["HOTKEY_CLEAR_CONTEXT"],     self._env.get("HOTKEY_CLEAR_CONTEXT",     cfg.HOTKEY_CLEAR_CONTEXT))
+
+        count = int(self._env.get("INTENT_COUNT", str(len(cfg.INTENT_ROWS))))
+        for i in range(count):
+            row = cfg.INTENT_ROWS[i] if i < len(cfg.INTENT_ROWS) else {"key": "", "label": "", "prompt": ""}
+            self._add_user_bind_row(
+                key=self._env.get(f"INTENT_{i + 1}_KEY",    row["key"]),
+                label=self._env.get(f"INTENT_{i + 1}_LABEL",  row["label"]),
+                prompt=self._env.get(f"INTENT_{i + 1}_PROMPT", row["prompt"]),
+            )
 
         auto_hide = self._env.get("DOLL_AUTO_HIDE", str(cfg.DOLL_AUTO_HIDE)).lower() == "true"
         self._fields["DOLL_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
@@ -289,22 +388,28 @@ class SettingsDialog(QDialog):
         _set(self._fields["DOLL_SIZE"],    self._env.get("DOLL_SIZE",    str(cfg.DOLL_SIZE)))
         _set(self._fields["BUBBLE_WIDTH"], self._env.get("BUBBLE_WIDTH", str(cfg.BUBBLE_WIDTH)))
         _set(self._fields["BUBBLE_LINES"], self._env.get("BUBBLE_LINES", str(cfg.BUBBLE_LINES)))
-
-        for key in ("up", "down", "left", "right"):
-            lbl_key    = f"INTENT_{key.upper()}_LABEL"
-            prompt_key = f"INTENT_{key.upper()}_PROMPT"
-            key_field  = f"INTENT_{key.upper()}_KEY"
-            _set(self._fields[lbl_key],
-                 self._env.get(lbl_key, cfg.INTENT_SHORTCUTS[key]["label"]))
-            self._fields[prompt_key].setPlainText(  # type: ignore
-                self._env.get(prompt_key, cfg.INTENT_SHORTCUTS[key]["prompt"]))
-            _set(self._fields[key_field],
-                 self._env.get(key_field, cfg.INTENT_SHORTCUTS[key]["key"]))
+        _set(self._fields["BUBBLE_REVEAL_WPM"], self._env.get("BUBBLE_REVEAL_WPM", str(cfg.BUBBLE_REVEAL_WPM)))
 
         util_val = self._env.get("SYSTEM_PROMPT_UTILITY", cfg.SYSTEM_PROMPT_UTILITY)
         self._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(util_val)  # type: ignore
 
+    def _apply(self):
+        """Save without closing the dialog, then apply changes live."""
+        if self._do_save():
+            import config
+            config.reload()
+            if self._on_apply:
+                self._on_apply()
+            self._status_lbl.setText("Applied.")
+            QTimer.singleShot(4000, lambda: self._status_lbl.setText(""))
+
     def _save(self):
+        """Save and close the dialog."""
+        if self._do_save():
+            self.accept()
+
+    def _do_save(self) -> bool:
+        """Write .env. Returns True on success, False if validation failed."""
         vals = {
             "LLM_PROVIDER":      _get(self._fields["LLM_PROVIDER"]),
             "LLM_MODEL":         _get(self._fields["LLM_MODEL"]),
@@ -317,25 +422,36 @@ class SettingsDialog(QDialog):
             "CARTESIA_API_KEY":  _get(self._fields["CARTESIA_API_KEY"]),
             "CARTESIA_VOICE_ID": _get(self._fields["CARTESIA_VOICE_ID"]),
             "ELEVENLABS_API_KEY": _get(self._fields["ELEVENLABS_API_KEY"]),
-            "HOTKEY_INVOKE":     _get(self._fields["HOTKEY_INVOKE"]),
+            "HOTKEY_INVOKE":            _get(self._fields["HOTKEY_INVOKE"]),
+            "HOTKEY_CUSTOM_PROMPT_KEY": _get(self._fields["HOTKEY_CUSTOM_PROMPT_KEY"]),
+            "HOTKEY_ADD_CONTEXT":       _get(self._fields["HOTKEY_ADD_CONTEXT"]),
+            "HOTKEY_CLEAR_CONTEXT":     _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
+            "INTENT_COUNT":             str(len(self._user_bind_rows)),
             "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
             "DOLL_SIZE":    _get(self._fields["DOLL_SIZE"]),
             "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
             "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
+            "BUBBLE_REVEAL_WPM": _get(self._fields["BUBBLE_REVEAL_WPM"]),
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
         }
-        for key in ("up", "down", "left", "right"):
-            lbl_key    = f"INTENT_{key.upper()}_LABEL"
-            prompt_key = f"INTENT_{key.upper()}_PROMPT"
-            key_field  = f"INTENT_{key.upper()}_KEY"
-            vals[lbl_key]    = _get(self._fields[lbl_key])
-            vals[prompt_key] = self._fields[prompt_key].toPlainText()  # type: ignore
-            vals[key_field]  = _get(self._fields[key_field])
+        # Key conflict check across all bindings
+        all_keys = [
+            _get(self._fields[k]).strip().lower()
+            for k in ("HOTKEY_INVOKE", "HOTKEY_CUSTOM_PROMPT_KEY", "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT")
+        ] + [_get(r["key"]).strip().lower() for r in self._user_bind_rows]
+        non_empty = [k for k in all_keys if k]
+        if len(non_empty) != len(set(non_empty)):
+            QMessageBox.warning(self, "Duplicate keys",
+                                "Two or more bindings share the same key.\nPlease resolve conflicts before saving.")
+            return False
+        for i, row in enumerate(self._user_bind_rows):
+            vals[f"INTENT_{i + 1}_KEY"]    = _get(row["key"])
+            vals[f"INTENT_{i + 1}_LABEL"]  = _get(row["label"])
+            vals[f"INTENT_{i + 1}_PROMPT"] = _get(row["prompt"])
         _write_env(vals)
-        QMessageBox.information(self, "Saved", "Settings saved. Restart the app to apply changes.")
-        self.accept()
+        return True
 
 
 # ------------------------------------------------------------------
@@ -366,6 +482,6 @@ def _get(widget) -> str:
     return ""
 
 
-def open_settings(parent=None):
-    dlg = SettingsDialog(parent)
+def open_settings(parent=None, on_apply=None):
+    dlg = SettingsDialog(parent, on_apply=on_apply)
     dlg.exec()

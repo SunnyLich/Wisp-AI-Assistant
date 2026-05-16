@@ -36,6 +36,8 @@ class OverlaySignals(QObject):
     bubble_clear       = pyqtSignal()      # hide immediately
     show_doll          = pyqtSignal()      # make doll visible
     hide_doll          = pyqtSignal()      # hide doll after short delay
+    settings_applied   = pyqtSignal()      # settings were applied; re-register hotkeys etc.
+    show_last_chat     = pyqtSignal()      # tray "Last chat" clicked
 
 
 class DollOverlay(QMainWindow):
@@ -108,10 +110,14 @@ class DollOverlay(QMainWindow):
 
         self._tray = QSystemTrayIcon(icon, self)
         menu = QMenu()
+        last_chat_action = QAction("Last chat", self)
+        last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(QApplication.quit)
+        menu.addAction(last_chat_action)
+        menu.addSeparator()
         menu.addAction(settings_action)
         menu.addSeparator()
         menu.addAction(quit_action)
@@ -139,7 +145,7 @@ class DollOverlay(QMainWindow):
 
     def _open_settings(self):
         from ui.settings import open_settings
-        open_settings(parent=self)
+        open_settings(parent=self, on_apply=self.signals.settings_applied.emit)
 
     # ------------------------------------------------------------------
     # Doll visibility

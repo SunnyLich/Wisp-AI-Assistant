@@ -27,8 +27,7 @@ _DOLL_W       = 80
 _DOLL_H       = 80
 _DOLL_MARGIN  = 20
 _HIDE_DELAY    = 8_000   # ms after finish() before hiding
-_WPM           = 170    # words per minute — approximate TTS speaking speed
-_MS_PER_WORD   = int(60_000 / _WPM)  # ~353 ms
+_DEFAULT_WPM = 170  # fallback if config not yet loaded
 
 
 class SpeechBubble(QWidget):
@@ -88,7 +87,7 @@ class SpeechBubble(QWidget):
 
         # Word-reveal timer
         self._reveal_timer = QTimer(self)
-        self._reveal_timer.setInterval(_MS_PER_WORD)
+        self._reveal_timer.setInterval(int(60_000 / config.BUBBLE_REVEAL_WPM))
         self._reveal_timer.timeout.connect(self._reveal_next_word)
 
     # ------------------------------------------------------------------
