@@ -1,0 +1,823 @@
+"""
+core/context_fetcher.py — Ambient context collection.
+
+Gathers context from multiple sources and writes a JSON snapshot to a
+stable temporary file so any part of the app (or the LLM prompt builder)
+can read it without re-fetching.
+
+Sources implemented (Windows):
+  • Active Window    — title, process name, exe path, browser URL
+  • Clipboard        — plain text currently on the clipboard (redacted)
+  • UI Automation    — focused element: name, value, control type, window title
+  • Recent Files     — Windows %APPDATA%\\Microsoft\\Windows\\Recent
+  • File System Events — background watchdog watcher on Desktop/Documents/Downloads
+  • Browser Content  — fetches & parses the current browser page as plain text (redacted)
+  • Online Search    — DuckDuckGo text search, no API key required (redacted)
+
+Optional:
+  • Screen Capture   — enable by passing capture_screen=True to fetch_and_save()
+
+All text written to the snapshot is passed through a redaction filter that
+removes credit-card numbers, SSNs, API keys, bearer tokens, private keys,
+and password/secret assignments before they reach disk.
+
+Usage:
+    from core.context_fetcher import fetch_and_save, load_latest, get_temp_path, start_fs_watcher
+
+    start_fs_watcher()                          # call once at app startup
+    snapshot = fetch_and_save()                 # fetch + write to disk
+    snapshot = fetch_and_save(
+        online_query="what is asyncio")          # also search online
+    data     = load_latest()                    # read last saved snapshot as dict
+    path     = get_temp_path()                  # path of the JSON file
+"""
+
+from __future__ import annotations
+
+import config
+import ctypes
+import ctypes.wintypes
+import json
+import os
+import re
+import tempfile
+import time
+from collections import deque
+from dataclasses import asdict, dataclass, field
+from threading import Lock
+from typing import Optional
+from urllib.parse import urlparse
+
+# ---------------------------------------------------------------------------
+# Snapshot data classes
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WindowInfo:
+    title: str = ""
+    process_name: str = ""
+    exe_path: str = ""
+    url: str = ""          # browser address-bar URL if detectable
+
+
+@dataclass
+class ClipboardInfo:
+    text: str = ""
+    fmt: str = "empty"     # "text" | "image" | "other" | "empty"
+
+
+@dataclass
+class UIElementInfo:
+    name: str = ""
+    value: str = ""
+    control_type: str = ""
+    class_name: str = ""
+    window_title: str = ""
+
+
+@dataclass
+class ContextSnapshot:
+    timestamp: float = 0.0
+    active_window: WindowInfo = field(default_factory=WindowInfo)
+    clipboard: ClipboardInfo = field(default_factory=ClipboardInfo)
+    ui_focused: UIElementInfo = field(default_factory=UIElementInfo)
+    recent_files: list[str] = field(default_factory=list)
+    fs_events: list[str] = field(default_factory=list)            # recent file-system changes
+    browser_content: str = ""                                     # current browser page text (redacted)
+    online_results: list[dict] = field(default_factory=list)      # [{title, url, snippet}]
+    # Populated only when capture_screen=True is passed to fetch_and_save()
+    screen_capture_path: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Sensitive-data redaction
+# ---------------------------------------------------------------------------
+
+_REDACT_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # Credit / debit card numbers (13-19 digits, optionally separated)
+    (re.compile(r'\b(?:\d[ \-]?){13,19}\b'), "[CARD_NUMBER]"),
+    # Social Security Numbers
+    (re.compile(r'\b\d{3}-\d{2}-\d{4}\b'), "[SSN]"),
+    # PEM private keys (RSA, EC, DSA, OpenSSH)
+    (re.compile(
+        r'-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----.*?'
+        r'-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----',
+        re.DOTALL,
+    ), "[PRIVATE_KEY]"),
+    # OpenAI-style API keys  sk-…  and project keys  sk-proj-…
+    (re.compile(r'\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b'), "[API_KEY]"),
+    # Anthropic  sk-ant-…
+    (re.compile(r'\bsk-ant-[A-Za-z0-9\-_]{20,}\b'), "[API_KEY]"),
+    # Bearer tokens in Authorization headers / config
+    (re.compile(r'(?i)\bBearer\s+[A-Za-z0-9\-_.~+/=]{20,}'), "[BEARER_TOKEN]"),
+    # Generic long hex / base64 tokens that look like secrets (32+ chars)
+    (re.compile(r'(?i)(?:token|api[_\-]?key|access[_\-]?key|secret[_\-]?key|client[_\-]?secret)'
+                r'[\s]*[:=][\s]*[\'"]?([A-Za-z0-9\-_./+]{32,})[\'"]?'), "[API_KEY]"),
+    # password / passwd / secret assignments  (key: value  or  key=value)
+    (re.compile(r'(?i)(?:password|passwd|pwd|secret)\s*[:=]\s*\S+'), "[REDACTED_CREDENTIAL]"),
+]
+
+
+def _redact(text: str) -> str:
+    """Remove sensitive patterns from *text* before it is written to disk."""
+    for pattern, replacement in _REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Stable temp file path
+# ---------------------------------------------------------------------------
+
+# Model used for the web-search call.  Haiku does not invoke web search;
+# Sonnet is the cheapest tier that actually uses the tool.
+# Override with SEARCH_LLM_MODEL in .env if needed.
+_SEARCH_MODEL = os.getenv("SEARCH_LLM_MODEL", "claude-sonnet-4-5")
+# web_search_20250305: basic search, works on all capable models.
+# web_search_20260209: adds dynamic filtering (requires code-execution tool
+#   enabled in your org and a Sonnet 4.6 / Opus 4.6+ model).
+_WEB_SEARCH_TOOL_TYPE = os.getenv("WEB_SEARCH_TOOL_TYPE", "web_search_20250305")
+
+_TEMP_FILE = os.path.join(tempfile.gettempdir(), "ai_assistant_context.json")
+
+
+def get_temp_path() -> str:
+    """Return the path of the JSON snapshot file."""
+    return _TEMP_FILE
+
+
+# ---------------------------------------------------------------------------
+# Source: File System Events  (background watchdog watcher)
+# ---------------------------------------------------------------------------
+
+_fs_events_buf: deque[str] = deque(maxlen=30)
+_fs_events_lock = Lock()
+_fs_observer = None   # watchdog Observer | False
+
+
+def start_fs_watcher(paths: list[str] | None = None) -> None:
+    """
+    Start the background file-system watcher.  Safe to call multiple times.
+    By default watches ~/Desktop, ~/Documents, ~/Downloads recursively.
+    Call once from app startup (e.g. main.py __init__).
+    """
+    global _fs_observer
+    if _fs_observer is not None:
+        return
+
+    try:
+        from watchdog.observers import Observer          # type: ignore
+        from watchdog.events import FileSystemEventHandler  # type: ignore
+
+        class _Handler(FileSystemEventHandler):
+            def on_any_event(self, event):
+                if event.is_directory:
+                    return
+                with _fs_events_lock:
+                    _fs_events_buf.append(event.src_path)
+
+        if paths is None:
+            home = os.path.expanduser("~")
+            candidates = [
+                os.path.join(home, "Desktop"),
+                os.path.join(home, "Documents"),
+                os.path.join(home, "Downloads"),
+            ]
+            paths = [p for p in candidates if os.path.isdir(p)]
+
+        if not paths:
+            _fs_observer = False
+            return
+
+        handler = _Handler()
+        observer = Observer()
+        for path in paths:
+            observer.schedule(handler, path, recursive=True)
+        observer.daemon = True
+        observer.start()
+        _fs_observer = observer
+        print(f"[context_fetcher] fs watcher started on {len(paths)} path(s).")
+
+    except Exception as exc:
+        print(f"[context_fetcher] fs watcher failed to start: {exc}")
+        _fs_observer = False
+
+
+def _get_fs_events() -> list[str]:
+    with _fs_events_lock:
+        return list(_fs_events_buf)
+
+
+# ---------------------------------------------------------------------------
+# Source: Browser page content
+# ---------------------------------------------------------------------------
+
+_PRIVATE_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_PRIVATE_PREFIXES = ("192.168.", "10.", "172.16.", "172.17.", "172.18.",
+                     "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
+                     "172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
+                     "172.29.", "172.30.", "172.31.")
+
+
+def _fetch_browser_content(url: str, max_chars: int = 4000) -> str:
+    """
+    Fetch the plain text of a public web page.
+    Skips non-HTTP, localhost, and private-network URLs.
+    JavaScript-heavy SPAs will return minimal content (only static HTML).
+    All output is passed through the sensitive-data redactor.
+    """
+    if not url:
+        return ""
+    if not url.startswith(("http://", "https://")):
+        return ""
+
+    host = urlparse(url).hostname or ""
+    if host in _PRIVATE_HOSTS or any(host.startswith(p) for p in _PRIVATE_PREFIXES):
+        return ""
+
+    try:
+        import requests                        # type: ignore
+        from bs4 import BeautifulSoup          # type: ignore
+
+        resp = requests.get(
+            url,
+            timeout=6,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AI-assistant-overlay/1.0)"},
+            allow_redirects=True,
+        )
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Strip boilerplate tags
+        for tag in soup(["script", "style", "nav", "header",
+                         "footer", "aside", "noscript", "svg"]):
+            tag.decompose()
+
+        text = soup.get_text(separator=" ", strip=True)
+        # Collapse runs of whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+        text = text[:max_chars]
+
+        return _redact(text)
+
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Source: Online search  (Anthropic web search tool, charges via ANTHROPIC_API_KEY)
+# ---------------------------------------------------------------------------
+
+def _search_online(query: str, max_results: int = 5) -> list[dict]:
+    """
+    Use the Anthropic web search tool to find up to *max_results* hits for
+    *query* and return them as [{"title", "url", "snippet"}].
+
+    Charges through ANTHROPIC_API_KEY at ~$10 / 1 000 searches plus token
+    costs.  Returns [] immediately if the key is not configured or on any
+    failure.
+
+    Response structure parsed here:
+      • web_search_tool_result blocks  → raw {url, title} from Anthropic
+      • text blocks with citations     → {cited_text} snippets (≤150 chars)
+    Both are merged by URL and passed through the sensitive-data redactor.
+    """
+    if not query or not query.strip():
+        return []
+    if not config.ANTHROPIC_API_KEY:
+        print("[context_fetcher] ANTHROPIC_API_KEY not set — online search skipped.")
+        return []
+
+    try:
+        import anthropic  # type: ignore
+
+        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+        response = client.messages.create(
+            model=_SEARCH_MODEL,
+            max_tokens=1024,
+            tools=[{
+                "type": _WEB_SEARCH_TOOL_TYPE,
+                "name": "web_search",
+                "max_uses": 2,           # cap at 2 search queries per call
+            }],
+            messages=[{"role": "user", "content": query.strip()}],
+        )
+
+        # Collect results preserving insertion order (dict, Python 3.7+)
+        results: dict[str, dict] = {}   # url → {title, url, snippet}
+
+        for block in response.content:
+            btype = getattr(block, "type", "")
+
+            # Raw search results list returned by Anthropic infrastructure
+            if btype == "web_search_tool_result":
+                for item in (getattr(block, "content", None) or []):
+                    if getattr(item, "type", "") == "web_search_result":
+                        url   = (getattr(item, "url",   "") or "").strip()
+                        title = (getattr(item, "title", "") or "").strip()
+                        if url and url not in results:
+                            results[url] = {
+                                "title":   _redact(title),
+                                "url":     url,
+                                "snippet": "",
+                            }
+
+            # Text blocks carry inline citations with short cited_text snippets
+            elif btype == "text":
+                for citation in (getattr(block, "citations", None) or []):
+                    url        = (getattr(citation, "url",        "") or "").strip()
+                    title      = (getattr(citation, "title",      "") or "").strip()
+                    cited_text = (getattr(citation, "cited_text", "") or "").strip()
+                    if url:
+                        if url not in results:
+                            results[url] = {
+                                "title":   _redact(title),
+                                "url":     url,
+                                "snippet": "",
+                            }
+                        if cited_text and not results[url]["snippet"]:
+                            results[url]["snippet"] = _redact(cited_text)
+
+        return list(results.values())[:max_results]
+
+    except Exception as exc:
+        print(f"[context_fetcher] online search failed: {exc}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Source: Active Window
+# ---------------------------------------------------------------------------
+
+_BROWSER_PROCS = frozenset({
+    "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
+    "opera.exe", "vivaldi.exe", "arc.exe",
+})
+
+
+def _fetch_active_window() -> WindowInfo:
+    info = WindowInfo()
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return info
+
+        # Window title
+        length = user32.GetWindowTextLengthW(hwnd) + 1
+        buf = ctypes.create_unicode_buffer(length)
+        user32.GetWindowTextW(hwnd, buf, length)
+        info.title = buf.value.strip()
+
+        # Process name + exe path via psutil
+        pid = ctypes.wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            import psutil
+            proc = psutil.Process(pid.value)
+            info.process_name = proc.name()
+            try:
+                info.exe_path = proc.exe()
+            except (psutil.AccessDenied, Exception):
+                pass
+        except Exception:
+            pass
+
+        # Browser URL via UIA address bar
+        if info.process_name.lower() in _BROWSER_PROCS:
+            info.url = _get_browser_url_uia(hwnd) or ""
+
+    except Exception:
+        pass
+
+    return info
+
+
+def _get_browser_url_uia(hwnd: int) -> str | None:
+    """
+    Walk the UIA tree of a browser window to find the address-bar Edit control
+    and return its current value if it looks like a URL.
+    """
+    try:
+        import comtypes.client
+        import comtypes.gen.UIAutomationClient as uiac  # type: ignore
+
+        uia = _get_uia()
+        if uia is None:
+            return None
+
+        root = uia.ElementFromHandle(hwnd)
+        if root is None:
+            return None
+
+        # Find all Edit controls (ControlType == 50004) under the window
+        condition = uia.CreatePropertyCondition(
+            30003,  # UIA_ControlTypePropertyId
+            50004,  # UIA_EditControlTypeId
+        )
+        import comtypes.gen.UIAutomationClient as uiac  # type: ignore
+        el = root.FindFirst(uiac.TreeScope_Descendants, condition)
+        if el is None:
+            return None
+
+        raw = el.GetCurrentPattern(10002)  # UIA_ValuePatternId
+        if raw is None:
+            return None
+
+        import comtypes
+        vp = raw.QueryInterface(uiac.IUIAutomationValuePattern)
+        val = (vp.CurrentValue or "").strip()
+        if val.startswith(("http://", "https://", "file://", "ftp://")):
+            return val
+        return None
+
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Source: Clipboard
+# ---------------------------------------------------------------------------
+
+_CF_UNICODETEXT = 13
+_CF_BITMAP = 2
+_CF_DIB = 8
+
+
+def _fetch_clipboard() -> ClipboardInfo:
+    info = ClipboardInfo()
+    try:
+        import win32clipboard  # type: ignore
+
+        win32clipboard.OpenClipboard()
+        try:
+            if win32clipboard.IsClipboardFormatAvailable(_CF_UNICODETEXT):
+                raw = win32clipboard.GetClipboardData(_CF_UNICODETEXT)
+                info.text = _redact((raw or "").strip())
+                info.fmt = "text"
+            elif win32clipboard.IsClipboardFormatAvailable(_CF_BITMAP) or \
+                 win32clipboard.IsClipboardFormatAvailable(_CF_DIB):
+                info.fmt = "image"
+            else:
+                info.fmt = "other"
+        finally:
+            win32clipboard.CloseClipboard()
+
+    except Exception:
+        info.fmt = "empty"
+
+    return info
+
+
+# ---------------------------------------------------------------------------
+# Source: UI Automation — focused element
+# ---------------------------------------------------------------------------
+
+_UIA_ValuePatternId = 10002
+_UIA_TextPatternId  = 10014
+
+_CONTROL_TYPES: dict[int, str] = {
+    50000: "Button",     50001: "Calendar",    50002: "CheckBox",
+    50003: "ComboBox",   50004: "Edit",        50005: "Hyperlink",
+    50006: "Image",      50007: "ListItem",    50008: "List",
+    50009: "Menu",       50010: "MenuBar",     50011: "MenuItem",
+    50012: "ProgressBar",50013: "RadioButton", 50014: "ScrollBar",
+    50015: "Slider",     50016: "Spinner",     50017: "StatusBar",
+    50018: "Tab",        50019: "TabItem",     50020: "Text",
+    50021: "ToolBar",    50022: "ToolTip",     50023: "Tree",
+    50024: "TreeItem",   50025: "Custom",      50026: "Group",
+    50027: "Thumb",      50028: "DataGrid",    50029: "DataItem",
+    50030: "Document",   50031: "SplitButton", 50032: "Window",
+    50033: "Pane",       50034: "Header",      50035: "HeaderItem",
+    50036: "Table",      50037: "TitleBar",    50038: "Separator",
+}
+
+_uia_singleton = None   # IUIAutomation | False
+
+
+def _get_uia():
+    """Return a cached IUIAutomation instance (or None if unavailable)."""
+    global _uia_singleton
+    if _uia_singleton is None:
+        try:
+            import comtypes.client
+            comtypes.client.GetModule("UIAutomationCore.dll")
+            import comtypes.gen.UIAutomationClient as uiac  # type: ignore
+            _uia_singleton = comtypes.client.CreateObject(
+                "{ff48dba4-60ef-4201-aa87-54103eef594e}",
+                interface=uiac.IUIAutomation,
+            )
+        except Exception:
+            _uia_singleton = False
+
+    return _uia_singleton if _uia_singleton is not False else None
+
+
+def _fetch_ui_focused() -> UIElementInfo:
+    info = UIElementInfo()
+    uia = _get_uia()
+    if uia is None:
+        return info
+
+    try:
+        import comtypes.gen.UIAutomationClient as uiac  # type: ignore
+
+        el = uia.GetFocusedElement()
+        if el is None:
+            return info
+
+        # Name
+        try:
+            info.name = (el.CurrentName or "").strip()
+        except Exception:
+            pass
+
+        # Class name
+        try:
+            info.class_name = (el.CurrentClassName or "").strip()
+        except Exception:
+            pass
+
+        # Control type
+        try:
+            ct = el.CurrentControlType
+            info.control_type = _CONTROL_TYPES.get(ct, str(ct))
+        except Exception:
+            pass
+
+        # Containing window title — walk up UIA tree
+        try:
+            walker = uia.ControlViewWalker
+            parent = walker.GetParentElement(el)
+            depth = 0
+            while parent and depth < 20:
+                try:
+                    if parent.CurrentControlType == 50032:  # Window
+                        info.window_title = (parent.CurrentName or "").strip()
+                        break
+                except Exception:
+                    break
+                parent = walker.GetParentElement(parent)
+                depth += 1
+        except Exception:
+            pass
+
+        # Value (Edit / ComboBox / address bars)
+        try:
+            raw = el.GetCurrentPattern(_UIA_ValuePatternId)
+            if raw is not None:
+                vp = raw.QueryInterface(uiac.IUIAutomationValuePattern)
+                info.value = _redact((vp.CurrentValue or "").strip())
+        except Exception:
+            pass
+
+        # Text selection — try if value is empty
+        if not info.value:
+            try:
+                raw = el.GetCurrentPattern(_UIA_TextPatternId)
+                if raw is not None:
+                    tp = raw.QueryInterface(uiac.IUIAutomationTextPattern)
+                    sels = tp.GetSelection()
+                    if sels.Length > 0:
+                        info.value = _redact((sels.GetElement(0).GetText(-1) or "").strip())
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    return info
+
+
+# ---------------------------------------------------------------------------
+# Source: Recent Files (Windows Recent folder, max 10)
+# ---------------------------------------------------------------------------
+
+def _fetch_recent_files(max_files: int = 10) -> list[str]:
+    """
+    Return the display names (and resolved target paths where possible) of the
+    most recently touched files from %APPDATA%\\Microsoft\\Windows\\Recent.
+    """
+    results: list[str] = []
+    try:
+        recent_dir = os.path.join(
+            os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Recent"
+        )
+        if not os.path.isdir(recent_dir):
+            return results
+
+        entries: list[tuple[float, str]] = []
+        for name in os.listdir(recent_dir):
+            if not name.lower().endswith(".lnk"):
+                continue
+            full = os.path.join(recent_dir, name)
+            try:
+                mtime = os.path.getmtime(full)
+                entries.append((mtime, full))
+            except OSError:
+                pass
+
+        entries.sort(reverse=True)
+
+        # Attempt to resolve .lnk → actual target path via WScript.Shell
+        shell = None
+        try:
+            import win32com.client  # type: ignore
+            shell = win32com.client.Dispatch("WScript.Shell")
+        except Exception:
+            pass
+
+        for _, lnk_path in entries[:max_files]:
+            if shell is not None:
+                try:
+                    shortcut = shell.CreateShortcut(lnk_path)
+                    target = (shortcut.TargetPath or "").strip()
+                    if target:
+                        results.append(target)
+                        continue
+                except Exception:
+                    pass
+            # Fallback: strip .lnk from display name
+            results.append(os.path.splitext(os.path.basename(lnk_path))[0])
+
+    except Exception:
+        pass
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Source: Screen Capture (opt-in)
+# ---------------------------------------------------------------------------
+
+def _capture_screen_to_file() -> str:
+    """
+    Take a full-screen screenshot and save it as a PNG next to the JSON
+    snapshot.  Returns the path, or "" on failure.
+    """
+    try:
+        import mss
+        import mss.tools
+
+        out_path = os.path.join(tempfile.gettempdir(), "ai_assistant_screen.png")
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]  # primary monitor
+            raw = sct.grab(monitor)
+            mss.tools.to_png(raw.rgb, raw.size, output=out_path)
+        return out_path
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Main public API
+# ---------------------------------------------------------------------------
+
+def fetch_and_save(
+    capture_screen: bool = False,
+    fetch_browser_content: bool = False,  # opt-in; now driven by LLM tools instead
+    online_query: str | None = None,
+) -> ContextSnapshot:
+    """
+    Collect all context sources, persist to the temp JSON file, and return
+    the snapshot.  Always produces at least an active-window entry.
+
+    Args:
+        capture_screen:       Take a full-screen screenshot (off by default).
+        fetch_browser_content: Fetch and parse the URL in the active browser
+                              window as plain text (on by default; only fires
+                              when a supported browser is in the foreground).
+        online_query:         If provided, run a DuckDuckGo search and include
+                              up to 5 results in the snapshot.
+    """
+    # Lazily start fs watcher on first fetch
+    if _fs_observer is None:
+        start_fs_watcher()
+
+    active_win = _fetch_active_window()
+
+    browser_content = ""
+    if fetch_browser_content and active_win.url:
+        browser_content = _fetch_browser_content(active_win.url)
+
+    snapshot = ContextSnapshot(
+        timestamp=time.time(),
+        active_window=active_win,
+        clipboard=_fetch_clipboard(),
+        ui_focused=_fetch_ui_focused(),
+        recent_files=_fetch_recent_files(),
+        fs_events=_get_fs_events(),
+        browser_content=browser_content,
+        online_results=_search_online(online_query) if online_query else [],
+        screen_capture_path=_capture_screen_to_file() if capture_screen else "",
+    )
+    _persist(snapshot)
+    return snapshot
+
+
+def load_latest() -> dict | None:
+    """Load the last persisted snapshot from disk as a plain dict."""
+    try:
+        with open(_TEMP_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def fetch_browser_content_for_tool(url: str) -> str:
+    """
+    Public wrapper around _fetch_browser_content for use as an LLM tool.
+    Fetches the plain-text content of *url* with redaction applied.
+    Returns "" on failure or if the URL is private/non-HTTP.
+    """
+    return _fetch_browser_content(url)
+
+
+def format_context_for_prompt(snapshot: ContextSnapshot) -> str:
+    """
+    Format a ContextSnapshot as a compact plain-text block suitable for
+    inclusion in an LLM system prompt.
+    """
+    lines: list[str] = ["AMBIENT CONTEXT (captured at hotkey time):"]
+
+    w = snapshot.active_window
+    if w.title or w.process_name:
+        win_str = f"{w.process_name} — \u201c{w.title}\u201d" if w.title else w.process_name
+        lines.append(f"- Active window: {win_str}")
+    if w.url:
+        lines.append(f"- Browser URL: {w.url}")
+
+    cb = snapshot.clipboard
+    if cb.fmt == "text" and cb.text:
+        preview = cb.text[:300].replace("\n", " ")
+        if len(cb.text) > 300:
+            preview += "\u2026"
+        lines.append(f"- Clipboard: \u201c{preview}\u201d")
+    elif cb.fmt == "image":
+        lines.append("- Clipboard: [image]")
+
+    ui = snapshot.ui_focused
+    if ui.control_type or ui.name:
+        el_str = ui.control_type or "Element"
+        if ui.name:
+            el_str += f" \u2018{ui.name[:80]}\u2019"
+        if ui.window_title:
+            el_str += f" in \u201c{ui.window_title[:80]}\u201d"
+        lines.append(f"- Focused element: {el_str}")
+    if ui.value:
+        preview = ui.value[:200].replace("\n", " ")
+        lines.append(f"- Element value: \u201c{preview}\u201d")
+
+    if snapshot.fs_events:
+        recent = snapshot.fs_events[-5:]
+        lines.append("- Recent file changes: " + ", ".join(recent))
+
+    if not lines[1:]:  # nothing useful was added
+        return ""
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _snapshot_to_dict(snapshot: ContextSnapshot) -> dict:
+    """Recursively convert dataclasses to plain dicts."""
+    def _convert(obj):
+        if hasattr(obj, "__dataclass_fields__"):
+            return {k: _convert(v) for k, v in vars(obj).items()}
+        if isinstance(obj, list):
+            return [_convert(i) for i in obj]
+        return obj
+
+    return _convert(snapshot)
+
+
+def _persist(snapshot: ContextSnapshot) -> None:
+    try:
+        data = _snapshot_to_dict(snapshot)
+        with open(_TEMP_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[context_fetcher] Failed to write snapshot: {e}")
+
+
+# ---------------------------------------------------------------------------
+# CLI smoke-test: python -m core.context_fetcher
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import pprint
+    import sys
+
+    query = sys.argv[1] if len(sys.argv) > 1 else None
+    print(f"Writing snapshot to: {get_temp_path()}")
+    if query:
+        print(f"Online query: {query!r}")
+    print()
+    snap = fetch_and_save(capture_screen=False, online_query=query)
+    pprint.pprint(_snapshot_to_dict(snap))

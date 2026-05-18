@@ -26,3 +26,8 @@ python-dotenv>=1.2.2      # .env config loading
 pynput>=1.8.2             # mouse/keyboard listener (backup)
 pywin32>=311              # Windows-specific APIs (clipboard, window focus)
 comtypes>=1.4.0           # Windows UI Automation (read selected text without clipboard)
+psutil>=6.0.0             # process name / exe path lookup (context fetcher)
+watchdog>=4.0.0           # file system event watcher (context fetcher)
+requests>=2.32.0          # browser page fetching (context fetcher)
+beautifulsoup4>=4.12.0    # HTML→text extraction (context fetcher)
+# anthropic is already listed above — web search charges through that key

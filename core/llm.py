@@ -14,6 +14,47 @@ import config
 from typing import Generator
 
 # ------------------------------------------------------------------
+# Context tools — offered to Claude during hotkey-triggered queries.
+# web_search is a built-in Anthropic server-side tool (no client code needed).
+# fetch_browser_page is user-defined: we execute it and return the result.
+# ------------------------------------------------------------------
+
+_CONTEXT_TOOLS: list[dict] = [
+    {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": 2,
+    },
+    {
+        "name": "fetch_browser_page",
+        "description": (
+            "Fetch and read the plain-text content of a web page. "
+            "Use when the user asks about a specific URL or the current browser page."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Full URL to fetch (must start with http:// or https://)",
+                }
+            },
+            "required": ["url"],
+        },
+    },
+]
+
+
+def _execute_context_tool(name: str, inputs: dict) -> str:
+    """Execute a user-defined context tool and return a plain-text result."""
+    if name == "fetch_browser_page":
+        from core.context_fetcher import fetch_browser_content_for_tool
+        url = inputs.get("url", "")
+        result = fetch_browser_content_for_tool(url)
+        return result or f"Could not fetch content from {url!r}."
+    return f"Unknown tool: {name!r}"
+
+# ------------------------------------------------------------------
 # Singleton clients — initialised once, reused across all requests
 # ------------------------------------------------------------------
 _openai_client = None
@@ -158,6 +199,8 @@ def _get_vision_anthropic_client():
 def stream_response(
     user_message: str,
     image_base64: str | None = None,
+    ambient_context: str = "",
+    use_tools: bool = False,
 ) -> Generator[str, None, None]:
     """
     Stream a response from the configured LLM.
@@ -166,8 +209,14 @@ def stream_response(
     Otherwise uses LLM_PROVIDER/MODEL.
 
     Args:
-        user_message: The user's query text.
-        image_base64: Optional base64-encoded PNG for vision input.
+        user_message:     The user's query text.
+        image_base64:     Optional base64-encoded PNG for vision input.
+        ambient_context:  Plain-text context block prepended to the system
+                          prompt (active window, clipboard, focused element).
+        use_tools:        If True and provider is Anthropic, expose
+                          web_search + fetch_browser_page tools so Claude can
+                          pull extra context when it decides to.  Ignored for
+                          Groq/OpenAI providers and vision calls.
 
     Yields:
         Text chunks as they arrive from the API.
@@ -186,9 +235,9 @@ def stream_response(
         _check_llm_config()
         provider = config.LLM_PROVIDER.lower()
         if provider in ("groq", "openai"):
-            yield from _stream_openai_compat(user_message, None, config.LLM_MODEL, _get_openai_client())
+            yield from _stream_openai_compat(user_message, None, config.LLM_MODEL, _get_openai_client(), ambient_context)
         elif provider == "anthropic":
-            yield from _stream_anthropic(user_message, None, config.LLM_MODEL, _get_anthropic_client())
+            yield from _stream_anthropic(user_message, None, config.LLM_MODEL, _get_anthropic_client(), ambient_context, use_tools)
         else:
             raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
@@ -202,8 +251,9 @@ def _stream_openai_compat(
     image_base64: str | None,
     model: str,
     client,
+    ambient_context: str = "",
 ) -> Generator[str, None, None]:
-    messages = _build_openai_messages(user_message, image_base64)
+    messages = _build_openai_messages(user_message, image_base64, ambient_context)
 
     with client.chat.completions.create(
         model=model,
@@ -218,8 +268,10 @@ def _stream_openai_compat(
                 yield delta
 
 
-def _build_openai_messages(user_message: str, image_base64: str | None) -> list:
+def _build_openai_messages(user_message: str, image_base64: str | None, ambient_context: str = "") -> list:
     system = config.get_system_prompt()
+    if ambient_context:
+        system += f"\n\n---\n{ambient_context}"
     if image_base64:
         content = [
             {"type": "text", "text": user_message},
@@ -246,8 +298,12 @@ def _stream_anthropic(
     image_base64: str | None,
     model: str,
     client,
+    ambient_context: str = "",
+    use_tools: bool = False,
 ) -> Generator[str, None, None]:
     system = config.get_system_prompt()
+    if ambient_context:
+        system += f"\n\n---\n{ambient_context}"
 
     if image_base64:
         content = [
@@ -264,14 +320,59 @@ def _stream_anthropic(
     else:
         content = user_message
 
-    with client.messages.stream(
-        model=model,
-        max_tokens=256,
-        system=system,
-        messages=[{"role": "user", "content": content}],
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
+    # --- No tools: original streaming path (lowest latency) ---
+    if not use_tools:
+        with client.messages.stream(
+            model=model,
+            max_tokens=256,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+        return
+
+    # --- Tool-enabled path: non-streaming loop, then yield final text ---
+    # Claude decides whether to call tools; common case is no calls at all.
+    messages: list[dict] = [{"role": "user", "content": content}]
+    for _round in range(4):   # at most 3 tool rounds + 1 final answer
+        response = client.messages.create(
+            model=model,
+            max_tokens=512,
+            system=system,
+            messages=messages,
+            tools=_CONTEXT_TOOLS,
+        )
+
+        if response.stop_reason in ("end_turn", "max_tokens"):
+            for block in response.content:
+                if getattr(block, "type", "") == "text":
+                    text = getattr(block, "text", "")
+                    if text:
+                        yield text
+            return
+
+        if response.stop_reason == "tool_use":
+            messages.append({"role": "assistant", "content": response.content})
+            tool_results = []
+            for block in response.content:
+                if getattr(block, "type", "") == "tool_use":
+                    result = _execute_context_tool(block.name, block.input or {})
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+            if tool_results:
+                messages.append({"role": "user", "content": tool_results})
+        else:
+            # Unexpected stop reason (e.g. server-side tool already resolved)
+            for block in response.content:
+                if getattr(block, "type", "") == "text":
+                    text = getattr(block, "text", "")
+                    if text:
+                        yield text
+            return
 
 
 # ------------------------------------------------------------------

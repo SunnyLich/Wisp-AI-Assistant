@@ -11,7 +11,7 @@ import threading
 from PyQt6.QtWidgets import QApplication
 import config
 from core.hotkeys import HotkeyListener
-from core import capture, llm, audio
+from core import capture, llm, audio, context_fetcher
 from core import tts as tts_module
 from ui.overlay import DollOverlay, OverlaySignals
 from ui.intent_overlay import IntentOverlay
@@ -33,6 +33,7 @@ class App:
         )
         self._context_buffer: list[str] = []   # accumulated via Alt+Q
         self._last_reply: str = ""
+        self._pending_context: context_fetcher.ContextSnapshot | None = None
         self._intent_picker: IntentOverlay | None = None
         self._snip_overlay: SnipOverlay | None = None
         self._chat_window: ChatWindow | None = None
@@ -49,6 +50,9 @@ class App:
 
         # Pre-warm connections in background
         threading.Thread(target=self._prewarm, daemon=True).start()
+
+        # Start fs watcher (watches Desktop/Documents/Downloads in background)
+        context_fetcher.start_fs_watcher()
 
     def run(self):
         if not config.DOLL_AUTO_HIDE:
@@ -146,7 +150,9 @@ class App:
         self._snip_overlay = None
 
     def _on_hotkey(self):
-        # 1. Capture FIRST — original app still has focus, so Ctrl+C works.
+        # 1. Capture context FIRST — original app still has focus.
+        self._pending_context = context_fetcher.fetch_and_save()
+
         selected = capture.get_selected_text()
         screenshot_b64 = None
         if not selected:
@@ -234,6 +240,11 @@ class App:
                 img = capture.get_screen_snippet()
                 screenshot_b64 = capture.image_to_base64(img)
 
+        # Ambient context captured at hotkey time
+        snap = self._pending_context
+        self._pending_context = None
+        ambient_ctx = context_fetcher.format_context_for_prompt(snap) if snap else ""
+
         # Build final message, incorporating any buffered context items
         context_items = self._context_buffer.copy()
         self._context_buffer.clear()
@@ -260,7 +271,12 @@ class App:
         def llm_producer():
             nonlocal full_text
             try:
-                for chunk in llm.stream_response(user_message, screenshot_b64):
+                for chunk in llm.stream_response(
+                    user_message,
+                    screenshot_b64,
+                    ambient_context=ambient_ctx,
+                    use_tools=not screenshot_b64,   # tools only for text queries; vision handles itself
+                ):
                     full_text += chunk
                     llm_chunk_q.put(chunk)
                     self._signals.bubble_chunk.emit(chunk)   # buffered by bubble in reveal mode
