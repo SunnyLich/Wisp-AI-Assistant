@@ -1,5 +1,6 @@
 .env
 private/
+doll/
 
 # Python
 __pycache__/

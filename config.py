@@ -63,7 +63,9 @@ for _i in range(INTENT_COUNT):
 # --- UI sizes ---
 BUBBLE_WIDTH      = int(os.getenv("BUBBLE_WIDTH",      "340"))  # px wide (not including tail)
 BUBBLE_LINES      = int(os.getenv("BUBBLE_LINES",      "2"))    # max lines shown at once
-DOLL_SIZE         = int(os.getenv("DOLL_SIZE",         "80"))   # doll icon size px (square)
+DOLL_SIZE         = int(os.getenv("DOLL_SIZE",         "80"))   # doll icon size px (square, sprite fallback)
+VRM_WIDTH         = int(os.getenv("VRM_WIDTH",         "200"))  # VRM overlay width px
+VRM_HEIGHT        = int(os.getenv("VRM_HEIGHT",        "300"))  # VRM overlay height px
 BUBBLE_REVEAL_WPM = int(os.getenv("BUBBLE_REVEAL_WPM", "170")) # word-reveal speed (WPM fallback mode)
 
 # --- Audio ---
@@ -144,6 +146,8 @@ def reload() -> None:
     BUBBLE_WIDTH      = int(os.getenv("BUBBLE_WIDTH",      "340"))
     BUBBLE_LINES      = int(os.getenv("BUBBLE_LINES",      "2"))
     DOLL_SIZE         = int(os.getenv("DOLL_SIZE",         "80"))
+    VRM_WIDTH         = int(os.getenv("VRM_WIDTH",         "200"))
+    VRM_HEIGHT        = int(os.getenv("VRM_HEIGHT",        "300"))
     BUBBLE_REVEAL_WPM = int(os.getenv("BUBBLE_REVEAL_WPM", "170"))
 
     SYSTEM_PROMPT_UTILITY = os.getenv(

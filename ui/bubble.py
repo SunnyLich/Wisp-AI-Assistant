@@ -181,12 +181,10 @@ class SpeechBubble(QWidget):
         if self._timestamp_mode:
             # Timestamp mode: all words already scheduled via QTimer.singleShot.
             self._reveal_timer.stop()
-        elif self._reveal_mode:
-            # WPM mode: let timer keep draining remaining words naturally.
-            # (hide timer starting now gives 8 s for the last few words to appear)
-            pass
         else:
-            # No reveal active (TTS=none path with no chunks): flush immediately.
+            # WPM mode or no-reveal: flush all remaining words immediately so
+            # the full text is visible before the hide countdown starts.
+            self._reveal_timer.stop()
             self._full_text = " ".join(self._pending_words)
             self._rewrap()
             self.update()

@@ -75,7 +75,8 @@ def play_tts_stream(text: str, on_done: callable | None = None):
 
 def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None,
                                 on_audio_start: callable | None = None,
-                                on_word_timestamps: callable | None = None):
+                                on_word_timestamps: callable | None = None,
+                                on_amplitude: callable | None = None):
     """
     Stream TTS from an iterable of text chunks (e.g. live LLM stream) and play.
     Non-blocking — runs in a daemon thread.
@@ -88,13 +89,14 @@ def play_tts_stream_from_chunks(text_chunks, on_done: callable | None = None,
         on_word_timestamps: Optional callback(words, start_ms) from Cartesia timestamps.
     """
     threading.Thread(
-        target=_stream_and_play_chunks, args=(text_chunks, on_done, on_audio_start, on_word_timestamps), daemon=True
+        target=_stream_and_play_chunks, args=(text_chunks, on_done, on_audio_start, on_word_timestamps, on_amplitude), daemon=True
     ).start()
 
 
 def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                             on_audio_start: callable | None,
-                            on_word_timestamps: callable | None):
+                            on_word_timestamps: callable | None,
+                            on_amplitude: callable | None):
     chunk_q: queue.Queue[bytes | None] = queue.Queue()
 
     # Producer: fetch TTS audio chunks
@@ -130,6 +132,13 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                     except Exception:
                         pass
             stream.write(chunk)
+            if on_amplitude:
+                try:
+                    samples = np.frombuffer(chunk, dtype=tts_module.DTYPE)
+                    amp = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+                    on_amplitude(min(amp, 1.0))
+                except Exception:
+                    pass
 
     if on_done:
         on_done()

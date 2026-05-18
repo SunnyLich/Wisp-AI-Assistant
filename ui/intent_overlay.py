@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QWidget, QApplication, QLineEdit
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
 import config
+import keyboard
 
 
 
@@ -51,6 +52,7 @@ _HINT   = QColor(120, 120, 140, 180)
 class IntentOverlay(QWidget):
     intent_chosen = pyqtSignal(str, str)   # (direction_key, prompt)
     cancelled     = pyqtSignal()
+    _raw_key      = pyqtSignal(str)        # keyboard hook thread → Qt main thread
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -78,6 +80,8 @@ class IntentOverlay(QWidget):
         self._hovered: int | None = None
         self._handled = False
         self._custom_mode = False
+        self._kb_hook = None
+        self._raw_key.connect(self._on_raw_key)
 
         # Inline text input (shown only in custom mode)
         self._input_line = QLineEdit(self)
@@ -183,13 +187,25 @@ class IntentOverlay(QWidget):
         self.intent_chosen.emit(config.HOTKEY_CUSTOM_PROMPT_KEY, text)
         self.close()
 
+    def _on_raw_key(self, name: str):
+        """Runs on Qt main thread (dispatched from keyboard hook thread via signal)."""
+        if self._custom_mode:
+            return
+        if name in ('escape', 'esc'):
+            self._cancel()
+            return
+        for i, row in enumerate(self._rows):
+            if name.lower() == row['glyph'].lower():
+                self._select(i)
+                return
+
     def keyPressEvent(self, event):
+        """Fallback: handles keys if Qt does receive focus."""
         key_map: dict[Qt.Key, int] = {}
         for i, row in enumerate(self._rows):
             qt_key = getattr(Qt.Key, f"Key_{row['glyph']}", None)
             if qt_key is not None:
                 key_map[qt_key] = i
-
         idx = key_map.get(event.key())
         if idx is not None:
             self._select(idx)
@@ -200,14 +216,23 @@ class IntentOverlay(QWidget):
         super().showEvent(event)
         self.raise_()
         self.activateWindow()
-        self.setFocus()
-        self.grabKeyboard()
+        # Use keyboard library hook so keys work regardless of Qt focus/Popup restrictions.
+        self._kb_hook = keyboard.on_press(
+            lambda e: self._raw_key.emit(e.name) if (e and e.name) else None,
+            suppress=False,
+        )
 
     # ------------------------------------------------------------------
     # Cleanup / fire
     # ------------------------------------------------------------------
 
     def _unhook(self):
+        if self._kb_hook is not None:
+            try:
+                keyboard.unhook(self._kb_hook)
+            except Exception:
+                pass
+            self._kb_hook = None
         try:
             self.releaseKeyboard()
         except Exception:

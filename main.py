@@ -280,15 +280,20 @@ class App:
                 yield chunk
 
         def on_audio_start():
-            # Called when first PCM chunk hits the speaker — start word reveal.
+            # Called when first PCM chunk hits the speaker — start word reveal + speaking anim.
+            self._signals.set_state.emit("speaking")
             self._signals.bubble_start_reveal.emit()
+
+        def on_amplitude(amp: float):
+            self._signals.set_mouth_amp.emit(amp)
 
         def on_word_timestamps(words, start_ms):
             # Real word timings from Cartesia — drives precise bubble sync.
             self._signals.bubble_schedule_words.emit(words, start_ms)
 
         def tts_consumer():
-            self._signals.set_state.emit("speaking")
+            if config.TTS_PROVIDER.lower() == "none":
+                on_audio_start()
             audio.play_tts_stream_from_chunks(
                 llm_chunk_iter(),
                 on_done=lambda: (
@@ -298,6 +303,7 @@ class App:
                     self._signals.hide_doll.emit() if config.DOLL_AUTO_HIDE else None,
                 ),
                 on_audio_start=on_audio_start,
+                on_amplitude=on_amplitude,
                 on_word_timestamps=on_word_timestamps,
             )
 
