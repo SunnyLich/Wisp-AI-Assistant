@@ -11,7 +11,7 @@ import threading
 from PyQt6.QtWidgets import QApplication
 import config
 from core.hotkeys import HotkeyListener
-from core import capture, llm, audio, context_fetcher
+from core import capture, llm, audio, context_fetcher, stt
 from core import tts as tts_module
 from ui.overlay import DollOverlay, OverlaySignals
 from ui.intent_overlay import IntentOverlay
@@ -34,6 +34,7 @@ class App:
         self._context_buffer: list[str] = []   # accumulated via Alt+Q
         self._last_reply: str = ""
         self._pending_context: context_fetcher.ContextSnapshot | None = None
+        self._voice_active: bool = False        # guard against spurious release events
         self._intent_picker: IntentOverlay | None = None
         self._snip_overlay: SnipOverlay | None = None
         self._chat_window: ChatWindow | None = None
@@ -53,6 +54,9 @@ class App:
 
         # Start fs watcher (watches Desktop/Documents/Downloads in background)
         context_fetcher.start_fs_watcher()
+
+        # Pre-load the Whisper model so the first voice query has no cold start
+        stt.prewarm()
 
     def run(self):
         if not config.DOLL_AUTO_HIDE:
@@ -82,6 +86,8 @@ class App:
             on_add_context=self._on_add_context,
             on_clear_context=self._on_clear_context,
             on_snip=self._on_snip_hotkey,
+            on_voice_start=self._on_voice_start,
+            on_voice_stop=self._on_voice_stop,
         )
         self._hotkeys.start()
         print("[main] Config reloaded and hotkeys re-registered.")
@@ -148,6 +154,39 @@ class App:
 
     def _on_snip_cancelled(self):
         self._snip_overlay = None
+
+    # ------------------------------------------------------------------
+    # Voice push-to-talk (runs in keyboard listener thread)
+    # ------------------------------------------------------------------
+
+    def _on_voice_start(self):
+        """F9 key-down — start recording."""
+        if self._voice_active:
+            return  # ignore held-down repeat events
+        self._voice_active = True
+        self._pending_context = context_fetcher.fetch_and_save()
+        stt.start_recording()
+        if config.DOLL_AUTO_HIDE:
+            self._signals.show_doll.emit()
+        self._signals.set_state.emit("listening")
+
+    def _on_voice_stop(self):
+        """F9 key-up — stop recording, transcribe, and query."""
+        if not self._voice_active:
+            return
+        self._voice_active = False
+        # Transcription is blocking (~200–600 ms) — run off the hotkey thread.
+        threading.Thread(target=self._voice_transcribe_and_query, daemon=True).start()
+
+    def _voice_transcribe_and_query(self):
+        text = stt.stop_and_transcribe()
+        if not text:
+            self._signals.set_state.emit("idle")
+            if config.DOLL_AUTO_HIDE:
+                self._signals.hide_doll.emit()
+            return
+        self._signals.set_state.emit("thinking")
+        self._query_and_speak(text, None)   # text IS the full user message
 
     def _on_hotkey(self):
         # 1. Capture context FIRST — original app still has focus.

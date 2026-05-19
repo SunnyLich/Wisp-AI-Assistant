@@ -13,9 +13,10 @@ cartesia[websockets]>=3.0.2  # Cartesia streaming TTS (~75ms TTFT); [websockets]
 # elevenlabs>=1.0.0       # alternative TTS
 
 # --- Audio ---
-sounddevice>=0.5.5        # audio output
+sounddevice>=0.5.5        # audio output + microphone input
 soundfile>=0.13.1         # WAV/audio file decoding
 numpy>=1.26.0             # audio buffer handling
+faster-whisper>=1.0.0     # local STT (Whisper model, CPU int8)
 
 # --- UI ---
 PyQt6>=6.11.0             # overlay window + system tray

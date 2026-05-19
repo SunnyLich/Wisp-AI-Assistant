@@ -31,11 +31,15 @@ class HotkeyListener:
         on_add_context: Callable[[], None] | None = None,
         on_clear_context: Callable[[], None] | None = None,
         on_snip: Callable[[], None] | None = None,
+        on_voice_start: Callable[[], None] | None = None,
+        on_voice_stop: Callable[[], None] | None = None,
     ):
         self._on_invoke = on_invoke
         self._on_add_context = on_add_context
         self._on_clear_context = on_clear_context
         self._on_snip = on_snip
+        self._on_voice_start = on_voice_start
+        self._on_voice_stop = on_voice_stop
 
     def start(self):
         """Register hotkeys. Call from the main thread."""
@@ -46,6 +50,10 @@ class HotkeyListener:
             keyboard.add_hotkey(config.HOTKEY_CLEAR_CONTEXT, self._on_clear_context, suppress=True)
         if self._on_snip:
             keyboard.add_hotkey(config.HOTKEY_SNIP, self._on_snip, suppress=True)
+        if self._on_voice_start and config.HOTKEY_VOICE:
+            keyboard.add_hotkey(config.HOTKEY_VOICE, self._on_voice_start, suppress=True)
+        if self._on_voice_stop and config.HOTKEY_VOICE:
+            keyboard.add_hotkey(config.HOTKEY_VOICE, self._on_voice_stop, suppress=True, trigger_on_release=True)
 
     def stop(self):
         """Unregister all hotkeys."""

@@ -237,7 +237,8 @@ def stream_response(
         if provider in ("groq", "openai"):
             yield from _stream_openai_compat(user_message, None, config.LLM_MODEL, _get_openai_client(), ambient_context)
         elif provider == "anthropic":
-            yield from _stream_anthropic(user_message, None, config.LLM_MODEL, _get_anthropic_client(), ambient_context, use_tools)
+            tool_model = config.TOOL_LLM_MODEL if use_tools else config.LLM_MODEL
+            yield from _stream_anthropic(user_message, None, tool_model, _get_anthropic_client(), ambient_context, use_tools)
         else:
             raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
@@ -404,13 +405,44 @@ def stream_response_with_history(messages: list) -> Generator[str, None, None]:
         client = _get_chat_anthropic_client()
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
         turns = [m for m in messages if m["role"] != "system"]
-        with client.messages.stream(
-            model=config.CHAT_LLM_MODEL,
-            max_tokens=1024,
-            system=system,
-            messages=turns,
-        ) as stream:
-            for text in stream.text_stream:
-                yield text
+        # Use TOOL_LLM_MODEL (Sonnet) — Haiku ignores web_search_20250305.
+        tool_model = config.TOOL_LLM_MODEL
+        # Tool-enabled loop — Claude calls web_search / fetch_browser_page when it decides to.
+        for _round in range(4):
+            response = client.messages.create(
+                model=tool_model,
+                max_tokens=1024,
+                system=system,
+                messages=turns,
+                tools=_CONTEXT_TOOLS,
+            )
+            if response.stop_reason in ("end_turn", "max_tokens"):
+                for block in response.content:
+                    if getattr(block, "type", "") == "text":
+                        text = getattr(block, "text", "")
+                        if text:
+                            yield text
+                return
+            if response.stop_reason == "tool_use":
+                turns.append({"role": "assistant", "content": response.content})
+                tool_results = []
+                for block in response.content:
+                    if getattr(block, "type", "") == "tool_use":
+                        result = _execute_context_tool(block.name, block.input or {})
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        })
+                if tool_results:
+                    turns.append({"role": "user", "content": tool_results})
+            else:
+                # Unexpected stop reason — yield whatever text is there and exit.
+                for block in response.content:
+                    if getattr(block, "type", "") == "text":
+                        text = getattr(block, "text", "")
+                        if text:
+                            yield text
+                return
     else:
         raise ValueError(f"Unknown chat LLM provider: {provider}")

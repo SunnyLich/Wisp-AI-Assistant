@@ -21,6 +21,11 @@ LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
 CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", LLM_PROVIDER)
 CHAT_LLM_MODEL    = os.getenv("CHAT_LLM_MODEL",    LLM_MODEL)
 
+# --- Tool-capable LLM (used when web_search / fetch_browser_page tools are active) ---
+# Haiku does not invoke web_search_20250305; Sonnet does. Defaults to Sonnet so tools
+# work out of the box even if LLM_MODEL is set to Haiku.
+TOOL_LLM_MODEL = os.getenv("TOOL_LLM_MODEL", "claude-sonnet-4-5")
+
 # --- Vision LLM (for screen-snip queries — must support image input) ---
 # Leave empty to get a helpful error when snip is used without configuration.
 VISION_LLM_PROVIDER = os.getenv("VISION_LLM_PROVIDER", "")   # e.g. anthropic | openai
@@ -41,6 +46,12 @@ HOTKEY_CUSTOM_PROMPT_KEY = os.getenv("HOTKEY_CUSTOM_PROMPT_KEY", "s")           
 HOTKEY_ADD_CONTEXT       = os.getenv("HOTKEY_ADD_CONTEXT",       "alt+q")       # add selected text to context buffer
 HOTKEY_CLEAR_CONTEXT     = os.getenv("HOTKEY_CLEAR_CONTEXT",     "alt+w")       # clear context buffer
 HOTKEY_SNIP              = os.getenv("HOTKEY_SNIP",              "ctrl+alt+q")  # draw screen region → intent picker
+HOTKEY_VOICE             = os.getenv("HOTKEY_VOICE",             "f9")          # push-to-talk voice input
+
+# --- STT (Speech-to-Text) ---
+STT_MODEL        = os.getenv("STT_MODEL",        "base")   # tiny | base | small | medium | large-v3
+STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")   # int8 | float16 | float32
+STT_LANGUAGE     = os.getenv("STT_LANGUAGE",     "en")     # ISO 639-1 code, or "" for auto-detect
 
 # Dynamic intent rows — shown in the overlay picker after invoke.
 # Stored as INTENT_COUNT + INTENT_N_KEY / INTENT_N_LABEL / INTENT_N_PROMPT (1-indexed).
@@ -80,7 +91,10 @@ LATENCY_CEILING_MS = 3000
 SYSTEM_PROMPT_UTILITY = os.getenv(
     "SYSTEM_PROMPT_UTILITY",
     "You are a concise desktop assistant. "
-    "Answer in 1-3 short sentences. Be direct and plain. No markdown."
+    "Answer in 1-3 short sentences. Be direct and plain. No markdown. "
+    "You have access to a web_search tool and a fetch_browser_page tool — "
+    "use them whenever the user asks for current information, live data, or "
+    "content from a specific URL."
 )
 
 def get_system_prompt() -> str:
@@ -96,11 +110,12 @@ def reload() -> None:
     """
     global GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
     global CARTESIA_API_KEY, ELEVENLABS_API_KEY
-    global LLM_PROVIDER, LLM_MODEL, CHAT_LLM_PROVIDER, CHAT_LLM_MODEL
+    global LLM_PROVIDER, LLM_MODEL, CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, TOOL_LLM_MODEL
     global VISION_LLM_PROVIDER, VISION_LLM_MODEL
     global TTS_PROVIDER, CARTESIA_VOICE_ID
     global DOLL_AUTO_HIDE, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
     global HOTKEY_INVOKE, HOTKEY_CUSTOM_PROMPT_KEY, HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP
+    global HOTKEY_VOICE, STT_MODEL, STT_COMPUTE_TYPE, STT_LANGUAGE
     global INTENT_COUNT, INTENT_ROWS
     global BUBBLE_WIDTH, BUBBLE_LINES, DOLL_SIZE, BUBBLE_REVEAL_WPM
     global SYSTEM_PROMPT_UTILITY
@@ -117,6 +132,7 @@ def reload() -> None:
     LLM_MODEL    = os.getenv("LLM_MODEL", "llama3-8b-8192")
     CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", LLM_PROVIDER)
     CHAT_LLM_MODEL    = os.getenv("CHAT_LLM_MODEL",    LLM_MODEL)
+    TOOL_LLM_MODEL    = os.getenv("TOOL_LLM_MODEL",    "claude-sonnet-4-5")
     VISION_LLM_PROVIDER = os.getenv("VISION_LLM_PROVIDER", "")
     VISION_LLM_MODEL    = os.getenv("VISION_LLM_MODEL",    "")
 
@@ -132,6 +148,10 @@ def reload() -> None:
     HOTKEY_ADD_CONTEXT       = os.getenv("HOTKEY_ADD_CONTEXT",       "alt+q")
     HOTKEY_CLEAR_CONTEXT     = os.getenv("HOTKEY_CLEAR_CONTEXT",     "alt+w")
     HOTKEY_SNIP              = os.getenv("HOTKEY_SNIP",              "ctrl+alt+q")
+    HOTKEY_VOICE             = os.getenv("HOTKEY_VOICE",             "f9")
+    STT_MODEL        = os.getenv("STT_MODEL",        "base")
+    STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")
+    STT_LANGUAGE     = os.getenv("STT_LANGUAGE",     "en")
 
     INTENT_COUNT = int(os.getenv("INTENT_COUNT", str(len(_INTENT_DEFAULTS))))
     INTENT_ROWS.clear()
@@ -153,5 +173,8 @@ def reload() -> None:
     SYSTEM_PROMPT_UTILITY = os.getenv(
         "SYSTEM_PROMPT_UTILITY",
         "You are a concise desktop assistant. "
-        "Answer in 1-3 short sentences. Be direct and plain. No markdown."
+        "Answer in 1-3 short sentences. Be direct and plain. No markdown. "
+        "You have access to a web_search tool and a fetch_browser_page tool — "
+        "use them whenever the user asks for current information, live data, or "
+        "content from a specific URL."
     )
