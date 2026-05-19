@@ -522,6 +522,68 @@ def _stream_anthropic(
 
 
 # ------------------------------------------------------------------
+# Inline rewrite / fix  (Ctrl+Shift+Q)
+# ------------------------------------------------------------------
+
+_REWRITE_SYSTEM_PROMPT = (
+    "You are a text editor assistant. "
+    "Rewrite or fix the provided text. "
+    "Output ONLY the corrected/rewritten text — no explanation, "
+    "no markdown, no commentary, no code fences. "
+    "Your entire response will be pasted directly as a replacement for the original text."
+)
+
+
+def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the following text") -> Generator[str, None, None]:
+    """
+    Stream a rewrite/fix of the selected text using the primary LLM.
+
+    The system prompt instructs the model to output raw replacement text only —
+    no prose, no markdown, no explanation.  The result is pasted back directly.
+
+    Args:
+        selected_text:  The text to rewrite.
+        intent_prompt:  The instruction (e.g. "Fix the grammar and spelling").
+                        Taken from the caller's chosen intent row.
+    """
+    import time
+    ts = time.strftime("%H:%M:%S")
+    print(f"[llm {ts}] Rewrite request ({len(selected_text)} chars) — {intent_prompt[:60]!r}")
+    _check_llm_config()
+    user_message = f"{intent_prompt}:\n\n{selected_text}"
+    provider = config.LLM_PROVIDER.lower()
+    if provider in ("groq", "openai"):
+        client = _get_openai_client()
+        with client.chat.completions.create(
+            model=config.LLM_MODEL,
+            messages=[
+                {"role": "system", "content": _REWRITE_SYSTEM_PROMPT},
+                {"role": "user",   "content": user_message},
+            ],
+            stream=True,
+            max_tokens=1024,
+            temperature=0.3,
+        ) as stream:
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+    elif provider == "anthropic":
+        client = _get_anthropic_client()
+        with client.messages.stream(
+            model=config.LLM_MODEL,
+            max_tokens=1024,
+            system=_REWRITE_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+            temperature=0.3,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+    else:
+        raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
+
+
+# ------------------------------------------------------------------
 # Multi-turn (chat window)
 # ------------------------------------------------------------------
 

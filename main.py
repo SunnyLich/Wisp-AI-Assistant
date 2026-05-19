@@ -76,7 +76,7 @@ class App:
         self._signals = OverlaySignals()
         self._overlay = DollOverlay(self._signals)
         self._hotkeys = HotkeyListener(
-            on_invoke=self._on_hotkey,
+            on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
             on_add_context=self._on_add_context,
             on_clear_context=self._on_clear_context,
             on_snip=self._on_snip_hotkey,
@@ -93,6 +93,9 @@ class App:
         self._all_conversations: list[dict] = []  # each item = {"messages": [...], "context": str}
         self._overlay_hwnd: int = 0          # cached after first show
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
+        self._pending_caller_idx: int = 0    # which CALLER_ROWS entry triggered the current picker
+        self._pending_paste_target: int = 0  # HWND to paste into (0 = no paste)
+        self._gen_id: int = 0                # incremented on each new query; stale workers skip bubble signals
 
         # Memory
         self._memory = memory_module.get_manager()
@@ -119,7 +122,7 @@ class App:
             self._overlay.show()
         self._overlay_hwnd = int(self._overlay.winId())  # safe: Qt main thread
         self._hotkeys.start()
-        print("[main] AI Assistant Overlay running. Press Ctrl+Q to invoke.")
+        print(f"[main] AI Assistant Overlay running. Callers: {[c['hotkey'] for c in config.CALLER_ROWS]}")
         sys.exit(self._qt.exec())
 
     # ------------------------------------------------------------------
@@ -138,7 +141,7 @@ class App:
         config.reload()
         self._hotkeys.stop()
         self._hotkeys = HotkeyListener(
-            on_invoke=self._on_hotkey,
+            on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
             on_add_context=self._on_add_context,
             on_clear_context=self._on_clear_context,
             on_snip=self._on_snip_hotkey,
@@ -188,6 +191,34 @@ class App:
         self._steal_foreground()
         self._signals.show_snip_overlay.emit()
 
+    def _on_caller_hotkey(self, caller_idx: int):
+        """Called when any caller hotkey fires. Dispatches based on caller's paste_back flag."""
+        import ctypes
+        caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
+        paste_back = caller.get("paste_back", False)
+
+        # For paste-back callers, save the target HWND BEFORE stealing focus.
+        target_hwnd = ctypes.windll.user32.GetForegroundWindow() if paste_back else 0
+
+        self._pending_context = context_fetcher.fetch_and_save()
+        selected = capture.get_selected_text()
+        screenshot_b64 = None
+        if not selected:
+            if paste_back:
+                return  # nothing selected — nothing to rewrite
+            img = capture.get_screen_snippet()
+            screenshot_b64 = capture.image_to_base64(img)
+        self._pending_capture = (selected, screenshot_b64)
+        self._pending_caller_idx = caller_idx
+        self._pending_paste_target = target_hwnd
+
+        self._steal_foreground()
+        audio.play_filler()
+        if config.DOLL_AUTO_HIDE:
+            self._signals.show_doll.emit()
+        self._signals.set_state.emit("listening")
+        self._signals.show_intent_picker.emit(caller_idx)
+
     # ------------------------------------------------------------------
     # Snip overlay (runs on Qt main thread via signal)
     # ------------------------------------------------------------------
@@ -205,12 +236,14 @@ class App:
         img = capture.get_screen_snippet(region)
         screenshot_b64 = capture.image_to_base64(img)
         self._pending_capture = (None, screenshot_b64)
+        self._pending_caller_idx = 0
+        self._pending_paste_target = 0
 
         audio.play_filler()
         if config.DOLL_AUTO_HIDE:
             self._signals.show_doll.emit()
         self._signals.set_state.emit("listening")
-        self._signals.show_intent_picker.emit()
+        self._signals.show_intent_picker.emit(0)
 
     def _on_snip_cancelled(self):
         self._snip_overlay = None
@@ -247,40 +280,18 @@ class App:
                 self._signals.hide_doll.emit()
             return
         self._signals.set_state.emit("thinking")
-        self._query_and_speak(text, (None, None))   # (None, None) = no screenshot, text IS the full prompt
-
-    def _on_hotkey(self):
-        # 1. Capture context FIRST — original app still has focus.
-        self._pending_context = context_fetcher.fetch_and_save()
-
-        selected = capture.get_selected_text()
-        screenshot_b64 = None
-        if not selected:
-            img = capture.get_screen_snippet()
-            screenshot_b64 = capture.image_to_base64(img)
-        self._pending_capture = (selected, screenshot_b64)
-
-        # 2. Steal foreground from the keyboard hook thread.
-        #    Plain SetForegroundWindow fails silently when called from a non-foreground
-        #    thread.  AttachThreadInput borrows the input state of whichever thread
-        #    owns the foreground right now, which unlocks SetForegroundWindow for us.
-        self._steal_foreground()
-
-        audio.play_filler()
-        if config.DOLL_AUTO_HIDE:
-            self._signals.show_doll.emit()
-        self._signals.set_state.emit("listening")
-        self._signals.show_intent_picker.emit()
+        self._gen_id += 1
+        self._query_and_speak(text, (None, None), self._gen_id)
 
     # ------------------------------------------------------------------
     # Intent picker (runs on Qt main thread via signal)
     # ------------------------------------------------------------------
 
-    def _show_intent_picker(self):
+    def _show_intent_picker(self, caller_idx: int):
         if self._intent_picker is not None:
             return  # already showing
 
-        self._intent_picker = IntentOverlay()
+        self._intent_picker = IntentOverlay(caller_idx)
         self._intent_picker.intent_chosen.connect(self._on_intent_chosen)
         self._intent_picker.cancelled.connect(self._on_intent_cancelled)
         self._intent_picker.show()
@@ -297,23 +308,98 @@ class App:
         self._intent_picker = None
         capture_data = self._pending_capture
         self._pending_capture = None
-        threading.Thread(
-            target=self._query_and_speak,
-            args=(prompt, capture_data),
-            daemon=True,
-        ).start()
+        caller_idx   = self._pending_caller_idx
+        target_hwnd  = self._pending_paste_target
+        self._pending_paste_target = 0
+
+        caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
+        self._gen_id += 1
+        gen_id = self._gen_id
+        if caller.get("paste_back") and target_hwnd:
+            threading.Thread(
+                target=self._rewrite_and_paste,
+                args=(prompt, capture_data, target_hwnd, gen_id),
+                daemon=True,
+            ).start()
+        else:
+            threading.Thread(
+                target=self._query_and_speak,
+                args=(prompt, capture_data, gen_id),
+                daemon=True,
+            ).start()
 
     def _on_intent_cancelled(self):
         self._intent_picker = None
+        self._pending_paste_target = 0
         self._signals.set_state.emit("idle")
         if config.DOLL_AUTO_HIDE:
             self._signals.hide_doll.emit()
+
+    def _rewrite_and_paste(self, intent_prompt: str, capture_data: tuple | None, target_hwnd: int, gen_id: int = 0):
+        """Worker: stream LLM rewrite using intent_prompt, then paste into the original window."""
+        import ctypes
+        import time
+        import pyperclip
+
+        selected_text = (capture_data[0] or "") if capture_data else ""
+
+        full_reply = ""
+        try:
+            for chunk in llm.stream_rewrite(selected_text, intent_prompt):
+                full_reply += chunk
+                if gen_id == self._gen_id:
+                    self._signals.bubble_chunk.emit(chunk)
+        except Exception as exc:
+            print(f"[main] Rewrite error: {exc}")
+            if gen_id == self._gen_id:
+                self._signals.set_state.emit("idle")
+                if config.DOLL_AUTO_HIDE:
+                    self._signals.hide_doll.emit()
+            return
+
+        reply_text = full_reply.strip()
+        if not reply_text:
+            if gen_id == self._gen_id:
+                self._signals.set_state.emit("idle")
+                if config.DOLL_AUTO_HIDE:
+                    self._signals.hide_doll.emit()
+            return
+
+        self._last_reply = reply_text
+        if gen_id == self._gen_id:
+            self._signals.bubble_start_reveal.emit()
+            self._signals.bubble_finish.emit()
+
+        # Paste result back into the original window (replaces the selection).
+        try:
+            pyperclip.copy(reply_text)
+            ctypes.windll.user32.SetForegroundWindow(target_hwnd)
+            time.sleep(0.15)   # let the focus switch settle
+            import keyboard
+            keyboard.send("ctrl+v")
+        except Exception as exc:
+            print(f"[main] Paste-back error: {exc}")
+
+        # Store in conversation history so the chat window can review it.
+        self._all_conversations.append({
+            "messages": [
+                {"role": "user",      "content": f"{intent_prompt}:\n\n{selected_text}"},
+                {"role": "assistant", "content": reply_text},
+            ],
+            "context": "",
+        })
+        self._memory.record_turn(f"{intent_prompt}:\n\n{selected_text}", reply_text, "")
+
+        if gen_id == self._gen_id:
+            self._signals.set_state.emit("idle")
+            if config.DOLL_AUTO_HIDE:
+                self._signals.hide_doll.emit()
 
     # ------------------------------------------------------------------
     # LLM + TTS pipeline (worker thread)
     # ------------------------------------------------------------------
 
-    def _query_and_speak(self, intent_prompt: str, capture_data: tuple | None):
+    def _query_and_speak(self, intent_prompt: str, capture_data: tuple | None, gen_id: int = 0):
         import queue
 
         # Use pre-captured input from hotkey time (original app still had focus then).
@@ -383,6 +469,8 @@ class App:
                     full_text += chunk
                     llm_chunk_q.put(chunk)
                     self._signals.bubble_chunk.emit(chunk)   # buffered by bubble in reveal mode
+                    if gen_id != self._gen_id:
+                        break  # a newer query started — stop feeding stale chunks to the bubble
             finally:
                 llm_chunk_q.put(None)
             # Store context separately so the chat window can inject it into
@@ -407,6 +495,8 @@ class App:
 
         def on_audio_start():
             # Called when first PCM chunk hits the speaker — start word reveal + speaking anim.
+            if gen_id != self._gen_id:
+                return
             self._signals.set_state.emit("speaking")
             self._signals.bubble_start_reveal.emit()
 
@@ -424,9 +514,9 @@ class App:
                 llm_chunk_iter(),
                 on_done=lambda: (
                     setattr(self, "_last_reply", full_text),
-                    self._signals.set_state.emit("idle"),
-                    self._signals.bubble_finish.emit(),
-                    self._signals.hide_doll.emit() if config.DOLL_AUTO_HIDE else None,
+                    self._signals.set_state.emit("idle") if gen_id == self._gen_id else None,
+                    self._signals.bubble_finish.emit() if gen_id == self._gen_id else None,
+                    self._signals.hide_doll.emit() if (config.DOLL_AUTO_HIDE and gen_id == self._gen_id) else None,
                 ),
                 on_audio_start=on_audio_start,
                 on_amplitude=on_amplitude,

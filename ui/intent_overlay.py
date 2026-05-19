@@ -15,10 +15,11 @@ import keyboard
 
 
 
-def _build_rows() -> list[dict]:
-    """Build the full list of overlay rows from config at show-time."""
+def _build_rows(caller_idx: int = 0) -> list[dict]:
+    """Build the full list of overlay rows from the specified caller's config."""
+    caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
     rows = []
-    for r in config.INTENT_ROWS:
+    for r in caller.get("intents", []):
         rows.append({
             "glyph":     r["key"].upper() if r["key"] else "?",
             "label":     r["label"],
@@ -26,8 +27,9 @@ def _build_rows() -> list[dict]:
             "is_custom": False,
         })
     # Custom prompt row always appended last
+    custom_key = caller.get("custom_key", "s")
     rows.append({
-        "glyph":     config.HOTKEY_CUSTOM_PROMPT_KEY.upper(),
+        "glyph":     custom_key.upper(),
         "label":     "Custom prompt",
         "prompt":    "",
         "is_custom": True,
@@ -54,7 +56,7 @@ class IntentOverlay(QWidget):
     cancelled     = pyqtSignal()
     _raw_key      = pyqtSignal(str)        # keyboard hook thread → Qt main thread
 
-    def __init__(self, parent=None):
+    def __init__(self, caller_idx: int = 0, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -65,7 +67,7 @@ class IntentOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        self._rows = _build_rows()
+        self._rows = _build_rows(caller_idx)
         n_rows = len(self._rows)
         h = _PADDING * 2 + _ROW_H * n_rows + 28   # 28px for ESC hint
         self._normal_h = h
@@ -217,9 +219,10 @@ class IntentOverlay(QWidget):
         super().showEvent(event)
         self.raise_()
         self.activateWindow()
+        self._closed = False
         # Use keyboard library hook so keys work regardless of Qt focus/Popup restrictions.
         self._kb_hook = keyboard.on_press(
-            lambda e: self._raw_key.emit(e.name) if (e and e.name) else None,
+            lambda e: None if (not e or not e.name or self._closed) else self._raw_key.emit(e.name),
             suppress=False,
         )
 
@@ -228,6 +231,7 @@ class IntentOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def _unhook(self):
+        self._closed = True  # guard lambda against late keyboard events after C++ deletion
         if self._kb_hook is not None:
             try:
                 keyboard.unhook(self._kb_hook)
@@ -238,6 +242,11 @@ class IntentOverlay(QWidget):
             self.releaseKeyboard()
         except Exception:
             pass
+
+    def closeEvent(self, event):
+        """Unhook keyboard listener whenever the widget closes (including Popup auto-close)."""
+        self._unhook()
+        super().closeEvent(event)
 
     def _fire(self, idx: int):
         self._unhook()

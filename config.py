@@ -41,35 +41,74 @@ CHAT_AUTO_ELABORATE = os.getenv("CHAT_AUTO_ELABORATE", "true").lower() == "true"
 CHAT_ELABORATE_PROMPT = os.getenv("CHAT_ELABORATE_PROMPT", "Please elaborate on that.")
 
 # --- Hotkeys ---
-HOTKEY_INVOKE            = os.getenv("HOTKEY_INVOKE",            "ctrl+q")
-HOTKEY_CUSTOM_PROMPT_KEY = os.getenv("HOTKEY_CUSTOM_PROMPT_KEY", "s")           # single key in picker → free-text input
-HOTKEY_ADD_CONTEXT       = os.getenv("HOTKEY_ADD_CONTEXT",       "alt+q")       # add selected text to context buffer
-HOTKEY_CLEAR_CONTEXT     = os.getenv("HOTKEY_CLEAR_CONTEXT",     "alt+w")       # clear context buffer
-HOTKEY_SNIP              = os.getenv("HOTKEY_SNIP",              "ctrl+alt+q")  # draw screen region → intent picker
-HOTKEY_VOICE             = os.getenv("HOTKEY_VOICE",             "f9")          # push-to-talk voice input
+HOTKEY_ADD_CONTEXT   = os.getenv("HOTKEY_ADD_CONTEXT",   "alt+q")       # add selected text to context buffer
+HOTKEY_CLEAR_CONTEXT = os.getenv("HOTKEY_CLEAR_CONTEXT", "alt+w")       # clear context buffer
+HOTKEY_SNIP          = os.getenv("HOTKEY_SNIP",          "ctrl+alt+q")  # draw screen region → intent picker
+HOTKEY_VOICE         = os.getenv("HOTKEY_VOICE",         "f9")          # push-to-talk voice input
 
 # --- STT (Speech-to-Text) ---
 STT_MODEL        = os.getenv("STT_MODEL",        "base")   # tiny | base | small | medium | large-v3
 STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")   # int8 | float16 | float32
 STT_LANGUAGE     = os.getenv("STT_LANGUAGE",     "en")     # ISO 639-1 code, or "" for auto-detect
 
-# Dynamic intent rows — shown in the overlay picker after invoke.
-# Stored as INTENT_COUNT + INTENT_N_KEY / INTENT_N_LABEL / INTENT_N_PROMPT (1-indexed).
-_INTENT_DEFAULTS = [
-    ("w", "What is this?",      "What is this? Give me a clear, plain-English explanation in 2-3 sentences."),
-    ("a", "Explain simply",     "Explain this as simply as possible. Assume I have no technical background whatsoever."),
-    ("d", "How do I fix this?", "How do I fix this? Give me: 1, what error is this in 1 sentence; 2, concise, actionable steps I can follow right now."),
+# --- Caller rows ---
+# Each "caller" is a hotkey that shows the WASD intent picker.
+# Stored as CALLER_COUNT + CALLER_N_* env vars (1-indexed).
+_CALLER_DEFAULTS: list[dict] = [
+    {
+        "hotkey": "ctrl+q",
+        "label": "General",
+        "paste_back": False,
+        "custom_key": "s",
+        "intents": [
+            {"key": "w", "label": "What is this?",      "prompt": "What is this? Give me a clear, plain-English explanation in 2-3 sentences."},
+            {"key": "a", "label": "Explain simply",     "prompt": "Explain this as simply as possible. Assume I have no technical background whatsoever."},
+            {"key": "d", "label": "How do I fix this?", "prompt": "How do I fix this? Give me: 1, what error is this in 1 sentence; 2, concise, actionable steps I can follow right now."},
+        ],
+    },
+    {
+        "hotkey": "ctrl+shift+q",
+        "label": "Rewrite & Paste",
+        "paste_back": True,
+        "custom_key": "s",
+        "intents": [
+            {"key": "w", "label": "Fix grammar",   "prompt": "Fix the grammar and spelling of the following text. Output ONLY the corrected text."},
+            {"key": "a", "label": "Simplify",      "prompt": "Simplify the following text for a general audience. Output ONLY the simplified text."},
+            {"key": "d", "label": "Improve tone",  "prompt": "Rewrite the following text to sound more professional and polished. Output ONLY the rewritten text."},
+        ],
+    },
 ]
 
-INTENT_COUNT = int(os.getenv("INTENT_COUNT", str(len(_INTENT_DEFAULTS))))
-INTENT_ROWS: list[dict] = []
-for _i in range(INTENT_COUNT):
-    _dk, _dl, _dp = _INTENT_DEFAULTS[_i] if _i < len(_INTENT_DEFAULTS) else ("", f"Intent {_i + 1}", "")
-    INTENT_ROWS.append({
-        "key":    os.getenv(f"INTENT_{_i + 1}_KEY",    _dk),
-        "label":  os.getenv(f"INTENT_{_i + 1}_LABEL",  _dl),
-        "prompt": os.getenv(f"INTENT_{_i + 1}_PROMPT", _dp),
-    })
+
+def _load_caller_rows() -> list[dict]:
+    """Read CALLER_COUNT + CALLER_N_* env vars, fall back to _CALLER_DEFAULTS."""
+    count = int(os.getenv("CALLER_COUNT", str(len(_CALLER_DEFAULTS))))
+    rows: list[dict] = []
+    for i in range(count):
+        n = i + 1
+        default = _CALLER_DEFAULTS[i] if i < len(_CALLER_DEFAULTS) else {}
+        intent_count = int(os.getenv(f"CALLER_{n}_INTENT_COUNT", str(len(default.get("intents", [])))))
+        intents = []
+        for j in range(intent_count):
+            m = j + 1
+            di = default.get("intents", [])
+            d_intent = di[j] if j < len(di) else {}
+            intents.append({
+                "key":    os.getenv(f"CALLER_{n}_INTENT_{m}_KEY",    d_intent.get("key", "")),
+                "label":  os.getenv(f"CALLER_{n}_INTENT_{m}_LABEL",  d_intent.get("label", "")),
+                "prompt": os.getenv(f"CALLER_{n}_INTENT_{m}_PROMPT", d_intent.get("prompt", "")),
+            })
+        rows.append({
+            "hotkey":     os.getenv(f"CALLER_{n}_HOTKEY",     default.get("hotkey", "")),
+            "label":      os.getenv(f"CALLER_{n}_LABEL",      default.get("label", "")),
+            "paste_back": os.getenv(f"CALLER_{n}_PASTE_BACK", str(default.get("paste_back", False))).lower() == "true",
+            "custom_key": os.getenv(f"CALLER_{n}_CUSTOM_KEY", default.get("custom_key", "s")),
+            "intents":    intents,
+        })
+    return rows
+
+
+CALLER_ROWS: list[dict] = _load_caller_rows()
 
 # --- UI sizes ---
 BUBBLE_WIDTH      = int(os.getenv("BUBBLE_WIDTH",      "340"))  # px wide (not including tail)
@@ -125,9 +164,9 @@ def reload() -> None:
     global VISION_LLM_PROVIDER, VISION_LLM_MODEL
     global TTS_PROVIDER, CARTESIA_VOICE_ID
     global DOLL_AUTO_HIDE, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
-    global HOTKEY_INVOKE, HOTKEY_CUSTOM_PROMPT_KEY, HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP
+    global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP
     global HOTKEY_VOICE, STT_MODEL, STT_COMPUTE_TYPE, STT_LANGUAGE
-    global INTENT_COUNT, INTENT_ROWS
+    global CALLER_ROWS
     global BUBBLE_WIDTH, BUBBLE_LINES, DOLL_SIZE, BUBBLE_REVEAL_WPM
     global SYSTEM_PROMPT_UTILITY
     global MEMORY_LLM_PROVIDER, MEMORY_LLM_MODEL
@@ -156,25 +195,16 @@ def reload() -> None:
     CHAT_AUTO_ELABORATE   = os.getenv("CHAT_AUTO_ELABORATE", "true").lower() == "true"
     CHAT_ELABORATE_PROMPT = os.getenv("CHAT_ELABORATE_PROMPT", "Please elaborate on that.")
 
-    HOTKEY_INVOKE            = os.getenv("HOTKEY_INVOKE",            "ctrl+q")
-    HOTKEY_CUSTOM_PROMPT_KEY = os.getenv("HOTKEY_CUSTOM_PROMPT_KEY", "s")
-    HOTKEY_ADD_CONTEXT       = os.getenv("HOTKEY_ADD_CONTEXT",       "alt+q")
-    HOTKEY_CLEAR_CONTEXT     = os.getenv("HOTKEY_CLEAR_CONTEXT",     "alt+w")
-    HOTKEY_SNIP              = os.getenv("HOTKEY_SNIP",              "ctrl+alt+q")
-    HOTKEY_VOICE             = os.getenv("HOTKEY_VOICE",             "f9")
+    HOTKEY_ADD_CONTEXT       = os.getenv("HOTKEY_ADD_CONTEXT",   "alt+q")
+    HOTKEY_CLEAR_CONTEXT     = os.getenv("HOTKEY_CLEAR_CONTEXT", "alt+w")
+    HOTKEY_SNIP              = os.getenv("HOTKEY_SNIP",          "ctrl+alt+q")
+    HOTKEY_VOICE             = os.getenv("HOTKEY_VOICE",         "f9")
     STT_MODEL        = os.getenv("STT_MODEL",        "base")
     STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")
     STT_LANGUAGE     = os.getenv("STT_LANGUAGE",     "en")
 
-    INTENT_COUNT = int(os.getenv("INTENT_COUNT", str(len(_INTENT_DEFAULTS))))
-    INTENT_ROWS.clear()
-    for _i in range(INTENT_COUNT):
-        _dk, _dl, _dp = _INTENT_DEFAULTS[_i] if _i < len(_INTENT_DEFAULTS) else ("", f"Intent {_i + 1}", "")
-        INTENT_ROWS.append({
-            "key":    os.getenv(f"INTENT_{_i + 1}_KEY",    _dk),
-            "label":  os.getenv(f"INTENT_{_i + 1}_LABEL",  _dl),
-            "prompt": os.getenv(f"INTENT_{_i + 1}_PROMPT", _dp),
-        })
+    CALLER_ROWS.clear()
+    CALLER_ROWS.extend(_load_caller_rows())
 
     BUBBLE_WIDTH      = int(os.getenv("BUBBLE_WIDTH",      "340"))
     BUBBLE_LINES      = int(os.getenv("BUBBLE_LINES",      "2"))

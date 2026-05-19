@@ -101,16 +101,19 @@ class HotkeyListener:
 
     def __init__(
         self,
-        on_invoke: Callable[[], None],
+        on_callers: list[Callable[[], None]],
         on_add_context: Callable[[], None] | None = None,
         on_clear_context: Callable[[], None] | None = None,
         on_snip: Callable[[], None] | None = None,
         on_voice_start: Callable[[], None] | None = None,
         on_voice_stop: Callable[[], None] | None = None,
     ):
-        self._hotkey_defs: list[tuple[str, Callable]] = [
-            (config.HOTKEY_INVOKE, on_invoke),
-        ]
+        self._hotkey_defs: list[tuple[str, Callable]] = []
+        for i, cb in enumerate(on_callers):
+            if i < len(config.CALLER_ROWS):
+                hotkey = config.CALLER_ROWS[i]["hotkey"]
+                if hotkey:
+                    self._hotkey_defs.append((hotkey, cb))
         if on_add_context:
             self._hotkey_defs.append((config.HOTKEY_ADD_CONTEXT, on_add_context))
         if on_clear_context:

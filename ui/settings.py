@@ -322,53 +322,39 @@ class SettingsDialog(QDialog):
         from PyQt6.QtWidgets import QScrollArea, QSizePolicy
         container = QWidget()
         self._keybinds_layout = QVBoxLayout(container)
-        self._keybinds_layout.setSpacing(2)
+        self._keybinds_layout.setSpacing(6)
         self._keybinds_layout.setContentsMargins(12, 12, 12, 12)
 
-        # Column header
-        hdr = QWidget()
-        hdr_h = QHBoxLayout(hdr)
-        hdr_h.setContentsMargins(0, 0, 0, 6)
-        hdr_h.setSpacing(8)
-        for text, w in [("Key", 112), ("Special Function", 142), ("Label", 102), ("Prompt", 0)]:
-            lbl = QLabel(f"<b>{text}</b>")
-            if w:
-                lbl.setFixedWidth(w)
-            else:
-                lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-            hdr_h.addWidget(lbl)
-        hdr_h.addSpacing(36)  # align with delete-button column
-        self._keybinds_layout.addWidget(hdr)
+        # Caller hotkeys section
+        self._keybinds_layout.addWidget(QLabel("<b>Caller Hotkeys</b>"))
 
-        # Special rows (in order)
-        self._fields["HOTKEY_INVOKE"]            = self._kb_special_row("Call the app")
-        self._fields["HOTKEY_CUSTOM_PROMPT_KEY"] = self._kb_special_row("Custom prompt")
-        self._fields["HOTKEY_ADD_CONTEXT"]       = self._kb_special_row("Add as prompt")
-        self._fields["HOTKEY_CLEAR_CONTEXT"]     = self._kb_special_row("Clear prompt")
-        self._fields["HOTKEY_SNIP"]              = self._kb_special_row("Snip screen region")
+        self._callers_container = QWidget()
+        self._callers_vlayout = QVBoxLayout(self._callers_container)
+        self._callers_vlayout.setSpacing(8)
+        self._callers_vlayout.setContentsMargins(0, 0, 0, 0)
+        self._keybinds_layout.addWidget(self._callers_container)
+        self._caller_blocks: list[dict] = []
+
+        add_caller_btn = QPushButton("+ Add Caller Hotkey")
+        add_caller_btn.setFixedWidth(160)
+        add_caller_btn.clicked.connect(lambda: self._add_caller_block())
+        btn_wrap = QHBoxLayout()
+        btn_wrap.setContentsMargins(0, 4, 0, 4)
+        btn_wrap.addWidget(add_caller_btn)
+        btn_wrap.addStretch()
+        self._keybinds_layout.addLayout(btn_wrap)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet("color: rgba(128,128,128,80); margin: 4px 0px;")
         self._keybinds_layout.addWidget(sep)
 
-        # Dynamic user rows area
-        self._user_rows_widget = QWidget()
-        self._user_rows_layout = QVBoxLayout(self._user_rows_widget)
-        self._user_rows_layout.setSpacing(2)
-        self._user_rows_layout.setContentsMargins(0, 0, 0, 0)
-        self._keybinds_layout.addWidget(self._user_rows_widget)
-        self._user_bind_rows: list[dict] = []
+        # Other (non-caller) hotkeys
+        self._keybinds_layout.addWidget(QLabel("<b>Other Hotkeys</b>"))
+        self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
+        self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
+        self._fields["HOTKEY_SNIP"]          = self._kb_special_row("Snip screen region")
 
-        # Add-row button
-        add_btn = QPushButton("+ Add row")
-        add_btn.setFixedWidth(90)
-        add_btn.clicked.connect(lambda: self._add_user_bind_row())
-        btn_wrap = QHBoxLayout()
-        btn_wrap.setContentsMargins(0, 6, 0, 0)
-        btn_wrap.addWidget(add_btn)
-        btn_wrap.addStretch()
-        self._keybinds_layout.addLayout(btn_wrap)
         self._keybinds_layout.addStretch()
 
         scroll = QScrollArea()
@@ -377,60 +363,154 @@ class SettingsDialog(QDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         return scroll
 
-    def _kb_special_row(self, special_label: str) -> QLineEdit:
-        """Add one non-deletable special keybind row; return its key QLineEdit."""
-        from PyQt6.QtWidgets import QSizePolicy
+    def _kb_special_row(self, label_text: str) -> "HotkeyCaptureEdit":
+        """Add a simple labeled hotkey row; return its HotkeyCaptureEdit."""
         row_w = QWidget()
         h = QHBoxLayout(row_w)
         h.setContentsMargins(0, 2, 0, 2)
         h.setSpacing(8)
 
         key_edit = HotkeyCaptureEdit()
-        key_edit.setFixedWidth(112)
+        key_edit.setFixedWidth(120)
         h.addWidget(key_edit)
 
-        s_lbl = QLabel(special_label)
-        s_lbl.setFixedWidth(142)
-        s_lbl.setStyleSheet("font-style: italic; color: palette(mid);")
-        h.addWidget(s_lbl)
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet("font-style: italic; color: palette(mid);")
+        h.addWidget(lbl)
+        h.addStretch()
 
-        for fixed_w in [102, 0]:
-            filler = QLineEdit()
-            filler.setEnabled(False)
-            if fixed_w:
-                filler.setFixedWidth(fixed_w)
-            else:
-                filler.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-            h.addWidget(filler)
-
-        h.addSpacing(36)  # align with delete-button column of user rows
         self._keybinds_layout.addWidget(row_w)
         return key_edit
 
-    def _add_user_bind_row(self, key: str = "", label: str = "", prompt: str = "") -> None:
+    def _add_caller_block(
+        self,
+        hotkey: str = "",
+        label: str = "",
+        paste_back: bool = False,
+        custom_key: str = "s",
+        intents: "list[dict] | None" = None,
+    ) -> None:
+        """Add a caller block (framed panel with header + intent rows) to the UI."""
+        from PyQt6.QtWidgets import QSizePolicy
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.StyledPanel)
+        frame.setStyleSheet("QFrame { border: 1px solid palette(mid); border-radius: 4px; }")
+        outer = QVBoxLayout(frame)
+        outer.setSpacing(4)
+        outer.setContentsMargins(8, 6, 8, 6)
+
+        # Header row
+        hdr = QWidget()
+        hdr_h = QHBoxLayout(hdr)
+        hdr_h.setContentsMargins(0, 0, 0, 0)
+        hdr_h.setSpacing(6)
+
+        hotkey_edit = HotkeyCaptureEdit()
+        hotkey_edit.setFixedWidth(120)
+        if hotkey:
+            hotkey_edit.setText(hotkey)
+        hotkey_edit.setPlaceholderText("Hotkey…")
+        hdr_h.addWidget(hotkey_edit)
+
+        hdr_h.addWidget(QLabel("Name:"))
+        label_edit = QLineEdit(label)
+        label_edit.setFixedWidth(110)
+        label_edit.setPlaceholderText("Label")
+        hdr_h.addWidget(label_edit)
+
+        paste_cb = QCheckBox("Paste result back")
+        paste_cb.setChecked(paste_back)
+        hdr_h.addWidget(paste_cb)
+
+        hdr_h.addWidget(QLabel("↵ key:"))
+        custom_key_edit = QLineEdit(custom_key)
+        custom_key_edit.setFixedWidth(36)
+        custom_key_edit.setPlaceholderText("s")
+        hdr_h.addWidget(custom_key_edit)
+
+        hdr_h.addStretch()
+        del_caller_btn = QPushButton("✕ Remove")
+        del_caller_btn.setFixedWidth(80)
+        hdr_h.addWidget(del_caller_btn)
+        outer.addWidget(hdr)
+
+        # Intent rows column header
+        from PyQt6.QtWidgets import QSizePolicy as SP
+        int_hdr = QWidget()
+        int_hdr_h = QHBoxLayout(int_hdr)
+        int_hdr_h.setContentsMargins(0, 2, 0, 0)
+        int_hdr_h.setSpacing(6)
+        for txt, w in [("Key", 40), ("Label", 130), ("Prompt", 0)]:
+            lbl = QLabel(f"<small><b>{txt}</b></small>")
+            if w:
+                lbl.setFixedWidth(w)
+            else:
+                lbl.setSizePolicy(SP.Policy.Expanding, SP.Policy.Preferred)
+            int_hdr_h.addWidget(lbl)
+        int_hdr_h.addSpacing(32)
+        outer.addWidget(int_hdr)
+
+        # Intent rows container
+        intents_container = QWidget()
+        intents_vlayout = QVBoxLayout(intents_container)
+        intents_vlayout.setSpacing(2)
+        intents_vlayout.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(intents_container)
+
+        blk: dict = {
+            "widget":         frame,
+            "hotkey":         hotkey_edit,
+            "label":          label_edit,
+            "paste_back":     paste_cb,
+            "custom_key":     custom_key_edit,
+            "intents_layout": intents_vlayout,
+            "intent_rows":    [],
+        }
+
+        for r in (intents or []):
+            self._add_caller_intent_row(blk, r.get("key", ""), r.get("label", ""), r.get("prompt", ""))
+
+        # Add-row button
+        add_row_btn = QPushButton("+ Add row")
+        add_row_btn.setFixedWidth(80)
+        add_row_btn.clicked.connect(lambda: self._add_caller_intent_row(blk))
+        add_wrap = QHBoxLayout()
+        add_wrap.setContentsMargins(0, 2, 0, 0)
+        add_wrap.addWidget(add_row_btn)
+        add_wrap.addStretch()
+        outer.addLayout(add_wrap)
+
+        del_caller_btn.clicked.connect(lambda: self._delete_caller_block(blk))
+
+        self._callers_vlayout.addWidget(frame)
+        self._caller_blocks.append(blk)
+
+    def _add_caller_intent_row(
+        self,
+        blk: dict,
+        key: str = "",
+        label: str = "",
+        prompt: str = "",
+    ) -> None:
+        """Append one intent row to a caller block."""
         from PyQt6.QtWidgets import QSizePolicy
         row_w = QWidget()
         h = QHBoxLayout(row_w)
-        h.setContentsMargins(0, 2, 0, 2)
-        h.setSpacing(8)
+        h.setContentsMargins(0, 1, 0, 1)
+        h.setSpacing(6)
 
-        key_edit = HotkeyCaptureEdit()
-        key_edit.setFixedWidth(112)
-        if key:
-            key_edit.setText(key)
+        key_edit = QLineEdit(key)
+        key_edit.setFixedWidth(40)
+        key_edit.setPlaceholderText("w")
         h.addWidget(key_edit)
 
-        empty_lbl = QLabel()
-        empty_lbl.setFixedWidth(142)
-        h.addWidget(empty_lbl)
-
         label_edit = QLineEdit(label)
-        label_edit.setFixedWidth(102)
-        label_edit.setPlaceholderText("Short label")
+        label_edit.setFixedWidth(130)
+        label_edit.setPlaceholderText("Label")
         h.addWidget(label_edit)
 
         prompt_edit = QLineEdit(prompt)
-        prompt_edit.setPlaceholderText("Full prompt sent to LLM")
+        prompt_edit.setPlaceholderText("Prompt sent to LLM…")
         prompt_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         h.addWidget(prompt_edit)
 
@@ -438,16 +518,21 @@ class SettingsDialog(QDialog):
 
         del_btn = QPushButton("×")
         del_btn.setFixedWidth(28)
-        del_btn.clicked.connect(lambda: self._delete_user_bind_row(row_info))
+        del_btn.clicked.connect(lambda: self._delete_caller_intent_row(blk, row_info))
         h.addWidget(del_btn)
 
-        self._user_rows_layout.addWidget(row_w)
-        self._user_bind_rows.append(row_info)
+        blk["intents_layout"].addWidget(row_w)
+        blk["intent_rows"].append(row_info)
 
-    def _delete_user_bind_row(self, row_info: dict) -> None:
-        if row_info in self._user_bind_rows:
-            self._user_bind_rows.remove(row_info)
+    def _delete_caller_intent_row(self, blk: dict, row_info: dict) -> None:
+        if row_info in blk["intent_rows"]:
+            blk["intent_rows"].remove(row_info)
         row_info["widget"].deleteLater()
+
+    def _delete_caller_block(self, blk: dict) -> None:
+        if blk in self._caller_blocks:
+            self._caller_blocks.remove(blk)
+        blk["widget"].deleteLater()
 
     def _tab_memory(self) -> QWidget:
         """Memory tab: LTM config knobs + embedded fact browser."""
@@ -579,13 +664,11 @@ class SettingsDialog(QDialog):
         _set(self._fields["CARTESIA_API_KEY"], self._env.get("CARTESIA_API_KEY", ""))
         _set(self._fields["CARTESIA_VOICE_ID"], self._env.get("CARTESIA_VOICE_ID", ""))
         _set(self._fields["ELEVENLABS_API_KEY"], self._env.get("ELEVENLABS_API_KEY", ""))
-        _set(self._fields["HOTKEY_INVOKE"],            self._env.get("HOTKEY_INVOKE",            cfg.HOTKEY_INVOKE))
-        _set(self._fields["HOTKEY_CUSTOM_PROMPT_KEY"], self._env.get("HOTKEY_CUSTOM_PROMPT_KEY", cfg.HOTKEY_CUSTOM_PROMPT_KEY))
-        _set(self._fields["HOTKEY_ADD_CONTEXT"],       self._env.get("HOTKEY_ADD_CONTEXT",       cfg.HOTKEY_ADD_CONTEXT))
-        _set(self._fields["HOTKEY_CLEAR_CONTEXT"],     self._env.get("HOTKEY_CLEAR_CONTEXT",     cfg.HOTKEY_CLEAR_CONTEXT))
-        _set(self._fields["HOTKEY_SNIP"],              self._env.get("HOTKEY_SNIP",              cfg.HOTKEY_SNIP))
-        _set(self._fields["VISION_LLM_PROVIDER"],      self._env.get("VISION_LLM_PROVIDER",      cfg.VISION_LLM_PROVIDER))
-        _set(self._fields["VISION_LLM_MODEL"],         self._env.get("VISION_LLM_MODEL",         cfg.VISION_LLM_MODEL))
+        _set(self._fields["HOTKEY_ADD_CONTEXT"],   self._env.get("HOTKEY_ADD_CONTEXT",   cfg.HOTKEY_ADD_CONTEXT))
+        _set(self._fields["HOTKEY_CLEAR_CONTEXT"], self._env.get("HOTKEY_CLEAR_CONTEXT", cfg.HOTKEY_CLEAR_CONTEXT))
+        _set(self._fields["HOTKEY_SNIP"],          self._env.get("HOTKEY_SNIP",          cfg.HOTKEY_SNIP))
+        _set(self._fields["VISION_LLM_PROVIDER"],  self._env.get("VISION_LLM_PROVIDER",  cfg.VISION_LLM_PROVIDER))
+        _set(self._fields["VISION_LLM_MODEL"],     self._env.get("VISION_LLM_MODEL",     cfg.VISION_LLM_MODEL))
 
         _set(self._fields["MEMORY_LLM_PROVIDER"],    self._env.get("MEMORY_LLM_PROVIDER",    cfg.MEMORY_LLM_PROVIDER))
         _set(self._fields["MEMORY_LLM_MODEL"],       self._env.get("MEMORY_LLM_MODEL",       cfg.MEMORY_LLM_MODEL))
@@ -593,13 +676,31 @@ class SettingsDialog(QDialog):
         _set(self._fields["MEMORY_TOP_K"],           self._env.get("MEMORY_TOP_K",           str(cfg.MEMORY_TOP_K)))
         _set(self._fields["MEMORY_STM_TOKEN_BUDGET"], self._env.get("MEMORY_STM_TOKEN_BUDGET", str(cfg.MEMORY_STM_TOKEN_BUDGET)))
 
-        count = int(self._env.get("INTENT_COUNT", str(len(cfg.INTENT_ROWS))))
-        for i in range(count):
-            row = cfg.INTENT_ROWS[i] if i < len(cfg.INTENT_ROWS) else {"key": "", "label": "", "prompt": ""}
-            self._add_user_bind_row(
-                key=self._env.get(f"INTENT_{i + 1}_KEY",    row["key"]),
-                label=self._env.get(f"INTENT_{i + 1}_LABEL",  row["label"]),
-                prompt=self._env.get(f"INTENT_{i + 1}_PROMPT", row["prompt"]),
+        # Build caller blocks from CALLER_ROWS + any env overrides
+        for blk in list(self._caller_blocks):
+            blk["widget"].deleteLater()
+        self._caller_blocks.clear()
+
+        caller_count = int(self._env.get("CALLER_COUNT", str(len(cfg.CALLER_ROWS))))
+        for i in range(caller_count):
+            cr = cfg.CALLER_ROWS[i] if i < len(cfg.CALLER_ROWS) else {}
+            n = i + 1
+            intent_count = int(self._env.get(f"CALLER_{n}_INTENT_COUNT", str(len(cr.get("intents", [])))))
+            intents = []
+            for j in range(intent_count):
+                m = j + 1
+                di = cr["intents"][j] if j < len(cr.get("intents", [])) else {}
+                intents.append({
+                    "key":    self._env.get(f"CALLER_{n}_INTENT_{m}_KEY",    di.get("key", "")),
+                    "label":  self._env.get(f"CALLER_{n}_INTENT_{m}_LABEL",  di.get("label", "")),
+                    "prompt": self._env.get(f"CALLER_{n}_INTENT_{m}_PROMPT", di.get("prompt", "")),
+                })
+            self._add_caller_block(
+                hotkey     = self._env.get(f"CALLER_{n}_HOTKEY",     cr.get("hotkey", "")),
+                label      = self._env.get(f"CALLER_{n}_LABEL",      cr.get("label", "")),
+                paste_back = self._env.get(f"CALLER_{n}_PASTE_BACK", str(cr.get("paste_back", False))).lower() == "true",
+                custom_key = self._env.get(f"CALLER_{n}_CUSTOM_KEY", cr.get("custom_key", "s")),
+                intents    = intents,
             )
 
         auto_hide = self._env.get("DOLL_AUTO_HIDE", str(cfg.DOLL_AUTO_HIDE)).lower() == "true"
@@ -647,11 +748,9 @@ class SettingsDialog(QDialog):
             "CARTESIA_API_KEY":  _get(self._fields["CARTESIA_API_KEY"]),
             "CARTESIA_VOICE_ID": _get(self._fields["CARTESIA_VOICE_ID"]),
             "ELEVENLABS_API_KEY": _get(self._fields["ELEVENLABS_API_KEY"]),
-            "HOTKEY_INVOKE":            _get(self._fields["HOTKEY_INVOKE"]),
-            "HOTKEY_CUSTOM_PROMPT_KEY": _get(self._fields["HOTKEY_CUSTOM_PROMPT_KEY"]),
-            "HOTKEY_ADD_CONTEXT":       _get(self._fields["HOTKEY_ADD_CONTEXT"]),
-            "HOTKEY_CLEAR_CONTEXT":     _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
-            "HOTKEY_SNIP":              _get(self._fields["HOTKEY_SNIP"]),
+            "HOTKEY_ADD_CONTEXT":  _get(self._fields["HOTKEY_ADD_CONTEXT"]),
+            "HOTKEY_CLEAR_CONTEXT": _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
+            "HOTKEY_SNIP":         _get(self._fields["HOTKEY_SNIP"]),
             "VISION_LLM_PROVIDER":      _get(self._fields["VISION_LLM_PROVIDER"]),
             "VISION_LLM_MODEL":         _get(self._fields["VISION_LLM_MODEL"]),
             "MEMORY_LLM_PROVIDER":      _get(self._fields["MEMORY_LLM_PROVIDER"]),
@@ -659,7 +758,7 @@ class SettingsDialog(QDialog):
             "MEMORY_CONSOLIDATION_INTERVAL": _get(self._fields["MEMORY_CONSOLIDATION_INTERVAL"]),
             "MEMORY_TOP_K":             _get(self._fields["MEMORY_TOP_K"]),
             "MEMORY_STM_TOKEN_BUDGET":  _get(self._fields["MEMORY_STM_TOKEN_BUDGET"]),
-            "INTENT_COUNT":             str(len(self._user_bind_rows)),
+            "CALLER_COUNT":  str(len(self._caller_blocks)),
             "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
@@ -669,20 +768,28 @@ class SettingsDialog(QDialog):
             "BUBBLE_REVEAL_WPM": _get(self._fields["BUBBLE_REVEAL_WPM"]),
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
         }
-        # Key conflict check across all bindings
-        all_keys = [
-            _get(self._fields[k]).strip().lower()
-            for k in ("HOTKEY_INVOKE", "HOTKEY_CUSTOM_PROMPT_KEY", "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP")
-        ] + [_get(r["key"]).strip().lower() for r in self._user_bind_rows]
+        # Key conflict check (caller hotkeys + special hotkeys)
+        all_keys = (
+            [_get(blk["hotkey"]).strip().lower() for blk in self._caller_blocks]
+            + [_get(self._fields[k]).strip().lower() for k in ("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP")]
+        )
         non_empty = [k for k in all_keys if k]
         if len(non_empty) != len(set(non_empty)):
             QMessageBox.warning(self, "Duplicate keys",
                                 "Two or more bindings share the same key.\nPlease resolve conflicts before saving.")
             return False
-        for i, row in enumerate(self._user_bind_rows):
-            vals[f"INTENT_{i + 1}_KEY"]    = _get(row["key"])
-            vals[f"INTENT_{i + 1}_LABEL"]  = _get(row["label"])
-            vals[f"INTENT_{i + 1}_PROMPT"] = _get(row["prompt"])
+        for i, blk in enumerate(self._caller_blocks):
+            n = i + 1
+            vals[f"CALLER_{n}_HOTKEY"]        = _get(blk["hotkey"])
+            vals[f"CALLER_{n}_LABEL"]         = _get(blk["label"])
+            vals[f"CALLER_{n}_PASTE_BACK"]    = str(blk["paste_back"].isChecked())  # type: ignore
+            vals[f"CALLER_{n}_CUSTOM_KEY"]    = _get(blk["custom_key"])
+            vals[f"CALLER_{n}_INTENT_COUNT"]  = str(len(blk["intent_rows"]))
+            for j, row in enumerate(blk["intent_rows"]):
+                m = j + 1
+                vals[f"CALLER_{n}_INTENT_{m}_KEY"]    = _get(row["key"])
+                vals[f"CALLER_{n}_INTENT_{m}_LABEL"]  = _get(row["label"])
+                vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = _get(row["prompt"])
         _write_env(vals)
         return True
 

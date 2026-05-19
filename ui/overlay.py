@@ -53,7 +53,7 @@ class OverlaySignals(QObject):
     set_state          = pyqtSignal(str)   # "idle" | "listening" | "thinking" | "speaking"
     set_mouth_amp      = pyqtSignal(float)  # 0.0–1.0 amplitude for lip sync
     show_text_popup    = pyqtSignal(str)   # full reply text
-    show_intent_picker = pyqtSignal()      # show arrow-key intent chooser
+    show_intent_picker = pyqtSignal(int)  # caller index → show WASD picker for that caller
     show_snip_overlay  = pyqtSignal()      # show full-screen region selector
     bubble_listening   = pyqtSignal()      # show mic/recording indicator
     bubble_thinking    = pyqtSignal()      # show animated dots
