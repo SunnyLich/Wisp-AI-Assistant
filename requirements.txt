@@ -22,6 +22,10 @@ faster-whisper>=1.0.0     # local STT (Whisper model, CPU int8)
 PyQt6>=6.11.0             # overlay window + system tray
 PyQt6-WebEngine>=6.11.0   # QWebEngineView for VRM rendering
 
+# --- Memory ---
+chromadb>=0.6.0              # local vector store for long-term memory facts
+sentence-transformers>=3.0.0 # all-MiniLM-L6-v2 embeddings (used by chromadb DefaultEmbeddingFunction)
+
 # --- Utilities ---
 python-dotenv>=1.2.2      # .env config loading
 pynput>=1.8.2             # mouse/keyboard listener (backup)

@@ -19,9 +19,13 @@ import config
 from typing import Generator, Iterable
 
 
-SAMPLE_RATE = 44100   # Hz
+SAMPLE_RATE = 44100   # Hz  (Cartesia / default)
 CHANNELS = 1
-DTYPE = "float32"     # pcm_f32le
+DTYPE = "float32"     # pcm_f32le  (Cartesia / default)
+
+# ElevenLabs uses a different output format
+_EL_SAMPLE_RATE = 22050
+_EL_DTYPE = "int16"
 
 # ------------------------------------------------------------------
 # Singleton Cartesia WebSocket connection
@@ -140,10 +144,6 @@ def _stream_cartesia(text_chunks: Iterable[str],
 # ------------------------------------------------------------------
 
 def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
-    global SAMPLE_RATE, DTYPE
-    SAMPLE_RATE = 22050
-    DTYPE = "int16"
-
     from elevenlabs.client import ElevenLabs  # type: ignore
 
     client = ElevenLabs(api_key=config.ELEVENLABS_API_KEY)

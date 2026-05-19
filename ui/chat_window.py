@@ -46,8 +46,9 @@ class ChatWindow(QWidget):
         """
         Args:
             conversations: Direct reference to the app's list of all past
-                           conversations. Each item is a list of
-                           {"role": "user"|"assistant", "content": str}.
+                           conversations. Each item is a dict with keys
+                           ``"messages"`` (list of role/content turns) and
+                           ``"context"`` (ambient context string).
             send_fn:       Callable(messages: list) -> Generator[str]
             auto_message:  If set, automatically sent when the window opens.
         """
@@ -171,8 +172,8 @@ class ChatWindow(QWidget):
                 self._sidebar_btns.append((real_idx, btn))
         self._sidebar_layout.addStretch()
 
-    def _make_sidebar_btn(self, idx: int, conv: list[dict]) -> QPushButton:
-        first_user = next((m for m in conv if m["role"] == "user"), None)
+    def _make_sidebar_btn(self, idx: int, conv: dict) -> QPushButton:
+        first_user = next((m for m in conv["messages"] if m["role"] == "user"), None)
         raw = first_user["content"] if first_user else f"Conversation {idx+1}"
         has_image = bool(first_user and first_user.get("image_base64"))
         prefix = "📷 " if has_image else ""
@@ -245,7 +246,7 @@ class ChatWindow(QWidget):
         vl.addWidget(self._input_frame)
         return panel
 
-    def _make_page(self, idx: int, conv: list[dict]) -> QScrollArea:
+    def _make_page(self, idx: int, conv: dict) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -259,7 +260,7 @@ class ChatWindow(QWidget):
         layout.setSpacing(10)
         layout.addStretch()
 
-        for msg in conv:
+        for msg in conv["messages"]:
             self._bubble(layout, msg["content"], msg["role"], msg.get("image_base64"))
 
         scroll._msg_layout = layout  # type: ignore[attr-defined]
@@ -390,13 +391,19 @@ class ChatWindow(QWidget):
         layout = self._latest_layout()
         if layout:
             self._bubble(layout, text, "user")
-        conv.append({"role": "user", "content": text})
+        conv["messages"].append({"role": "user", "content": text})
 
         self._current_ai_text = ""
         self._current_ai_label = self._bubble(layout, "…", "assistant") if layout else None
         self._scroll_bottom()
 
-        messages = [{"role": "system", "content": config.get_system_prompt()}] + conv
+        # Inject stored context into system prompt so it is available for every
+        # follow-up without being repeated inside the conversation turns.
+        ctx = conv.get("context", "")
+        sys_content = config.get_system_prompt()
+        if ctx:
+            sys_content += f"\n\n---\n{ctx}"
+        messages = [{"role": "system", "content": sys_content}] + conv["messages"]
 
         def _stream():
             try:
@@ -415,7 +422,7 @@ class ChatWindow(QWidget):
 
     def _on_finished(self):
         if self._current_ai_text and self._conversations:
-            self._conversations[-1].append(
+            self._conversations[-1]["messages"].append(
                 {"role": "assistant", "content": self._current_ai_text}
             )
         self._current_ai_label = None

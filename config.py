@@ -79,6 +79,17 @@ VRM_WIDTH         = int(os.getenv("VRM_WIDTH",         "200"))  # VRM overlay wi
 VRM_HEIGHT        = int(os.getenv("VRM_HEIGHT",        "300"))  # VRM overlay height px
 BUBBLE_REVEAL_WPM = int(os.getenv("BUBBLE_REVEAL_WPM", "170")) # word-reveal speed (WPM fallback mode)
 
+# --- Memory ---
+# LLM used for consolidation / compression (defaults to chat LLM).
+MEMORY_LLM_PROVIDER             = os.getenv("MEMORY_LLM_PROVIDER",             CHAT_LLM_PROVIDER)
+MEMORY_LLM_MODEL                = os.getenv("MEMORY_LLM_MODEL",                CHAT_LLM_MODEL)
+# How often (minutes) to extract facts from the session and write them to LTM.
+MEMORY_CONSOLIDATION_INTERVAL   = int(os.getenv("MEMORY_CONSOLIDATION_INTERVAL",   "15"))
+# How many LTM facts to retrieve per LLM call (semantic top-k).
+MEMORY_TOP_K                    = int(os.getenv("MEMORY_TOP_K",                    "3"))
+# Approximate token budget for raw STM turns before mid-session compression kicks in.
+MEMORY_STM_TOKEN_BUDGET         = int(os.getenv("MEMORY_STM_TOKEN_BUDGET",         "4000"))
+
 # --- Audio ---
 FILLER_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "assets", "filler")
 FILLER_MAX_DURATION_MS = 1000   # filler clips must be < 1s
@@ -119,6 +130,8 @@ def reload() -> None:
     global INTENT_COUNT, INTENT_ROWS
     global BUBBLE_WIDTH, BUBBLE_LINES, DOLL_SIZE, BUBBLE_REVEAL_WPM
     global SYSTEM_PROMPT_UTILITY
+    global MEMORY_LLM_PROVIDER, MEMORY_LLM_MODEL
+    global MEMORY_CONSOLIDATION_INTERVAL, MEMORY_TOP_K, MEMORY_STM_TOKEN_BUDGET
 
     load_dotenv(override=True)   # push .env values back into os.environ
 
@@ -169,6 +182,12 @@ def reload() -> None:
     VRM_WIDTH         = int(os.getenv("VRM_WIDTH",         "200"))
     VRM_HEIGHT        = int(os.getenv("VRM_HEIGHT",        "300"))
     BUBBLE_REVEAL_WPM = int(os.getenv("BUBBLE_REVEAL_WPM", "170"))
+
+    MEMORY_LLM_PROVIDER           = os.getenv("MEMORY_LLM_PROVIDER",           CHAT_LLM_PROVIDER)
+    MEMORY_LLM_MODEL              = os.getenv("MEMORY_LLM_MODEL",              CHAT_LLM_MODEL)
+    MEMORY_CONSOLIDATION_INTERVAL = int(os.getenv("MEMORY_CONSOLIDATION_INTERVAL", "15"))
+    MEMORY_TOP_K                  = int(os.getenv("MEMORY_TOP_K",                  "3"))
+    MEMORY_STM_TOKEN_BUDGET       = int(os.getenv("MEMORY_STM_TOKEN_BUDGET",       "4000"))
 
     SYSTEM_PROMPT_UTILITY = os.getenv(
         "SYSTEM_PROMPT_UTILITY",

@@ -13,10 +13,35 @@ import config
 from core.hotkeys import HotkeyListener
 from core import capture, llm, audio, context_fetcher, stt
 from core import tts as tts_module
+from core import memory as memory_module
 from ui.overlay import DollOverlay, OverlaySignals
 from ui.intent_overlay import IntentOverlay
 from ui.snip_overlay import SnipOverlay
 from ui.chat_window import ChatWindow
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_REMEMBER_PREFIXES = (
+    "remember that ",
+    "remember: ",
+    "please remember ",
+    "please remember that ",
+)
+
+
+def _extract_remember_fact(text: str) -> str | None:
+    """
+    If the user's message is an explicit memory command ("remember that X"),
+    return the fact text stripped of the prefix.  Otherwise return None.
+    """
+    t = text.strip()
+    lower = t.lower()
+    for prefix in _REMEMBER_PREFIXES:
+        if lower.startswith(prefix):
+            return t[len(prefix):].strip()
+    return None
 
 
 class App:
@@ -40,15 +65,19 @@ class App:
         self._intent_picker: IntentOverlay | None = None
         self._snip_overlay: SnipOverlay | None = None
         self._chat_window: ChatWindow | None = None
-        self._all_conversations: list[list[dict]] = []  # each item = one full Q&A session
+        self._all_conversations: list[dict] = []  # each item = {"messages": [...], "context": str}
         self._overlay_hwnd: int = 0          # cached after first show
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
+
+        # Memory
+        self._memory = memory_module.get_manager()
 
         # Wire signals
         self._signals.show_intent_picker.connect(self._show_intent_picker)
         self._signals.show_snip_overlay.connect(self._show_snip_overlay)
         self._signals.settings_applied.connect(self._on_settings_applied)
         self._signals.show_last_chat.connect(self._on_show_last_chat)
+        self._signals.show_memory_viewer.connect(self._open_memory_viewer)
         self._overlay.set_click_handler(self._on_doll_click)
 
         # Pre-warm connections in background
@@ -110,24 +139,28 @@ class App:
         self._context_buffer.clear()
         print("[main] Context buffer cleared.")
 
+    def _steal_foreground(self) -> None:
+        """AttachThreadInput + SetForegroundWindow — must be called from the keyboard-hook thread."""
+        if not self._overlay_hwnd:
+            return
+        try:
+            import ctypes
+            user32   = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            fg_hwnd  = user32.GetForegroundWindow()
+            fg_tid   = user32.GetWindowThreadProcessId(fg_hwnd, None)
+            our_tid  = kernel32.GetCurrentThreadId()
+            if fg_tid and fg_tid != our_tid:
+                user32.AttachThreadInput(fg_tid, our_tid, True)
+            user32.SetForegroundWindow(self._overlay_hwnd)
+            if fg_tid and fg_tid != our_tid:
+                user32.AttachThreadInput(fg_tid, our_tid, False)
+        except Exception:
+            pass
+
     def _on_snip_hotkey(self):
         """Ctrl+Alt+Q — show the region selector, then the intent picker."""
-        # Steal foreground from the keyboard hook thread (same pattern as _on_hotkey)
-        if self._overlay_hwnd:
-            try:
-                import ctypes
-                user32   = ctypes.windll.user32
-                kernel32 = ctypes.windll.kernel32
-                fg_hwnd  = user32.GetForegroundWindow()
-                fg_tid   = user32.GetWindowThreadProcessId(fg_hwnd, None)
-                our_tid  = kernel32.GetCurrentThreadId()
-                if fg_tid and fg_tid != our_tid:
-                    user32.AttachThreadInput(fg_tid, our_tid, True)
-                user32.SetForegroundWindow(self._overlay_hwnd)
-                if fg_tid and fg_tid != our_tid:
-                    user32.AttachThreadInput(fg_tid, our_tid, False)
-            except Exception:
-                pass
+        self._steal_foreground()
         self._signals.show_snip_overlay.emit()
 
     # ------------------------------------------------------------------
@@ -206,21 +239,7 @@ class App:
         #    Plain SetForegroundWindow fails silently when called from a non-foreground
         #    thread.  AttachThreadInput borrows the input state of whichever thread
         #    owns the foreground right now, which unlocks SetForegroundWindow for us.
-        if self._overlay_hwnd:
-            try:
-                import ctypes
-                user32   = ctypes.windll.user32
-                kernel32 = ctypes.windll.kernel32
-                fg_hwnd  = user32.GetForegroundWindow()
-                fg_tid   = user32.GetWindowThreadProcessId(fg_hwnd, None)
-                our_tid  = kernel32.GetCurrentThreadId()
-                if fg_tid and fg_tid != our_tid:
-                    user32.AttachThreadInput(fg_tid, our_tid, True)
-                user32.SetForegroundWindow(self._overlay_hwnd)
-                if fg_tid and fg_tid != our_tid:
-                    user32.AttachThreadInput(fg_tid, our_tid, False)
-            except Exception:
-                pass
+        self._steal_foreground()
 
         audio.play_filler()
         if config.DOLL_AUTO_HIDE:
@@ -287,26 +306,42 @@ class App:
         self._pending_context = None
         ambient_ctx = context_fetcher.format_context_for_prompt(snap) if snap else ""
 
-        # Build final message, incorporating any buffered context items
+        # Build final message — intent prompt only; context goes into the system
+        # prompt so it is sent exactly once and not repeated in every follow-up turn.
         context_items = self._context_buffer.copy()
         self._context_buffer.clear()
 
         all_contexts = context_items + ([selected] if selected else [])
-        if len(all_contexts) > 1:
-            labelled = "\n\n".join(
-                f"Context {i + 1}:\n{ctx}" for i, ctx in enumerate(all_contexts)
+        user_message = intent_prompt  # clean turn — no embedded context
+        if all_contexts:
+            # Merge selected / buffered text into ambient_ctx (system-prompt layer).
+            ctx_block = (
+                "\n\n".join(f"Context {i + 1}:\n{c}" for i, c in enumerate(all_contexts))
+                if len(all_contexts) > 1
+                else all_contexts[0]
             )
-            user_message = f"{intent_prompt}\n\n{labelled}"
-        elif all_contexts:
-            user_message = f"{intent_prompt}\n\n{all_contexts[0]}"
-        else:
-            user_message = intent_prompt
+            ambient_ctx = f"{ambient_ctx}\n\n---\n{ctx_block}" if ambient_ctx else ctx_block
 
         self._signals.set_state.emit("thinking")
         self._signals.bubble_thinking.emit()
 
-        # Reset conversation for a fresh query (new hotkey invocation)
-        self._conversation_history = []
+        # Memory: check for explicit "remember that" command, then retrieve
+        # relevant LTM facts and the current STM session summary.
+        remember_fact = _extract_remember_fact(user_message)
+        if remember_fact:
+            self._memory.add_explicit_fact(remember_fact)
+
+        query_for_retrieval = user_message + (" " + (selected or "")).strip()
+        ltm_facts  = self._memory.retrieve_relevant(query_for_retrieval)
+        stm_ctx    = self._memory.get_stm_context()
+        memory_ctx_parts: list[str] = []
+        if ltm_facts:
+            memory_ctx_parts.append(ltm_facts)
+        if stm_ctx:
+            memory_ctx_parts.append("[Session context]\n" + stm_ctx)
+        memory_context = "\n\n".join(memory_ctx_parts)
+
+        # Fresh query — reset streamed text accumulator.
         full_text = ""
         llm_chunk_q: queue.Queue[str | None] = queue.Queue()
 
@@ -317,6 +352,7 @@ class App:
                     user_message,
                     screenshot_b64,
                     ambient_context=ambient_ctx,
+                    memory_context=memory_context,
                     use_tools=not screenshot_b64,   # tools only for text queries; vision handles itself
                 ):
                     full_text += chunk
@@ -324,11 +360,18 @@ class App:
                     self._signals.bubble_chunk.emit(chunk)   # buffered by bubble in reveal mode
             finally:
                 llm_chunk_q.put(None)
-            self._all_conversations.append([
-                {"role": "user", "content": user_message,
-                 **(({"image_base64": screenshot_b64}) if screenshot_b64 else {})},
-                {"role": "assistant", "content": full_text},
-            ])
+            # Store context separately so the chat window can inject it into
+            # the system prompt for follow-ups without re-embedding it in turns.
+            self._all_conversations.append({
+                "messages": [
+                    {"role": "user", "content": user_message,
+                     **({"image_base64": screenshot_b64} if screenshot_b64 else {})},
+                    {"role": "assistant", "content": full_text},
+                ],
+                "context": ambient_ctx,
+            })
+            # Record the completed turn in short-term memory.
+            self._memory.record_turn(user_message, full_text, ambient_ctx)
 
         def llm_chunk_iter():
             while True:
@@ -372,32 +415,50 @@ class App:
     # Doll click → show popup
     # ------------------------------------------------------------------
 
-    def _on_doll_click(self, event):
-        auto_msg = config.CHAT_ELABORATE_PROMPT if config.CHAT_AUTO_ELABORATE and self._all_conversations else None
+    def _open_or_raise_chat(self, auto_message: str | None = None) -> None:
+        """Open the chat window, or raise it if already open."""
         if self._chat_window is not None:
             self._chat_window.raise_()
             self._chat_window.activateWindow()
             return
         self._chat_window = ChatWindow(
             conversations=self._all_conversations,
-            send_fn=llm.stream_response_with_history,
-            auto_message=auto_msg,
+            send_fn=self._make_memory_send_fn(),
+            auto_message=auto_message,
         )
         self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
         self._chat_window.show()
 
+    def _on_doll_click(self, event):
+        auto_msg = config.CHAT_ELABORATE_PROMPT if config.CHAT_AUTO_ELABORATE and self._all_conversations else None
+        self._open_or_raise_chat(auto_message=auto_msg)
+
     def _on_show_last_chat(self):
         """Tray menu 'Last chat' — open or raise the chat window."""
-        if self._chat_window is not None:
-            self._chat_window.raise_()
-            self._chat_window.activateWindow()
-            return
-        self._chat_window = ChatWindow(
-            conversations=self._all_conversations,
-            send_fn=llm.stream_response_with_history,
-        )
-        self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
-        self._chat_window.show()
+        self._open_or_raise_chat()
+
+    def _make_memory_send_fn(self):
+        """Return a send_fn wrapper that injects relevant LTM facts per chat turn."""
+        memory = self._memory
+
+        def send_with_memory(messages: list):
+            last_user = next(
+                (m["content"] for m in reversed(messages) if m["role"] == "user"),
+                "",
+            )
+            mem_ctx = memory.retrieve_relevant(last_user) if last_user else ""
+            return llm.stream_response_with_history(messages, memory_context=mem_ctx)
+
+        return send_with_memory
+
+    # ------------------------------------------------------------------
+    # Memory viewer
+    # ------------------------------------------------------------------
+
+    def _open_memory_viewer(self) -> None:
+        from ui.memory_viewer import MemoryViewer
+        viewer = MemoryViewer(self._memory)
+        viewer.exec()
 
 
 def main():

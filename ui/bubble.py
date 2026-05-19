@@ -27,7 +27,6 @@ _DOLL_W       = 80
 _DOLL_H       = 80
 _DOLL_MARGIN  = 20
 _HIDE_DELAY    = 8_000   # ms after finish() before hiding
-_DEFAULT_WPM = 170  # fallback if config not yet loaded
 
 
 class SpeechBubble(QWidget):
@@ -91,9 +90,42 @@ class SpeechBubble(QWidget):
         self._reveal_timer.setInterval(int(60_000 / config.BUBBLE_REVEAL_WPM))
         self._reveal_timer.timeout.connect(self._reveal_next_word)
 
+        # Drag support
+        self._drag_offset = None          # QPoint while dragging
+        self._companion_callback = None   # called with new QPoint after each drag move
+
     # ------------------------------------------------------------------
-    # Public API (called via Qt signals from worker thread)
+    # Drag API
     # ------------------------------------------------------------------
+
+    def set_companion_callback(self, fn):
+        """Register a callback(new_bubble_pos: QPoint) called while dragging."""
+        self._companion_callback = fn
+
+    def doll_pos_for_bubble(self, bubble_pos, doll_size: int):
+        """Given this bubble's top-left position, return where the doll icon should sit."""
+        from PyQt6.QtCore import QPoint
+        doll_x = bubble_pos.x() + self._bubble_w + _TAIL_W + 6
+        doll_y = bubble_pos.y() - (doll_size - self._bubble_h) // 2
+        return QPoint(doll_x, doll_y)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = self.pos() - event.globalPosition().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            new_pos = event.globalPosition().toPoint() + self._drag_offset
+            self.move(new_pos)
+            if self._companion_callback:
+                self._companion_callback(new_pos)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = None
+        super().mouseReleaseEvent(event)
 
     def show_listening(self):
         """Show a static mic indicator while the user holds F9."""

@@ -4,6 +4,7 @@ ui/popup.py — Transient text popup for the full LLM reply.
 Appears near the doll, auto-dismisses after a timeout, or on click.
 """
 from __future__ import annotations
+import config
 from PyQt6.QtWidgets import QLabel, QWidget, QApplication, QVBoxLayout
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -59,7 +60,7 @@ class TextPopup(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         # Place above the doll (bottom-right)
         x = screen.width() - POPUP_WIDTH - 20
-        y = screen.height() - 80 - POPUP_MAX_HEIGHT - DOLL_MARGIN
+        y = screen.height() - config.DOLL_SIZE - POPUP_MAX_HEIGHT - DOLL_MARGIN
         self.move(x, y)
 
     def mousePressEvent(self, event):

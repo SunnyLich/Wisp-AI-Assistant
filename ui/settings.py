@@ -83,6 +83,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._tab_prompt(),    "Prompts")
         tabs.addTab(self._tab_keybinds(),  "Keybinds")
         tabs.addTab(self._tab_app(),       "App")
+        tabs.addTab(self._tab_memory(),    "Memory")
         root.addWidget(tabs)
 
         # Buttons
@@ -311,6 +312,72 @@ class SettingsDialog(QDialog):
             self._user_bind_rows.remove(row_info)
         row_info["widget"].deleteLater()
 
+    def _tab_memory(self) -> QWidget:
+        """Memory tab: LTM config knobs + embedded fact browser."""
+        from PyQt6.QtWidgets import QGroupBox, QSizePolicy
+
+        w = QWidget()
+        root = QVBoxLayout(w)
+        root.setSpacing(10)
+        root.setContentsMargins(12, 12, 12, 12)
+
+        # --- Config group ---
+        cfg_group = QGroupBox("Memory LLM & Settings")
+        f = QFormLayout(cfg_group)
+        f.setSpacing(8)
+        f.setContentsMargins(8, 8, 8, 8)
+
+        mem_provider = self._combo(
+            ["groq", "openai", "anthropic"],
+            self._env.get("MEMORY_LLM_PROVIDER", ""),
+        )
+        self._fields["MEMORY_LLM_PROVIDER"] = mem_provider
+        f.addRow("Memory LLM provider:", mem_provider)
+
+        mem_model = QLineEdit(self._env.get("MEMORY_LLM_MODEL", ""))
+        mem_model.setPlaceholderText("e.g. llama-3.1-8b-instant")
+        self._fields["MEMORY_LLM_MODEL"] = mem_model
+        f.addRow("Memory LLM model:", mem_model)
+
+        mem_interval = QLineEdit(self._env.get("MEMORY_CONSOLIDATION_INTERVAL", "15"))
+        mem_interval.setPlaceholderText("minutes between consolidations")
+        self._fields["MEMORY_CONSOLIDATION_INTERVAL"] = mem_interval
+        f.addRow("Consolidation interval (min):", mem_interval)
+
+        mem_topk = QLineEdit(self._env.get("MEMORY_TOP_K", "3"))
+        mem_topk.setPlaceholderText("number of facts to retrieve per query")
+        self._fields["MEMORY_TOP_K"] = mem_topk
+        f.addRow("Retrieval top-k:", mem_topk)
+
+        mem_budget = QLineEdit(self._env.get("MEMORY_STM_TOKEN_BUDGET", "4000"))
+        mem_budget.setPlaceholderText("tokens before STM compression kicks in")
+        self._fields["MEMORY_STM_TOKEN_BUDGET"] = mem_budget
+        f.addRow("STM token budget:", mem_budget)
+
+        root.addWidget(cfg_group)
+
+        # --- Fact browser ---
+        browser_group = QGroupBox("Stored Facts")
+        browser_layout = QVBoxLayout(browser_group)
+        browser_layout.setContentsMargins(6, 6, 6, 6)
+
+        try:
+            from core.memory import get_manager
+            from ui.memory_viewer import MemoryPanel
+            panel = MemoryPanel(get_manager(), browser_group)
+            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            browser_layout.addWidget(panel)
+        except Exception as exc:
+            from PyQt6.QtCore import Qt
+            err = QLabel(f"Memory store unavailable:\n{exc}")
+            err.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            err.setStyleSheet("color: #c00;")
+            browser_layout.addWidget(err)
+
+        root.addWidget(browser_group, stretch=1)
+
+        return w
+
     def _tab_app(self) -> QWidget:
         w = QWidget()
         f = QFormLayout(w)
@@ -381,6 +448,12 @@ class SettingsDialog(QDialog):
         _set(self._fields["VISION_LLM_PROVIDER"],      self._env.get("VISION_LLM_PROVIDER",      cfg.VISION_LLM_PROVIDER))
         _set(self._fields["VISION_LLM_MODEL"],         self._env.get("VISION_LLM_MODEL",         cfg.VISION_LLM_MODEL))
 
+        _set(self._fields["MEMORY_LLM_PROVIDER"],    self._env.get("MEMORY_LLM_PROVIDER",    cfg.MEMORY_LLM_PROVIDER))
+        _set(self._fields["MEMORY_LLM_MODEL"],       self._env.get("MEMORY_LLM_MODEL",       cfg.MEMORY_LLM_MODEL))
+        _set(self._fields["MEMORY_CONSOLIDATION_INTERVAL"], self._env.get("MEMORY_CONSOLIDATION_INTERVAL", str(cfg.MEMORY_CONSOLIDATION_INTERVAL)))
+        _set(self._fields["MEMORY_TOP_K"],           self._env.get("MEMORY_TOP_K",           str(cfg.MEMORY_TOP_K)))
+        _set(self._fields["MEMORY_STM_TOKEN_BUDGET"], self._env.get("MEMORY_STM_TOKEN_BUDGET", str(cfg.MEMORY_STM_TOKEN_BUDGET)))
+
         count = int(self._env.get("INTENT_COUNT", str(len(cfg.INTENT_ROWS))))
         for i in range(count):
             row = cfg.INTENT_ROWS[i] if i < len(cfg.INTENT_ROWS) else {"key": "", "label": "", "prompt": ""}
@@ -442,6 +515,11 @@ class SettingsDialog(QDialog):
             "HOTKEY_SNIP":              _get(self._fields["HOTKEY_SNIP"]),
             "VISION_LLM_PROVIDER":      _get(self._fields["VISION_LLM_PROVIDER"]),
             "VISION_LLM_MODEL":         _get(self._fields["VISION_LLM_MODEL"]),
+            "MEMORY_LLM_PROVIDER":      _get(self._fields["MEMORY_LLM_PROVIDER"]),
+            "MEMORY_LLM_MODEL":         _get(self._fields["MEMORY_LLM_MODEL"]),
+            "MEMORY_CONSOLIDATION_INTERVAL": _get(self._fields["MEMORY_CONSOLIDATION_INTERVAL"]),
+            "MEMORY_TOP_K":             _get(self._fields["MEMORY_TOP_K"]),
+            "MEMORY_STM_TOKEN_BUDGET":  _get(self._fields["MEMORY_STM_TOKEN_BUDGET"]),
             "INTENT_COUNT":             str(len(self._user_bind_rows)),
             "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore

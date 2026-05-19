@@ -292,6 +292,7 @@ def stream_response(
     user_message: str,
     image_base64: str | None = None,
     ambient_context: str = "",
+    memory_context: str = "",
     use_tools: bool = False,
 ) -> Generator[str, None, None]:
     """
@@ -303,8 +304,11 @@ def stream_response(
     Args:
         user_message:     The user's query text.
         image_base64:     Optional base64-encoded PNG for vision input.
-        ambient_context:  Plain-text context block prepended to the system
-                          prompt (active window, clipboard, focused element).
+        ambient_context:  Plain-text context block (active window, clipboard,
+                          focused element) — injected into system prompt.
+        memory_context:   Pre-formatted LTM facts + STM session summary from
+                          core.memory — injected into system prompt before the
+                          ambient context block.
         use_tools:        If True and provider is Anthropic, expose
                           web_search + fetch_browser_page tools so Claude can
                           pull extra context when it decides to.  Ignored for
@@ -340,10 +344,10 @@ def stream_response(
         _check_llm_config()
         provider = config.LLM_PROVIDER.lower()
         if provider in ("groq", "openai"):
-            yield from _stream_openai_compat(user_message, None, config.LLM_MODEL, _get_openai_client(), ambient_context)
+            yield from _stream_openai_compat(user_message, None, config.LLM_MODEL, _get_openai_client(), ambient_context, memory_context)
         elif provider == "anthropic":
             tool_model = config.TOOL_LLM_MODEL if use_tools else config.LLM_MODEL
-            yield from _stream_anthropic(user_message, None, tool_model, _get_anthropic_client(), ambient_context, use_tools)
+            yield from _stream_anthropic(user_message, None, tool_model, _get_anthropic_client(), ambient_context, memory_context, use_tools)
         else:
             raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
@@ -358,8 +362,9 @@ def _stream_openai_compat(
     model: str,
     client,
     ambient_context: str = "",
+    memory_context: str = "",
 ) -> Generator[str, None, None]:
-    messages = _build_openai_messages(user_message, image_base64, ambient_context)
+    messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
 
     with client.chat.completions.create(
         model=model,
@@ -374,8 +379,15 @@ def _stream_openai_compat(
                 yield delta
 
 
-def _build_openai_messages(user_message: str, image_base64: str | None, ambient_context: str = "") -> list:
+def _build_openai_messages(
+    user_message: str,
+    image_base64: str | None,
+    ambient_context: str = "",
+    memory_context: str = "",
+) -> list:
     system = config.get_system_prompt()
+    if memory_context:
+        system += f"\n\n{memory_context}"
     if ambient_context:
         system += f"\n\n---\n{ambient_context}"
     if image_base64:
@@ -396,8 +408,53 @@ def _build_openai_messages(user_message: str, image_base64: str | None, ambient_
 
 
 # ------------------------------------------------------------------
-# Anthropic Claude
+# Anthropic Claude  —  shared tool-loop helper
 # ------------------------------------------------------------------
+
+def _run_anthropic_tool_loop(
+    client,
+    messages: list,
+    first_response,
+    model: str,
+    system: str,
+    max_tokens: int,
+) -> Generator[str, None, None]:
+    """
+    Execute Anthropic tool calls and yield text from subsequent rounds.
+    *messages* is mutated in place (assistant + tool-result turns are appended).
+    """
+    messages.append({"role": "assistant", "content": first_response.content})
+    final = first_response
+    for _round in range(3):
+        tool_results = []
+        for block in final.content:
+            if getattr(block, "type", "") == "tool_use":
+                result = _execute_context_tool(block.name, block.input or {})
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+        if not tool_results:
+            return
+        messages.append({"role": "user", "content": tool_results})
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+            tools=_CONTEXT_TOOLS,
+        )
+        for block in response.content:
+            if getattr(block, "type", "") == "text":
+                text = getattr(block, "text", "")
+                if text:
+                    yield text
+        if response.stop_reason != "tool_use":
+            return
+        final = response
+        messages.append({"role": "assistant", "content": response.content})
+
 
 def _stream_anthropic(
     user_message: str,
@@ -405,9 +462,12 @@ def _stream_anthropic(
     model: str,
     client,
     ambient_context: str = "",
+    memory_context: str = "",
     use_tools: bool = False,
 ) -> Generator[str, None, None]:
     system = config.get_system_prompt()
+    if memory_context:
+        system += f"\n\n{memory_context}"
     if ambient_context:
         system += f"\n\n---\n{ambient_context}"
 
@@ -458,51 +518,42 @@ def _stream_anthropic(
         return
 
     # A tool was called — execute it and do followup round(s) non-streaming.
-    messages.append({"role": "assistant", "content": final.content})
-    for _round in range(3):
-        tool_results = []
-        for block in final.content:
-            if getattr(block, "type", "") == "tool_use":
-                result = _execute_context_tool(block.name, block.input or {})
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
-        if not tool_results:
-            return
-        messages.append({"role": "user", "content": tool_results})
-
-        response = client.messages.create(
-            model=model,
-            max_tokens=512,
-            system=system,
-            messages=messages,
-            tools=_CONTEXT_TOOLS,
-        )
-        for block in response.content:
-            if getattr(block, "type", "") == "text":
-                text = getattr(block, "text", "")
-                if text:
-                    yield text
-        if response.stop_reason != "tool_use":
-            return
-        final = response
-        messages.append({"role": "assistant", "content": response.content})
+    yield from _run_anthropic_tool_loop(client, messages, final, model, system, max_tokens=512)
 
 
 # ------------------------------------------------------------------
 # Multi-turn (chat window)
 # ------------------------------------------------------------------
 
-def stream_response_with_history(messages: list) -> Generator[str, None, None]:
+def stream_response_with_history(
+    messages: list,
+    memory_context: str = "",
+) -> Generator[str, None, None]:
     """
     Stream a response given a pre-built messages list including history.
     Uses CHAT_LLM_PROVIDER / CHAT_LLM_MODEL (defaults to LLM_PROVIDER / LLM_MODEL).
-    messages: [{"role": "system"|"user"|"assistant", "content": str}, ...]
+
+    Args:
+        messages:        [{{"role": "system"|"user"|"assistant", "content": str}}, ...]
+        memory_context:  Pre-formatted LTM facts from core.memory — appended to
+                         the system message so the model is aware of user facts.
     """
     _check_chat_llm_config()
     provider = config.CHAT_LLM_PROVIDER.lower()
+
+    # Inject memory context into the system message (or prepend one)
+    if memory_context:
+        sys_idx = next(
+            (i for i, m in enumerate(messages) if m["role"] == "system"), None
+        )
+        if sys_idx is not None:
+            messages = list(messages)   # shallow copy — don't mutate the caller's list
+            messages[sys_idx] = {
+                **messages[sys_idx],
+                "content": messages[sys_idx]["content"] + f"\n\n{memory_context}",
+            }
+        else:
+            messages = [{"role": "system", "content": memory_context}] + list(messages)
     if provider in ("groq", "openai"):
         client = _get_chat_openai_client()
         with client.chat.completions.create(
@@ -541,36 +592,6 @@ def stream_response_with_history(messages: list) -> Generator[str, None, None]:
         if final.stop_reason != "tool_use":
             return
 
-        turns.append({"role": "assistant", "content": final.content})
-        for _round in range(3):
-            tool_results = []
-            for block in final.content:
-                if getattr(block, "type", "") == "tool_use":
-                    result = _execute_context_tool(block.name, block.input or {})
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-            if not tool_results:
-                return
-            turns.append({"role": "user", "content": tool_results})
-
-            response = client.messages.create(
-                model=tool_model,
-                max_tokens=1024,
-                system=system,
-                messages=turns,
-                tools=_CONTEXT_TOOLS,
-            )
-            for block in response.content:
-                if getattr(block, "type", "") == "text":
-                    text = getattr(block, "text", "")
-                    if text:
-                        yield text
-            if response.stop_reason != "tool_use":
-                return
-            final = response
-            turns.append({"role": "assistant", "content": response.content})
+        yield from _run_anthropic_tool_loop(client, turns, final, tool_model, system, max_tokens=1024)
     else:
         raise ValueError(f"Unknown chat LLM provider: {provider}")

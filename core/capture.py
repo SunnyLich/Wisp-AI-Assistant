@@ -13,7 +13,6 @@ import mss
 import mss.tools
 from PIL import Image
 import io
-import win32clipboard
 
 
 # ------------------------------------------------------------------

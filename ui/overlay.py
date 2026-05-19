@@ -17,7 +17,7 @@ import urllib.parse
 import config
 from core import asset_server as _asset_server
 from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QSystemTrayIcon, QMenu
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QEvent, QPoint
 from PyQt6.QtGui import QPixmap, QIcon, QAction, QColor
 from doll.animation import DollAnimator
 
@@ -66,6 +66,7 @@ class OverlaySignals(QObject):
     hide_doll          = pyqtSignal()      # hide doll after short delay
     settings_applied   = pyqtSignal()      # settings were applied; re-register hotkeys etc.
     show_last_chat     = pyqtSignal()      # tray "Last chat" clicked
+    show_memory_viewer = pyqtSignal()      # tray "Memory…" clicked
 
 
 class DollOverlay(QMainWindow):
@@ -91,10 +92,12 @@ class DollOverlay(QMainWindow):
 
         self._build_window()
         self._build_tray()
+        self._build_icon_label()
 
         # Speech bubble
         from ui.bubble import SpeechBubble
         self._bubble = SpeechBubble()
+        self._bubble.set_companion_callback(self._on_bubble_dragged)
 
         # Connect signals
         signals.set_state.connect(self._on_state_changed)
@@ -107,6 +110,7 @@ class DollOverlay(QMainWindow):
         signals.bubble_chunk.connect(self._bubble.append_chunk)
         signals.bubble_finish.connect(self._bubble.finish)
         signals.bubble_clear.connect(self._bubble.clear)
+        signals.bubble_clear.connect(self._icon_label_clear)
         signals.show_doll.connect(self._show_doll)
         signals.hide_doll.connect(self._hide_doll)
 
@@ -125,9 +129,40 @@ class DollOverlay(QMainWindow):
             self.setFixedSize(0, 0)
             return
 
+    def _build_icon_label(self):
+        sz = config.DOLL_SIZE
+        margin = 20
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = screen.x() + screen.width()  - sz - margin
+        y = screen.y() + screen.height() - sz - margin
+
+        self._icon_label = QLabel(None)
+        self._icon_label.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self._icon_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._icon_label.setFixedSize(sz, sz)
+        self._icon_label.move(x, y)
+        self._icon_label.setScaledContents(True)
+        self._set_icon_pixmap("idle")
+        self._icon_label.show()
+        self._icon_label.setCursor(Qt.CursorShape.SizeAllCursor)
+        self._icon_label.installEventFilter(self)
+        self._icon_drag_offset = None
+
+        self._icon_hide_timer = QTimer(self)
+        self._icon_hide_timer.setSingleShot(True)
+        self._icon_hide_timer.setInterval(8_000)
+        self._icon_hide_timer.timeout.connect(self._icon_label.hide)
+
     def _build_tray(self):
-        icon_path = os.path.join(ASSETS_DIR, "idle.png")
-        icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+        self._state_icons: dict[str, QIcon] = {}
+        for state in ("idle", "listening", "thinking", "speaking"):
+            p = os.path.join(ASSETS_DIR, f"{state}.png")
+            self._state_icons[state] = QIcon(p) if os.path.exists(p) else QIcon()
+        icon = self._state_icons.get("idle", QIcon())
 
         self._tray = QSystemTrayIcon(icon, self)
         menu = QMenu()
@@ -140,11 +175,15 @@ class DollOverlay(QMainWindow):
 
         last_chat_action = QAction("Last chat", self)
         last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
+        memory_action = QAction("Memory…", self)
+        memory_action.triggered.connect(self.signals.show_memory_viewer.emit)
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(QApplication.quit)
         menu.addAction(last_chat_action)
+        menu.addSeparator()
+        menu.addAction(memory_action)
         menu.addSeparator()
         menu.addAction(settings_action)
         menu.addSeparator()
@@ -183,7 +222,18 @@ class DollOverlay(QMainWindow):
     # State machine
     # ------------------------------------------------------------------
 
+    def _set_icon_pixmap(self, state: str):
+        p = os.path.join(ASSETS_DIR, f"{state}.png")
+        if not os.path.exists(p):
+            p = os.path.join(ASSETS_DIR, "idle.png")
+        if os.path.exists(p):
+            self._icon_label.setPixmap(QPixmap(p))
+
     def _on_state_changed(self, state: str):
+        icon = self._state_icons.get(state) or self._state_icons.get("idle")
+        if icon:
+            self._tray.setIcon(icon)
+        self._set_icon_pixmap(state)
         if self._no_doll:
             return
         if self._use_vrm:
@@ -217,10 +267,15 @@ class DollOverlay(QMainWindow):
     # ------------------------------------------------------------------
 
     def _show_doll(self):
-        pass  # doll disabled
+        self._icon_hide_timer.stop()
+        self._icon_label.show()
 
     def _hide_doll(self):
-        pass  # doll disabled
+        self._icon_hide_timer.start()
+
+    def _icon_label_clear(self):
+        self._icon_hide_timer.stop()
+        self._icon_label.hide()
 
     # ------------------------------------------------------------------
     # Mouse
@@ -231,3 +286,38 @@ class DollOverlay(QMainWindow):
 
     def _on_click(self, event):
         pass
+
+    # ------------------------------------------------------------------
+    # Drag support (doll icon + bubble kept in sync)
+    # ------------------------------------------------------------------
+
+    def eventFilter(self, obj, event):
+        if obj is self._icon_label:
+            t = event.type()
+            if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._icon_drag_offset = self._icon_label.pos() - event.globalPosition().toPoint()
+                return True
+            elif t == QEvent.Type.MouseMove and self._icon_drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+                new_pos = event.globalPosition().toPoint() + self._icon_drag_offset
+                self._icon_label.move(new_pos)
+                self._on_doll_dragged(new_pos)
+                return True
+            elif t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                self._icon_drag_offset = None
+                return True
+        return super().eventFilter(obj, event)
+
+    def _on_doll_dragged(self, doll_pos: QPoint):
+        """Reposition bubble to stay to the left of the doll after a drag."""
+        sz = config.DOLL_SIZE
+        bw = self._bubble._bubble_w
+        bh = self._bubble._bubble_h
+        from ui.bubble import _TAIL_W
+        bx = doll_pos.x() - bw - _TAIL_W - 6
+        by = doll_pos.y() + (sz - bh) // 2
+        self._bubble.move(bx, by)
+
+    def _on_bubble_dragged(self, bubble_pos: QPoint):
+        """Reposition doll icon to stay to the right of the bubble after a drag."""
+        doll_pos = self._bubble.doll_pos_for_bubble(bubble_pos, config.DOLL_SIZE)
+        self._icon_label.move(doll_pos)

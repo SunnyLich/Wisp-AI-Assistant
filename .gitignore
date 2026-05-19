@@ -2,6 +2,11 @@
 private/
 doll/
 
+# Memory (vector store + fallback JSON — contains personal user data)
+memory/chroma/
+memory/facts_fallback.json
+# keep memory/.gitkeep so the folder is tracked
+
 # Python
 __pycache__/
 *.py[cod]

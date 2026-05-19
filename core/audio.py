@@ -111,14 +111,24 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
     threading.Thread(target=producer, daemon=True).start()
 
     # Consumer: feed chunks to sounddevice output stream
-    sample_rate = tts_module.SAMPLE_RATE
-    channels = tts_module.CHANNELS
+    # Derive playback params from the configured provider so that ElevenLabs
+    # (22050 Hz int16) and Cartesia (44100 Hz float32) both play correctly,
+    # regardless of which was used last.
+    provider = config.TTS_PROVIDER.lower()
+    if provider == "elevenlabs":
+        sample_rate = tts_module._EL_SAMPLE_RATE
+        channels    = tts_module.CHANNELS
+        dtype       = tts_module._EL_DTYPE
+    else:
+        sample_rate = tts_module.SAMPLE_RATE
+        channels    = tts_module.CHANNELS
+        dtype       = tts_module.DTYPE
 
     _audio_started = False
     with sd.RawOutputStream(
         samplerate=sample_rate,
         channels=channels,
-        dtype=tts_module.DTYPE,
+        dtype=dtype,
     ) as stream:
         while True:
             chunk = chunk_q.get()
