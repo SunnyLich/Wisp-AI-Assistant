@@ -26,32 +26,124 @@ _CONTEXT_TOOLS: list[dict] = [
         "max_uses": 2,
     },
     {
-        "name": "fetch_browser_page",
+        "name": "get_context",
         "description": (
-            "Fetch and read the plain-text content of a web page. "
-            "Use when the user asks about a specific URL or the current browser page."
+            "Retrieve additional context the user can see. "
+            "Pass a URL to fetch a web page; omit it to read the document "
+            "currently open in the foreground app "
+            "(Word, Excel, PowerPoint, PDF, LibreOffice, Notepad, etc.)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Full URL to fetch (must start with http:// or https://)",
+                    "description": (
+                        "A web page URL (http:// or https://) to fetch. "
+                        "Omit this field to read the active local document instead."
+                    ),
                 }
             },
-            "required": ["url"],
+            "required": [],
         },
     },
 ]
 
 
+def _log_context(reason: str, text: str, max_line: int = 120) -> None:
+    """Print the context block; each line is capped at max_line chars."""
+    import time
+    ts = time.strftime("%H:%M:%S")
+    def _trim(line: str) -> str:
+        return line if len(line) <= max_line else line[:max_line] + "…"
+    lines = [_trim(l) for l in text.splitlines() if l.strip()]
+    body = "\n  ".join(lines) if lines else "[empty]"
+    print(f"[llm {ts}] Context — {reason}:\n  {body}")
+
+
+def _read_document_file(path: str, max_chars: int = 8000) -> str:
+    """Read a local document file and return its plain text."""
+    import os
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext == ".docx":
+            from docx import Document  # type: ignore
+            doc = Document(path)
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        elif ext in (".xlsx", ".xls"):
+            import openpyxl  # type: ignore
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            parts = []
+            for sheet in wb.worksheets:
+                parts.append(f"[Sheet: {sheet.title}]")
+                for row in sheet.iter_rows(values_only=True):
+                    cells = [str(c) for c in row if c is not None]
+                    if cells:
+                        parts.append("\t".join(cells))
+            text = "\n".join(parts)
+        elif ext == ".pptx":
+            from pptx import Presentation  # type: ignore
+            prs = Presentation(path)
+            parts = []
+            for i, slide in enumerate(prs.slides, 1):
+                parts.append(f"[Slide {i}]")
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        for para in shape.text_frame.paragraphs:
+                            line = para.text.strip()
+                            if line:
+                                parts.append(line)
+            text = "\n".join(parts)
+        elif ext == ".pdf":
+            import pypdf  # type: ignore
+            reader = pypdf.PdfReader(path)
+            parts = []
+            for i, page in enumerate(reader.pages, 1):
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    parts.append(f"[Page {i}]\n{page_text.strip()}")
+            text = "\n\n".join(parts)
+        elif ext in (".odt", ".ods", ".odp"):
+            from odf import text as odf_text, teletype  # type: ignore
+            from odf.opendocument import load as odf_load  # type: ignore
+            doc = odf_load(path)
+            paragraphs = doc.getElementsByType(odf_text.P)
+            text = "\n".join(
+                teletype.extractText(p) for p in paragraphs
+                if teletype.extractText(p).strip()
+            )
+        elif ext in (".txt", ".md", ".csv", ".py", ".js", ".ts",
+                     ".json", ".xml", ".html", ".log"):
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        else:
+            return f"File type {ext!r} is not supported for reading."
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n[…truncated]"
+        _log_context(f"tool: read_active_document — read {path!r}", text)
+        return text
+    except Exception as e:
+        return f"Failed to read {path!r}: {e}"
+
+
 def _execute_context_tool(name: str, inputs: dict) -> str:
     """Execute a user-defined context tool and return a plain-text result."""
-    if name == "fetch_browser_page":
-        from core.context_fetcher import fetch_browser_content_for_tool
-        url = inputs.get("url", "")
-        result = fetch_browser_content_for_tool(url)
-        return result or f"Could not fetch content from {url!r}."
+    if name == "get_context":
+        url = inputs.get("url", "").strip()
+        if url:
+            from core.context_fetcher import fetch_browser_content_for_tool
+            result = fetch_browser_content_for_tool(url)
+            _log_context(
+                f"tool: get_context (browser) — {url!r}",
+                result or "",
+            )
+            return result or f"Could not fetch content from {url!r}."
+        else:
+            from core.context_fetcher import get_active_document_path
+            path = get_active_document_path()
+            if not path:
+                return "Could not determine the active document path from the window title."
+            return _read_document_file(path)
     return f"Unknown tool: {name!r}"
 
 # ------------------------------------------------------------------
@@ -221,6 +313,19 @@ def stream_response(
     Yields:
         Text chunks as they arrive from the API.
     """
+    import time
+    ts = time.strftime("%H:%M:%S")
+    if image_base64:
+        print(f"[llm {ts}] User message (vision): {user_message!r}")
+    else:
+        print(f"[llm {ts}] User message: {user_message!r}")
+
+    if ambient_context:
+        _log_context(
+            "ambient snapshot — captured at hotkey/voice trigger, injected into system prompt",
+            ambient_context,
+        )
+
     if image_base64:
         _check_vision_config()
         provider = config.VISION_LLM_PROVIDER.lower()
@@ -333,10 +438,41 @@ def _stream_anthropic(
                 yield text
         return
 
-    # --- Tool-enabled path: non-streaming loop, then yield final text ---
-    # Claude decides whether to call tools; common case is no calls at all.
+    # --- Tool-enabled path: stream first round for fast first-token ---
+    # If no tool is called (common case), text streams immediately.
+    # Only falls back to blocking create() if Claude actually invokes a tool.
     messages: list[dict] = [{"role": "user", "content": content}]
-    for _round in range(4):   # at most 3 tool rounds + 1 final answer
+
+    with client.messages.stream(
+        model=model,
+        max_tokens=512,
+        system=system,
+        messages=messages,
+        tools=_CONTEXT_TOOLS,
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+        final = stream.get_final_message()
+
+    if final.stop_reason != "tool_use":
+        return
+
+    # A tool was called — execute it and do followup round(s) non-streaming.
+    messages.append({"role": "assistant", "content": final.content})
+    for _round in range(3):
+        tool_results = []
+        for block in final.content:
+            if getattr(block, "type", "") == "tool_use":
+                result = _execute_context_tool(block.name, block.input or {})
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+        if not tool_results:
+            return
+        messages.append({"role": "user", "content": tool_results})
+
         response = client.messages.create(
             model=model,
             max_tokens=512,
@@ -344,36 +480,15 @@ def _stream_anthropic(
             messages=messages,
             tools=_CONTEXT_TOOLS,
         )
-
-        if response.stop_reason in ("end_turn", "max_tokens"):
-            for block in response.content:
-                if getattr(block, "type", "") == "text":
-                    text = getattr(block, "text", "")
-                    if text:
-                        yield text
+        for block in response.content:
+            if getattr(block, "type", "") == "text":
+                text = getattr(block, "text", "")
+                if text:
+                    yield text
+        if response.stop_reason != "tool_use":
             return
-
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
-            for block in response.content:
-                if getattr(block, "type", "") == "tool_use":
-                    result = _execute_context_tool(block.name, block.input or {})
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-            if tool_results:
-                messages.append({"role": "user", "content": tool_results})
-        else:
-            # Unexpected stop reason (e.g. server-side tool already resolved)
-            for block in response.content:
-                if getattr(block, "type", "") == "text":
-                    text = getattr(block, "text", "")
-                    if text:
-                        yield text
-            return
+        final = response
+        messages.append({"role": "assistant", "content": response.content})
 
 
 # ------------------------------------------------------------------
@@ -404,11 +519,43 @@ def stream_response_with_history(messages: list) -> Generator[str, None, None]:
     elif provider == "anthropic":
         client = _get_chat_anthropic_client()
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
-        turns = [m for m in messages if m["role"] != "system"]
+        _VALID_KEYS = {"role", "content"}
+        turns = [
+            {k: v for k, v in m.items() if k in _VALID_KEYS}
+            for m in messages if m["role"] != "system"
+        ]
         # Use TOOL_LLM_MODEL (Sonnet) — Haiku ignores web_search_20250305.
         tool_model = config.TOOL_LLM_MODEL
-        # Tool-enabled loop — Claude calls web_search / fetch_browser_page when it decides to.
-        for _round in range(4):
+        # Tool-enabled loop — stream first round, block only if a tool is actually called.
+        with client.messages.stream(
+            model=tool_model,
+            max_tokens=1024,
+            system=system,
+            messages=turns,
+            tools=_CONTEXT_TOOLS,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+            final = stream.get_final_message()
+
+        if final.stop_reason != "tool_use":
+            return
+
+        turns.append({"role": "assistant", "content": final.content})
+        for _round in range(3):
+            tool_results = []
+            for block in final.content:
+                if getattr(block, "type", "") == "tool_use":
+                    result = _execute_context_tool(block.name, block.input or {})
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+            if not tool_results:
+                return
+            turns.append({"role": "user", "content": tool_results})
+
             response = client.messages.create(
                 model=tool_model,
                 max_tokens=1024,
@@ -416,33 +563,14 @@ def stream_response_with_history(messages: list) -> Generator[str, None, None]:
                 messages=turns,
                 tools=_CONTEXT_TOOLS,
             )
-            if response.stop_reason in ("end_turn", "max_tokens"):
-                for block in response.content:
-                    if getattr(block, "type", "") == "text":
-                        text = getattr(block, "text", "")
-                        if text:
-                            yield text
+            for block in response.content:
+                if getattr(block, "type", "") == "text":
+                    text = getattr(block, "text", "")
+                    if text:
+                        yield text
+            if response.stop_reason != "tool_use":
                 return
-            if response.stop_reason == "tool_use":
-                turns.append({"role": "assistant", "content": response.content})
-                tool_results = []
-                for block in response.content:
-                    if getattr(block, "type", "") == "tool_use":
-                        result = _execute_context_tool(block.name, block.input or {})
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
-                if tool_results:
-                    turns.append({"role": "user", "content": tool_results})
-            else:
-                # Unexpected stop reason — yield whatever text is there and exit.
-                for block in response.content:
-                    if getattr(block, "type", "") == "text":
-                        text = getattr(block, "text", "")
-                        if text:
-                            yield text
-                return
+            final = response
+            turns.append({"role": "assistant", "content": response.content})
     else:
         raise ValueError(f"Unknown chat LLM provider: {provider}")

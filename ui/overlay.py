@@ -55,6 +55,7 @@ class OverlaySignals(QObject):
     show_text_popup    = pyqtSignal(str)   # full reply text
     show_intent_picker = pyqtSignal()      # show arrow-key intent chooser
     show_snip_overlay  = pyqtSignal()      # show full-screen region selector
+    bubble_listening   = pyqtSignal()      # show mic/recording indicator
     bubble_thinking    = pyqtSignal()      # show animated dots
     bubble_start_reveal = pyqtSignal()     # start word-by-word reveal synced to audio
     bubble_schedule_words = pyqtSignal(list, list)  # (words, start_ms) from Cartesia timestamps
@@ -99,6 +100,7 @@ class DollOverlay(QMainWindow):
         signals.set_state.connect(self._on_state_changed)
         signals.set_mouth_amp.connect(self._on_mouth_amp)
         signals.show_text_popup.connect(self._on_show_popup)
+        signals.bubble_listening.connect(self._bubble.show_listening)
         signals.bubble_thinking.connect(self._bubble.start_thinking)
         signals.bubble_start_reveal.connect(self._bubble.start_word_reveal)
         signals.bubble_schedule_words.connect(self._bubble.schedule_words)

@@ -165,6 +165,7 @@ class IntentOverlay(QWidget):
 
     def _enter_custom_mode(self):
         self._custom_mode = True
+        self._timer.stop()   # don't auto-close while the user is typing
         new_h = self._normal_h + _INPUT_EXTRA
         screen = QApplication.primaryScreen().geometry()
         self.setFixedSize(_W, new_h)

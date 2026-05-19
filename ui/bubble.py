@@ -53,6 +53,7 @@ class SpeechBubble(QWidget):
 
         # Word-reveal mode (syncs text display to audio playback speed)
         self._reveal_mode = False
+        self._finishing = False   # True after finish() while WPM timer still draining words
         self._pending_words: list[str] = []
         self._revealed_count = 0
         self._timestamp_mode = False      # True = driven by Cartesia timestamps
@@ -93,6 +94,22 @@ class SpeechBubble(QWidget):
     # ------------------------------------------------------------------
     # Public API (called via Qt signals from worker thread)
     # ------------------------------------------------------------------
+
+    def show_listening(self):
+        """Show a static mic indicator while the user holds F9."""
+        self._full_text = ""
+        self._lines = ["\u25cf Recording — release to send"]
+        self._thinking = False
+        self._pending_words = []
+        self._revealed_count = 0
+        self._reveal_mode = False
+        self._pre_audio_timestamps = []
+        self._reveal_timer.stop()
+        self._dot_timer.stop()
+        self._hide_timer.stop()
+        self.show()
+        self.raise_()
+        self.update()
 
     def start_thinking(self):
         """Show animated dots while waiting for the first LLM token."""
@@ -176,21 +193,25 @@ class SpeechBubble(QWidget):
             self._reveal_timer.start()
 
     def finish(self):
-        """Called when TTS playback finishes; starts hide countdown."""
+        """Called when TTS playback finishes; reveals remaining words then hides."""
         self._dot_timer.stop()
         if self._timestamp_mode:
             # Timestamp mode: all words already scheduled via QTimer.singleShot.
             self._reveal_timer.stop()
+            self._reveal_mode = False
+            self._timestamp_mode = False
+            self._hide_timer.start()
+        elif self._revealed_count < len(self._pending_words):
+            # WPM timer still has words to show — let it finish naturally, then hide.
+            self._finishing = True
+            self._reveal_mode = False
+            self._timestamp_mode = False
         else:
-            # WPM mode or no-reveal: flush all remaining words immediately so
-            # the full text is visible before the hide countdown starts.
+            # All words already revealed.
             self._reveal_timer.stop()
-            self._full_text = " ".join(self._pending_words)
-            self._rewrap()
-            self.update()
-        self._reveal_mode = False
-        self._timestamp_mode = False
-        self._hide_timer.start()
+            self._reveal_mode = False
+            self._timestamp_mode = False
+            self._hide_timer.start()
 
     def clear(self):
         """Hard reset — hide immediately."""
@@ -198,6 +219,7 @@ class SpeechBubble(QWidget):
         self._dot_timer.stop()
         self._reveal_timer.stop()
         self._reveal_mode = False
+        self._finishing = False
         self._timestamp_mode = False
         self._pending_words = []
         self._revealed_count = 0
@@ -221,7 +243,11 @@ class SpeechBubble(QWidget):
             self._full_text = " ".join(self._pending_words[:self._revealed_count])
             self._rewrap()
             self.update()
-        # Timer keeps running until finish() is called (which flushes remaining words)
+        if self._finishing and self._revealed_count >= len(self._pending_words):
+            self._reveal_timer.stop()
+            self._finishing = False
+            self._hide_timer.start()
+        # Timer keeps running until finish() is called (which sets _finishing)
 
     def _rewrap(self):
         """Word-wrap _full_text to _text_w; keep only the last BUBBLE_LINES lines."""

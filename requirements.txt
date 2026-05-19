@@ -31,4 +31,9 @@ psutil>=6.0.0             # process name / exe path lookup (context fetcher)
 watchdog>=4.0.0           # file system event watcher (context fetcher)
 requests>=2.32.0          # browser page fetching (context fetcher)
 beautifulsoup4>=4.12.0    # HTML→text extraction (context fetcher)
+python-docx>=1.1.0        # read .docx files for read_active_document tool
+openpyxl>=3.1.0           # read .xlsx files for read_active_document tool
+python-pptx>=1.0.0        # read .pptx files for read_active_document tool
+pypdf>=5.0.0              # read .pdf files for read_active_document tool
+odfpy>=1.4.1              # read LibreOffice .odt/.ods/.odp files
 # anthropic is already listed above — web search charges through that key

@@ -65,6 +65,7 @@ class ChatWindow(QWidget):
 
         self.setWindowTitle("Chat")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setStyleSheet(f"background: {_BG}; color: {_TEXT};")
         self.setMinimumSize(_W, _H)
         self.resize(_W, _H)

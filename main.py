@@ -30,6 +30,8 @@ class App:
             on_add_context=self._on_add_context,
             on_clear_context=self._on_clear_context,
             on_snip=self._on_snip_hotkey,
+            on_voice_start=self._on_voice_start,
+            on_voice_stop=self._on_voice_stop,
         )
         self._context_buffer: list[str] = []   # accumulated via Alt+Q
         self._last_reply: str = ""
@@ -169,6 +171,7 @@ class App:
         if config.DOLL_AUTO_HIDE:
             self._signals.show_doll.emit()
         self._signals.set_state.emit("listening")
+        self._signals.bubble_listening.emit()
 
     def _on_voice_stop(self):
         """F9 key-up — stop recording, transcribe, and query."""
@@ -186,7 +189,7 @@ class App:
                 self._signals.hide_doll.emit()
             return
         self._signals.set_state.emit("thinking")
-        self._query_and_speak(text, None)   # text IS the full user message
+        self._query_and_speak(text, (None, None))   # (None, None) = no screenshot, text IS the full prompt
 
     def _on_hotkey(self):
         # 1. Capture context FIRST — original app still has focus.

@@ -736,6 +736,74 @@ def fetch_browser_content_for_tool(url: str) -> str:
     return _fetch_browser_content(url)
 
 
+# Apps that open documents whose content Claude might want to read.
+# (suffix in window title → display label)
+_DOC_APP_TITLE_SUFFIXES: list[str] = [
+    " - Microsoft Word",
+    " - Word",
+    " - Microsoft Excel",
+    " - Excel",
+    " - Microsoft PowerPoint",
+    " - PowerPoint",
+    " - LibreOffice Writer",
+    " - LibreOffice Calc",
+    " - LibreOffice Impress",
+    " - Notepad",
+    " - Notepad++",
+    " - Visual Studio Code",
+]
+
+
+def get_active_document_path() -> str:
+    """
+    Try to find the full filesystem path of the document open in the
+    foreground application window.  Returns "" if not detectable.
+
+    Strategy:
+      1. Read the active window title.
+      2. Strip the app name suffix (e.g. " - Word") to get a filename.
+      3. Resolve Windows .lnk Recent-file entries and match by filename.
+    """
+    try:
+        win = _fetch_active_window()
+        title = win.title
+        if not title:
+            return ""
+
+        doc_name = None
+        for suffix in _DOC_APP_TITLE_SUFFIXES:
+            if title.endswith(suffix):
+                doc_name = title[: -len(suffix)].strip()
+                break
+
+        if not doc_name:
+            return ""
+
+        # Strip bracketed modifiers like "[Compatibility Mode]"
+        doc_name = re.sub(r"\s*\[.*?\]\s*$", "", doc_name).strip()
+        if not doc_name:
+            return ""
+
+        # If it looks like an absolute path already, trust it.
+        if os.path.isfile(doc_name):
+            return doc_name
+
+        # Match against recently opened files (resolved .lnk paths).
+        recent = _fetch_recent_files(30)
+        doc_lower = doc_name.lower()
+        for path in recent:
+            if os.path.basename(path).lower() == doc_lower:
+                return path
+        # Fuzzy: strip extension from both sides
+        doc_stem = os.path.splitext(doc_lower)[0]
+        for path in recent:
+            if os.path.splitext(os.path.basename(path))[0].lower() == doc_stem:
+                return path
+    except Exception:
+        pass
+    return ""
+
+
 def format_context_for_prompt(snapshot: ContextSnapshot) -> str:
     """
     Format a ContextSnapshot as a compact plain-text block suitable for
@@ -774,6 +842,20 @@ def format_context_for_prompt(snapshot: ContextSnapshot) -> str:
     if snapshot.fs_events:
         recent = snapshot.fs_events[-5:]
         lines.append("- Recent file changes: " + ", ".join(recent))
+
+    # If a document app is in the foreground, hint that its content is readable.
+    w = snapshot.active_window
+    if w.title:
+        for suffix in _DOC_APP_TITLE_SUFFIXES:
+            if w.title.endswith(suffix):
+                doc_name = re.sub(r"\s*\[.*?\]\s*$", "",
+                                  w.title[: -len(suffix)]).strip()
+                if doc_name:
+                    lines.append(
+                        f"- Open document: \"{doc_name}\" "
+                        "(call get_context tool to read full content)"
+                    )
+                break
 
     if not lines[1:]:  # nothing useful was added
         return ""
