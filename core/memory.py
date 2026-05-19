@@ -11,7 +11,7 @@ Short-term memory (STM):
 
 Long-term memory (LTM):
   - Atomic facts stored in a chromadb vector collection (local, file-backed).
-  - Categories: project_context | preferences | personal | open_threads.
+  - Categories: project_context | general.
   - Retrieval: top-k semantic search; result injected into every LLM call.
   - Writes: explicit ("remember that …") or via the periodic summariser.
   - Conflict: if a new fact is semantically similar (cosine distance < 0.15,
@@ -39,7 +39,7 @@ _MEMORY_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "memory")
 _CHROMA_DIR = os.path.join(_MEMORY_DIR, "chroma")
 _FALLBACK_PATH = os.path.join(_MEMORY_DIR, "facts_fallback.json")
 
-_CATEGORIES = ("project_context", "preferences", "personal", "open_threads")
+_CATEGORIES = ("project_context", "general")
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -49,10 +49,8 @@ _SUMMARIZER_PROMPT = """\
 You are extracting facts for a personal memory system.
 
 Extract ONLY facts that fit these categories:
-- project_context: things the user is working on, projects, goals, deadlines
-- preferences: how the user likes things — language, tools, communication style, format
-- personal: personal facts about the user: location, background, name, relationships
-- open_threads: open questions or tasks the user mentioned but has not resolved
+- project_context: things the user is working on, projects, goals, tasks, deadlines
+- general: everything else — preferences, personal facts, background, open questions
 
 Rules:
 - Each fact must be a single atomic sentence, under 20 words.
@@ -66,7 +64,7 @@ Conversation turns:
 {turns}
 
 Return ONLY a JSON array, no other text:
-[{{"text": "...", "category": "project_context|preferences|personal|open_threads"}}, ...]"""
+[{{"text": "...", "category": "project_context|general"}}, ...]"""
 
 _COMPRESSION_PROMPT = """\
 Compress the following conversation turns into a concise summary (2–3 sentences maximum) \
@@ -87,14 +85,6 @@ _CAT_KEYWORDS: dict[str, list[str]] = {
         "working on", "project", "deadline", "goal", "building",
         "developing", "task", "sprint", "release",
     ],
-    "preferences": [
-        "prefer", "like", "don't like", "want", "dislike",
-        "favourite", "always use", "never use", "rather", "instead of",
-    ],
-    "open_threads": [
-        "need to", "should", "todo", "open question",
-        "follow up", "still need", "haven't", "not done",
-    ],
 }
 
 
@@ -103,7 +93,7 @@ def _infer_category(text: str) -> str:
     for cat, kws in _CAT_KEYWORDS.items():
         if any(kw in t for kw in kws):
             return cat
-    return "personal"
+    return "general"
 
 
 def _now_iso() -> str:
@@ -395,7 +385,7 @@ class MemoryManager:
             if isinstance(item, dict) and item.get("text"):
                 cat = item.get("category", "personal")
                 if cat not in _CATEGORIES:
-                    cat = "personal"
+                    cat = "general"
                 self._upsert_fact(item["text"], cat, source="summarizer")
                 count += 1
 
@@ -578,7 +568,7 @@ class MemoryManager:
     def add_fact_manual(self, text: str, category: str) -> None:
         """Add a fact directly from the viewer (manual entry)."""
         if category not in _CATEGORIES:
-            category = "personal"
+            category = "general"
         self._upsert_fact(text.strip(), category, source="manual")
 
     def _fallback_delete(self, fact_id: str) -> None:

@@ -1,5 +1,5 @@
 # --- Input capture ---
-keyboard>=0.13.5          # global hotkeys
+pynput>=1.7.7             # global hotkeys (no admin rights required on Windows)
 pyperclip>=1.11.0         # clipboard access
 mss>=10.2.0               # fast screen capture
 Pillow>=12.2.0            # image handling

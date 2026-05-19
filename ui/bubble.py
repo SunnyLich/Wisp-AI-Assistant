@@ -93,6 +93,7 @@ class SpeechBubble(QWidget):
         # Drag support
         self._drag_offset = None          # QPoint while dragging
         self._companion_callback = None   # called with new QPoint after each drag move
+        self._hide_callback = None        # called when this widget hides (for icon sync)
 
     # ------------------------------------------------------------------
     # Drag API
@@ -101,6 +102,15 @@ class SpeechBubble(QWidget):
     def set_companion_callback(self, fn):
         """Register a callback(new_bubble_pos: QPoint) called while dragging."""
         self._companion_callback = fn
+
+    def set_hide_callback(self, fn):
+        """Register a zero-argument callback called whenever this widget hides."""
+        self._hide_callback = fn
+
+    def hideEvent(self, event):  # noqa: N802
+        super().hideEvent(event)
+        if self._hide_callback:
+            self._hide_callback()
 
     def doll_pos_for_bubble(self, bubble_pos, doll_size: int):
         """Given this bubble's top-left position, return where the doll icon should sit."""

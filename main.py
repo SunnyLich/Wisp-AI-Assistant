@@ -23,24 +23,49 @@ from ui.chat_window import ChatWindow
 # Helpers
 # ---------------------------------------------------------------------------
 
-_REMEMBER_PREFIXES = (
-    "remember that ",
-    "remember: ",
-    "please remember ",
-    "please remember that ",
+import re as _re
+
+# Matches only unambiguous imperative memory commands at the START of a message.
+# The (?=[a-zA-Z]) after ^ explicitly rejects messages that begin with a
+# quotation mark, symbol, or any non-letter character before the trigger word.
+# Also deliberately excludes: "I remember...", "do you remember...?",
+# "can you remember...", "help me remember..." — those are conversation, not storage.
+_REMEMBER_RE = _re.compile(
+    r"""^(?=[a-zA-Z])(?:
+        (?:please\s+)?remember\s+(?:that\s+|this[:\-\s]+|these[:\-\s]+)
+        |(?:please\s+)?remember\s*[:\-]\s*
+        |(?:please\s+)?note\s+that\s+
+        |(?:please\s+)?note\s*[:\-]\s*
+        |save\s+(?:this|that)\s*[:\-\s]+
+        |keep\s+in\s+mind\s+(?:that\s+)?
+        |keep\s+in\s+mind\s*[:\-]\s*
+        |don'?t\s+forget\s+(?:that\s+)?
+        |make\s+(?:a\s+)?note\s+(?:that\s+|of\s+)?
+        |make\s+(?:a\s+)?note\s*[:\-]\s*
+        |store\s+(?:this|that)\s*[:\-\s]+
+    )""",
+    _re.IGNORECASE | _re.VERBOSE,
 )
 
 
 def _extract_remember_fact(text: str) -> str | None:
     """
-    If the user's message is an explicit memory command ("remember that X"),
-    return the fact text stripped of the prefix.  Otherwise return None.
+    Return the fact text if the message is an imperative memory command,
+    otherwise None.
+
+    Triggers: "remember that X", "remember: X", "note that X", "note: X",
+              "keep in mind X", "don't forget X", "make a note of X",
+              "save this: X", "store that: X"  (and "please ..." variants).
+
+    Does NOT trigger: "I remember X", "do you remember X?",
+                      "can you remember X", "help me remember X".
     """
     t = text.strip()
-    lower = t.lower()
-    for prefix in _REMEMBER_PREFIXES:
-        if lower.startswith(prefix):
-            return t[len(prefix):].strip()
+    m = _REMEMBER_RE.match(t)
+    if m:
+        fact = t[m.end():].strip()
+        if fact:
+            return fact
     return None
 
 

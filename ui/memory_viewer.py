@@ -39,12 +39,10 @@ from PyQt6.QtWidgets import (
 if TYPE_CHECKING:
     from core.memory import MemoryManager
 
-_CATEGORIES = ("project_context", "preferences", "personal", "open_threads")
+_CATEGORIES = ("project_context", "general")
 _CAT_LABELS = {
-    "project_context": "Projects & Goals",
-    "preferences":     "Preferences",
-    "personal":        "Personal",
-    "open_threads":    "Open Threads",
+    "project_context": "Project",
+    "general":         "General",
 }
 
 
@@ -70,7 +68,7 @@ class _FactRow(QWidget):
         self._cat_combo = QComboBox()
         for cat in _CATEGORIES:
             self._cat_combo.addItem(_CAT_LABELS[cat], userData=cat)
-        idx = _CATEGORIES.index(fact.get("category", "personal"))
+        idx = _CATEGORIES.index(fact.get("category", "general"))
         self._cat_combo.setCurrentIndex(idx)
         self._cat_combo.setFixedWidth(160)
         self._cat_combo.currentIndexChanged.connect(self._on_category_changed)
@@ -196,9 +194,9 @@ class MemoryPanel(QWidget):
 
         grouped: dict[str, list[dict]] = {cat: [] for cat in _CATEGORIES}
         for fact in facts:
-            cat = fact.get("category", "personal")
+            cat = fact.get("category", "general")
             if cat not in grouped:
-                cat = "personal"
+                cat = "general"
             grouped[cat].append(fact)
 
         container = QWidget()
@@ -226,7 +224,7 @@ class MemoryPanel(QWidget):
         if not has_any:
             empty = QLabel(
                 "No facts stored yet.\n"
-                "Say "remember that…" or wait for the periodic consolidation."
+                'Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.'
             )
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet("color: #999; font-style: italic;")

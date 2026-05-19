@@ -8,7 +8,7 @@ or cancelled on Escape / zero-size drag.
 """
 from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QApplication, QRubberBand
-from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint, QSize, QTimer
 from PyQt6.QtGui import QPainter, QColor, QFont, QCursor
 
 _DIM_ALPHA = 110   # overlay darkness 0–255
@@ -108,6 +108,15 @@ class SnipOverlay(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.raise_()
+        self.activateWindow()
+        self.setFocus()
+        # Defer the keyboard grab: on Windows, grabKeyboard() only works after the
+        # window is truly in the foreground.  A zero-delay timer fires after the
+        # current event-loop iteration, by which time the OS has processed Show.
+        QTimer.singleShot(0, self._grab_keyboard)
+
+    def _grab_keyboard(self):
         self.raise_()
         self.activateWindow()
         self.setFocus()

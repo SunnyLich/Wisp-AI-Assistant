@@ -98,6 +98,7 @@ class DollOverlay(QMainWindow):
         from ui.bubble import SpeechBubble
         self._bubble = SpeechBubble()
         self._bubble.set_companion_callback(self._on_bubble_dragged)
+        self._bubble.set_hide_callback(self._on_bubble_hidden)
 
         # Connect signals
         signals.set_state.connect(self._on_state_changed)
@@ -154,7 +155,7 @@ class DollOverlay(QMainWindow):
 
         self._icon_hide_timer = QTimer(self)
         self._icon_hide_timer.setSingleShot(True)
-        self._icon_hide_timer.setInterval(8_000)
+        self._icon_hide_timer.setInterval(30_000)  # safety backstop only — icon normally hides via _on_bubble_hidden
         self._icon_hide_timer.timeout.connect(self._icon_label.hide)
 
     def _build_tray(self):
@@ -271,7 +272,15 @@ class DollOverlay(QMainWindow):
         self._icon_label.show()
 
     def _hide_doll(self):
+        # Start a backstop timer — the icon will normally be hidden in sync with
+        # the bubble via _on_bubble_hidden, but this covers cases where the bubble
+        # is never shown (e.g. empty voice transcription).
         self._icon_hide_timer.start()
+
+    def _on_bubble_hidden(self):
+        """Called by SpeechBubble.hideEvent — hides the icon in lockstep with the bubble."""
+        self._icon_hide_timer.stop()
+        self._icon_label.hide()
 
     def _icon_label_clear(self):
         self._icon_hide_timer.stop()
