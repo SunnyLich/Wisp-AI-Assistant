@@ -49,6 +49,7 @@ class SpeechBubble(QWidget):
         self._lines: list[str] = []
         self._thinking = False
         self._dot_count = 1
+        self._last_chunk_ended_with_space = True  # guards mid-word chunk merging
 
         # Word-reveal mode (syncs text display to audio playback speed)
         self._reveal_mode = False
@@ -159,6 +160,7 @@ class SpeechBubble(QWidget):
         self._lines = []
         self._thinking = True
         self._dot_count = 1
+        self._last_chunk_ended_with_space = True
         self._pending_words = []
         self._revealed_count = 0
         self._reveal_mode = False
@@ -222,10 +224,22 @@ class SpeechBubble(QWidget):
 
     def append_chunk(self, chunk: str):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
+        if not chunk:
+            return
         if self._thinking:
             self._thinking = False
             self._dot_timer.stop()
-        self._pending_words.extend(chunk.split())
+        new_words = chunk.split()
+        if new_words:
+            # If this chunk starts mid-word (no leading space) and the previous
+            # chunk also ended mid-word (no trailing space), merge into last word.
+            if (self._pending_words
+                    and not chunk[0].isspace()
+                    and not self._last_chunk_ended_with_space):
+                self._pending_words[-1] += new_words[0]
+                new_words = new_words[1:]
+            self._pending_words.extend(new_words)
+        self._last_chunk_ended_with_space = chunk[-1].isspace()
         # Kick off WPM reveal on first token so words always appear gradually,
         # even when TTS=none.  start_word_reveal() / schedule_words() will take
         # over once audio actually starts.
@@ -263,6 +277,7 @@ class SpeechBubble(QWidget):
         self._reveal_mode = False
         self._finishing = False
         self._timestamp_mode = False
+        self._last_chunk_ended_with_space = True
         self._pending_words = []
         self._revealed_count = 0
         self._pre_audio_timestamps = []

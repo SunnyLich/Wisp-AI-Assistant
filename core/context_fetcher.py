@@ -111,8 +111,14 @@ _REDACT_PATTERNS: list[tuple[re.Pattern, str]] = [
     # Bearer tokens in Authorization headers / config
     (re.compile(r'(?i)\bBearer\s+[A-Za-z0-9\-_.~+/=]{20,}'), "[BEARER_TOKEN]"),
     # Generic long hex / base64 tokens that look like secrets (32+ chars)
-    (re.compile(r'(?i)(?:token|api[_\-]?key|access[_\-]?key|secret[_\-]?key|client[_\-]?secret)'
-                r'[\s]*[:=][\s]*[\'"]?([A-Za-z0-9\-_./+]{32,})[\'"]?'), "[API_KEY]"),
+    (re.compile(
+        r'(?i)(?:token|api[_\-]?key|access[_\-]?key|secret[_\-]?key|client[_\-]?secret)'
+        r'[\s]*[:=][\s]*(?:'
+        r'[\'"][A-Za-z0-9\-_./+]{20,}[\'"]'
+        r'|'
+        r'[A-Za-z0-9\-_./+]{32,}(?=$|[\s,#;\]}])'
+        r')'
+    ), "[API_KEY]"),
     # password / passwd / secret assignments  (key: value  or  key=value)
     (re.compile(r'(?i)(?:password|passwd|pwd|secret)\s*[:=]\s*\S+'), "[REDACTED_CREDENTIAL]"),
 ]
@@ -153,6 +159,7 @@ def get_temp_path() -> str:
 _fs_events_buf: deque[str] = deque(maxlen=30)
 _fs_events_lock = Lock()
 _fs_observer = None   # watchdog Observer | False
+_context_window: "WindowInfo | None" = None  # window captured at last fetch_and_save()
 
 
 def start_fs_watcher(paths: list[str] | None = None) -> None:
@@ -693,11 +700,14 @@ def fetch_and_save(
         online_query:         If provided, run a DuckDuckGo search and include
                               up to 5 results in the snapshot.
     """
+    global _context_window
+
     # Lazily start fs watcher on first fetch
     if _fs_observer is None:
         start_fs_watcher()
 
     active_win = _fetch_active_window()
+    _context_window = active_win  # cache so get_active_document_path() can use it after focus changes
 
     browser_content = ""
     if fetch_browser_content and active_win.url:
@@ -739,50 +749,417 @@ def fetch_browser_content_for_tool(url: str) -> str:
 # Apps that open documents whose content Claude might want to read.
 # (suffix in window title → display label)
 _DOC_APP_TITLE_SUFFIXES: list[str] = [
+    # Microsoft Office
     " - Microsoft Word",
     " - Word",
     " - Microsoft Excel",
     " - Excel",
     " - Microsoft PowerPoint",
     " - PowerPoint",
+    " - Microsoft Publisher",
+    " - Publisher",
+    " - Microsoft Visio",
+    " - Visio",
+    # LibreOffice / WPS Office
     " - LibreOffice Writer",
     " - LibreOffice Calc",
     " - LibreOffice Impress",
+    " - LibreOffice Draw",
+    " - LibreOffice Math",
+    " - WPS Writer",
+    " - WPS Spreadsheet",
+    " - WPS Presentation",
+    # Plain text / Markdown editors
     " - Notepad",
     " - Notepad++",
+    " - Sublime Text",
+    " - Typora",
+    " - Zettlr",
+    " - Mark Text",
+    " - GNU Emacs",
+    " - GVIM",
+    # PDF viewers / editors
+    " - Adobe Acrobat",
+    " - Adobe Reader",
+    " - Foxit PDF Reader",
+    " - Foxit Reader",
+    " - PDF-XChange Editor",
+    " - PDF-XChange Viewer",
+    " - SumatraPDF",
+    # Image / design
+    " - Paint.NET",
+    " - Krita",
+    " - Inkscape",
+    " - GNU Image Manipulation Program",  # GIMP
+    " - draw.io",
+    " - Blender",
+    # VS Code family  (Insiders must come before plain VS Code)
+    " - Visual Studio Code - Insiders",
     " - Visual Studio Code",
+    " - Cursor",
+    " - Windsurf",
+    # JetBrains IDEs use en-dash (\u2013) as separator
+    " \u2013 PyCharm",
+    " \u2013 IntelliJ IDEA",
+    " \u2013 WebStorm",
+    " \u2013 GoLand",
+    " \u2013 Rider",
+    " \u2013 CLion",
+    " \u2013 RubyMine",
+    " \u2013 PhpStorm",
+    " \u2013 DataGrip",
+    " \u2013 Android Studio",
 ]
 
+# Maps VS Code-like process names to their storage.json path under %APPDATA%.
+_VSCODE_LIKE_STORAGE: dict[str, str] = {
+    "code.exe":            r"Code\User\globalStorage\storage.json",
+    "code - insiders.exe": r"Code - Insiders\User\globalStorage\storage.json",
+    "cursor.exe":          r"Cursor\User\globalStorage\storage.json",
+    "windsurf.exe":        r"Windsurf\User\globalStorage\storage.json",
+}
 
-def get_active_document_path() -> str:
+_JETBRAINS_PROCS = frozenset({
+    "pycharm64.exe", "pycharm.exe",
+    "idea64.exe",    "idea.exe",
+    "webstorm64.exe", "webstorm.exe",
+    "goland64.exe",  "goland.exe",
+    "clion64.exe",   "clion.exe",
+    "rider64.exe",   "rider.exe",
+    "rubymine64.exe", "rubymine.exe",
+    "phpstorm64.exe", "phpstorm.exe",
+    "datagrip64.exe", "datagrip.exe",
+    "studio64.exe",   # Android Studio
+})
+
+_VSCODE_TITLE_MARKERS: tuple[str, ...] = (
+    " - Visual Studio Code - Insiders",
+    " - Visual Studio Code",
+    " - Cursor",
+    " - Windsurf",
+)
+
+
+def _decode_vscode_uri(uri: str) -> str:
+    """Convert a VS Code file:/// URI to a Windows filesystem path."""
+    from urllib.parse import unquote
+    if not uri.startswith("file:///"):
+        return ""
+    path = unquote(uri[8:]).replace("/", os.sep)
+    # Normalize drive letter: "c:" -> "C:"
+    if len(path) >= 2 and path[1] == ":":
+        path = path[0].upper() + path[1:]
+    return path
+
+
+def _vscode_find_file(filename: str, workspace_hint: str = "", storage_path: str = "") -> str:
     """
-    Try to find the full filesystem path of the document open in the
-    foreground application window.  Returns "" if not detectable.
+    Resolve a bare filename via a VS Code-like storage.json.
+    Works for VS Code, VS Code Insiders, Cursor, Windsurf, and any other
+    Electron editor that uses the same storage format.
+    *storage_path* should be the full path to storage.json; defaults to the
+    standard VS Code location when omitted.
+    """
+    import json
 
-    Strategy:
-      1. Read the active window title.
-      2. Strip the app name suffix (e.g. " - Word") to get a filename.
-      3. Resolve Windows .lnk Recent-file entries and match by filename.
+    if not storage_path:
+        storage_path = os.path.join(
+            os.environ.get("APPDATA", ""), "Code", "User", "globalStorage", "storage.json"
+        )
+    try:
+        with open(storage_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return ""
+
+    history = data.get("history.recentlyOpenedPathsList", {})
+    fn_lower = filename.lower()
+
+    # 1. Exact match against recently opened files.
+    for item in history.get("files2", []):
+        uri = item.get("fileUri", "")
+        if uri:
+            path = _decode_vscode_uri(uri)
+            if path and os.path.basename(path).lower() == fn_lower:
+                return path
+
+    # 2. Search within recently opened workspace folders.
+    folders: list[str] = []
+    for item in history.get("workspaces3", []):
+        uri = item.get("folderUri", "")
+        if uri:
+            path = _decode_vscode_uri(uri)
+            if path and os.path.isdir(path):
+                folders.append(path)
+
+    if not folders:
+        return ""
+
+    # Prioritise the folder whose name matches the workspace hint from the title.
+    if workspace_hint:
+        hint_lower = workspace_hint.lower()
+        folders.sort(key=lambda p: 0 if os.path.basename(p).lower() == hint_lower else 1)
+
+    return _search_filename_in_folders(filename, folders)
+
+
+def _vscode_running_roots(process_name: str, workspace_hint: str = "") -> list[str]:
+    """Collect plausible workspace roots from running VS Code-like processes."""
+    roots: list[str] = []
+    seen: set[str] = set()
+
+    try:
+        import psutil  # type: ignore
+
+        for proc in psutil.process_iter(["name", "cwd", "cmdline"]):
+            try:
+                if (proc.info.get("name") or "").lower() != process_name.lower():
+                    continue
+
+                candidates: list[str] = []
+
+                cwd = (proc.info.get("cwd") or "").strip()
+                if cwd:
+                    candidates.append(cwd)
+
+                for arg in proc.info.get("cmdline") or []:
+                    if not isinstance(arg, str):
+                        continue
+                    arg = arg.strip().strip('"')
+                    if not arg:
+                        continue
+                    if os.path.isdir(arg):
+                        candidates.append(arg)
+                    elif arg.lower().endswith(".code-workspace") and os.path.isfile(arg):
+                        candidates.append(os.path.dirname(arg))
+
+                for candidate in candidates:
+                    norm = os.path.normpath(candidate)
+                    if not os.path.isdir(norm) or norm in seen:
+                        continue
+                    seen.add(norm)
+                    roots.append(norm)
+            except Exception:
+                pass
+    except Exception:
+        return []
+
+    if workspace_hint:
+        hint_lower = workspace_hint.lower()
+        roots.sort(key=lambda p: 0 if os.path.basename(p).lower() == hint_lower else 1)
+
+    return roots
+
+
+def _search_filename_in_folders(filename: str, folders: list[str], max_depth: int = 5) -> str:
+    """Search a bare filename under candidate folders up to *max_depth* deep."""
+    import glob
+
+    for folder in folders[:8]:
+        for depth in range(max_depth):
+            pattern = os.path.join(glob.escape(folder), *(["*"] * depth), filename)
+            matches = glob.glob(pattern)
+            if matches:
+                return matches[0]
+
+    return ""
+
+
+def _jetbrains_find_file(filename: str, project_hint: str = "") -> str:
+    """
+    Resolve a filename using JetBrains IDE recent project directories.
+    Reads recentProjectDirectories.xml from all installed JetBrains products
+    (and Android Studio under %APPDATA%\\Google\\AndroidStudio*).
+    """
+    import glob as _glob
+    import xml.etree.ElementTree as ET
+
+    appdata = os.environ.get("APPDATA", "")
+    xml_paths: list[str] = []
+
+    jb_base = os.path.join(appdata, "JetBrains")
+    if os.path.isdir(jb_base):
+        xml_paths.extend(
+            _glob.glob(os.path.join(jb_base, "*", "options", "recentProjectDirectories.xml"))
+        )
+
+    google_base = os.path.join(appdata, "Google")
+    if os.path.isdir(google_base):
+        xml_paths.extend(
+            _glob.glob(os.path.join(google_base, "AndroidStudio*", "options", "recentProjectDirectories.xml"))
+        )
+
+    project_dirs: list[str] = []
+    home = os.path.expanduser("~")
+    for xml_path in xml_paths:
+        try:
+            tree = ET.parse(xml_path)
+            for option in tree.iter("option"):
+                val = option.get("value", "")
+                if val:
+                    val = val.replace("$USER_HOME$", home)
+                    val = os.path.normpath(val)
+                    if os.path.isdir(val) and val not in project_dirs:
+                        project_dirs.append(val)
+        except Exception:
+            pass
+
+    if not project_dirs:
+        return ""
+
+    if project_hint:
+        hint_lower = project_hint.lower()
+        project_dirs.sort(
+            key=lambda p: 0 if os.path.basename(p).lower() == hint_lower else 1
+        )
+
+    import glob
+    for proj_dir in project_dirs[:8]:
+        for depth in range(5):
+            pattern = os.path.join(glob.escape(proj_dir), *(["*"] * depth), filename)
+            matches = glob.glob(pattern)
+            if matches:
+                return matches[0]
+
+    return ""
+
+
+def _obsidian_find_note(stripped_title: str) -> str:
+    """
+    Resolve an Obsidian note to a filesystem path.
+    *stripped_title* is the window title with the " - Obsidian vX.Y.Z" suffix
+    already removed, e.g. "Note Name" or "Note Name - Vault Name".
+    Reads vault paths from %APPDATA%\\obsidian\\obsidian.json.
+    """
+    import json
+    import glob
+
+    # Split "Note Name - Vault Name" from the right so note names with " - "
+    # in them are preserved correctly.
+    parts = stripped_title.rsplit(" - ", 1)
+    note_name = parts[0].strip()
+    vault_hint = parts[1].strip() if len(parts) > 1 else ""
+
+    if not note_name:
+        return ""
+
+    storage = os.path.join(os.environ.get("APPDATA", ""), "obsidian", "obsidian.json")
+    try:
+        with open(storage, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return ""
+
+    vaults = [
+        v["path"] for v in data.get("vaults", {}).values()
+        if isinstance(v, dict) and "path" in v and os.path.isdir(v["path"])
+    ]
+    if not vaults:
+        return ""
+
+    if vault_hint:
+        hint_lower = vault_hint.lower()
+        vaults.sort(key=lambda p: 0 if os.path.basename(p).lower() == hint_lower else 1)
+
+    for vault in vaults[:5]:
+        for ext in (".md", ".txt", ""):
+            fn = note_name + ext if ext else note_name
+            for depth in range(5):
+                pattern = os.path.join(glob.escape(vault), *(["*"] * depth), fn)
+                matches = glob.glob(pattern)
+                if matches:
+                    return matches[0]
+
+    return ""
+
+
+def _extract_doc_name_from_window(win: WindowInfo) -> str:
+    """Extract the document portion of a supported app window title."""
+    title = (win.title or "").strip()
+    if not title:
+        return ""
+
+    proc_lower = (win.process_name or "").lower()
+
+    if proc_lower == "obsidian.exe":
+        return re.sub(
+            r"\s*-\s*Obsidian\s+v[\d.]+.*$", "", title, flags=re.IGNORECASE
+        ).strip()
+
+    if proc_lower in _VSCODE_LIKE_STORAGE:
+        for marker in _VSCODE_TITLE_MARKERS:
+            idx = title.find(marker)
+            if idx != -1:
+                return title[:idx].strip()
+
+    for suffix in _DOC_APP_TITLE_SUFFIXES:
+        if title.endswith(suffix):
+            return title[: -len(suffix)].strip()
+
+    return ""
+
+
+def _resolve_doc_path(win: WindowInfo) -> str:
+    """
+    Internal: resolve the open-document path from a WindowInfo.
+    Extracted so it can be called for any window, focused or not.
     """
     try:
-        win = _fetch_active_window()
         title = win.title
         if not title:
             return ""
 
-        doc_name = None
-        for suffix in _DOC_APP_TITLE_SUFFIXES:
-            if title.endswith(suffix):
-                doc_name = title[: -len(suffix)].strip()
-                break
+        proc_lower = win.process_name.lower()
+
+        doc_name = _extract_doc_name_from_window(win)
 
         if not doc_name:
             return ""
+
+        if proc_lower == "obsidian.exe":
+            return _obsidian_find_note(doc_name)
 
         # Strip bracketed modifiers like "[Compatibility Mode]"
         doc_name = re.sub(r"\s*\[.*?\]\s*$", "", doc_name).strip()
         if not doc_name:
             return ""
+
+        # VS Code and forks (Cursor, Windsurf, …) — resolve via their storage.json.
+        if proc_lower in _VSCODE_LIKE_STORAGE:
+            doc_name = doc_name.lstrip("\u25cf\u2022").strip()  # strip ● unsaved marker
+            workspace_hint = ""
+            if " - " in doc_name:
+                parts = doc_name.split(" - ", 1)
+                doc_name = parts[0].strip()
+                workspace_hint = re.sub(r"\s*\(Workspace\)\s*$", "", parts[1]).strip()
+            if not doc_name:
+                return ""
+            storage_path = os.path.join(
+                os.environ.get("APPDATA", ""), _VSCODE_LIKE_STORAGE[proc_lower]
+            )
+            vscode_path = _vscode_find_file(doc_name, workspace_hint, storage_path)
+            if not vscode_path:
+                vscode_path = _search_filename_in_folders(
+                    doc_name,
+                    _vscode_running_roots(proc_lower, workspace_hint),
+                )
+            if vscode_path:
+                return vscode_path
+            # Fall through to generic recent-files lookup below
+
+        # JetBrains IDEs — title uses en-dash: "filename \u2013 project \u2013 IDE".
+        elif proc_lower in _JETBRAINS_PROCS:
+            project_hint = ""
+            if "\u2013" in doc_name:
+                parts = doc_name.split("\u2013", 1)
+                doc_name = parts[0].strip()
+                project_hint = parts[1].strip()
+            if not doc_name:
+                return ""
+            jb_path = _jetbrains_find_file(doc_name, project_hint)
+            if jb_path:
+                return jb_path
+            # Fall through to generic recent-files lookup below
 
         # If it looks like an absolute path already, trust it.
         if os.path.isfile(doc_name):
@@ -802,6 +1179,82 @@ def get_active_document_path() -> str:
     except Exception:
         pass
     return ""
+
+
+def get_active_document_path() -> str:
+    """
+    Try to find the full filesystem path of the document open in the
+    foreground application window.  Returns "" if not detectable.
+
+    Uses the window captured at hotkey time so the overlay's own window
+    does not shadow the user's document after focus transfer.
+    """
+    win = _context_window if _context_window is not None else _fetch_active_window()
+    return _resolve_doc_path(win)
+
+
+def _enumerate_open_doc_windows() -> list[WindowInfo]:
+    """
+    Return a WindowInfo for every visible top-level window whose title matches
+    a known doc-app suffix or the Obsidian version pattern.
+    Uses EnumWindows so it covers background windows regardless of focus.
+    """
+    results: list[WindowInfo] = []
+    WNDENUMPROC = ctypes.WINFUNCTYPE(
+        ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
+    )
+
+    def _callback(hwnd, _):
+        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+            return True
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd) + 1
+        if length <= 1:
+            return True
+        buf = ctypes.create_unicode_buffer(length)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length)
+        title = buf.value.strip()
+        if not title:
+            return True
+        pid = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        proc_name = ""
+        try:
+            import psutil
+            proc_name = psutil.Process(pid.value).name()
+        except Exception:
+            pass
+        win = WindowInfo(title=title, process_name=proc_name)
+        if _extract_doc_name_from_window(win):
+            results.append(win)
+        return True
+
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(_callback), 0)
+    return results
+
+
+def get_all_open_document_paths(max_docs: int = 5) -> list[str]:
+    """
+    Resolve filesystem paths for ALL open doc-app windows, focused or not.
+    Returns a deduplicated list of up to *max_docs* paths, with the window
+    that had focus at hotkey time listed first (if resolvable).
+    """
+    # Put the hotkey-time window first so it has priority.
+    primary = get_active_document_path()
+    seen: set[str] = set()
+    paths: list[str] = []
+    if primary:
+        seen.add(primary)
+        paths.append(primary)
+
+    for win in _enumerate_open_doc_windows():
+        if len(paths) >= max_docs:
+            break
+        path = _resolve_doc_path(win)
+        if path and path not in seen:
+            seen.add(path)
+            paths.append(path)
+
+    return paths
 
 
 def format_context_for_prompt(snapshot: ContextSnapshot) -> str:
@@ -844,18 +1297,14 @@ def format_context_for_prompt(snapshot: ContextSnapshot) -> str:
         lines.append("- Recent file changes: " + ", ".join(recent))
 
     # If a document app is in the foreground, hint that its content is readable.
-    w = snapshot.active_window
-    if w.title:
-        for suffix in _DOC_APP_TITLE_SUFFIXES:
-            if w.title.endswith(suffix):
-                doc_name = re.sub(r"\s*\[.*?\]\s*$", "",
-                                  w.title[: -len(suffix)]).strip()
-                if doc_name:
-                    lines.append(
-                        f"- Open document: \"{doc_name}\" "
-                        "(call get_context tool to read full content)"
-                    )
-                break
+    doc_name = _extract_doc_name_from_window(snapshot.active_window)
+    if doc_name:
+        doc_name = re.sub(r"\s*\[.*?\]\s*$", "", doc_name).strip()
+        if doc_name:
+            lines.append(
+                f"- Open document: \"{doc_name}\" "
+                "(call get_context tool to read full content)"
+            )
 
     if not lines[1:]:  # nothing useful was added
         return ""

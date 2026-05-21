@@ -177,9 +177,13 @@ class MemoryManager:
                 "context": context,
                 "timestamp": _now_iso(),
             })
+            # Guard set inside lock so two concurrent record_turn calls
+            # cannot both see _compressing=False and spawn duplicate threads.
+            launch_compression = not self._compressing
+            if launch_compression:
+                self._compressing = True
 
-        # Trigger compression asynchronously if needed
-        if not self._compressing:
+        if launch_compression:
             threading.Thread(
                 target=self._maybe_compress_stm,
                 daemon=True,
@@ -217,9 +221,8 @@ class MemoryManager:
         """
         If the raw-turn token estimate exceeds the budget, compress the oldest
         half of turns into a summary block via the memory LLM.
-        Runs in a background thread; sets _compressing guard.
+        Runs in a background thread; _compressing is set by the caller.
         """
-        self._compressing = True
         try:
             with self._stm_lock:
                 raw = [e for e in self._stm if e.get("type") == "turn"]

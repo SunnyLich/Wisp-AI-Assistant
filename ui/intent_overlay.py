@@ -7,8 +7,9 @@ Custom Prompt row (config.HOTKEY_CUSTOM_PROMPT_KEY).
 Press the matching key to pick, Escape to cancel.
 """
 from __future__ import annotations
+import ctypes
 from PyQt6.QtWidgets import QWidget, QApplication, QLineEdit
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QRect
 from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
 import config
 import keyboard
@@ -56,7 +57,7 @@ class IntentOverlay(QWidget):
     cancelled     = pyqtSignal()
     _raw_key      = pyqtSignal(str)        # keyboard hook thread → Qt main thread
 
-    def __init__(self, caller_idx: int = 0, parent=None):
+    def __init__(self, caller_idx: int = 0, target_hwnd: int = 0, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -72,12 +73,10 @@ class IntentOverlay(QWidget):
         h = _PADDING * 2 + _ROW_H * n_rows + 28   # 28px for ESC hint
         self._normal_h = h
         self.setFixedSize(_W, h)
+        self._target_hwnd = target_hwnd
+        self._screen_geometry = self._resolve_screen_geometry()
 
-        screen = QApplication.primaryScreen().geometry()
-        self.move(
-            screen.x() + (screen.width()  - _W) // 2,
-            screen.y() + (screen.height() - h)  // 2,
-        )
+        self._move_to_screen_center(h)
 
         self._hovered: int | None = None
         self._handled = False
@@ -105,6 +104,31 @@ class IntentOverlay(QWidget):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._cancel)
         self._timer.start(_AUTO_CLOSE_MS)
+
+    def _resolve_screen_geometry(self) -> QRect:
+        app = QApplication.instance()
+        if self._target_hwnd:
+            try:
+                rect = ctypes.wintypes.RECT()
+                if ctypes.windll.user32.GetWindowRect(self._target_hwnd, ctypes.byref(rect)):
+                    center = QPoint(
+                        (rect.left + rect.right) // 2,
+                        (rect.top + rect.bottom) // 2,
+                    )
+                    screen = app.screenAt(center) if app is not None else None
+                    if screen is not None:
+                        return screen.geometry()
+            except Exception:
+                pass
+        primary = QApplication.primaryScreen()
+        return primary.geometry() if primary is not None else QRect(0, 0, _W, self._normal_h)
+
+    def _move_to_screen_center(self, height: int) -> None:
+        screen = self._screen_geometry
+        self.move(
+            screen.x() + (screen.width() - _W) // 2,
+            screen.y() + (screen.height() - height) // 2,
+        )
 
     # ------------------------------------------------------------------
     # Paint
@@ -169,12 +193,8 @@ class IntentOverlay(QWidget):
         self._custom_mode = True
         self._timer.stop()   # don't auto-close while the user is typing
         new_h = self._normal_h + _INPUT_EXTRA
-        screen = QApplication.primaryScreen().geometry()
         self.setFixedSize(_W, new_h)
-        self.move(
-            screen.x() + (screen.width()  - _W) // 2,
-            screen.y() + (screen.height() - new_h) // 2,
-        )
+        self._move_to_screen_center(new_h)
         self._input_line.setGeometry(10, self._normal_h - 24, _W - 20, 32)
         self._input_line.show()
         self._input_line.setFocus()

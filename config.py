@@ -21,7 +21,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
 CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", LLM_PROVIDER)
 CHAT_LLM_MODEL    = os.getenv("CHAT_LLM_MODEL",    LLM_MODEL)
 
-# --- Tool-capable LLM (used when web_search / fetch_browser_page tools are active) ---
+# --- Tool-capable LLM (used when web_search / get_context tools are active) ---
 # Haiku does not invoke web_search_20250305; Sonnet does. Defaults to Sonnet so tools
 # work out of the box even if LLM_MODEL is set to Haiku.
 TOOL_LLM_MODEL = os.getenv("TOOL_LLM_MODEL", "claude-sonnet-4-5")
@@ -142,9 +142,10 @@ SYSTEM_PROMPT_UTILITY = os.getenv(
     "SYSTEM_PROMPT_UTILITY",
     "You are a concise desktop assistant. "
     "Answer in 1-3 short sentences. Be direct and plain. No markdown. "
-    "You have access to a web_search tool and a fetch_browser_page tool — "
-    "use them whenever the user asks for current information, live data, or "
-    "content from a specific URL."
+    "You have access to a web_search tool and a get_context tool. "
+    "Use web_search for current information and use get_context with a URL "
+    "when the user asks about a specific page. Never print or simulate tool "
+    "calls in the reply."
 )
 
 def get_system_prompt() -> str:
@@ -223,7 +224,8 @@ def reload() -> None:
         "SYSTEM_PROMPT_UTILITY",
         "You are a concise desktop assistant. "
         "Answer in 1-3 short sentences. Be direct and plain. No markdown. "
-        "You have access to a web_search tool and a fetch_browser_page tool — "
-        "use them whenever the user asks for current information, live data, or "
-        "content from a specific URL."
+        "You have access to a web_search tool and a get_context tool. "
+        "Use web_search for current information and use get_context with a URL "
+        "when the user asks about a specific page. Never print or simulate tool "
+        "calls in the reply."
     )

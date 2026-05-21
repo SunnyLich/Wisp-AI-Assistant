@@ -118,6 +118,10 @@ def save_tokens(tokens: dict) -> None:
     """Persist tokens — keyring preferred, local file as fallback."""
     serialised = json.dumps(tokens)
     if not _keyring_set(serialised):
+        print(
+            "[chatgpt_auth] Warning: keyring unavailable — "
+            f"OAuth tokens stored in plaintext file: {_TOKEN_FILE}"
+        )
         _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         _TOKEN_FILE.write_text(serialised, encoding="utf-8")
 

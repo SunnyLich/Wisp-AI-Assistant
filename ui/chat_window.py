@@ -1,8 +1,8 @@
 """
 ui/chat_window.py — Multi-turn chat window with conversation history sidebar.
 
-Left sidebar lists all past conversations; clicking one shows it read-only.
-The latest conversation is always active (can send new messages).
+Left sidebar lists all past conversations; clicking one selects it so you can
+continue that thread.
 
 Send message: Enter (Shift+Enter for newline).
 """
@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QStackedWidget, QSplitter,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtGui import QFont, QPixmap, QShortcut, QKeySequence
 
 _W          = 680
 _H          = 520
@@ -42,6 +42,7 @@ class ChatWindow(QWidget):
         conversations: list[list[dict]],
         send_fn,
         auto_message: str | None = None,
+        start_new: bool = False,
     ):
         """
         Args:
@@ -73,8 +74,12 @@ class ChatWindow(QWidget):
 
         self._build_ui()
         self._center_on_screen()
+        self._new_shortcut = QShortcut(QKeySequence.StandardKey.New, self)
+        self._new_shortcut.activated.connect(self.start_new_conversation)
 
-        if auto_message and conversations:
+        if start_new:
+            QTimer.singleShot(0, lambda: self.start_new_conversation(auto_message=auto_message))
+        elif auto_message and conversations:
             QTimer.singleShot(120, lambda: self._send(auto_message))
 
     # ------------------------------------------------------------------ Build
@@ -103,6 +108,17 @@ class ChatWindow(QWidget):
         title = QLabel("Chat")
         title.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT}; background: transparent;")
+        new_chat = QPushButton("New")
+        new_chat.setFixedSize(52, 26)
+        new_chat.setToolTip("Start a new conversation (Ctrl+N)")
+        new_chat.setStyleSheet(
+            f"QPushButton {{ background: rgba(160,160,255,18); color: {_ACCENT};"
+            f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 9pt; }}"
+            "QPushButton:hover { background: rgba(160,160,255,28); }"
+            "QPushButton:disabled { color: #666; border-color: rgba(255,255,255,10); }"
+        )
+        new_chat.clicked.connect(self.start_new_conversation)
+        self._new_chat_btn = new_chat
         close = QPushButton("✕")
         close.setFixedSize(26, 26)
         close.setStyleSheet(
@@ -112,6 +128,7 @@ class ChatWindow(QWidget):
         close.clicked.connect(self.close)
         h.addWidget(title)
         h.addStretch()
+        h.addWidget(new_chat)
         h.addWidget(close)
         return bar
 
@@ -204,9 +221,8 @@ class ChatWindow(QWidget):
         self._active_idx = idx
         if idx < self._stack.count():
             self._stack.setCurrentIndex(idx)
-        is_latest = (idx == len(self._conversations) - 1)
-        self._past_notice.setVisible(not is_latest)
-        self._input_frame.setEnabled(is_latest)
+        self._past_notice.setVisible(False)
+        self._input_frame.setEnabled(bool(self._conversations))
         for real_idx, btn in self._sidebar_btns:
             is_sel = (real_idx == idx)
             btn.setChecked(is_sel)
@@ -233,7 +249,7 @@ class ChatWindow(QWidget):
         self._stack.setCurrentIndex(self._active_idx)
         vl.addWidget(self._stack, stretch=1)
 
-        self._past_notice = QLabel("  Viewing past conversation")
+        self._past_notice = QLabel("  Selected conversation")
         self._past_notice.setFixedHeight(26)
         self._past_notice.setStyleSheet(
             f"background: rgba(160,160,255,10); color: {_HINT};"
@@ -243,8 +259,31 @@ class ChatWindow(QWidget):
         vl.addWidget(self._past_notice)
 
         self._input_frame = self._make_input_area()
+        self._input_frame.setEnabled(bool(self._conversations))
         vl.addWidget(self._input_frame)
         return panel
+
+    def start_new_conversation(self, auto_message: str | None = None):
+        if self._streaming:
+            return
+
+        was_empty = not self._conversations
+        conv = {"messages": [], "context": ""}
+        self._conversations.append(conv)
+
+        if was_empty and self._stack.count() == 1:
+            placeholder = self._stack.widget(0)
+            self._stack.removeWidget(placeholder)
+            placeholder.deleteLater()
+
+        idx = len(self._conversations) - 1
+        self._stack.addWidget(self._make_page(idx, conv))
+        self._rebuild_sidebar()
+        self._switch(idx)
+        self._input.setFocus()
+
+        if auto_message:
+            QTimer.singleShot(0, lambda: self._send(auto_message))
 
     def _make_page(self, idx: int, conv: dict) -> QScrollArea:
         scroll = QScrollArea()
@@ -348,22 +387,22 @@ class ChatWindow(QWidget):
         layout.insertWidget(layout.count() - 1, wrapper)  # before trailing stretch
         return lbl
 
-    def _latest_layout(self):
-        latest_idx = len(self._conversations) - 1
-        if latest_idx < 0 or latest_idx >= self._stack.count():
+    def _active_layout(self):
+        active_idx = self._active_idx
+        if active_idx < 0 or active_idx >= self._stack.count():
             return None
-        page = self._stack.widget(latest_idx)
+        page = self._stack.widget(active_idx)
         return getattr(page, "_msg_layout", None)
 
-    def _latest_scroll(self) -> QScrollArea | None:
-        latest_idx = len(self._conversations) - 1
-        if latest_idx < 0 or latest_idx >= self._stack.count():
+    def _active_scroll(self) -> QScrollArea | None:
+        active_idx = self._active_idx
+        if active_idx < 0 or active_idx >= self._stack.count():
             return None
-        page = self._stack.widget(latest_idx)
+        page = self._stack.widget(active_idx)
         return page if isinstance(page, QScrollArea) else None
 
     def _scroll_bottom(self):
-        scroll = self._latest_scroll()
+        scroll = self._active_scroll()
         if scroll:
             QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(
                 scroll.verticalScrollBar().maximum()
@@ -382,13 +421,11 @@ class ChatWindow(QWidget):
             return
         self._streaming = True
         self._send_btn.setEnabled(False)
+        self._new_chat_btn.setEnabled(False)
 
-        conv = self._conversations[-1]  # always send to latest
-        latest_idx = len(self._conversations) - 1
-        if self._active_idx != latest_idx:
-            self._switch(latest_idx)
+        conv = self._conversations[self._active_idx]
 
-        layout = self._latest_layout()
+        layout = self._active_layout()
         if layout:
             self._bubble(layout, text, "user")
         conv["messages"].append({"role": "user", "content": text})
@@ -421,14 +458,15 @@ class ChatWindow(QWidget):
         self._scroll_bottom()
 
     def _on_finished(self):
-        if self._current_ai_text and self._conversations:
-            self._conversations[-1]["messages"].append(
+        if self._current_ai_text and self._conversations and 0 <= self._active_idx < len(self._conversations):
+            self._conversations[self._active_idx]["messages"].append(
                 {"role": "assistant", "content": self._current_ai_text}
             )
         self._current_ai_label = None
         self._current_ai_text = ""
         self._streaming = False
         self._send_btn.setEnabled(True)
+        self._new_chat_btn.setEnabled(True)
 
     # ------------------------------------------------------------------ Events
 

@@ -16,6 +16,7 @@ full LLM response is available — this is the lowest-latency path.
 """
 from __future__ import annotations
 import config
+import threading
 from typing import Generator, Iterable
 
 
@@ -33,16 +34,31 @@ _EL_DTYPE = "int16"
 _cartesia_client = None
 _cartesia_ws_manager = None   # the context manager returned by websocket_connect()
 _cartesia_ws = None           # the entered connection object (has .context())
+_cartesia_ws_lock = threading.Lock()
 
 
 def _get_cartesia_ws():
     global _cartesia_client, _cartesia_ws_manager, _cartesia_ws
-    if _cartesia_ws is None:
-        from cartesia import Cartesia  # type: ignore
-        _cartesia_client = Cartesia(api_key=config.CARTESIA_API_KEY)
-        _cartesia_ws_manager = _cartesia_client.tts.websocket_connect()
-        _cartesia_ws = _cartesia_ws_manager.__enter__()
-    return _cartesia_ws
+    with _cartesia_ws_lock:
+        if _cartesia_ws is None:
+            from cartesia import Cartesia  # type: ignore
+            _cartesia_client = Cartesia(api_key=config.CARTESIA_API_KEY)
+            _cartesia_ws_manager = _cartesia_client.tts.websocket_connect()
+            _cartesia_ws = _cartesia_ws_manager.__enter__()
+        return _cartesia_ws
+
+
+def _reset_cartesia_ws() -> None:
+    """Discard the current WebSocket so the next call to _get_cartesia_ws() reconnects."""
+    global _cartesia_ws, _cartesia_ws_manager
+    with _cartesia_ws_lock:
+        if _cartesia_ws_manager is not None:
+            try:
+                _cartesia_ws_manager.__exit__(None, None, None)
+            except Exception:
+                pass
+        _cartesia_ws = None
+        _cartesia_ws_manager = None
 
 
 def prewarm():
@@ -110,33 +126,38 @@ def stream_audio_from_chunks(text_chunks: Iterable[str],
 
 def _stream_cartesia(text_chunks: Iterable[str],
                      on_word_timestamps=None) -> Generator[bytes, None, None]:
-    ws = _get_cartesia_ws()
+    try:
+        ws = _get_cartesia_ws()
 
-    ctx = ws.context(
-        model_id="sonic-3",
-        voice={"mode": "id", "id": config.CARTESIA_VOICE_ID},
-        output_format={
-            "container": "raw",
-            "encoding": "pcm_f32le",
-            "sample_rate": SAMPLE_RATE,
-        },
-        language="en",
-        add_timestamps=True,
-    )
+        ctx = ws.context(
+            model_id="sonic-3",
+            voice={"mode": "id", "id": config.CARTESIA_VOICE_ID},
+            output_format={
+                "container": "raw",
+                "encoding": "pcm_f32le",
+                "sample_rate": SAMPLE_RATE,
+            },
+            language="en",
+            add_timestamps=True,
+        )
 
-    for piece in text_chunks:
-        if piece:
-            ctx.push(piece)
-    ctx.no_more_inputs()
+        for piece in text_chunks:
+            if piece:
+                ctx.push(piece)
+        ctx.no_more_inputs()
 
-    for response in ctx.receive():
-        if response.type == "chunk" and response.audio:
-            yield response.audio
-        elif response.type == "timestamps" and on_word_timestamps:
-            wt = response.word_timestamps
-            if wt and wt.words:
-                start_ms = [int(t * 1000) for t in wt.start]
-                on_word_timestamps(wt.words, start_ms)
+        for response in ctx.receive():
+            if response.type == "chunk" and response.audio:
+                yield response.audio
+            elif response.type == "timestamps" and on_word_timestamps:
+                wt = response.word_timestamps
+                if wt and wt.words:
+                    start_ms = [int(t * 1000) for t in wt.start]
+                    on_word_timestamps(wt.words, start_ms)
+    except Exception:
+        # Reset the dead connection so the next call reconnects cleanly.
+        _reset_cartesia_ws()
+        raise
 
 
 # ------------------------------------------------------------------

@@ -86,6 +86,7 @@ class App:
             on_voice_stop=self._on_voice_stop,
         )
         self._context_buffer: list[str] = []   # accumulated via Alt+Q
+        self._context_buffer_lock = threading.Lock()
         self._last_reply: str = ""
         self._pending_context: context_fetcher.ContextSnapshot | None = None
         self._voice_active: bool = False        # guard against spurious release events
@@ -97,7 +98,9 @@ class App:
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
         self._pending_caller_idx: int = 0    # which CALLER_ROWS entry triggered the current picker
         self._pending_paste_target: int = 0  # HWND to paste into (0 = no paste)
+        self._pending_intent_target: int = 0 # HWND whose monitor should host the picker
         self._gen_id: int = 0                # incremented on each new query; stale workers skip bubble signals
+        self._gen_id_lock = threading.Lock()
 
         # Memory
         self._memory = memory_module.get_manager()
@@ -106,6 +109,7 @@ class App:
         self._signals.show_intent_picker.connect(self._show_intent_picker)
         self._signals.show_snip_overlay.connect(self._show_snip_overlay)
         self._signals.settings_applied.connect(self._on_settings_applied)
+        self._signals.show_new_chat.connect(self._on_show_new_chat)
         self._signals.show_last_chat.connect(self._on_show_last_chat)
         self._signals.show_memory_viewer.connect(self._open_memory_viewer)
         self._overlay.set_click_handler(self._on_doll_click)
@@ -161,12 +165,14 @@ class App:
         """Alt+Q — capture selected text and append to context buffer."""
         text = capture.get_selected_text()
         if text:
-            self._context_buffer.append(text)
+            with self._context_buffer_lock:
+                self._context_buffer.append(text)
             print(f"[main] Context buffer: {len(self._context_buffer)} item(s) queued.")
 
     def _on_clear_context(self):
         """Alt+W — clear the context buffer."""
-        self._context_buffer.clear()
+        with self._context_buffer_lock:
+            self._context_buffer.clear()
         print("[main] Context buffer cleared.")
 
     def _steal_foreground(self) -> None:
@@ -190,6 +196,11 @@ class App:
 
     def _on_snip_hotkey(self):
         """Ctrl+Alt+Q — show the region selector, then the intent picker."""
+        try:
+            import ctypes
+            self._pending_intent_target = ctypes.windll.user32.GetForegroundWindow()
+        except Exception:
+            self._pending_intent_target = 0
         self._steal_foreground()
         self._signals.show_snip_overlay.emit()
 
@@ -199,8 +210,10 @@ class App:
         caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
         paste_back = caller.get("paste_back", False)
 
-        # For paste-back callers, save the target HWND BEFORE stealing focus.
-        target_hwnd = ctypes.windll.user32.GetForegroundWindow() if paste_back else 0
+        # Save the foreground HWND BEFORE stealing focus so the picker can open
+        # on the same monitor and paste-back callers can restore focus correctly.
+        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
+        target_hwnd = fg_hwnd if paste_back else 0
 
         self._pending_context = context_fetcher.fetch_and_save()
         selected = capture.get_selected_text()
@@ -209,6 +222,7 @@ class App:
         self._pending_capture = (selected, None)
         self._pending_caller_idx = caller_idx
         self._pending_paste_target = target_hwnd
+        self._pending_intent_target = fg_hwnd
 
         self._steal_foreground()
         audio.play_filler()
@@ -278,8 +292,10 @@ class App:
                 self._signals.hide_doll.emit()
             return
         self._signals.set_state.emit("thinking")
-        self._gen_id += 1
-        self._query_and_speak(text, (None, None), self._gen_id)
+        with self._gen_id_lock:
+            self._gen_id += 1
+            gen_id = self._gen_id
+        self._query_and_speak(text, (None, None), gen_id)
 
     # ------------------------------------------------------------------
     # Intent picker (runs on Qt main thread via signal)
@@ -289,7 +305,7 @@ class App:
         if self._intent_picker is not None:
             return  # already showing
 
-        self._intent_picker = IntentOverlay(caller_idx)
+        self._intent_picker = IntentOverlay(caller_idx, target_hwnd=self._pending_intent_target)
         self._intent_picker.intent_chosen.connect(self._on_intent_chosen)
         self._intent_picker.cancelled.connect(self._on_intent_cancelled)
         self._intent_picker.show()
@@ -309,10 +325,12 @@ class App:
         caller_idx   = self._pending_caller_idx
         target_hwnd  = self._pending_paste_target
         self._pending_paste_target = 0
+        self._pending_intent_target = 0
 
         caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
-        self._gen_id += 1
-        gen_id = self._gen_id
+        with self._gen_id_lock:
+            self._gen_id += 1
+            gen_id = self._gen_id
         if caller.get("paste_back") and target_hwnd:
             threading.Thread(
                 target=self._rewrite_and_paste,
@@ -329,6 +347,7 @@ class App:
     def _on_intent_cancelled(self):
         self._intent_picker = None
         self._pending_paste_target = 0
+        self._pending_intent_target = 0
         self._signals.set_state.emit("idle")
         if config.DOLL_AUTO_HIDE:
             self._signals.hide_doll.emit()
@@ -348,6 +367,10 @@ class App:
                 if config.DOLL_AUTO_HIDE:
                     self._signals.hide_doll.emit()
             return
+
+        if gen_id == self._gen_id:
+            self._signals.set_state.emit("thinking")
+            self._signals.bubble_thinking.emit()
 
         full_reply = ""
         try:
@@ -425,8 +448,9 @@ class App:
 
         # Build final message — intent prompt only; context goes into the system
         # prompt so it is sent exactly once and not repeated in every follow-up turn.
-        context_items = self._context_buffer.copy()
-        self._context_buffer.clear()
+        with self._context_buffer_lock:
+            context_items = self._context_buffer.copy()
+            self._context_buffer.clear()
 
         all_contexts = context_items + ([selected] if selected else [])
         user_message = intent_prompt  # clean turn — no embedded context
@@ -438,6 +462,17 @@ class App:
                 else all_contexts[0]
             )
             ambient_ctx = f"{ambient_ctx}\n\n---\n{ctx_block}" if ambient_ctx else ctx_block
+
+        # Proactively read the active document (if any) so the model has full context
+        # without needing a tool round-trip.  Only for text queries — vision queries
+        # already have a screenshot as context.
+        if not screenshot_b64:
+            doc_text = llm.read_active_document_for_context()
+            if doc_text and not doc_text.startswith(("Could not", "File type", "Failed to")):
+                ambient_ctx = (
+                    f"{ambient_ctx}\n\n---\n[Active document]\n{doc_text}"
+                    if ambient_ctx else f"[Active document]\n{doc_text}"
+                )
 
         self._signals.set_state.emit("thinking")
         self._signals.bubble_thinking.emit()
@@ -516,14 +551,18 @@ class App:
         def tts_consumer():
             if config.TTS_PROVIDER.lower() == "none":
                 on_audio_start()
+
+            def _on_done():
+                self._last_reply = full_text
+                if gen_id == self._gen_id:
+                    self._signals.set_state.emit("idle")
+                    self._signals.bubble_finish.emit()
+                    if config.DOLL_AUTO_HIDE:
+                        self._signals.hide_doll.emit()
+
             audio.play_tts_stream_from_chunks(
                 llm_chunk_iter(),
-                on_done=lambda: (
-                    setattr(self, "_last_reply", full_text),
-                    self._signals.set_state.emit("idle") if gen_id == self._gen_id else None,
-                    self._signals.bubble_finish.emit() if gen_id == self._gen_id else None,
-                    self._signals.hide_doll.emit() if (config.DOLL_AUTO_HIDE and gen_id == self._gen_id) else None,
-                ),
+                on_done=_on_done,
                 on_audio_start=on_audio_start,
                 on_amplitude=on_amplitude,
                 on_word_timestamps=on_word_timestamps,
@@ -536,9 +575,11 @@ class App:
     # Doll click → show popup
     # ------------------------------------------------------------------
 
-    def _open_or_raise_chat(self, auto_message: str | None = None) -> None:
+    def _open_or_raise_chat(self, auto_message: str | None = None, force_new: bool = False) -> None:
         """Open the chat window, or raise it if already open."""
         if self._chat_window is not None:
+            if force_new:
+                self._chat_window.start_new_conversation(auto_message=auto_message)
             self._chat_window.raise_()
             self._chat_window.activateWindow()
             return
@@ -546,6 +587,7 @@ class App:
             conversations=self._all_conversations,
             send_fn=self._make_memory_send_fn(),
             auto_message=auto_message,
+            start_new=force_new,
         )
         self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
         self._chat_window.show()
@@ -557,6 +599,10 @@ class App:
     def _on_show_last_chat(self):
         """Tray menu 'Last chat' — open or raise the chat window."""
         self._open_or_raise_chat()
+
+    def _on_show_new_chat(self):
+        """Tray menu 'New chat' — open the chat window on a fresh thread."""
+        self._open_or_raise_chat(force_new=True)
 
     def _make_memory_send_fn(self):
         """Return a send_fn wrapper that injects relevant LTM facts per chat turn."""

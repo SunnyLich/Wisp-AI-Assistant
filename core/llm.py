@@ -16,7 +16,7 @@ from typing import Generator
 # ------------------------------------------------------------------
 # Context tools — offered to Claude during hotkey-triggered queries.
 # web_search is a built-in Anthropic server-side tool (no client code needed).
-# fetch_browser_page is user-defined: we execute it and return the result.
+# get_context is user-defined: we execute it and return the result.
 # ------------------------------------------------------------------
 
 _CONTEXT_TOOLS: list[dict] = [
@@ -29,8 +29,8 @@ _CONTEXT_TOOLS: list[dict] = [
         "name": "get_context",
         "description": (
             "Retrieve additional context the user can see. "
-            "Pass a URL to fetch a web page; omit it to read the document "
-            "currently open in the foreground app "
+            "Pass a URL to fetch a web page; omit it to read open local "
+            "documents from supported apps "
             "(Word, Excel, PowerPoint, PDF, LibreOffice, Notepad, etc.)."
         ),
         "input_schema": {
@@ -40,7 +40,7 @@ _CONTEXT_TOOLS: list[dict] = [
                     "type": "string",
                     "description": (
                         "A web page URL (http:// or https://) to fetch. "
-                        "Omit this field to read the active local document instead."
+                        "Omit this field to read open local documents instead."
                     ),
                 }
             },
@@ -50,18 +50,43 @@ _CONTEXT_TOOLS: list[dict] = [
 ]
 
 
-def _log_context(reason: str, text: str, max_line: int = 120) -> None:
-    """Print the context block; each line is capped at max_line chars."""
+def _log_context(
+    reason: str,
+    text: str,
+    max_line: int = 120,
+    max_lines: int = 12,
+    max_chars: int = 1200,
+) -> None:
+    """Print a compact preview of a context block for debugging."""
     import time
+
     ts = time.strftime("%H:%M:%S")
+
     def _trim(line: str) -> str:
         return line if len(line) <= max_line else line[:max_line] + "…"
+
     lines = [_trim(l) for l in text.splitlines() if l.strip()]
+    truncated = False
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        truncated = True
+
     body = "\n  ".join(lines) if lines else "[empty]"
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+        truncated = True
+    if truncated and body != "[empty]":
+        body += "\n  [preview truncated]"
+
     print(f"[llm {ts}] Context — {reason}:\n  {body}")
 
 
-def _read_document_file(path: str, max_chars: int = 8000) -> str:
+_AMBIENT_DOCUMENT_MAX_CHARS = 8000
+_TOOL_DOCUMENT_MAX_CHARS = 50000
+
+
+def _read_document_file(path: str, max_chars: int = _AMBIENT_DOCUMENT_MAX_CHARS) -> str:
     """Read a local document file and return its plain text."""
     import os
     ext = os.path.splitext(path)[1].lower()
@@ -120,10 +145,28 @@ def _read_document_file(path: str, max_chars: int = 8000) -> str:
             return f"File type {ext!r} is not supported for reading."
         if len(text) > max_chars:
             text = text[:max_chars] + "\n[…truncated]"
-        _log_context(f"tool: read_active_document — read {path!r}", text)
+        # Redact sensitive data before the text reaches the LLM.
+        from core.context_fetcher import _redact  # noqa: PLC0415
+        text = _redact(text)
+        _log_context(f"tool: read_document — read {path!r}", text)
         return text
     except Exception as e:
         return f"Failed to read {path!r}: {e}"
+
+
+def _read_document_paths(
+    paths: list[str],
+    max_chars_per_doc: int = _AMBIENT_DOCUMENT_MAX_CHARS,
+) -> str:
+    """Read multiple local document files and join readable results."""
+    import os
+
+    parts: list[str] = []
+    for path in paths:
+        text = _read_document_file(path, max_chars=max_chars_per_doc)
+        if text and not text.startswith(("Could not", "File type", "Failed to")):
+            parts.append(f"[{os.path.basename(path)}]\n{text}")
+    return "\n\n".join(parts)
 
 
 def _execute_context_tool(name: str, inputs: dict) -> str:
@@ -139,12 +182,33 @@ def _execute_context_tool(name: str, inputs: dict) -> str:
             )
             return result or f"Could not fetch content from {url!r}."
         else:
-            from core.context_fetcher import get_active_document_path
-            path = get_active_document_path()
-            if not path:
-                return "Could not determine the active document path from the window title."
-            return _read_document_file(path)
+            from core.context_fetcher import get_all_open_document_paths
+
+            paths = get_all_open_document_paths()
+            if not paths:
+                return "Could not determine any open document paths from supported app windows."
+
+            text = _read_document_paths(paths, max_chars_per_doc=_TOOL_DOCUMENT_MAX_CHARS)
+            if text:
+                return text
+            return "Open document windows were detected, but none of their file types were readable."
     return f"Unknown tool: {name!r}"
+
+
+def read_active_document_for_context() -> str:
+    """
+    Read all open doc-app windows (foreground and background) and return their
+    redacted plain text for proactive injection into the system prompt.
+    Multiple documents are separated by per-file headers.
+    Returns "" if no readable documents are found.
+    """
+    from core.context_fetcher import get_all_open_document_paths
+
+    paths = get_all_open_document_paths()
+    if not paths:
+        return ""
+    return _read_document_paths(paths)
+
 
 # ------------------------------------------------------------------
 # Singleton clients — initialised once, reused across all requests
@@ -232,16 +296,8 @@ def _get_codex_client():
 
 
 def _get_chat_codex_client():
-    global _chat_codex_client
-    if _chat_codex_client is None:
-        import httpx
-        from openai import OpenAI
-        _chat_codex_client = OpenAI(
-            api_key="chatgpt-oauth-dummy",
-            base_url="https://chatgpt.com/backend-api/codex",
-            http_client=httpx.Client(transport=_CodexTransport()),
-        )
-    return _chat_codex_client
+    """Returns the same singleton as _get_codex_client() — same endpoint."""
+    return _get_codex_client()
 
 
 # ------------------------------------------------------------------
@@ -439,9 +495,11 @@ def stream_response(
                           core.memory — injected into system prompt before the
                           ambient context block.
         use_tools:        If True and provider is Anthropic, expose
-                          web_search + fetch_browser_page tools so Claude can
-                          pull extra context when it decides to.  Ignored for
-                          Groq/OpenAI providers and vision calls.
+                  web_search + get_context tools so Claude can
+                  pull extra context when it decides to. The model
+                  must use the actual tool call interface rather than
+                  describing or simulating tool calls in text.
+                  Ignored for Groq/OpenAI providers and vision calls.
 
     Yields:
         Text chunks as they arrive from the API.
@@ -480,7 +538,7 @@ def stream_response(
             tool_model = config.TOOL_LLM_MODEL if use_tools else config.LLM_MODEL
             yield from _stream_anthropic(user_message, None, tool_model, _get_anthropic_client(), ambient_context, memory_context, use_tools)
         elif provider == "chatgpt":
-            yield from _stream_codex(user_message, config.LLM_MODEL, _get_codex_client(), ambient_context, memory_context)
+            yield from _stream_codex(user_message, config.LLM_MODEL, _get_codex_client(), ambient_context, memory_context, use_tools)
         else:
             raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
@@ -533,8 +591,17 @@ def _stream_codex(
     client,
     ambient_context: str = "",
     memory_context: str = "",
+    use_tools: bool = False,
 ) -> Generator[str, None, None]:
     """Stream a response via the Codex endpoint using the Responses API."""
+    # The Responses API tool-call loop (previous_response_id chaining) is not
+    # implemented here.  When tools are requested we eagerly inject context that
+    # Claude would otherwise fetch on demand: open supported documents and clipboard.
+    if use_tools:
+        doc_text = read_active_document_for_context()
+        if doc_text:
+            doc_block = f"[Open documents]\n{doc_text}"
+            ambient_context = f"{ambient_context}\n\n---\n{doc_block}".strip() if ambient_context else doc_block
     text = _build_codex_text(user_message, ambient_context, memory_context)
     with client.responses.stream(
         model=model,

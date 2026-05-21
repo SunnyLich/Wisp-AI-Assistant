@@ -65,6 +65,7 @@ class OverlaySignals(QObject):
     show_doll          = pyqtSignal()      # make doll visible
     hide_doll          = pyqtSignal()      # hide doll after short delay
     settings_applied   = pyqtSignal()      # settings were applied; re-register hotkeys etc.
+    show_new_chat      = pyqtSignal()      # tray "New chat" clicked
     show_last_chat     = pyqtSignal()      # tray "Last chat" clicked
     show_memory_viewer = pyqtSignal()      # tray "Memory…" clicked
 
@@ -174,6 +175,8 @@ class DollOverlay(QMainWindow):
             menu.addAction(tuner_action)
             menu.addSeparator()
 
+        new_chat_action = QAction("New chat", self)
+        new_chat_action.triggered.connect(self.signals.show_new_chat.emit)
         last_chat_action = QAction("Last chat", self)
         last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
         memory_action = QAction("Memory…", self)
@@ -182,6 +185,7 @@ class DollOverlay(QMainWindow):
         settings_action.triggered.connect(self._open_settings)
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(QApplication.quit)
+        menu.addAction(new_chat_action)
         menu.addAction(last_chat_action)
         menu.addSeparator()
         menu.addAction(memory_action)
