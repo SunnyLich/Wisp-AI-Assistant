@@ -17,6 +17,42 @@ import numpy as np
 import config
 from core import tts as tts_module
 
+_tts_speed_boost = False
+_tts_speed_lock = threading.Lock()
+
+
+def set_tts_speed_boost(enabled: bool) -> None:
+    """Called by the UI while the user holds the speech bubble."""
+    global _tts_speed_boost
+    with _tts_speed_lock:
+        _tts_speed_boost = enabled
+
+
+def _current_tts_rate() -> float:
+    with _tts_speed_lock:
+        boosted = _tts_speed_boost
+    rate = config.TTS_HOLD_PLAYBACK_RATE if boosted else config.TTS_PLAYBACK_RATE
+    return max(0.25, min(4.0, float(rate)))
+
+
+def _speed_adjust_pcm(chunk: bytes, dtype: str, rate: float) -> bytes:
+    """Change PCM playback speed by resampling chunk length before playback."""
+    if abs(rate - 1.0) < 0.01 or not chunk:
+        return chunk
+    np_dtype = np.float32 if dtype == "float32" else np.int16
+    samples = np.frombuffer(chunk, dtype=np_dtype)
+    if samples.size < 2:
+        return chunk
+    out_len = max(1, int(samples.size / rate))
+    src_x = np.arange(samples.size, dtype=np.float32)
+    dst_x = np.linspace(0, samples.size - 1, out_len, dtype=np.float32)
+    if np_dtype is np.float32:
+        adjusted = np.interp(dst_x, src_x, samples).astype(np.float32)
+    else:
+        adjusted = np.interp(dst_x, src_x, samples.astype(np.float32))
+        adjusted = np.clip(adjusted, -32768, 32767).astype(np.int16)
+    return adjusted.tobytes()
+
 
 # ------------------------------------------------------------------
 # Filler audio
@@ -141,10 +177,12 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                         on_audio_start()
                     except Exception:
                         pass
-            stream.write(chunk)
+            adjusted_chunk = _speed_adjust_pcm(chunk, dtype, _current_tts_rate())
+            stream.write(adjusted_chunk)
             if on_amplitude:
                 try:
-                    samples = np.frombuffer(chunk, dtype=tts_module.DTYPE)
+                    amp_dtype = np.float32 if dtype == "float32" else np.int16
+                    samples = np.frombuffer(adjusted_chunk, dtype=amp_dtype)
                     amp = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
                     on_amplitude(min(amp, 1.0))
                 except Exception:

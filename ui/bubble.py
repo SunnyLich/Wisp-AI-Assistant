@@ -42,11 +42,16 @@ class SpeechBubble(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._font = QFont("Segoe UI", _FONT_SIZE)
+        self._bold_font = QFont("Segoe UI", _FONT_SIZE)
+        self._bold_font.setBold(True)
         self._fm = QFontMetrics(self._font)
+        self._bold_fm = QFontMetrics(self._bold_font)
+        self._space_w = self._fm.horizontalAdvance(" ")
         self._line_h = self._fm.height() + _LINE_GAP
 
         self._full_text = ""
         self._lines: list[str] = []
+        self._line_segments: list[list[tuple[str, bool]]] = []
         self._thinking = False
         self._dot_count = 1
         self._last_chunk_ended_with_space = True  # guards mid-word chunk merging
@@ -59,6 +64,7 @@ class SpeechBubble(QWidget):
         self._timestamp_mode = False      # True = driven by Cartesia timestamps
         self._audio_elapsed = QElapsedTimer()  # measures ms since audio start
         self._pre_audio_timestamps: list[tuple] = []  # batches that arrived before audio start
+        self._speed_boosting = False
 
         # Derive size from config
         screen = QApplication.primaryScreen().availableGeometry()
@@ -88,13 +94,14 @@ class SpeechBubble(QWidget):
 
         # Word-reveal timer
         self._reveal_timer = QTimer(self)
-        self._reveal_timer.setInterval(int(60_000 / config.BUBBLE_REVEAL_WPM))
+        self._apply_reveal_speed()
         self._reveal_timer.timeout.connect(self._reveal_next_word)
 
         # Drag support
         self._drag_offset = None          # QPoint while dragging
         self._companion_callback = None   # called with new QPoint after each drag move
         self._hide_callback = None        # called when this widget hides (for icon sync)
+        self._speed_callback = None       # called with True while hold-to-speed is active
 
     # ------------------------------------------------------------------
     # Drag API
@@ -107,6 +114,21 @@ class SpeechBubble(QWidget):
     def set_hide_callback(self, fn):
         """Register a zero-argument callback called whenever this widget hides."""
         self._hide_callback = fn
+
+    def set_speed_callback(self, fn):
+        """Register callback(enabled: bool) for hold-to-speed state."""
+        self._speed_callback = fn
+
+    def apply_config(self):
+        """Apply live bubble size/line/speed settings after config.reload()."""
+        self._bubble_w = config.BUBBLE_WIDTH
+        self._text_w = self._bubble_w - _PAD * 2
+        self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
+        self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+        self._apply_reveal_speed()
+        if self._full_text:
+            self._rewrap()
+        self.update()
 
     def hideEvent(self, event):  # noqa: N802
         super().hideEvent(event)
@@ -122,6 +144,7 @@ class SpeechBubble(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self._set_speed_boost(True)
             self._drag_offset = self.pos() - event.globalPosition().toPoint()
         super().mousePressEvent(event)
 
@@ -135,6 +158,7 @@ class SpeechBubble(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self._set_speed_boost(False)
             self._drag_offset = None
         super().mouseReleaseEvent(event)
 
@@ -142,6 +166,7 @@ class SpeechBubble(QWidget):
         """Show a static mic indicator while the user holds F9."""
         self._full_text = ""
         self._lines = ["\u25cf Recording — release to send"]
+        self._line_segments = [[("Recording - release to send", False)]]
         self._thinking = False
         self._pending_words = []
         self._revealed_count = 0
@@ -158,6 +183,7 @@ class SpeechBubble(QWidget):
         """Show animated dots while waiting for the first LLM token."""
         self._full_text = ""
         self._lines = []
+        self._line_segments = []
         self._thinking = True
         self._dot_count = 1
         self._last_chunk_ended_with_space = True
@@ -184,7 +210,8 @@ class SpeechBubble(QWidget):
             self._revealed_count = 0
             self._full_text = ""
             self._lines = []
-            self._reveal_timer.setInterval(int(60_000 / max(1, config.BUBBLE_REVEAL_WPM)))
+            self._line_segments = []
+            self._apply_reveal_speed()
             self._reveal_timer.start()
         # else: WPM already running from append_chunk — keep going, elapsed timer updated above.
         # Drain any timestamp batches that arrived before audio started
@@ -245,7 +272,7 @@ class SpeechBubble(QWidget):
         # over once audio actually starts.
         if not self._reveal_mode and not self._timestamp_mode:
             self._reveal_mode = True
-            self._reveal_timer.setInterval(int(60_000 / max(1, config.BUBBLE_REVEAL_WPM)))
+            self._apply_reveal_speed()
             self._reveal_timer.start()
 
     def finish(self):
@@ -278,12 +305,14 @@ class SpeechBubble(QWidget):
         self._finishing = False
         self._timestamp_mode = False
         self._last_chunk_ended_with_space = True
+        self._speed_boosting = False
         self._pending_words = []
         self._revealed_count = 0
         self._pre_audio_timestamps = []
         self._thinking = False
         self._full_text = ""
         self._lines = []
+        self._line_segments = []
         self.hide()
 
     # ------------------------------------------------------------------
@@ -293,6 +322,22 @@ class SpeechBubble(QWidget):
     def _tick_dots(self):
         self._dot_count = (self._dot_count % 3) + 1
         self.update()
+
+    def _current_reveal_wpm(self) -> int:
+        if self._speed_boosting:
+            return max(1, int(getattr(config, "BUBBLE_HOLD_REVEAL_WPM", 480)))
+        return max(1, int(getattr(config, "BUBBLE_REVEAL_WPM", 170)))
+
+    def _apply_reveal_speed(self):
+        self._reveal_timer.setInterval(max(1, int(60_000 / self._current_reveal_wpm())))
+
+    def _set_speed_boost(self, enabled: bool):
+        if self._speed_boosting == enabled:
+            return
+        self._speed_boosting = enabled
+        self._apply_reveal_speed()
+        if self._speed_callback:
+            self._speed_callback(enabled)
 
     def _reveal_next_word(self):
         if self._revealed_count < len(self._pending_words):
@@ -308,20 +353,46 @@ class SpeechBubble(QWidget):
 
     def _rewrap(self):
         """Word-wrap _full_text to _text_w; keep only the last BUBBLE_LINES lines."""
-        words = self._full_text.split()
-        lines: list[str] = []
-        current = ""
-        for word in words:
-            test = (current + " " + word).strip()
-            if self._fm.horizontalAdvance(test) <= self._text_w:
-                current = test
+        words = self._markdown_words(self._full_text)
+        lines: list[list[tuple[str, bool]]] = []
+        current: list[tuple[str, bool]] = []
+        current_w = 0
+        for word, bold in words:
+            fm = self._bold_fm if bold else self._fm
+            word_w = fm.horizontalAdvance(word)
+            extra_space = self._space_w if current else 0
+            if current and current_w + extra_space + word_w > self._text_w:
+                lines.append(current)
+                current = [(word, bold)]
+                current_w = word_w
             else:
-                if current:
-                    lines.append(current)
-                current = word
+                current.append((word, bold))
+                current_w += extra_space + word_w
         if current:
             lines.append(current)
-        self._lines = lines[-config.BUBBLE_LINES:]
+        visible = lines[-config.BUBBLE_LINES:]
+        self._line_segments = visible
+        self._lines = [" ".join(word for word, _bold in line) for line in visible]
+
+    @staticmethod
+    def _markdown_words(text: str) -> list[tuple[str, bool]]:
+        words: list[tuple[str, bool]] = []
+        bold = False
+        buf = ""
+        i = 0
+        while i < len(text):
+            if text.startswith("**", i) or text.startswith("__", i):
+                if buf:
+                    words.extend((part, bold) for part in buf.split())
+                    buf = ""
+                bold = not bold
+                i += 2
+                continue
+            buf += text[i]
+            i += 1
+        if buf:
+            words.extend((part, bold) for part in buf.split())
+        return words
 
     # ------------------------------------------------------------------
     # Paint
@@ -354,10 +425,21 @@ class SpeechBubble(QWidget):
         else:
             p.setPen(QPen(_TEXT))
             y = _PAD
-            for line in self._lines:
-                p.drawText(_PAD, y, self._text_w, self._line_h,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                           line)
+            if not self._line_segments and self._lines:
+                self._line_segments = [[(line, False)] for line in self._lines]
+            for line in self._line_segments:
+                x = _PAD
+                for idx, (word, bold) in enumerate(line):
+                    if idx:
+                        x += self._space_w
+                    font = self._bold_font if bold else self._font
+                    fm = self._bold_fm if bold else self._fm
+                    p.setFont(font)
+                    p.drawText(x, y, self._text_w - (x - _PAD), self._line_h,
+                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                               word)
+                    x += fm.horizontalAdvance(word)
+                p.setFont(self._font)
                 y += self._line_h
 
         p.end()

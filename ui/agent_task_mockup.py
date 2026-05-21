@@ -20,9 +20,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -35,14 +36,17 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+from ui.window_utils import fit_window_to_screen
 
 
 TaskSubmitCallback = Callable[["AgentTaskSpec"], None]
+_agent_run_windows: list["AgentRunWindow"] = []
 
 
 @dataclass(frozen=True)
@@ -138,13 +142,14 @@ class AgentTaskDialog(QDialog):
         self.task_spec: AgentTaskSpec | None = None
 
         self.setWindowTitle("Start Agent Task")
-        self.setMinimumSize(720, 720)
+        self.setMinimumSize(560, 420)
         self.setWindowFlags(
             self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
         )
 
         self._build_ui()
         self._load_defaults()
+        self._fit_to_screen()
 
     # ------------------------------------------------------------------ UI
 
@@ -161,12 +166,21 @@ class AgentTaskDialog(QDialog):
         intro.setStyleSheet("color: #777;")
         root.addWidget(intro)
 
-        root.addWidget(self._task_group())
-        root.addWidget(self._scope_group())
-        root.addWidget(self._permissions_group())
-        root.addWidget(self._runtime_group())
-        root.addWidget(self._output_group())
-        root.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+        content_layout.addWidget(self._task_group())
+        content_layout.addWidget(self._scope_group())
+        content_layout.addWidget(self._permissions_group())
+        content_layout.addWidget(self._runtime_group())
+        content_layout.addWidget(self._output_group())
+        content_layout.addStretch()
+        scroll.setWidget(content)
+        root.addWidget(scroll, stretch=1)
         root.addWidget(self._buttons())
 
     def _task_group(self) -> QGroupBox:
@@ -333,7 +347,7 @@ class AgentTaskDialog(QDialog):
         self.preview_btn.clicked.connect(self._preview_spec)
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
-        start = QPushButton("Start Mock Task")
+        start = QPushButton("Start Task")
         start.setDefault(True)
         start.clicked.connect(self._accept)
 
@@ -354,6 +368,19 @@ class AgentTaskDialog(QDialog):
         self.runtime_minutes.setValue(60)
         self.max_turns.setValue(30)
         self.blocked_globs_edit.setText(".env, private/*, .git/*")
+
+    def _fit_to_screen(self) -> None:
+        screen = QApplication.primaryScreen()
+        available_h = screen.availableGeometry().height() if screen is not None else 680
+        fit_window_to_screen(
+            self,
+            preferred_width=680,
+            preferred_height=min(640, max(460, available_h - 80)),
+        )
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        self._fit_to_screen()
 
     # ------------------------------------------------------------------ Actions
 
@@ -385,12 +412,10 @@ class AgentTaskDialog(QDialog):
         if self._on_submit is not None:
             self._on_submit(spec)
         else:
-            QMessageBox.information(
-                self,
-                "Mock Task Ready",
-                "No runner is wired yet. This is the validated task spec:\n\n"
-                + self._format_spec(spec),
-            )
+            window = AgentRunWindow(spec, parent=self.parentWidget())
+            _agent_run_windows.append(window)
+            window.destroyed.connect(lambda _obj=None, w=window: _agent_run_windows.remove(w) if w in _agent_run_windows else None)
+            window.show()
         self.accept()
 
     # ------------------------------------------------------------------ Spec
@@ -440,3 +465,70 @@ class AgentTaskDialog(QDialog):
             lines.append(f"{key}: {value}")
         return "\n".join(lines)
 
+
+class AgentRunWindow(QDialog):
+    """Small live log window for a background agent run."""
+
+    log_line = pyqtSignal(str)
+    finished = pyqtSignal(str)
+
+    def __init__(self, spec: AgentTaskSpec, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._spec = spec
+        self._thread = None
+        self.setWindowTitle(f"Agent Task - {spec.title}")
+        self.setMinimumSize(620, 420)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        title = QLabel(f"<b>{spec.title}</b>")
+        title.setTextFormat(Qt.TextFormat.RichText)
+        root.addWidget(title)
+
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        root.addWidget(self.log_view, stretch=1)
+
+        row = QHBoxLayout()
+        self.status_lbl = QLabel("Starting...")
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        row.addWidget(self.status_lbl)
+        row.addStretch()
+        row.addWidget(close_btn)
+        root.addLayout(row)
+
+        self.log_line.connect(self._append_log)
+        self.finished.connect(self._on_finished)
+        fit_window_to_screen(self, preferred_width=700, preferred_height=500)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        if self._thread is None:
+            self._start_runner()
+
+    def _start_runner(self) -> None:
+        from core.agent_runner import AgentTaskRunner
+
+        runner = AgentTaskRunner()
+
+        def run_and_finish():
+            run_dir = runner.run(self._spec, self.log_line.emit)
+            self.finished.emit(str(run_dir))
+
+        import threading
+
+        self._thread = threading.Thread(target=run_and_finish, daemon=True)
+        self._thread.start()
+
+    def _append_log(self, line: str) -> None:
+        self.log_view.append(line)
+
+    def _on_finished(self, run_dir: str) -> None:
+        self.status_lbl.setText(f"Finished. Log: {run_dir}")

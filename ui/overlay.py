@@ -100,6 +100,8 @@ class DollOverlay(QMainWindow):
         self._bubble = SpeechBubble()
         self._bubble.set_companion_callback(self._on_bubble_dragged)
         self._bubble.set_hide_callback(self._on_bubble_hidden)
+        self._bubble.set_speed_callback(self._on_bubble_speed_boost)
+        self._current_state = "idle"
 
         # Connect signals
         signals.set_state.connect(self._on_state_changed)
@@ -108,7 +110,6 @@ class DollOverlay(QMainWindow):
         signals.bubble_listening.connect(self._bubble.show_listening)
         signals.bubble_thinking.connect(self._bubble.start_thinking)
         signals.bubble_start_reveal.connect(self._bubble.start_word_reveal)
-        signals.bubble_schedule_words.connect(self._bubble.schedule_words)
         signals.bubble_chunk.connect(self._bubble.append_chunk)
         signals.bubble_finish.connect(self._bubble.finish)
         signals.bubble_clear.connect(self._bubble.clear)
@@ -167,6 +168,11 @@ class DollOverlay(QMainWindow):
         icon = self._state_icons.get("idle", QIcon())
 
         self._tray = QSystemTrayIcon(icon, self)
+        self._tray_menu = self._build_tray_menu()
+        self._tray.setContextMenu(self._tray_menu)
+        self._tray.show()
+
+    def _build_tray_menu(self) -> QMenu:
         menu = QMenu()
 
         if self._use_vrm:
@@ -174,6 +180,11 @@ class DollOverlay(QMainWindow):
             tuner_action.triggered.connect(self._open_vrm_tuner)
             menu.addAction(tuner_action)
             menu.addSeparator()
+
+        from ui.agent_task_mockup import make_agent_task_action
+
+        menu.addAction(make_agent_task_action(self, parent=self))
+        menu.addSeparator()
 
         new_chat_action = QAction("New chat", self)
         new_chat_action.triggered.connect(self.signals.show_new_chat.emit)
@@ -193,8 +204,7 @@ class DollOverlay(QMainWindow):
         menu.addAction(settings_action)
         menu.addSeparator()
         menu.addAction(quit_action)
-        self._tray.setContextMenu(menu)
-        self._tray.show()
+        return menu
 
     # ------------------------------------------------------------------
     # VRM Tuner
@@ -235,6 +245,7 @@ class DollOverlay(QMainWindow):
             self._icon_label.setPixmap(QPixmap(p))
 
     def _on_state_changed(self, state: str):
+        self._current_state = state
         icon = self._state_icons.get(state) or self._state_icons.get("idle")
         if icon:
             self._tray.setIcon(icon)
@@ -253,6 +264,17 @@ class DollOverlay(QMainWindow):
     def _update_pixmap(self, pixmap: QPixmap):
         if not self._use_vrm:
             self._label.setPixmap(pixmap)
+
+    def apply_settings(self):
+        """Apply settings that affect existing overlay widgets without restart."""
+        if hasattr(self, "_icon_label"):
+            sz = config.DOLL_SIZE
+            self._icon_label.setFixedSize(sz, sz)
+            self._set_icon_pixmap(getattr(self, "_current_state", "idle"))
+        if hasattr(self, "_bubble"):
+            self._bubble.apply_config()
+            if hasattr(self, "_icon_label"):
+                self._on_doll_dragged(self._icon_label.pos())
 
     # ------------------------------------------------------------------
     # Popup
@@ -289,12 +311,14 @@ class DollOverlay(QMainWindow):
         """Called by SpeechBubble.hideEvent — hides the icon in lockstep with the bubble."""
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
+        self._on_bubble_speed_boost(False)
         self._icon_hide_timer.stop()
         self._icon_label.hide()
 
     def _icon_label_clear(self):
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
+        self._on_bubble_speed_boost(False)
         self._icon_hide_timer.stop()
         self._icon_label.hide()
 
@@ -315,6 +339,9 @@ class DollOverlay(QMainWindow):
     def eventFilter(self, obj, event):
         if obj is self._icon_label:
             t = event.type()
+            if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
+                self._tray_menu.popup(event.globalPosition().toPoint())
+                return True
             if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self._icon_drag_offset = self._icon_label.pos() - event.globalPosition().toPoint()
                 return True
@@ -342,3 +369,7 @@ class DollOverlay(QMainWindow):
         """Reposition doll icon to stay to the right of the bubble after a drag."""
         doll_pos = self._bubble.doll_pos_for_bubble(bubble_pos, config.DOLL_SIZE)
         self._icon_label.move(doll_pos)
+
+    def _on_bubble_speed_boost(self, enabled: bool):
+        from core import audio
+        audio.set_tts_speed_boost(enabled)

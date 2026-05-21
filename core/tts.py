@@ -61,6 +61,11 @@ def _reset_cartesia_ws() -> None:
         _cartesia_ws_manager = None
 
 
+def reset_connections() -> None:
+    """Discard cached TTS connections so new provider/key/voice settings apply."""
+    _reset_cartesia_ws()
+
+
 def prewarm():
     """
     Open connections eagerly at app startup so the first user query is fast.

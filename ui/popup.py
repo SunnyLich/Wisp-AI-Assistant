@@ -45,6 +45,7 @@ class TextPopup(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
 
         label = QLabel(text)
+        label.setTextFormat(Qt.TextFormat.MarkdownText)
         label.setWordWrap(True)
         label.setFont(QFont("Segoe UI", 10))
         label.setStyleSheet(

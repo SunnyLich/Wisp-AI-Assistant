@@ -117,6 +117,9 @@ DOLL_SIZE         = int(os.getenv("DOLL_SIZE",         "80"))   # doll icon size
 VRM_WIDTH         = int(os.getenv("VRM_WIDTH",         "200"))  # VRM overlay width px
 VRM_HEIGHT        = int(os.getenv("VRM_HEIGHT",        "300"))  # VRM overlay height px
 BUBBLE_REVEAL_WPM = int(os.getenv("BUBBLE_REVEAL_WPM", "170")) # word-reveal speed (WPM fallback mode)
+BUBBLE_HOLD_REVEAL_WPM = int(os.getenv("BUBBLE_HOLD_REVEAL_WPM", "480")) # hold bubble to speed up reveal
+TTS_PLAYBACK_RATE = float(os.getenv("TTS_PLAYBACK_RATE", "1.0")) # normal TTS playback speed
+TTS_HOLD_PLAYBACK_RATE = float(os.getenv("TTS_HOLD_PLAYBACK_RATE", "1.35")) # hold bubble to speed up TTS
 
 # --- Memory ---
 # LLM used for consolidation / compression (defaults to chat LLM).
@@ -168,7 +171,8 @@ def reload() -> None:
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP
     global HOTKEY_VOICE, STT_MODEL, STT_COMPUTE_TYPE, STT_LANGUAGE
     global CALLER_ROWS
-    global BUBBLE_WIDTH, BUBBLE_LINES, DOLL_SIZE, BUBBLE_REVEAL_WPM
+    global BUBBLE_WIDTH, BUBBLE_LINES, DOLL_SIZE, BUBBLE_REVEAL_WPM, BUBBLE_HOLD_REVEAL_WPM
+    global TTS_PLAYBACK_RATE, TTS_HOLD_PLAYBACK_RATE
     global SYSTEM_PROMPT_UTILITY
     global MEMORY_LLM_PROVIDER, MEMORY_LLM_MODEL
     global MEMORY_CONSOLIDATION_INTERVAL, MEMORY_TOP_K, MEMORY_STM_TOKEN_BUDGET
@@ -213,6 +217,9 @@ def reload() -> None:
     VRM_WIDTH         = int(os.getenv("VRM_WIDTH",         "200"))
     VRM_HEIGHT        = int(os.getenv("VRM_HEIGHT",        "300"))
     BUBBLE_REVEAL_WPM = int(os.getenv("BUBBLE_REVEAL_WPM", "170"))
+    BUBBLE_HOLD_REVEAL_WPM = int(os.getenv("BUBBLE_HOLD_REVEAL_WPM", "480"))
+    TTS_PLAYBACK_RATE = float(os.getenv("TTS_PLAYBACK_RATE", "1.0"))
+    TTS_HOLD_PLAYBACK_RATE = float(os.getenv("TTS_HOLD_PLAYBACK_RATE", "1.35"))
 
     MEMORY_LLM_PROVIDER           = os.getenv("MEMORY_LLM_PROVIDER",           CHAT_LLM_PROVIDER)
     MEMORY_LLM_MODEL              = os.getenv("MEMORY_LLM_MODEL",              CHAT_LLM_MODEL)

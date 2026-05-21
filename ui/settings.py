@@ -12,11 +12,15 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
     QPushButton, QTabWidget, QWidget, QFrame, QMessageBox,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
+from dotenv import dotenv_values
+from ui.window_utils import fit_window_to_screen
 
 ENV_PATH = Path(__file__).parent.parent / ".env"
+_settings_dialog: "SettingsDialog | None" = None
 
 
 # ---------------------------------------------------------------------------
@@ -148,14 +152,26 @@ class HotkeyCaptureEdit(QLineEdit):
 
 
 def _read_env() -> dict[str, str]:
-    vals: dict[str, str] = {}
-    if ENV_PATH.exists():
-        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                vals[k.strip()] = v.strip()
-    return vals
+    if not ENV_PATH.exists():
+        return {}
+    return {
+        k: v
+        for k, v in dotenv_values(ENV_PATH).items()
+        if k is not None and v is not None
+    }
+
+
+def _format_env_value(value: str) -> str:
+    if any(ch in value for ch in ("\n", "\r", '"', "#")):
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\n", "\\n")
+            .replace('"', '\\"')
+        )
+        return f'"{escaped}"'
+    return value
 
 
 def _write_env(vals: dict[str, str]):
@@ -168,7 +184,7 @@ def _write_env(vals: dict[str, str]):
             if stripped and not stripped.startswith("#") and "=" in stripped:
                 k = stripped.split("=", 1)[0].strip()
                 if k in vals:
-                    lines.append(f"{k}={vals[k]}")
+                    lines.append(f"{k}={_format_env_value(vals[k])}")
                     written.add(k)
                 else:
                     lines.append(line)
@@ -176,10 +192,10 @@ def _write_env(vals: dict[str, str]):
                 lines.append(line)
         for k, v in vals.items():
             if k not in written:
-                lines.append(f"{k}={v}")
+                lines.append(f"{k}={_format_env_value(v)}")
     else:
         for k, v in vals.items():
-            lines.append(f"{k}={v}")
+            lines.append(f"{k}={_format_env_value(v)}")
     ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -189,13 +205,14 @@ class SettingsDialog(QDialog):
         self._on_apply = on_apply  # callable() fired after a successful apply
         self.setWindowTitle("Settings")
         self.setMinimumWidth(480)
-        self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
-        )
+        self.setModal(False)
+        self.setWindowFlag(Qt.WindowType.Window, True)
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
         self._env = _read_env()
         self._fields: dict[str, QLineEdit | QComboBox | QCheckBox | QTextEdit] = {}
         self._build_ui()
         self._load_values()
+        fit_window_to_screen(self, preferred_width=620, preferred_height=620)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -209,6 +226,10 @@ class SettingsDialog(QDialog):
                 if w._recording:
                     w._cancel()
         super().changeEvent(event)
+
+    def showEvent(self, event):                 # noqa: N802
+        super().showEvent(event)
+        fit_window_to_screen(self, preferred_width=620, preferred_height=620)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -448,10 +469,13 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(QLabel("System prompt:"))
         util = QTextEdit()
-        util.setFixedHeight(80)
+        util.setMinimumHeight(260)
+        util.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self._fields["SYSTEM_PROMPT_UTILITY"] = util
-        layout.addWidget(util)
-        layout.addStretch()
+        layout.addWidget(util, stretch=1)
         return w
 
     def _tab_keybinds(self) -> QWidget:
@@ -755,6 +779,12 @@ class SettingsDialog(QDialog):
         self._fields["BUBBLE_LINES"].setPlaceholderText("e.g. 2")
         self._fields["BUBBLE_REVEAL_WPM"] = QLineEdit()
         self._fields["BUBBLE_REVEAL_WPM"].setPlaceholderText("e.g. 170")
+        self._fields["BUBBLE_HOLD_REVEAL_WPM"] = QLineEdit()
+        self._fields["BUBBLE_HOLD_REVEAL_WPM"].setPlaceholderText("e.g. 480")
+        self._fields["TTS_PLAYBACK_RATE"] = QLineEdit()
+        self._fields["TTS_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.0")
+        self._fields["TTS_HOLD_PLAYBACK_RATE"] = QLineEdit()
+        self._fields["TTS_HOLD_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.35")
 
         f.addRow("", self._fields["DOLL_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
@@ -764,6 +794,9 @@ class SettingsDialog(QDialog):
         f.addRow("Bubble width (px)", self._fields["BUBBLE_WIDTH"])
         f.addRow("Bubble lines", self._fields["BUBBLE_LINES"])
         f.addRow("Bubble text speed (WPM)", self._fields["BUBBLE_REVEAL_WPM"])
+        f.addRow("Bubble hold speed (WPM)", self._fields["BUBBLE_HOLD_REVEAL_WPM"])
+        f.addRow("TTS speed", self._fields["TTS_PLAYBACK_RATE"])
+        f.addRow("TTS hold speed", self._fields["TTS_HOLD_PLAYBACK_RATE"])
         return w
 
     # ------------------------------------------------------------------
@@ -851,6 +884,9 @@ class SettingsDialog(QDialog):
         _set(self._fields["BUBBLE_WIDTH"], self._env.get("BUBBLE_WIDTH", str(cfg.BUBBLE_WIDTH)))
         _set(self._fields["BUBBLE_LINES"], self._env.get("BUBBLE_LINES", str(cfg.BUBBLE_LINES)))
         _set(self._fields["BUBBLE_REVEAL_WPM"], self._env.get("BUBBLE_REVEAL_WPM", str(cfg.BUBBLE_REVEAL_WPM)))
+        _set(self._fields["BUBBLE_HOLD_REVEAL_WPM"], self._env.get("BUBBLE_HOLD_REVEAL_WPM", str(cfg.BUBBLE_HOLD_REVEAL_WPM)))
+        _set(self._fields["TTS_PLAYBACK_RATE"], self._env.get("TTS_PLAYBACK_RATE", str(cfg.TTS_PLAYBACK_RATE)))
+        _set(self._fields["TTS_HOLD_PLAYBACK_RATE"], self._env.get("TTS_HOLD_PLAYBACK_RATE", str(cfg.TTS_HOLD_PLAYBACK_RATE)))
 
         util_val = self._env.get("SYSTEM_PROMPT_UTILITY", cfg.SYSTEM_PROMPT_UTILITY)
         self._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(util_val)  # type: ignore
@@ -860,8 +896,10 @@ class SettingsDialog(QDialog):
         if self._do_save():
             import config
             from core import llm as _llm
+            from core import tts as _tts
             config.reload()
             _llm.reset_clients()
+            _tts.reset_connections()
             if self._on_apply:
                 self._on_apply()
             self._status_lbl.setText("Applied.")
@@ -872,8 +910,10 @@ class SettingsDialog(QDialog):
         if self._do_save():
             import config as _cfg
             from core import llm as _llm
+            from core import tts as _tts
             _cfg.reload()
             _llm.reset_clients()
+            _tts.reset_connections()
             if self._on_apply:
                 self._on_apply()
             self.accept()
@@ -910,6 +950,9 @@ class SettingsDialog(QDialog):
             "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
             "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
             "BUBBLE_REVEAL_WPM": _get(self._fields["BUBBLE_REVEAL_WPM"]),
+            "BUBBLE_HOLD_REVEAL_WPM": _get(self._fields["BUBBLE_HOLD_REVEAL_WPM"]),
+            "TTS_PLAYBACK_RATE": _get(self._fields["TTS_PLAYBACK_RATE"]),
+            "TTS_HOLD_PLAYBACK_RATE": _get(self._fields["TTS_HOLD_PLAYBACK_RATE"]),
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
         }
         # Key conflict check (caller hotkeys + special hotkeys)
@@ -979,5 +1022,17 @@ def _get(widget) -> str:
 
 
 def open_settings(parent=None, on_apply=None):
-    dlg = SettingsDialog(parent, on_apply=on_apply)
-    dlg.exec()
+    global _settings_dialog
+    dialog_parent = None if os.name == "nt" else parent
+    if _settings_dialog is None:
+        _settings_dialog = SettingsDialog(dialog_parent, on_apply=on_apply)
+    else:
+        _settings_dialog._on_apply = on_apply
+        _settings_dialog._env = _read_env()
+        _settings_dialog._load_values()
+
+    if _settings_dialog.isMinimized():
+        _settings_dialog.showNormal()
+    _settings_dialog.show()
+    _settings_dialog.raise_()
+    _settings_dialog.activateWindow()

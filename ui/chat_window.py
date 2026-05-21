@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
 from PyQt6.QtGui import QFont, QPixmap, QShortcut, QKeySequence
+from ui.window_utils import fit_window_to_screen
 
 _W          = 680
 _H          = 520
@@ -342,6 +343,7 @@ class ChatWindow(QWidget):
 
     def _bubble(self, layout, text: str, role: str, image_b64: str | None = None) -> QLabel:
         lbl = QLabel(text)
+        lbl.setTextFormat(Qt.TextFormat.MarkdownText)
         lbl.setWordWrap(True)
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -482,8 +484,8 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Helpers
 
     def _center_on_screen(self):
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.move(
-            screen.x() + (screen.width()  - self.width())  // 2,
-            screen.y() + (screen.height() - self.height()) // 2,
-        )
+        fit_window_to_screen(self, preferred_width=_W, preferred_height=_H)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        self._center_on_screen()

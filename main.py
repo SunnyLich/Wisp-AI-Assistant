@@ -21,6 +21,18 @@ from ui.intent_overlay import IntentOverlay
 from ui.snip_overlay import SnipOverlay
 from ui.chat_window import ChatWindow
 
+
+def _configure_windows_app_identity() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Sunny.AIAssistantOverlay"
+        )
+    except Exception:
+        pass
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -73,7 +85,10 @@ def _extract_remember_fact(text: str) -> str | None:
 
 class App:
     def __init__(self):
+        _configure_windows_app_identity()
         self._qt = QApplication(sys.argv)
+        self._qt.setApplicationName("AI Assistant Overlay")
+        self._qt.setApplicationDisplayName("AI Assistant Overlay")
         self._qt.setQuitOnLastWindowClosed(False)  # chat/settings closing must not exit the app
         self._signals = OverlaySignals()
         self._overlay = DollOverlay(self._signals)
@@ -145,6 +160,7 @@ class App:
 
     def _on_settings_applied(self):
         config.reload()
+        tts_module.reset_connections()
         self._hotkeys.stop()
         self._hotkeys = HotkeyListener(
             on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
@@ -155,6 +171,7 @@ class App:
             on_voice_stop=self._on_voice_stop,
         )
         self._hotkeys.start()
+        self._overlay.apply_settings()
         print("[main] Config reloaded and hotkeys re-registered.")
 
     # ------------------------------------------------------------------

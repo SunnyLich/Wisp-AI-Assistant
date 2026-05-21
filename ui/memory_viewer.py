@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
+from ui.window_utils import fit_window_to_screen
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -260,6 +261,7 @@ class MemoryViewer(QDialog):
         self.setWindowFlags(
             self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
         )
+        fit_window_to_screen(self, preferred_width=620, preferred_height=520)
 
         root = QVBoxLayout(self)
         root.setSpacing(8)
@@ -288,3 +290,7 @@ class MemoryViewer(QDialog):
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
         root.addLayout(btn_row)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        fit_window_to_screen(self, preferred_width=620, preferred_height=520)
