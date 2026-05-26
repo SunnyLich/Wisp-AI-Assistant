@@ -1,10 +1,10 @@
-﻿"""
-main.py -” Entry point for Wisp.
+"""
+main.py -" Entry point for Wisp.
 
 Flow:
-  Ctrl+E â†’ IntentOverlay appears (WASD picker)
-  WASD key â†’ capture input â†’ LLM stream â†’ TTS stream â†’ audio out
-  Click doll â†’ show full reply popup
+  Ctrl+E â†' IntentOverlay appears (WASD picker)
+  WASD key â†' capture input â†' LLM stream â†' TTS stream â†' audio out
+  Click doll â†' show full reply popup
 """
 import sys
 import os
@@ -104,7 +104,7 @@ class App:
         print("[main] Connections pre-warmed.")
 
     # ------------------------------------------------------------------
-    # Settings applied -” reload config + re-register hotkeys live
+    # Settings applied -" reload config + re-register hotkeys live
     # ------------------------------------------------------------------
 
     def _on_settings_applied(self):
@@ -125,11 +125,11 @@ class App:
         print("[main] Config reloaded and hotkeys re-registered.")
 
     # ------------------------------------------------------------------
-    # Hotkey â†’ show intent picker (runs in keyboard listener thread)
+    # Hotkey â†' show intent picker (runs in keyboard listener thread)
     # ------------------------------------------------------------------
 
     def _on_add_context(self):
-        """Alt+Q -” capture selected text and append to context buffer."""
+        """Alt+Q -" capture selected text and append to context buffer."""
         text = capture.get_selected_text()
         if text:
             with self._context_buffer_lock:
@@ -137,13 +137,13 @@ class App:
             print(f"[main] Context buffer: {len(self._context_buffer)} item(s) queued.")
 
     def _on_clear_context(self):
-        """Alt+W -” clear the context buffer."""
+        """Alt+W -" clear the context buffer."""
         with self._context_buffer_lock:
             self._context_buffer.clear()
         print("[main] Context buffer cleared.")
 
     def _steal_foreground(self) -> None:
-        “””Bring the overlay to the foreground from the keyboard-hook thread.”””
+        """Bring the overlay to the foreground from the keyboard-hook thread."""
         if _IS_WIN:
             if not self._overlay_hwnd:
                 return
@@ -165,7 +165,7 @@ class App:
             self._signals.raise_overlay.emit()
 
     def _on_snip_hotkey(self):
-        “””Ctrl+Alt+Q — show the region selector, then the intent picker.”””
+        """Ctrl+Alt+Q — show the region selector, then the intent picker."""
         from core.platform_utils import get_foreground_window
         self._pending_intent_target = get_foreground_window()
         self._steal_foreground()
@@ -252,7 +252,7 @@ class App:
     # ------------------------------------------------------------------
 
     def _on_voice_start(self):
-        """F9 key-down -” start recording."""
+        """F9 key-down -" start recording."""
         if self._voice_active:
             return  # ignore held-down repeat events
         self._voice_active = True
@@ -264,11 +264,11 @@ class App:
         self._signals.bubble_listening.emit()
 
     def _on_voice_stop(self):
-        """F9 key-up -” stop recording, transcribe, and query."""
+        """F9 key-up -" stop recording, transcribe, and query."""
         if not self._voice_active:
             return
         self._voice_active = False
-        # Transcription is blocking (~200-“600 ms) -” run off the hotkey thread.
+        # Transcription is blocking (~200-"600 ms) -" run off the hotkey thread.
         threading.Thread(target=self._voice_transcribe_and_query, daemon=True).start()
 
     def _voice_transcribe_and_query(self):
@@ -440,14 +440,14 @@ class App:
             else ""
         )
 
-        # Build final message -” intent prompt only; context goes into the system
+        # Build final message -" intent prompt only; context goes into the system
         # prompt so it is sent exactly once and not repeated in every follow-up turn.
         with self._context_buffer_lock:
             context_items = self._context_buffer.copy()
             self._context_buffer.clear()
 
         all_contexts = context_items + ([selected] if selected else [])
-        user_message = intent_prompt  # clean turn -” no embedded context
+        user_message = intent_prompt  # clean turn -" no embedded context
         if all_contexts:
             # Merge selected / buffered text into ambient_ctx (system-prompt layer).
             ctx_block = (
@@ -458,7 +458,7 @@ class App:
             ambient_ctx = f"{ambient_ctx}\n\n---\n{ctx_block}" if ambient_ctx else ctx_block
 
         # Proactively read the active document (if any) so the model has full context
-        # without needing a tool round-trip.  Only for text queries -” vision queries
+        # without needing a tool round-trip.  Only for text queries -" vision queries
         # already have a screenshot as context.
         if not screenshot_b64 and caller.get("context_documents", True):
             doc_text = llm.read_active_document_for_context()
@@ -487,7 +487,7 @@ class App:
             memory_ctx_parts.append("[Session context]\n" + stm_ctx)
         memory_context = "\n\n".join(memory_ctx_parts)
 
-        # Fresh query -” reset streamed text accumulator.
+        # Fresh query -" reset streamed text accumulator.
         full_text = ""
         reply_text = ""
         llm_chunk_q: queue.Queue[str | None] = queue.Queue()
@@ -512,7 +512,7 @@ class App:
                             reply_text += part
                             llm_chunk_q.put(part)
                     if gen_id != self._gen_id:
-                        break  # a newer query started -” stop feeding stale chunks to the bubble
+                        break  # a newer query started -" stop feeding stale chunks to the bubble
             finally:
                 for part, is_thought in parser.finish():
                     if not part:
@@ -546,7 +546,7 @@ class App:
                 yield chunk
 
         def on_audio_start():
-            # Called when first PCM chunk hits the speaker -” start word reveal + speaking anim.
+            # Called when first PCM chunk hits the speaker -" start word reveal + speaking anim.
             if gen_id != self._gen_id:
                 return
             self._signals.set_state.emit("speaking")
@@ -556,7 +556,7 @@ class App:
             self._signals.set_mouth_amp.emit(amp)
 
         def on_word_timestamps(words, start_ms):
-            # Real word timings from Cartesia -” drives precise bubble sync.
+            # Real word timings from Cartesia -" drives precise bubble sync.
             if gen_id == self._gen_id:
                 self._signals.bubble_schedule_words.emit(words, start_ms)
 
@@ -584,7 +584,7 @@ class App:
         threading.Thread(target=tts_consumer, daemon=True).start()
 
     # ------------------------------------------------------------------
-    # Doll click â†’ show popup
+    # Doll click â†' show popup
     # ------------------------------------------------------------------
 
     def _open_or_raise_chat(self, auto_message: str | None = None, force_new: bool = False) -> None:
@@ -609,11 +609,11 @@ class App:
         self._open_or_raise_chat(auto_message=auto_msg)
 
     def _on_show_last_chat(self):
-        """Tray menu 'Last chat' -” open or raise the chat window."""
+        """Tray menu 'Last chat' -" open or raise the chat window."""
         self._open_or_raise_chat()
 
     def _on_show_new_chat(self):
-        """Tray menu 'New chat' -” open the chat window on a fresh thread."""
+        """Tray menu 'New chat' -" open the chat window on a fresh thread."""
         self._open_or_raise_chat(force_new=True)
 
     def _make_memory_send_fn(self):
@@ -650,7 +650,7 @@ class App:
 def main():
     # On Windows, synthesising Ctrl+C via keyboard.send() also delivers
     # CTRL_C_EVENT to our own process, becoming a KeyboardInterrupt in Qt.
-    # Block it at the Win32 level; the tray “Quit” action is the exit path.
+    # Block it at the Win32 level; the tray "Quit" action is the exit path.
     if _IS_WIN:
         try:
             import ctypes
