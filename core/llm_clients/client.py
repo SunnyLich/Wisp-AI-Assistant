@@ -1211,17 +1211,26 @@ def _stream_openai_compat(
 ) -> Generator[str, None, None]:
     messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
 
+    finish_reason = None
     with client.chat.completions.create(
         model=model,
         messages=messages,
         stream=True,
-        max_tokens=max_tokens or 256,
+        max_tokens=max_tokens or 1024,
         temperature=0.5 if temperature is None else temperature,
     ) as stream:
         for chunk in stream:
-            delta = chunk.choices[0].delta.content
+            choice = chunk.choices[0] if chunk.choices else None
+            if choice is None:
+                continue
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            delta = choice.delta.content
             if delta:
                 yield delta
+    if finish_reason and finish_reason != "stop":
+        import time
+        print(f"[llm {time.strftime('%H:%M:%S')}] Stream ended with finish_reason={finish_reason!r} (model={model})")
 
 
 # ------------------------------------------------------------------
@@ -1407,7 +1416,7 @@ def _stream_anthropic(
     if not use_tools:
         request = {
             "model": model,
-            "max_tokens": max_tokens or 256,
+            "max_tokens": max_tokens or 1024,
             "system": system,
             "messages": [{"role": "user", "content": content}],
         }
