@@ -152,7 +152,9 @@ def get_window_title(wid: int) -> str:
     try:
         ew = _get_ewmh()
         win = ew.display.create_resource_object("window", wid)
-        return ew.getWmName(win) or ""
+        title = ew.getWmName(win) or ""
+        # ewmh may return bytes on some distros (legacy WM_NAME atom)
+        return title.decode("utf-8", errors="replace") if isinstance(title, bytes) else title
     except Exception:
         return ""
 

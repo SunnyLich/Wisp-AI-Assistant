@@ -20,6 +20,10 @@ a = Analysis(
         "sentence_transformers",
         "pynput.keyboard._xorg",
         "pynput.mouse._xorg",
+        # SSL support — required for any https:// request from the bundle
+        "ssl",
+        "_ssl",
+        "certifi",
     ],
     hookspath=[],
     hooksconfig={},
@@ -32,6 +36,13 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Strip bundled libssl/libcrypto — venv and system versions can mismatch.
+# The system's OpenSSL pair is always self-consistent.
+a.binaries = [
+    b for b in a.binaries
+    if not (b[0].startswith("libssl") or b[0].startswith("libcrypto"))
+]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

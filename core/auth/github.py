@@ -11,8 +11,6 @@ import pathlib
 import threading
 import time
 from typing import Callable
-from urllib.parse import urlencode
-
 import config
 
 _DEVICE_CODE_URL = "https://github.com/login/device/code"
@@ -125,27 +123,25 @@ def get_user_login() -> str | None:
 
 
 def _post_form(url: str, params: dict) -> dict:
-    import urllib.request
+    import requests  # type: ignore
 
-    body = urlencode(params).encode()
-    req = urllib.request.Request(
+    resp = requests.post(
         url,
-        data=body,
+        data=params,
         headers={
             "Accept": "application/json",
-            "Content-Type": "application/x-www-form-urlencoded",
             "User-Agent": "python-ai-overlay",
         },
-        method="POST",
+        timeout=30,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _get_json(url: str, token: str) -> dict:
-    import urllib.request
+    import requests  # type: ignore
 
-    req = urllib.request.Request(
+    resp = requests.get(
         url,
         headers={
             "Accept": "application/vnd.github+json",
@@ -153,9 +149,10 @@ def _get_json(url: str, token: str) -> dict:
             "User-Agent": "python-ai-overlay",
             "X-GitHub-Api-Version": "2022-11-28",
         },
+        timeout=30,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _tokens_from_raw(raw: dict) -> dict:

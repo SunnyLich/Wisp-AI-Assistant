@@ -12,7 +12,8 @@ from PyQt6.QtWidgets import QWidget, QApplication, QLineEdit
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QRect
 from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
 import config
-import keyboard
+
+_IS_WIN = sys.platform == "win32"
 
 
 
@@ -262,11 +263,30 @@ class IntentOverlay(QWidget):
         self.raise_()
         self.activateWindow()
         self._closed = False
-        # Use keyboard library hook so keys work regardless of Qt focus/Popup restrictions.
-        self._kb_hook = keyboard.on_press(
-            lambda e: None if (not e or not e.name or self._closed) else self._raw_key.emit(e.name),
-            suppress=False,
-        )
+        if _IS_WIN:
+            import keyboard  # type: ignore
+            self._kb_hook = keyboard.on_press(
+                lambda e: None if (not e or not e.name or self._closed) else self._raw_key.emit(e.name),
+                suppress=False,
+            )
+        else:
+            # pynput Listener uses Xlib — no root required (unlike the keyboard library)
+            from pynput import keyboard as _kb  # type: ignore
+
+            def _on_press(key):
+                if self._closed:
+                    return
+                try:
+                    name = key.char if (hasattr(key, "char") and key.char) else key.name
+                except AttributeError:
+                    return
+                if name:
+                    self._raw_key.emit(name.lower())
+
+            listener = _kb.Listener(on_press=_on_press)
+            listener.daemon = True
+            listener.start()
+            self._kb_hook = listener
 
     # ------------------------------------------------------------------
     # Cleanup / fire
@@ -276,7 +296,11 @@ class IntentOverlay(QWidget):
         self._closed = True  # guard lambda against late keyboard events after C++ deletion
         if self._kb_hook is not None:
             try:
-                keyboard.unhook(self._kb_hook)
+                if _IS_WIN:
+                    import keyboard  # type: ignore
+                    keyboard.unhook(self._kb_hook)
+                else:
+                    self._kb_hook.stop()
             except Exception:
                 pass
             self._kb_hook = None
