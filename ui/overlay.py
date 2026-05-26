@@ -118,6 +118,9 @@ class DollOverlay(QMainWindow):
         )
         self._icon_label.setWindowTitle("AI Assistant Doll")
         self._icon_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        _app_icon = QApplication.instance().windowIcon()
+        if not _app_icon.isNull():
+            self._icon_label.setWindowIcon(_app_icon)
         self._icon_label.setFixedSize(sz, sz)
         self._icon_label.move(x, y)
         self._icon_label.setScaledContents(True)

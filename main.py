@@ -10,6 +10,7 @@ import sys
 import os
 import threading
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QIcon
 
 _IS_WIN = sys.platform == "win32"
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen=false")
@@ -21,12 +22,24 @@ from core.assistant_text import ThoughtStreamParser
 from core import tts as tts_module
 from core.memory_store import store as memory_module
 from core.system.app_platform import configure_windows_app_identity
+from core.system.paths import ASSETS_DIR
 from core.memory_store.commands import extract_remember_fact
 from ui.overlay import DollOverlay, OverlaySignals
 from ui.intent_overlay import IntentOverlay
 from ui.snip_overlay import SnipOverlay
 from ui.chat_window import ChatWindow
 from ui.shared.theme import apply_app_theme
+
+
+def _build_app_icon() -> QIcon:
+    """Return the best available app icon (app.ico, then idle.png as fallback)."""
+    for name in ("app.ico", "idle.png"):
+        p = str(ASSETS_DIR / name)
+        icon = QIcon(p)
+        if not icon.isNull():
+            return icon
+    idle_p = str(ASSETS_DIR / "doll" / "idle.png")
+    return QIcon(idle_p)
 
 
 class App:
@@ -36,6 +49,9 @@ class App:
         self._qt.setApplicationName("Wisp")
         self._qt.setApplicationDisplayName("Wisp")
         self._qt.setQuitOnLastWindowClosed(False)  # chat/settings closing must not exit the app
+        _app_icon = _build_app_icon()
+        if not _app_icon.isNull():
+            self._qt.setWindowIcon(_app_icon)
         apply_app_theme(self._qt)
         self._signals = OverlaySignals()
         self._overlay = DollOverlay(self._signals)
