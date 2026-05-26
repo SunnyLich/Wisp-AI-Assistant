@@ -8,7 +8,8 @@ from core.system.env_utils import env_bool, env_float, env_int
 from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
 from core.system.paths import REPO_ROOT, TOOLS_INSTALLED_DIR
 
-load_dotenv()
+_ENV_FILE = REPO_ROOT / ".env"
+load_dotenv(_ENV_FILE)
 
 BASE_DIR = str(REPO_ROOT)
 
@@ -246,5 +247,5 @@ def reload() -> None:
     Note: UI size constants (BUBBLE_WIDTH, DOLL_SIZE, …) require widget recreation
     and only fully apply after a restart; everything else is live.
     """
-    load_dotenv(override=True)
+    load_dotenv(_ENV_FILE, override=True)
     _load_config()

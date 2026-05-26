@@ -1,13 +1,63 @@
 """Canonical filesystem locations for the app."""
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
+_APP_NAME = "Wisp"
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ASSETS_DIR = REPO_ROOT / "assets"
-DOLL_ASSETS_DIR = ASSETS_DIR / "doll"
+
+def _user_data_dir() -> Path:
+    """
+    Return a platform-appropriate, user-writable directory for settings and
+    data that must survive rebuilds and updates.
+
+    Linux:   $XDG_CONFIG_HOME/wisp  (~/.config/wisp)
+    Windows: %APPDATA%\\Wisp
+    macOS:   ~/Library/Application Support/Wisp
+    """
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+        return base / _APP_NAME
+    elif sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / _APP_NAME
+    else:
+        xdg = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+        return xdg / _APP_NAME.lower()
+
+
+def _bundle_root() -> Path:
+    """
+    Return the root of read-only bundled files (assets).
+    In a PyInstaller onedir build this is sys._MEIPASS (_internal/).
+    In a dev run it is the repo root.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parents[2]
+
+
+def _repo_root() -> Path:
+    """Return the repo root in dev mode; user data dir when frozen."""
+    if getattr(sys, "frozen", False):
+        d = _user_data_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return Path(__file__).resolve().parents[2]
+
+
+# ---------------------------------------------------------------------------
+# Public paths
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = _repo_root()          # user-writable: .env, memory, plugins
+_BUNDLE = _bundle_root()           # read-only bundled files
+
+ASSETS_DIR       = _BUNDLE / "assets"
+DOLL_ASSETS_DIR  = ASSETS_DIR / "doll"
 FILLER_AUDIO_DIR = ASSETS_DIR / "filler"
-MEMORY_DIR = REPO_ROOT / "memory"
-AGENT_RUNS_DIR = MEMORY_DIR / "agent_runs"
+
+MEMORY_DIR        = REPO_ROOT / "memory"
+AGENT_RUNS_DIR    = MEMORY_DIR / "agent_runs"
 TOOLS_INSTALLED_DIR = REPO_ROOT / "tools" / "installed"

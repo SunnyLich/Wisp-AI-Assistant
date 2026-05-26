@@ -105,6 +105,27 @@ if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed with exit code $LASTEXITCODE."
 }
 
+# Seed %APPDATA%\Wisp\.env with the repo's .env if the user has no settings yet.
+# Settings are stored there so they survive rebuilds and updates.
+$UserCfg = Join-Path $env:APPDATA "Wisp"
+$EnvTarget = Join-Path $UserCfg ".env"
+if (-not (Test-Path $UserCfg)) { New-Item -ItemType Directory -Force $UserCfg | Out-Null }
+if (-not (Test-Path $EnvTarget)) {
+    $envSrc = Join-Path $Root ".env"
+    $envExample = Join-Path $Root ".env.example"
+    if (Test-Path $envSrc) {
+        Copy-Item $envSrc $EnvTarget
+    } elseif (Test-Path $envExample) {
+        Copy-Item $envExample $EnvTarget
+    } else {
+        New-Item -ItemType File $EnvTarget | Out-Null
+    }
+    Write-Host "Created $EnvTarget (initial settings)"
+} else {
+    Write-Host "Keeping existing settings at $EnvTarget"
+}
+
 Write-Host ""
 Write-Host "Built app folder: $Root\dist\$AppName"
 Write-Host "Executable:       $Root\dist\$AppName\$AppName.exe"
+Write-Host "Settings file:    $EnvTarget  (persists across rebuilds)"

@@ -106,6 +106,23 @@ fi
 
 "$PYTHON" -m PyInstaller --noconfirm "$SPEC"
 
+# Seed the user config dir (~/.config/wisp/.env) with the repo's .env if the
+# user has no settings yet. The app reads/writes settings there at runtime so
+# they survive rebuilds and updates.
+XDG_CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+USER_CFG="$XDG_CFG/wisp"
+ENV_TARGET="$USER_CFG/.env"
+mkdir -p "$USER_CFG"
+if [[ ! -f "$ENV_TARGET" ]]; then
+    cp "$ROOT/.env" "$ENV_TARGET" 2>/dev/null \
+        || cp "$ROOT/.env.example" "$ENV_TARGET" 2>/dev/null \
+        || touch "$ENV_TARGET"
+    echo "Created $ENV_TARGET (initial settings)"
+else
+    echo "Keeping existing settings at $ENV_TARGET"
+fi
+
 echo ""
 echo "Built app folder: $ROOT/dist/$APP_NAME"
 echo "Executable:       $ROOT/dist/$APP_NAME/$APP_NAME"
+echo "Settings file:    $ENV_TARGET  (persists across rebuilds)"
