@@ -5,7 +5,14 @@ import config
 from core import secret_store
 
 
-GOOGLE_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GOOGLE_OPENAI_BASE_URL  = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEEPSEEK_BASE_URL       = "https://api.deepseek.com/v1"
+OPENROUTER_BASE_URL     = "https://openrouter.ai/api/v1"
+MISTRAL_BASE_URL        = "https://api.mistral.ai/v1"
+XAI_BASE_URL            = "https://api.x.ai/v1"
+TOGETHER_BASE_URL       = "https://api.together.xyz/v1"
+CEREBRAS_BASE_URL       = "https://api.cerebras.ai/v1"
+OLLAMA_BASE_URL         = "http://localhost:11434/v1"
 
 
 def api_key_for(provider: str) -> str:
@@ -22,6 +29,22 @@ def api_key_for(provider: str) -> str:
         return "chatgpt-oauth"
     if p == "copilot":
         return "copilot-token"
+    if p == "custom":
+        return config.CUSTOM_API_KEY
+    if p == "deepseek":
+        return config.DEEPSEEK_API_KEY
+    if p == "openrouter":
+        return config.OPENROUTER_API_KEY
+    if p == "mistral":
+        return config.MISTRAL_API_KEY
+    if p == "xai":
+        return config.XAI_API_KEY
+    if p == "together":
+        return config.TOGETHER_API_KEY
+    if p == "cerebras":
+        return config.CEREBRAS_API_KEY
+    if p == "ollama":
+        return "ollama-local"   # no real key required
     return ""
 
 
@@ -39,6 +62,22 @@ def credential_source_for_provider(provider: str) -> str:
         return "chatgpt-oauth"
     if p == "copilot":
         return "copilot-keychain"
+    if p == "custom":
+        return secret_store.secret_source("CUSTOM_API_KEY")
+    if p == "deepseek":
+        return secret_store.secret_source("DEEPSEEK_API_KEY")
+    if p == "openrouter":
+        return secret_store.secret_source("OPENROUTER_API_KEY")
+    if p == "mistral":
+        return secret_store.secret_source("MISTRAL_API_KEY")
+    if p == "xai":
+        return secret_store.secret_source("XAI_API_KEY")
+    if p == "together":
+        return secret_store.secret_source("TOGETHER_API_KEY")
+    if p == "cerebras":
+        return secret_store.secret_source("CEREBRAS_API_KEY")
+    if p == "ollama":
+        return "local"
     return "none"
 
 

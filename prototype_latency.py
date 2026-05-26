@@ -18,7 +18,8 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 import config
-from core import llm, tts, audio
+from core import tts, audio
+from core.llm_clients import client as llm
 
 
 def run_latency_test(user_text: str, image_base64: str | None = None):

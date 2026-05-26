@@ -1,5 +1,5 @@
 ﻿"""
-core/memory.py â€” Long-term and short-term memory for the AI assistant.
+core/memory.py -” Long-term and short-term memory for the AI assistant.
 
 Short-term memory (STM):
   - In-memory log of turns from the current session; reset on every app start.
@@ -13,7 +13,7 @@ Long-term memory (LTM):
   - Atomic facts stored in a chromadb vector collection (local, file-backed).
   - Categories: project_context | general.
   - Retrieval: top-k semantic search; result injected into every LLM call.
-  - Writes: explicit ("remember that â€¦") or via the periodic summariser.
+  - Writes: explicit ("remember that -¦") or via the periodic summariser.
   - Conflict: if a new fact is semantically similar (cosine distance < 0.15,
     i.e. similarity > 0.85) to an existing one the old fact is archived
     (not deleted) and the new one wins. Timestamps are preserved for audit.
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -51,14 +52,18 @@ You are extracting facts for a personal memory system.
 
 Extract ONLY facts that fit these categories:
 - project_context: things the user is working on, projects, goals, tasks, deadlines
-- general: everything else â€” preferences, personal facts, background, open questions
+- general: everything else -” preferences, personal facts, background, open questions
 
 Rules:
 - Each fact must be a single atomic sentence, under 20 words.
-- Extract ONLY things the USER stated about themselves or their situation.
+- Extract ONLY durable facts the USER stated about themselves, their preferences,
+  their projects, or their stable situation.
 - Do NOT extract transient queries ("what time is it in Tokyo").
+- Do NOT extract ordinary task requests, troubleshooting steps, greetings, thanks,
+  one-off opinions, UI labels, code, logs, URLs, file paths, or copied document text.
 - Do NOT extract credentials, passwords, or secrets.
 - Do NOT extract information the assistant provided; only user-originated facts.
+- Prefer returning [] unless the fact will clearly still be useful next week.
 - If nothing qualifies, return an empty array.
 
 Conversation turns:
@@ -68,7 +73,7 @@ Return ONLY a JSON array, no other text:
 [{{"text": "...", "category": "project_context|general"}}, ...]"""
 
 _COMPRESSION_PROMPT = """\
-Compress the following conversation turns into a concise summary (2â€“3 sentences maximum) \
+Compress the following conversation turns into a concise summary (2-“3 sentences maximum) \
 that preserves key decisions, topics discussed, and any context the user provided.
 Be factual and brief.
 
@@ -88,6 +93,22 @@ _CAT_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+_SECRET_PATTERNS = (
+    re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\b(?:api[_-]?key|token|password|secret)\b", re.IGNORECASE),
+)
+_JUNK_PREFIXES = (
+    "what is", "what are", "how do", "how can", "can you", "could you",
+    "please ", "fix ", "rewrite ", "summarize ", "explain ", "create ",
+    "make ", "add ", "remove ", "update ", "open ", "search ", "find ",
+)
+_DURABLE_CUES = (
+    "i am ", "i'm ", "i like ", "i prefer ", "i use ", "i work ",
+    "my ", "our project", "the project", "this project", "working on",
+    "building", "developing", "deadline", "goal",
+)
+
 
 def _infer_category(text: str) -> str:
     t = text.lower()
@@ -104,6 +125,40 @@ def _now_iso() -> str:
 def _estimate_tokens(text: str) -> int:
     """Rough estimate: 1 token â‰ˆ 4 chars."""
     return max(1, len(text) // 4)
+
+
+def _normalize_fact_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip(" \t\r\n-•")).strip()
+
+
+def _is_memory_worthy_fact(text: str, *, source: str) -> bool:
+    """Reject noisy/non-durable memory candidates before they hit storage."""
+    fact = _normalize_fact_text(text)
+    lower = fact.lower()
+    words = re.findall(r"[A-Za-z0-9']+", fact)
+    if not fact or len(words) < 3 or len(words) > 24:
+        return False
+    if fact.endswith("?") or any(p.search(fact) for p in _SECRET_PATTERNS):
+        return False
+    if "http://" in lower or "https://" in lower or "\\" in fact or "/" in fact:
+        return False
+    if "```" in fact or "traceback" in lower or "error:" in lower:
+        return False
+    if any(lower.startswith(prefix) for prefix in _JUNK_PREFIXES):
+        return source == "explicit"
+    if source == "summarizer" and not any(cue in lower for cue in _DURABLE_CUES):
+        return False
+    return True
+
+
+def _lexical_overlap(query: str, fact: str) -> int:
+    stop = {
+        "the", "and", "for", "with", "that", "this", "you", "your", "are",
+        "was", "were", "have", "has", "had", "what", "how", "can", "please",
+    }
+    q_words = {w for w in re.findall(r"[a-z0-9']+", query.lower()) if len(w) > 2 and w not in stop}
+    f_words = {w for w in re.findall(r"[a-z0-9']+", fact.lower()) if len(w) > 2 and w not in stop}
+    return len(q_words & f_words)
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +183,7 @@ class MemoryManager:
         self._consolidation_timer: threading.Timer | None = None
 
         self._init_chromadb()
-        self._schedule_consolidation()
+        self._sync_consolidation_timer()
 
     # ------------------------------------------------------------------
     # chromadb initialisation
@@ -153,7 +208,7 @@ class MemoryManager:
             )
         except Exception as exc:
             print(
-                f"[memory] chromadb unavailable â€” using plain JSON fallback: {exc}"
+                f"[memory] chromadb unavailable -” using plain JSON fallback: {exc}"
             )
             self._chroma_ok = False
             self._collection = None
@@ -169,6 +224,7 @@ class MemoryManager:
         context: str = "",
     ) -> None:
         """Append a completed turn to the in-session STM."""
+        self._sync_consolidation_timer()
         with self._stm_lock:
             self._stm.append({
                 "type": "turn",
@@ -178,9 +234,15 @@ class MemoryManager:
                 "context": context,
                 "timestamp": _now_iso(),
             })
-            # Guard set inside lock so two concurrent record_turn calls
-            # cannot both see _compressing=False and spawn duplicate threads.
-            launch_compression = not self._compressing
+            # Check the budget inside the lock so we only spawn a thread when
+            # compression is actually needed, avoiding a pointless thread per turn.
+            raw = [e for e in self._stm if e.get("type") == "turn"]
+            total = sum(
+                _estimate_tokens(t.get("role_user", "") + " " + t.get("role_assistant", ""))
+                for t in raw
+            )
+            over_budget = total > config.MEMORY_STM_TOKEN_BUDGET
+            launch_compression = not self._compressing and over_budget
             if launch_compression:
                 self._compressing = True
 
@@ -265,20 +327,20 @@ class MemoryManager:
             self._compressing = False
 
     # ------------------------------------------------------------------
-    # Long-term memory â€” explicit writes
+    # Long-term memory -” explicit writes
     # ------------------------------------------------------------------
 
     def add_explicit_fact(self, text: str) -> None:
         """
         Immediately commit a user-stated fact to LTM.
-        Called when the user's message starts with "remember that â€¦".
+        Called when the user's message starts with "remember that -¦".
         """
         category = _infer_category(text)
         self._upsert_fact(text.strip(), category, source="explicit")
         print(f"[memory] Explicit fact stored ({category}): {text!r}")
 
     # ------------------------------------------------------------------
-    # Long-term memory â€” retrieval
+    # Long-term memory -” retrieval
     # ------------------------------------------------------------------
 
     def retrieve_relevant(self, query: str, top_k: Optional[int] = None) -> str:
@@ -291,7 +353,7 @@ class MemoryManager:
         k = top_k if top_k is not None else config.MEMORY_TOP_K
 
         if not self._chroma_ok or self._collection is None:
-            return self._fallback_all_facts()
+            return self._fallback_all_facts(query)
 
         try:
             count = self._collection.count()
@@ -301,25 +363,38 @@ class MemoryManager:
                 query_texts=[query],
                 n_results=min(k, count),
                 where={"archived": {"$eq": False}},
-                include=["documents", "metadatas"],
+                include=["documents", "metadatas", "distances"],
             )
             docs: list[str] = results.get("documents", [[]])[0]
+            dists: list[float] = results.get("distances", [[]])[0]
             if not docs:
                 return ""
-            lines = [f"- {doc}" for doc in docs]
+            max_dist = config.MEMORY_RELEVANCE_MAX_DISTANCE
+            filtered = [
+                doc for doc, dist in zip(docs, dists)
+                if dist <= max_dist or _lexical_overlap(query, doc) > 0
+            ]
+            if not filtered:
+                return ""
+            lines = [f"- {doc}" for doc in filtered[:k]]
             return "[Memory]\n" + "\n".join(lines)
         except Exception as exc:
             print(f"[memory] Retrieval error: {exc}")
             return ""
 
-    def _fallback_all_facts(self) -> str:
+    def _fallback_all_facts(self, query: str = "") -> str:
         """Return all active facts as a plain list when chromadb is unavailable."""
         if not os.path.exists(_FALLBACK_PATH):
             return ""
         try:
             with open(_FALLBACK_PATH, encoding="utf-8") as f:
                 facts: list[dict] = json.load(f)
-            active = [fa for fa in facts if not fa.get("archived")][:10]
+            active = [
+                fa for fa in facts
+                if not fa.get("archived") and _lexical_overlap(query, fa.get("text", "")) > 0
+            ]
+            if not active:
+                active = [fa for fa in facts if not fa.get("archived")][:max(1, config.MEMORY_TOP_K)]
             if not active:
                 return ""
             return "[Memory]\n" + "\n".join(f"- {fa['text']}" for fa in active)
@@ -327,10 +402,12 @@ class MemoryManager:
             return ""
 
     # ------------------------------------------------------------------
-    # Long-term memory â€” periodic consolidation
+    # Long-term memory -” periodic consolidation
     # ------------------------------------------------------------------
 
     def _schedule_consolidation(self) -> None:
+        if not config.MEMORY_AUTO_CONSOLIDATE:
+            return
         interval_s = config.MEMORY_CONSOLIDATION_INTERVAL * 60
         self._consolidation_timer = threading.Timer(
             interval_s, self._consolidation_tick
@@ -338,13 +415,23 @@ class MemoryManager:
         self._consolidation_timer.daemon = True
         self._consolidation_timer.start()
 
+    def _sync_consolidation_timer(self) -> None:
+        if config.MEMORY_AUTO_CONSOLIDATE:
+            if self._consolidation_timer is None:
+                self._schedule_consolidation()
+            return
+        if self._consolidation_timer:
+            self._consolidation_timer.cancel()
+            self._consolidation_timer = None
+
     def _consolidation_tick(self) -> None:
         try:
             self._consolidate()
         except Exception as exc:
             print(f"[memory] Consolidation error: {exc}")
         finally:
-            self._schedule_consolidation()  # always reschedule
+            self._consolidation_timer = None
+            self._sync_consolidation_timer()
 
     def _consolidate(self) -> None:
         """
@@ -366,7 +453,7 @@ class MemoryManager:
         prompt = _SUMMARIZER_PROMPT.format(turns=turns_text)
         response = self._call_memory_llm(prompt, max_tokens=600).strip()
 
-        # Parse JSON â€” tolerant of extra prose around the array
+        # Parse JSON -” tolerant of extra prose around the array
         facts: list[dict] = []
         try:
             facts = json.loads(response)
@@ -390,30 +477,35 @@ class MemoryManager:
                 cat = item.get("category", "personal")
                 if cat not in _CATEGORIES:
                     cat = "general"
-                self._upsert_fact(item["text"], cat, source="summarizer")
-                count += 1
+                if self._upsert_fact(item["text"], cat, source="summarizer"):
+                    count += 1
 
-        print(f"[memory] Consolidation complete â€” {count} fact(s) extracted.")
+        print(f"[memory] Consolidation complete -” {count} fact(s) extracted.")
 
     # ------------------------------------------------------------------
-    # Long-term memory â€” upsert with conflict resolution
+    # Long-term memory -” upsert with conflict resolution
     # ------------------------------------------------------------------
 
     def _upsert_fact(
         self, text: str, category: str, source: str = "summarizer"
-    ) -> None:
+    ) -> bool:
         """
         Insert a fact into LTM.  If a semantically similar fact already exists
         (cosine similarity â‰¥ 0.85, i.e. distance < 0.15) it is archived and
         the new fact replaces it.
         """
+        text = _normalize_fact_text(text)
+        if not _is_memory_worthy_fact(text, source=source):
+            print(f"[memory] Ignored low-value fact candidate: {text!r}")
+            return False
+
         if not self._chroma_ok or self._collection is None:
             self._fallback_upsert(text, category, source)
-            return
+            return True
 
         now = _now_iso()
 
-        # Conflict check â€” only if the collection is non-empty
+        # Conflict check -” only if the collection is non-empty
         try:
             count = self._collection.count()
             if count > 0:
@@ -429,6 +521,14 @@ class MemoryManager:
                 metas: list[dict] = results.get("metadatas", [[]])[0]
 
                 for i, (fact_id, dist) in enumerate(zip(ids, dists)):
+                    if dist < 0.08:
+                        archived_meta = dict(metas[i])
+                        archived_meta["last_seen"] = now
+                        self._collection.update(
+                            ids=[fact_id],
+                            metadatas=[archived_meta],
+                        )
+                        return False
                     if dist < 0.15:          # similarity > 0.85
                         archived_meta = dict(metas[i])
                         archived_meta["archived"] = True
@@ -458,12 +558,15 @@ class MemoryManager:
                     "archived": False,
                 }],
             )
+            return True
         except Exception as exc:
             print(f"[memory] Upsert error: {exc}")
+            return False
 
     def _fallback_upsert(
         self, text: str, category: str, source: str
     ) -> None:
+        text = _normalize_fact_text(text)
         facts: list[dict] = []
         if os.path.exists(_FALLBACK_PATH):
             try:
@@ -472,20 +575,31 @@ class MemoryManager:
             except Exception:
                 facts = []
 
-        facts.append({
+        now = _now_iso()
+        for fact in facts:
+            if fact.get("archived"):
+                continue
+            existing = fact.get("text", "")
+            if existing.lower() == text.lower() or _lexical_overlap(existing, text) >= max(3, min(6, len(text.split()) // 2)):
+                fact["last_seen"] = now
+                fact["category"] = category
+                fact["source"] = source
+                break
+        else:
+            facts.append({
             "id": str(uuid.uuid4()),
             "text": text,
             "category": category,
             "source": source,
-            "created_at": _now_iso(),
-            "last_seen": _now_iso(),
+            "created_at": now,
+            "last_seen": now,
             "archived": False,
-        })
+            })
         with open(_FALLBACK_PATH, "w", encoding="utf-8") as f:
             json.dump(facts, f, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # Viewer API â€” read
+    # Viewer API -” read
     # ------------------------------------------------------------------
 
     def get_all_facts(self) -> list[dict]:
@@ -527,11 +641,11 @@ class MemoryManager:
             return []
 
     # ------------------------------------------------------------------
-    # Viewer API â€” write
+    # Viewer API -” write
     # ------------------------------------------------------------------
 
     def delete_fact(self, fact_id: str) -> None:
-        """Hard-delete a fact (viewer action â€” user explicitly removed it)."""
+        """Hard-delete a fact (viewer action -” user explicitly removed it)."""
         if not self._chroma_ok or self._collection is None:
             self._fallback_delete(fact_id)
             return
@@ -575,6 +689,59 @@ class MemoryManager:
             category = "general"
         self._upsert_fact(text.strip(), category, source="manual")
 
+    def prune_low_value_facts(self) -> int:
+        """
+        Archive stored facts that fail the current memory-quality filter.
+        This is intentionally conservative for manual/explicit facts.
+        """
+        if not self._chroma_ok or self._collection is None:
+            return self._fallback_prune_low_value()
+        try:
+            results = self._collection.get(
+                where={"archived": {"$eq": False}},
+                include=["documents", "metadatas"],
+            )
+            ids: list[str] = results.get("ids", [])
+            docs: list[str] = results.get("documents", [])
+            metas: list[dict] = results.get("metadatas", [])
+            archived = 0
+            for fact_id, doc, meta in zip(ids, docs, metas):
+                source = str(meta.get("source", "summarizer"))
+                if _is_memory_worthy_fact(doc, source=source):
+                    continue
+                new_meta = dict(meta)
+                new_meta["archived"] = True
+                new_meta["archived_reason"] = "low_value_cleanup"
+                self._collection.update(ids=[fact_id], metadatas=[new_meta])
+                archived += 1
+            return archived
+        except Exception as exc:
+            print(f"[memory] prune_low_value_facts error: {exc}")
+            return 0
+
+    def _fallback_prune_low_value(self) -> int:
+        if not os.path.exists(_FALLBACK_PATH):
+            return 0
+        try:
+            with open(_FALLBACK_PATH, encoding="utf-8") as f:
+                facts = json.load(f)
+            archived = 0
+            for fact in facts:
+                if fact.get("archived"):
+                    continue
+                source = str(fact.get("source", "summarizer"))
+                if _is_memory_worthy_fact(fact.get("text", ""), source=source):
+                    continue
+                fact["archived"] = True
+                fact["archived_reason"] = "low_value_cleanup"
+                archived += 1
+            if archived:
+                with open(_FALLBACK_PATH, "w", encoding="utf-8") as f:
+                    json.dump(facts, f, indent=2, ensure_ascii=False)
+            return archived
+        except Exception:
+            return 0
+
     def _fallback_delete(self, fact_id: str) -> None:
         if not os.path.exists(_FALLBACK_PATH):
             return
@@ -615,7 +782,7 @@ class MemoryManager:
         """
         Synchronous LLM call using MEMORY_LLM_PROVIDER / MEMORY_LLM_MODEL.
         Used for consolidation and mid-session compression.
-        Runs on background threads â€” never call from Qt main thread.
+        Runs on background threads -” never call from Qt main thread.
         """
         provider = config.MEMORY_LLM_PROVIDER.lower()
         model    = config.MEMORY_LLM_MODEL

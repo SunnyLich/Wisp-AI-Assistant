@@ -1,20 +1,49 @@
+# Local secrets / credentials
 .env
+.env.*
+!.env.example
 private/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.token
+*.secret
+secrets.*
+
+# Local/generated assets
 doll/
 tmp_debug_agent/
 
-# Memory (vector store + fallback JSON — contains personal user data)
+# Memory (vector store + fallback JSON; contains personal user data)
 memory/
-# keep memory/.gitkeep so the folder is tracked
+!memory/.gitkeep
 
 # Python
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.py[cod]
 *.pyo
 .venv/
 venv/
 *.egg-info/
+
+# Packaging / build output
+build/
+dist/
+build_logs/
+*.spec~
+*.manifest
+
+# Logs / temp files
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
 
 # OS
 .DS_Store

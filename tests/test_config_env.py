@@ -9,6 +9,7 @@ class ConfigEnvTests(unittest.TestCase):
     def test_reload_parses_icon_size_and_bool_aliases(self):
         previous = {
             "DOLL_SIZE": config.DOLL_SIZE,
+            "DARK_MODE": config.DARK_MODE,
             "DOLL_AUTO_HIDE": config.DOLL_AUTO_HIDE,
             "SNIP_CONTEXT_DOCUMENTS": config.SNIP_CONTEXT_DOCUMENTS,
         }
@@ -17,6 +18,7 @@ class ConfigEnvTests(unittest.TestCase):
                 os.environ,
                 {
                     "DOLL_SIZE": "96",
+                    "DARK_MODE": "true",
                     "DOLL_AUTO_HIDE": "yes",
                     "SNIP_CONTEXT_DOCUMENTS": "off",
                 },
@@ -25,6 +27,7 @@ class ConfigEnvTests(unittest.TestCase):
                 config.reload()
 
             self.assertEqual(config.DOLL_SIZE, 96)
+            self.assertTrue(config.DARK_MODE)
             self.assertTrue(config.DOLL_AUTO_HIDE)
             self.assertFalse(config.SNIP_CONTEXT_DOCUMENTS)
         finally:

@@ -9,22 +9,18 @@ next iteration can add edit tools without weakening the boundary.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-import ast
-import fnmatch
 import base64
 import hashlib
 import json
-import re
 import shlex
-import subprocess
 import threading
 import traceback
 import time
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Sequence
 
 from core.agent.runtime import (
     AgentCancelled,
@@ -40,307 +36,13 @@ from core.agent.runtime import (
 )
 from core.system.paths import AGENT_RUNS_DIR
 
-
-class ScopedWorkspace:
-    """Filesystem facade that enforces a resolved folder boundary."""
-
-    def __init__(
-        self,
-        scope_folder: str | Path,
-        *,
-        allowed_globs: Iterable[str] | None = None,
-        blocked_globs: Iterable[str] | None = None,
-    ):
-        self.root = Path(scope_folder).expanduser().resolve()
-        if not self.root.exists() or not self.root.is_dir():
-            raise ValueError(f"Invalid scope folder: {scope_folder}")
-        self.allowed_globs = [g for g in (allowed_globs or []) if g]
-        self.blocked_globs = [g for g in (blocked_globs or []) if g]
-
-    def resolve(self, path: str | Path = ".") -> Path:
-        raw = Path(path)
-        candidate = raw if raw.is_absolute() else self.root / raw
-        candidate = candidate.expanduser().resolve()
-        if candidate != self.root and self.root not in candidate.parents:
-            raise ScopeViolation(f"Path escapes scope: {candidate}")
-        self._check_globs(candidate)
-        return candidate
-
-    def relative(self, path: str | Path) -> str:
-        return str(self.resolve(path).relative_to(self.root)).replace("\\", "/")
-
-    def list_files(self, *, limit: int = 300) -> list[str]:
-        files: list[str] = []
-        for path in self.root.rglob("*"):
-            if len(files) >= limit:
-                break
-            if not path.is_file():
-                continue
-            try:
-                self._check_globs(path.resolve())
-            except ScopeViolation:
-                continue
-            rel = str(path.relative_to(self.root)).replace("\\", "/")
-            files.append(rel)
-        return files
-
-    def read_text(self, path: str | Path, *, max_chars: int = 20_000) -> str:
-        resolved = self.resolve(path)
-        return resolved.read_text(encoding="utf-8", errors="replace")[:max_chars]
-
-    def write_text(self, path: str | Path, content: str, *, create: bool, edit: bool) -> None:
-        resolved = self.resolve(path)
-        exists = resolved.exists()
-        if exists and not edit:
-            raise PermissionError("Editing files is disabled for this task.")
-        if not exists and not create:
-            raise PermissionError("Creating files is disabled for this task.")
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_text(content, encoding="utf-8")
-
-    def patch_text(self, path: str | Path, old: str, new: str, *, edit: bool) -> int:
-        if not edit:
-            raise PermissionDenied("Editing files is disabled for this task.")
-        if not old:
-            raise ValueError("Patch old text cannot be empty.")
-        resolved = self.resolve(path)
-        text = resolved.read_text(encoding="utf-8", errors="replace")
-        count = text.count(old)
-        if count != 1:
-            raise ValueError(f"Patch expected exactly 1 match, found {count}.")
-        resolved.write_text(text.replace(old, new, 1), encoding="utf-8")
-        return 1
-
-    def delete_file(self, path: str | Path, *, delete: bool) -> None:
-        if not delete:
-            raise PermissionDenied("Deleting files is disabled for this task.")
-        resolved = self.resolve(path)
-        if not resolved.exists():
-            raise FileNotFoundError(str(resolved))
-        if not resolved.is_file():
-            raise PermissionDenied("Only file deletion is supported.")
-        resolved.unlink()
-
-    def _check_globs(self, path: Path) -> None:
-        rel = str(path.relative_to(self.root)).replace("\\", "/") if path != self.root else "."
-        if self.allowed_globs and not any(fnmatch.fnmatch(rel, g) for g in self.allowed_globs):
-            raise ScopeViolation(f"Path is not in allowed globs: {rel}")
-        if any(fnmatch.fnmatch(rel, g) for g in self.blocked_globs):
-            raise ScopeViolation(f"Path is blocked by globs: {rel}")
+from core.agent.artifacts import AgentRunArtifactsMixin
+from core.agent.response import AgentResponseMixin
+from core.agent.toolbox import AgentToolbox
+from core.agent.workspace import ScopedWorkspace
 
 
-class AgentToolbox:
-    """Scoped tools available to the future autonomous agent loop."""
-
-    _BASE_COMMAND_ALLOWLIST: tuple[tuple[str, ...], ...] = (
-        ("python", "-m", "py_compile"),
-        ("python", "-m", "unittest"),
-        ("python", "-m", "pytest"),
-        ("python", "-m", "ruff"),
-        ("python", "-m", "mypy"),
-        ("pytest",),
-        ("ruff",),
-        ("mypy",),
-        ("rg",),
-        ("node", "--check"),
-    )
-    _PROJECT_COMMAND_ALLOWLIST: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
-        (("npm", "test"), ("package.json",)),
-        (("npm", "run", "build"), ("package.json",)),
-        (("cargo", "test"), ("Cargo.toml",)),
-        (("go", "test"), ("go.mod",)),
-    )
-    _GIT_COMMAND_ALLOWLIST: tuple[tuple[str, ...], ...] = (
-        ("git", "status"),
-        ("git", "diff"),
-    )
-
-    def __init__(
-        self,
-        workspace: ScopedWorkspace,
-        permissions: AgentPermissions,
-        *,
-        log: LogCallback | None = None,
-        approval_callback: ApprovalCallback | None = None,
-        require_approval: bool = False,
-        permission_modes: dict[str, str] | None = None,
-    ):
-        self.workspace = workspace
-        self.permissions = permissions
-        self._log = log
-        self._approval_callback = approval_callback
-        self._require_approval = require_approval
-        self._permission_modes = permission_modes or {}
-
-    def list_files(self, *, limit: int = 300) -> ToolResult:
-        files = self.workspace.list_files(limit=limit)
-        return self._result("list_files", True, f"{len(files)} file(s)", files)
-
-    def read_file(self, path: str, *, max_chars: int = 20_000) -> ToolResult:
-        text = self.workspace.read_text(path, max_chars=max_chars)
-        return self._result("read_file", True, self.workspace.relative(path), text)
-
-    def create_file(self, path: str, content: str) -> ToolResult:
-        if not self.permissions.allow_file_create:
-            raise PermissionDenied("Creating files is disabled for this task.")
-        self._approve("create_file", {"path": path, "chars": len(content)})
-        self.workspace.write_text(path, content, create=True, edit=False)
-        return self._result("create_file", True, self.workspace.relative(path))
-
-    def write_file(self, path: str, content: str) -> ToolResult:
-        resolved = self.workspace.resolve(path)
-        exists = resolved.exists()
-        if exists and not self.permissions.allow_file_edit:
-            raise PermissionDenied("Editing files is disabled for this task.")
-        if not exists and not self.permissions.allow_file_create:
-            raise PermissionDenied("Creating files is disabled for this task.")
-        self._approve("write_file", {"path": path, "exists": exists, "chars": len(content)})
-        self.workspace.write_text(
-            path,
-            content,
-            create=self.permissions.allow_file_create,
-            edit=self.permissions.allow_file_edit,
-        )
-        return self._result("write_file", True, self.workspace.relative(path))
-
-    def patch_file(self, path: str, old: str, new: str) -> ToolResult:
-        self._approve("patch_file", {"path": path, "old_chars": len(old), "new_chars": len(new)})
-        count = self.workspace.patch_text(
-            path,
-            old,
-            new,
-            edit=self.permissions.allow_file_edit,
-        )
-        return self._result("patch_file", True, f"{self.workspace.relative(path)} patched", {"replacements": count})
-
-    def delete_file(self, path: str) -> ToolResult:
-        self._approve("delete_file", {"path": path})
-        self.workspace.delete_file(path, delete=self.permissions.allow_file_delete)
-        return self._result("delete_file", True, self.workspace.relative(path))
-
-    def run_command(self, args: Sequence[str], *, timeout_seconds: int = 30) -> ToolResult:
-        clean_args = [str(arg) for arg in args if str(arg)]
-        if not clean_args:
-            raise ValueError("Command cannot be empty.")
-        if not self.permissions.allow_shell and not self._is_read_only_git_command(clean_args):
-            raise PermissionDenied("Shell commands are disabled for this task.")
-        if not self._is_command_allowed(clean_args):
-            raise PermissionDenied(f"Command is not allowlisted: {' '.join(clean_args)}")
-        if not self._is_read_only_git_command(clean_args):
-            self._approve("run_command", {"args": clean_args})
-        else:
-            self._approve("git", {"args": clean_args})
-        completed = subprocess.run(
-            clean_args,
-            cwd=str(self.workspace.root),
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            shell=False,
-        )
-        data = {
-            "returncode": completed.returncode,
-            "stdout": completed.stdout[-20_000:],
-            "stderr": completed.stderr[-20_000:],
-        }
-        return self._result(
-            "run_command",
-            completed.returncode == 0,
-            f"exit {completed.returncode}: {' '.join(clean_args)}",
-            data,
-        )
-
-    def _is_command_allowed(self, args: list[str]) -> bool:
-        allowed = list(self._BASE_COMMAND_ALLOWLIST)
-        if self.permissions.allow_git:
-            allowed.extend(self._GIT_COMMAND_ALLOWLIST)
-        lowered = [arg.lower() for arg in args]
-        for prefix in allowed:
-            if lowered[: len(prefix)] == list(prefix):
-                return True
-        for prefix, required_files in self._PROJECT_COMMAND_ALLOWLIST:
-            if lowered[: len(prefix)] != list(prefix):
-                continue
-            if all((self.workspace.root / required).exists() for required in required_files):
-                return True
-        return False
-
-    def verification_commands(self) -> list[list[str]]:
-        commands = [
-            ["python", "-m", "unittest"],
-            ["python", "-m", "pytest"],
-            ["pytest"],
-            ["python", "-m", "ruff", "check", "."],
-            ["ruff", "check", "."],
-            ["python", "-m", "mypy", "."],
-            ["mypy", "."],
-        ]
-        if (self.workspace.root / "package.json").exists():
-            commands.extend([["npm", "test"], ["npm", "run", "build"]])
-        if (self.workspace.root / "Cargo.toml").exists():
-            commands.append(["cargo", "test"])
-        if (self.workspace.root / "go.mod").exists():
-            commands.append(["go", "test", "./..."])
-        return [cmd for cmd in commands if self._is_command_allowed(cmd)]
-
-    def git_status(self) -> ToolResult:
-        if not self.permissions.allow_git:
-            raise PermissionDenied("Git is disabled for this task.")
-        return self.run_command(["git", "status", "--short"])
-
-    def git_diff(self) -> ToolResult:
-        if not self.permissions.allow_git:
-            raise PermissionDenied("Git is disabled for this task.")
-        return self.run_command(["git", "diff", "--", "."])
-
-    @staticmethod
-    def _is_read_only_git_command(args: list[str]) -> bool:
-        lowered = [arg.lower() for arg in args]
-        return lowered[:2] in (["git", "status"], ["git", "diff"])
-
-    def _approve(self, action: str, details: dict) -> None:
-        category = self._permission_category(action)
-        mode = str(self._permission_modes.get(category, "") or "").lower()
-        if mode in {"never", "never permit", "deny"}:
-            raise PermissionDenied(f"{category.replace('_', ' ').title()} permission is set to never permit.")
-        if mode in {"auto", "allow", "always"}:
-            return
-        if not self._require_approval and mode not in {"ask", "ask permission", "ask for permission"}:
-            return
-        if self._approval_callback is None:
-            raise PermissionDenied(f"Approval required for {action}, but no approval UI is available.")
-        request = {"action": action, "details": details}
-        if not self._approval_callback(request):
-            raise PermissionDenied(f"User declined {action}.")
-
-    @staticmethod
-    def _permission_category(action: str) -> str:
-        if action in {"create_file", "create_file_base64"}:
-            return "file_create"
-        if action in {"write_file", "write_file_base64", "patch_file"}:
-            return "file_edit"
-        if action == "delete_file":
-            return "file_delete"
-        if action == "git":
-            return "git"
-        if action == "run_command":
-            return "shell"
-        return action
-
-    def _result(
-        self,
-        tool: str,
-        ok: bool,
-        message: str,
-        data: dict | list | str | None = None,
-    ) -> ToolResult:
-        result = ToolResult(tool=tool, ok=ok, message=message, data=data)
-        if self._log:
-            self._log(f"tool {tool}: {message}")
-        return result
-
-
-class AgentTaskRunner:
+class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
     """Runs one agent task in a background thread and writes an auditable log."""
 
     def __init__(
@@ -1003,7 +705,7 @@ class AgentTaskRunner:
             command_args = args.get("cmd")
         if isinstance(command_args, str):
             try:
-                return shlex.split(command_args, posix=False)
+                return shlex.split(command_args)
             except ValueError:
                 return command_args.split()
         if isinstance(command_args, Sequence) and not isinstance(command_args, (str, bytes, bytearray)):
@@ -1176,17 +878,6 @@ class AgentTaskRunner:
             ),
         }
 
-    @staticmethod
-    def _compact_text(text: str, max_chars: int) -> str:
-        if len(text) <= max_chars:
-            return text
-        head = max_chars // 2
-        tail = max_chars - head
-        return (
-            text[:head]
-            + f"\n... [middle truncated {len(text) - max_chars} chars for prompt; full data is in run artifacts] ...\n"
-            + text[-tail:]
-        )
 
     def _run_parallel_read_only_round(
         self,
@@ -1628,7 +1319,7 @@ class AgentTaskRunner:
             log(f"model callback response received in {time.perf_counter() - started:.1f}s ({len(response)} chars)")
             return response
         try:
-            from core import llm
+            from core.llm_clients import client as llm
 
             route = f"{provider or 'configured provider'} / {model or 'configured model'}"
             log(f"requesting LLM tool response via {route}")
@@ -2053,222 +1744,6 @@ class AgentTaskRunner:
             )
         return None
 
-    def _repair_agent_response(
-        self,
-        bad_response: str,
-        log: LogCallback,
-        verbose: Callable[[str, object], None] | None = None,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-    ) -> str | None:
-        local_repair = self._locally_repair_agent_response(bad_response)
-        if local_repair is not None:
-            log("repaired invalid JSON locally")
-            return local_repair
-        if self._looks_like_truncated_agent_response(bad_response):
-            log("invalid JSON appears truncated; using local fallback without model repair")
-            fallback = self._fallback_invalid_response(bad_response)
-            log("using local fallback for invalid JSON response")
-            return fallback
-        excerpt = self._repair_response_excerpt(bad_response)
-        repair_prompt = (
-            "Convert the following text into valid JSON for the agent protocol. "
-            "Return only one JSON object with keys thought, status, next_agent, "
-            "reason, tool_calls, and final. Do not explain, do not use markdown, "
-            "and do not wrap the result in an output field. If the response is "
-            "truncated or missing file content, return a retry JSON object with "
-            "an empty tool_calls list instead of inventing missing content. "
-            "Preserve intended complete tool calls and final text. The bad response "
-            "may be excerpted; do not attempt to reconstruct omitted file content.\n\n"
-            f"Bad response excerpt ({len(bad_response)} original chars):\n"
-            + excerpt
-        )
-        log(f"requesting JSON repair with {len(excerpt)} char excerpt from {len(bad_response)} char response")
-        started = time.perf_counter()
-        repaired = self._call_model(repair_prompt, log, provider=provider, model=model, max_tokens=1024)
-        log(f"JSON repair response received in {time.perf_counter() - started:.1f}s ({len(repaired)} chars)")
-        if verbose:
-            verbose("JSON repair response", repaired)
-        try:
-            self._parse_agent_response(repaired)
-        except ValueError as exc:
-            log(f"JSON repair response invalid: {exc}")
-            fallback = self._fallback_invalid_response(bad_response)
-            log("using local fallback for invalid JSON response")
-            return fallback
-        return repaired
-
-    @staticmethod
-    def _repair_response_excerpt(response_text: str, max_chars: int = 3000) -> str:
-        return AgentTaskRunner._compact_text(response_text, max_chars)
-
-    @staticmethod
-    def _parse_agent_response(response_text: str) -> dict:
-        text = AgentTaskRunner._extract_json_text(response_text)
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Agent response was not valid JSON: {exc}") from exc
-        if not isinstance(parsed, dict):
-            if isinstance(parsed, list):
-                parsed = {"thought": "", "tool_calls": parsed, "final": None}
-            else:
-                raise ValueError("Agent response JSON must be an object.")
-        parsed.setdefault("tool_calls", [])
-        parsed.setdefault("final", None)
-        return parsed
-
-    @staticmethod
-    def _locally_repair_agent_response(response_text: str) -> str | None:
-        text = AgentTaskRunner._strip_json_fence(AgentTaskRunner._extract_json_text(response_text))
-        candidates = [text]
-        sanitized = AgentTaskRunner._escape_control_chars_inside_json_strings(text)
-        if sanitized != text:
-            candidates.append(sanitized)
-        for candidate in candidates:
-            try:
-                parsed = json.loads(candidate)
-            except json.JSONDecodeError:
-                parsed = None
-            if parsed is not None:
-                if isinstance(parsed, dict) and isinstance(parsed.get("output"), str):
-                    nested = AgentTaskRunner._locally_repair_agent_response(parsed["output"])
-                    if nested is not None:
-                        return nested
-                if isinstance(parsed, (dict, list)):
-                    try:
-                        AgentTaskRunner._parse_agent_response(json.dumps(parsed, ensure_ascii=False))
-                    except ValueError:
-                        continue
-                    return json.dumps(parsed, ensure_ascii=False)
-            try:
-                literal = ast.literal_eval(candidate)
-            except (SyntaxError, ValueError):
-                continue
-            if isinstance(literal, (dict, list)):
-                try:
-                    AgentTaskRunner._parse_agent_response(json.dumps(literal, ensure_ascii=False))
-                except ValueError:
-                    continue
-                return json.dumps(literal, ensure_ascii=False)
-        return None
-
-    @staticmethod
-    def _strip_json_fence(text: str) -> str:
-        text = text.strip()
-        if not text.startswith("```"):
-            return text
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        return "\n".join(lines).strip()
-
-    @staticmethod
-    def _escape_control_chars_inside_json_strings(text: str) -> str:
-        result: list[str] = []
-        in_string = False
-        escaped = False
-        for char in text:
-            if in_string:
-                if escaped:
-                    result.append(char)
-                    escaped = False
-                    continue
-                if char == "\\":
-                    result.append(char)
-                    escaped = True
-                    continue
-                if char == '"':
-                    result.append(char)
-                    in_string = False
-                    continue
-                if char == "\n":
-                    result.append("\\n")
-                    continue
-                if char == "\r":
-                    result.append("\\r")
-                    continue
-                if char == "\t":
-                    result.append("\\t")
-                    continue
-            else:
-                if char == '"':
-                    in_string = True
-            result.append(char)
-        return "".join(result)
-
-    @staticmethod
-    def _looks_like_truncated_agent_response(response_text: str) -> bool:
-        text = AgentTaskRunner._strip_json_fence(AgentTaskRunner._extract_json_text(response_text))
-        if not text:
-            return False
-        stripped = text.rstrip()
-        if text.count("{") > text.count("}") or text.count("[") > text.count("]"):
-            return True
-        return any(key in text for key in ('"content_base64"', '"content"')) and not stripped.endswith(("}", "]"))
-
-    @staticmethod
-    def _extract_json_text(response_text: str) -> str:
-        text = response_text.strip()
-        if text.startswith("```"):
-            return text
-        fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
-        if fenced:
-            candidate = fenced.group(1).strip()
-            if candidate.startswith(("{", "[")):
-                return candidate
-        start = text.find("{")
-        end = text.rfind("}")
-        if 0 <= start < end:
-            return text[start:end + 1].strip()
-        return text
-
-    @staticmethod
-    def _tool_call_name(call: dict) -> str:
-        name = call.get("tool")
-        if name is None:
-            name = call.get("function")
-        if name is None:
-            name = call.get("name")
-        if isinstance(name, dict):
-            name = name.get("name")
-        return str(name or "")
-
-    @staticmethod
-    def _tool_call_args(call: dict) -> dict | object:
-        args = call.get("args")
-        if args is None:
-            args = call.get("parameters")
-        if args is None and isinstance(call.get("function"), dict):
-            args = call["function"].get("arguments")
-        if args is None:
-            args = {}
-        return args
-
-    @staticmethod
-    def _fallback_invalid_response(response_text: str) -> str:
-        return json.dumps(
-            {
-                "thought": "The previous model response was malformed JSON and could not be repaired.",
-                "status": "retry",
-                "next_agent": "same",
-                "reason": "Retry the same agent because the prior JSON response was malformed.",
-                "tool_calls": [],
-                "final": None,
-                "raw_response_excerpt": response_text[:4000],
-            },
-            ensure_ascii=False,
-        )
 
     def _execute_tool_call(self, tools: AgentToolbox, call) -> ToolResult:  # noqa: ANN001
         if not isinstance(call, dict):
@@ -2369,50 +1844,3 @@ class AgentTaskRunner:
             f"{tool} received placeholder path {path!r}. Use the actual relative filename from list_files "
             "or the task context, for example 'snake_game.py', and do not reuse the placeholder."
         )
-
-    def _write_diff_artifacts(
-        self,
-        run_dir: Path,
-        tools: AgentToolbox,
-        permissions: AgentPermissions,
-        log: LogCallback,
-        verbose: Callable[[str, object], None] | None = None,
-    ) -> None:
-        if not permissions.allow_git:
-            return
-        status = tools.git_status()
-        diff = tools.git_diff()
-        self._write_json(run_dir / "git_status.json", asdict(status))
-        self._write_json(run_dir / "git_diff.json", asdict(diff))
-        if verbose:
-            verbose("git status", asdict(status))
-            verbose("git diff", asdict(diff))
-        if diff.ok and isinstance(diff.data, dict):
-            patch = str(diff.data.get("stdout", ""))
-            (run_dir / "diff.patch").write_text(patch, encoding="utf-8")
-            log("git diff artifact written")
-
-    def _make_run_dir(self, title: str) -> Path:
-        safe_title = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in title.lower())
-        safe_title = "-".join(part for part in safe_title.split("-") if part)[:48] or "task"
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        run_dir = self.log_root / f"{stamp}-{safe_title}"
-        run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir
-
-    @staticmethod
-    def _write_json(path: Path, data) -> None:
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    @staticmethod
-    def _truncate(text: str, max_chars: int) -> str:
-        if len(text) <= max_chars:
-            return text
-        return text[:max_chars] + f"\n... [truncated {len(text) - max_chars} chars]"
-
-    @staticmethod
-    def _spec_dict(spec: AgentTaskLike) -> dict:
-        if is_dataclass(spec):
-            return asdict(spec)
-        return {name: getattr(spec, name, None) for name in AgentTaskLike.__annotations__}
-

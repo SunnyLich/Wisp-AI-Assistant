@@ -82,10 +82,12 @@ class IntentOverlay(QWidget):
         self._handled = False
         self._custom_mode = False
         self._kb_hook = None
+        self._drop_next_keypress = False
         self._raw_key.connect(self._on_raw_key)
 
         # Inline text input (shown only in custom mode)
         self._input_line = QLineEdit(self)
+        self._input_line.installEventFilter(self)
         self._input_line.setPlaceholderText("Type your prompt, press Enter...")
         self._input_line.setStyleSheet(
             "QLineEdit {"
@@ -199,9 +201,15 @@ class IntentOverlay(QWidget):
         self._input_line.show()
         self._input_line.setFocus()
         self.update()
-        # The key that triggered custom mode (e.g. 'S') propagates to Qt
-        # because suppress=False on the hook.  Clear after Qt drains pending events.
-        QTimer.singleShot(0, self._input_line.clear)
+        self._drop_next_keypress = True
+
+    def eventFilter(self, obj, event):
+        from PyQt6.QtCore import QEvent
+        if obj is self._input_line and self._drop_next_keypress:
+            if event.type() == QEvent.Type.KeyPress:
+                self._drop_next_keypress = False
+                return True  # consume the triggering key so it never reaches the field
+        return super().eventFilter(obj, event)
 
     def _fire_custom(self):
         text = self._input_line.text().strip()

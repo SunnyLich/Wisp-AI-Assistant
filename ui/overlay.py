@@ -1,14 +1,14 @@
 ﻿"""
-ui/overlay.py â€” Persistent doll overlay widget.
+ui/overlay.py -” Persistent doll overlay widget.
 
 A small, always-on-top, click-through frameless window that lives in the
 bottom-right corner. It shows the doll sprite and hosts the system tray icon.
 
 States:
-  idle      â€” static doll, sitting quietly
-  listening â€” hotkey pressed; plays animate_listen()
-  thinking  â€” LLM request in flight
-  speaking  â€” TTS playing; plays animate_speak()
+  idle      -” static doll, sitting quietly
+  listening -” hotkey pressed; plays animate_listen()
+  thinking  -” LLM request in flight
+  speaking  -” TTS playing; plays animate_speak()
 """
 from __future__ import annotations
 import os
@@ -25,7 +25,7 @@ ASSETS_DIR = str(DOLL_ASSETS_DIR)
 class OverlaySignals(QObject):
     """Thread-safe signals for updating the overlay from worker threads."""
     set_state          = pyqtSignal(str)   # "idle" | "listening" | "thinking" | "speaking"
-    set_mouth_amp      = pyqtSignal(float)  # 0.0â€“1.0 amplitude for lip sync
+    set_mouth_amp      = pyqtSignal(float)  # 0.0-“1.0 amplitude for lip sync
     show_text_popup    = pyqtSignal(str)   # full reply text
     show_intent_picker = pyqtSignal(int)  # caller index â†’ show WASD picker for that caller
     show_snip_overlay  = pyqtSignal()      # show full-screen region selector
@@ -41,7 +41,7 @@ class OverlaySignals(QObject):
     settings_applied   = pyqtSignal()      # settings were applied; re-register hotkeys etc.
     show_new_chat      = pyqtSignal()      # tray "New chat" clicked
     show_last_chat     = pyqtSignal()      # tray "Last chat" clicked
-    show_memory_viewer = pyqtSignal()      # tray "Memoryâ€¦" clicked
+    show_memory_viewer = pyqtSignal()      # tray "Memory-¦" clicked
 
 
 class DollOverlay(QMainWindow):
@@ -159,7 +159,7 @@ class DollOverlay(QMainWindow):
         last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
         hide_doll_action = QAction("Hide doll", self)
         hide_doll_action.triggered.connect(self._hide_doll_now)
-        memory_action = QAction("Memoryâ€¦", self)
+        memory_action = QAction("Memory...", self)
         memory_action.triggered.connect(self.signals.show_memory_viewer.emit)
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
@@ -189,6 +189,8 @@ class DollOverlay(QMainWindow):
         if icon:
             self._tray.setIcon(icon)
         self._set_icon_pixmap(state)
+        if config.DOLL_AUTO_HIDE and state != "idle":
+            self._show_doll()
 
     def _on_mouth_amp(self, amp: float):
         pass
@@ -250,12 +252,12 @@ class DollOverlay(QMainWindow):
             return
         self._icon_hide_timer.stop()
         self._icon_label.show()
-        self._icon_hide_timer.start()
+        self._icon_label.raise_()
 
     def _hide_doll(self):
         if not hasattr(self, '_icon_hide_timer'):
             return
-        # Start a backstop timer â€” the icon will normally be hidden in sync with
+        # Start a backstop timer -” the icon will normally be hidden in sync with
         # the bubble via _on_bubble_hidden, but this covers cases where the bubble
         # is never shown (e.g. empty voice transcription).
         self._icon_hide_timer.start()
@@ -273,7 +275,7 @@ class DollOverlay(QMainWindow):
         return max(500, int(getattr(config, "DOLL_ICON_BACKSTOP_MS", 5000)))
 
     def _on_bubble_hidden(self):
-        """Called by SpeechBubble.hideEvent â€” hides the icon in lockstep with the bubble."""
+        """Called by SpeechBubble.hideEvent -” hides the icon in lockstep with the bubble."""
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
         self._on_bubble_speed_boost(False)

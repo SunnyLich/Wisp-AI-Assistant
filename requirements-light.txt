@@ -1,0 +1,33 @@
+# Core/light runtime for the portable app.
+# Omits local ML/vector memory, local Whisper STT, document readers, Copilot SDK,
+# and paid TTS provider SDKs. Those remain in requirements.txt for the full build.
+
+# --- Input capture ---
+pynput>=1.7.7
+keyboard>=0.13.5
+pyperclip>=1.11.0
+mss>=10.2.0
+Pillow>=12.2.0
+
+# --- LLM ---
+openai>=2.37.0
+anthropic>=0.102.0
+
+# --- Audio shell ---
+# Required because the app imports the audio modules at startup. TTS defaults to none.
+sounddevice>=0.5.5
+soundfile>=0.13.1
+numpy>=1.26.0
+
+# --- UI ---
+PyQt6>=6.11.0
+
+# --- Utilities ---
+python-dotenv>=1.2.2
+keyring>=24.0.0
+pywin32>=311
+comtypes>=1.4.0
+psutil>=6.0.0
+watchdog>=4.0.0
+requests>=2.32.0
+beautifulsoup4>=4.12.0

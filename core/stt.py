@@ -52,7 +52,13 @@ def _get_model():
 
 def prewarm():
     """Load the Whisper model in a background thread to avoid cold start on first use."""
-    threading.Thread(target=_get_model, daemon=True).start()
+    def _worker() -> None:
+        try:
+            _get_model()
+        except Exception as exc:
+            print(f"[stt] prewarm skipped: {exc}")
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 # ------------------------------------------------------------------

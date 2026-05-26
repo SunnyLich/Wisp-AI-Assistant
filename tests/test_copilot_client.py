@@ -4,7 +4,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-from core import copilot_client
+from core.auth import copilot_client
 
 
 class CopilotClientBridgeTests(unittest.TestCase):

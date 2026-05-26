@@ -1,5 +1,6 @@
 # --- Input capture ---
 pynput>=1.7.7             # global hotkeys (no admin rights required on Windows)
+keyboard>=0.13.5          # lightweight key-state checks during intent selection
 pyperclip>=1.11.0         # clipboard access
 mss>=10.2.0               # fast screen capture
 Pillow>=12.2.0            # image handling
@@ -11,7 +12,7 @@ github-copilot-sdk>=0.1.0 # GitHub Copilot SDK bridge (imports as copilot)
 
 # --- TTS ---
 cartesia[websockets]>=3.0.2  # Cartesia streaming TTS (~75ms TTFT); [websockets] extra required for WebSocket streaming
-# elevenlabs>=1.0.0       # alternative TTS
+elevenlabs>=1.0.0         # alternative TTS provider exposed in Settings
 
 # --- Audio ---
 sounddevice>=0.5.5        # audio output + microphone input

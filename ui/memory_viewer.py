@@ -1,5 +1,5 @@
 ﻿"""
-ui/memory_viewer.py â€” Long-term memory viewer / editor.
+ui/memory_viewer.py -” Long-term memory viewer / editor.
 
 Provides two surfaces:
 
@@ -38,7 +38,7 @@ from PyQt6.QtWidgets import (
 )
 
 if TYPE_CHECKING:
-    from core.memory import MemoryManager
+    from core.memory_store.store import MemoryManager
 
 _CATEGORIES = ("project_context", "general")
 _CAT_LABELS = {
@@ -82,7 +82,7 @@ class _FactRow(QWidget):
         source_label.setToolTip(f"Source: {fact.get('source', 'unknown')}")
         layout.addWidget(source_label)
 
-        del_btn = QPushButton("âœ•")
+        del_btn = QPushButton("X")
         del_btn.setFixedWidth(28)
         del_btn.setToolTip("Delete this fact")
         del_btn.clicked.connect(self._on_delete)
@@ -158,7 +158,7 @@ class MemoryPanel(QWidget):
         add_layout.addWidget(add_lbl)
 
         self._add_text = QLineEdit()
-        self._add_text.setPlaceholderText("Enter a new factâ€¦")
+        self._add_text.setPlaceholderText("Enter a new fact...")
         self._add_text.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
@@ -251,7 +251,7 @@ class MemoryPanel(QWidget):
 class MemoryViewer(QDialog):
     """
     Standalone dialog wrapping MemoryPanel.
-    Opened from tray icon â†’ Memoryâ€¦ or from Settings â†’ Memory tab.
+    Opened from tray icon â†’ Memory-¦ or from Settings â†’ Memory tab.
     """
 
     def __init__(self, manager: "MemoryManager", parent=None):

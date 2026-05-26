@@ -1,5 +1,5 @@
 ﻿"""
-core/llm.py â€” Cloud LLM client with streaming support.
+core/llm.py -” Cloud LLM client with streaming support.
 
 Supports:
   - Groq (OpenAI-compatible, fast TTFT)
@@ -15,6 +15,13 @@ from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
 from core.llm_clients.routes import (
     GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
+    DEEPSEEK_BASE_URL as _DEEPSEEK_BASE_URL,
+    OPENROUTER_BASE_URL as _OPENROUTER_BASE_URL,
+    MISTRAL_BASE_URL as _MISTRAL_BASE_URL,
+    XAI_BASE_URL as _XAI_BASE_URL,
+    TOGETHER_BASE_URL as _TOGETHER_BASE_URL,
+    CEREBRAS_BASE_URL as _CEREBRAS_BASE_URL,
+    OLLAMA_BASE_URL as _OLLAMA_BASE_URL,
     api_key_for as _api_key_for,
     credential_source_for_provider as _credential_source_for_provider,
     parse_model_fallbacks as _parse_model_fallbacks,
@@ -38,7 +45,7 @@ def _log_context(
     ts = time.strftime("%H:%M:%S")
 
     def _trim(line: str) -> str:
-        return line if len(line) <= max_line else line[:max_line] + "â€¦"
+        return line if len(line) <= max_line else line[:max_line] + "-¦"
 
     lines = [_trim(l) for l in text.splitlines() if l.strip()]
     truncated = False
@@ -49,12 +56,12 @@ def _log_context(
 
     body = "\n  ".join(lines) if lines else "[empty]"
     if len(body) > max_chars:
-        body = body[:max_chars].rstrip() + "â€¦"
+        body = body[:max_chars].rstrip() + "-¦"
         truncated = True
     if truncated and body != "[empty]":
         body += "\n  [preview truncated]"
 
-    print(f"[llm {ts}] Context â€” {reason}:\n  {body}")
+    print(f"[llm {ts}] Context -” {reason}:\n  {body}")
 
 
 def _ambient_document_max_chars() -> int:
@@ -125,11 +132,11 @@ def _read_document_file(path: str, max_chars: int | None = None) -> str:
         else:
             return f"File type {ext!r} is not supported for reading."
         if len(text) > max_chars:
-            text = text[:max_chars] + "\n[â€¦truncated]"
+            text = text[:max_chars] + "\n[-¦truncated]"
         # Redact sensitive data before the text reaches the LLM.
         from core.context_fetcher import _redact  # noqa: PLC0415
         text = _redact(text)
-        _log_context(f"tool: read_document â€” read {path!r}", text)
+        _log_context(f"tool: read_document -” read {path!r}", text)
         return text
     except Exception as e:
         return f"Failed to read {path!r}: {e}"
@@ -159,7 +166,7 @@ def _execute_get_context(inputs: dict) -> str:
         from core.context_fetcher import fetch_browser_content_for_tool
         result = fetch_browser_content_for_tool(url)
         _log_context(
-            f"tool: get_context (browser) â€” {url!r}",
+            f"tool: get_context (browser) -” {url!r}",
             result or "",
         )
         return result or f"Could not fetch content from {url!r}."
@@ -220,7 +227,7 @@ def _execute_github_issue(inputs: dict) -> str:
 def _github_get_json(url: str) -> str:
     import json
     import urllib.request
-    from core import github_auth
+    from core.auth import github as github_auth
 
     token = github_auth.get_valid_access_token()
     if not token:
@@ -357,7 +364,7 @@ def read_active_document_for_context() -> str:
 
 
 # ------------------------------------------------------------------
-# Singleton clients â€” initialised once, reused across all requests
+# Singleton clients -” initialised once, reused across all requests
 # ------------------------------------------------------------------
 _openai_client = None
 _anthropic_client = None
@@ -384,15 +391,15 @@ def reset_clients() -> None:
 
 
 # ------------------------------------------------------------------
-# Codex (ChatGPT subscription) â€” custom httpx transport + client
+# Codex (ChatGPT subscription) -” custom httpx transport + client
 # ------------------------------------------------------------------
 
 class _CodexTransport:
     """
     httpx-compatible BaseTransport that:
-      â€¢ strips the placeholder API-key authorization header
-      â€¢ injects ``Authorization: Bearer <access_token>``
-      â€¢ adds ``ChatGPT-Account-Id`` and ``originator`` headers
+      -¢ strips the placeholder API-key authorization header
+      -¢ injects ``Authorization: Bearer <access_token>``
+      -¢ adds ``ChatGPT-Account-Id`` and ``originator`` headers
     Tokens are fetched (and refreshed) lazily on every request.
     """
 
@@ -402,7 +409,7 @@ class _CodexTransport:
 
     def handle_request(self, request):
         import httpx
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
 
         token      = chatgpt_auth.get_valid_access_token()
         account_id = chatgpt_auth.get_account_id()
@@ -446,12 +453,12 @@ def _get_codex_client():
 
 
 def _get_chat_codex_client():
-    """Returns the same singleton as _get_codex_client() â€” same endpoint."""
+    """Returns the same singleton as _get_codex_client() -” same endpoint."""
     return _get_codex_client()
 
 
 # ------------------------------------------------------------------
-# Config sanity checks â€” raise early with actionable messages
+# Config sanity checks -” raise early with actionable messages
 # ------------------------------------------------------------------
 
 def _log_model_route(kind: str, provider: str, model: str, use_tools: bool = False) -> None:
@@ -464,13 +471,36 @@ def _log_model_route(kind: str, provider: str, model: str, use_tools: bool = Fal
         f"model={model or '[unset]'} credential={_credential_source_for_provider(provider)}{tool_note}"
     )
 
+# All providers that go through the OpenAI-compatible chat completions API.
+_OPENAI_COMPAT_PROVIDER_SET = frozenset({
+    "groq", "openai", "google",
+    "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+    "custom",
+})
+
+_OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
+    # provider → (api_key_attr, base_url)
+    "groq":       ("GROQ_API_KEY",       "https://api.groq.com/openai/v1"),
+    "google":     ("GOOGLE_API_KEY",     _GOOGLE_OPENAI_BASE_URL),
+    "deepseek":   ("DEEPSEEK_API_KEY",   _DEEPSEEK_BASE_URL),
+    "openrouter": ("OPENROUTER_API_KEY", _OPENROUTER_BASE_URL),
+    "mistral":    ("MISTRAL_API_KEY",    _MISTRAL_BASE_URL),
+    "xai":        ("XAI_API_KEY",        _XAI_BASE_URL),
+    "together":   ("TOGETHER_API_KEY",   _TOGETHER_BASE_URL),
+    "cerebras":   ("CEREBRAS_API_KEY",   _CEREBRAS_BASE_URL),
+    "ollama":     (None,                 _OLLAMA_BASE_URL),
+}
+
+
 def _dynamic_openai_client(provider: str):
     from openai import OpenAI
 
-    if provider == "groq":
-        return OpenAI(api_key=config.GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
-    if provider == "google":
-        return OpenAI(api_key=config.GOOGLE_API_KEY, base_url=_GOOGLE_OPENAI_BASE_URL)
+    if provider in _OPENAI_COMPAT_PROVIDERS:
+        key_attr, base_url = _OPENAI_COMPAT_PROVIDERS[provider]
+        api_key = getattr(config, key_attr) if key_attr else "ollama"
+        return OpenAI(api_key=api_key or "no-key", base_url=base_url)
+    if provider == "custom":
+        return OpenAI(api_key=config.CUSTOM_API_KEY or "no-key", base_url=config.CUSTOM_BASE_URL)
     return OpenAI(api_key=config.OPENAI_API_KEY)
 
 
@@ -493,11 +523,11 @@ def _check_llm_config() -> None:
             "Add LLM_MODEL=<model> (e.g. llama3-8b-8192 for Groq)."
         )
     if config.LLM_PROVIDER.lower() == "chatgpt":
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
         if not chatgpt_auth.get_tokens():
             raise ValueError(
                 "LLM_PROVIDER is set to 'chatgpt' but you are not logged in. "
-                "Open Settings â†’ LLM and sign in with your ChatGPT account."
+                "Open Settings -> LLM and sign in with your ChatGPT account."
             )
         if config.LLM_MODEL.lower() not in _CHATGPT_SUPPORTED_MODELS:
             raise ValueError(
@@ -506,12 +536,19 @@ def _check_llm_config() -> None:
             )
         return
     if config.LLM_PROVIDER.lower() == "copilot":
-        from core import copilot_auth
+        from core.auth import copilot_auth
         if not copilot_auth.get_token():
             raise ValueError(
                 "LLM_PROVIDER is set to 'copilot' but no GitHub Copilot token is stored. "
                 "Open Settings -> LLM and save a GitHub Copilot token."
             )
+        return
+    if config.LLM_PROVIDER.lower() == "custom" and not config.CUSTOM_BASE_URL:
+        raise ValueError(
+            "LLM_PROVIDER is set to 'custom' but CUSTOM_BASE_URL is not configured. "
+            "Add the base URL in Settings → LLM → Custom provider."
+        )
+    if config.LLM_PROVIDER.lower() == "ollama":
         return
     if not _api_key_for(config.LLM_PROVIDER):
         raise ValueError(
@@ -527,11 +564,11 @@ def _check_chat_llm_config() -> None:
             "Add CHAT_LLM_MODEL=<model> or leave unset to inherit LLM_MODEL."
         )
     if config.CHAT_LLM_PROVIDER.lower() == "chatgpt":
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
         if not chatgpt_auth.get_tokens():
             raise ValueError(
                 "CHAT_LLM_PROVIDER is set to 'chatgpt' but you are not logged in. "
-                "Open Settings â†’ LLM and sign in with your ChatGPT account."
+                "Open Settings -> LLM and sign in with your ChatGPT account."
             )
         if config.CHAT_LLM_MODEL.lower() not in _CHATGPT_SUPPORTED_MODELS:
             raise ValueError(
@@ -540,12 +577,19 @@ def _check_chat_llm_config() -> None:
             )
         return
     if config.CHAT_LLM_PROVIDER.lower() == "copilot":
-        from core import copilot_auth
+        from core.auth import copilot_auth
         if not copilot_auth.get_token():
             raise ValueError(
                 "CHAT_LLM_PROVIDER is set to 'copilot' but no GitHub Copilot token is stored. "
                 "Open Settings -> LLM and save a GitHub Copilot token."
             )
+        return
+    if config.CHAT_LLM_PROVIDER.lower() == "custom" and not config.CUSTOM_BASE_URL:
+        raise ValueError(
+            "CHAT_LLM_PROVIDER is set to 'custom' but CUSTOM_BASE_URL is not configured. "
+            "Add the base URL in Settings → LLM → Custom provider."
+        )
+    if config.CHAT_LLM_PROVIDER.lower() == "ollama":
         return
     if not _api_key_for(config.CHAT_LLM_PROVIDER):
         raise ValueError(
@@ -567,12 +611,19 @@ def _check_vision_config() -> None:
             "Add VISION_LLM_PROVIDER=anthropic (or openai or chatgpt) alongside VISION_LLM_MODEL."
         )
     if config.VISION_LLM_PROVIDER.lower() == "chatgpt":
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
         if not chatgpt_auth.get_tokens():
             raise ValueError(
                 "VISION_LLM_PROVIDER is set to 'chatgpt' but you are not logged in. "
-                "Open Settings â†’ LLM and sign in with your ChatGPT account."
+                "Open Settings -> LLM and sign in with your ChatGPT account."
             )
+        return
+    if config.VISION_LLM_PROVIDER.lower() == "custom" and not config.CUSTOM_BASE_URL:
+        raise ValueError(
+            "VISION_LLM_PROVIDER is set to 'custom' but CUSTOM_BASE_URL is not configured. "
+            "Add the base URL in Settings → LLM → Custom provider."
+        )
+    if config.VISION_LLM_PROVIDER.lower() == "ollama":
         return
     if not _api_key_for(config.VISION_LLM_PROVIDER):
         raise ValueError(
@@ -585,7 +636,7 @@ def _check_route_config(provider: str, model: str, route_name: str) -> None:
     if not provider or not model:
         raise ValueError(f"{route_name} route is missing provider or model.")
     if provider == "chatgpt":
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
         if not chatgpt_auth.get_tokens():
             raise ValueError(f"{route_name} route uses chatgpt but you are not logged in.")
         if model.lower() not in _CHATGPT_SUPPORTED_MODELS:
@@ -595,10 +646,16 @@ def _check_route_config(provider: str, model: str, route_name: str) -> None:
             )
         return
     if provider == "copilot":
-        from core import copilot_auth
+        from core.auth import copilot_auth
         if not copilot_auth.get_token():
             raise ValueError(f"{route_name} route uses copilot but no GitHub Copilot token is stored.")
         return
+    if provider == "custom":
+        if not config.CUSTOM_BASE_URL:
+            raise ValueError(f"{route_name} route uses 'custom' but CUSTOM_BASE_URL is not set.")
+        return
+    if provider == "ollama":
+        return   # local, no key required
     if not _api_key_for(provider):
         raise ValueError(f"{route_name} route uses {provider!r}, but its API key is not configured.")
 
@@ -608,15 +665,14 @@ def _check_route_config_with_credentials(
     model: str,
     route_name: str,
     *,
-    groq_api_key: str = "",
-    openai_api_key: str = "",
     anthropic_api_key: str = "",
-    google_api_key: str = "",
+    custom_base_url: str = "",
+    compat_keys: dict[str, str] | None = None,
 ) -> None:
     if not provider or not model:
         raise ValueError(f"{route_name} route is missing provider or model.")
     if provider == "chatgpt":
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
         if not chatgpt_auth.get_tokens():
             raise ValueError(f"{route_name} route uses chatgpt but you are not logged in.")
         if model.lower() not in _CHATGPT_SUPPORTED_MODELS:
@@ -626,17 +682,25 @@ def _check_route_config_with_credentials(
             )
         return
     if provider == "copilot":
-        from core import copilot_auth
+        from core.auth import copilot_auth
         if not copilot_auth.get_token():
             raise ValueError(f"{route_name} route uses copilot but no GitHub Copilot token is stored.")
         return
-    available_keys = {
-        "groq": groq_api_key,
-        "openai": openai_api_key,
-        "anthropic": anthropic_api_key,
-        "google": google_api_key,
-    }
-    if not available_keys.get(provider, ""):
+    if provider == "custom":
+        if not (custom_base_url or config.CUSTOM_BASE_URL):
+            raise ValueError(f"{route_name} route uses 'custom' but CUSTOM_BASE_URL is not set.")
+        return
+    if provider == "ollama":
+        return   # no key required
+    if provider == "anthropic":
+        if not anthropic_api_key:
+            raise ValueError(f"{route_name} route uses anthropic, but its API key is not configured.")
+        return
+    if provider in _OPENAI_COMPAT_PROVIDER_SET:
+        if compat_keys and not compat_keys.get(provider, ""):
+            raise ValueError(f"{route_name} route uses {provider!r}, but its API key is not configured.")
+        return
+    if not _api_key_for(provider):
         raise ValueError(f"{route_name} route uses {provider!r}, but its API key is not configured.")
 
 
@@ -731,6 +795,7 @@ def _probe_openai_compat_route_with_credentials(
     model: str,
     *,
     api_key: str,
+    base_url: str = "",
     image_base64: str | None = None,
 ) -> None:
     from openai import OpenAI
@@ -739,6 +804,8 @@ def _probe_openai_compat_route_with_credentials(
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
     elif provider == "google":
         client = OpenAI(api_key=api_key, base_url=_GOOGLE_OPENAI_BASE_URL)
+    elif provider == "custom":
+        client = OpenAI(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
     else:
         client = OpenAI(api_key=api_key)
     client.chat.completions.create(
@@ -816,7 +883,7 @@ def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
 
 
 def _probe_copilot_route(model: str) -> None:
-    from core import copilot_client
+    from core.auth import copilot_client
 
     text = copilot_client.ask(
         "Reply with OK.",
@@ -834,42 +901,46 @@ def test_route_connection(
     route_name: str = "LLM",
     *,
     image: bool = False,
-    groq_api_key: str | None = None,
-    openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
-    google_api_key: str | None = None,
+    custom_base_url: str | None = None,
+    compat_keys: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
+    """Test a provider/model route.
+
+    compat_keys: map of provider name → API key for OpenAI-compat providers,
+                 used when the dialog passes freshly-typed (not-yet-saved) keys.
+    """
     provider = (provider or "").strip().lower()
     model = (model or "").strip()
     try:
-        explicit_credentials = any(
-            value is not None
-            for value in (groq_api_key, openai_api_key, anthropic_api_key, google_api_key)
-        )
+        explicit_credentials = bool(compat_keys or anthropic_api_key is not None or custom_base_url is not None)
         if explicit_credentials:
             _check_route_config_with_credentials(
                 provider,
                 model,
                 route_name,
-                groq_api_key=groq_api_key or "",
-                openai_api_key=openai_api_key or "",
                 anthropic_api_key=anthropic_api_key or "",
-                google_api_key=google_api_key or "",
+                custom_base_url=custom_base_url or "",
+                compat_keys=compat_keys or {},
             )
         else:
             _check_route_config(provider, model, route_name)
+
+        def _probe_compat(image_b64=None):
+            if explicit_credentials and compat_keys and provider in compat_keys:
+                _probe_openai_compat_route_with_credentials(
+                    provider, model,
+                    api_key=compat_keys.get(provider, ""),
+                    base_url=custom_base_url or "",
+                    image_base64=image_b64,
+                )
+            else:
+                _probe_openai_compat_route(provider, model, image_base64=image_b64)
+
         if image:
             image_base64 = _TEST_IMAGE_BASE64
-            if provider in ("groq", "openai", "google"):
-                if explicit_credentials:
-                    api_key = {
-                        "groq": groq_api_key or "",
-                        "openai": openai_api_key or "",
-                        "google": google_api_key or "",
-                    }[provider]
-                    _probe_openai_compat_route_with_credentials(provider, model, api_key=api_key, image_base64=image_base64)
-                else:
-                    _probe_openai_compat_route(provider, model, image_base64=image_base64)
+            if provider in _OPENAI_COMPAT_PROVIDER_SET:
+                _probe_compat(image_base64)
             elif provider == "anthropic":
                 if explicit_credentials:
                     _probe_anthropic_route_with_api_key(model, anthropic_api_key or "", image_base64=image_base64)
@@ -881,16 +952,8 @@ def test_route_connection(
                 raise ValueError(f"Unknown vision provider: {provider}")
             return True, f"{route_name} vision route OK: {provider} / {model}"
 
-        if provider in ("groq", "openai", "google"):
-            if explicit_credentials:
-                api_key = {
-                    "groq": groq_api_key or "",
-                    "openai": openai_api_key or "",
-                    "google": google_api_key or "",
-                }[provider]
-                _probe_openai_compat_route_with_credentials(provider, model, api_key=api_key)
-            else:
-                _probe_openai_compat_route(provider, model)
+        if provider in _OPENAI_COMPAT_PROVIDER_SET:
+            _probe_compat()
         elif provider == "anthropic":
             if explicit_credentials:
                 _probe_anthropic_route_with_api_key(model, anthropic_api_key or "")
@@ -929,9 +992,9 @@ def stream_response(
         user_message:     The user's query text.
         image_base64:     Optional base64-encoded PNG for vision input.
         ambient_context:  Plain-text context block (active window, clipboard,
-                          focused element) â€” injected into system prompt.
+                          focused element) -” injected into system prompt.
         memory_context:   Pre-formatted LTM facts + STM session summary from
-                          core.memory â€” injected into system prompt before the
+                          core.memory -” injected into system prompt before the
                           ambient context block.
         use_tools:        If True and provider is Anthropic, expose
                   web_search + get_context tools so Claude can
@@ -959,7 +1022,7 @@ def stream_response(
 
     if ambient_context:
         _log_context(
-            "ambient snapshot â€” captured at hotkey/voice trigger, injected into system prompt",
+            "ambient snapshot -” captured at hotkey/voice trigger, injected into system prompt",
             ambient_context,
         )
 
@@ -1055,7 +1118,7 @@ def _stream_single_response_route(
     effective_model = config.TOOL_LLM_MODEL if provider == "anthropic" and use_tools else model
     _log_model_route("vision" if image_base64 else "query", provider, effective_model, use_tools=use_tools)
     if image_base64:
-        if provider in ("groq", "openai", "google"):
+        if provider in _OPENAI_COMPAT_PROVIDER_SET:
             yield from _stream_openai_compat(
                 user_message,
                 image_base64,
@@ -1078,7 +1141,7 @@ def _stream_single_response_route(
         else:
             raise ValueError(f"Unknown vision provider: {provider}")
         return
-    if provider in ("groq", "openai", "google"):
+    if provider in _OPENAI_COMPAT_PROVIDER_SET:
         yield from _stream_openai_compat(
             user_message,
             None,
@@ -1116,7 +1179,7 @@ def _stream_copilot(
     memory_context: str = "",
     use_tools: bool = False,
 ) -> Generator[str, None, None]:
-    from core import copilot_client
+    from core.auth import copilot_client
 
     parts = []
     if memory_context:
@@ -1162,7 +1225,7 @@ def _stream_openai_compat(
 
 
 # ------------------------------------------------------------------
-# Codex (ChatGPT subscription) â€” Responses API streaming
+# Codex (ChatGPT subscription) -” Responses API streaming
 # ------------------------------------------------------------------
 
 def _build_codex_text(user_message: str, ambient_context: str = "", memory_context: str = "") -> str:
@@ -1260,7 +1323,7 @@ def _build_openai_messages(
 
 
 # ------------------------------------------------------------------
-# Anthropic Claude  â€”  shared tool-loop helper
+# Anthropic Claude  -”  shared tool-loop helper
 # ------------------------------------------------------------------
 
 def _run_anthropic_tool_loop(
@@ -1377,7 +1440,7 @@ def _stream_anthropic(
     if final.stop_reason != "tool_use":
         return
 
-    # A tool was called â€” execute it and do followup round(s) non-streaming.
+    # A tool was called -” execute it and do followup round(s) non-streaming.
     yield from _run_anthropic_tool_loop(
         client,
         messages,
@@ -1395,7 +1458,7 @@ def _stream_anthropic(
 _REWRITE_SYSTEM_PROMPT = (
     "You are a text editor assistant. "
     "Rewrite or fix the provided text. "
-    "Output ONLY the corrected/rewritten text â€” no explanation, "
+    "Output ONLY the corrected/rewritten text -” no explanation, "
     "no markdown, no commentary, no code fences. "
     "Your entire response will be pasted directly as a replacement for the original text."
 )
@@ -1405,7 +1468,7 @@ def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the 
     """
     Stream a rewrite/fix of the selected text using the primary LLM.
 
-    The system prompt instructs the model to output raw replacement text only â€”
+    The system prompt instructs the model to output raw replacement text only -”
     no prose, no markdown, no explanation.  The result is pasted back directly.
 
     Args:
@@ -1415,7 +1478,7 @@ def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the 
     """
     import time
     ts = time.strftime("%H:%M:%S")
-    print(f"[llm {ts}] Rewrite request ({len(selected_text)} chars) â€” {intent_prompt[:60]!r}")
+    print(f"[llm {ts}] Rewrite request ({len(selected_text)} chars) -” {intent_prompt[:60]!r}")
     user_message = f"{intent_prompt}:\n\n{selected_text}"
     candidates = _route_candidates(config.LLM_PROVIDER, config.LLM_MODEL, config.LLM_FALLBACKS)
     yield from _stream_with_fallbacks(
@@ -1428,7 +1491,7 @@ def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the 
 def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -> Generator[str, None, None]:
     _check_route_config(provider, model, "LLM")
     _log_model_route("rewrite", provider, model, use_tools=False)
-    if provider in ("groq", "openai", "google"):
+    if provider in _OPENAI_COMPAT_PROVIDER_SET:
         client = _dynamic_openai_client(provider)
         with client.chat.completions.create(
             model=model,
@@ -1456,7 +1519,7 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
             for text in stream.text_stream:
                 yield text
     elif provider == "copilot":
-        from core import copilot_client
+        from core.auth import copilot_client
         yield from copilot_client.stream(
             user_message,
             model,
@@ -1492,7 +1555,7 @@ def stream_response_with_history(
 
     Args:
         messages:        [{{"role": "system"|"user"|"assistant", "content": str}}, ...]
-        memory_context:  Pre-formatted LTM facts from core.memory â€” appended to
+        memory_context:  Pre-formatted LTM facts from core.memory -” appended to
                          the system message so the model is aware of user facts.
     """
     # Inject memory context into the system message (or prepend one)
@@ -1501,7 +1564,7 @@ def stream_response_with_history(
             (i for i, m in enumerate(messages) if m["role"] == "system"), None
         )
         if sys_idx is not None:
-            messages = list(messages)   # shallow copy â€” don't mutate the caller's list
+            messages = list(messages)   # shallow copy -” don't mutate the caller's list
             messages[sys_idx] = {
                 **messages[sys_idx],
                 "content": messages[sys_idx]["content"] + f"\n\n{memory_context}",
@@ -1523,7 +1586,7 @@ def stream_response_with_history(
 def _stream_single_history_route(provider: str, model: str, messages: list) -> Generator[str, None, None]:
     _check_route_config(provider, model, "CHAT_LLM")
     _log_model_route("chat", provider, model, use_tools=(provider == "anthropic"))
-    if provider in ("groq", "openai", "google"):
+    if provider in _OPENAI_COMPAT_PROVIDER_SET:
         client = _dynamic_openai_client(provider)
         with client.chat.completions.create(
             model=model,
@@ -1544,7 +1607,7 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
             {k: v for k, v in m.items() if k in _VALID_KEYS}
             for m in messages if m["role"] != "system"
         ]
-        # Tool-enabled loop â€” stream first round, block only if a tool is actually called.
+        # Tool-enabled loop -” stream first round, block only if a tool is actually called.
         with client.messages.stream(
             model=model,
             max_tokens=1024,
@@ -1584,7 +1647,7 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
                     if delta:
                         yield delta
     elif provider == "copilot":
-        from core import copilot_client
+        from core.auth import copilot_client
 
         system_msg = next((m["content"] for m in messages if m["role"] == "system"), "")
         turns = [m for m in messages if m["role"] != "system"]

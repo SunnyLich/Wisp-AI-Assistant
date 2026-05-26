@@ -66,7 +66,7 @@ async def _ask_async(
     allow_tools: bool = False,
 ) -> str:
     from copilot import CopilotClient  # type: ignore
-    from core import copilot_auth
+    from core.auth import copilot_auth
 
     token = copilot_auth.get_token()
     if not token:
@@ -137,7 +137,7 @@ def stream(
 
 
 def test_copilot_token() -> tuple[bool, str]:
-    from core import copilot_auth
+    from core.auth import copilot_auth
 
     token = copilot_auth.get_token()
     if not token:

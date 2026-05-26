@@ -8,7 +8,7 @@ import unittest
 import base64
 from unittest.mock import patch
 
-from core.agent_runner import (
+from core.agent.runner import (
     AgentCancelled,
     AgentPermissions,
     AgentRunControl,

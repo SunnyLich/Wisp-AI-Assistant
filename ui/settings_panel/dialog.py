@@ -1,5 +1,5 @@
 ﻿"""
-ui/settings.py â€” Settings dialog.
+ui/settings.py -” Settings dialog.
 
 A plain GUI for editing all user-configurable values.
 Reads from and writes to the .env file.
@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
     QPushButton, QTabWidget, QWidget, QFrame, QMessageBox,
-    QScrollArea, QSizePolicy,
+    QScrollArea, QSizePolicy, QCompleter,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -63,6 +63,7 @@ class SettingsDialog(QDialog):
         self._pending_test_results_lock = threading.Lock()
         self._running_test_tokens: set[tuple[str, int]] = set()
         self._latest_test_token: dict[str, int] = {}
+        self._memory_panel = None
         self._test_result_timer = QTimer(self)
         self._test_result_timer.setInterval(100)
         self._test_result_timer.timeout.connect(self._drain_test_results)
@@ -78,6 +79,13 @@ class SettingsDialog(QDialog):
             "GOOGLE_API_KEY": "Google AI Studio",
             "CARTESIA_API_KEY": "Cartesia",
             "ELEVENLABS_API_KEY": "ElevenLabs",
+            "CUSTOM_API_KEY": "Custom provider",
+            "DEEPSEEK_API_KEY": "DeepSeek",
+            "OPENROUTER_API_KEY": "OpenRouter",
+            "MISTRAL_API_KEY": "Mistral",
+            "XAI_API_KEY": "xAI (Grok)",
+            "TOGETHER_API_KEY": "Together AI",
+            "CEREBRAS_API_KEY": "Cerebras",
         }
         try:
             secret_store.migrate_env_secrets(self._env)
@@ -133,15 +141,12 @@ class SettingsDialog(QDialog):
         btn_row.addWidget(self._status_lbl)
         btn_row.addStretch()
         apply_btn  = QPushButton("Apply")
-        save_btn   = QPushButton("Save")
         cancel_btn = QPushButton("Cancel")
-        save_btn.setDefault(True)
+        apply_btn.setDefault(True)
         apply_btn.clicked.connect(self._apply)
-        save_btn.clicked.connect(self._save)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(apply_btn)
-        btn_row.addWidget(save_btn)
         root.addLayout(btn_row)
 
     def _tab_llm(self) -> QWidget:
@@ -154,9 +159,11 @@ class SettingsDialog(QDialog):
         f.setContentsMargins(12, 12, 12, 12)
 
         self._fields["LLM_PROVIDER"] = self._combo(
-            ["groq", "openai", "anthropic", "google", "chatgpt", "copilot"]
+            ["groq", "openai", "anthropic", "google", "chatgpt", "copilot",
+             "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+             "custom"]
         )
-        self._fields["LLM_MODEL"] = QLineEdit()
+        self._fields["LLM_MODEL"] = self._model_combo()
         self._fallback_rows: dict[str, list[dict]] = {
             "LLM_FALLBACKS": [],
             "CHAT_LLM_FALLBACKS": [],
@@ -171,22 +178,43 @@ class SettingsDialog(QDialog):
         self._fields["ANTHROPIC_API_KEY"].setPlaceholderText("Stored in OS keychain")
         self._fields["GOOGLE_API_KEY"].setPlaceholderText("Stored in OS keychain")
 
+        # Additional provider key fields (hidden until expanded)
+        _extra_key_specs = [
+            ("DEEPSEEK_API_KEY",   "DeepSeek",    "https://platform.deepseek.com/api_keys"),
+            ("OPENROUTER_API_KEY", "OpenRouter",  "https://openrouter.ai/settings/keys"),
+            ("MISTRAL_API_KEY",    "Mistral",     "https://console.mistral.ai/api-keys"),
+            ("XAI_API_KEY",        "xAI (Grok)",  "https://console.x.ai"),
+            ("TOGETHER_API_KEY",   "Together AI", "https://api.together.xyz/settings/api-keys"),
+            ("CEREBRAS_API_KEY",   "Cerebras",    "https://cloud.cerebras.ai"),
+        ]
+        for name, _label, _url in _extra_key_specs:
+            field = self._password()
+            field.setPlaceholderText("Stored in OS keychain")
+            self._fields[name] = field
+
         self._fields["CHAT_LLM_PROVIDER"] = self._combo(
-            ["groq", "openai", "anthropic", "google", "chatgpt", "copilot"]
+            ["groq", "openai", "anthropic", "google", "chatgpt", "copilot",
+             "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+             "custom"]
         )
 
         def _update_model_placeholders():
-            p = self._fields["LLM_PROVIDER"].currentText()
-            hint = _model_hint(p)
-            self._fields["LLM_MODEL"].setPlaceholderText(hint)
-            cp = self._fields["CHAT_LLM_PROVIDER"].currentText()
+            p = _get(self._fields["LLM_PROVIDER"])
+            _refresh_model_combo(self._fields["LLM_MODEL"], p)
+            self._fields["LLM_MODEL"].lineEdit().setPlaceholderText(_model_hint(p))
+            cp = _get(self._fields["CHAT_LLM_PROVIDER"])
+            _refresh_model_combo(self._fields["CHAT_LLM_MODEL"], cp)
             chint = _model_hint(cp) if cp else "Leave blank to use same model as above"
-            self._fields["CHAT_LLM_MODEL"].setPlaceholderText(chint)
+            self._fields["CHAT_LLM_MODEL"].lineEdit().setPlaceholderText(chint)
+
+        def _update_vision_model():
+            vp = _get(self._fields["VISION_LLM_PROVIDER"])
+            _refresh_model_combo(self._fields["VISION_LLM_MODEL"], vp)
+            self._fields["VISION_LLM_MODEL"].lineEdit().setPlaceholderText(_model_hint(vp))
 
         self._fields["LLM_PROVIDER"].currentTextChanged.connect(lambda _: _update_model_placeholders())
         self._fields["CHAT_LLM_PROVIDER"].currentTextChanged.connect(lambda _: _update_model_placeholders())
-        self._fields["CHAT_LLM_MODEL"] = QLineEdit()
-        self._fields["CHAT_LLM_MODEL"].setPlaceholderText("Leave blank to use same model as above")
+        self._fields["CHAT_LLM_MODEL"] = self._model_combo()
 
         f.addRow("Provider", self._fields["LLM_PROVIDER"])
         f.addRow("Model", self._fields["LLM_MODEL"])
@@ -202,10 +230,36 @@ class SettingsDialog(QDialog):
         key_note = QLabel("<small>API keys are saved to the OS keychain. Leave blank to keep the stored key.</small>")
         key_note.setWordWrap(True)
         f.addRow("", key_note)
-        f.addRow("Groq API key", self._fields["GROQ_API_KEY"])
-        f.addRow("OpenAI API key", self._fields["OPENAI_API_KEY"])
-        f.addRow("Anthropic API key", self._fields["ANTHROPIC_API_KEY"])
-        f.addRow("Google AI Studio API key", self._fields["GOOGLE_API_KEY"])
+        f.addRow(_link_label("Groq API key", "https://console.groq.com/keys"), self._fields["GROQ_API_KEY"])
+        f.addRow(_link_label("OpenAI API key", "https://platform.openai.com/api-keys"), self._fields["OPENAI_API_KEY"])
+        f.addRow(_link_label("Anthropic API key", "https://console.anthropic.com/settings/keys"), self._fields["ANTHROPIC_API_KEY"])
+        f.addRow(_link_label("Google AI Studio API key", "https://aistudio.google.com/apikey"), self._fields["GOOGLE_API_KEY"])
+
+        # ---- Collapsible extra provider keys ----
+        self._extra_keys_widget = QWidget()
+        extra_keys_form = QFormLayout(self._extra_keys_widget)
+        extra_keys_form.setContentsMargins(0, 4, 0, 0)
+        extra_keys_form.setSpacing(8)
+        _extra_key_specs = [
+            ("DEEPSEEK_API_KEY",   "DeepSeek API key",    "https://platform.deepseek.com/api_keys"),
+            ("OPENROUTER_API_KEY", "OpenRouter API key",  "https://openrouter.ai/settings/keys"),
+            ("MISTRAL_API_KEY",    "Mistral API key",     "https://console.mistral.ai/api-keys"),
+            ("XAI_API_KEY",        "xAI (Grok) API key",  "https://console.x.ai"),
+            ("TOGETHER_API_KEY",   "Together AI API key", "https://api.together.xyz/settings/api-keys"),
+            ("CEREBRAS_API_KEY",   "Cerebras API key",    "https://cloud.cerebras.ai"),
+        ]
+        for name, label, url in _extra_key_specs:
+            extra_keys_form.addRow(_link_label(label, url), self._fields[name])
+        ollama_note = QLabel("<small><i>Ollama</i> runs locally — no API key needed.</small>")
+        extra_keys_form.addRow("", ollama_note)
+        self._extra_keys_widget.setVisible(False)
+
+        self._extra_keys_toggle = QPushButton("▶  More provider keys (DeepSeek, OpenRouter, Mistral, xAI…)")
+        self._extra_keys_toggle.setFlat(True)
+        self._extra_keys_toggle.setStyleSheet("text-align: left; font-weight: bold;")
+        self._extra_keys_toggle.clicked.connect(self._toggle_extra_keys)
+        f.addRow("", self._extra_keys_toggle)
+        f.addRow("", self._extra_keys_widget)
         f.addRow(_sep(), _sep())
         f.addRow(QLabel("<i>Chat / Elaborate model</i>"), QLabel(""))
         f.addRow("Chat provider", self._fields["CHAT_LLM_PROVIDER"])
@@ -217,10 +271,12 @@ class SettingsDialog(QDialog):
         self._add_fallback_section(f, "CHAT_LLM_FALLBACKS", "Chat fallback")
         f.addRow(_sep(), _sep())
         self._fields["VISION_LLM_PROVIDER"] = self._combo(
-            ["", "anthropic", "openai", "google", "chatgpt"]
+            ["", "anthropic", "openai", "google", "chatgpt",
+             "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+             "custom"]
         )
-        self._fields["VISION_LLM_MODEL"] = QLineEdit()
-        self._fields["VISION_LLM_MODEL"].setPlaceholderText("e.g. claude-opus-4-5 / gpt-4o / gemini-2.5-flash")
+        self._fields["VISION_LLM_PROVIDER"].currentIndexChanged.connect(lambda _: _update_vision_model())
+        self._fields["VISION_LLM_MODEL"] = self._model_combo()
         f.addRow(QLabel("<i>Vision model (screen snip)</i>"), QLabel(""))
         f.addRow("Vision provider", self._fields["VISION_LLM_PROVIDER"])
         f.addRow("Vision model", self._fields["VISION_LLM_MODEL"])
@@ -228,7 +284,46 @@ class SettingsDialog(QDialog):
         self._vision_test_status_lbl.setWordWrap(True)
         f.addRow("", self._button_row(("Test Vision", self._test_vision_connection)))
         f.addRow("", self._vision_test_status_lbl)
-        self._add_fallback_section(f, "VISION_LLM_FALLBACKS", "Vision fallback", providers=["", "anthropic", "openai", "google", "chatgpt"])
+        self._add_fallback_section(f, "VISION_LLM_FALLBACKS", "Vision fallback",
+            providers=["", "anthropic", "openai", "google", "chatgpt",
+                       "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+                       "custom"])
+
+        # ---- Custom (OpenAI-compatible) provider section ----
+        f.addRow(_sep(), _sep())
+        f.addRow(QLabel("<i>Custom (OpenAI-compatible) provider</i>"), QLabel(""))
+        custom_note = QLabel(
+            "<small>Use any OpenAI-compatible endpoint — DeepSeek, OpenRouter, Mistral, xAI, "
+            "Together AI, Cerebras, Ollama, and more. Select <b>custom</b> in any provider "
+            "dropdown above to route requests here.</small>"
+        )
+        custom_note.setWordWrap(True)
+        f.addRow("", custom_note)
+
+        self._fields["CUSTOM_BASE_URL"] = QLineEdit()
+        self._fields["CUSTOM_BASE_URL"].setPlaceholderText("https://api.example.com/v1")
+        self._fields["CUSTOM_API_KEY"] = self._password()
+        self._fields["CUSTOM_API_KEY"].setPlaceholderText("Stored in OS keychain")
+
+        # Presets button — opens a menu of common providers
+        presets_btn = QPushButton("Presets ▾")
+        presets_btn.setFixedWidth(90)
+        presets_btn.clicked.connect(self._show_custom_presets_menu)
+
+        base_url_row = QWidget()
+        base_url_h = QHBoxLayout(base_url_row)
+        base_url_h.setContentsMargins(0, 0, 0, 0)
+        base_url_h.setSpacing(6)
+        base_url_h.addWidget(self._fields["CUSTOM_BASE_URL"])
+        base_url_h.addWidget(presets_btn)
+
+        f.addRow("Base URL", base_url_row)
+        f.addRow("API key", self._fields["CUSTOM_API_KEY"])
+
+        self._custom_test_status_lbl = QLabel()
+        self._custom_test_status_lbl.setWordWrap(True)
+        f.addRow("", self._button_row(("Test custom", self._test_custom_connection)))
+        f.addRow("", self._custom_test_status_lbl)
 
         # ---- ChatGPT Pro/Plus OAuth section ----
         f.addRow(_sep(), _sep())
@@ -259,14 +354,12 @@ class SettingsDialog(QDialog):
         f.addRow(_sep(), _sep())
         f.addRow(
             QLabel("<i>GitHub OAuth</i>"),
-            _desc_label("", "Sign in opens GitHub in your browser. Client ID is bundled; override only for development."),
+            _desc_label("", "Sign in opens GitHub in your browser and links this app to your account."),
         )
         self._fields["GITHUB_CLIENT_ID"] = QLineEdit()
-        self._fields["GITHUB_CLIENT_ID"].setPlaceholderText("Optional custom OAuth app client ID")
+        self._fields["GITHUB_CLIENT_ID"].setPlaceholderText("Developer OAuth app client ID override")
         self._fields["GITHUB_OAUTH_SCOPES"] = QLineEdit()
         self._fields["GITHUB_OAUTH_SCOPES"].setPlaceholderText("e.g. repo read:user user:email")
-        f.addRow("Custom client ID", self._fields["GITHUB_CLIENT_ID"])
-        f.addRow("GitHub scopes", self._fields["GITHUB_OAUTH_SCOPES"])
 
         self._github_status_lbl = QLabel()
         self._github_status_lbl.setWordWrap(True)
@@ -277,7 +370,7 @@ class SettingsDialog(QDialog):
         github_btn_h = QHBoxLayout(github_btn_w)
         github_btn_h.setContentsMargins(0, 0, 0, 0)
         github_btn_h.setSpacing(6)
-        self._github_login_btn = QPushButton("Sign in")
+        self._github_login_btn = QPushButton("Sign in with GitHub")
         self._github_logout_btn = QPushButton("Sign out")
         github_btn_h.addWidget(self._github_login_btn)
         github_btn_h.addWidget(self._github_logout_btn)
@@ -321,9 +414,82 @@ class SettingsDialog(QDialog):
         scroll.setWidget(w)
         return scroll
 
+    def _toggle_extra_keys(self) -> None:
+        visible = not self._extra_keys_widget.isVisible()
+        self._extra_keys_widget.setVisible(visible)
+        self._extra_keys_toggle.setText(
+            ("▼" if visible else "▶") +
+            "  More provider keys (DeepSeek, OpenRouter, Mistral, xAI…)"
+        )
+
+    # ---- Custom provider helpers ----
+
+    _CUSTOM_PRESETS: list[tuple[str, str, str]] = [
+        ("DeepSeek",     "https://api.deepseek.com/v1",          "deepseek-chat"),
+        ("OpenRouter",   "https://openrouter.ai/api/v1",         "openai/gpt-4o"),
+        ("Mistral",      "https://api.mistral.ai/v1",            "mistral-large-latest"),
+        ("xAI (Grok)",   "https://api.x.ai/v1",                  "grok-3"),
+        ("Together AI",  "https://api.together.xyz/v1",          "meta-llama/Llama-3-70b-chat-hf"),
+        ("Cerebras",     "https://api.cerebras.ai/v1",           "llama-3.3-70b"),
+        ("Ollama (local)", "http://localhost:11434/v1",           "llama3"),
+        ("LM Studio (local)", "http://localhost:1234/v1",        "local-model"),
+    ]
+
+    def _show_custom_presets_menu(self) -> None:
+        from PyQt6.QtWidgets import QMenu
+        from PyQt6.QtGui import QAction
+
+        menu = QMenu(self)
+        for name, url, model_hint in self._CUSTOM_PRESETS:
+            action = QAction(name, self)
+            action.setToolTip(url)
+            action.triggered.connect(
+                lambda checked, u=url, h=model_hint: self._apply_custom_preset(u, h)
+            )
+            menu.addAction(action)
+        btn = self.sender()
+        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _apply_custom_preset(self, base_url: str, model_hint: str) -> None:
+        self._fields["CUSTOM_BASE_URL"].setText(base_url)
+        # Update model placeholder for all custom-selected combos
+        for key in ("LLM_MODEL", "CHAT_LLM_MODEL", "VISION_LLM_MODEL"):
+            if key in self._fields:
+                combo = self._fields[key]
+                provider_key = key.replace("_MODEL", "_PROVIDER")
+                if provider_key in self._fields and _get(self._fields[provider_key]) == "custom":
+                    combo.lineEdit().setPlaceholderText(f"e.g. {model_hint}")
+
+    def _test_custom_connection(self) -> None:
+        from core.llm_clients import client as llm
+
+        provider = "custom"
+        model = _get(self._fields.get("LLM_MODEL", QLineEdit())).strip()
+        custom_api_key = self._effective_secret_value("CUSTOM_API_KEY")
+        custom_base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip()
+
+        if not model:
+            self._set_test_status(self._custom_test_status_lbl, False, "Enter a model name in the LLM Model field first.")
+            return
+        if not custom_base_url:
+            self._set_test_status(self._custom_test_status_lbl, False, "Enter a base URL first.")
+            return
+
+        self._start_async_test(
+            "custom_test",
+            self._custom_test_status_lbl,
+            lambda: llm.test_route_connection(
+                provider,
+                model,
+                "Custom",
+                custom_base_url=custom_base_url,
+                compat_keys={"custom": custom_api_key},
+            ),
+        )
+
     def _refresh_chatgpt_status(self) -> None:
         try:
-            from core import chatgpt_auth
+            from core.auth import chatgpt as chatgpt_auth
             tokens = chatgpt_auth.get_tokens()
             if tokens:
                 aid = tokens.get("account_id") or ""
@@ -338,7 +504,7 @@ class SettingsDialog(QDialog):
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
 
     def _chatgpt_login_browser(self) -> None:
-        from core import chatgpt_auth
+        from core.auth import chatgpt as chatgpt_auth
         self._chatgpt_status_lbl.setText("Opening browser\u2026 waiting for callback")
         self._chatgpt_status_lbl.setStyleSheet("color: #c0c040;")
         self._start_auth_poll()
@@ -366,7 +532,7 @@ class SettingsDialog(QDialog):
             msg = self._auth_poll_error
             self._auth_poll_error = None  # clear so we don't re-trigger
             if msg.startswith("__device_code__"):
-                # Device code info â€” show it without stopping the poll
+                # Device code info -” show it without stopping the poll
                 body = msg[len("__device_code__"):]
                 url, _, code = body.partition("\n")
                 self._chatgpt_status_lbl.setText(f"Go to: {url}\nEnter code: {code}")
@@ -378,7 +544,7 @@ class SettingsDialog(QDialog):
             return
         # Check if tokens have appeared in the keychain
         try:
-            from core import chatgpt_auth
+            from core.auth import chatgpt as chatgpt_auth
             if chatgpt_auth.get_tokens():
                 self._auth_poll_timer.stop()
                 self._refresh_chatgpt_status()
@@ -393,8 +559,8 @@ class SettingsDialog(QDialog):
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
 
     def _chatgpt_login_device(self) -> None:
-        from core import chatgpt_auth
-        self._chatgpt_status_lbl.setText("Starting device authâ€¦")
+        from core.auth import chatgpt as chatgpt_auth
+        self._chatgpt_status_lbl.setText("Starting device auth...")
         self._chatgpt_status_lbl.setStyleSheet("color: #c0c040;")
         self._start_auth_poll()
 
@@ -411,7 +577,7 @@ class SettingsDialog(QDialog):
 
     def _chatgpt_logout(self) -> None:
         try:
-            from core import chatgpt_auth
+            from core.auth import chatgpt as chatgpt_auth
             chatgpt_auth.clear_tokens()
         except Exception:
             pass
@@ -419,7 +585,7 @@ class SettingsDialog(QDialog):
 
     def _refresh_github_status(self) -> None:
         try:
-            from core import github_auth
+            from core.auth import github as github_auth
             tokens = github_auth.get_tokens()
             if tokens:
                 login = (tokens.get("user") or {}).get("login") or ""
@@ -439,13 +605,15 @@ class SettingsDialog(QDialog):
     def _github_login_device(self) -> None:
         import webbrowser
         import config as cfg
-        from core import github_auth
+        from core.auth import github as github_auth
 
         override_client_id = _get(self._fields["GITHUB_CLIENT_ID"]).strip()
         cfg.GITHUB_CLIENT_ID = override_client_id or getattr(cfg, "GITHUB_DEFAULT_CLIENT_ID", "")
         cfg.GITHUB_OAUTH_SCOPES = _get(self._fields["GITHUB_OAUTH_SCOPES"]).strip()
-        if not cfg.GITHUB_CLIENT_ID:
-            self._github_status_lbl.setText("No bundled GitHub OAuth client ID is configured yet.")
+        if not github_auth.has_configured_client_id():
+            self._github_status_lbl.setText(
+                "This build does not include a GitHub OAuth app client ID yet."
+            )
             self._github_status_lbl.setStyleSheet("color: #c04040;")
             return
 
@@ -491,7 +659,7 @@ class SettingsDialog(QDialog):
             self._github_status_lbl.setStyleSheet("color: #c04040;")
             return
         try:
-            from core import github_auth
+            from core.auth import github as github_auth
             if github_auth.get_tokens():
                 self._github_auth_poll_timer.stop()
                 self._refresh_github_status()
@@ -506,7 +674,7 @@ class SettingsDialog(QDialog):
 
     def _github_logout(self) -> None:
         try:
-            from core import github_auth
+            from core.auth import github as github_auth
             github_auth.clear_tokens()
         except Exception:
             pass
@@ -514,7 +682,7 @@ class SettingsDialog(QDialog):
 
     def _refresh_copilot_status(self) -> None:
         try:
-            from core import copilot_auth
+            from core.auth import copilot_auth
             stored, message = copilot_auth.token_status()
             self._copilot_status_lbl.setText(message)
             self._copilot_status_lbl.setStyleSheet(
@@ -526,7 +694,7 @@ class SettingsDialog(QDialog):
 
     def _copilot_save_token(self) -> None:
         try:
-            from core import copilot_auth
+            from core.auth import copilot_auth
             copilot_auth.save_token(self._copilot_token_edit.text())
             self._copilot_token_edit.clear()
             self._refresh_copilot_status()
@@ -537,7 +705,7 @@ class SettingsDialog(QDialog):
 
     def _copilot_clear_token(self) -> None:
         try:
-            from core import copilot_auth
+            from core.auth import copilot_auth
             copilot_auth.clear_token()
             self._copilot_token_edit.clear()
             self._refresh_copilot_status()
@@ -548,7 +716,7 @@ class SettingsDialog(QDialog):
 
     def _copilot_test_token(self) -> None:
         try:
-            from core import copilot_client
+            from core.auth import copilot_client
             ok, message = copilot_client.test_copilot_token()
             self._copilot_status_lbl.setText(message)
             self._copilot_status_lbl.setStyleSheet(
@@ -579,10 +747,10 @@ class SettingsDialog(QDialog):
         tts_key_note = QLabel("<small>API keys are saved to the OS keychain. Leave blank to keep the stored key.</small>")
         tts_key_note.setWordWrap(True)
         f.addRow("", tts_key_note)
-        f.addRow("Cartesia API key", self._fields["CARTESIA_API_KEY"])
+        f.addRow(_link_label("Cartesia API key", "https://play.cartesia.ai/keys"), self._fields["CARTESIA_API_KEY"])
         f.addRow("Cartesia Voice ID", self._fields["CARTESIA_VOICE_ID"])
         f.addRow(_sep(), _sep())
-        f.addRow("ElevenLabs API key", self._fields["ELEVENLABS_API_KEY"])
+        f.addRow(_link_label("ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys"), self._fields["ELEVENLABS_API_KEY"])
         self._tts_test_status_lbl = QLabel()
         self._tts_test_status_lbl.setWordWrap(True)
         f.addRow("", self._button_row(("Test TTS", self._test_tts_connection)))
@@ -731,7 +899,7 @@ class SettingsDialog(QDialog):
         hotkey_edit.setFixedWidth(120)
         if hotkey:
             hotkey_edit.setText(hotkey)
-        hotkey_edit.setPlaceholderText("Hotkeyâ€¦")
+        hotkey_edit.setPlaceholderText("Hotkey...")
         hdr_h.addWidget(hotkey_edit)
 
         hdr_h.addWidget(QLabel("Name:"))
@@ -744,14 +912,14 @@ class SettingsDialog(QDialog):
         paste_cb.setChecked(paste_back)
         hdr_h.addWidget(paste_cb)
 
-        hdr_h.addWidget(QLabel("â†µ key:"))
+        hdr_h.addWidget(QLabel("Enter key:"))
         custom_key_edit = QLineEdit(custom_key)
         custom_key_edit.setFixedWidth(36)
         custom_key_edit.setPlaceholderText("s")
         hdr_h.addWidget(custom_key_edit)
 
         hdr_h.addStretch()
-        del_caller_btn = QPushButton("âœ• Remove")
+        del_caller_btn = QPushButton("X Remove")
         del_caller_btn.setFixedWidth(80)
         hdr_h.addWidget(del_caller_btn)
         outer.addWidget(hdr)
@@ -856,13 +1024,13 @@ class SettingsDialog(QDialog):
         h.addWidget(label_edit)
 
         prompt_edit = QLineEdit(prompt)
-        prompt_edit.setPlaceholderText("Prompt sent to LLMâ€¦")
+        prompt_edit.setPlaceholderText("Prompt sent to LLM...")
         prompt_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         h.addWidget(prompt_edit)
 
         row_info: dict = {"widget": row_w, "key": key_edit, "label": label_edit, "prompt": prompt_edit}
 
-        del_btn = QPushButton("Ã—")
+        del_btn = QPushButton("X")
         del_btn.setFixedWidth(28)
         del_btn.clicked.connect(lambda: self._delete_caller_intent_row(blk, row_info))
         h.addWidget(del_btn)
@@ -896,21 +1064,30 @@ class SettingsDialog(QDialog):
         f.setContentsMargins(8, 8, 8, 8)
 
         mem_provider = self._combo(
-            ["groq", "openai", "anthropic", "google"],
+            ["groq", "openai", "anthropic", "google",
+             "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+             "custom"],
             self._env.get("MEMORY_LLM_PROVIDER", ""),
         )
         self._fields["MEMORY_LLM_PROVIDER"] = mem_provider
         f.addRow("Memory LLM provider:", mem_provider)
 
-        mem_model = QLineEdit(self._env.get("MEMORY_LLM_MODEL", ""))
-        mem_model.setPlaceholderText("e.g. llama-3.1-8b-instant")
+        mem_model = self._model_combo()
         self._fields["MEMORY_LLM_MODEL"] = mem_model
+        mem_provider.currentIndexChanged.connect(
+            lambda _: _refresh_model_combo(mem_model, _get(mem_provider))
+        )
         f.addRow("Memory LLM model:", mem_model)
 
         self._memory_test_status_lbl = QLabel()
         self._memory_test_status_lbl.setWordWrap(True)
         f.addRow("", self._button_row(("Test Memory LLM", self._test_memory_connection)))
         f.addRow("", self._memory_test_status_lbl)
+
+        mem_auto = QCheckBox("Automatically extract long-term facts from conversation")
+        mem_auto.setToolTip("Off by default to avoid clutter. Explicit remember/note commands still save facts.")
+        self._fields["MEMORY_AUTO_CONSOLIDATE"] = mem_auto
+        f.addRow("", mem_auto)
 
         mem_interval = QLineEdit(self._env.get("MEMORY_CONSOLIDATION_INTERVAL", "15"))
         mem_interval.setPlaceholderText("minutes between consolidations")
@@ -922,10 +1099,16 @@ class SettingsDialog(QDialog):
         self._fields["MEMORY_TOP_K"] = mem_topk
         f.addRow("Retrieval top-k:", mem_topk)
 
+        mem_distance = QLineEdit(self._env.get("MEMORY_RELEVANCE_MAX_DISTANCE", "0.55"))
+        mem_distance.setPlaceholderText("lower is stricter; 0.55 is conservative")
+        self._fields["MEMORY_RELEVANCE_MAX_DISTANCE"] = mem_distance
+        f.addRow("Retrieval max distance:", mem_distance)
+
         mem_budget = QLineEdit(self._env.get("MEMORY_STM_TOKEN_BUDGET", "4000"))
         mem_budget.setPlaceholderText("tokens before STM compression kicks in")
         self._fields["MEMORY_STM_TOKEN_BUDGET"] = mem_budget
         f.addRow("STM token budget:", mem_budget)
+        f.addRow("", self._button_row(("Clean up low-value stored facts", self._cleanup_memory)))
 
         root.addWidget(cfg_group)
 
@@ -935,9 +1118,10 @@ class SettingsDialog(QDialog):
         browser_layout.setContentsMargins(6, 6, 6, 6)
 
         try:
-            from core.memory import get_manager
+            from core.memory_store.store import get_manager
             from ui.memory_viewer import MemoryPanel
             panel = MemoryPanel(get_manager(), browser_group)
+            self._memory_panel = panel
             panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             browser_layout.addWidget(panel)
         except Exception as exc:
@@ -951,12 +1135,28 @@ class SettingsDialog(QDialog):
 
         return w
 
+    def _cleanup_memory(self) -> None:
+        try:
+            from core.memory_store.store import get_manager
+            count = get_manager().prune_low_value_facts()
+            panel = getattr(self, "_memory_panel", None)
+            if panel is not None:
+                panel._load_facts()
+            QMessageBox.information(
+                self,
+                "Memory cleanup",
+                f"Archived {count} low-value fact(s).",
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Memory cleanup failed", str(exc))
+
     def _tab_app(self) -> QWidget:
         w = QWidget()
         f = QFormLayout(w)
         f.setSpacing(10)
         f.setContentsMargins(12, 12, 12, 12)
 
+        self._fields["DARK_MODE"] = QCheckBox("Dark mode")
         self._fields["DOLL_AUTO_HIDE"] = QCheckBox("Auto-hide doll (only visible when active)")
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox("Auto-elaborate when opening chat")
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
@@ -983,6 +1183,7 @@ class SettingsDialog(QDialog):
         self._fields["TTS_HOLD_PLAYBACK_RATE"] = QLineEdit()
         self._fields["TTS_HOLD_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.35")
 
+        f.addRow("", self._fields["DARK_MODE"])
         f.addRow("", self._fields["DOLL_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
         f.addRow("Elaborate prompt", self._fields["CHAT_ELABORATE_PROMPT"])
@@ -1003,11 +1204,27 @@ class SettingsDialog(QDialog):
     # Helpers
     # ------------------------------------------------------------------
 
+    def _model_combo(self, provider: str = "") -> QComboBox:
+        models = _PROVIDER_MODELS.get(provider, [])
+        cb = QComboBox()
+        cb.setEditable(True)
+        cb.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        cb.addItems(models)
+        cb.setCurrentIndex(-1)
+        completer = QCompleter(models, cb)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        cb.setCompleter(completer)
+        return cb
+
     def _combo(self, options: list[str], current: str = "") -> QComboBox:
         cb = QComboBox()
-        cb.addItems(options)
-        if current and current in options:
-            cb.setCurrentText(current)
+        for opt in options:
+            cb.addItem(_PROVIDER_LABELS.get(opt, opt) if opt else "", opt)
+        if current is not None:
+            idx = cb.findData(current)
+            if idx >= 0:
+                cb.setCurrentIndex(idx)
         return cb
 
     def _button_row(self, *buttons: tuple[str, object]) -> QWidget:
@@ -1061,15 +1278,21 @@ class SettingsDialog(QDialog):
     ) -> None:
         provider_options = providers or self._fallback_rows.get(f"{key}__providers", ["groq", "openai", "anthropic", "google", "chatgpt", "copilot"])  # type: ignore[arg-type]
         provider_combo = self._combo(provider_options, provider)
-        model_edit = QLineEdit(model)
-        model_edit.setPlaceholderText("model")
+        model_combo = self._model_combo(provider)
+        if model:
+            model_combo.setCurrentText(model)
+        else:
+            model_combo.lineEdit().setPlaceholderText("model")
+        provider_combo.currentIndexChanged.connect(
+            lambda _: _refresh_model_combo(model_combo, _get(provider_combo))
+        )
         remove_btn = QPushButton("Remove")
         remove_btn.setFixedWidth(70)
         model_row = QWidget()
         model_h = QHBoxLayout(model_row)
         model_h.setContentsMargins(0, 0, 0, 0)
         model_h.setSpacing(8)
-        model_h.addWidget(model_edit)
+        model_h.addWidget(model_combo)
         model_h.addWidget(remove_btn)
 
         provider_label = QLabel()
@@ -1079,7 +1302,7 @@ class SettingsDialog(QDialog):
             "provider": provider_combo,
             "model_label": model_label,
             "model_row": model_row,
-            "model": model_edit,
+            "model": model_combo,
         }
         remove_btn.clicked.connect(lambda: self._remove_fallback_row(key, row_info))
         form = self._fallback_rows[f"{key}__form"]  # type: ignore[index]
@@ -1113,8 +1336,8 @@ class SettingsDialog(QDialog):
     def _get_fallback_rows(self, key: str) -> str:
         parts = []
         for row in self._fallback_rows[key]:
-            provider = row["provider"].currentText().strip()
-            model = row["model"].text().strip()
+            provider = _get(row["provider"]).strip()
+            model = _get(row["model"]).strip()
             if provider and model:
                 parts.append(f"{provider}:{model}")
         return "\n".join(parts)
@@ -1147,6 +1370,7 @@ class SettingsDialog(QDialog):
         _set(self._fields["VISION_LLM_PROVIDER"],  self._env.get("VISION_LLM_PROVIDER",  cfg.VISION_LLM_PROVIDER))
         _set(self._fields["VISION_LLM_MODEL"],     self._env.get("VISION_LLM_MODEL",     cfg.VISION_LLM_MODEL))
         self._set_fallback_rows("VISION_LLM_FALLBACKS", self._env.get("VISION_LLM_FALLBACKS", cfg.VISION_LLM_FALLBACKS))
+        _set(self._fields["CUSTOM_BASE_URL"],      self._env.get("CUSTOM_BASE_URL",      cfg.CUSTOM_BASE_URL))
         _set(self._fields["GITHUB_CLIENT_ID"],     self._env.get("GITHUB_CLIENT_ID",     cfg.GITHUB_CLIENT_ID))
         _set(self._fields["GITHUB_OAUTH_SCOPES"],  self._env.get("GITHUB_OAUTH_SCOPES",  cfg.GITHUB_OAUTH_SCOPES))
         _set(self._fields["CONTEXT_BROWSER_MAX_CHARS"], self._env.get("CONTEXT_BROWSER_MAX_CHARS", str(cfg.CONTEXT_BROWSER_MAX_CHARS)))
@@ -1156,8 +1380,12 @@ class SettingsDialog(QDialog):
 
         _set(self._fields["MEMORY_LLM_PROVIDER"],    self._env.get("MEMORY_LLM_PROVIDER",    cfg.MEMORY_LLM_PROVIDER))
         _set(self._fields["MEMORY_LLM_MODEL"],       self._env.get("MEMORY_LLM_MODEL",       cfg.MEMORY_LLM_MODEL))
+        self._fields["MEMORY_AUTO_CONSOLIDATE"].setChecked(
+            self._env.get("MEMORY_AUTO_CONSOLIDATE", str(cfg.MEMORY_AUTO_CONSOLIDATE)).lower() == "true"
+        )  # type: ignore
         _set(self._fields["MEMORY_CONSOLIDATION_INTERVAL"], self._env.get("MEMORY_CONSOLIDATION_INTERVAL", str(cfg.MEMORY_CONSOLIDATION_INTERVAL)))
         _set(self._fields["MEMORY_TOP_K"],           self._env.get("MEMORY_TOP_K",           str(cfg.MEMORY_TOP_K)))
+        _set(self._fields["MEMORY_RELEVANCE_MAX_DISTANCE"], self._env.get("MEMORY_RELEVANCE_MAX_DISTANCE", str(cfg.MEMORY_RELEVANCE_MAX_DISTANCE)))
         _set(self._fields["MEMORY_STM_TOKEN_BUDGET"], self._env.get("MEMORY_STM_TOKEN_BUDGET", str(cfg.MEMORY_STM_TOKEN_BUDGET)))
 
         # Build caller blocks from CALLER_ROWS + any env overrides
@@ -1192,6 +1420,8 @@ class SettingsDialog(QDialog):
             )
 
         auto_hide = self._env.get("DOLL_AUTO_HIDE", str(cfg.DOLL_AUTO_HIDE)).lower() == "true"
+        dark_mode = self._env.get("DARK_MODE", str(cfg.DARK_MODE)).lower() == "true"
+        self._fields["DARK_MODE"].setChecked(dark_mode)  # type: ignore
         self._fields["DOLL_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
 
         auto_elab = self._env.get("CHAT_AUTO_ELABORATE", str(cfg.CHAT_AUTO_ELABORATE)).lower() == "true"
@@ -1262,14 +1492,16 @@ class SettingsDialog(QDialog):
             self._test_result_timer.stop()
 
     def _test_llm_route(self, *, provider_key: str, model_key: str, route_name: str, status_label: QLabel, image: bool = False) -> None:
-        from core import llm
+        from core.llm_clients import client as llm
 
         provider = _get(self._fields[provider_key]).strip().lower()
         model = _get(self._fields[model_key]).strip()
-        groq_api_key = self._effective_secret_value("GROQ_API_KEY")
-        openai_api_key = self._effective_secret_value("OPENAI_API_KEY")
         anthropic_api_key = self._effective_secret_value("ANTHROPIC_API_KEY")
-        google_api_key = self._effective_secret_value("GOOGLE_API_KEY")
+        custom_base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip()
+        compat_keys = {
+            p: self._effective_secret_value(k)
+            for p, k in _PROVIDER_KEY_NAMES.items()
+        }
         test_key = {
             "LLM": "llm_test",
             "CHAT_LLM": "chat_llm_test",
@@ -1285,10 +1517,9 @@ class SettingsDialog(QDialog):
                 model,
                 route_name,
                 image=image,
-                groq_api_key=groq_api_key,
-                openai_api_key=openai_api_key,
                 anthropic_api_key=anthropic_api_key,
-                google_api_key=google_api_key,
+                custom_base_url=custom_base_url,
+                compat_keys=compat_keys,
             ),
         )
 
@@ -1344,28 +1575,16 @@ class SettingsDialog(QDialog):
         )
 
     def _apply(self):
-        """Save without closing the dialog, then apply changes live."""
+        """Save settings, apply changes live, then close the dialog."""
         if self._do_save():
             import config
-            from core import llm as _llm
+            from core.llm_clients import client as _llm
             from core import tts as _tts
+            from ui.shared.theme import apply_app_theme
             config.reload()
             _llm.reset_clients()
             _tts.reset_connections()
-            if self._on_apply:
-                self._on_apply()
-            self._status_lbl.setText("Applied.")
-            QTimer.singleShot(4000, lambda: self._status_lbl.setText(""))
-
-    def _save(self):
-        """Save and close the dialog."""
-        if self._do_save():
-            import config as _cfg
-            from core import llm as _llm
-            from core import tts as _tts
-            _cfg.reload()
-            _llm.reset_clients()
-            _tts.reset_connections()
+            apply_app_theme()
             if self._on_apply:
                 self._on_apply()
             self.accept()
@@ -1396,14 +1615,18 @@ class SettingsDialog(QDialog):
             "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": _get(self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"]),
             "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": _get(self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"]),
             "TOOL_PLUGIN_DIR": _get(self._fields["TOOL_PLUGIN_DIR"]),
+            "CUSTOM_BASE_URL":            _get(self._fields["CUSTOM_BASE_URL"]),
             "GITHUB_CLIENT_ID":          _get(self._fields["GITHUB_CLIENT_ID"]),
             "GITHUB_OAUTH_SCOPES":       _get(self._fields["GITHUB_OAUTH_SCOPES"]),
             "MEMORY_LLM_PROVIDER":      _get(self._fields["MEMORY_LLM_PROVIDER"]),
             "MEMORY_LLM_MODEL":         _get(self._fields["MEMORY_LLM_MODEL"]),
+            "MEMORY_AUTO_CONSOLIDATE":   str(self._fields["MEMORY_AUTO_CONSOLIDATE"].isChecked()),  # type: ignore
             "MEMORY_CONSOLIDATION_INTERVAL": _get(self._fields["MEMORY_CONSOLIDATION_INTERVAL"]),
             "MEMORY_TOP_K":             _get(self._fields["MEMORY_TOP_K"]),
+            "MEMORY_RELEVANCE_MAX_DISTANCE": _get(self._fields["MEMORY_RELEVANCE_MAX_DISTANCE"]),
             "MEMORY_STM_TOKEN_BUDGET":  _get(self._fields["MEMORY_STM_TOKEN_BUDGET"]),
             "CALLER_COUNT":  str(len(self._caller_blocks)),
+            "DARK_MODE":        str(self._fields["DARK_MODE"].isChecked()),  # type: ignore
             "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
@@ -1453,18 +1676,165 @@ class SettingsDialog(QDialog):
 # Helpers
 # ------------------------------------------------------------------
 
+# Maps provider name → secret store key name (OpenAI-compat providers only)
+_PROVIDER_KEY_NAMES: dict[str, str] = {
+    "groq":       "GROQ_API_KEY",
+    "openai":     "OPENAI_API_KEY",
+    "google":     "GOOGLE_API_KEY",
+    "deepseek":   "DEEPSEEK_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "mistral":    "MISTRAL_API_KEY",
+    "xai":        "XAI_API_KEY",
+    "together":   "TOGETHER_API_KEY",
+    "cerebras":   "CEREBRAS_API_KEY",
+    "custom":     "CUSTOM_API_KEY",
+    # ollama: no key
+}
+
 _MODEL_HINTS: dict[str, str] = {
-    "groq":      "e.g. llama3-8b-8192",
-    "openai":    "e.g. gpt-4o",
-    "anthropic": "e.g. claude-sonnet-4-5",
-    "google":    "e.g. gemini-2.5-flash",
-    "chatgpt":   "gpt-5.5  |  gpt-5.4  |  gpt-5.4-mini  |  gpt-5.3-codex",
-    "copilot":   "e.g. gpt-4.1",
+    "groq":       "e.g. llama3-8b-8192",
+    "openai":     "e.g. gpt-4o",
+    "anthropic":  "e.g. claude-sonnet-4-5",
+    "google":     "e.g. gemini-2.5-flash",
+    "chatgpt":    "gpt-5.5  |  gpt-5.4  |  gpt-5.4-mini  |  gpt-5.3-codex",
+    "copilot":    "e.g. gpt-4.1",
+    "deepseek":   "e.g. deepseek-chat",
+    "openrouter": "e.g. openai/gpt-4o",
+    "mistral":    "e.g. mistral-large-latest",
+    "xai":        "e.g. grok-3",
+    "together":   "e.g. meta-llama/Llama-3-70b-chat-hf",
+    "cerebras":   "e.g. llama-3.3-70b",
+    "ollama":     "e.g. llama3  (model pulled locally)",
+    "custom":     "model name for your custom endpoint",
+}
+
+_PROVIDER_MODELS: dict[str, list[str]] = {
+    "groq": [
+        "llama-3.3-70b-versatile",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
+    ],
+    "openai": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "o3",
+        "o4-mini",
+    ],
+    "anthropic": [
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-5",
+        "claude-sonnet-4-5",
+    ],
+    "google": [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+    ],
+    "chatgpt": [
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex",
+    ],
+    "copilot": [
+        "gpt-4.1",
+        "gpt-4o",
+        "claude-sonnet-4-5",
+        "gemini-2.5-pro",
+    ],
+    "deepseek": [
+        "deepseek-chat",
+        "deepseek-reasoner",
+    ],
+    "openrouter": [
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+        "anthropic/claude-sonnet-4-5",
+        "google/gemini-2.5-flash",
+        "meta-llama/llama-3.3-70b-instruct",
+        "deepseek/deepseek-chat",
+        "mistralai/mistral-large",
+    ],
+    "mistral": [
+        "mistral-large-latest",
+        "mistral-small-latest",
+        "mistral-medium-latest",
+        "codestral-latest",
+    ],
+    "xai": [
+        "grok-3",
+        "grok-3-mini",
+        "grok-2-latest",
+    ],
+    "together": [
+        "meta-llama/Llama-3-70b-chat-hf",
+        "meta-llama/Llama-3-8b-chat-hf",
+        "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "Qwen/Qwen2.5-72B-Instruct-Turbo",
+    ],
+    "cerebras": [
+        "llama-3.3-70b",
+        "llama3.1-8b",
+        "qwen-3-32b",
+    ],
+    "ollama": [
+        "llama3",
+        "llama3:70b",
+        "mistral",
+        "codellama",
+        "phi3",
+        "gemma2",
+    ],
+    "custom": [],
+}
+
+_PROVIDER_LABELS: dict[str, str] = {
+    "groq":       "Groq",
+    "openai":     "OpenAI",
+    "anthropic":  "Anthropic",
+    "google":     "Google AI Studio",
+    "chatgpt":    "Codex (ChatGPT subscription)",
+    "copilot":    "GitHub Copilot",
+    "deepseek":   "DeepSeek",
+    "openrouter": "OpenRouter",
+    "mistral":    "Mistral",
+    "xai":        "xAI (Grok)",
+    "together":   "Together AI",
+    "cerebras":   "Cerebras",
+    "ollama":     "Ollama (local)",
+    "custom":     "Custom (OpenAI-compatible)",
+    "cartesia":   "Cartesia",
+    "elevenlabs": "ElevenLabs",
+    "none":       "None",
 }
 
 
 def _model_hint(provider: str) -> str:
     return _MODEL_HINTS.get(provider.lower(), "model name")
+
+
+def _refresh_model_combo(combo: QComboBox, provider: str) -> None:
+    """Update a model combo's item list for the given provider without losing the current text."""
+    current_text = combo.currentText()
+    models = _PROVIDER_MODELS.get(provider, [])
+    combo.blockSignals(True)
+    combo.clear()
+    combo.addItems(models)
+    combo.setCurrentText(current_text) if current_text else combo.setCurrentIndex(-1)
+    completer = QCompleter(models, combo)
+    completer.setFilterMode(Qt.MatchFlag.MatchContains)
+    completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    combo.setCompleter(completer)
+    combo.blockSignals(False)
 
 
 def _sep() -> QFrame:
@@ -1476,9 +1846,15 @@ def _sep() -> QFrame:
 
 def _set(widget, value: str):
     if isinstance(widget, QComboBox):
-        idx = widget.findText(value)
+        idx = widget.findData(value)
         if idx >= 0:
             widget.setCurrentIndex(idx)
+        else:
+            idx = widget.findText(value)
+            if idx >= 0:
+                widget.setCurrentIndex(idx)
+            elif widget.isEditable():
+                widget.setCurrentText(value)
     elif isinstance(widget, QLineEdit):
         widget.setText(value)
     elif isinstance(widget, QTextEdit):
@@ -1487,7 +1863,8 @@ def _set(widget, value: str):
 
 def _get(widget) -> str:
     if isinstance(widget, QComboBox):
-        return widget.currentText()
+        data = widget.currentData()
+        return data if data is not None else widget.currentText()
     elif isinstance(widget, QLineEdit):
         return widget.text()
     elif isinstance(widget, QTextEdit):
@@ -1499,6 +1876,14 @@ def _desc_label(title: str, description: str) -> QLabel:
     lbl = QLabel(description)
     lbl.setWordWrap(True)
     lbl.setStyleSheet("color: palette(mid); font-size: 9pt;")
+    return lbl
+
+
+def _link_label(text: str, url: str) -> QLabel:
+    lbl = QLabel(f'<a href="{url}">{text}</a>')
+    lbl.setOpenExternalLinks(True)
+    lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+    lbl.setToolTip(url)
     return lbl
 
 

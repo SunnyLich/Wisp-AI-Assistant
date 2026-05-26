@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from core import llm
+from core.llm_clients import client as llm
 
 
 class LlmFallbackTests(unittest.TestCase):

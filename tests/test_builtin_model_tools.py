@@ -1,6 +1,6 @@
 import unittest
 
-from core import llm
+from core.llm_clients import client as llm
 
 
 class BuiltinModelToolsTests(unittest.TestCase):

@@ -2076,7 +2076,7 @@ class AgentRunWindow(QDialog):
             self._start_runner()
 
     def _start_runner(self) -> None:
-        from core.agent_runner import AgentRunControl, AgentTaskRunner
+        from core.agent.runner import AgentRunControl, AgentTaskRunner
 
         self._control = AgentRunControl()
         runner = AgentTaskRunner(

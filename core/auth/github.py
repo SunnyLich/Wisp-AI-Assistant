@@ -23,13 +23,22 @@ _KEYRING_SERVICE = "python-ai-overlay"
 _KEYRING_ACCOUNT = "github-oauth"
 _TOKEN_FILE = pathlib.Path(__file__).parent.parent / "private" / ".github_tokens.json"
 
+# Public OAuth app client ID for this desktop app. GitHub device flow does not
+# require a client secret, so this is safe to bundle once the OAuth app exists.
+_BUNDLED_CLIENT_ID = "Ov23lir59v9aESWj9PYV"
+
 
 def configured_client_id() -> str:
     """Return the bundled GitHub OAuth client ID, with optional user override."""
     return (
         getattr(config, "GITHUB_CLIENT_ID", "").strip()
         or getattr(config, "GITHUB_DEFAULT_CLIENT_ID", "").strip()
+        or _BUNDLED_CLIENT_ID
     )
+
+
+def has_configured_client_id() -> bool:
+    return bool(configured_client_id())
 
 
 def _keyring_get() -> str | None:
@@ -91,9 +100,22 @@ def clear_tokens() -> None:
         pass
 
 
+_TOKEN_WARN_DAYS = 365
+
+
 def get_valid_access_token() -> str | None:
     tokens = get_tokens()
-    return tokens.get("access") if tokens else None
+    if not tokens:
+        return None
+    token = tokens.get("access")
+    if token and "saved_at" in tokens:
+        age_days = (time.time() * 1000 - tokens["saved_at"]) / (1000 * 86400)
+        if age_days > _TOKEN_WARN_DAYS:
+            print(
+                f"[github_auth] Warning: stored token is {age_days:.0f} days old "
+                "and may have expired. Re-authenticate if API calls fail."
+            )
+    return token
 
 
 def get_user_login() -> str | None:
@@ -167,7 +189,10 @@ def start_device_login(
     def _run() -> None:
         client_id = configured_client_id()
         if not client_id:
-            on_error("No bundled GitHub OAuth client ID is configured for this app yet.")
+            on_error(
+                "This build does not include a GitHub OAuth app client ID yet. "
+                "Register one once for Wisp and bundle its public client ID."
+            )
             return
 
         try:
