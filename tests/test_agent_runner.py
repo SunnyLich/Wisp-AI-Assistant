@@ -1279,7 +1279,7 @@ class AgentRunnerTests(unittest.TestCase):
             spec = DummySpec(scope_folder=str(scope), max_turns=1, approval_policy="never")
             response = json.dumps({"thought": "Done.", "tool_calls": [], "final": "Finished."})
 
-            with patch("core.llm.stream_response", return_value=iter([response])) as stream_response:
+            with patch("core.llm_clients.client.stream_response", return_value=iter([response])) as stream_response:
                 AgentTaskRunner(log_root=logs).run(spec)
 
             self.assertEqual(stream_response.call_args.kwargs["max_tokens"], 4096)
@@ -1301,7 +1301,7 @@ class AgentRunnerTests(unittest.TestCase):
                     raise RuntimeError("provider 500")
                 return iter([response])
 
-            with patch("core.llm.stream_response", side_effect=fake_stream_response):
+            with patch("core.llm_clients.client.stream_response", side_effect=fake_stream_response):
                 run_dir = AgentTaskRunner(log_root=logs).run(spec)
 
             self.assertEqual(calls, 2)

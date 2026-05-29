@@ -213,14 +213,19 @@ class IntentOverlay(QWidget):
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                        row["label"])
 
-            # Hint / subtitle
-            if row.get("hint"):
+            # Subtitle: actual prompt snippet (configured rows) or hint (custom row)
+            subtitle = row["hint"] if row["is_custom"] else (row["prompt"] or row["hint"])
+            if subtitle:
                 p.setFont(hint_font)
                 p.setPen(QPen(_HINT))
                 hint_y = y + (_ROW_H // 2) + 2
+                from PySide6.QtGui import QFontMetrics
+                elided = QFontMetrics(hint_font).elidedText(
+                    subtitle, Qt.TextElideMode.ElideRight, text_w
+                )
                 p.drawText(_TEXT_X, hint_y, text_w, 18,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                           row["hint"])
+                           elided)
 
             y += _ROW_H
 

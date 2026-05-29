@@ -893,9 +893,14 @@ _DOC_APP_TITLE_SUFFIXES: list[str] = [
 ]
 
 def _config_dir() -> str:
-    """Return the per-user config base directory (%APPDATA% on Windows, ~/.config on Linux)."""
+    """Return the per-user config base directory for app data.
+
+    Windows: %APPDATA%; macOS: ~/Library/Application Support; Linux: ~/.config.
+    """
     if _IS_WIN:
         return os.environ.get("APPDATA", "")
+    if sys.platform == "darwin":
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support")
     return os.path.join(os.path.expanduser("~"), ".config")
 
 

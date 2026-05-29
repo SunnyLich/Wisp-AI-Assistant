@@ -75,16 +75,12 @@ class _FactRow(QWidget):
         self._cat_combo.currentIndexChanged.connect(self._on_category_changed)
         layout.addWidget(self._cat_combo)
 
-        source_label = QLabel(fact.get("source", "")[:3].upper())
-        source_label.setFixedWidth(36)
-        source_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        source_label.setStyleSheet("color: #888; font-size: 10px;")
-        source_label.setToolTip(f"Source: {fact.get('source', 'unknown')}")
-        layout.addWidget(source_label)
-
         del_btn = QPushButton("X")
-        del_btn.setFixedWidth(28)
-        del_btn.setToolTip("Delete this fact")
+        del_btn.setFixedWidth(40)
+        del_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
+        del_btn.setToolTip(
+            f"Delete this fact (source: {fact.get('source', 'unknown')})"
+        )
         del_btn.clicked.connect(self._on_delete)
         layout.addWidget(del_btn)
 

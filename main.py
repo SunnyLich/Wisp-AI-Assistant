@@ -41,12 +41,14 @@ def _thread_excepthook(args):
 threading.excepthook = _thread_excepthook
 # ---------------------------------------------------------------------------------
 import config
+import core.plugin_manager as _plugin_manager_mod
 from core.hotkeys import HotkeyListener
 from core import capture, audio, context_fetcher, stt
 from core.llm_clients import client as llm
 from core.assistant_text import ThoughtStreamParser
 from core import tts as tts_module
 from core.memory_store import store as memory_module
+from core.query_pipeline import GenerationCounter, ContextInputs, build_context
 from core.system.app_platform import configure_windows_app_identity
 from core.memory_store.commands import extract_remember_fact
 from ui.overlay import DollOverlay, OverlaySignals
@@ -58,6 +60,9 @@ from ui.shared.theme import apply_app_theme
 
 class App:
     def __init__(self):
+        from core.system.paths import PLUGINS_DIR
+        self._plugin_manager = _plugin_manager_mod.init(PLUGINS_DIR)
+
         configure_windows_app_identity()
         self._qt = QApplication(sys.argv)
         self._qt.setApplicationName("Wisp")
@@ -66,16 +71,11 @@ class App:
         apply_app_theme(self._qt)
         self._signals = OverlaySignals()
         self._overlay = DollOverlay(self._signals)
-        self._hotkeys = HotkeyListener(
-            on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
-            on_add_context=self._on_add_context,
-            on_clear_context=self._on_clear_context,
-            on_snip=self._on_snip_hotkey,
-            on_voice_start=self._on_voice_start,
-            on_voice_stop=self._on_voice_stop,
-        )
-        self._context_buffer: list[str] = []   # accumulated via Alt+Q
+        self._hotkeys = self._build_hotkey_listener()
+        self._context_buffer: list[str] = []       # accumulated via Alt+Q
         self._context_buffer_lock = threading.Lock()
+        self._drop_context_items: list[tuple] = []  # (name, content, type) from drag-drop
+        self._drop_context_lock = threading.Lock()
         self._last_reply: str = ""
         self._pending_context: context_fetcher.ContextSnapshot | None = None
         self._voice_active: bool = False        # guard against spurious release events
@@ -90,8 +90,7 @@ class App:
         self._pending_context_policy: dict | None = None
         self._pending_paste_target: int = 0  # HWND to paste into (0 = no paste)
         self._pending_intent_target: int = 0 # HWND whose monitor should host the picker
-        self._gen_id: int = 0                # incremented on each new query; stale workers skip bubble signals
-        self._gen_id_lock = threading.Lock()
+        self._generations = GenerationCounter()  # bumped per query; stale workers skip bubble signals
 
         # Memory
         self._memory = memory_module.get_manager()
@@ -103,6 +102,8 @@ class App:
         self._signals.show_new_chat.connect(self._on_show_new_chat)
         self._signals.show_last_chat.connect(self._on_show_last_chat)
         self._signals.show_memory_viewer.connect(self._open_memory_viewer)
+        self._signals.context_items_dropped.connect(self._on_context_items_dropped)
+        self._signals.remove_dropped_item.connect(self._on_remove_dropped_item)
         self._overlay.set_click_handler(self._on_doll_click)
 
         # Pre-warm connections in background
@@ -113,6 +114,39 @@ class App:
 
         # Pre-load the Whisper model so the first voice query has no cold start
         stt.prewarm()
+
+        # Notify mods that the app is fully initialised
+        from core.plugin_manager import AppContext
+        from core.llm_clients.client import get_tool_registry
+        self._plugin_manager.on_startup(AppContext(
+            signals=self._signals,
+            model_tool_registry=get_tool_registry(),
+            config=config,
+        ))
+        self._qt.aboutToQuit.connect(self._plugin_manager.on_shutdown)
+
+    def _build_hotkey_listener(self) -> HotkeyListener:
+        """Construct the HotkeyListener with all callbacks wired. Used at startup
+        and again whenever settings change re-register hotkeys live."""
+        return HotkeyListener(
+            on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
+            on_add_context=self._on_add_context,
+            on_clear_context=self._on_clear_context,
+            on_snip=self._on_snip_hotkey,
+            on_voice_start=self._on_voice_start,
+            on_voice_stop=self._on_voice_stop,
+        )
+
+    def _set_idle(self) -> None:
+        """Return the overlay to its resting state."""
+        self._signals.set_state.emit("idle")
+        if config.DOLL_AUTO_HIDE:
+            self._signals.hide_doll.emit()
+
+    def _finish_idle(self, gen_id: int) -> None:
+        """Return to idle only if this generation is still the active one."""
+        if self._generations.is_current(gen_id):
+            self._set_idle()
 
     def run(self):
         if not config.DOLL_AUTO_HIDE:
@@ -127,6 +161,7 @@ class App:
     # ------------------------------------------------------------------
 
     def _prewarm(self):
+        audio.prewarm_filler()  # decode filler WAVs so the hotkey path does no disk I/O
         tts_module.prewarm()
         print("[main] Connections pre-warmed.")
 
@@ -138,14 +173,7 @@ class App:
         config.reload()
         tts_module.reset_connections()
         self._hotkeys.stop()
-        self._hotkeys = HotkeyListener(
-            on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
-            on_add_context=self._on_add_context,
-            on_clear_context=self._on_clear_context,
-            on_snip=self._on_snip_hotkey,
-            on_voice_start=self._on_voice_start,
-            on_voice_stop=self._on_voice_stop,
-        )
+        self._hotkeys = self._build_hotkey_listener()
         self._hotkeys.start()
         self._overlay.apply_settings()
         apply_app_theme(self._qt)
@@ -164,10 +192,26 @@ class App:
             print(f"[main] Context buffer: {len(self._context_buffer)} item(s) queued.")
 
     def _on_clear_context(self):
-        """Alt+W -" clear the context buffer."""
+        """Alt+W — clear the context buffer and any dropped context."""
         with self._context_buffer_lock:
             self._context_buffer.clear()
+        with self._drop_context_lock:
+            self._drop_context_items.clear()
+        self._signals.drop_context_cleared.emit()
         print("[main] Context buffer cleared.")
+
+    def _on_context_items_dropped(self, items: list) -> None:
+        """Called when files/text are dropped onto the doll icon."""
+        with self._drop_context_lock:
+            self._drop_context_items.extend(items)
+        print(f"[main] Drop context: {len(items)} item(s) queued.")
+
+    def _on_remove_dropped_item(self, idx: int) -> None:
+        """User clicked X on a context badge — remove that item from the queue."""
+        with self._drop_context_lock:
+            if 0 <= idx < len(self._drop_context_items):
+                removed = self._drop_context_items.pop(idx)
+                print(f"[main] Removed drop context item: {removed[0]!r}")
 
     def _steal_foreground(self) -> None:
         """Bring the overlay to the foreground from the keyboard-hook thread."""
@@ -238,9 +282,7 @@ class App:
                 self._signals.show_intent_picker.emit(caller_idx)
             except Exception:
                 log.exception("_fetch_and_show crashed")
-                self._signals.set_state.emit("idle")
-                if config.DOLL_AUTO_HIDE:
-                    self._signals.hide_doll.emit()
+                self._set_idle()
 
         threading.Thread(target=_fetch_and_show, daemon=True).start()
 
@@ -289,6 +331,7 @@ class App:
         if self._voice_active:
             return  # ignore held-down repeat events
         self._voice_active = True
+        audio.stop()  # cut off any reply still being spoken before recording
         self._pending_context = context_fetcher.fetch_and_save()
         stt.start_recording()
         if config.DOLL_AUTO_HIDE:
@@ -307,14 +350,10 @@ class App:
     def _voice_transcribe_and_query(self):
         text = stt.stop_and_transcribe()
         if not text:
-            self._signals.set_state.emit("idle")
-            if config.DOLL_AUTO_HIDE:
-                self._signals.hide_doll.emit()
+            self._set_idle()
             return
         self._signals.set_state.emit("thinking")
-        with self._gen_id_lock:
-            self._gen_id += 1
-            gen_id = self._gen_id
+        gen_id = self._generations.next()
         self._query_and_speak(text, (None, None), gen_id=gen_id)
 
     # ------------------------------------------------------------------
@@ -356,9 +395,8 @@ class App:
         self._pending_intent_target = 0
 
         caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
-        with self._gen_id_lock:
-            self._gen_id += 1
-            gen_id = self._gen_id
+        audio.stop()  # supersede any reply still being spoken from the previous query
+        gen_id = self._generations.next()
         if caller.get("paste_back") and target_hwnd:
             threading.Thread(
                 target=self._rewrite_and_paste,
@@ -377,9 +415,7 @@ class App:
         self._pending_context_policy = None
         self._pending_paste_target = 0
         self._pending_intent_target = 0
-        self._signals.set_state.emit("idle")
-        if config.DOLL_AUTO_HIDE:
-            self._signals.hide_doll.emit()
+        self._set_idle()
 
     def _rewrite_and_paste(self, intent_prompt: str, capture_data: tuple | None, target_hwnd: int, gen_id: int = 0):
         """Worker: stream LLM rewrite using intent_prompt, then paste into the original window."""
@@ -390,13 +426,10 @@ class App:
 
         if not selected_text:
             print("[main] Rewrite & Paste: no text was selected, aborting.")
-            if gen_id == self._gen_id:
-                self._signals.set_state.emit("idle")
-                if config.DOLL_AUTO_HIDE:
-                    self._signals.hide_doll.emit()
+            self._finish_idle(gen_id)
             return
 
-        if gen_id == self._gen_id:
+        if self._generations.is_current(gen_id):
             self._signals.set_state.emit("thinking")
             self._signals.bubble_thinking.emit()
 
@@ -404,36 +437,30 @@ class App:
         try:
             for chunk in llm.stream_rewrite(selected_text, intent_prompt):
                 full_reply += chunk
-                if gen_id == self._gen_id:
+                if self._generations.is_current(gen_id):
                     self._signals.bubble_chunk.emit(chunk)
         except Exception as exc:
             print(f"[main] Rewrite error: {exc}")
-            if gen_id == self._gen_id:
-                self._signals.set_state.emit("idle")
-                if config.DOLL_AUTO_HIDE:
-                    self._signals.hide_doll.emit()
+            self._finish_idle(gen_id)
             return
 
         reply_text = full_reply.strip()
         if not reply_text:
-            if gen_id == self._gen_id:
-                self._signals.set_state.emit("idle")
-                if config.DOLL_AUTO_HIDE:
-                    self._signals.hide_doll.emit()
+            self._finish_idle(gen_id)
             return
 
         self._last_reply = reply_text
-        if gen_id == self._gen_id:
+        if self._generations.is_current(gen_id):
             self._signals.bubble_start_reveal.emit()
             self._signals.bubble_finish.emit()
 
         # Paste result back into the original window (replaces the selection).
         try:
-            from core.platform_utils import set_foreground_window, send_keys
+            from core.platform_utils import set_foreground_window, send_keys, PASTE_COMBO
             pyperclip.copy(reply_text)
             set_foreground_window(target_hwnd)
             time.sleep(0.15)   # let the focus switch settle
-            send_keys("ctrl+v")
+            send_keys(PASTE_COMBO)
         except Exception as exc:
             print(f"[main] Paste-back error: {exc}")
 
@@ -447,10 +474,7 @@ class App:
         })
         self._memory.record_turn(f"{intent_prompt}:\n\n{selected_text}", reply_text, "")
 
-        if gen_id == self._gen_id:
-            self._signals.set_state.emit("idle")
-            if config.DOLL_AUTO_HIDE:
-                self._signals.hide_doll.emit()
+        self._finish_idle(gen_id)
 
     # ------------------------------------------------------------------
     # LLM + TTS pipeline (worker thread)
@@ -459,6 +483,24 @@ class App:
     def _query_and_speak(self, intent_prompt: str, capture_data: tuple | None, caller: dict | None = None, gen_id: int = 0):
         import queue
         caller = caller or {}
+
+        # Kick off the active-document read up front so it overlaps the remaining
+        # capture/clipboard I/O instead of serialising after it. Speculative: it
+        # only feeds the prompt when no screenshot is present (build_context gates
+        # it), so a vision query that appears later simply discards the result.
+        pre_screenshot = capture_data[1] if capture_data else None
+        active_doc: dict[str, str] = {}
+        active_doc_thread: threading.Thread | None = None
+        if caller.get("context_documents", True) and not pre_screenshot:
+            def _read_active_doc():
+                try:
+                    txt = llm.read_active_document_for_context()
+                    if txt and not txt.startswith(("Could not", "File type", "Failed to")):
+                        active_doc["text"] = txt
+                except Exception:
+                    log.exception("active-document read failed")
+            active_doc_thread = threading.Thread(target=_read_active_doc, daemon=True)
+            active_doc_thread.start()
 
         # Use pre-captured input from hotkey time (original app still had focus then).
         if capture_data:
@@ -473,39 +515,49 @@ class App:
         # Ambient context captured at hotkey time
         snap = self._pending_context
         self._pending_context = None
-        ambient_ctx = (
+        ambient_text = (
             context_fetcher.format_context_for_prompt(snap)
             if snap and caller.get("context_ambient", True)
             else ""
         )
 
-        # Build final message -" intent prompt only; context goes into the system
-        # prompt so it is sent exactly once and not repeated in every follow-up turn.
         with self._context_buffer_lock:
-            context_items = self._context_buffer.copy()
+            buffered_items = self._context_buffer.copy()
             self._context_buffer.clear()
 
-        all_contexts = context_items + ([selected] if selected else [])
-        user_message = intent_prompt  # clean turn -" no embedded context
-        if all_contexts:
-            # Merge selected / buffered text into ambient_ctx (system-prompt layer).
-            ctx_block = (
-                "\n\n".join(f"Context {i + 1}:\n{c}" for i, c in enumerate(all_contexts))
-                if len(all_contexts) > 1
-                else all_contexts[0]
-            )
-            ambient_ctx = f"{ambient_ctx}\n\n---\n{ctx_block}" if ambient_ctx else ctx_block
+        # Consume dropped context items (files/images/text dragged onto the doll)
+        with self._drop_context_lock:
+            drop_items = self._drop_context_items.copy()
+            self._drop_context_items.clear()
+        if drop_items:
+            self._signals.drop_context_cleared.emit()
 
-        # Proactively read the active document (if any) so the model has full context
-        # without needing a tool round-trip.  Only for text queries -" vision queries
-        # already have a screenshot as context.
-        if not screenshot_b64 and caller.get("context_documents", True):
-            doc_text = llm.read_active_document_for_context()
-            if doc_text and not doc_text.startswith(("Could not", "File type", "Failed to")):
-                ambient_ctx = (
-                    f"{ambient_ctx}\n\n---\n[Active document]\n{doc_text}"
-                    if ambient_ctx else f"[Active document]\n{doc_text}"
-                )
+        # Read the current clipboard directly (no synthesised Ctrl+C) when the
+        # caller opts in — works in apps where get_selected_text() comes back empty.
+        clipboard_text = capture.get_clipboard_text() if caller.get("context_clipboard") else None
+
+        if active_doc_thread is not None:
+            active_doc_thread.join()
+
+        built = build_context(
+            ContextInputs(
+                intent_prompt=intent_prompt,
+                selected=selected,
+                screenshot_b64=screenshot_b64,
+                ambient_text=ambient_text,
+                buffered_items=buffered_items,
+                drop_items=drop_items,
+                clipboard_text=clipboard_text,
+                active_document_text=active_doc.get("text", ""),
+            ),
+            read_document_file=llm.read_document_file,
+        )
+        user_message = built.user_message
+        ambient_ctx = built.ambient_ctx
+        screenshot_b64 = built.screenshot_b64
+
+        # Give mods a chance to inspect or modify the prompt/context before the LLM call.
+        user_message, ambient_ctx = self._plugin_manager.before_query(user_message, ambient_ctx)
 
         self._signals.set_state.emit("thinking")
         self._signals.bubble_thinking.emit()
@@ -550,7 +602,7 @@ class App:
                         if not is_thought:
                             reply_text += part
                             llm_chunk_q.put(part)
-                    if gen_id != self._gen_id:
+                    if not self._generations.is_current(gen_id):
                         break  # a newer query started — stop feeding stale chunks to the bubble
             except Exception:
                 log.exception("llm_producer crashed (gen_id=%d)", gen_id)
@@ -583,6 +635,7 @@ class App:
                     "context": ambient_ctx,
                 })
                 self._memory.record_turn(user_message, reply_text, ambient_ctx)
+                self._plugin_manager.after_response(reply_text)
 
         def llm_chunk_iter():
             while True:
@@ -593,7 +646,7 @@ class App:
 
         def on_audio_start():
             # Called when first PCM chunk hits the speaker -" start word reveal + speaking anim.
-            if gen_id != self._gen_id:
+            if not self._generations.is_current(gen_id):
                 return
             self._signals.set_state.emit("speaking")
             self._signals.bubble_start_reveal.emit()
@@ -603,7 +656,7 @@ class App:
 
         def on_word_timestamps(words, start_ms):
             # Real word timings from Cartesia -" drives precise bubble sync.
-            if gen_id == self._gen_id:
+            if self._generations.is_current(gen_id):
                 self._signals.bubble_schedule_words.emit(words, start_ms)
 
         def tts_consumer():
@@ -612,11 +665,13 @@ class App:
 
             def _on_done():
                 self._last_reply = reply_text
-                if gen_id == self._gen_id:
-                    self._signals.set_state.emit("idle")
+                if self._generations.is_current(gen_id):
+                    if not reply_text:
+                        self._signals.bubble_chunk.emit(
+                            "⚠️ No reply from model. Check model name / API key in Settings.", False
+                        )
                     self._signals.bubble_finish.emit()
-                    if config.DOLL_AUTO_HIDE:
-                        self._signals.hide_doll.emit()
+                    self._set_idle()
 
             try:
                 audio.play_tts_stream_from_chunks(
@@ -628,10 +683,7 @@ class App:
                 )
             except Exception:
                 log.exception("tts_consumer crashed (gen_id=%d)", gen_id)
-                if gen_id == self._gen_id:
-                    self._signals.set_state.emit("idle")
-                    if config.DOLL_AUTO_HIDE:
-                        self._signals.hide_doll.emit()
+                self._finish_idle(gen_id)
 
         threading.Thread(target=llm_producer, daemon=True).start()
         threading.Thread(target=tts_consumer, daemon=True).start()

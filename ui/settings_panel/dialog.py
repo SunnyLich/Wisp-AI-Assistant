@@ -160,12 +160,12 @@ class SettingsDialog(QDialog):
         QScrollArea > QWidget > QWidget { background: transparent; }
         QLineEdit {
             background: white; border: 1px solid #d1d1d6; border-radius: 8px;
-            padding: 5px 10px; font-size: 10pt; color: #1c1c1e;
+            padding: 5px 10px; font-size: 10pt; color: #1c1c1e; min-height: 30px;
         }
         QLineEdit:focus { border-color: #5856d6; }
         QComboBox {
             background: white; border: 1px solid #d1d1d6; border-radius: 8px;
-            padding: 5px 10px; font-size: 10pt; color: #1c1c1e; min-height: 22px;
+            padding: 5px 10px; font-size: 10pt; color: #1c1c1e; min-height: 30px;
         }
         QComboBox:focus { border-color: #5856d6; }
         QComboBox::drop-down { border: none; width: 20px; }
@@ -203,12 +203,12 @@ class SettingsDialog(QDialog):
         QWidget { background-color: transparent; color: #e8e8f0; }
         QLineEdit {
             background: #17181d; border: 1px solid #454854; border-radius: 8px;
-            padding: 5px 10px; font-size: 10pt; color: #e8e8f0;
+            padding: 5px 10px; font-size: 10pt; color: #e8e8f0; min-height: 30px;
         }
         QLineEdit:focus { border-color: #8b87ff; }
         QComboBox {
             background: #17181d; border: 1px solid #454854; border-radius: 8px;
-            padding: 5px 10px; font-size: 10pt; color: #e8e8f0; min-height: 22px;
+            padding: 5px 10px; font-size: 10pt; color: #e8e8f0; min-height: 30px;
         }
         QComboBox:focus { border-color: #8b87ff; }
         QComboBox::drop-down { border: none; width: 20px; }
@@ -255,6 +255,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._tab_keybinds(),  "Keybinds")
         tabs.addTab(self._tab_app(),       "App")
         tabs.addTab(self._tab_memory(),    "Memory")
+        tabs.addTab(self._tab_tools(),     "Tools")
         root.addWidget(tabs)
 
         # Buttons
@@ -378,7 +379,6 @@ class SettingsDialog(QDialog):
         api_keys_cv.addWidget(self._api_key_rows_container)
 
         add_key_btn = QPushButton("+ Add API Key")
-        add_key_btn.setFixedWidth(120)
         akw = QHBoxLayout()
         akw.setContentsMargins(0, 0, 0, 0)
         akw.addWidget(add_key_btn)
@@ -406,7 +406,6 @@ class SettingsDialog(QDialog):
             title_lbl = QLabel(section_title.upper())
             title_lbl.setObjectName("sectionHeader")
             apply_btn = QPushButton("Apply to all")
-            apply_btn.setFixedWidth(100)
             apply_btn.clicked.connect(
                 lambda checked, sk=section_key: self._apply_model_section_to_all(sk)
             )
@@ -451,7 +450,6 @@ class SettingsDialog(QDialog):
 
             # add row button
             add_row_btn = QPushButton("+ Add row")
-            add_row_btn.setFixedWidth(80)
             arw = QHBoxLayout()
             arw.setContentsMargins(0, 0, 0, 0)
             arw.addWidget(add_row_btn)
@@ -479,7 +477,6 @@ class SettingsDialog(QDialog):
         custom_cv.addWidget(custom_note)
 
         presets_btn = QPushButton("Presets ▾")
-        presets_btn.setFixedWidth(90)
         presets_btn.clicked.connect(self._show_custom_presets_menu)
         base_url_row = QWidget()
         bur_h = QHBoxLayout(base_url_row)
@@ -538,7 +535,8 @@ class SettingsDialog(QDialog):
         key_edit.setPlaceholderText("stored in keychain" if stored else "enter API key")
 
         remove_btn = QPushButton("✕")
-        remove_btn.setFixedWidth(28)
+        remove_btn.setFixedWidth(40)
+        remove_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
 
         h.addWidget(provider_combo, 2)
         h.addWidget(alias_edit, 2)
@@ -635,7 +633,8 @@ class SettingsDialog(QDialog):
         api_key_combo.currentIndexChanged.connect(lambda _: _on_key_change())
 
         remove_btn = QPushButton("✕")
-        remove_btn.setFixedWidth(28)
+        remove_btn.setFixedWidth(40)
+        remove_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
 
         h.addWidget(api_key_combo, 2)
         h.addWidget(model_combo, 3)
@@ -1075,17 +1074,16 @@ class SettingsDialog(QDialog):
     def _tab_keybinds(self) -> QWidget:
         from PySide6.QtWidgets import QScrollArea, QSizePolicy
         container = QWidget()
-        self._keybinds_layout = QVBoxLayout(container)
-        self._keybinds_layout.setSpacing(6)
-        self._keybinds_layout.setContentsMargins(12, 12, 12, 12)
+        outer_layout = QVBoxLayout(container)
+        outer_layout.setSpacing(12)
+        outer_layout.setContentsMargins(12, 12, 12, 12)
 
-        # Caller hotkeys section
-        self._keybinds_layout.addWidget(QLabel("<b>Caller Hotkeys</b>"))
+        # ── CALLER HOTKEYS card ───────────────────────────────────────────
+        caller_card, caller_cv = self._card("Caller Hotkeys")
 
-        limits_frame = QFrame()
-        limits_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        limits_layout = QFormLayout(limits_frame)
-        limits_layout.setContentsMargins(8, 6, 8, 6)
+        limits_fw = QWidget()
+        limits_layout = QFormLayout(limits_fw)
+        limits_layout.setContentsMargins(0, 0, 0, 0)
         limits_layout.setSpacing(6)
         self._fields["CONTEXT_BROWSER_MAX_CHARS"] = QLineEdit()
         self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"] = QLineEdit()
@@ -1095,31 +1093,29 @@ class SettingsDialog(QDialog):
         limits_layout.addRow("Auto document chars", self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"])
         limits_layout.addRow("Tool document chars", self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"])
         limits_layout.addRow("Tool plugin folder", self._fields["TOOL_PLUGIN_DIR"])
-        self._keybinds_layout.addWidget(limits_frame)
+        caller_cv.addWidget(limits_fw)
 
         self._callers_container = QWidget()
         self._callers_vlayout = QVBoxLayout(self._callers_container)
         self._callers_vlayout.setSpacing(8)
         self._callers_vlayout.setContentsMargins(0, 0, 0, 0)
-        self._keybinds_layout.addWidget(self._callers_container)
+        caller_cv.addWidget(self._callers_container)
         self._caller_blocks: list[dict] = []
 
         add_caller_btn = QPushButton("+ Add Caller Hotkey")
-        add_caller_btn.setFixedWidth(160)
         add_caller_btn.clicked.connect(lambda: self._add_caller_block())
         btn_wrap = QHBoxLayout()
         btn_wrap.setContentsMargins(0, 4, 0, 4)
         btn_wrap.addWidget(add_caller_btn)
         btn_wrap.addStretch()
-        self._keybinds_layout.addLayout(btn_wrap)
+        caller_cv.addLayout(btn_wrap)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: rgba(128,128,128,80); margin: 4px 0px;")
-        self._keybinds_layout.addWidget(sep)
+        outer_layout.addWidget(caller_card)
 
-        # Other (non-caller) hotkeys
-        self._keybinds_layout.addWidget(QLabel("<b>Other Hotkeys</b>"))
+        # ── OTHER HOTKEYS card ────────────────────────────────────────────
+        other_card, other_cv = self._card("Other Hotkeys")
+        self._keybinds_layout = other_cv
+
         self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
         self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
         self._fields["HOTKEY_SNIP"]          = self._kb_special_row("Snip screen region")
@@ -1139,7 +1135,8 @@ class SettingsDialog(QDialog):
         snip_h.addStretch()
         self._keybinds_layout.addWidget(snip_ctx)
 
-        self._keybinds_layout.addStretch()
+        outer_layout.addWidget(other_card)
+        outer_layout.addStretch()
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1218,7 +1215,6 @@ class SettingsDialog(QDialog):
 
         hdr_h.addStretch()
         del_caller_btn = QPushButton("X Remove")
-        del_caller_btn.setFixedWidth(80)
         hdr_h.addWidget(del_caller_btn)
         outer.addWidget(hdr)
 
@@ -1284,7 +1280,6 @@ class SettingsDialog(QDialog):
 
         # Add-row button
         add_row_btn = QPushButton("+ Add row")
-        add_row_btn.setFixedWidth(80)
         add_row_btn.clicked.connect(lambda: self._add_caller_intent_row(blk))
         add_wrap = QHBoxLayout()
         add_wrap.setContentsMargins(0, 2, 0, 0)
@@ -1329,7 +1324,8 @@ class SettingsDialog(QDialog):
         row_info: dict = {"widget": row_w, "key": key_edit, "label": label_edit, "prompt": prompt_edit}
 
         del_btn = QPushButton("X")
-        del_btn.setFixedWidth(28)
+        del_btn.setFixedWidth(40)
+        del_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
         del_btn.clicked.connect(lambda: self._delete_caller_intent_row(blk, row_info))
         h.addWidget(del_btn)
 
@@ -1348,18 +1344,23 @@ class SettingsDialog(QDialog):
 
     def _tab_memory(self) -> QWidget:
         """Memory tab: LTM config knobs + embedded fact browser."""
-        from PySide6.QtWidgets import QGroupBox, QSizePolicy
+        from PySide6.QtWidgets import QScrollArea, QSizePolicy
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         w = QWidget()
         root = QVBoxLayout(w)
-        root.setSpacing(10)
+        root.setSpacing(12)
         root.setContentsMargins(12, 12, 12, 12)
 
-        # --- Config group ---
-        cfg_group = QGroupBox("Memory Settings")
-        f = QFormLayout(cfg_group)
+        # --- Config card ---
+        cfg_card, cfg_cv = self._card("Memory Settings")
+        fw = QWidget()
+        f = QFormLayout(fw)
         f.setSpacing(8)
-        f.setContentsMargins(8, 8, 8, 8)
+        f.setContentsMargins(0, 0, 0, 0)
 
         note_lbl = QLabel("<small>Memory model is configured in the <b>LLM</b> tab → Memory model section.</small>")
         note_lbl.setWordWrap(True)
@@ -1391,30 +1392,120 @@ class SettingsDialog(QDialog):
         f.addRow("STM token budget:", mem_budget)
         f.addRow("", self._button_row(("Clean up low-value stored facts", self._cleanup_memory)))
 
-        root.addWidget(cfg_group)
+        cfg_cv.addWidget(fw)
+        root.addWidget(cfg_card)
 
-        # --- Fact browser ---
-        browser_group = QGroupBox("Stored Facts")
-        browser_layout = QVBoxLayout(browser_group)
-        browser_layout.setContentsMargins(6, 6, 6, 6)
+        # --- Fact browser card ---
+        browser_card, browser_cv = self._card("Stored Facts")
 
         try:
             from core.memory_store.store import get_manager
             from ui.memory_viewer import MemoryPanel
-            panel = MemoryPanel(get_manager(), browser_group)
+            panel = MemoryPanel(get_manager(), browser_card)
             self._memory_panel = panel
             panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            browser_layout.addWidget(panel)
+            browser_cv.addWidget(panel)
         except Exception as exc:
-            from PySide6.QtCore import Qt
             err = QLabel(f"Memory store unavailable:\n{exc}")
             err.setAlignment(Qt.AlignmentFlag.AlignCenter)
             err.setStyleSheet("color: #c00;")
-            browser_layout.addWidget(err)
+            browser_cv.addWidget(err)
 
-        root.addWidget(browser_group, stretch=1)
+        root.addWidget(browser_card, stretch=1)
+        scroll.setWidget(w)
+        return scroll
 
-        return w
+    def _tab_tools(self) -> QWidget:
+        from core.llm_clients.client import get_tool_registry
+        from core.system.paths import TOOL_KEYWORDS_FILE
+
+        registry = get_tool_registry()
+        self._tool_keyword_fields: list[tuple[str, QLineEdit]] = []
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        w = QWidget()
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(12)
+
+        card, cv = self._card("Tool Calling Keywords")
+
+        note = QLabel(
+            "Tools with <b>no keywords</b> are always sent to the model.<br>"
+            "Tools with keywords are only sent when the prompt contains at least one.<br>"
+            "Separate multiple keywords with commas."
+        )
+        note.setWordWrap(True)
+        cv.addWidget(note)
+
+        try:
+            first = True
+            for spec in registry.list_tools():
+                keywords = registry._keyword_map.get(spec.name, [])
+
+                if not first:
+                    sep = QFrame()
+                    sep.setFrameShape(QFrame.Shape.HLine)
+                    sep.setStyleSheet("max-height: 1px; background: rgba(128,128,128,0.25); margin: 2px 0;")
+                    cv.addWidget(sep)
+                first = False
+
+                tool_w = QWidget()
+                tool_h = QHBoxLayout(tool_w)
+                tool_h.setContentsMargins(0, 4, 0, 4)
+                tool_h.setSpacing(12)
+
+                name_col = QWidget()
+                name_v = QVBoxLayout(name_col)
+                name_v.setContentsMargins(0, 0, 0, 0)
+                name_v.setSpacing(3)
+
+                name_lbl = QLabel(f"<b>{spec.name}</b>")
+                name_v.addWidget(name_lbl)
+
+                if spec.description:
+                    desc_lbl = QLabel(spec.description)
+                    desc_lbl.setWordWrap(True)
+                    desc_lbl.setStyleSheet("color: #6b6b7e; font-size: 9pt;")
+                    name_v.addWidget(desc_lbl)
+
+                field = QLineEdit(", ".join(keywords))
+                field.setPlaceholderText("leave empty to always include")
+                self._tool_keyword_fields.append((spec.name, field))
+
+                tool_h.addWidget(name_col, 3)
+                tool_h.addWidget(field, 2)
+                cv.addWidget(tool_w)
+
+        except Exception as exc:
+            cv.addWidget(QLabel(f"Could not load tools: {exc}"))
+
+        save_btn = QPushButton("Save keyword filters")
+        save_btn.clicked.connect(lambda: self._save_tool_keywords(registry, TOOL_KEYWORDS_FILE))
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        save_row.addWidget(save_btn)
+        cv.addLayout(save_row)
+
+        outer.addWidget(card)
+        outer.addStretch()
+        scroll.setWidget(w)
+        return scroll
+
+    def _save_tool_keywords(self, registry, path) -> None:
+        for tool_name, field in getattr(self, "_tool_keyword_fields", []):
+            raw = field.text()
+            keywords = [k.strip().lower() for k in raw.split(",") if k.strip()]
+            registry.set_keyword_filter(tool_name, keywords)
+        try:
+            registry.save_keyword_filters(path)
+            self._status_lbl.setText("Tool keyword filters saved.")
+            QTimer.singleShot(3000, lambda: self._status_lbl.setText(""))
+        except Exception as exc:
+            QMessageBox.warning(self, "Save failed", str(exc))
 
     def _cleanup_memory(self) -> None:
         try:
@@ -1432,10 +1523,20 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "Memory cleanup failed", str(exc))
 
     def _tab_app(self) -> QWidget:
-        w = QWidget()
-        f = QFormLayout(w)
+        from PySide6.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer_w = QWidget()
+        outer = QVBoxLayout(outer_w)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(12)
+
+        card, cv = self._card("App Settings")
+        fw = QWidget()
+        f = QFormLayout(fw)
         f.setSpacing(10)
-        f.setContentsMargins(12, 12, 12, 12)
+        f.setContentsMargins(0, 0, 0, 0)
 
         theme_combo = _NoScrollCombo()
         theme_combo.addItem("System default", "system")
@@ -1480,7 +1581,11 @@ class SettingsDialog(QDialog):
         f.addRow("Bubble hold speed (WPM)", self._fields["BUBBLE_HOLD_REVEAL_WPM"])
         f.addRow("TTS speed", self._fields["TTS_PLAYBACK_RATE"])
         f.addRow("TTS hold speed", self._fields["TTS_HOLD_PLAYBACK_RATE"])
-        return w
+        cv.addWidget(fw)
+        outer.addWidget(card)
+        outer.addStretch()
+        scroll.setWidget(outer_w)
+        return scroll
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1655,7 +1760,6 @@ class SettingsDialog(QDialog):
         providers: list[str] | None = None,
     ) -> None:
         add_btn = QPushButton("+ Add fallback")
-        add_btn.setFixedWidth(120)
         add_wrap = QHBoxLayout()
         add_wrap.setContentsMargins(0, 0, 0, 0)
         add_wrap.addWidget(add_btn)
@@ -1690,7 +1794,6 @@ class SettingsDialog(QDialog):
             lambda _: _refresh_model_combo(model_combo, _get(provider_combo))
         )
         remove_btn = QPushButton("Remove")
-        remove_btn.setFixedWidth(70)
         model_row = QWidget()
         model_h = QHBoxLayout(model_row)
         model_h.setContentsMargins(0, 0, 0, 0)

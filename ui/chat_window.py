@@ -60,6 +60,16 @@ class _MessageTextView(QTextBrowser):
         margin = self.contentsMargins().top() + self.contentsMargins().bottom()
         self.setFixedHeight(max(38, int(doc_h + margin + 6)))
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Document layout hasn't run before first show — recompute height now.
+        QTimer.singleShot(0, self._sync_height)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self._sync_height()
+
 
 def _merge_display_segments(segments: list[tuple[str, bool]], text: str, is_thought: bool) -> list[tuple[str, bool]]:
     if not text:

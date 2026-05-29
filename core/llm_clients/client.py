@@ -72,6 +72,63 @@ def _tool_document_max_chars() -> int:
     return config.CONTEXT_TOOL_DOCUMENT_MAX_CHARS
 
 
+def _normalize_pdf_text(s: str) -> str:
+    """Collapse layout whitespace from PDF text.
+
+    LiteParse pads its output with horizontal spacing used for visual
+    layout, which carries no extra content but multiplies the token count
+    sent to the LLM. Collapsing intra-line whitespace yields the same text
+    pypdf would, at a fraction of the tokens.
+    """
+    import re
+    lines = []
+    for line in s.splitlines():
+        line = re.sub(r"[ \t]+", " ", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _read_pdf_text(path: str, max_chars: int) -> str:
+    """Extract PDF text, preferring LiteParse (fast, native) over pypdf."""
+    parts: list[str] = []
+    total = 0
+    try:
+        import liteparse  # type: ignore
+    except ImportError:
+        liteparse = None
+    if liteparse is not None:
+        try:
+            # LiteParse parses every page up front, so cap pages to roughly
+            # what max_chars can hold (with a buffer for sparse pages) instead
+            # of parsing the whole document just to truncate the output.
+            page_cap = max(8, max_chars // 500 + 5)
+            lp = liteparse.LiteParse(ocr_enabled=False, quiet=True, max_pages=page_cap)
+            result = lp.parse(path)
+            for i in range(1, result.num_pages + 1):
+                page = result.get_page(i)
+                page_text = _normalize_pdf_text(page.text) if page and page.text else ""
+                if page_text:
+                    parts.append(f"[Page {i}]\n{page_text}")
+                    total += len(page_text)
+                    if total > max_chars:
+                        break
+            return "\n\n".join(parts)
+        except Exception:
+            parts.clear()
+    # Fallback: pure-Python pypdf (slower, no native dependency).
+    import pypdf  # type: ignore
+    reader = pypdf.PdfReader(path)
+    for i, page in enumerate(reader.pages, 1):
+        page_text = (page.extract_text() or "").strip()
+        if page_text:
+            parts.append(f"[Page {i}]\n{page_text}")
+            total += len(page_text)
+            if total > max_chars:
+                break
+    return "\n\n".join(parts)
+
+
 def _read_document_file(path: str, max_chars: int | None = None) -> str:
     """Read a local document file and return its plain text."""
     import os
@@ -108,14 +165,7 @@ def _read_document_file(path: str, max_chars: int | None = None) -> str:
                                 parts.append(line)
             text = "\n".join(parts)
         elif ext == ".pdf":
-            import pypdf  # type: ignore
-            reader = pypdf.PdfReader(path)
-            parts = []
-            for i, page in enumerate(reader.pages, 1):
-                page_text = page.extract_text() or ""
-                if page_text.strip():
-                    parts.append(f"[Page {i}]\n{page_text.strip()}")
-            text = "\n\n".join(parts)
+            text = _read_pdf_text(path, max_chars)
         elif ext in (".odt", ".ods", ".odp"):
             from odf import text as odf_text, teletype  # type: ignore
             from odf.opendocument import load as odf_load  # type: ignore
@@ -337,15 +387,33 @@ def _register_builtin_tools() -> None:
     )
 
 
-def _get_tool_schemas() -> list[dict]:
-    return _TOOL_REGISTRY.schemas(include_server_tools=True)
+def _get_tool_schemas(prompt: str = "") -> list[dict]:
+    return _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
 
 
 def _execute_model_tool(name: str, inputs: dict) -> str:
     return _TOOL_REGISTRY.execute(name, inputs)
 
 
+def _init_keyword_filters() -> None:
+    from core.system.paths import TOOL_KEYWORDS_FILE
+    _TOOL_REGISTRY.load_keyword_filters(TOOL_KEYWORDS_FILE)
+    if not TOOL_KEYWORDS_FILE.exists():
+        _TOOL_REGISTRY.save_keyword_filters(TOOL_KEYWORDS_FILE)
+
+
 _register_builtin_tools()
+_init_keyword_filters()
+
+
+def get_tool_registry() -> ToolRegistry:
+    """Return the shared model tool registry. Used by the mod manager."""
+    return _TOOL_REGISTRY
+
+
+def read_document_file(path: str, max_chars: int | None = None) -> str:
+    """Read a single local document file and return its plain text (public API)."""
+    return _read_document_file(path, max_chars=max_chars)
 
 
 def read_active_document_for_context() -> str:
@@ -1076,6 +1144,7 @@ def _stream_with_fallbacks(
     candidates: list[tuple[str, str]],
     factory,
 ) -> Generator[str, None, None]:
+    import time
     last_exc: Exception | None = None
     for idx, (provider, model) in enumerate(candidates):
         emitted = False
@@ -1083,11 +1152,17 @@ def _stream_with_fallbacks(
             for chunk in factory(provider, model):
                 emitted = True
                 yield chunk
-            return
+            if emitted:
+                return
+            # Model returned HTTP 200 but zero content chunks — treat as failure.
+            ts = time.strftime("%H:%M:%S")
+            last_exc = ValueError(f"Route ({kind}) {provider}/{model} returned no content")
+            if idx < len(candidates) - 1:
+                print(f"[llm {ts}] Route ({kind}) returned no content; trying fallback")
+                continue
+            print(f"[llm {ts}] Route ({kind}) returned no content; no fallback left")
         except Exception as exc:
             last_exc = exc
-            import time
-
             ts = time.strftime("%H:%M:%S")
             if emitted:
                 print(f"[llm {ts}] Route ({kind}) failed after streaming; not falling back: {exc}")
@@ -1096,7 +1171,6 @@ def _stream_with_fallbacks(
                 print(f"[llm {ts}] Route ({kind}) failed before output; trying fallback: {exc}")
                 continue
             print(f"[llm {ts}] Route ({kind}) failed; no fallback left: {exc}")
-            raise
     if last_exc:
         raise last_exc
     raise ValueError(f"No {kind} model routes configured.")
@@ -1149,6 +1223,7 @@ def _stream_single_response_route(
             _dynamic_openai_client(provider),
             ambient_context,
             memory_context,
+            use_tools=use_tools,
             max_tokens=max_tokens,
             temperature=temperature,
         )
@@ -1206,22 +1281,104 @@ def _stream_openai_compat(
     client,
     ambient_context: str = "",
     memory_context: str = "",
+    use_tools: bool = False,
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> Generator[str, None, None]:
-    messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
+    import json as _json
 
-    with client.chat.completions.create(
-        model=model,
-        messages=messages,
-        stream=True,
-        max_tokens=max_tokens or 2048,
-        temperature=0.5 if temperature is None else temperature,
-    ) as stream:
+    messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
+    tools = _TOOL_REGISTRY.filtered_openai_schemas(user_message) if use_tools and not image_base64 else None
+
+    kwargs: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        "max_tokens": max_tokens or 2048,
+        "temperature": 0.5 if temperature is None else temperature,
+    }
+    if tools:
+        kwargs["tools"] = tools
+
+    # Stream first round — yield text, accumulate any tool-call deltas.
+    tool_calls_acc: dict[int, dict] = {}  # index → {id, name, arguments}
+    finish_reason = None
+
+    with client.chat.completions.create(**kwargs) as stream:
         for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            finish_reason = choice.finish_reason or finish_reason
+            delta = choice.delta
+            if delta.content:
+                yield delta.content
+            for tc in (delta.tool_calls or []):
+                entry = tool_calls_acc.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                if tc.id:
+                    entry["id"] = tc.id
+                if tc.function:
+                    if tc.function.name:
+                        entry["name"] += tc.function.name
+                    if tc.function.arguments:
+                        entry["arguments"] += tc.function.arguments
+
+    if finish_reason != "tool_calls" or not tool_calls_acc:
+        return
+
+    # Build the assistant tool-call turn and append it to messages.
+    assistant_tool_calls = [
+        {"id": tc["id"], "type": "function",
+         "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+        for tc in tool_calls_acc.values()
+    ]
+    messages.append({"role": "assistant", "content": None, "tool_calls": assistant_tool_calls})
+
+    # Tool-call loop (up to 3 rounds, non-streaming for follow-ups).
+    for _round in range(3):
+        tool_results = []
+        for tc in tool_calls_acc.values():
+            try:
+                inputs = _json.loads(tc["arguments"] or "{}")
+            except Exception:
+                inputs = {}
+            result = _execute_model_tool(tc["name"], inputs)
+            tool_results.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+        messages.extend(tool_results)
+
+        follow_up_kwargs = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens or 2048,
+            "temperature": 0.5 if temperature is None else temperature,
+            "stream": False,
+        }
+        if tools:
+            follow_up_kwargs["tools"] = tools
+        follow_up = client.chat.completions.create(**follow_up_kwargs)
+        choice = follow_up.choices[0]
+        text = choice.message.content or ""
+        if text:
+            yield text
+        if choice.finish_reason != "tool_calls":
+            return
+        # Another tool round — update accumulator and append assistant turn.
+        tool_calls_acc = {}
+        if choice.message.tool_calls:
+            for i, tc in enumerate(choice.message.tool_calls):
+                tool_calls_acc[i] = {
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments or "",
+                }
+            messages.append({
+                "role": "assistant", "content": None,
+                "tool_calls": [
+                    {"id": tc["id"], "type": "function",
+                     "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+                    for tc in tool_calls_acc.values()
+                ],
+            })
 
 
 # ------------------------------------------------------------------
@@ -1333,6 +1490,7 @@ def _run_anthropic_tool_loop(
     model: str,
     system: str,
     max_tokens: int,
+    prompt: str = "",
 ) -> Generator[str, None, None]:
     """
     Execute Anthropic tool calls and yield text from subsequent rounds.
@@ -1358,7 +1516,7 @@ def _run_anthropic_tool_loop(
             max_tokens=max_tokens,
             system=system,
             messages=messages,
-            tools=_get_tool_schemas(),
+            tools=_get_tool_schemas(prompt),
         )
         for block in response.content:
             if getattr(block, "type", "") == "text":
@@ -1428,7 +1586,7 @@ def _stream_anthropic(
         "max_tokens": max_tokens or 2048,
         "system": system,
         "messages": messages,
-        "tools": _get_tool_schemas(),
+        "tools": _get_tool_schemas(user_message),
     }
     if temperature is not None:
         request["temperature"] = temperature
@@ -1448,6 +1606,7 @@ def _stream_anthropic(
         model,
         system,
         max_tokens=max_tokens or 512,
+        prompt=user_message,
     )
 
 
@@ -1608,12 +1767,15 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
             for m in messages if m["role"] != "system"
         ]
         # Tool-enabled loop -” stream first round, block only if a tool is actually called.
+        _last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        if isinstance(_last_user, list):
+            _last_user = " ".join(p.get("text", "") for p in _last_user if isinstance(p, dict))
         with client.messages.stream(
             model=model,
             max_tokens=1024,
             system=system,
             messages=turns,
-            tools=_get_tool_schemas(),
+            tools=_get_tool_schemas(_last_user),
         ) as stream:
             for text in stream.text_stream:
                 yield text

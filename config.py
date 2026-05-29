@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from core import secret_store
 from core.system.env_utils import env_bool, env_float, env_int
 from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
-from core.system.paths import REPO_ROOT, TOOLS_INSTALLED_DIR
+from core.system.paths import REPO_ROOT, MODEL_TOOLS_DIR
 
 _ENV_FILE = REPO_ROOT / ".env"
 load_dotenv(_ENV_FILE)
@@ -32,6 +32,7 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_documents": True,
         "context_tools": True,
         "context_screenshot": False,
+        "context_clipboard": False,
         "intents": [
             {"key": "w", "label": "What is this?",      "hint": "Quick explanation, plain English",  "prompt": "What is this? Give me a clear, plain-English explanation in 2-3 sentences."},
             {"key": "a", "label": "Explain simply",     "hint": "ELI5 — no jargon",                 "prompt": "Explain this as simply as possible. Assume I have no technical background whatsoever."},
@@ -47,6 +48,7 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_documents": False,
         "context_tools": False,
         "context_screenshot": False,
+        "context_clipboard": False,
         "intents": [
             {"key": "w", "label": "Fix grammar",  "hint": "Correct spelling and grammar",     "prompt": "Fix the grammar and spelling of the following text. Output ONLY the corrected text."},
             {"key": "a", "label": "Simplify",     "hint": "Make it easier to read",           "prompt": "Simplify the following text for a general audience. Output ONLY the simplified text."},
@@ -84,6 +86,7 @@ def _load_caller_rows() -> list[dict]:
             "context_documents": env_bool(f"CALLER_{n}_CONTEXT_DOCUMENTS", bool(default.get("context_documents", True))),
             "context_tools": env_bool(f"CALLER_{n}_CONTEXT_TOOLS", bool(default.get("context_tools", True))),
             "context_screenshot": env_bool(f"CALLER_{n}_CONTEXT_SCREENSHOT", bool(default.get("context_screenshot", False))),
+            "context_clipboard": env_bool(f"CALLER_{n}_CONTEXT_CLIPBOARD", bool(default.get("context_clipboard", False))),
             "intents":    intents,
         })
     return rows
@@ -134,8 +137,8 @@ def _load_config() -> None:
     CEREBRAS_API_KEY  = secret_store.get_secret("CEREBRAS_API_KEY")
 
     # --- LLM ---
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")       # groq | openai | anthropic | google | chatgpt | copilot
-    LLM_MODEL    = os.getenv("LLM_MODEL", "llama3-8b-8192")
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "chatgpt")    # groq | openai | anthropic | google | chatgpt | copilot
+    LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-5.4")
     LLM_FALLBACKS = os.getenv("LLM_FALLBACKS", "")
 
     # --- Chat / elaborate LLM (defaults to same as above) ---
@@ -194,7 +197,7 @@ def _load_config() -> None:
     CONTEXT_BROWSER_MAX_CHARS          = env_int("CONTEXT_BROWSER_MAX_CHARS",          4000)
     CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS = env_int("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", 8000)
     CONTEXT_TOOL_DOCUMENT_MAX_CHARS    = env_int("CONTEXT_TOOL_DOCUMENT_MAX_CHARS",    50000)
-    TOOL_PLUGIN_DIR = os.getenv("TOOL_PLUGIN_DIR", str(TOOLS_INSTALLED_DIR))
+    TOOL_PLUGIN_DIR = os.getenv("TOOL_PLUGIN_DIR", str(MODEL_TOOLS_DIR))
     TOOL_GIT_ROOT   = os.getenv("TOOL_GIT_ROOT", BASE_DIR)
 
     # --- UI sizes ---

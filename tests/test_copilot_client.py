@@ -45,10 +45,10 @@ class CopilotClientBridgeTests(unittest.TestCase):
         fake_copilot.CopilotClient = FakeCopilotClient
 
         with patch.dict(sys.modules, {"copilot": fake_copilot}), patch(
-            "core.copilot_auth.get_token",
+            "core.auth.copilot_auth.get_token",
             return_value="github_pat_test",
         ), patch(
-            "core.copilot_auth.validate_token_format",
+            "core.auth.copilot_auth.validate_token_format",
             return_value=(True, "ok"),
         ):
             result = copilot_client._ask_sync(

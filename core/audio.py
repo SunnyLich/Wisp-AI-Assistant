@@ -20,6 +20,25 @@ from core import tts as tts_module
 _tts_speed_boost = False
 _tts_speed_lock = threading.Lock()
 
+# Tracks the currently-playing TTS stream so stop() can abort it from any thread.
+_playback_lock = threading.Lock()
+_current_stop_event: threading.Event | None = None
+
+
+def stop() -> None:
+    """
+    Immediately stop any in-progress streaming TTS playback and discard buffered
+    audio. Safe to call from any thread; a no-op if nothing is playing.
+
+    Used whenever a new generation supersedes the current one (a fresh query or
+    voice capture) so the previous reply is cut off instead of talking over the
+    new one.
+    """
+    with _playback_lock:
+        ev = _current_stop_event
+    if ev is not None:
+        ev.set()
+
 
 def set_tts_speed_boost(enabled: bool) -> None:
     """Called by the UI while the user holds the speech bubble."""
@@ -58,39 +77,46 @@ def _speed_adjust_pcm(chunk: bytes, dtype: str, rate: float) -> bytes:
 # Filler audio
 # ------------------------------------------------------------------
 
-_filler_files: list[str] = []
+# Decoded filler clips kept in memory so the hotkey path does zero disk I/O.
+_filler_clips: list[tuple[np.ndarray, int]] = []   # (samples, samplerate)
 _filler_loaded = False
 
 
-def _load_filler_files():
-    global _filler_files, _filler_loaded
+def prewarm_filler() -> None:
+    """Decode all filler WAVs into memory once so play_filler() never touches
+    disk on the latency-critical hotkey path. Safe to call repeatedly."""
+    global _filler_clips, _filler_loaded
+    clips: list[tuple[np.ndarray, int]] = []
     d = config.FILLER_AUDIO_DIR
     if os.path.isdir(d):
-        _filler_files = [
-            os.path.join(d, f)
-            for f in os.listdir(d)
-            if f.lower().endswith(".wav")
-        ]
+        for f in os.listdir(d):
+            if not f.lower().endswith(".wav"):
+                continue
+            try:
+                data, samplerate = sf.read(os.path.join(d, f), dtype="float32")
+                clips.append((data, samplerate))
+            except Exception as e:
+                print(f"[audio] filler precache error for {f}: {e}")
+    _filler_clips = clips
     _filler_loaded = True
 
 
 def play_filler():
     """
-    Play a random filler clip instantly (non-blocking).
+    Play a random pre-decoded filler clip instantly (non-blocking).
     Safe to call from any thread.
     """
     if not _filler_loaded:
-        _load_filler_files()
-    if not _filler_files:
-        return  # no filler files available yet, skip silently
+        prewarm_filler()
+    if not _filler_clips:
+        return  # no filler files available, skip silently
 
-    path = random.choice(_filler_files)
-    threading.Thread(target=_play_wav_file, args=(path,), daemon=True).start()
+    data, samplerate = random.choice(_filler_clips)
+    threading.Thread(target=_play_clip, args=(data, samplerate), daemon=True).start()
 
 
-def _play_wav_file(path: str):
+def _play_clip(data: np.ndarray, samplerate: int):
     try:
-        data, samplerate = sf.read(path, dtype="float32")
         sd.play(data, samplerate)
         sd.wait()
     except Exception as e:
@@ -135,11 +161,19 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                             on_amplitude: callable | None):
     chunk_q: queue.Queue[bytes | None] = queue.Queue()
 
+    # Register this playback as the current one so stop() can abort it.
+    global _current_stop_event
+    stop_event = threading.Event()
+    with _playback_lock:
+        _current_stop_event = stop_event
+
     # Producer: fetch TTS audio chunks
     def producer():
         try:
             for chunk in tts_module.stream_audio_from_chunks(text_chunks,
                                                               on_word_timestamps=on_word_timestamps):
+                if stop_event.is_set():
+                    break
                 chunk_q.put(chunk)
         finally:
             chunk_q.put(None)  # sentinel
@@ -167,7 +201,13 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         dtype=dtype,
     ) as stream:
         while True:
-            chunk = chunk_q.get()
+            if stop_event.is_set():
+                stream.abort()  # discard buffered audio immediately
+                break
+            try:
+                chunk = chunk_q.get(timeout=0.1)
+            except queue.Empty:
+                continue
             if chunk is None:
                 break
             if not _audio_started:
@@ -188,5 +228,11 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                 except Exception:
                     pass
 
-    if on_done:
+    with _playback_lock:
+        if _current_stop_event is stop_event:
+            _current_stop_event = None
+
+    # Suppress the completion callback when interrupted — the superseding
+    # generation owns the UI state now.
+    if on_done and not stop_event.is_set():
         on_done()

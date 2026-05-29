@@ -1,0 +1,57 @@
+name: macOS compatibility
+
+# Verifies the app stays importable and the pyobjc-backed platform helpers run
+# on real macOS, without needing a Mac locally. GUI behaviour, global hotkeys and
+# the Accessibility/Screen-Recording permission flow still require manual testing.
+#
+# Note: macOS runner minutes bill at 10x on private repos. Triggers are scoped to
+# relevant paths + manual dispatch to keep cost down.
+
+on:
+  push:
+    branches: [main, Dev]
+    paths:
+      - "core/**"
+      - "ui/**"
+      - "main.py"
+      - "config.py"
+      - "requirements*.txt"
+      - "scripts/macos_smoke.py"
+      - ".github/workflows/macos.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "ui/**"
+      - "main.py"
+      - "config.py"
+      - "requirements*.txt"
+      - "scripts/macos_smoke.py"
+      - ".github/workflows/macos.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-light.txt
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q core ui main.py config.py
+
+      - name: Headless import + pyobjc smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/macos_smoke.py
+
+      - name: Platform unit tests
+        run: python -m unittest tests.test_platform_macos -v

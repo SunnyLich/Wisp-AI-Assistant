@@ -1,0 +1,127 @@
+"""macOS platform-logic tests.
+
+These stub out pyobjc (Quartz/AppKit) and force sys.platform to "darwin", so the
+macOS branches in core.platform_utils can be exercised on any host OS (including
+the Windows dev box and the macOS CI runner). They verify our wiring, not pyobjc
+itself — the GitHub Actions macOS job exercises the real pyobjc calls.
+"""
+import importlib
+import sys
+import unittest
+from unittest.mock import patch
+
+
+def _fake_quartz(windows):
+    mod = type(sys)("Quartz")
+    mod.kCGWindowListOptionOnScreenOnly = 1
+    mod.kCGWindowListExcludeDesktopElements = 16
+    mod.kCGNullWindowID = 0
+    mod.CGWindowListCopyWindowInfo = lambda opts, rel: list(windows)
+    return mod
+
+
+def _fake_appkit(front_pid, activated):
+    mod = type(sys)("AppKit")
+    mod.NSApplicationActivateIgnoringOtherApps = 0
+
+    class _App:
+        def processIdentifier(self):
+            return front_pid
+
+    class _Workspace:
+        def frontmostApplication(self):
+            return _App() if front_pid is not None else None
+
+    class NSWorkspace:
+        @staticmethod
+        def sharedWorkspace():
+            return _Workspace()
+
+    class _Running:
+        def __init__(self, pid):
+            self._pid = pid
+
+        def activateWithOptions_(self, _opts):
+            activated.append(self._pid)
+
+    class NSRunningApplication:
+        @staticmethod
+        def runningApplicationWithProcessIdentifier_(pid):
+            return _Running(pid)
+
+    mod.NSWorkspace = NSWorkspace
+    mod.NSRunningApplication = NSRunningApplication
+    return mod
+
+
+class MacPlatformTests(unittest.TestCase):
+    def setUp(self):
+        # Reload platform_utils under a faked darwin platform so its module-level
+        # IS_MAC / COPY_COMBO constants take the macOS values.
+        self._platform_patch = patch.object(sys, "platform", "darwin")
+        self._platform_patch.start()
+        import core.platform_utils as pu
+        self.pu = importlib.reload(pu)
+
+    def tearDown(self):
+        self._platform_patch.stop()
+        import core.platform_utils as pu
+        importlib.reload(pu)  # restore real-platform constants for other tests
+
+    def test_clipboard_combos_use_cmd_on_mac(self):
+        self.assertTrue(self.pu.IS_MAC)
+        self.assertEqual(self.pu.COPY_COMBO, "cmd+c")
+        self.assertEqual(self.pu.PASTE_COMBO, "cmd+v")
+
+    def test_get_foreground_window_returns_frontmost_layer0_window(self):
+        windows = [
+            {"kCGWindowNumber": 7, "kCGWindowOwnerPID": 999, "kCGWindowLayer": 25},  # menu bar
+            {"kCGWindowNumber": 42, "kCGWindowOwnerPID": 1234, "kCGWindowLayer": 0,
+             "kCGWindowName": "Doc.txt", "kCGWindowOwnerName": "TextEdit"},
+        ]
+        with patch.dict(sys.modules, {"Quartz": _fake_quartz(windows),
+                                      "AppKit": _fake_appkit(1234, [])}):
+            self.assertEqual(self.pu.get_foreground_window(), 42)
+
+    def test_window_title_and_pid_lookup(self):
+        windows = [
+            {"kCGWindowNumber": 42, "kCGWindowOwnerPID": 1234, "kCGWindowLayer": 0,
+             "kCGWindowName": "Doc.txt", "kCGWindowOwnerName": "TextEdit"},
+        ]
+        with patch.dict(sys.modules, {"Quartz": _fake_quartz(windows),
+                                      "AppKit": _fake_appkit(1234, [])}):
+            self.assertEqual(self.pu.get_window_title(42), "Doc.txt")
+            self.assertEqual(self.pu.get_window_pid(42), 1234)
+
+    def test_window_title_falls_back_to_owner_without_screen_recording(self):
+        # kCGWindowName is absent when Screen Recording permission is not granted.
+        windows = [
+            {"kCGWindowNumber": 42, "kCGWindowOwnerPID": 1234, "kCGWindowLayer": 0,
+             "kCGWindowOwnerName": "TextEdit"},
+        ]
+        with patch.dict(sys.modules, {"Quartz": _fake_quartz(windows),
+                                      "AppKit": _fake_appkit(1234, [])}):
+            self.assertEqual(self.pu.get_window_title(42), "TextEdit")
+
+    def test_set_foreground_window_activates_owning_app(self):
+        windows = [
+            {"kCGWindowNumber": 42, "kCGWindowOwnerPID": 1234, "kCGWindowLayer": 0,
+             "kCGWindowOwnerName": "TextEdit"},
+        ]
+        activated: list[int] = []
+        with patch.dict(sys.modules, {"Quartz": _fake_quartz(windows),
+                                      "AppKit": _fake_appkit(1234, activated)}):
+            self.pu.set_foreground_window(42)
+        self.assertEqual(activated, [1234])
+
+    def test_window_helpers_degrade_when_pyobjc_missing(self):
+        # No Quartz/AppKit in sys.modules and import fails -> safe defaults, no raise.
+        with patch.dict(sys.modules, {"Quartz": None, "AppKit": None}):
+            self.assertEqual(self.pu.get_foreground_window(), 0)
+            self.assertEqual(self.pu.list_visible_windows(), [])
+            self.assertEqual(self.pu.get_window_title(42), "")
+            self.assertEqual(self.pu.get_window_pid(42), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

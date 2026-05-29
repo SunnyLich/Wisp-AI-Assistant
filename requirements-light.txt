@@ -29,6 +29,8 @@ pywin32>=311; sys_platform == "win32"
 comtypes>=1.4.0; sys_platform == "win32"
 python-xlib>=0.33; sys_platform == "linux"
 ewmh>=0.1.6; sys_platform == "linux"
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
 psutil>=6.0.0
 watchdog>=4.0.0
 requests>=2.32.0
