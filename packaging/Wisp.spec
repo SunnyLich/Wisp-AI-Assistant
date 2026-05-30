@@ -2,6 +2,12 @@
 
 from pathlib import Path
 import PyQt6
+from PyInstaller.utils.hooks import collect_all
+
+# LiteParse ships a loose pdfium.dll that its native extension loads at
+# runtime; PyInstaller's dependency scanner does not pick it up, so collect
+# the package's data/binaries explicitly or the frozen app panics on parse.
+LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 
 ROOT = Path(SPECPATH).resolve().parent
 PYQT6_QT_BIN = Path(PyQt6.__file__).resolve().parent / "Qt6" / "bin"
@@ -22,11 +28,11 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "main.py")],
     pathex=[str(ROOT)],
-    binaries=QT_RUNTIME_DLLS,
+    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / ".env.example"), "."),
-    ],
+    ] + LITEPARSE_DATAS,
     hiddenimports=[
         "chromadb",
         "sentence_transformers",
@@ -38,7 +44,7 @@ a = Analysis(
         "win32process",
         "comtypes",
         "comtypes.client",
-    ],
+    ] + LITEPARSE_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

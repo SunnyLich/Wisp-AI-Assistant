@@ -69,11 +69,63 @@ FLOORS: dict[str, float] = {
 # (R=0.92, P=0.80). 0.0 disables the relative cutoff entirely.
 REL_CUTOFF = 0.55
 
+# --- additive pipeline tunables --------------------------------------------
+# These drive the new route(). The ladder constants above are kept only for
+# route_ladder() (A/B baseline).
+#
+# Design note: the per-chunk score formula (_score_chunk) ALREADY weights
+# phrase/identifier (0.25), rare-term (0.30), and recency (0.10). Adding more
+# bonuses for those here would double-count and saturate confidence on strong
+# matches. The additive layer here only contributes signals the base score
+# doesn't see: breadth, definitional phrasing, follow-up, vec-only-ness.
+
+# Absolute admission floor: if the top chunk scores below this AND there's no
+# identifier rescue, we retrieve nothing regardless of bonus accumulation.
+T_ABS = 0.15
+
+# Positive evidence (added to confidence) -- breadth only; the rest is in base.
+W_BREADTH   = 0.08   # per extra chunk in top-5 above breadth bar
+BREADTH_BAR = 0.25   # what counts as "another relevant chunk" for breadth
+
+# Negative evidence (subtracted from confidence) -- query-shape signals that
+# the base score can't see.
+W_DEF_PENALTY      = 0.08   # query looks like a generic "what is X" question
+W_FOLLOWUP_PENALTY = 0.15   # short anaphoric follow-up
+W_VECONLY_PENALTY  = 0.20   # top match is pure embedding vibes, no real evidence
+
+# "Real evidence" gate used by vec_only and the safety rail: top chunk has
+# at least one phrase/identifier match, OR strong rare-term overlap.
+RARETERM_EVIDENCE_BAR = 0.50
+
+# Level thresholds on confidence. Anchored to base-score distribution from the
+# eval set: strong matches sit 0.7-1.1, medium 0.3-0.5, weak <0.15. Confidence
+# is base ± small adjustments, so thresholds live in the same range.
+L_FULL     = 0.85
+L_SELECTED = 0.35
+L_TINY     = 0.20
+
+# Minimum breadth required to upgrade to `full`. A single strong chunk + one
+# tangential neighbour shouldn't reach full; that's a `selected` query.
+FULL_BREADTH_MIN = 3
+
+# Step-8 chunk-picking knobs once the level is decided.
+REL_CUTOFF_SELECTED = 0.55   # selected: stricter, precision-oriented
+REL_CUTOFF_FULL     = 0.55   # full: keep precision; breadth comes from limit, not cutoff
+ABS_INCLUDE_FLOOR   = 0.25   # never include a chunk scoring below this absolute bar
+
 # Definition / generic question patterns -> bias toward none/tiny.
 _DEFINITION_RE = re.compile(
     r"^\s*(what\s+(is|are|does|do)\b|what'?s\b|define\b|meaning\s+of\b|"
     r"explain\s+(what|the\s+(term|word|concept))\b|"
     r"\w+\s+vs\.?\s+\w+\s*\??$)",
+    re.IGNORECASE,
+)
+# Generic-framing markers: even a query that mentions a project term should be
+# treated as a definition if the user explicitly disclaims their own context
+# ("in general", "in any X", "conceptually", "generally, not for my repo").
+_GENERIC_FRAMING_RE = re.compile(
+    r"(?:\bin general\b|\bgenerally\b(?=[,\s])|\bconceptually\b|"
+    r"\bin any\s+\w+|\bas a concept\b|\bthe concept of\b|\bin theory\b)",
     re.IGNORECASE,
 )
 # Short anaphoric follow-ups ("explain that simpler", "why is it slow?").
@@ -207,9 +259,186 @@ class ContextRouter:
         )
 
     # ------------------------------------------------------------------
-    # routing decision
+    # routing decision — additive pipeline (8 steps)
     # ------------------------------------------------------------------
     def route(self, query: str) -> RouteResult:
+        """Score-then-budget pipeline. See module docstring for the 8 steps.
+
+        1+2. Score all chunks; take the top one.
+        3.   Start a confidence number at top.score.
+        4.   Add bonuses for evidence the user wants stored context
+             (identifier hit, phrase hit, rare-term overlap, breadth, recency).
+        5.   Subtract penalties for evidence they don't
+             (definitional phrasing, anaphoric follow-up, vec-only noise).
+        6.   Safety rails: absolute floor (force none), identifier override
+             (never drop below selected when a rare id matched).
+        7.   Single threshold table -> level.
+        8.   Pick chunks to fit the chosen level's budget.
+        """
+        import time
+        now = time.time()
+        q = extract(query)
+
+        # --- 1 + 2: score and pick the top chunk -----------------------
+        scores = sorted(
+            (self._score_chunk(c, q, query, now) for c in self.chunks),
+            key=lambda s: s.score,
+            reverse=True,
+        )
+        top = scores[0] if scores else None
+        if top is None:
+            return self._mk(query, "none", [], 0.5, "No chunks indexed.",
+                            scores, match_type="empty")
+
+        # --- detect signals --------------------------------------------
+        has_ident = bool(top.matched_identifiers)
+        has_phrase = bool(top.matched_phrases)
+        strong_rareterm = top.rare_term >= RARETERM_EVIDENCE_BAR
+        # "vec-only" = top match has no exact phrase/id and only weak rare-term
+        # overlap. Pure embedding similarity; the joke/markup failure mode.
+        vec_only = (top.phrase_ident < 0.05) and (not strong_rareterm) and (not has_ident)
+
+        is_definition = bool(_DEFINITION_RE.search(query.strip()))
+        # Generic-framing ("in general", "in any VCS", "conceptually") counts as
+        # a definitional question even without a "what is" prefix — the user is
+        # explicitly disclaiming their own stored context.
+        is_generic_framing = bool(_GENERIC_FRAMING_RE.search(query))
+        if is_generic_framing:
+            is_definition = True
+        is_followup = bool(_FOLLOWUP_RE.search(query)) and len(q.terms) <= 4
+
+        # breadth signal: how many of the top chunks look genuinely relevant?
+        breadth = sum(1 for s in scores[:5] if s.score >= BREADTH_BAR)
+
+        # --- 3: start confidence at the top score ----------------------
+        base = top.score
+
+        # --- 4: positive evidence --------------------------------------
+        # Only breadth here -- identifier/phrase/rare-term/recency are already
+        # in the base score (see _score_chunk weights). Adding them again
+        # would double-count and saturate confidence.
+        bonuses = 0.0
+        if breadth > 1:
+            bonuses += W_BREADTH * (breadth - 1)
+
+        # --- 5: negative evidence --------------------------------------
+        penalties = 0.0
+        if is_definition:
+            penalties += W_DEF_PENALTY
+        if is_followup:
+            penalties += W_FOLLOWUP_PENALTY
+        if vec_only:
+            penalties += W_VECONLY_PENALTY
+
+        conf = base + bonuses - penalties
+
+        # --- 6: safety rails -------------------------------------------
+        # Absolute floor: top chunk is too weak and we have no identifier to
+        # rescue it -> retrieve nothing, no matter what bonuses accumulated.
+        if top.score < T_ABS and not has_ident:
+            return self._mk(
+                query, "none", [], 0.6,
+                f"Top score {top.score:.2f} below T_ABS={T_ABS}; "
+                f"no identifier rescue. (base={base:.2f} +{bonuses:.2f} "
+                f"-{penalties:.2f} = conf {conf:.2f}, ignored)",
+                scores, match_type="below_abs_floor",
+            )
+        # Identifier override: a rare identifier hit guarantees at least
+        # `selected` — a 'what is TaskJar?' query shouldn't be killed by the
+        # definition penalty.
+        rail_notes = []
+        if has_ident:
+            forced = L_SELECTED + 0.02
+            if conf < forced:
+                rail_notes.append("identifier override")
+                conf = forced
+        # Rare-term rescue: same idea, for distinctive single-word project
+        # terms that don't match the identifier regex (e.g. 'Wisp', 'TaskJar'
+        # without the camel-case). If rare-term evidence is strong, don't let
+        # the definition penalty drop us below `selected`.
+        elif strong_rareterm:
+            forced = L_SELECTED + 0.02
+            if conf < forced:
+                rail_notes.append("rare-term override")
+                conf = forced
+
+        conf = max(0.0, min(1.2, conf))
+
+        # --- 7: threshold table -> level -------------------------------
+        # `full` requires both high confidence AND breadth — a single strong
+        # chunk should sit at `selected` and not drag a secondary in.
+        if conf >= L_FULL and breadth >= FULL_BREADTH_MIN:
+            level = "full"
+        elif conf >= L_SELECTED:
+            level = "selected"
+        elif conf >= L_TINY:
+            level = "tiny"
+        else:
+            level = "none"
+        # Generic-framing cap: if the user explicitly disclaimed their own
+        # stored context ("in general", "in any VCS", "conceptually") and no
+        # rare identifier rescued the route, cap at `tiny`. Selected/full are
+        # for queries the user wants answered with *their* memory.
+        if is_generic_framing and not has_ident and level in ("selected", "full"):
+            level = "tiny"
+            rail_notes.append("generic-framing cap")
+
+        # --- 8: pick chunks to fit the level's budget ------------------
+        # Inclusion bar = max(relative cutoff, absolute include floor). The
+        # absolute floor stops near-zero secondaries from sneaking in when the
+        # top chunk is weak.
+        sel: list[str] = []
+        dropped: list[str] = []
+        if level == "tiny":
+            sel = [top.chunk_id]
+        elif level == "selected":
+            bar = max(REL_CUTOFF_SELECTED * top.score, ABS_INCLUDE_FLOOR)
+            for s in scores[:5]:
+                (sel if s.score >= bar else dropped).append(s.chunk_id)
+        elif level == "full":
+            bar = max(REL_CUTOFF_FULL * top.score, ABS_INCLUDE_FLOOR)
+            for s in scores[:7]:
+                (sel if s.score >= bar else dropped).append(s.chunk_id)
+            # Post-hoc safety: `full` claims breadth, but the inclusion bar
+            # uses a stricter relative cutoff than BREADTH_BAR, so a query
+            # with one dominant chunk + tangential neighbours can pass
+            # FULL_BREADTH_MIN at scoring time and still end up with only one
+            # includable chunk. If that happens, demote to `selected` so the
+            # level label matches what we actually return.
+            if len(sel) < FULL_BREADTH_MIN:
+                level = "selected"
+                rail_notes.append(f"full -> selected (only {len(sel)} chunk(s) cleared floor)")
+
+        # diagnostic match_type: what carried the decision?
+        if has_ident:
+            match_type = "identifier"
+        elif has_phrase:
+            match_type = "phrase"
+        elif strong_rareterm:
+            match_type = "rare_term"
+        elif vec_only:
+            match_type = "vec_only"
+        else:
+            match_type = "additive"
+
+        reason = (
+            f"conf={conf:.2f} (base {base:.2f} +{bonuses:.2f} -{penalties:.2f})"
+            f" -> {level}"
+        )
+        if rail_notes:
+            reason += "; " + ", ".join(rail_notes)
+
+        return self._mk(
+            query, level, sel, min(0.95, conf), reason,
+            scores, match_type=match_type, floor=L_TINY, dropped=dropped,
+        )
+
+    # ------------------------------------------------------------------
+    # legacy ladder routing (kept for A/B against the additive pipeline)
+    # ------------------------------------------------------------------
+    def route_ladder(self, query: str) -> RouteResult:
+        """Original first-match-wins rule ladder. Kept so eval_large can
+        diff it against the new additive route()."""
         import time
         now = time.time()
         q = extract(query)

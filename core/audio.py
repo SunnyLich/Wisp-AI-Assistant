@@ -84,11 +84,17 @@ _filler_loaded = False
 
 def prewarm_filler() -> None:
     """Decode all filler WAVs into memory once so play_filler() never touches
-    disk on the latency-critical hotkey path. Safe to call repeatedly."""
+    disk on the latency-critical hotkey path. Safe to call repeatedly.
+
+    Loads from both the bundled assets dir and the user-data dir (where
+    TTS-baked voice-matched clips live), so a user with a Cartesia voice gets
+    a mix of stock + voice-matched fillers."""
     global _filler_clips, _filler_loaded
     clips: list[tuple[np.ndarray, int]] = []
-    d = config.FILLER_AUDIO_DIR
-    if os.path.isdir(d):
+    dirs = [config.FILLER_AUDIO_DIR, getattr(config, "USER_FILLER_AUDIO_DIR", "")]
+    for d in dirs:
+        if not d or not os.path.isdir(d):
+            continue
         for f in os.listdir(d):
             if not f.lower().endswith(".wav"):
                 continue

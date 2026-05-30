@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from core import secret_store
 from core.system.env_utils import env_bool, env_float, env_int
 from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
+from core.system.paths import USER_FILLER_AUDIO_DIR as DEFAULT_USER_FILLER_AUDIO_DIR
 from core.system.paths import REPO_ROOT, MODEL_TOOLS_DIR
 
 _ENV_FILE = REPO_ROOT / ".env"
@@ -15,6 +16,9 @@ BASE_DIR = str(REPO_ROOT)
 
 # Static constants — not .env-configurable; do not belong in _load_config().
 FILLER_AUDIO_DIR = str(DEFAULT_FILLER_AUDIO_DIR)
+# Writable companion dir that holds filler clips synthesised in the user's
+# chosen TTS voice. Loaded alongside the bundled WAVs.
+USER_FILLER_AUDIO_DIR = str(DEFAULT_USER_FILLER_AUDIO_DIR)
 FILLER_MAX_DURATION_MS = 1000   # filler clips must be < 1s
 LATENCY_TARGET_MS = 1500
 LATENCY_CEILING_MS = 3000

@@ -57,6 +57,10 @@ _BUNDLE = _bundle_root()           # read-only bundled files
 ASSETS_DIR       = _BUNDLE / "assets"
 DOLL_ASSETS_DIR  = ASSETS_DIR / "doll"
 FILLER_AUDIO_DIR = ASSETS_DIR / "filler"
+# User-writable filler dir, used for TTS-baked clips in the user's chosen
+# voice. Played in addition to the bundled clips. Survives PyInstaller
+# rebuilds because it lives under user-data, not _MEIPASS.
+USER_FILLER_AUDIO_DIR = _user_data_dir() / "filler"
 
 MEMORY_DIR        = REPO_ROOT / "memory"
 AGENT_RUNS_DIR    = MEMORY_DIR / "agent_runs"

@@ -1,8 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_all
 
 ROOT = Path(SPECPATH).resolve().parent
+
+# LiteParse ships a loose pdfium shared library that its native extension
+# loads at runtime; collect the package explicitly or the frozen app panics
+# on parse. (See Wisp.spec for the Windows equivalent.)
+LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 
 block_cipher = None
 
@@ -10,11 +16,11 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "main.py")],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=LITEPARSE_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / ".env.example"), "."),
-    ],
+    ] + LITEPARSE_DATAS,
     hiddenimports=[
         "chromadb",
         "sentence_transformers",
@@ -24,7 +30,7 @@ a = Analysis(
         "ssl",
         "_ssl",
         "certifi",
-    ],
+    ] + LITEPARSE_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

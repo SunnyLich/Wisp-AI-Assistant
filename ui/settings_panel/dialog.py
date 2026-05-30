@@ -2133,6 +2133,15 @@ class SettingsDialog(QDialog):
             _tts.reset_connections()
             apply_app_theme()
             self._apply_dialog_theme()
+            # Silently (re)bake voice-matched filler clips for the now-current
+            # TTS settings. No-ops when the cache already matches the voice id
+            # or when TTS is disabled. Background thread so Apply stays snappy
+            # and the user is never prompted.
+            try:
+                from core import filler_bake
+                filler_bake.bake_in_background()
+            except Exception:
+                pass
             if self._on_apply:
                 self._on_apply()
             self.accept()

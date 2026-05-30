@@ -56,6 +56,7 @@ a = Analysis(
         "openpyxl",
         "pptx",
         "pypdf",
+        "liteparse",
         "odf",
         "cartesia",
         "elevenlabs",
