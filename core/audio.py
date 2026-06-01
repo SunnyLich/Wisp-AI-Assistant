@@ -15,11 +15,11 @@ import numpy as np
 import config
 from core import tts as tts_module
 
-_SD_IMPORT_ERROR: ImportError | None = None
+_SD_IMPORT_ERROR: Exception | None = None
 _SF_IMPORT_ERROR: ImportError | None = None
 try:
     import sounddevice as sd
-except ImportError as exc:
+except (ImportError, OSError) as exc:
     _SD_IMPORT_ERROR = exc
 
     def _raise_sounddevice_unavailable() -> None:
