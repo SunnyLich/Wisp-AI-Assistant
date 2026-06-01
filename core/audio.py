@@ -11,11 +11,61 @@ import os
 import random
 import threading
 import queue
-import sounddevice as sd
-import soundfile as sf
 import numpy as np
 import config
 from core import tts as tts_module
+
+_SD_IMPORT_ERROR: ImportError | None = None
+_SF_IMPORT_ERROR: ImportError | None = None
+try:
+    import sounddevice as sd
+except ImportError as exc:
+    _SD_IMPORT_ERROR = exc
+
+    def _raise_sounddevice_unavailable() -> None:
+        raise ModuleNotFoundError("sounddevice is required for audio playback") from _SD_IMPORT_ERROR
+
+    class _MissingRawOutputStream:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            _raise_sounddevice_unavailable()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):  # noqa: ANN002, ANN003
+            return False
+
+    class _MissingSoundDevice:
+        RawOutputStream = _MissingRawOutputStream
+
+        class default:
+            device = (None, None)
+
+        @staticmethod
+        def play(*args, **kwargs):  # noqa: ANN002, ANN003
+            _raise_sounddevice_unavailable()
+
+        @staticmethod
+        def wait() -> None:
+            _raise_sounddevice_unavailable()
+
+        @staticmethod
+        def query_devices():  # noqa: ANN201
+            _raise_sounddevice_unavailable()
+
+    sd = _MissingSoundDevice()
+
+try:
+    import soundfile as sf
+except ImportError as exc:
+    _SF_IMPORT_ERROR = exc
+
+    class _MissingSoundFile:
+        @staticmethod
+        def read(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise ModuleNotFoundError("soundfile is required for filler audio decoding") from _SF_IMPORT_ERROR
+
+    sf = _MissingSoundFile()
 
 _tts_speed_boost = False
 _tts_speed_lock = threading.Lock()
@@ -201,38 +251,41 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         dtype       = tts_module.DTYPE
 
     _audio_started = False
-    with sd.RawOutputStream(
-        samplerate=sample_rate,
-        channels=channels,
-        dtype=dtype,
-    ) as stream:
-        while True:
-            if stop_event.is_set():
-                stream.abort()  # discard buffered audio immediately
-                break
-            try:
-                chunk = chunk_q.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            if chunk is None:
-                break
-            if not _audio_started:
-                _audio_started = True
-                if on_audio_start:
+    try:
+        with sd.RawOutputStream(
+            samplerate=sample_rate,
+            channels=channels,
+            dtype=dtype,
+        ) as stream:
+            while True:
+                if stop_event.is_set():
+                    stream.abort()  # discard buffered audio immediately
+                    break
+                try:
+                    chunk = chunk_q.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                if chunk is None:
+                    break
+                if not _audio_started:
+                    _audio_started = True
+                    if on_audio_start:
+                        try:
+                            on_audio_start()
+                        except Exception:
+                            pass
+                adjusted_chunk = _speed_adjust_pcm(chunk, dtype, _current_tts_rate())
+                stream.write(adjusted_chunk)
+                if on_amplitude:
                     try:
-                        on_audio_start()
+                        amp_dtype = np.float32 if dtype == "float32" else np.int16
+                        samples = np.frombuffer(adjusted_chunk, dtype=amp_dtype)
+                        amp = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+                        on_amplitude(min(amp, 1.0))
                     except Exception:
                         pass
-            adjusted_chunk = _speed_adjust_pcm(chunk, dtype, _current_tts_rate())
-            stream.write(adjusted_chunk)
-            if on_amplitude:
-                try:
-                    amp_dtype = np.float32 if dtype == "float32" else np.int16
-                    samples = np.frombuffer(adjusted_chunk, dtype=amp_dtype)
-                    amp = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
-                    on_amplitude(min(amp, 1.0))
-                except Exception:
-                    pass
+    except ModuleNotFoundError as exc:
+        print(f"[audio] streaming playback unavailable: {exc}")
 
     with _playback_lock:
         if _current_stop_event is stop_event:

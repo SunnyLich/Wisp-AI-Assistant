@@ -29,6 +29,7 @@ def apply_app_theme(app: QApplication | None = None) -> None:
     """Apply the configured app-wide palette to top-level Qt widgets."""
     app = app or QApplication.instance()
     if app is None:
+        
         return
 
     if is_dark_mode():

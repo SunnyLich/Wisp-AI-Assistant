@@ -895,83 +895,107 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         log(f"parallel read-only briefing started: {len(agents)} agents")
 
         def worker(agent: dict) -> dict:
-            self._control.raise_if_cancelled()
-            agent_name = agent["name"]
-            log(f"agent read-only turn: {agent_name}")
-            model_input = self._build_agent_prompt(
-                spec,
-                files,
-                verify_commands,
-                active_agent=agent,
-                messages=messages,
-                agent_history=agent_states[agent_name]["history"],
-                read_only_phase=True,
-                compact=bool(agent_states[agent_name].get("briefed")),
-            )
-            if verbose:
-                verbose(f"read-only {agent_name} model input", model_input)
-            log(f"prompt prepared for {agent_name}: {len(model_input)} chars (read-only full)")
-            provider, model = self._resolve_agent_route(spec, agent)
-            response_text = self._call_model(
-                model_input,
-                log,
-                provider=provider,
-                model=model,
-                max_tokens=self._spec_int(spec, "read_only_max_tokens", 1536),
-                temperature=self._spec_float(spec, "agent_temperature", 0.0),
-            )
-            agent_states[agent_name]["briefed"] = True
-            file_payload = self._file_payload_summary(response_text)
-            if file_payload:
-                log(file_payload)
-            if verbose:
-                verbose(f"read-only {agent_name} model response", response_text)
+            agent_name = str(agent.get("name") or "<unknown>")
             turn: dict = {
                 "turn": 0,
                 "phase": "read_only_briefing",
                 "agent": agent_name,
-                "model_response": response_text,
+                "model_response": "",
                 "tool_results": [],
                 "messages": [],
                 "routing": {},
             }
             try:
-                parsed = self._parse_agent_response(response_text)
-            except ValueError as exc:
-                log(f"{agent_name} read-only response parse failed: {exc}")
-                repaired = self._repair_agent_response(response_text, log, verbose, provider=provider, model=model)
-                if repaired is None:
-                    turn["tool_results"].append(asdict(ToolResult("response_parser", False, str(exc))))
-                    return turn
-                turn["model_response_repaired"] = repaired
-                parsed = self._parse_agent_response(repaired)
-            if verbose:
-                verbose(f"read-only {agent_name} parsed response", parsed)
-            thought = str(parsed.get("thought") or "").strip()
-            if thought:
-                log(f"{agent_name} thought: {thought}")
-                self._append_agent_history(agent_states, agent_name, f"Thought: {thought}")
-            results: list[dict] = []
-            for call in parsed.get("tool_calls") or []:
-                if isinstance(call, dict):
-                    log(f"{agent_name} tool call: {self._tool_call_name(call) or 'unknown'}")
-                result = self._execute_agent_tool_call(
-                    tools,
-                    call,
-                    agent_name,
-                    messages,
-                    turn,
-                    log=log,
-                    read_only=True,
+                self._control.raise_if_cancelled()
+                log(f"agent read-only turn: {agent_name}")
+                model_input = self._build_agent_prompt(
+                    spec,
+                    files,
+                    verify_commands,
                     active_agent=agent,
-                    spec=spec,
+                    messages=messages,
+                    agent_history=agent_states[agent_name]["history"],
+                    read_only_phase=True,
+                    compact=bool(agent_states[agent_name].get("briefed")),
                 )
-                result_dict = asdict(result)
-                results.append(result_dict)
-                turn["tool_results"].append(result_dict)
-                self._append_agent_history(agent_states, agent_name, f"Tool {result.tool}: {result.message}")
-            agent_states[agent_name]["tool_context"] = self._tool_results_for_prompt(results, spec)
-            return turn
+                if verbose:
+                    verbose(f"read-only {agent_name} model input", model_input)
+                log(f"prompt prepared for {agent_name}: {len(model_input)} chars (read-only full)")
+                provider, model = self._resolve_agent_route(spec, agent)
+                response_text = self._call_model(
+                    model_input,
+                    log,
+                    provider=provider,
+                    model=model,
+                    max_tokens=self._spec_int(spec, "read_only_max_tokens", 1536),
+                    temperature=self._spec_float(spec, "agent_temperature", 0.0),
+                )
+                turn["model_response"] = response_text
+                agent_states[agent_name]["briefed"] = True
+                file_payload = self._file_payload_summary(response_text)
+                if file_payload:
+                    log(file_payload)
+                if verbose:
+                    verbose(f"read-only {agent_name} model response", response_text)
+                try:
+                    parsed = self._parse_agent_response(response_text)
+                except ValueError as exc:
+                    log(f"{agent_name} read-only response parse failed: {exc}")
+                    repaired = self._repair_agent_response(response_text, log, verbose, provider=provider, model=model)
+                    if repaired is None:
+                        turn["tool_results"].append(asdict(ToolResult("response_parser", False, str(exc))))
+                        return turn
+                    turn["model_response_repaired"] = repaired
+                    try:
+                        parsed = self._parse_agent_response(repaired)
+                    except ValueError as repair_exc:
+                        log(f"{agent_name} read-only response repair failed: {repair_exc}")
+                        turn["tool_results"].append(asdict(ToolResult("response_parser", False, str(repair_exc))))
+                        return turn
+                if verbose:
+                    verbose(f"read-only {agent_name} parsed response", parsed)
+                thought = str(parsed.get("thought") or "").strip()
+                if thought:
+                    log(f"{agent_name} thought: {thought}")
+                    self._append_agent_history(agent_states, agent_name, f"Thought: {thought}")
+                results: list[dict] = []
+                for call in parsed.get("tool_calls") or []:
+                    if isinstance(call, dict):
+                        log(f"{agent_name} tool call: {self._tool_call_name(call) or 'unknown'}")
+                    result = self._execute_agent_tool_call(
+                        tools,
+                        call,
+                        agent_name,
+                        messages,
+                        turn,
+                        log=log,
+                        read_only=True,
+                        active_agent=agent,
+                        spec=spec,
+                    )
+                    result_dict = asdict(result)
+                    results.append(result_dict)
+                    turn["tool_results"].append(result_dict)
+                    self._append_agent_history(agent_states, agent_name, f"Tool {result.tool}: {result.message}")
+                agent_states[agent_name]["tool_context"] = self._tool_results_for_prompt(results, spec)
+                return turn
+            except AgentCancelled:
+                raise
+            except Exception as exc:
+                log(f"{agent_name} read-only briefing failed: {exc}")
+                if verbose:
+                    verbose(f"read-only {agent_name} failure", traceback.format_exc())
+                turn["tool_results"].append(
+                    asdict(
+                        ToolResult(
+                            "read_only_briefing",
+                            False,
+                            str(exc),
+                            {"error_type": exc.__class__.__name__},
+                        )
+                    )
+                )
+                return turn
 
         with ThreadPoolExecutor(max_workers=min(len(agents), 4)) as executor:
             future_map = {executor.submit(worker, agent): agent for agent in agents}

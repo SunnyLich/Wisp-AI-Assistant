@@ -1,0 +1,88 @@
+name: Build Artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows ${{ matrix.variant }} build
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            artifact_name: wisp-windows
+            app_dir: dist/Wisp
+            build_command: .\tools\build_exe.ps1 -Clean -Yes
+          - variant: lite
+            artifact_name: wisp-windows-lite
+            app_dir: dist/WispLite
+            build_command: .\tools\build_exe.ps1 -Clean -Yes -Lite
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-light.txt
+            requirements-build.txt
+
+      - name: Build Windows artifact
+        shell: pwsh
+        run: ${{ matrix.build_command }}
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.app_dir }}
+          if-no-files-found: error
+
+  build-linux:
+    name: Linux ${{ matrix.variant }} build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            artifact_name: wisp-linux
+            app_dir: dist/Wisp
+            build_command: ./tools/build_exe.sh --clean --yes
+          - variant: lite
+            artifact_name: wisp-linux-lite
+            app_dir: dist/WispLite
+            build_command: ./tools/build_exe.sh --clean --yes --lite
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-light.txt
+            requirements-build.txt
+
+      - name: Make build script executable
+        run: chmod +x ./tools/build_exe.sh
+
+      - name: Build Linux artifact
+        run: ${{ matrix.build_command }}
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.app_dir }}
+          if-no-files-found: error

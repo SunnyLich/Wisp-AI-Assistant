@@ -769,8 +769,8 @@ class AgentRunnerTests(unittest.TestCase):
                 {"name": "Builder", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""},
             ]
             responses = [
-                {"thought": "Verify once.", "status": "continue", "next_agent": "Builder", "tool_calls": [{"tool": "run_command", "args": {"args": ["pytest"]}}], "final": None},
-                {"thought": "Try equivalent verify.", "status": "continue", "next_agent": "Builder", "tool_calls": [{"tool": "run_command", "args": {"args": ["python", "-m", "pytest"]}}], "final": None},
+                {"thought": "Verify once.", "status": "continue", "next_agent": "Builder", "tool_calls": [{"tool": "run_command", "args": {"args": ["python", "-m", "pytest"]}}], "final": None},
+                {"thought": "Try equivalent verify.", "status": "continue", "next_agent": "Builder", "tool_calls": [{"tool": "run_command", "args": {"args": ["pytest"]}}], "final": None},
             ]
 
             def fake_model(_prompt: str) -> str:
@@ -781,6 +781,40 @@ class AgentRunnerTests(unittest.TestCase):
 
             self.assertIn("skipped duplicate successful verification", turns[-1]["tool_results"][0]["message"])
             self.assertEqual(turns[-1]["task_state"]["tests"]["pytest"], "passed")
+
+    def test_parallel_read_only_briefing_converts_invalid_repair_into_tool_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            scope.mkdir()
+            spec = DummySpec(scope_folder=str(scope), max_turns=1)
+            agents = [
+                {"name": "Planner", "role": "Planner", "provider": "same as task", "model": "same as task", "responsibility": ""},
+                {"name": "Reviewer", "role": "Reviewer", "provider": "same as task", "model": "same as task", "responsibility": ""},
+            ]
+            runner = AgentTaskRunner()
+            tools = AgentToolbox(ScopedWorkspace(scope), AgentPermissions())
+            turns: list[dict] = []
+            agent_states = runner._initial_agent_states(agents)
+
+            with patch.object(runner, "_call_model", return_value="{"), \
+                 patch.object(runner, "_repair_agent_response", return_value="still not json"):
+                runner._run_parallel_read_only_round(
+                    spec,
+                    tools,
+                    agents,
+                    [],
+                    [],
+                    [],
+                    turns,
+                    agent_states,
+                    lambda _message: None,
+                )
+
+            self.assertEqual(len(turns), 2)
+            self.assertTrue(all(turn["phase"] == "read_only_briefing" for turn in turns))
+            self.assertTrue(all(turn["tool_results"] for turn in turns))
+            self.assertTrue(all(turn["tool_results"][0]["tool"] == "response_parser" for turn in turns))
+            self.assertTrue(all(turn["tool_results"][0]["ok"] is False for turn in turns))
 
     def test_git_not_repo_is_marked_unavailable(self):
         task_state = AgentTaskRunner._initial_task_state([])

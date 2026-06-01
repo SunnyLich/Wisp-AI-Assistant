@@ -96,7 +96,7 @@ class AudioStreamTests(unittest.TestCase):
 class FillerPrecacheTests(unittest.TestCase):
     def test_prewarm_decodes_wavs_into_memory(self):
         fake_clip = (np.zeros(4, dtype=np.float32), 44100)
-        with mock.patch.object(audio.os.path, "isdir", return_value=True), \
+        with mock.patch.object(audio.os.path, "isdir", side_effect=lambda path: path == config.FILLER_AUDIO_DIR), \
              mock.patch.object(audio.os, "listdir", return_value=["a.wav", "b.txt", "c.WAV"]), \
              mock.patch.object(audio.sf, "read", return_value=fake_clip) as read:
             audio.prewarm_filler()

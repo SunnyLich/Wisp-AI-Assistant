@@ -180,7 +180,10 @@ class MemoryManager:
     """
 
     def __init__(self) -> None:
-        os.makedirs(_CHROMA_DIR, exist_ok=True)
+        try:
+            os.makedirs(_CHROMA_DIR, exist_ok=True)
+        except OSError as exc:
+            print(f"[memory] storage directory unavailable; continuing without persistent store: {exc}")
         self._stm_lock = threading.Lock()
         self._stm: list[dict] = []          # turns + compressed blocks
         self._compressing = False           # guard against concurrent compression

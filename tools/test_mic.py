@@ -7,12 +7,21 @@ Usage:
 import sys
 import os
 import numpy as np
-import sounddevice as sd
 
 SAMPLE_RATE = 16_000
 DURATION    = 4   # seconds to record
 
+
+def _require_sounddevice():
+    try:
+        import sounddevice as sd
+    except ImportError:
+        print("  ERROR: sounddevice is not installed.\n  Run: pip install sounddevice")
+        sys.exit(1)
+    return sd
+
 def list_inputs():
+    sd = _require_sounddevice()
     print("\n=== Audio input devices ===")
     devices = sd.query_devices()
     default_in = sd.default.device[0]
@@ -23,6 +32,7 @@ def list_inputs():
     print()
 
 def record_and_transcribe():
+    sd = _require_sounddevice()
     import time
     for i in (3, 2, 1):
         print(f"  Starting in {i}…", end="\r")
