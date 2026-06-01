@@ -29,7 +29,7 @@ REQUIREMENTS_FILE="requirements.txt"
 SPEC="$ROOT/packaging/$SPEC_NAME"
 DIST_BIN="$ROOT/dist/$APP_NAME/$APP_NAME"
 ICON_PATH="$ROOT/assets/app.ico"
-DOLL_ICON_PNG="$ROOT/assets/doll/idle.png"
+ICON_SOURCE_PNG="$ROOT/assets/doll/idle.png"
 
 cd "$ROOT"
 
@@ -56,15 +56,15 @@ else
 fi
 
 if [[ ! -f "$ICON_PATH" ]]; then
-    if [[ ! -f "$DOLL_ICON_PNG" ]]; then
-        echo "Cannot create icon: doll source image missing at $DOLL_ICON_PNG" >&2
+    if [[ ! -f "$ICON_SOURCE_PNG" ]]; then
+        echo "Cannot create icon: icon source image missing at $ICON_SOURCE_PNG" >&2
         exit 1
     fi
-    echo "Creating exe icon from doll image: $ICON_PATH"
+    echo "Creating exe icon from icon image: $ICON_PATH"
     "$PYTHON" -c "
 from pathlib import Path
 from PIL import Image
-src = Path('$DOLL_ICON_PNG')
+src = Path('$ICON_SOURCE_PNG')
 dst = Path('$ICON_PATH')
 img = Image.open(src).convert('RGBA')
 img.save(dst, format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])

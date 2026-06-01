@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QPushButton, QTabWidget, QWidget, QFrame, QGroupBox, QMessageBox,
     QScrollArea, QSizePolicy, QCompleter,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QObject, Signal
 from PySide6.QtGui import QFont
 from core import secret_store
 import ui.settings_panel.env as settings_env
@@ -34,6 +34,19 @@ class _NoScrollCombo(QComboBox):
             super().wheelEvent(event)
         else:
             event.ignore()
+
+
+# Sentinel data value for the "Custom / enter manually…" model combo entry.
+_CUSTOM_MODEL_SENTINEL = "__custom__"
+_CUSTOM_MODEL_LABEL = "Custom / enter manually…"
+
+
+class _ModelFetchSignals(QObject):
+    """Marshals a background model-list fetch result back to the Qt main thread.
+
+    done(models: list, error: str) — error is "" on success.
+    """
+    done = Signal(object, str)
 
 
 def _read_env() -> dict[str, str]:
@@ -293,14 +306,11 @@ class SettingsDialog(QDialog):
         self._refresh_chatgpt_status()
         auth_cv.addWidget(self._chatgpt_status_lbl)
         cgpt_row = self._button_row(
-            ("Sign in (browser)",  self._chatgpt_login_browser),
-            ("Sign in (headless)", self._chatgpt_login_device),
-            ("Sign out",           self._chatgpt_logout),
+            ("Sign in",  self._chatgpt_login_browser),
+            ("Sign out", self._chatgpt_logout),
         )
         btns = cgpt_row.findChildren(QPushButton)
-        self._cgpt_login_btn, self._cgpt_device_btn, self._cgpt_logout_btn = (
-            btns[0], btns[1], btns[2]
-        )
+        self._cgpt_login_btn, self._cgpt_logout_btn = btns[0], btns[1]
         auth_cv.addWidget(cgpt_row)
         auth_cv.addWidget(_sep(visible=True))
 
@@ -617,34 +627,57 @@ class SettingsDialog(QDialog):
             if idx >= 0:
                 api_key_combo.setCurrentIndex(idx)
 
-        model_combo = self._model_combo(provider)
-        if model:
-            model_combo.setCurrentText(model)
-        else:
-            model_combo.lineEdit().setPlaceholderText(
-                _model_hint(provider) if provider else "model"
-            )
+        # Model cell: a non-editable combo (curated list + a "Custom / enter
+        # manually…" sentinel) stacked over a hidden line edit that appears only
+        # when the sentinel is chosen.
+        model_container = QWidget()
+        mc_v = QVBoxLayout(model_container)
+        mc_v.setContentsMargins(0, 0, 0, 0)
+        mc_v.setSpacing(2)
+        model_combo = _NoScrollCombo()
+        model_combo.setMinimumWidth(140)
+        model_edit = QLineEdit()
+        model_edit.hide()
+        mc_v.addWidget(model_combo)
+        mc_v.addWidget(model_edit)
 
-        def _on_key_change(ac=api_key_combo, mc=model_combo):
-            p = ac.currentData() or ""
-            _refresh_model_combo(mc, p)
-            mc.lineEdit().setPlaceholderText(_model_hint(p) if p else "model")
-
-        api_key_combo.currentIndexChanged.connect(lambda _: _on_key_change())
+        refresh_btn = QPushButton("↻")
+        refresh_btn.setFixedWidth(34)
+        refresh_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
+        refresh_btn.setToolTip("Fetch the latest model names from the provider")
 
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(40)
         remove_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
 
         h.addWidget(api_key_combo, 2)
-        h.addWidget(model_combo, 3)
+        h.addWidget(model_container, 3)
+        h.addWidget(refresh_btn)
         h.addWidget(remove_btn)
 
         row_info: dict = {
             "widget":        row_w,
             "api_key_combo": api_key_combo,
-            "model":         model_combo,
+            "model_combo":   model_combo,
+            "model_edit":    model_edit,
+            "refresh_btn":   refresh_btn,
         }
+
+        # Populate with the curated list for this provider; refresh fetches live.
+        self._fill_model_combo(row_info, _PROVIDER_MODELS.get(provider, []), provider, model)
+
+        model_combo.currentIndexChanged.connect(
+            lambda _: self._on_model_combo_changed(row_info)
+        )
+
+        def _on_key_change():
+            p = api_key_combo.currentData() or ""
+            self._fill_model_combo(
+                row_info, _PROVIDER_MODELS.get(p, []), p, self._model_value(row_info)
+            )
+
+        api_key_combo.currentIndexChanged.connect(lambda _: _on_key_change())
+        refresh_btn.clicked.connect(lambda: self._refresh_models_for_row(row_info))
         remove_btn.clicked.connect(
             lambda: self._remove_model_section_row(section_key, row_info)
         )
@@ -652,6 +685,99 @@ class SettingsDialog(QDialog):
         self._model_section_layouts[section_key].addWidget(row_w)
         self._model_section_rows[section_key].append(row_info)
         return row_info
+
+    def _fill_model_combo(
+        self, row_info: dict, models: list, provider: str, selected: str
+    ) -> None:
+        """Repopulate a row's model combo with *models* plus the Custom sentinel,
+        preserving/applying the *selected* value (custom text routes to the edit)."""
+        combo = row_info["model_combo"]
+        edit = row_info["model_edit"]
+        combo.blockSignals(True)
+        combo.clear()
+        for m in models:
+            combo.addItem(m, m)
+        combo.addItem(_CUSTOM_MODEL_LABEL, _CUSTOM_MODEL_SENTINEL)
+        selected = (selected or "").strip()
+        if selected and selected in models:
+            combo.setCurrentIndex(combo.findData(selected))
+            edit.clear()
+            edit.hide()
+        elif selected:
+            combo.setCurrentIndex(combo.findData(_CUSTOM_MODEL_SENTINEL))
+            edit.setText(selected)
+            edit.show()
+        else:
+            combo.setCurrentIndex(-1)
+            edit.hide()
+        edit.setPlaceholderText(_model_hint(provider) if provider else "model name")
+        completer = QCompleter(models, edit)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        edit.setCompleter(completer)
+        combo.blockSignals(False)
+
+    def _on_model_combo_changed(self, row_info: dict) -> None:
+        combo = row_info["model_combo"]
+        edit = row_info["model_edit"]
+        if combo.currentData() == _CUSTOM_MODEL_SENTINEL:
+            edit.show()
+            edit.setFocus()
+        else:
+            edit.hide()
+
+    def _model_value(self, row_info: dict) -> str:
+        """Effective model string for a section row: the line-edit text when the
+        Custom sentinel is selected, otherwise the chosen combo item."""
+        combo = row_info["model_combo"]
+        if combo.currentData() == _CUSTOM_MODEL_SENTINEL:
+            return row_info["model_edit"].text().strip()
+        return (combo.currentData() or "").strip()
+
+    def _refresh_models_for_row(self, row_info: dict) -> None:
+        """Fetch live model names for the row's provider on a background thread."""
+        provider = (row_info["api_key_combo"].currentData() or "").strip()
+        refresh_btn = row_info["refresh_btn"]
+        if not provider:
+            refresh_btn.setToolTip("Pick a provider first")
+            return
+        api_key = self._effective_secret_value_from_provider(provider)
+        base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip() if provider == "custom" else ""
+
+        refresh_btn.setEnabled(False)
+        refresh_btn.setText("…")
+
+        carrier = _ModelFetchSignals()
+        carrier.done.connect(
+            lambda models, err, ri=row_info: self._on_models_fetched(ri, models, err)
+        )
+        row_info["_fetch_carrier"] = carrier  # keep alive until fetch completes
+
+        def _worker():
+            try:
+                from core.llm_clients import client as llm
+                models = llm.list_models(provider, api_key=api_key, base_url=base_url)
+                carrier.done.emit(models, "")
+            except Exception as exc:  # noqa: BLE001 — surfaced to the user as a tooltip
+                carrier.done.emit([], str(exc))
+
+        threading.Thread(target=_worker, daemon=True, name="model-list-fetch").start()
+
+    def _on_models_fetched(self, row_info: dict, models, err: str) -> None:
+        refresh_btn = row_info["refresh_btn"]
+        refresh_btn.setEnabled(True)
+        refresh_btn.setText("↻")
+        row_info.pop("_fetch_carrier", None)
+        provider = (row_info["api_key_combo"].currentData() or "").strip()
+        if err or not models:
+            refresh_btn.setToolTip(
+                f"Couldn't fetch — showing built-ins ({err})" if err
+                else "Provider returned no models — showing built-ins"
+            )
+            return
+        # Live list only; preserve the row's current selection.
+        self._fill_model_combo(row_info, list(models), provider, self._model_value(row_info))
+        refresh_btn.setToolTip(f"Live: {len(models)} models")
 
     def _remove_model_section_row(self, section_key: str, row_info: dict) -> None:
         rows = self._model_section_rows[section_key]
@@ -668,7 +794,7 @@ class SettingsDialog(QDialog):
                 self._remove_model_section_row(sk, row)
             for row in source_rows:
                 provider = row["api_key_combo"].currentData() or ""
-                model = _get(row["model"])
+                model = self._model_value(row)
                 self._add_model_section_row(sk, provider, model)
 
     def _effective_secret_value_from_provider(self, provider: str) -> str:
@@ -715,14 +841,14 @@ class SettingsDialog(QDialog):
         for section_rows in self._model_section_rows.values():
             for row in section_rows:
                 if (row["api_key_combo"].currentData() or "") == "custom":
-                    row["model"].lineEdit().setPlaceholderText(f"e.g. {model_hint}")
+                    row["model_edit"].setPlaceholderText(f"e.g. {model_hint}")
 
     def _test_custom_connection(self) -> None:
         from core.llm_clients import client as llm
 
         provider = "custom"
         rows = self._model_section_rows.get("LLM", [])
-        model = _get(rows[0]["model"]).strip() if rows else ""
+        model = self._model_value(rows[0]) if rows else ""
         custom_api_key = (
             _get(self._fields.get("CUSTOM_API_KEY", QLineEdit())).strip()
             or secret_store.get_keychain_secret("CUSTOM_API_KEY")
@@ -793,13 +919,6 @@ class SettingsDialog(QDialog):
         if self._auth_poll_error is not None:
             msg = self._auth_poll_error
             self._auth_poll_error = None  # clear so we don't re-trigger
-            if msg.startswith("__device_code__"):
-                # Device code info -” show it without stopping the poll
-                body = msg[len("__device_code__"):]
-                url, _, code = body.partition("\n")
-                self._chatgpt_status_lbl.setText(f"Go to: {url}\nEnter code: {code}")
-                self._chatgpt_status_lbl.setStyleSheet("color: #80a0ff;")
-                return
             self._auth_poll_timer.stop()
             self._chatgpt_status_lbl.setText(f"Error: {msg}")
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
@@ -819,23 +938,6 @@ class SettingsDialog(QDialog):
             self._auth_poll_timer.stop()
             self._chatgpt_status_lbl.setText("Timed out waiting for login")
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
-
-    def _chatgpt_login_device(self) -> None:
-        from core.auth import chatgpt as chatgpt_auth
-        self._chatgpt_status_lbl.setText("Starting device auth...")
-        self._chatgpt_status_lbl.setStyleSheet("color: #c0c040;")
-        self._start_auth_poll()
-
-        def on_code(url, user_code):
-            self._auth_poll_error = f"__device_code__{url}\n{user_code}"
-
-        def on_success(_tokens):
-            pass  # polling timer will detect the saved tokens
-
-        def on_error(msg):
-            self._auth_poll_error = msg
-
-        chatgpt_auth.start_device_login(on_code, on_success, on_error)
 
     def _chatgpt_logout(self) -> None:
         try:
@@ -1543,13 +1645,13 @@ class SettingsDialog(QDialog):
         theme_combo.addItem("Light", "light")
         theme_combo.addItem("Dark", "dark")
         self._fields["THEME_MODE"] = theme_combo
-        self._fields["DOLL_AUTO_HIDE"] = QCheckBox("Auto-hide doll (only visible when active)")
+        self._fields["ICON_AUTO_HIDE"] = QCheckBox("Auto-hide icon (only visible when active)")
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox("Auto-elaborate when opening chat")
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
         self._fields["CHAT_ELABORATE_PROMPT"].setPlaceholderText("e.g. Please elaborate on that.")
 
-        self._fields["DOLL_SIZE"] = QLineEdit()
-        self._fields["DOLL_SIZE"].setPlaceholderText("e.g. 80")
+        self._fields["ICON_SIZE"] = QLineEdit()
+        self._fields["ICON_SIZE"].setPlaceholderText("e.g. 80")
         self._fields["BUBBLE_WIDTH"] = QLineEdit()
         self._fields["BUBBLE_WIDTH"].setPlaceholderText("e.g. 340")
         self._fields["BUBBLE_LINES"] = QLineEdit()
@@ -1567,11 +1669,11 @@ class SettingsDialog(QDialog):
         self._fields["TTS_HOLD_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.35")
 
         f.addRow("Theme", self._fields["THEME_MODE"])
-        f.addRow("", self._fields["DOLL_AUTO_HIDE"])
+        f.addRow("", self._fields["ICON_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
         f.addRow("Elaborate prompt", self._fields["CHAT_ELABORATE_PROMPT"])
         f.addRow(_sep(), _sep())
-        f.addRow("Doll icon size (px)", self._fields["DOLL_SIZE"])
+        f.addRow("Icon size (px)", self._fields["ICON_SIZE"])
         f.addRow("Bubble width (px)", self._fields["BUBBLE_WIDTH"])
         f.addRow("Bubble lines", self._fields["BUBBLE_LINES"])
         f.addRow("Bubble color", _bubble_color_row)
@@ -1871,13 +1973,11 @@ class SettingsDialog(QDialog):
             ("together",   "TOGETHER_API_KEY"),
             ("cerebras",   "CEREBRAS_API_KEY"),
         ]
-        has_any_key = False
         for provider, key_name in _LLM_KEY_MAP:
             if secret_store.get_keychain_secret(key_name):
                 self._add_api_key_row(provider=provider, stored=True)
-                has_any_key = True
-        if not has_any_key:
-            self._add_api_key_row()
+        # No default placeholder row — the list stays empty until the user adds
+        # a key via "+ Add API Key". Avoids a spurious "Groq" row on every open.
 
         # ── Model sections ────────────────────────────────────────────────
         def _load_section(sk, penv, menv, fenv, pdef, mdef, fdef=""):
@@ -1963,19 +2063,23 @@ class SettingsDialog(QDialog):
                 intents    = intents,
             )
 
-        auto_hide = self._env.get("DOLL_AUTO_HIDE", str(cfg.DOLL_AUTO_HIDE)).lower() == "true"
+        # Read ICON_AUTO_HIDE, falling back to the legacy DOLL_AUTO_HIDE key.
+        auto_hide = self._env.get(
+            "ICON_AUTO_HIDE",
+            self._env.get("DOLL_AUTO_HIDE", str(cfg.ICON_AUTO_HIDE)),
+        ).lower() == "true"
         theme_mode = self._env.get("THEME_MODE", getattr(cfg, "THEME_MODE", "system"))
         combo = self._fields["THEME_MODE"]
         idx = combo.findData(theme_mode)  # type: ignore[attr-defined]
         combo.setCurrentIndex(idx if idx >= 0 else 0)  # type: ignore[attr-defined]
-        self._fields["DOLL_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
+        self._fields["ICON_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
 
         auto_elab = self._env.get("CHAT_AUTO_ELABORATE", str(cfg.CHAT_AUTO_ELABORATE)).lower() == "true"
         self._fields["CHAT_AUTO_ELABORATE"].setChecked(auto_elab)  # type: ignore
         _set(self._fields["CHAT_ELABORATE_PROMPT"],
              self._env.get("CHAT_ELABORATE_PROMPT", cfg.CHAT_ELABORATE_PROMPT))
 
-        _set(self._fields["DOLL_SIZE"],    self._env.get("DOLL_SIZE",    str(cfg.DOLL_SIZE)))
+        _set(self._fields["ICON_SIZE"],    self._env.get("ICON_SIZE", self._env.get("DOLL_SIZE", str(cfg.ICON_SIZE))))
         _set(self._fields["BUBBLE_WIDTH"], self._env.get("BUBBLE_WIDTH", str(cfg.BUBBLE_WIDTH)))
         _set(self._fields["BUBBLE_LINES"], self._env.get("BUBBLE_LINES", str(cfg.BUBBLE_LINES)))
         _set(self._fields["BUBBLE_COLOR"], self._env.get("BUBBLE_COLOR", cfg.BUBBLE_COLOR))
@@ -2046,7 +2150,7 @@ class SettingsDialog(QDialog):
             return
         primary = rows[0]
         provider = (primary["api_key_combo"].currentData() or "").strip().lower()
-        model = _get(primary["model"]).strip()
+        model = self._model_value(primary)
         anthropic_api_key = self._effective_secret_value_from_provider("anthropic")
         custom_base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip()
         compat_keys = {
@@ -2157,11 +2261,11 @@ class SettingsDialog(QDialog):
                 return "", "", ""
             primary = rows[0]
             provider = primary["api_key_combo"].currentData() or ""
-            model = _get(primary["model"])
+            model = self._model_value(primary)
             fallbacks = "\n".join(
-                f"{r['api_key_combo'].currentData() or ''}:{_get(r['model'])}"
+                f"{r['api_key_combo'].currentData() or ''}:{self._model_value(r)}"
                 for r in rows[1:]
-                if (r["api_key_combo"].currentData() or "") and _get(r["model"])
+                if (r["api_key_combo"].currentData() or "") and self._model_value(r)
             )
             return provider, model, fallbacks
 
@@ -2204,10 +2308,10 @@ class SettingsDialog(QDialog):
             "MEMORY_STM_TOKEN_BUDGET":  _get(self._fields["MEMORY_STM_TOKEN_BUDGET"]),
             "CALLER_COUNT":  str(len(self._caller_blocks)),
             "THEME_MODE":       self._fields["THEME_MODE"].currentData(),  # type: ignore[attr-defined]
-            "DOLL_AUTO_HIDE":    str(self._fields["DOLL_AUTO_HIDE"].isChecked()),  # type: ignore
+            "ICON_AUTO_HIDE":    str(self._fields["ICON_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
-            "DOLL_SIZE":    _get(self._fields["DOLL_SIZE"]),
+            "ICON_SIZE":    _get(self._fields["ICON_SIZE"]),
             "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
             "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
             "BUBBLE_COLOR": _get(self._fields["BUBBLE_COLOR"]),

@@ -578,6 +578,53 @@ def _dynamic_anthropic_client():
     return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
 
+def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list[str]:
+    """Return available model ids for *provider*, fetched live from its API.
+
+    Raises on any failure — missing credential, network error, or a provider
+    that has no public listing endpoint (chatgpt/copilot). Callers should treat
+    a raise as "fall back to the curated list". Optional ``api_key``/``base_url``
+    let the settings dialog fetch with not-yet-saved field values.
+    """
+    provider = (provider or "").lower()
+    if provider in ("chatgpt", "copilot"):
+        raise NotImplementedError(f"{provider} does not support model listing")
+
+    if provider == "anthropic":
+        from anthropic import Anthropic
+        key = api_key or config.ANTHROPIC_API_KEY
+        if not key:
+            raise ValueError("No Anthropic API key configured")
+        resp = Anthropic(api_key=key).models.list(limit=1000)
+        ids = [m.id for m in resp.data]
+    else:
+        from openai import OpenAI
+        if provider == "custom":
+            url = base_url or config.CUSTOM_BASE_URL
+            if not url:
+                raise ValueError("No custom base URL configured")
+            client = OpenAI(api_key=api_key or config.CUSTOM_API_KEY or "no-key", base_url=url)
+        elif provider in _OPENAI_COMPAT_PROVIDERS:
+            key_attr, default_base = _OPENAI_COMPAT_PROVIDERS[provider]
+            key = api_key or (getattr(config, key_attr) if key_attr else "ollama")
+            if key_attr and not key:
+                raise ValueError(f"No API key configured for {provider}")
+            client = OpenAI(api_key=key or "no-key", base_url=base_url or default_base)
+        elif provider == "openai":
+            key = api_key or config.OPENAI_API_KEY
+            if not key:
+                raise ValueError("No OpenAI API key configured")
+            client = OpenAI(api_key=key)
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
+        resp = client.models.list()
+        ids = [m.id for m in resp.data]
+
+    if not ids:
+        raise ValueError("Provider returned no models")
+    return sorted(ids)
+
+
 _CHATGPT_SUPPORTED_MODELS = {
     "gpt-5.5", "gpt-5.4", "gpt-5.4-mini",
     "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2",

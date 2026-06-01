@@ -18,15 +18,15 @@ Press `Ctrl+Q`. Wisp reads what's on your screen, thinks out loud, and answers i
 
 ## What it does
 
-Wisp lives as a small animated doll in the corner of your screen — always on top, never in your way. Hit the hotkey and a slick intent picker drops in. Pick an action or type your own, and Wisp immediately:
+Wisp lives as a small animated icon in the corner of your screen — always on top, never in your way. Hit the hotkey and a slick intent picker drops in. Pick an action or type your own, and Wisp immediately:
 
 1. **Grabs context** — highlighted text, open documents, clipboard, active browser tab, or a screenshot you draw
 2. **Fires the query** — to your chosen LLM with full context already attached
 3. **Answers in ~1.5s** — streaming text to a speech bubble *and* speaking it aloud, word by word, in sync
 
-The doll plays a filler sound (`hm…`, `let me think…`) the instant you press the hotkey, so there's never a silent gap. By the time that finishes, the real answer is already coming in.
+The icon plays a filler sound (`hm…`, `let me think…`) the instant you press the hotkey, so there's never a silent gap. By the time that finishes, the real answer is already coming in.
 
-Click the doll at any time to open a full chat window for deeper conversations with memory of everything you've discussed.
+Click the icon at any time to open a full chat window for deeper conversations with memory of everything you've discussed.
 
 ---
 
@@ -41,7 +41,7 @@ Click the doll at any time to open a full chat window for deeper conversations w
 - **Remembers you** — a local vector database stores facts across sessions; the most relevant ones surface automatically on every query
 - **Bring your own model** — Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, Ollama, GitHub Copilot, and more
 - **Feels instant** — filler audio plays in milliseconds to mask the LLM round-trip; the real answer usually arrives before the filler finishes
-- **Stays out of the way** — doll auto-hides when idle, pops up on hotkey, disappears after the answer fades out
+- **Stays out of the way** — icon auto-hides when idle, pops up on hotkey, disappears after the answer fades out
 
 ---
 
@@ -136,8 +136,8 @@ HOTKEY_VOICE=f9                    # push-to-talk
 ### UI
 
 ```env
-DOLL_SIZE=80
-DOLL_AUTO_HIDE=true                # hide doll when idle; show on hotkey
+ICON_SIZE=80
+ICON_AUTO_HIDE=true                # hide icon when idle; show on hotkey
 BUBBLE_WIDTH=340
 BUBBLE_LINES=2
 ```

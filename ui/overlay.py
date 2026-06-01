@@ -1,11 +1,11 @@
 ﻿"""
-ui/overlay.py -” Persistent doll overlay widget.
+ui/overlay.py -” Persistent icon overlay widget.
 
 A small, always-on-top, click-through frameless window that lives in the
-bottom-right corner. It shows the doll sprite and hosts the system tray icon.
+bottom-right corner. It shows the icon sprite and hosts the system tray icon.
 
 States:
-  idle      -” static doll, sitting quietly
+  idle      -” static icon, sitting quietly
   listening -” hotkey pressed; plays animate_listen()
   thinking  -” LLM request in flight
   speaking  -” TTS playing; plays animate_speak()
@@ -36,8 +36,8 @@ class OverlaySignals(QObject):
     bubble_chunk       = Signal(str, bool)   # (chunk, is_thought)
     bubble_finish      = Signal()      # response done, start hide countdown
     bubble_clear       = Signal()      # hide immediately
-    show_doll          = Signal()      # make doll visible
-    hide_doll          = Signal()      # hide doll after short delay
+    show_icon          = Signal()      # make icon visible
+    hide_icon          = Signal()      # hide icon after short delay
     raise_overlay      = Signal()      # bring overlay to foreground (Linux)
     settings_applied   = Signal()      # settings were applied; re-register hotkeys etc.
     show_new_chat          = Signal()        # tray "New chat" clicked
@@ -48,15 +48,15 @@ class OverlaySignals(QObject):
     remove_dropped_item    = Signal(int)     # user clicked X on badge at this index
 
 
-class DollOverlay(QMainWindow):
+class IconOverlay(QMainWindow):
     """
-    The persistent doll window. Always on top, no taskbar entry,
+    The persistent icon window. Always on top, no taskbar entry,
     no frame. Positioned at bottom-right corner.
     """
 
     @property
-    def DOLL_SIZE(self):
-        s = config.DOLL_SIZE
+    def ICON_SIZE(self):
+        s = config.ICON_SIZE
         return (s, s)
 
     def __init__(self, signals: OverlaySignals):
@@ -75,11 +75,11 @@ class DollOverlay(QMainWindow):
         self._bubble.set_speed_callback(self._on_bubble_speed_boost)
         self._current_state = "idle"
 
-        # Drop-context panel (right side of doll)
+        # Drop-context panel (right side of icon)
         from ui.drop_zone import ContextPanel
         self._context_panel = ContextPanel()
         self._context_panel.set_remove_callback(signals.remove_dropped_item.emit)
-        self._context_panel.reposition(self._icon_label.pos(), config.DOLL_SIZE)
+        self._context_panel.reposition(self._icon_label.pos(), config.ICON_SIZE)
         signals.drop_context_cleared.connect(self._context_panel.clear_items)
 
         # Connect signals
@@ -95,8 +95,8 @@ class DollOverlay(QMainWindow):
         signals.bubble_finish.connect(self._on_bubble_finish)
         signals.bubble_clear.connect(self._bubble.clear)
         signals.bubble_clear.connect(self._icon_label_clear)
-        signals.show_doll.connect(self._show_doll)
-        signals.hide_doll.connect(self._hide_doll)
+        signals.show_icon.connect(self._show_icon)
+        signals.hide_icon.connect(self._hide_icon)
         signals.raise_overlay.connect(self._raise_overlay)
 
         self._hide_timer = QTimer(self)
@@ -114,7 +114,7 @@ class DollOverlay(QMainWindow):
         self.setFixedSize(0, 0)
 
     def _build_icon_label(self):
-        sz = config.DOLL_SIZE
+        sz = config.ICON_SIZE
         margin = 20
         screen = QApplication.primaryScreen().availableGeometry()
         x = screen.x() + screen.width()  - sz - margin
@@ -126,7 +126,7 @@ class DollOverlay(QMainWindow):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
-        self._icon_label.setWindowTitle("AI Assistant Doll")
+        self._icon_label.setWindowTitle("AI Assistant Icon")
         self._icon_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         _app_icon = QApplication.instance().windowIcon()
         if not _app_icon.isNull():
@@ -135,7 +135,7 @@ class DollOverlay(QMainWindow):
         self._icon_label.move(x, y)
         self._icon_label.setScaledContents(True)
         self._set_icon_pixmap("idle")
-        if config.DOLL_AUTO_HIDE:
+        if config.ICON_AUTO_HIDE:
             self._icon_label.hide()
         else:
             self._icon_label.show()
@@ -178,8 +178,8 @@ class DollOverlay(QMainWindow):
         new_chat_action.triggered.connect(self.signals.show_new_chat.emit)
         last_chat_action = QAction("Last chat", self)
         last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
-        hide_doll_action = QAction("Hide doll", self)
-        hide_doll_action.triggered.connect(self._hide_doll_now)
+        hide_icon_action = QAction("Hide icon", self)
+        hide_icon_action.triggered.connect(self._hide_icon_now)
         memory_action = QAction("Memory", self)
         memory_action.triggered.connect(self.signals.show_memory_viewer.emit)
         settings_action = QAction("Settings", self)
@@ -188,7 +188,7 @@ class DollOverlay(QMainWindow):
         quit_action.triggered.connect(QApplication.quit)
         menu.addAction(new_chat_action)
         menu.addAction(last_chat_action)
-        menu.addAction(hide_doll_action)
+        menu.addAction(hide_icon_action)
         menu.addSeparator()
         menu.addAction(memory_action)
         plugin_manager_action = QAction("Plugin Manager", self)
@@ -214,8 +214,8 @@ class DollOverlay(QMainWindow):
         if icon:
             self._tray.setIcon(icon)
         self._set_icon_pixmap(state)
-        if config.DOLL_AUTO_HIDE and state != "idle":
-            self._show_doll()
+        if config.ICON_AUTO_HIDE and state != "idle":
+            self._show_icon()
 
     def _on_mouth_amp(self, amp: float):
         pass
@@ -223,19 +223,19 @@ class DollOverlay(QMainWindow):
     def apply_settings(self):
         """Apply settings that affect existing overlay widgets without restart."""
         if hasattr(self, "_icon_label"):
-            sz = config.DOLL_SIZE
+            sz = config.ICON_SIZE
             self._icon_label.setFixedSize(sz, sz)
             self._set_icon_pixmap(getattr(self, "_current_state", "idle"))
-            if not config.DOLL_AUTO_HIDE:
+            if not config.ICON_AUTO_HIDE:
                 self._icon_label.show()
             elif getattr(self, "_current_state", "idle") == "idle":
                 self._icon_label.hide()
         if hasattr(self, "_bubble"):
             self._bubble.apply_config()
             if hasattr(self, "_icon_label"):
-                self._on_doll_dragged(self._icon_label.pos())
+                self._on_icon_dragged(self._icon_label.pos())
         if hasattr(self, "_context_panel") and hasattr(self, "_icon_label"):
-            self._context_panel.reposition(self._icon_label.pos(), config.DOLL_SIZE)
+            self._context_panel.reposition(self._icon_label.pos(), config.ICON_SIZE)
         if hasattr(self, "_icon_hide_timer"):
             self._icon_hide_timer.setInterval(self._icon_backstop_ms())
         self._update_tray_context_menu()
@@ -250,7 +250,7 @@ class DollOverlay(QMainWindow):
         popup.show()
 
     def notify_agent_approval(self, text: str, *, resolved: bool = False) -> None:
-        """Raise the doll/icon and show an agent approval notice bubble."""
+        """Raise the icon and show an agent approval notice bubble."""
         if hasattr(self, "_icon_hide_timer"):
             self._icon_hide_timer.stop()
         if hasattr(self, "_icon_label"):
@@ -280,7 +280,13 @@ class DollOverlay(QMainWindow):
         open_plugin_manager(parent=self)
 
     # ------------------------------------------------------------------
-    # Doll visibility
+    # Icon visibility
+    #
+    # Invariant: the icon is only ever hidden by (a) auto-hide returning to
+    # idle (the backstop timer / bubble-lockstep paths below, all gated on
+    # config.ICON_AUTO_HIDE), or (b) the user's manual "Hide icon" action
+    # (_hide_icon_now). When auto-hide is off the icon stays visible until the
+    # user hides it. Nothing else should hide it.
     # ------------------------------------------------------------------
 
     def _raise_overlay(self):
@@ -288,17 +294,17 @@ class DollOverlay(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def _show_doll(self):
+    def _show_icon(self):
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
         self._icon_hide_timer.stop()
         self._icon_label.show()
         self._icon_label.raise_()
 
-    def _hide_doll(self):
+    def _hide_icon(self):
         if not hasattr(self, '_icon_hide_timer'):
             return
-        if not config.DOLL_AUTO_HIDE:
+        if not config.ICON_AUTO_HIDE:
             return
         # Start a backstop timer -” the icon will normally be hidden in sync with
         # the bubble via _on_bubble_hidden, but this covers cases where the bubble
@@ -306,12 +312,13 @@ class DollOverlay(QMainWindow):
         self._icon_hide_timer.start()
 
     def _on_bubble_finish(self):
-        """Bubble is winding down its reveal — stop the backstop so the doll
+        """Bubble is winding down its reveal — stop the backstop so the icon
         stays until the bubble actually hides via _on_bubble_hidden."""
         if hasattr(self, '_icon_hide_timer'):
             self._icon_hide_timer.stop()
 
-    def _hide_doll_now(self):
+    def _hide_icon_now(self):
+        """Manual 'Hide icon' tray action — always hides, regardless of auto-hide."""
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
         self._icon_hide_timer.stop()
@@ -321,7 +328,7 @@ class DollOverlay(QMainWindow):
 
     @staticmethod
     def _icon_backstop_ms() -> int:
-        return max(500, int(getattr(config, "DOLL_ICON_BACKSTOP_MS", 5000)))
+        return max(500, int(getattr(config, "ICON_BACKSTOP_MS", 5000)))
 
     def _on_bubble_hidden(self):
         """Called by SpeechBubble.hideEvent -- hides the icon in lockstep with the bubble."""
@@ -329,7 +336,7 @@ class DollOverlay(QMainWindow):
             return
         self._on_bubble_speed_boost(False)
         self._icon_hide_timer.stop()
-        if config.DOLL_AUTO_HIDE:
+        if config.ICON_AUTO_HIDE:
             self._icon_label.hide()
 
     def _icon_label_clear(self):
@@ -337,7 +344,7 @@ class DollOverlay(QMainWindow):
             return
         self._on_bubble_speed_boost(False)
         self._icon_hide_timer.stop()
-        if config.DOLL_AUTO_HIDE:
+        if config.ICON_AUTO_HIDE:
             self._icon_label.hide()
 
     # ------------------------------------------------------------------
@@ -345,13 +352,13 @@ class DollOverlay(QMainWindow):
     # ------------------------------------------------------------------
 
     def set_click_handler(self, handler):
-        pass  # doll disabled
+        pass  # icon click disabled
 
     def _on_click(self, event):
         pass
 
     # ------------------------------------------------------------------
-    # Drag support (doll icon + bubble kept in sync)
+    # Drag support (icon + bubble kept in sync)
     # ------------------------------------------------------------------
 
     def eventFilter(self, obj, event):
@@ -368,7 +375,7 @@ class DollOverlay(QMainWindow):
             elif t == QEvent.Type.MouseMove and self._icon_drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
                 new_pos = event.globalPosition().toPoint() + self._icon_drag_offset
                 self._icon_label.move(new_pos)
-                self._on_doll_dragged(new_pos)
+                self._on_icon_dragged(new_pos)
                 return True
             elif t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
                 self._icon_drag_offset = None
@@ -413,8 +420,8 @@ class DollOverlay(QMainWindow):
         # Particle burst at cursor
         VanishEffect(global_pos)
 
-        # "Added as context!" toast above the doll
-        AddedContextToast(self._icon_label.pos(), config.DOLL_SIZE)
+        # "Added as context!" toast above the icon
+        AddedContextToast(self._icon_label.pos(), config.ICON_SIZE)
 
         # Populate the right-side context panel
         for name, _content, item_type in items:
@@ -423,22 +430,22 @@ class DollOverlay(QMainWindow):
         # Notify main.py
         self.signals.context_items_dropped.emit(items)
 
-    def _on_doll_dragged(self, doll_pos: QPoint):
+    def _on_icon_dragged(self, icon_pos: QPoint):
         """Reposition bubble and context panel after a drag."""
-        sz = config.DOLL_SIZE
+        sz = config.ICON_SIZE
         bw = self._bubble._bubble_w
         bh = self._bubble._bubble_h
         from ui.bubble import _TAIL_W
-        bx = doll_pos.x() - bw - _TAIL_W - 6
-        by = doll_pos.y() + (sz - bh) // 2
+        bx = icon_pos.x() - bw - _TAIL_W - 6
+        by = icon_pos.y() + (sz - bh) // 2
         self._bubble.move(bx, by)
         if hasattr(self, "_context_panel"):
-            self._context_panel.reposition(doll_pos, sz)
+            self._context_panel.reposition(icon_pos, sz)
 
     def _on_bubble_dragged(self, bubble_pos: QPoint):
-        """Reposition doll icon to stay to the right of the bubble after a drag."""
-        doll_pos = self._bubble.doll_pos_for_bubble(bubble_pos, config.DOLL_SIZE)
-        self._icon_label.move(doll_pos)
+        """Reposition icon to stay to the right of the bubble after a drag."""
+        icon_pos = self._bubble.icon_pos_for_bubble(bubble_pos, config.ICON_SIZE)
+        self._icon_label.move(icon_pos)
 
     def _on_bubble_speed_boost(self, enabled: bool):
         from core import audio

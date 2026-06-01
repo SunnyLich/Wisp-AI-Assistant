@@ -107,7 +107,7 @@ def _load_config() -> None:
     global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, TOOL_LLM_MODEL
     global VISION_LLM_PROVIDER, VISION_LLM_MODEL, VISION_LLM_FALLBACKS
     global TTS_PROVIDER, CARTESIA_VOICE_ID
-    global THEME_MODE, DARK_MODE, DOLL_AUTO_HIDE, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
+    global THEME_MODE, DARK_MODE, ICON_AUTO_HIDE, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
     global GITHUB_DEFAULT_CLIENT_ID, GITHUB_CLIENT_ID, GITHUB_OAUTH_SCOPES
     global COPILOT_CLI_URL, COPILOT_CLI_PATH
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP, HOTKEY_VOICE
@@ -117,7 +117,7 @@ def _load_config() -> None:
     global CONTEXT_BROWSER_MAX_CHARS, CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS, CONTEXT_TOOL_DOCUMENT_MAX_CHARS
     global TOOL_PLUGIN_DIR, TOOL_GIT_ROOT
     global BUBBLE_WIDTH, BUBBLE_LINES, BUBBLE_COLOR, BUBBLE_TEXT_COLOR, BUBBLE_READ_WORD_COLOR
-    global DOLL_SIZE, DOLL_ICON_BACKSTOP_MS, BUBBLE_HIDE_DELAY_MS
+    global ICON_SIZE, ICON_BACKSTOP_MS, BUBBLE_HIDE_DELAY_MS
     global BUBBLE_REVEAL_WPM, BUBBLE_HOLD_REVEAL_WPM
     global TTS_PLAYBACK_RATE, TTS_HOLD_PLAYBACK_RATE
     global MEMORY_LLM_PROVIDER, MEMORY_LLM_MODEL, MEMORY_AUTO_CONSOLIDATE
@@ -165,7 +165,8 @@ def _load_config() -> None:
     # --- App behaviour ---
     THEME_MODE            = os.getenv("THEME_MODE", "system")  # "dark" | "light" | "system"
     DARK_MODE             = env_bool("DARK_MODE", THEME_MODE == "dark")
-    DOLL_AUTO_HIDE        = env_bool("DOLL_AUTO_HIDE", True)
+    # ICON_AUTO_HIDE (formerly DOLL_AUTO_HIDE) — old key still honored for back-compat.
+    ICON_AUTO_HIDE        = env_bool("ICON_AUTO_HIDE", env_bool("DOLL_AUTO_HIDE", True))
     CHAT_AUTO_ELABORATE   = env_bool("CHAT_AUTO_ELABORATE", True)
     CHAT_ELABORATE_PROMPT = os.getenv("CHAT_ELABORATE_PROMPT", "Please elaborate on that.")
     GITHUB_DEFAULT_CLIENT_ID = os.getenv("GITHUB_DEFAULT_CLIENT_ID", "")
@@ -210,8 +211,10 @@ def _load_config() -> None:
     BUBBLE_COLOR           = os.getenv("BUBBLE_COLOR",           "#1c1c24dc")
     BUBBLE_TEXT_COLOR      = os.getenv("BUBBLE_TEXT_COLOR",      "#e6e6e6")
     BUBBLE_READ_WORD_COLOR = os.getenv("BUBBLE_READ_WORD_COLOR", "#4da3ff")
-    DOLL_SIZE              = env_int("DOLL_SIZE",              80)
-    DOLL_ICON_BACKSTOP_MS  = env_int("DOLL_ICON_BACKSTOP_MS",  5000)
+    # ICON_SIZE / ICON_BACKSTOP_MS (formerly DOLL_SIZE / DOLL_ICON_BACKSTOP_MS) —
+    # old keys still honored for back-compat.
+    ICON_SIZE              = env_int("ICON_SIZE",     env_int("DOLL_SIZE",             80))
+    ICON_BACKSTOP_MS       = env_int("ICON_BACKSTOP_MS", env_int("DOLL_ICON_BACKSTOP_MS", 5000))
     BUBBLE_HIDE_DELAY_MS   = env_int("BUBBLE_HIDE_DELAY_MS",   3500)
     BUBBLE_REVEAL_WPM      = env_int("BUBBLE_REVEAL_WPM",      170)
     BUBBLE_HOLD_REVEAL_WPM = env_int("BUBBLE_HOLD_REVEAL_WPM", 480)
@@ -253,7 +256,7 @@ def reload() -> None:
     """Re-read .env and update every module-level variable in-place.
 
     Call this after writing a new .env so changes take effect without a restart.
-    Note: UI size constants (BUBBLE_WIDTH, DOLL_SIZE, …) require widget recreation
+    Note: UI size constants (BUBBLE_WIDTH, ICON_SIZE, …) require widget recreation
     and only fully apply after a restart; everything else is live.
     """
     load_dotenv(_ENV_FILE, override=True)

@@ -16,7 +16,7 @@ $RequirementsFile = "requirements.txt"
 $Spec = Join-Path $Root "packaging\$SpecName"
 $DistExe = Join-Path $Root "dist\$AppName\$AppName.exe"
 $IconPath = Join-Path $Root "assets\app.ico"
-$DollIconPng = Join-Path $Root "assets\doll\idle.png"
+$IconSourcePng = Join-Path $Root "assets\doll\idle.png"
 
 Set-Location $Root
 
@@ -137,13 +137,13 @@ if (-not $SkipInstall) {
 }
 
 if (-not (Test-Path $IconPath)) {
-    if (-not (Test-Path $DollIconPng)) {
-        throw "Cannot create exe icon because the doll source image is missing: $DollIconPng"
+    if (-not (Test-Path $IconSourcePng)) {
+        throw "Cannot create exe icon because the icon source image is missing: $IconSourcePng"
     }
-    Write-Host "Creating exe icon from doll image: $IconPath"
+    Write-Host "Creating exe icon from icon image: $IconPath"
     Invoke-CheckedPython -Python $Python -CommandArgs @(
         "-c",
-        "from pathlib import Path; from PIL import Image; src=Path(r'$DollIconPng'); dst=Path(r'$IconPath'); img=Image.open(src).convert('RGBA'); img.save(dst, format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+        "from pathlib import Path; from PIL import Image; src=Path(r'$IconSourcePng'); dst=Path(r'$IconPath'); img=Image.open(src).convert('RGBA'); img.save(dst, format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
     ) -StepName "icon generation"
 }
 

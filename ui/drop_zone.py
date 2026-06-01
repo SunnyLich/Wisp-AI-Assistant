@@ -1,11 +1,11 @@
 """
-ui/drop_zone.py -- Drag-and-drop context panel for the doll icon.
+ui/drop_zone.py -- Drag-and-drop context panel for the icon.
 
 Components:
   VanishEffect       -- particle burst animation at the cursor on drop
-  AddedContextToast  -- "Added as context!" label that fades above the doll
+  AddedContextToast  -- "Added as context!" label that fades above the icon
   ContextBadge       -- single row badge showing one queued context item (with X to remove)
-  ContextPanel       -- frameless always-on panel to the right of the doll
+  ContextPanel       -- frameless always-on panel to the right of the icon
   process_drop_mime  -- converts dropped MIME data to (name, content, type) items
 """
 from __future__ import annotations
@@ -200,9 +200,9 @@ class VanishEffect(QWidget):
 # ---------------------------------------------------------------------------
 
 class AddedContextToast(QWidget):
-    """'Added as context!' label that appears above the doll and fades out."""
+    """'Added as context!' label that appears above the icon and fades out."""
 
-    def __init__(self, doll_pos: QPoint, doll_size: int):
+    def __init__(self, icon_pos: QPoint, icon_size: int):
         super().__init__(None)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -224,9 +224,9 @@ class AddedContextToast(QWidget):
         lbl.adjustSize()
         self.resize(lbl.size())
 
-        # Centre above the doll
-        x = doll_pos.x() + doll_size // 2 - self.width() // 2
-        y = doll_pos.y() - self.height() - 8
+        # Centre above the icon
+        x = icon_pos.x() + icon_size // 2 - self.width() // 2
+        y = icon_pos.y() - self.height() - 8
         self.move(x, y)
 
         self._effect = QGraphicsOpacityEffect(self)
@@ -385,7 +385,7 @@ class ContextBadge(QWidget):
 
 class ContextPanel(QWidget):
     """
-    Frameless always-on-top panel to the right of the doll.
+    Frameless always-on-top panel to the right of the icon.
     Shows a translucent drop-zone placeholder when empty,
     or stacked ContextBadge widgets (each with an X to remove) when items are queued.
     """
@@ -401,8 +401,8 @@ class ContextPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self._badges: list[ContextBadge] = []
         self._on_remove_item: Callable[[int], None] | None = None
-        self._doll_pos  = QPoint(0, 0)
-        self._doll_size = 80
+        self._icon_pos  = QPoint(0, 0)
+        self._icon_size = 80
         self._drag_active = False
         self.setFixedWidth(_BADGE_W)
         self.resize(_BADGE_W, _ZONE_H)
@@ -434,9 +434,9 @@ class ContextPanel(QWidget):
         self._relayout()
         self._update_visibility()
 
-    def reposition(self, doll_pos: QPoint, doll_size: int) -> None:
-        self._doll_pos  = doll_pos
-        self._doll_size = doll_size
+    def reposition(self, icon_pos: QPoint, icon_size: int) -> None:
+        self._icon_pos  = icon_pos
+        self._icon_size = icon_size
         self._relayout()
         self._update_visibility()
 
@@ -500,11 +500,11 @@ class ContextPanel(QWidget):
             badge.move(0, i * (_BADGE_H + _BADGE_GAP))
             badge.show()
 
-        x = self._doll_pos.x() + self._doll_size // 2 - _BADGE_W // 2
+        x = self._icon_pos.x() + self._icon_size // 2 - _BADGE_W // 2
         if not self._badges:
-            y = self._doll_pos.y() + self._doll_size // 2 - panel_h // 2
+            y = self._icon_pos.y() + self._icon_size // 2 - panel_h // 2
         else:
-            y = self._doll_pos.y() + self._doll_size // 2 - _ZONE_H // 2
+            y = self._icon_pos.y() + self._icon_size // 2 - _ZONE_H // 2
         self.move(x, y)
         self.update()
 

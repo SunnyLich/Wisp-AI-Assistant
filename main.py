@@ -4,7 +4,7 @@ main.py -" Entry point for Wisp.
 Flow:
   Ctrl+E â†' IntentOverlay appears (WASD picker)
   WASD key â†' capture input â†' LLM stream â†' TTS stream â†' audio out
-  Click doll â†' show full reply popup
+  Click icon â†' show full reply popup
 """
 import sys
 import os
@@ -77,7 +77,7 @@ from core.query_pipeline import GenerationCounter, ContextInputs, build_context
 from core.system.app_platform import configure_windows_app_identity
 from core.system.paths import ASSETS_DIR
 from core.memory_store.commands import extract_remember_fact
-from ui.overlay import DollOverlay, OverlaySignals
+from ui.overlay import IconOverlay, OverlaySignals
 from ui.intent_overlay import IntentOverlay
 from ui.snip_overlay import SnipOverlay
 from ui.chat_window import ChatWindow
@@ -110,7 +110,7 @@ class App:
             self._qt.setWindowIcon(_app_icon)
         apply_app_theme(self._qt)
         self._signals = OverlaySignals()
-        self._overlay = DollOverlay(self._signals)
+        self._overlay = IconOverlay(self._signals)
         self._hotkeys = self._build_hotkey_listener()
         self._context_buffer: list[str] = []       # accumulated via Alt+Q
         self._context_buffer_lock = threading.Lock()
@@ -144,7 +144,7 @@ class App:
         self._signals.show_memory_viewer.connect(self._open_memory_viewer)
         self._signals.context_items_dropped.connect(self._on_context_items_dropped)
         self._signals.remove_dropped_item.connect(self._on_remove_dropped_item)
-        self._overlay.set_click_handler(self._on_doll_click)
+        self._overlay.set_click_handler(self._on_icon_click)
 
         # Pre-warm connections in background
         threading.Thread(target=self._prewarm, daemon=True).start()
@@ -180,8 +180,8 @@ class App:
     def _set_idle(self) -> None:
         """Return the overlay to its resting state."""
         self._signals.set_state.emit("idle")
-        if config.DOLL_AUTO_HIDE:
-            self._signals.hide_doll.emit()
+        if config.ICON_AUTO_HIDE:
+            self._signals.hide_icon.emit()
 
     def _finish_idle(self, gen_id: int) -> None:
         """Return to idle only if this generation is still the active one."""
@@ -189,7 +189,7 @@ class App:
             self._set_idle()
 
     def run(self):
-        if not config.DOLL_AUTO_HIDE:
+        if not config.ICON_AUTO_HIDE:
             self._overlay.show()
         self._overlay_hwnd = int(self._overlay.winId())  # safe: Qt main thread
         self._hotkeys.start()
@@ -241,7 +241,7 @@ class App:
         print("[main] Context buffer cleared.")
 
     def _on_context_items_dropped(self, items: list) -> None:
-        """Called when files/text are dropped onto the doll icon."""
+        """Called when files/text are dropped onto the icon."""
         with self._drop_context_lock:
             self._drop_context_items.extend(items)
         print(f"[main] Drop context: {len(items)} item(s) queued.")
@@ -293,8 +293,8 @@ class App:
         fg_hwnd = get_foreground_window()
         target_hwnd = fg_hwnd if paste_back else 0
 
-        if config.DOLL_AUTO_HIDE:
-            self._signals.show_doll.emit()
+        if config.ICON_AUTO_HIDE:
+            self._signals.show_icon.emit()
 
         # Capture selected text NOW while the original window still has focus;
         # get_selected_text() synthesises Ctrl+C so it must precede steal_foreground().
@@ -351,8 +351,8 @@ class App:
         }
         self._pending_paste_target = 0
 
-        if config.DOLL_AUTO_HIDE:
-            self._signals.show_doll.emit()
+        if config.ICON_AUTO_HIDE:
+            self._signals.show_icon.emit()
 
         audio.play_filler()
         self._signals.set_state.emit("listening")
@@ -374,8 +374,8 @@ class App:
         audio.stop()  # cut off any reply still being spoken before recording
         self._pending_context = context_fetcher.fetch_and_save()
         stt.start_recording()
-        if config.DOLL_AUTO_HIDE:
-            self._signals.show_doll.emit()
+        if config.ICON_AUTO_HIDE:
+            self._signals.show_icon.emit()
         self._signals.set_state.emit("listening")
         self._signals.bubble_listening.emit()
 
@@ -565,7 +565,7 @@ class App:
             buffered_items = self._context_buffer.copy()
             self._context_buffer.clear()
 
-        # Consume dropped context items (files/images/text dragged onto the doll)
+        # Consume dropped context items (files/images/text dragged onto the icon)
         with self._drop_context_lock:
             drop_items = self._drop_context_items.copy()
             self._drop_context_items.clear()
@@ -734,7 +734,7 @@ class App:
         threading.Thread(target=tts_consumer, daemon=True).start()
 
     # ------------------------------------------------------------------
-    # Doll click â†' show popup
+    # Icon click â†' show popup
     # ------------------------------------------------------------------
 
     def _open_or_raise_chat(self, auto_message: str | None = None, force_new: bool = False) -> None:
@@ -754,7 +754,7 @@ class App:
         self._chat_window.destroyed.connect(lambda: setattr(self, "_chat_window", None))
         self._chat_window.show()
 
-    def _on_doll_click(self, event):
+    def _on_icon_click(self, event):
         auto_msg = config.CHAT_ELABORATE_PROMPT if config.CHAT_AUTO_ELABORATE and self._all_conversations else None
         self._open_or_raise_chat(auto_message=auto_msg)
 
@@ -807,6 +807,14 @@ def main():
             ctypes.windll.kernel32.SetConsoleCtrlHandler(None, True)
         except Exception:
             pass
+
+    # Enforce a single running Wisp. The lock is shared across dev runs and
+    # installed builds, so a second launch exits before doing any work.
+    from core.system.single_instance import acquire
+    if not acquire():
+        log.warning("Another instance of Wisp is already running; exiting.")
+        print("[main] Wisp is already running. Exiting.")
+        sys.exit(0)
 
     app = App()
     try:

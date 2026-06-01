@@ -3,7 +3,7 @@ prototype_latency.py — First-build latency loop test.
 
 Tests the critical path: capture → LLM stream → TTS stream → audio out.
 No UI. Measures real-world numbers so you know if the product premise holds
-before investing in the doll UI.
+before investing in the icon UI.
 
 Usage:
     python prototype_latency.py --text "What is a kernel?"

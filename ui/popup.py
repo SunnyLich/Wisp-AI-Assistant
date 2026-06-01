@@ -1,7 +1,7 @@
 ﻿"""
 ui/popup.py — Transient text popup for the full LLM reply.
 
-Appears near the doll, auto-dismisses after a timeout, or on click.
+Appears near the icon, auto-dismisses after a timeout, or on click.
 """
 from __future__ import annotations
 import config
@@ -13,7 +13,7 @@ from PySide6.QtGui import QFont
 POPUP_WIDTH = 320
 POPUP_MAX_HEIGHT = 240
 AUTO_DISMISS_MS = 12_000   # disappears after 12 s if not clicked
-DOLL_MARGIN = 20           # gap between popup and doll, px
+ICON_MARGIN = 20           # gap between popup and icon, px
 
 
 class TextPopup(QWidget):
@@ -32,7 +32,7 @@ class TextPopup(QWidget):
         self.setFixedWidth(POPUP_WIDTH)
 
         self._build_ui(text)
-        self._position_near_doll()
+        self._position_near_icon()
 
         # Auto-dismiss
         self._timer = QTimer(self)
@@ -57,11 +57,11 @@ class TextPopup(QWidget):
         layout.addWidget(label)
         self.adjustSize()
 
-    def _position_near_doll(self):
+    def _position_near_icon(self):
         screen = QApplication.primaryScreen().availableGeometry()
-        # Place above the doll (bottom-right)
+        # Place above the icon (bottom-right)
         x = screen.width() - POPUP_WIDTH - 20
-        y = screen.height() - config.DOLL_SIZE - POPUP_MAX_HEIGHT - DOLL_MARGIN
+        y = screen.height() - config.ICON_SIZE - POPUP_MAX_HEIGHT - ICON_MARGIN
         self.move(x, y)
 
     def mousePressEvent(self, event):

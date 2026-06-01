@@ -62,6 +62,11 @@ FILLER_AUDIO_DIR = ASSETS_DIR / "filler"
 # rebuilds because it lives under user-data, not _MEIPASS.
 USER_FILLER_AUDIO_DIR = _user_data_dir() / "filler"
 
+# Single-instance lock. Lives in the user-data dir (not the repo / bundle) so a
+# dev run (`python main.py`) and an installed build contend for the *same* lock —
+# only one Wisp can be active at a time, regardless of how it was launched.
+SINGLE_INSTANCE_LOCK = _user_data_dir() / "wisp.lock"
+
 MEMORY_DIR        = REPO_ROOT / "memory"
 AGENT_RUNS_DIR    = MEMORY_DIR / "agent_runs"
 TOOLS_INSTALLED_DIR = REPO_ROOT / "tools" / "installed"

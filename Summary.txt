@@ -1,6 +1,6 @@
 Wisp — Summary
 Product concept
-A small persistent dolltoyicon on the desktop, not a window. Invoked by hotkey, delivers a short verbal answer plus inline text, then disappears. Click the icon for the full text reply. Cloud-based LLM. Windows-first (Raycast is Mac-only — real gap). Utility-first positioning, not companion-first.
+A small persistent icon on the desktop, not a window. Invoked by hotkey, delivers a short verbal answer plus inline text, then disappears. Click the icon for the full text reply. Cloud-based LLM. Windows-first (Raycast is Mac-only — real gap). Utility-first positioning, not companion-first.
 Target user
 General computer users, not devs. People who get errors, see things they don't understand, want quick explanations without context-switching to ChatGPT.
 Frictions targeted
@@ -14,7 +14,7 @@ Key UX moves
 Intent shortcuts. ctrl+u + arrow keys map to common query types what is this, how do I fix this, etc. Like vim verbs for AI queries — skips prompt-writing for the most common cases.
 Input modalities. Highlighted text and screen snippets (Win+Shift+S style) as primary inputs.
 Filler audio. Short canned phrases (hm..., let me think..., about that...) play immediately on hotkey to mask LLMTTS latency and add personality. Must be under 1s and overlap with real response generating in the background — otherwise it adds time instead of hiding it.
-Visual feedback on the doll. The doll animates the moment the hotkey is pressed (eyes look up, bounce, etc.). Perceived latency is mostly about did the system register me, not raw response time.
+Visual feedback on the icon. The icon animates the moment the hotkey is pressed (eyes look up, bounce, etc.). Perceived latency is mostly about did the system register me, not raw response time.
 Personality toggle. Cutepersonality mode opt-in; utility default for the hate-it crowd.
 
 Technical decisions
@@ -25,7 +25,7 @@ Pre-cached filler audio as local wav files. Plays instantly on hotkey for sub-50
 Latency budget. 1.5-2s end-to-end to first real audio is the target. 3s is the ceiling — above that the friction is back.
 
 First build priority
-Prototype the latency loop before any UI hotkey → screen capture → LLM → TTS → audio out. Measure actual numbers on the chosen stack. If you can't hit under 3s with no UI in the way, the product premise needs revisiting before sinking weeks into the doll. If you can hit 1.5-2s, the rest is execution.
+Prototype the latency loop before any UI hotkey → screen capture → LLM → TTS → audio out. Measure actual numbers on the chosen stack. If you can't hit under 3s with no UI in the way, the product premise needs revisiting before sinking weeks into the icon. If you can hit 1.5-2s, the rest is execution.
 Strategic positioning
 Differentiation against Copilot rests on model quality (ClaudeGPT vs Copilot's reputation), Windows-first availability, and voice-first short answers. Not a moat against Microsoft — they could license a better model tomorrow — but a real wedge while it works. Brand reputation (Copilot bad, this good) can outlast actual model parity.
 Deferred

@@ -1,8 +1,8 @@
 ﻿"""
-ui/bubble.py — Live speech bubble next to the doll icon.
+ui/bubble.py — Live speech bubble next to the icon.
 
 Shows the last 2 word-wrapped lines of streaming LLM text.
-Positioned to the left of the doll, tail points right toward it.
+Positioned to the left of the icon, tail points right toward it.
 Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
@@ -21,9 +21,9 @@ _TAIL_W       = 12
 _TAIL_H       = 14
 _RADIUS       = 10
 _FONT_SIZE    = 10
-_DOLL_W       = 80
-_DOLL_H       = 80
-_DOLL_MARGIN  = 20
+_ICON_W       = 80
+_ICON_H       = 80
+_ICON_MARGIN  = 20
 _HIDE_DELAY    = 3_500   # fallback ms after finish() before hiding
 
 
@@ -44,7 +44,7 @@ def _color(value: str, fallback: QColor) -> QColor:
 
 
 class SpeechBubble(QWidget):
-    """Compact always-on-top widget that streams LLM text next to the doll."""
+    """Compact always-on-top widget that streams LLM text next to the icon."""
 
     def __init__(self):
         super().__init__(None)
@@ -94,12 +94,12 @@ class SpeechBubble(QWidget):
         self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
 
-        # Position: left of doll, vertically centered with it
-        doll_sz = config.DOLL_SIZE
-        doll_x = screen.x() + screen.width()  - doll_sz - _DOLL_MARGIN
-        doll_y = screen.y() + screen.height() - doll_sz - _DOLL_MARGIN
-        bx = doll_x - self._bubble_w - _TAIL_W - 6
-        by = doll_y + (config.DOLL_SIZE - self._bubble_h) // 2
+        # Position: left of icon, vertically centered with it
+        icon_sz = config.ICON_SIZE
+        icon_x = screen.x() + screen.width()  - icon_sz - _ICON_MARGIN
+        icon_y = screen.y() + screen.height() - icon_sz - _ICON_MARGIN
+        bx = icon_x - self._bubble_w - _TAIL_W - 6
+        by = icon_y + (config.ICON_SIZE - self._bubble_h) // 2
         self.move(bx, by)
 
         # Dot animation (while thinking)
@@ -160,12 +160,12 @@ class SpeechBubble(QWidget):
         if self._hide_callback:
             self._hide_callback()
 
-    def doll_pos_for_bubble(self, bubble_pos, doll_size: int):
-        """Given this bubble's top-left position, return where the doll icon should sit."""
+    def icon_pos_for_bubble(self, bubble_pos, icon_size: int):
+        """Given this bubble's top-left position, return where the icon should sit."""
         from PySide6.QtCore import QPoint
-        doll_x = bubble_pos.x() + self._bubble_w + _TAIL_W + 6
-        doll_y = bubble_pos.y() - (doll_size - self._bubble_h) // 2
-        return QPoint(doll_x, doll_y)
+        icon_x = bubble_pos.x() + self._bubble_w + _TAIL_W + 6
+        icon_y = bubble_pos.y() - (icon_size - self._bubble_h) // 2
+        return QPoint(icon_x, icon_y)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -219,6 +219,7 @@ class SpeechBubble(QWidget):
         self._last_chunk_ended_with_space = True
         self._pending_words = []
         self._revealed_count = 0
+        self._finishing = False
         self._reveal_mode = False
         self._audio_started = False
         self._pre_audio_timestamps = []
@@ -288,6 +289,14 @@ class SpeechBubble(QWidget):
             self._revealed_count += 1
         self._rewrap()
         self.update()
+        # If finish() is waiting on the reveal to drain (WPM or timestamp mode),
+        # start the hide countdown only once the final word has been highlighted.
+        if self._finishing and self._revealed_count >= len(self._pending_words):
+            self._reveal_timer.stop()
+            self._finishing = False
+            self._reveal_mode = False
+            self._timestamp_mode = False
+            self._hide_timer.start()
 
     def append_chunk(self, chunk: str, is_thought: bool = False):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
@@ -331,11 +340,19 @@ class SpeechBubble(QWidget):
         """Called when TTS playback finishes; reveals remaining words then hides."""
         self._dot_timer.stop()
         if self._timestamp_mode:
-            # Timestamp mode: all words already scheduled via QTimer.singleShot.
+            # Timestamp mode: words are highlighted by per-word QTimer.singleShot
+            # callbacks that may still be pending when playback reports done. Hold
+            # the bubble (and the icon, hidden in lockstep) until the last word has
+            # actually been highlighted, then start the hide countdown — otherwise
+            # a fixed countdown could fire mid-highlight and the icon would vanish
+            # before the spoken text finished.
             self._reveal_timer.stop()
-            self._reveal_mode = False
-            self._timestamp_mode = False
-            self._hide_timer.start()
+            if self._revealed_count < len(self._pending_words):
+                self._finishing = True   # _advance_highlight starts the timer when drained
+            else:
+                self._reveal_mode = False
+                self._timestamp_mode = False
+                self._hide_timer.start()
         elif self._revealed_count < len(self._pending_words):
             # WPM timer still has words to show — let it finish naturally, then hide.
             self._finishing = True
@@ -371,7 +388,7 @@ class SpeechBubble(QWidget):
         self.hide()
 
     def show_notice(self, text: str, *, timeout_ms: int = 12000):
-        """Show a compact non-streaming notice next to the doll icon."""
+        """Show a compact non-streaming notice next to the icon."""
         self._hide_timer.stop()
         self._dot_timer.stop()
         self._reveal_timer.stop()
@@ -428,12 +445,10 @@ class SpeechBubble(QWidget):
             self._speed_callback(enabled)
 
     def _reveal_next_word(self):
+        # WPM fallback tick. _advance_highlight() also starts the hide countdown
+        # once the reveal drains while _finishing, so we don't duplicate it here.
         if self._revealed_count < len(self._pending_words):
             self._advance_highlight()
-        if self._finishing and self._revealed_count >= len(self._pending_words):
-            self._reveal_timer.stop()
-            self._finishing = False
-            self._hide_timer.start()
         # Timer keeps running until finish() is called (which sets _finishing)
 
     def _rewrap(self):

@@ -22,7 +22,7 @@ and local memory.
   parsing for LLM requests.
 - `core/memory_store/` contains memory storage and explicit memory-command
   parsing.
-- `ui/` contains PyQt widgets and dialogs: the doll overlay, chat window,
+- `ui/` contains PyQt widgets and dialogs: the icon overlay, chat window,
   settings, intent picker, snip overlay, memory viewer, and agent task UI.
 - `ui/agent/`, `ui/settings_panel/`, and `ui/shared/` group the largest UI
   domains and shared widget helpers.
