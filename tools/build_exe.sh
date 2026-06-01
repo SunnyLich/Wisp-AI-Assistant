@@ -5,7 +5,6 @@ CLEAN=false
 SKIP_INSTALL=false
 YES=false
 USE_GLOBAL_PYTHON=false
-LITE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -13,7 +12,6 @@ while [[ $# -gt 0 ]]; do
         --skip-install) SKIP_INSTALL=true ;;
         --yes|-y)   YES=true ;;
         --use-global-python) USE_GLOBAL_PYTHON=true ;;
-        --lite)     LITE=true ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
     shift
@@ -24,15 +22,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENV_DIR="$ROOT/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"
 
-if $LITE; then
-    SPEC_NAME="WispLiteLinux.spec"
-    APP_NAME="WispLite"
-    REQUIREMENTS_FILE="requirements-light.txt"
-else
-    SPEC_NAME="WispLinux.spec"
-    APP_NAME="Wisp"
-    REQUIREMENTS_FILE="requirements.txt"
-fi
+SPEC_NAME="WispLinux.spec"
+APP_NAME="Wisp"
+REQUIREMENTS_FILE="requirements.txt"
 
 SPEC="$ROOT/packaging/$SPEC_NAME"
 DIST_BIN="$ROOT/dist/$APP_NAME/$APP_NAME"

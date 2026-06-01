@@ -23,25 +23,6 @@ The built app lands at:
 dist\Wisp\Wisp.exe
 ```
 
-For a smaller/faster build without local Whisper STT, vector-memory embeddings,
-document readers, Copilot SDK, or TTS provider SDKs:
-
-```powershell
-.\tools\build_exe.ps1 -Clean -Lite
-```
-
-or double-click/run:
-
-```bat
-.\tools\build_exe_light.bat
-```
-
-The light build lands at:
-
-```text
-dist\WispLite\WispLite.exe
-```
-
 Use `-SkipInstall` if dependencies are already installed:
 
 ```powershell

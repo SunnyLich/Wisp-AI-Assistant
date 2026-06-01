@@ -2,8 +2,7 @@ param(
     [switch]$Clean,
     [switch]$SkipInstall,
     [switch]$Yes,
-    [switch]$UseGlobalPython,
-    [switch]$Lite
+    [switch]$UseGlobalPython
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,9 +10,9 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $VenvDir = Join-Path $Root ".venv"
 $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
-$SpecName = if ($Lite) { "WispLite.spec" } else { "Wisp.spec" }
-$AppName = if ($Lite) { "WispLite" } else { "Wisp" }
-$RequirementsFile = if ($Lite) { "requirements-light.txt" } else { "requirements.txt" }
+$SpecName = "Wisp.spec"
+$AppName = "Wisp"
+$RequirementsFile = "requirements.txt"
 $Spec = Join-Path $Root "packaging\$SpecName"
 $DistExe = Join-Path $Root "dist\$AppName\$AppName.exe"
 $IconPath = Join-Path $Root "assets\app.ico"
