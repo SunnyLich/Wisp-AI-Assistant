@@ -76,10 +76,17 @@ class LlmFallbackTests(unittest.TestCase):
     def test_text_route_probe_uses_openai_compatible_client(self):
         calls = []
 
+        class FakeStream:
+            def __enter__(self):
+                return iter([object()])
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
         class FakeCompletions:
             def create(self, **kwargs):
                 calls.append(kwargs)
-                return object()
+                return FakeStream()
 
         class FakeChat:
             completions = FakeCompletions()
@@ -98,7 +105,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("LLM route OK", message)
         self.assertEqual(calls[0]["model"], "gemini-2.5-flash")
-        self.assertFalse(calls[0]["stream"])
+        self.assertTrue(calls[0]["stream"])
 
     def test_vision_route_probe_uses_test_image(self):
         calls = []

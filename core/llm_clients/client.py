@@ -848,13 +848,23 @@ def _get_vision_anthropic_client():
     return _vision_anthropic_client
 
 
+def _run_openai_compat_probe(client, *, model: str, messages: list) -> None:
+    with client.chat.completions.create(
+        model=model,
+        messages=messages,
+        stream=True,
+        max_tokens=8,
+    ) as stream:
+        for _chunk in stream:
+            break
+
+
 def _probe_openai_compat_route(provider: str, model: str, image_base64: str | None = None) -> None:
     client = _dynamic_openai_client(provider)
-    client.chat.completions.create(
+    _run_openai_compat_probe(
+        client,
         model=model,
         messages=_build_openai_messages("Reply with OK.", image_base64),
-        stream=False,
-        max_tokens=8,
     )
 
 
@@ -876,11 +886,10 @@ def _probe_openai_compat_route_with_credentials(
         client = OpenAI(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
     else:
         client = OpenAI(api_key=api_key)
-    client.chat.completions.create(
+    _run_openai_compat_probe(
+        client,
         model=model,
         messages=_build_openai_messages("Reply with OK.", image_base64),
-        stream=False,
-        max_tokens=8,
     )
 
 

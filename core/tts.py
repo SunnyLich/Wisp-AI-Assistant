@@ -170,7 +170,12 @@ def _stream_cartesia(text_chunks: Iterable[str],
 # ------------------------------------------------------------------
 
 def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
-    from elevenlabs.client import ElevenLabs  # type: ignore
+    try:
+        from elevenlabs.client import ElevenLabs  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "ElevenLabs support is not installed in this build. Enable Windows long paths and reinstall dependencies to bundle it."
+        ) from exc
 
     client = ElevenLabs(api_key=config.ELEVENLABS_API_KEY)
 

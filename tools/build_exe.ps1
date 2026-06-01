@@ -24,6 +24,37 @@ function Test-Yes($Value) {
     return $Value -match '^(y|yes)$'
 }
 
+function Invoke-CheckedPython {
+    param(
+        [string]$Python,
+        [string[]]$CommandArgs,
+        [string]$StepName
+    )
+
+    $ArgumentList = @($CommandArgs | Where-Object { $_ -ne $null -and $_ -ne "" })
+    $Process = Start-Process -FilePath $Python -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru
+    if ($Process.ExitCode -ne 0) {
+        throw "$StepName failed with exit code $($Process.ExitCode)."
+    }
+}
+
+function Test-LongPathRisk {
+    param([string]$BaseDir)
+
+    $KnownLongWheelPath = Join-Path $BaseDir "Lib\site-packages\elevenlabs\pronunciation_dictionaries\rules\types\body_set_rules_on_the_pronunciation_dictionary_v_1_pronunciation_dictionaries_pronunciation_dictionary_id_set_rules_post_rules_item.py"
+    return $KnownLongWheelPath.Length -ge 240
+}
+
+function New-BuildRequirementsFile {
+    param([string]$SourcePath)
+
+    $TempPath = Join-Path $env:TEMP "wisp-build-requirements.txt"
+    Get-Content $SourcePath |
+        Where-Object { $_ -notmatch '^\s*elevenlabs\b' } |
+        Set-Content -Path $TempPath -Encoding ascii
+    return $TempPath
+}
+
 if (-not $UseGlobalPython) {
     if (-not (Test-Path $VenvPython)) {
         $CreateVenv = $false
@@ -40,24 +71,21 @@ if (-not $UseGlobalPython) {
             throw "Build cancelled: project .venv is required unless you pass -UseGlobalPython."
         }
 
-        if (Get-Command py.exe -ErrorAction SilentlyContinue) {
-            & py -3 -m venv $VenvDir
-        } else {
+        if (Get-Command python -ErrorAction SilentlyContinue) {
             & python -m venv $VenvDir
+        } elseif (Get-Command py.exe -ErrorAction SilentlyContinue) {
+            & py -m venv $VenvDir
+        } else {
+            throw "Could not find python or py.exe to create the project virtual environment."
+        }
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) {
+            throw "Failed to create project virtual environment at $VenvDir."
         }
     }
     $Python = $VenvPython
 } else {
     Write-Host "Using global Python because -UseGlobalPython was provided."
     $Python = "python"
-}
-
-if (-not (Test-Path $IconPath)) {
-    if (-not (Test-Path $DollIconPng)) {
-        throw "Cannot create exe icon because the doll source image is missing: $DollIconPng"
-    }
-    Write-Host "Creating exe icon from doll image: $IconPath"
-    & $Python -c "from pathlib import Path; from PIL import Image; src=Path(r'$DollIconPng'); dst=Path(r'$IconPath'); img=Image.open(src).convert('RGBA'); img.save(dst, format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 }
 
 if (Test-Path $DistExe) {
@@ -86,23 +114,46 @@ if (-not $SkipInstall) {
     }
 
     if ($InstallDeps) {
-        & $Python -m pip install --upgrade pip
-        & $Python -m pip install -r $RequirementsFile -r requirements-build.txt
+        $BuildRequirements = $RequirementsFile
+        $FilteredRequirements = $null
+        if ((-not $UseGlobalPython) -and (Test-LongPathRisk $VenvDir)) {
+            Write-Host "The project path is long enough to hit Windows path limits while installing ElevenLabs."
+            Write-Host "Building without ElevenLabs support in this environment; enable long paths if you need that provider bundled."
+            $FilteredRequirements = New-BuildRequirementsFile -SourcePath $RequirementsFile
+            $BuildRequirements = $FilteredRequirements
+        }
+
+        Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "--upgrade", "pip") -StepName "pip upgrade"
+        try {
+            Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "-r", $BuildRequirements, "-r", "requirements-build.txt") -StepName "dependency install"
+        } finally {
+            if ($FilteredRequirements -and (Test-Path $FilteredRequirements)) {
+                Remove-Item -LiteralPath $FilteredRequirements -Force -ErrorAction SilentlyContinue
+            }
+        }
     } else {
         Write-Host "Skipping dependency install. Use -Yes to install automatically or -SkipInstall to suppress this prompt."
     }
 }
 
+if (-not (Test-Path $IconPath)) {
+    if (-not (Test-Path $DollIconPng)) {
+        throw "Cannot create exe icon because the doll source image is missing: $DollIconPng"
+    }
+    Write-Host "Creating exe icon from doll image: $IconPath"
+    Invoke-CheckedPython -Python $Python -CommandArgs @(
+        "-c",
+        "from pathlib import Path; from PIL import Image; src=Path(r'$DollIconPng'); dst=Path(r'$IconPath'); img=Image.open(src).convert('RGBA'); img.save(dst, format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+    ) -StepName "icon generation"
+}
+
 try {
-    & $Python -m PyInstaller --version | Out-Null
+    Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "PyInstaller", "--version") -StepName "PyInstaller version check"
 } catch {
     throw "PyInstaller is not installed in $Python. Run without -SkipInstall, or run: $Python -m pip install -r requirements-build.txt"
 }
 
-& $Python -m PyInstaller --noconfirm $Spec
-if ($LASTEXITCODE -ne 0) {
-    throw "PyInstaller failed with exit code $LASTEXITCODE."
-}
+Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "PyInstaller", "--noconfirm", $Spec) -StepName "PyInstaller build"
 
 # Seed %APPDATA%\Wisp\.env with the repo's .env if the user has no settings yet.
 # Settings are stored there so they survive rebuilds and updates.

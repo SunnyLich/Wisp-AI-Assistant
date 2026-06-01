@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
-import PyQt6
+import PySide6
 from PyInstaller.utils.hooks import collect_all
 
 # LiteParse ships a loose pdfium.dll that its native extension loads at
@@ -10,15 +10,15 @@ from PyInstaller.utils.hooks import collect_all
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 
 ROOT = Path(SPECPATH).resolve().parent
-PYQT6_QT_BIN = Path(PyQt6.__file__).resolve().parent / "Qt6" / "bin"
+PYSIDE6_ROOT = Path(PySide6.__file__).resolve().parent
 QT_RUNTIME_DLLS = [
-    (str(path), "PyQt6/Qt6/bin")
+    (str(path), "PySide6")
     for pattern in (
         "concrt*.dll",
         "msvcp140*.dll",
         "vcruntime140*.dll",
     )
-    for path in PYQT6_QT_BIN.glob(pattern)
+    for path in PYSIDE6_ROOT.glob(pattern)
 ]
 
 
