@@ -11,7 +11,7 @@ import os
 import threading
 import logging
 import traceback
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
 
 _IS_WIN = sys.platform == "win32"
@@ -125,6 +125,7 @@ class App:
         self._memory_viewer = None
         self._all_conversations: list[dict] = []  # each item = {"messages": [...], "context": str}
         self._overlay_hwnd: int = 0          # cached after first show
+        self._hotkey_warning_shown = False
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
         self._pending_caller_idx: int = 0    # which CALLER_ROWS entry triggered the current picker
         self._pending_context_policy: dict | None = None
@@ -209,9 +210,28 @@ class App:
         if not config.ICON_AUTO_HIDE:
             self._overlay.show()
         self._overlay_hwnd = int(self._overlay.winId())  # safe: Qt main thread
-        self._hotkeys.start()
+        if not self._hotkeys.start():
+            self._warn_hotkeys_unavailable()
         print(f"[main] Wisp running. Callers: {[c['hotkey'] for c in config.CALLER_ROWS]}")
         sys.exit(self._qt.exec())
+
+    def _warn_hotkeys_unavailable(self) -> None:
+        if self._hotkey_warning_shown:
+            return
+        self._hotkey_warning_shown = True
+        if sys.platform == "darwin":
+            QMessageBox.warning(
+                self._overlay,
+                "Hotkeys unavailable",
+                "Global hotkeys are unavailable because macOS Accessibility access is not enabled for Wisp.\n\n"
+                "Open System Settings > Privacy & Security > Accessibility and allow Wisp, then relaunch the app.",
+            )
+        else:
+            QMessageBox.warning(
+                self._overlay,
+                "Hotkeys unavailable",
+                "Global hotkeys could not be started in this session. Check the app log for details.",
+            )
 
     # ------------------------------------------------------------------
     # Pre-warm
@@ -237,8 +257,10 @@ class App:
         if self._hotkey_signature() != before:
             self._hotkeys.stop()
             self._hotkeys = self._build_hotkey_listener()
-            self._hotkeys.start()
-            print("[main] Hotkeys changed — listener re-registered.")
+            if self._hotkeys.start():
+                print("[main] Hotkeys changed — listener re-registered.")
+            else:
+                self._warn_hotkeys_unavailable()
         self._overlay.apply_settings()
         apply_app_theme(self._qt)
         print("[main] Config reloaded.")

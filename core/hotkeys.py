@@ -22,6 +22,23 @@ import config
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
 
+
+def _macos_accessibility_enabled() -> bool:
+    if not _IS_MAC:
+        return True
+    try:
+        import ctypes
+        import ctypes.util
+
+        app_services = ctypes.cdll.LoadLibrary(
+            ctypes.util.find_library("ApplicationServices") or "ApplicationServices"
+        )
+        app_services.AXIsProcessTrusted.restype = ctypes.c_bool
+        return bool(app_services.AXIsProcessTrusted())
+    except Exception:
+        # If the trust check is unavailable, do not block startup here.
+        return True
+
 # ---------------------------------------------------------------------------
 # Windows-only Win32 setup
 # ---------------------------------------------------------------------------
@@ -212,10 +229,13 @@ class HotkeyListener:
         self._voice_listener = None
         self._voice_key      = None
 
-    def start(self) -> None:
-        self._impl.start()
+    def start(self) -> bool:
+        started = self._impl.start()
+        if not started:
+            return False
         if config.HOTKEY_VOICE and (self._on_voice_start or self._on_voice_stop):
             self._start_voice_listener()
+        return True
 
     def stop(self) -> None:
         self._impl.stop()
@@ -279,7 +299,7 @@ class _Win32Impl:
         self._pump_ready = threading.Event()
         self._pump_thread: threading.Thread | None = None
 
-    def start(self) -> None:
+    def start(self) -> bool:
         self._pump_thread = threading.Thread(
             target=self._message_pump,
             daemon=True,
@@ -287,6 +307,7 @@ class _Win32Impl:
         )
         self._pump_thread.start()
         self._pump_ready.wait(timeout=2.0)
+        return True
 
     def stop(self) -> None:
         if self._pump_tid:
@@ -335,8 +356,12 @@ class _PynputImpl:
         self._hotkey_defs = hotkey_defs
         self._global_hotkeys = None
 
-    def start(self) -> None:
+    def start(self) -> bool:
         from pynput import keyboard as _kb  # type: ignore
+
+        if _IS_MAC and not _macos_accessibility_enabled():
+            print("[hotkeys] macOS Accessibility permission is required for global hotkeys.")
+            return False
 
         mapping: dict[str, Callable] = {}
         for hotkey_str, cb in self._hotkey_defs:
@@ -357,12 +382,18 @@ class _PynputImpl:
 
         if not mapping:
             print("[hotkeys] No hotkeys registered (pynput).")
-            return
+            return False
 
-        self._global_hotkeys = _kb.GlobalHotKeys(mapping)
-        self._global_hotkeys.daemon = True
-        self._global_hotkeys.start()
+        try:
+            self._global_hotkeys = _kb.GlobalHotKeys(mapping)
+            self._global_hotkeys.daemon = True
+            self._global_hotkeys.start()
+        except Exception as exc:
+            self._global_hotkeys = None
+            print(f"[hotkeys] Failed to start pynput hotkeys: {exc}")
+            return False
         print(f"[hotkeys] Registered {len(mapping)} hotkey(s) via pynput.")
+        return True
 
     def stop(self) -> None:
         if self._global_hotkeys is not None:

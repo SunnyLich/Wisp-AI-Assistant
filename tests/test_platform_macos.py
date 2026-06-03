@@ -147,6 +147,16 @@ class MacHotkeyTests(unittest.TestCase):
             ["<cmd>+<shift>+q"],
         )
 
+    def test_accessibility_check_uses_application_services_trust(self):
+        class FakeAppServices:
+            def __init__(self):
+                self.AXIsProcessTrusted = lambda: True
+                self.AXIsProcessTrusted.restype = None
+
+        with patch("ctypes.util.find_library", return_value="ApplicationServices"), \
+             patch("ctypes.cdll.LoadLibrary", return_value=FakeAppServices()):
+            self.assertTrue(self.hotkeys._macos_accessibility_enabled())
+
 
 if __name__ == "__main__":
     unittest.main()
