@@ -9,6 +9,7 @@ Two modes:
 """
 import sys
 import time
+import logging
 import pyperclip
 import mss
 import mss.tools
@@ -16,6 +17,7 @@ from PIL import Image
 import io
 
 _IS_LINUX = sys.platform.startswith("linux")
+_log = logging.getLogger("wisp.capture")
 
 
 # ------------------------------------------------------------------
@@ -117,11 +119,23 @@ def get_selected_text() -> str | None:
     Linux:   PRIMARY selection (no keypress), then Ctrl+C fallback.
     macOS:   Ctrl+C fallback.
     """
-    text = _get_selected_text_uia()
+    try:
+        text = _get_selected_text_uia()
+    except Exception:
+        _log.exception("Selected-text UIA capture failed.")
+        text = None
     if not text and _IS_LINUX:
-        text = _get_primary_selection_linux()
+        try:
+            text = _get_primary_selection_linux()
+        except Exception:
+            _log.exception("Selected-text PRIMARY capture failed.")
+            text = None
     if not text:
-        text = _get_selected_text_clipboard()
+        try:
+            text = _get_selected_text_clipboard()
+        except Exception:
+            _log.exception("Selected-text clipboard capture failed.")
+            text = None
     return text
 
 
