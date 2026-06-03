@@ -179,6 +179,21 @@ class App:
             on_voice_stop=self._on_voice_stop,
         )
 
+    @staticmethod
+    def _hotkey_signature() -> tuple:
+        """Snapshot of every hotkey binding, used to detect whether a settings
+        apply actually changed the hotkeys. Recreating the pynput listener is
+        only safe to do when something here changed — on macOS recreating it
+        while the Cocoa run loop is active trace-traps inside pynput's
+        keycode_context, so we must avoid needless restarts."""
+        return (
+            tuple(r.get("hotkey") for r in config.CALLER_ROWS),
+            config.HOTKEY_ADD_CONTEXT,
+            config.HOTKEY_CLEAR_CONTEXT,
+            config.HOTKEY_SNIP,
+            config.HOTKEY_VOICE,
+        )
+
     def _set_idle(self) -> None:
         """Return the overlay to its resting state."""
         self._signals.set_state.emit("idle")
@@ -212,14 +227,21 @@ class App:
     # ------------------------------------------------------------------
 
     def _on_settings_applied(self):
+        before = self._hotkey_signature()
         config.reload()
         tts_module.reset_connections()
-        self._hotkeys.stop()
-        self._hotkeys = self._build_hotkey_listener()
-        self._hotkeys.start()
+        # Only rebuild the global hotkey listener when a binding actually
+        # changed. Recreating it on every apply needlessly tears down and
+        # recreates pynput's keyboard listener, which trace-traps on macOS
+        # (keycode_context touches main-thread-only HIToolbox APIs).
+        if self._hotkey_signature() != before:
+            self._hotkeys.stop()
+            self._hotkeys = self._build_hotkey_listener()
+            self._hotkeys.start()
+            print("[main] Hotkeys changed — listener re-registered.")
         self._overlay.apply_settings()
         apply_app_theme(self._qt)
-        print("[main] Config reloaded and hotkeys re-registered.")
+        print("[main] Config reloaded.")
 
     # ------------------------------------------------------------------
     # Hotkey â†' show intent picker (runs in keyboard listener thread)
