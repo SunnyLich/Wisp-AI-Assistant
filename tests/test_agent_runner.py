@@ -14,6 +14,7 @@ from core.agent.runner import (
     AgentRunControl,
     AgentTaskRunner,
     AgentToolbox,
+    FileLeaseRegistry,
     PermissionDenied,
     ScopedWorkspace,
     ScopeViolation,
@@ -46,6 +47,8 @@ class DummySpec:
     report_format: str = "Summary + changed files + verification"
     agent_temperature: float = 0.0
     parallel_read_only_briefing: bool = True
+    parallel_execution: bool = False
+    max_parallel_agents: int = 4
 
 
 class ScopedWorkspaceTests(unittest.TestCase):
@@ -1133,7 +1136,7 @@ class AgentRunnerTests(unittest.TestCase):
             runner = AgentTaskRunner()
             calls: list[int] = []
 
-            def fake_call_model(_prompt, _log, *, provider=None, model=None, max_tokens=4096, temperature=0.0):
+            def fake_call_model(_prompt, _log, *, provider=None, model=None, fallbacks=None, max_tokens=4096, temperature=0.0):
                 calls.append(max_tokens)
                 return json.dumps({"thought": "Brief.", "tool_calls": [], "final": None})
 
@@ -1151,7 +1154,7 @@ class AgentRunnerTests(unittest.TestCase):
                 lambda _message: None,
             )
 
-            self.assertEqual(calls, [1536])
+            self.assertEqual(calls, [3072])
 
     def test_mutating_tools_run_under_write_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1266,11 +1269,17 @@ class AgentRunnerTests(unittest.TestCase):
 
     def test_json_repair_uses_compact_excerpt_and_small_budget(self):
         runner = AgentTaskRunner()
-        bad_response = "bad-start " + ("x" * 9000) + " bad-end"
+        # A complete protocol object (balanced braces, protocol keys) that is still
+        # unparseable (unquoted key) and large enough to force excerpting: the case
+        # a model repair call is actually meant for.
+        bad_response = (
+            '{badkey: "' + ("x" * 9000) + '", "tool_calls": [], '
+            '"status": "continue", "final": null}'
+        )
         prompts: list[str] = []
         budgets: list[int] = []
 
-        def fake_call_model(prompt, _log, *, provider=None, model=None, max_tokens=4096, temperature=0.0):
+        def fake_call_model(prompt, _log, *, provider=None, model=None, fallbacks=None, max_tokens=4096, temperature=0.0):
             prompts.append(prompt)
             budgets.append(max_tokens)
             return json.dumps({"thought": "fixed", "tool_calls": [], "final": "ok"})
@@ -1316,8 +1325,23 @@ class AgentRunnerTests(unittest.TestCase):
             with patch("core.llm_clients.client.stream_response", return_value=iter([response])) as stream_response:
                 AgentTaskRunner(log_root=logs).run(spec)
 
-            self.assertEqual(stream_response.call_args.kwargs["max_tokens"], 4096)
+            self.assertEqual(stream_response.call_args.kwargs["max_tokens"], 8192)
             self.assertEqual(stream_response.call_args.kwargs["temperature"], 0.0)
+
+    def test_zero_token_budget_passes_through_as_no_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            logs = Path(tmp) / "logs"
+            scope.mkdir()
+            spec = DummySpec(scope_folder=str(scope), max_turns=1, approval_policy="never")
+            spec.full_turn_max_tokens = 0  # "No limit (model max)"
+            response = json.dumps({"thought": "Done.", "tool_calls": [], "final": "Finished."})
+
+            with patch("core.llm_clients.client.stream_response", return_value=iter([response])) as stream_response:
+                AgentTaskRunner(log_root=logs).run(spec)
+
+            # 0 is forwarded verbatim so the client omits the cap for the provider.
+            self.assertEqual(stream_response.call_args.kwargs["max_tokens"], 0)
 
     def test_llm_call_failure_retries_instead_of_finishing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1355,6 +1379,57 @@ class AgentRunnerTests(unittest.TestCase):
         parsed = AgentTaskRunner._parse_agent_response(response)
 
         self.assertEqual(parsed["final"], "Done.")
+
+    def test_runner_extracts_json_after_unfenced_prose_with_braces(self):
+        # Gemini/Gemma emit a <thought> preamble (no fence) that contains code
+        # snippets with stray braces; the naive first-{/last-} slice grabbed those.
+        response = (
+            "<thought>The user wants a label like f\"score {n}\" rendered each frame.\n"
+            "I will read the file and patch it.</thought>\n"
+            '{"thought": "patching", "status": "continue", "next_agent": "Builder", '
+            '"reason": "implement", "tool_calls": [], "final": null}'
+        )
+
+        parsed = AgentTaskRunner._parse_agent_response(response)
+
+        self.assertEqual(parsed["next_agent"], "Builder")
+        self.assertEqual(parsed["tool_calls"], [])
+
+    def test_runner_selects_protocol_object_over_embedded_fragment(self):
+        # A reasoning preamble that quotes a lone tool-call fragment must not be
+        # mistaken for the real protocol object (which carries the protocol keys).
+        response = (
+            "I plan to message the builder, e.g. "
+            '{"name": "send_message", "arguments": {"to": "Builder"}}.\n'
+            '{"thought": "go", "status": "continue", "next_agent": "Builder", '
+            '"reason": "handoff", "tool_calls": [], "final": null}'
+        )
+
+        parsed = AgentTaskRunner._parse_agent_response(response)
+
+        self.assertEqual(parsed["status"], "continue")
+        self.assertEqual(parsed["reason"], "handoff")
+
+    def test_truncated_response_routes_to_local_fallback_without_model_call(self):
+        # A response cut off mid-JSON (unbalanced braces) must retry cheaply rather
+        # than spend a model repair call that can only guess the lost content.
+        runner = AgentTaskRunner()
+        truncated = (
+            '{"thought": "writing", "tool_calls": [{"tool": "create_file", '
+            '"args": {"path": "game.py", "content": "import pygame'
+        )
+        called = False
+
+        def fake_call_model(*_args, **_kwargs):
+            nonlocal called
+            called = True
+            return "{}"
+
+        runner._call_model = fake_call_model  # type: ignore[method-assign]
+        repaired = runner._repair_agent_response(truncated, lambda _message: None)
+
+        self.assertFalse(called)
+        self.assertEqual(AgentTaskRunner._parse_agent_response(repaired or "")["status"], "retry")
 
     def test_runner_accepts_parameters_tool_call_alias(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1425,7 +1500,7 @@ class AgentRunnerTests(unittest.TestCase):
 
             self.assertEqual(calls, 1)
             run_log = (run_dir / "run.log").read_text(encoding="utf-8")
-            self.assertIn("invalid JSON appears truncated", run_log)
+            self.assertIn("no complete protocol object to repair", run_log)
             self.assertIn("using local fallback for invalid JSON response", run_log)
 
     def test_runner_falls_back_when_json_repair_is_invalid(self):
@@ -1465,6 +1540,131 @@ class AgentRunnerTests(unittest.TestCase):
             ).run(spec)
 
             self.assertIn("cancelled", (run_dir / "run.log").read_text(encoding="utf-8").lower())
+
+
+class FileLeaseRegistryTests(unittest.TestCase):
+    def test_exclusive_acquire_blocks_other_agents_only(self):
+        leases = FileLeaseRegistry()
+
+        self.assertIsNone(leases.acquire("Alpha", "a.py"))
+        # Same agent re-acquiring its own lease is a no-op, not a conflict.
+        self.assertIsNone(leases.acquire("Alpha", "a.py"))
+        # Another agent is blocked and told who holds it.
+        self.assertEqual(leases.acquire("Beta", "a.py"), "Alpha")
+        # A disjoint file is free.
+        self.assertIsNone(leases.acquire("Beta", "b.py"))
+
+    def test_release_returns_file_to_the_pool(self):
+        leases = FileLeaseRegistry()
+        leases.acquire("Alpha", "a.py")
+        leases.release("Alpha", ["a.py"])
+
+        self.assertIsNone(leases.holder("a.py"))
+        self.assertIsNone(leases.acquire("Beta", "a.py"))
+
+    def test_release_only_affects_caller_owned_leases(self):
+        leases = FileLeaseRegistry()
+        leases.acquire("Alpha", "a.py")
+        # Beta cannot release Alpha's lease.
+        leases.release("Beta", ["a.py"])
+
+        self.assertEqual(leases.holder("a.py"), "Alpha")
+
+    def test_claim_partitions_granted_and_denied(self):
+        leases = FileLeaseRegistry()
+        leases.acquire("Alpha", "shared.py")
+        granted, denied = leases.claim("Beta", ["shared.py", "own.py"])
+
+        self.assertEqual(granted, ["own.py"])
+        self.assertEqual(denied, {"shared.py": "Alpha"})
+        self.assertEqual(sorted(leases.held_by("Beta")), ["own.py"])
+
+
+class ParallelWorkRoundTests(unittest.TestCase):
+    def _workers(self):
+        return [
+            {"name": "Alpha", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""},
+            {"name": "Beta", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""},
+        ]
+
+    def _run_round(self, scope, fake_model):
+        spec = DummySpec(scope_folder=str(scope), parallel_execution=True)
+        spec.agents = self._workers()
+        runner = AgentTaskRunner(model_callback=fake_model)
+        tools = AgentToolbox(ScopedWorkspace(scope), AgentPermissions(allow_file_create=True, allow_file_edit=True))
+        agents = runner._normalise_agents(spec)
+        messages: list[dict] = []
+        turns: list[dict] = []
+        states = runner._initial_agent_states(agents)
+        task_state = runner._initial_task_state([])
+        runner._run_parallel_work_round(
+            spec, tools, agents, [], [], messages, turns, states, task_state, lambda _message: None,
+        )
+        return turns
+
+    def test_disjoint_files_are_written_in_parallel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            scope.mkdir()
+
+            def fake_model(prompt: str) -> str:
+                if "Active agent: Alpha" in prompt:
+                    return json.dumps({"thought": "build alpha", "tool_calls": [{"tool": "create_file", "args": {"path": "alpha.txt", "content": "alpha"}}], "final": None})
+                return json.dumps({"thought": "build beta", "tool_calls": [{"tool": "create_file", "args": {"path": "beta.txt", "content": "beta"}}], "final": None})
+
+            turns = self._run_round(scope, fake_model)
+
+            self.assertEqual((scope / "alpha.txt").read_text(encoding="utf-8"), "alpha")
+            self.assertEqual((scope / "beta.txt").read_text(encoding="utf-8"), "beta")
+            self.assertEqual({turn["agent"] for turn in turns}, {"Alpha", "Beta"})
+            self.assertTrue(all(turn["phase"] == "parallel_work" for turn in turns))
+            self.assertTrue(all(r["ok"] for turn in turns for r in turn["tool_results"]))
+
+    def test_same_file_write_is_leased_to_exactly_one_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            scope.mkdir()
+
+            def fake_model(prompt: str) -> str:
+                content = "alpha" if "Active agent: Alpha" in prompt else "beta"
+                return json.dumps({"thought": "edit shared", "tool_calls": [{"tool": "write_file", "args": {"path": "shared.txt", "content": content}}], "final": None})
+
+            turns = self._run_round(scope, fake_model)
+            results = [r for turn in turns for r in turn["tool_results"] if r["tool"] == "write_file"]
+            granted = [r for r in results if r["ok"]]
+            denied = [r for r in results if not r["ok"]]
+
+            # Exactly one writer wins; the other is safely rejected, not interleaved.
+            self.assertEqual(len(granted), 1)
+            self.assertEqual(len(denied), 1)
+            self.assertEqual(denied[0]["data"]["error_type"], "file_leased")
+            self.assertIn((scope / "shared.txt").read_text(encoding="utf-8"), {"alpha", "beta"})
+
+    def test_round_is_skipped_with_fewer_than_two_workers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            scope.mkdir()
+            spec = DummySpec(scope_folder=str(scope), parallel_execution=True)
+            spec.agents = [{"name": "Solo", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""}]
+            called = False
+
+            def fake_model(_prompt: str) -> str:
+                nonlocal called
+                called = True
+                return json.dumps({"thought": "x", "tool_calls": [], "final": None})
+
+            runner = AgentTaskRunner(model_callback=fake_model)
+            agents = runner._normalise_agents(spec)
+            turns: list[dict] = []
+            runner._run_parallel_work_round(
+                spec,
+                AgentToolbox(ScopedWorkspace(scope), AgentPermissions(allow_file_create=True)),
+                agents, [], [], [], turns, runner._initial_agent_states(agents),
+                runner._initial_task_state([]), lambda _message: None,
+            )
+
+            self.assertEqual(turns, [])
+            self.assertFalse(called)
 
 
 if __name__ == "__main__":

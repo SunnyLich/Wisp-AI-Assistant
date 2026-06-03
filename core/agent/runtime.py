@@ -19,6 +19,7 @@ class AgentTaskLike(Protocol):
     approval_policy: str
     provider: str
     model: str
+    model_fallbacks: str
     reasoning_effort: str
     max_runtime_minutes: int
     max_turns: int
@@ -52,6 +53,8 @@ class AgentTaskLike(Protocol):
     file_create_permission_mode: str
     file_edit_permission_mode: str
     file_delete_permission_mode: str
+    parallel_execution: bool
+    max_parallel_agents: int
 
 
 class ScopeViolation(ValueError):
@@ -121,6 +124,69 @@ class AgentRunControl:
             nudges = list(self._nudges)
             self._nudges.clear()
         return nudges
+
+
+class FileLeaseRegistry:
+    """Thread-safe exclusive file ownership for concurrently running agents.
+
+    A lease is keyed by a normalized relative path. While an agent holds a
+    lease on a path, no other agent may acquire it, so parallel writers can
+    only ever touch disjoint files. Acquiring a path you already hold is a
+    no-op, and releasing only affects leases the caller owns.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._holders: dict[str, str] = {}
+
+    def acquire(self, agent: str, path: str) -> str | None:
+        """Claim ``path`` for ``agent``.
+
+        Returns ``None`` if the lease is now held by ``agent`` (newly acquired
+        or already owned), or the name of the blocking holder if another agent
+        owns it.
+        """
+        with self._lock:
+            current = self._holders.get(path)
+            if current is None or current == agent:
+                self._holders[path] = agent
+                return None
+            return current
+
+    def claim(self, agent: str, paths: list[str]) -> tuple[list[str], dict[str, str]]:
+        """Best-effort claim of several paths; returns (granted, denied->holder)."""
+        granted: list[str] = []
+        denied: dict[str, str] = {}
+        with self._lock:
+            for path in paths:
+                current = self._holders.get(path)
+                if current is None or current == agent:
+                    self._holders[path] = agent
+                    granted.append(path)
+                else:
+                    denied[path] = current
+        return granted, denied
+
+    def release(self, agent: str, paths: list[str] | None = None) -> None:
+        with self._lock:
+            if paths is None:
+                self._holders = {p: h for p, h in self._holders.items() if h != agent}
+                return
+            for path in paths:
+                if self._holders.get(path) == agent:
+                    del self._holders[path]
+
+    def release_all(self) -> None:
+        with self._lock:
+            self._holders.clear()
+
+    def holder(self, path: str) -> str | None:
+        with self._lock:
+            return self._holders.get(path)
+
+    def held_by(self, agent: str) -> list[str]:
+        with self._lock:
+            return sorted(path for path, holder in self._holders.items() if holder == agent)
 
 
 @dataclass(frozen=True)

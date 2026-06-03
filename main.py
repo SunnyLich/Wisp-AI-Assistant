@@ -142,6 +142,8 @@ class App:
         self._signals.show_new_chat.connect(self._on_show_new_chat)
         self._signals.show_last_chat.connect(self._on_show_last_chat)
         self._signals.show_memory_viewer.connect(self._open_memory_viewer)
+        self._signals.bubble_highlight.connect(self._on_bubble_highlight)
+        self._signals.chat_new_conversation.connect(self._on_chat_new_conversation)
         self._signals.context_items_dropped.connect(self._on_context_items_dropped)
         self._signals.remove_dropped_item.connect(self._on_remove_dropped_item)
         self._overlay.set_click_handler(self._on_icon_click)
@@ -315,7 +317,7 @@ class App:
             try:
                 self._pending_context = context_fetcher.fetch_and_save()
                 screenshot_b64 = None
-                if caller.get("context_screenshot") and not selected:
+                if caller.get("context_screenshot") == "auto" and not selected:
                     img = capture.get_screen_snippet()
                     screenshot_b64 = capture.image_to_base64(img)
                 self._pending_capture = (selected, screenshot_b64)
@@ -473,6 +475,19 @@ class App:
             self._signals.set_state.emit("thinking")
             self._signals.bubble_thinking.emit()
 
+        # Create the conversation up front so an open chat window shows the new tab
+        # as the rewrite starts; assistant_msg is filled in once the reply lands.
+        assistant_msg: dict = {"role": "assistant", "content": ""}
+        user_content = f"{intent_prompt}:\n\n{selected_text}"
+        self._all_conversations.append({
+            "messages": [
+                {"role": "user", "content": user_content},
+                assistant_msg,
+            ],
+            "context": "",
+        })
+        self._signals.chat_new_conversation.emit()
+
         full_reply = ""
         try:
             for chunk in llm.stream_rewrite(selected_text, intent_prompt):
@@ -599,8 +614,37 @@ class App:
         # Give mods a chance to inspect or modify the prompt/context before the LLM call.
         user_message, ambient_ctx = self._plugin_manager.before_query(user_message, ambient_ctx)
 
+        # Create the conversation up front (with an empty, mutable assistant turn)
+        # so an open chat window can show the new tab and live-highlight the reply
+        # as it streams. llm_producer fills assistant_msg in once the reply lands.
+        assistant_msg: dict = {"role": "assistant", "content": ""}
+        conversation = {
+            "messages": [
+                {"role": "user", "content": user_message,
+                 **({"image_base64": screenshot_b64} if screenshot_b64 else {})},
+                assistant_msg,
+            ],
+            "context": ambient_ctx,
+        }
+        self._all_conversations.append(conversation)
+        self._signals.chat_new_conversation.emit()
+
         self._signals.set_state.emit("thinking")
         self._signals.bubble_thinking.emit()
+
+        # Show read-only badges of the context attached to this prompt, next to the
+        # icon — the same boxes the dragged-file flow uses.
+        summary_badges = self._context_summary_badges(
+            selected=selected,
+            screenshot_b64=screenshot_b64,
+            drop_items=drop_items,
+            buffered_items=buffered_items,
+            clipboard_text=clipboard_text,
+            active_document_text=active_doc.get("text", ""),
+            ambient_text=ambient_text,
+        )
+        if summary_badges:
+            self._signals.show_context_summary.emit(summary_badges)
 
         # Memory: check for explicit "remember that" command, then retrieve
         # relevant LTM facts and the current STM session summary.
@@ -633,6 +677,10 @@ class App:
                     ambient_context=ambient_ctx,
                     memory_context=memory_context,
                     use_tools=(not screenshot_b64 and caller.get("context_tools", True)),
+                    allow_screenshot_tool=(
+                        not screenshot_b64
+                        and caller.get("context_screenshot") == "model"
+                    ),
                 ):
                     full_text += chunk
                     for part, is_thought in parser.feed(chunk):
@@ -665,20 +713,14 @@ class App:
                     log.exception("parser.finish() crashed (gen_id=%d)", gen_id)
                 finally:
                     llm_chunk_q.put(None)
-            # Store context separately so the chat window can inject it into
-            # the system prompt for follow-ups without re-embedding it in turns.
+            # Fill in the assistant turn on the conversation created up front (the
+            # chat window holds the same dict by reference, so this updates history
+            # in place). Context was stored on the conversation so the chat window
+            # can inject it into the system prompt for follow-ups.
             if reply_text:
-                assistant_msg = {"role": "assistant", "content": reply_text}
+                assistant_msg["content"] = reply_text
                 if full_text != reply_text:
                     assistant_msg["display_content"] = full_text
-                self._all_conversations.append({
-                    "messages": [
-                        {"role": "user", "content": user_message,
-                         **({"image_base64": screenshot_b64} if screenshot_b64 else {})},
-                        assistant_msg,
-                    ],
-                    "context": ambient_ctx,
-                })
                 self._memory.record_turn(user_message, reply_text, ambient_ctx)
                 self._plugin_manager.after_response(reply_text)
 
@@ -759,8 +801,55 @@ class App:
         self._open_or_raise_chat(auto_message=auto_msg)
 
     def _on_show_last_chat(self):
-        """Tray menu 'Last chat' -" open or raise the chat window."""
+        """Tray menu 'Last chat' (and a click on the speech bubble) -" open or raise the chat window."""
         self._open_or_raise_chat()
+
+    def _on_bubble_highlight(self, reply_text: str, revealed_count: int, finished: bool):
+        """Mirror the bubble's TTS read-position onto the open chat window, if any."""
+        if self._chat_window is not None:
+            self._chat_window.update_live_highlight(reply_text, revealed_count, finished)
+
+    def _on_chat_new_conversation(self):
+        """A voice query just created a conversation — surface it as a new tab in
+        the open chat window (and switch to it) so its live highlight is visible."""
+        if self._chat_window is not None:
+            self._chat_window.ingest_new_conversations()
+
+    @staticmethod
+    def _context_summary_badges(
+        *,
+        selected: str | None,
+        screenshot_b64: str | None,
+        drop_items: list | None,
+        buffered_items: list | None,
+        clipboard_text: str | None,
+        active_document_text: str,
+        ambient_text: str,
+    ) -> list[tuple[str, str]]:
+        """Build (label, type) pairs describing the context attached to a prompt,
+        for the read-only badges shown next to the icon. type is one of
+        'image' | 'text' | 'file' (matching the drag-drop badge colours)."""
+        def short(text: str, n: int = 14) -> str:
+            flat = " ".join((text or "").split())
+            return (flat[: n - 1] + "…") if len(flat) > n else flat
+
+        type_map = {"image": "image", "text": "text", "document_path": "file", "file": "file"}
+        items: list[tuple[str, str]] = []
+        if screenshot_b64:
+            items.append(("Screenshot", "image"))
+        if selected:
+            items.append((f"Selection · {short(selected)}", "text"))
+        for name, _content, item_type in (drop_items or []):
+            items.append((short(name, 24), type_map.get(item_type, "file")))
+        for buf in (buffered_items or []):
+            items.append((short(buf, 24), "text"))
+        if clipboard_text:
+            items.append((f"Clipboard · {short(clipboard_text)}", "text"))
+        if active_document_text:
+            items.append(("Active document", "file"))
+        if ambient_text:
+            items.append(("Window context", "file"))
+        return items[:8]
 
     def _on_show_new_chat(self):
         """Tray menu 'New chat' -" open the chat window on a fresh thread."""

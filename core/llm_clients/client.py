@@ -26,6 +26,7 @@ from core.llm_clients.routes import (
     credential_source_for_provider as _credential_source_for_provider,
     parse_model_fallbacks as _parse_model_fallbacks,
     route_candidates as _route_candidates,
+    normalize_model_for_provider as _normalize_model_for_provider,
 )
 from typing import Generator
 
@@ -336,6 +337,26 @@ def _register_builtin_tools() -> None:
     )
     _TOOL_REGISTRY.register_builtin(
         ToolSpec(
+            name="capture_screen",
+            description=(
+                "Take a screenshot of the user's primary monitor and see it. "
+                "Use this only when the text context already provided is not "
+                "enough to answer and you need to visually see what is on the "
+                "user's screen (UI layout, a chart, an image, an error dialog, "
+                "etc.)."
+            ),
+            input_schema={"type": "object", "properties": {}, "required": []},
+            # Handled directly in the Anthropic and OpenAI tool loops, which
+            # deliver the screenshot as image content. The executor below is a
+            # text fallback for any path that calls it without that handling.
+            executor=lambda _inputs: (
+                "Screen capture could not be returned in this context."
+            ),
+            opt_in=True,
+        )
+    )
+    _TOOL_REGISTRY.register_builtin(
+        ToolSpec(
             name="git_status",
             description="Return read-only git status for the configured local repository.",
             input_schema={
@@ -387,12 +408,205 @@ def _register_builtin_tools() -> None:
     )
 
 
-def _get_tool_schemas(prompt: str = "") -> list[dict]:
-    return _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
+# Appended to the system prompt only when the screenshot tool is actually
+# offered, so the model knows it can see the screen instead of denying it.
+_SCREENSHOT_TOOL_NOTE = (
+    "You also have a capture_screen tool that takes a screenshot of the user's "
+    "screen. When answering needs you to visually see what is on screen — a "
+    "website, app UI, image, chart, or error — call capture_screen instead of "
+    "saying you cannot see the screen."
+)
+
+
+def _with_screenshot_note(system: str, allow_screenshot_tool: bool) -> str:
+    """Append the screenshot capability note when that tool is exposed."""
+    if allow_screenshot_tool:
+        return f"{system}\n\n{_SCREENSHOT_TOOL_NOTE}"
+    return system
+
+
+# Substrings of model names known to accept image input. Best-effort only, used
+# for a settings-time heads-up; unknown models are treated as text-only so we err
+# toward warning. This never gates runtime behavior.
+_VISION_MODEL_HINTS = (
+    "gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "chatgpt-4o",
+    "o1", "o3", "o4",
+    "claude", "sonnet", "opus", "haiku",
+    "gemini",
+    "pixtral", "mistral-small-3", "mistral-medium",
+    "llama-3.2-11b", "llama-3.2-90b", "llama-4", "scout", "maverick",
+    "qwen-vl", "qwen2-vl", "qwen2.5-vl", "qwen3-vl",
+    "internvl", "phi-3.5-vision", "phi-4-multimodal",
+    "grok-2-vision", "grok-4",
+    "vision", "-vl", "multimodal",
+)
+
+
+def _model_accepts_images(model: str) -> bool:
+    m = (model or "").strip().lower()
+    return any(hint in m for hint in _VISION_MODEL_HINTS)
+
+
+def screenshot_capability_warnings(
+    screenshot_modes,
+    *,
+    llm_provider: str,
+    llm_model: str,
+    vision_provider: str,
+    vision_model: str,
+) -> list[str]:
+    """Best-effort warnings if enabled screenshot modes likely can't be served.
+
+    Advisory only — the caller should still honor the user's setting and just
+    surface these. *screenshot_modes* is the per-caller list of "off"/"auto"/
+    "model" values. Returns human-readable warning strings (possibly empty).
+    """
+    modes = {m for m in screenshot_modes if m and m != "off"}
+    if not modes:
+        return []
+
+    llm_provider = (llm_provider or "").strip().lower()
+    vision_provider = (vision_provider or "").strip().lower()
+    vision_model = (vision_model or "").strip()
+    warnings: list[str] = []
+
+    if "auto" in modes:
+        # Eager ("On") screenshots always route through the Vision LLM.
+        if not vision_model:
+            warnings.append(
+                "Auto screenshot needs a Vision model, but none is set — "
+                "configure one under Vision LLM or auto screenshots will fail."
+            )
+        elif vision_provider == "copilot":
+            warnings.append(
+                "The Copilot provider can't process images, so auto screenshots "
+                "will fail. Use a Vision LLM that supports images."
+            )
+        elif not _model_accepts_images(vision_model):
+            warnings.append(
+                f"Your Vision model '{vision_model}' may not accept images, so "
+                "auto screenshots may fail."
+            )
+
+    if "model" in modes:
+        # On-demand ("Let model decide") screenshots run through the tool loop.
+        if llm_provider in ("copilot", "chatgpt"):
+            warnings.append(
+                f"'Let model decide' screenshots aren't supported on the "
+                f"'{llm_provider}' provider, so the model can't take one there."
+            )
+        elif llm_provider == "anthropic":
+            pass  # Claude tool models accept images
+        elif llm_provider in _OPENAI_COMPAT_PROVIDER_SET:
+            # Answered by a same-provider Vision model if set, else the main model.
+            target = (
+                vision_model
+                if (vision_provider == llm_provider and vision_model)
+                else (llm_model or "").strip()
+            )
+            if not _model_accepts_images(target):
+                warnings.append(
+                    f"'Let model decide' screenshots on '{llm_provider}' will go "
+                    f"to '{target or '(your model)'}', which may not accept images. "
+                    f"Set a vision-capable Vision model on '{llm_provider}', or "
+                    "screenshots may fail."
+                )
+
+    return warnings
+
+
+def tool_capability_warnings(tools_enabled: bool, *, llm_provider: str) -> list[str]:
+    """Best-effort warning if the context-tools setting won't behave as a user
+    expects on the active provider. Advisory only."""
+    if not tools_enabled:
+        return []
+    if (llm_provider or "").strip().lower() == "chatgpt":
+        return [
+            "On the ChatGPT provider, model tools (web search, GitHub, open "
+            "documents) aren't run as live tool calls — available context is "
+            "injected up front instead."
+        ]
+    return []
+
+
+def _get_tool_schemas(
+    prompt: str = "",
+    *,
+    include_general: bool = True,
+    include_screenshot: bool = False,
+) -> list[dict]:
+    """Anthropic tool schemas for a query.
+
+    capture_screen is opt-in (include_screenshot) and is never part of the
+    general set, so it only appears when the caller explicitly allows the model
+    to take screenshots. include_general gates every other built-in tool.
+    """
+    schemas: list[dict] = []
+    if include_general:
+        schemas = _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
+    if include_screenshot:
+        spec = _TOOL_REGISTRY.get_tool("capture_screen")
+        if spec is not None:
+            schemas.append(spec.anthropic_schema())
+    return schemas
+
+
+def _get_openai_tool_schemas(
+    prompt: str = "",
+    *,
+    include_general: bool = True,
+    include_screenshot: bool = False,
+) -> list[dict]:
+    """OpenAI/Groq function schemas for a query (mirror of _get_tool_schemas).
+
+    capture_screen is opt-in, so it's added back explicitly only when
+    include_screenshot is set.
+    """
+    schemas: list[dict] = []
+    if include_general:
+        schemas = _TOOL_REGISTRY.filtered_openai_schemas(prompt)
+    if include_screenshot:
+        spec = _TOOL_REGISTRY.get_tool("capture_screen")
+        if spec is not None:
+            schemas.append(spec.openai_schema())
+    return schemas
 
 
 def _execute_model_tool(name: str, inputs: dict) -> str:
     return _TOOL_REGISTRY.execute(name, inputs)
+
+
+def _capture_screen_b64() -> str | None:
+    """Grab the primary monitor and return it as a base64 PNG, or None on failure."""
+    try:
+        from core import capture
+        return capture.image_to_base64(capture.get_screen_snippet())
+    except Exception as exc:
+        print(f"[llm] capture_screen failed: {exc}")
+        return None
+
+
+def _anthropic_vision_model(current_model: str) -> str:
+    """Model to use after a screenshot enters the loop.
+
+    Prefer the configured Anthropic vision model; otherwise keep the current
+    tool model (Sonnet, which is itself vision-capable).
+    """
+    if config.VISION_LLM_PROVIDER.strip() == "anthropic" and config.VISION_LLM_MODEL.strip():
+        return config.VISION_LLM_MODEL.strip()
+    return current_model
+
+
+def _openai_vision_model(provider: str, current_model: str) -> str:
+    """Model to answer with after a screenshot enters an OpenAI/Groq loop.
+
+    Prefer the configured vision model when it lives on the *same* provider
+    (we can't swap the bound client mid-loop); otherwise keep the current
+    model and hope it is vision-capable (e.g. gpt-4o).
+    """
+    if config.VISION_LLM_PROVIDER.strip() == provider and config.VISION_LLM_MODEL.strip():
+        return config.VISION_LLM_MODEL.strip()
+    return current_model
 
 
 def _init_keyword_filters() -> None:
@@ -444,6 +658,52 @@ _codex_client = None
 _chat_codex_client = None
 
 _TEST_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
+
+# How many times the OpenAI SDK may retry the *same* model inside one call.
+_OPENAI_MAX_RETRIES = 1
+
+# Quota circuit breaker: when a route returns 429, it is parked for this many
+# seconds so subsequent turns skip straight to the fallback instead of
+# re-probing an exhausted model on every reply. After it expires the route is
+# tried again (some retries, not an infinite skip).
+_ROUTE_COOLDOWN_SECONDS = 60.0
+import threading as _threading
+import time as _time
+_route_cooldowns: dict[tuple[str, str], float] = {}
+_route_cooldowns_lock = _threading.Lock()
+
+
+def _route_key(provider: str, model: str) -> tuple[str, str]:
+    return ((provider or "").lower(), model or "")
+
+
+def _is_route_cooling(provider: str, model: str) -> bool:
+    key = _route_key(provider, model)
+    with _route_cooldowns_lock:
+        until = _route_cooldowns.get(key)
+        if until is None:
+            return False
+        if _time.time() >= until:
+            _route_cooldowns.pop(key, None)
+            return False
+        return True
+
+
+def _mark_route_cooling(provider: str, model: str, seconds: float = _ROUTE_COOLDOWN_SECONDS) -> None:
+    with _route_cooldowns_lock:
+        _route_cooldowns[_route_key(provider, model)] = _time.time() + seconds
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    """True for 429 / rate-limit / quota-exhausted errors worth a cooldown."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status == 429:
+        return True
+    name = type(exc).__name__.lower()
+    if "ratelimit" in name:
+        return True
+    text = str(exc).lower()
+    return "429" in text or "quota" in text or "rate limit" in text or "rate_limit" in text
 
 
 def reset_clients() -> None:
@@ -539,6 +799,10 @@ def _log_model_route(kind: str, provider: str, model: str, use_tools: bool = Fal
         f"model={model or '[unset]'} credential={_credential_source_for_provider(provider)}{tool_note}"
     )
 
+# Ceiling used when a caller asks for "no app cap" (max_tokens == 0) on a
+# provider that, unlike the OpenAI-compatible APIs, requires an explicit limit.
+_ANTHROPIC_UNCAPPED_MAX_TOKENS = 8192
+
 # All providers that go through the OpenAI-compatible chat completions API.
 _OPENAI_COMPAT_PROVIDER_SET = frozenset({
     "groq", "openai", "google",
@@ -563,13 +827,17 @@ _OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
 def _dynamic_openai_client(provider: str):
     from openai import OpenAI
 
+    # max_retries=1: allow one quick same-model retry for a transient blip, but
+    # not the SDK default (2) which slowly re-hammers an exhausted model every
+    # turn with backoff before the fallback chain (which switches models) is
+    # ever reached. Quota cooldown (see _stream_with_fallbacks) handles the rest.
     if provider in _OPENAI_COMPAT_PROVIDERS:
         key_attr, base_url = _OPENAI_COMPAT_PROVIDERS[provider]
         api_key = getattr(config, key_attr) if key_attr else "ollama"
-        return OpenAI(api_key=api_key or "no-key", base_url=base_url)
+        return OpenAI(api_key=api_key or "no-key", base_url=base_url, max_retries=_OPENAI_MAX_RETRIES)
     if provider == "custom":
-        return OpenAI(api_key=config.CUSTOM_API_KEY or "no-key", base_url=config.CUSTOM_BASE_URL)
-    return OpenAI(api_key=config.OPENAI_API_KEY)
+        return OpenAI(api_key=config.CUSTOM_API_KEY or "no-key", base_url=config.CUSTOM_BASE_URL, max_retries=_OPENAI_MAX_RETRIES)
+    return OpenAI(api_key=config.OPENAI_API_KEY, max_retries=_OPENAI_MAX_RETRIES)
 
 
 def _dynamic_anthropic_client():
@@ -618,7 +886,7 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
         else:
             raise ValueError(f"Unknown provider: {provider}")
         resp = client.models.list()
-        ids = [m.id for m in resp.data]
+        ids = [_normalize_model_for_provider(provider, m.id) for m in resp.data]
 
     if not ids:
         raise ValueError("Provider returned no models")
@@ -910,7 +1178,7 @@ def _probe_openai_compat_route(provider: str, model: str, image_base64: str | No
     client = _dynamic_openai_client(provider)
     _run_openai_compat_probe(
         client,
-        model=model,
+        model=_normalize_model_for_provider(provider, model),
         messages=_build_openai_messages("Reply with OK.", image_base64),
     )
 
@@ -935,7 +1203,7 @@ def _probe_openai_compat_route_with_credentials(
         client = OpenAI(api_key=api_key)
     _run_openai_compat_probe(
         client,
-        model=model,
+        model=_normalize_model_for_provider(provider, model),
         messages=_build_openai_messages("Reply with OK.", image_base64),
     )
 
@@ -1100,11 +1368,13 @@ def stream_response(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allow_screenshot_tool: bool = False,
     route_provider: str | None = None,
     route_model: str | None = None,
     route_fallbacks: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    json_mode: bool = False,
 ) -> Generator[str, None, None]:
     """
     Stream a response from the configured LLM.
@@ -1126,6 +1396,9 @@ def stream_response(
                   must use the actual tool call interface rather than
                   describing or simulating tool calls in text.
                   Ignored for Groq/OpenAI providers and vision calls.
+        allow_screenshot_tool: If True (Anthropic, non-vision), additionally
+                  expose the capture_screen tool so the model can grab a
+                  screenshot on demand. Independent of use_tools.
         route_provider:   Optional provider override for non-vision calls.
         route_model:      Optional model override for non-vision calls.
         route_fallbacks:  Optional provider:model fallback string for overrides.
@@ -1188,9 +1461,11 @@ def stream_response(
                 ambient_context,
                 memory_context,
                 use_tools=use_tools,
+                allow_screenshot_tool=allow_screenshot_tool,
                 route_name="LLM",
                 max_tokens=max_tokens,
                 temperature=temperature,
+                json_mode=json_mode,
             ),
         )
 
@@ -1201,8 +1476,15 @@ def _stream_with_fallbacks(
     factory,
 ) -> Generator[str, None, None]:
     import time
+    # Try routes not in quota cooldown first; keep cooling ones as last resort so
+    # a fully-throttled chain still attempts something rather than failing cold.
+    ready = [c for c in candidates if not _is_route_cooling(*c)]
+    cooling = [c for c in candidates if _is_route_cooling(*c)]
+    ordered = ready + cooling
+    if not ordered:
+        ordered = candidates
     last_exc: Exception | None = None
-    for idx, (provider, model) in enumerate(candidates):
+    for idx, (provider, model) in enumerate(ordered):
         emitted = False
         try:
             for chunk in factory(provider, model):
@@ -1213,7 +1495,7 @@ def _stream_with_fallbacks(
             # Model returned HTTP 200 but zero content chunks — treat as failure.
             ts = time.strftime("%H:%M:%S")
             last_exc = ValueError(f"Route ({kind}) {provider}/{model} returned no content")
-            if idx < len(candidates) - 1:
+            if idx < len(ordered) - 1:
                 print(f"[llm {ts}] Route ({kind}) returned no content; trying fallback")
                 continue
             print(f"[llm {ts}] Route ({kind}) returned no content; no fallback left")
@@ -1223,7 +1505,10 @@ def _stream_with_fallbacks(
             if emitted:
                 print(f"[llm {ts}] Route ({kind}) failed after streaming; not falling back: {exc}")
                 raise
-            if idx < len(candidates) - 1:
+            if not _is_route_cooling(provider, model) and _is_quota_error(exc):
+                _mark_route_cooling(provider, model)
+                print(f"[llm {ts}] Route ({kind}) {provider}/{model} hit quota; cooling down {_ROUTE_COOLDOWN_SECONDS:.0f}s and using fallback")
+            if idx < len(ordered) - 1:
                 print(f"[llm {ts}] Route ({kind}) failed before output; trying fallback: {exc}")
                 continue
             print(f"[llm {ts}] Route ({kind}) failed; no fallback left: {exc}")
@@ -1241,12 +1526,24 @@ def _stream_single_response_route(
     memory_context: str,
     use_tools: bool,
     route_name: str,
+    allow_screenshot_tool: bool = False,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    json_mode: bool = False,
 ) -> Generator[str, None, None]:
     _check_route_config(provider, model, route_name)
-    effective_model = config.TOOL_LLM_MODEL if provider == "anthropic" and use_tools else model
-    _log_model_route("vision" if image_base64 else "query", provider, effective_model, use_tools=use_tools)
+    model = _normalize_model_for_provider(provider, model)
+    # capture_screen also needs the Anthropic tool loop, so it counts as "tools".
+    anthropic_tools = use_tools or allow_screenshot_tool
+    # Use the user's model for tool calls. TOOL_LLM_MODEL is an optional override
+    # (empty by default) for users who want a different model when tools are active
+    # — we no longer force a hardcoded model.
+    effective_model = (
+        config.TOOL_LLM_MODEL
+        if (provider == "anthropic" and anthropic_tools and config.TOOL_LLM_MODEL.strip())
+        else model
+    )
+    _log_model_route("vision" if image_base64 else "query", provider, effective_model, use_tools=(anthropic_tools and not image_base64))
     if image_base64:
         if provider in _OPENAI_COMPAT_PROVIDER_SET:
             yield from _stream_openai_compat(
@@ -1280,8 +1577,11 @@ def _stream_single_response_route(
             ambient_context,
             memory_context,
             use_tools=use_tools,
+            allow_screenshot_tool=allow_screenshot_tool,
+            provider=provider,
             max_tokens=max_tokens,
             temperature=temperature,
+            json_mode=json_mode,
         )
     elif provider == "anthropic":
         yield from _stream_anthropic(
@@ -1292,6 +1592,7 @@ def _stream_single_response_route(
             ambient_context,
             memory_context,
             use_tools,
+            allow_screenshot_tool=allow_screenshot_tool,
             max_tokens=max_tokens,
             temperature=temperature,
         )
@@ -1338,23 +1639,46 @@ def _stream_openai_compat(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allow_screenshot_tool: bool = False,
+    provider: str = "",
     max_tokens: int | None = None,
     temperature: float | None = None,
+    json_mode: bool = False,
 ) -> Generator[str, None, None]:
     import json as _json
 
     messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
-    tools = _TOOL_REGISTRY.filtered_openai_schemas(user_message) if use_tools and not image_base64 else None
+    expose_screenshot = allow_screenshot_tool and not image_base64 and not json_mode
+    if expose_screenshot and messages and messages[0].get("role") == "system":
+        messages[0]["content"] = _with_screenshot_note(messages[0]["content"], True)
+    # JSON mode (used by the agent protocol) forces a single JSON object as the
+    # whole response. Native context tools would let the model emit a function
+    # call instead of that JSON, so they are mutually exclusive: the agent embeds
+    # its own tool calls inside the protocol JSON and does not need them here.
+    tools = (
+        _get_openai_tool_schemas(
+            user_message,
+            include_general=use_tools,
+            include_screenshot=allow_screenshot_tool,
+        )
+        if (use_tools or allow_screenshot_tool) and not image_base64 and not json_mode
+        else None
+    )
 
     kwargs: dict = {
         "model": model,
         "messages": messages,
         "stream": True,
-        "max_tokens": max_tokens or 2048,
         "temperature": 0.5 if temperature is None else temperature,
     }
+    # max_tokens == 0 means "no app-imposed cap": omit the field so the provider
+    # uses its own per-model maximum. None means "unspecified" -> a safe default.
+    if max_tokens != 0:
+        kwargs["max_tokens"] = max_tokens or 2048
     if tools:
         kwargs["tools"] = tools
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
 
     # Stream first round — yield text, accumulate any tool-call deltas.
     tool_calls_acc: dict[int, dict] = {}  # index → {id, name, arguments}
@@ -1391,25 +1715,52 @@ def _stream_openai_compat(
     messages.append({"role": "assistant", "content": None, "tool_calls": assistant_tool_calls})
 
     # Tool-call loop (up to 3 rounds, non-streaming for follow-ups).
+    current_model = model
+    vision_mode = False
     for _round in range(3):
-        tool_results = []
+        pending_image_b64: str | None = None
         for tc in tool_calls_acc.values():
             try:
                 inputs = _json.loads(tc["arguments"] or "{}")
             except Exception:
                 inputs = {}
-            result = _execute_model_tool(tc["name"], inputs)
-            tool_results.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-        messages.extend(tool_results)
+            if tc["name"] == "capture_screen":
+                # OpenAI tool messages can't carry an image, so acknowledge the
+                # call with text and deliver the screenshot as a user message
+                # below, then answer on a vision-capable model.
+                pending_image_b64 = _capture_screen_b64()
+                ack = (
+                    "Screenshot captured; it is attached in the next message."
+                    if pending_image_b64
+                    else "Screen capture failed; no image is available."
+                )
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ack})
+                _log_context("tool: capture_screen", "<screenshot>" if pending_image_b64 else "<failed>")
+            else:
+                result = _execute_model_tool(tc["name"], inputs)
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+
+        if pending_image_b64:
+            current_model = _openai_vision_model(provider, current_model)
+            vision_mode = True  # answer with the image; drop tools for follow-ups
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Here is the screenshot you requested."},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{pending_image_b64}"}},
+                ],
+            })
 
         follow_up_kwargs = {
-            "model": model,
+            "model": current_model,
             "messages": messages,
-            "max_tokens": max_tokens or 2048,
             "temperature": 0.5 if temperature is None else temperature,
             "stream": False,
         }
-        if tools:
+        if max_tokens != 0:
+            follow_up_kwargs["max_tokens"] = max_tokens or 2048
+        if tools and not vision_mode:
             follow_up_kwargs["tools"] = tools
         follow_up = client.chat.completions.create(**follow_up_kwargs)
         choice = follow_up.choices[0]
@@ -1547,6 +1898,8 @@ def _run_anthropic_tool_loop(
     system: str,
     max_tokens: int,
     prompt: str = "",
+    include_general: bool = True,
+    include_screenshot: bool = False,
 ) -> Generator[str, None, None]:
     """
     Execute Anthropic tool calls and yield text from subsequent rounds.
@@ -1554,25 +1907,49 @@ def _run_anthropic_tool_loop(
     """
     messages.append({"role": "assistant", "content": first_response.content})
     final = first_response
+    current_model = model
     for _round in range(3):
         tool_results = []
         for block in final.content:
-            if getattr(block, "type", "") == "tool_use":
-                result = _execute_model_tool(block.name, block.input or {})
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+            if getattr(block, "type", "") != "tool_use":
+                continue
+            if block.name == "capture_screen":
+                # Return the screenshot as an image block; upgrade the loop to a
+                # vision-capable model for the rounds that follow.
+                b64 = _capture_screen_b64()
+                if b64:
+                    current_model = _anthropic_vision_model(current_model)
+                    content = [{
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": b64,
+                        },
+                    }]
+                else:
+                    content = "Screen capture failed; no image is available."
+                _log_context("tool: capture_screen", "<screenshot>" if b64 else "<failed>")
+            else:
+                content = _execute_model_tool(block.name, block.input or {})
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": content,
+            })
         if not tool_results:
             return
         messages.append({"role": "user", "content": tool_results})
         response = client.messages.create(
-            model=model,
+            model=current_model,
             max_tokens=max_tokens,
             system=system,
             messages=messages,
-            tools=_get_tool_schemas(prompt),
+            tools=_get_tool_schemas(
+                prompt,
+                include_general=include_general,
+                include_screenshot=include_screenshot,
+            ),
         )
         for block in response.content:
             if getattr(block, "type", "") == "text":
@@ -1593,14 +1970,22 @@ def _stream_anthropic(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allow_screenshot_tool: bool = False,
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> Generator[str, None, None]:
-    system = config.get_system_prompt()
+    system = _with_screenshot_note(config.get_system_prompt(), allow_screenshot_tool)
     if memory_context:
         system += f"\n\n{memory_context}"
     if ambient_context:
         system += f"\n\n---\n{ambient_context}"
+
+    tools_active = use_tools or allow_screenshot_tool
+
+    # Anthropic requires an explicit max_tokens, so "no app cap" (0) maps to a
+    # generous per-request ceiling rather than being truly unlimited.
+    anthropic_max_tokens = _ANTHROPIC_UNCAPPED_MAX_TOKENS if max_tokens == 0 else (max_tokens or 2048)
+    anthropic_tool_max_tokens = _ANTHROPIC_UNCAPPED_MAX_TOKENS if max_tokens == 0 else (max_tokens or 512)
 
     if image_base64:
         content = [
@@ -1618,10 +2003,10 @@ def _stream_anthropic(
         content = user_message
 
     # --- No tools: original streaming path (lowest latency) ---
-    if not use_tools:
+    if not tools_active:
         request = {
             "model": model,
-            "max_tokens": max_tokens or 2048,
+            "max_tokens": anthropic_max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": content}],
         }
@@ -1639,10 +2024,14 @@ def _stream_anthropic(
 
     request = {
         "model": model,
-        "max_tokens": max_tokens or 2048,
+        "max_tokens": anthropic_max_tokens,
         "system": system,
         "messages": messages,
-        "tools": _get_tool_schemas(user_message),
+        "tools": _get_tool_schemas(
+            user_message,
+            include_general=use_tools,
+            include_screenshot=allow_screenshot_tool,
+        ),
     }
     if temperature is not None:
         request["temperature"] = temperature
@@ -1661,8 +2050,10 @@ def _stream_anthropic(
         final,
         model,
         system,
-        max_tokens=max_tokens or 512,
+        max_tokens=anthropic_tool_max_tokens,
         prompt=user_message,
+        include_general=use_tools,
+        include_screenshot=allow_screenshot_tool,
     )
 
 

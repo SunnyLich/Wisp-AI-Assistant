@@ -81,6 +81,21 @@ def credential_source_for_provider(provider: str) -> str:
     return "none"
 
 
+def normalize_model_for_provider(provider: str, model: str) -> str:
+    """Normalize a model id before it is sent to a provider.
+
+    Google's OpenAI-compatible ``/models`` endpoint lists ids with a ``models/``
+    resource prefix (e.g. ``models/gemini-2.5-flash``), but its GenerateContent
+    layer re-adds that prefix and rejects an already-prefixed name with
+    ``GenerateContentRequest.model: unexpected model name format``. Strip it so
+    both freshly-fetched and previously-saved Google model names work.
+    """
+    model = (model or "").strip()
+    if provider and provider.lower() == "google" and model.startswith("models/"):
+        return model[len("models/"):]
+    return model
+
+
 def parse_model_fallbacks(raw: str) -> list[tuple[str, str]]:
     """Parse provider:model fallback lines from settings."""
     routes: list[tuple[str, str]] = []

@@ -107,11 +107,11 @@ LLM_PROVIDER=groq                  # groq | anthropic | openai | google | deepse
 LLM_MODEL=llama3-8b-8192
 LLM_FALLBACKS=anthropic:claude-sonnet-4-6   # optional fallback chain
 
-VISION_LLM_PROVIDER=anthropic      # model used for screen snippets
+VISION_LLM_PROVIDER=anthropic      # model used for screenshots / screen snippets
 VISION_LLM_MODEL=claude-opus-4-5
 
-CHAT_LLM_PROVIDER=groq             # model used in the chat window
-CHAT_LLM_MODEL=llama3-8b-8192
+# The chat window shares LLM_PROVIDER / LLM_MODEL above (one combined model).
+TOOL_LLM_MODEL=                    # optional: override the model only when tools are active
 ```
 
 ### TTS
@@ -137,9 +137,9 @@ HOTKEY_VOICE=f9                    # push-to-talk
 
 ```env
 ICON_SIZE=80
-ICON_AUTO_HIDE=true                # hide icon when idle; show on hotkey
+ICON_AUTO_HIDE=false               # hide icon when idle; show on hotkey
 BUBBLE_WIDTH=340
-BUBBLE_LINES=2
+BUBBLE_LINES=3
 ```
 
 ### Memory
@@ -161,6 +161,7 @@ CALLER_1_LABEL=General
 CALLER_1_CONTEXT_AMBIENT=true      # read active window / clipboard
 CALLER_1_CONTEXT_DOCUMENTS=true    # read open Word / Excel / PDF / etc.
 CALLER_1_CONTEXT_TOOLS=true        # allow web_search / get_context tool calls
+CALLER_1_CONTEXT_SCREENSHOT=off    # off | model (let model screenshot on demand) | auto (always)
 CALLER_1_PASTE_BACK=false
 
 CALLER_2_HOTKEY=ctrl+shift+q

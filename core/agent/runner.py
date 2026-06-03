@@ -28,6 +28,7 @@ from core.agent.runtime import (
     AgentRunControl,
     AgentTaskLike,
     ApprovalCallback,
+    FileLeaseRegistry,
     LogCallback,
     ModelCallback,
     PermissionDenied,
@@ -194,6 +195,25 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 verbose,
             )
 
+        if (
+            self._model_callback is None
+            and bool(getattr(spec, "parallel_execution", False))
+            and len([agent for agent in agents if self._is_worker_agent(agent)]) >= 2
+        ):
+            self._run_parallel_work_round(
+                spec,
+                tools,
+                agents,
+                files,
+                verify_commands,
+                messages,
+                turns,
+                agent_states,
+                task_state,
+                log,
+                verbose,
+            )
+
         for turn_idx in range(max_turns):
             self._control.raise_if_cancelled()
             self._apply_manual_nudges(messages, log)
@@ -228,15 +248,17 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 verbose(f"turn {turn_idx + 1} model input", model_input)
             log(f"prompt prepared for {agent_name}: {len(model_input)} chars ({'delta' if compact_prompt else 'full'})")
             provider, model = self._resolve_agent_route(spec, agent)
+            fallbacks = self._task_model_fallbacks(spec)
             response_text = self._call_model(
                 model_input,
                 log,
                 provider=provider,
                 model=model,
-                max_tokens=self._spec_int(
+                fallbacks=fallbacks,
+                max_tokens=self._spec_token_budget(
                     spec,
                     "delta_turn_max_tokens" if compact_prompt else "full_turn_max_tokens",
-                    3072 if compact_prompt else 4096,
+                    6144 if compact_prompt else 8192,
                 ),
                 temperature=self._spec_float(spec, "agent_temperature", 0.0),
             )
@@ -270,6 +292,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                     verbose,
                     provider=provider,
                     model=model,
+                    fallbacks=fallbacks,
                 )
                 if repaired is None:
                     return f"Agent stopped because the model returned invalid JSON.\n\n{exc}", turns, messages, agent_states
@@ -631,6 +654,26 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         return max(1, value)
 
     @staticmethod
+    def _spec_token_budget(spec: AgentTaskLike, name: str, default: int) -> int:
+        """Resolve a per-turn token budget, preserving 0 as 'no app-imposed cap'.
+
+        A configured 0 is passed straight through to the LLM client (which then
+        lets the provider use its own per-model maximum) instead of being coerced
+        to a default the way ``_spec_int`` does. A missing or invalid value falls
+        back to ``default``.
+        """
+        value = getattr(spec, name, None)
+        if value is None:
+            return default
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return default
+        if value == 0:
+            return 0
+        return max(1, value)
+
+    @staticmethod
     def _spec_float(spec: AgentTaskLike, name: str, default: float) -> float:
         try:
             value = float(getattr(spec, name, default))
@@ -922,12 +965,14 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                     verbose(f"read-only {agent_name} model input", model_input)
                 log(f"prompt prepared for {agent_name}: {len(model_input)} chars (read-only full)")
                 provider, model = self._resolve_agent_route(spec, agent)
+                fallbacks = self._task_model_fallbacks(spec)
                 response_text = self._call_model(
                     model_input,
                     log,
                     provider=provider,
                     model=model,
-                    max_tokens=self._spec_int(spec, "read_only_max_tokens", 1536),
+                    fallbacks=fallbacks,
+                    max_tokens=self._spec_token_budget(spec, "read_only_max_tokens", 3072),
                     temperature=self._spec_float(spec, "agent_temperature", 0.0),
                 )
                 turn["model_response"] = response_text
@@ -941,7 +986,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                     parsed = self._parse_agent_response(response_text)
                 except ValueError as exc:
                     log(f"{agent_name} read-only response parse failed: {exc}")
-                    repaired = self._repair_agent_response(response_text, log, verbose, provider=provider, model=model)
+                    repaired = self._repair_agent_response(response_text, log, verbose, provider=provider, model=model, fallbacks=fallbacks)
                     if repaired is None:
                         turn["tool_results"].append(asdict(ToolResult("response_parser", False, str(exc))))
                         return turn
@@ -1003,6 +1048,166 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 self._control.raise_if_cancelled()
                 turns.append(future.result())
         log("parallel read-only briefing finished")
+
+    @staticmethod
+    def _is_worker_agent(agent: dict | None) -> bool:
+        """True for agents that perform implementation work (eligible to run in parallel)."""
+        role = str((agent or {}).get("role") or "").lower()
+        name = str((agent or {}).get("name") or "").lower()
+        return role in {"implementer", "builder", "developer", "tester"} or name in {"builder", "developer"}
+
+    def _run_parallel_work_round(
+        self,
+        spec: AgentTaskLike,
+        tools: AgentToolbox,
+        agents: list[dict],
+        files: list[str],
+        verify_commands: list[list[str]],
+        messages: list[dict],
+        turns: list[dict],
+        agent_states: dict[str, dict],
+        task_state: dict,
+        log: LogCallback,
+        verbose: Callable[[str, object], None] | None = None,
+    ) -> None:
+        """Run implementer agents concurrently, gating every write through a file lease.
+
+        Each worker takes one turn at the same time as the others. Mutating
+        tools auto-acquire an exclusive lease on their target file, so disjoint
+        files are edited in parallel while a clash on the same file fails safely
+        instead of corrupting it. Shared task state is reconciled on the calling
+        thread after all workers join to avoid concurrent mutation.
+        """
+        workers = [agent for agent in agents if self._is_worker_agent(agent)]
+        if len(workers) < 2:
+            return
+        leases = FileLeaseRegistry()
+        max_workers = max(1, self._spec_int(spec, "max_parallel_agents", 4))
+        concurrency = min(len(workers), max_workers)
+        log(f"parallel work round started: {len(workers)} worker(s), up to {concurrency} at a time")
+
+        def worker(agent: dict) -> dict:
+            agent_name = str(agent.get("name") or "<unknown>")
+            turn: dict = {
+                "turn": 0,
+                "phase": "parallel_work",
+                "agent": agent_name,
+                "model_response": "",
+                "tool_results": [],
+                "messages": [],
+                "routing": {},
+            }
+            try:
+                self._control.raise_if_cancelled()
+                log(f"agent parallel work turn: {agent_name}")
+                compact = bool(agent_states[agent_name].get("briefed"))
+                model_input = self._build_agent_prompt(
+                    spec,
+                    files,
+                    verify_commands,
+                    active_agent=agent,
+                    messages=messages,
+                    agent_history=agent_states[agent_name]["history"],
+                    task_state=task_state,
+                    compact=compact,
+                )
+                tool_context = str(agent_states[agent_name].get("tool_context") or "")
+                if tool_context:
+                    model_input += "\n\nYour previous tool results:\n" + tool_context
+                if verbose:
+                    verbose(f"parallel work {agent_name} model input", model_input)
+                provider, model = self._resolve_agent_route(spec, agent)
+                fallbacks = self._task_model_fallbacks(spec)
+                response_text = self._call_model(
+                    model_input,
+                    log,
+                    provider=provider,
+                    model=model,
+                    fallbacks=fallbacks,
+                    max_tokens=self._spec_token_budget(
+                        spec,
+                        "delta_turn_max_tokens" if compact else "full_turn_max_tokens",
+                        6144 if compact else 8192,
+                    ),
+                    temperature=self._spec_float(spec, "agent_temperature", 0.0),
+                )
+                turn["model_response"] = response_text
+                agent_states[agent_name]["briefed"] = True
+                if verbose:
+                    verbose(f"parallel work {agent_name} model response", response_text)
+                try:
+                    parsed = self._parse_agent_response(response_text)
+                except ValueError as exc:
+                    log(f"{agent_name} parallel work response parse failed: {exc}")
+                    repaired = self._repair_agent_response(response_text, log, verbose, provider=provider, model=model, fallbacks=fallbacks)
+                    if repaired is None:
+                        turn["tool_results"].append(asdict(ToolResult("response_parser", False, str(exc))))
+                        return turn
+                    turn["model_response_repaired"] = repaired
+                    try:
+                        parsed = self._parse_agent_response(repaired)
+                    except ValueError as repair_exc:
+                        turn["tool_results"].append(asdict(ToolResult("response_parser", False, str(repair_exc))))
+                        return turn
+                thought = str(parsed.get("thought") or "").strip()
+                if thought:
+                    log(f"{agent_name} thought: {thought}")
+                    self._append_agent_history(agent_states, agent_name, f"Thought: {thought}")
+                results: list[dict] = []
+                for call in parsed.get("tool_calls") or []:
+                    self._control.raise_if_cancelled()
+                    if isinstance(call, dict):
+                        log(f"{agent_name} tool call: {self._tool_call_name(call) or 'unknown'}")
+                    result = self._execute_agent_tool_call(
+                        tools,
+                        call,
+                        agent_name,
+                        messages,
+                        turn,
+                        log=log,
+                        active_agent=agent,
+                        spec=spec,
+                        task_state=task_state,
+                        leases=leases,
+                    )
+                    result_dict = asdict(result)
+                    results.append(result_dict)
+                    turn["tool_results"].append(result_dict)
+                    self._append_agent_history(agent_states, agent_name, f"Tool {result.tool}: {result.message}")
+                agent_states[agent_name]["tool_context"] = self._tool_results_for_prompt(results, spec)
+                return turn
+            except AgentCancelled:
+                raise
+            except Exception as exc:
+                log(f"{agent_name} parallel work turn failed: {exc}")
+                if verbose:
+                    verbose(f"parallel work {agent_name} failure", traceback.format_exc())
+                turn["tool_results"].append(
+                    asdict(ToolResult("parallel_work", False, str(exc), {"error_type": exc.__class__.__name__}))
+                )
+                return turn
+
+        completed: list[dict] = []
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            future_map = {executor.submit(worker, agent): agent for agent in workers}
+            for future in as_completed(future_map):
+                self._control.raise_if_cancelled()
+                completed.append(future.result())
+
+        # Reconcile shared task state on the calling thread, after all writers join.
+        for done_turn in completed:
+            turns.append(done_turn)
+            self._update_task_state(
+                task_state,
+                done_turn.get("tool_results", []),
+                {"thought": "", "status": ""},
+                str(done_turn.get("agent") or ""),
+                log,
+            )
+        leases.release_all()
+        agent_states["_shared_task_state"] = task_state
+        task_state["next_step"] = "review parallel work and integrate the changes"
+        log("parallel work round finished")
 
     @staticmethod
     def _allowed_tool_names(
@@ -1164,7 +1369,9 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             "You are an autonomous coding agent running inside a strictly scoped "
             "desktop assistant. You are one participant in a multi-agent run. "
             "Act only as the active agent named below. You may only use the JSON tool protocol below. "
-            "Do not write prose outside JSON.\n\n"
+            "Your entire reply must be a single JSON object: the first character is '{' and the last is '}'. "
+            "Do not write any prose, reasoning, or <thought>/<think> tags before or after it; "
+            "put all reasoning inside the JSON \"thought\" field and keep it short so the JSON is never truncated.\n\n"
             + phase_rules
             + "Return exactly one JSON object in this shape:\n"
             "{\n"
@@ -1294,7 +1501,9 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         return (
             "Continue as the active agent. Static task details remain in force.\n\n"
             + phase_rules
-            + "Return one valid JSON object with keys thought, status, next_agent, reason, tool_calls, final. "
+            + "Reply with one JSON object only: first character '{', last character '}', "
+            "no prose or <thought> tags around it, all reasoning inside a short \"thought\" field. "
+            "Keys: thought, status, next_agent, reason, tool_calls, final. "
             f"Tools: {allowed_tools}. "
             "Use real relative paths, never placeholders. "
             + tool_guidance
@@ -1333,8 +1542,10 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         *,
         provider: str | None = None,
         model: str | None = None,
+        fallbacks: str | None = None,
         max_tokens: int = 4096,
         temperature: float | None = 0.0,
+        json_mode: bool = True,
     ) -> str:
         self._control.raise_if_cancelled()
         if self._model_callback is not None:
@@ -1372,8 +1583,10 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                     use_tools=True,
                     route_provider=provider,
                     route_model=model,
+                    route_fallbacks=fallbacks,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    json_mode=json_mode,
                 ):
                     if first_chunk:
                         first_chunk = False
@@ -1423,6 +1636,12 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             model = None
 
         return provider, model
+
+    @staticmethod
+    def _task_model_fallbacks(spec: AgentTaskLike) -> str | None:
+        """Task-level ``provider:model`` fallback chain, or None to keep app defaults."""
+        raw = str(getattr(spec, "model_fallbacks", "") or "").strip()
+        return raw or None
 
     def _normalise_agents(self, spec: AgentTaskLike) -> list[dict]:
         raw_agents = getattr(spec, "agents", None) or []
@@ -1629,6 +1848,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         active_agent: dict | None = None,
         spec: AgentTaskLike | None = None,
         task_state: dict | None = None,
+        leases: FileLeaseRegistry | None = None,
     ) -> ToolResult:
         if not isinstance(call, dict):
             return ToolResult("invalid", False, "Tool call must be an object.")
@@ -1670,7 +1890,46 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             guard = self._guard_disabled_or_duplicate_tool(tool, args, task_state)
             if guard is not None:
                 return guard
+        if leases is not None and self._is_mutating_agent_tool(tool):
+            lease_error = self._enforce_file_lease(tools, tool, args, agent_name, leases, log)
+            if lease_error is not None:
+                return lease_error
         return self._execute_tool_call(tools, call)
+
+    @staticmethod
+    def _enforce_file_lease(
+        tools: AgentToolbox,
+        tool: str,
+        args: dict,
+        agent_name: str,
+        leases: FileLeaseRegistry,
+        log: LogCallback | None = None,
+    ) -> ToolResult | None:
+        """Auto-acquire an exclusive lease before a mutating write.
+
+        Returns ``None`` when the calling agent owns (or just acquired) the
+        lease and the write may proceed, or a failed ``ToolResult`` when
+        another agent holds it so concurrent writers never collide on a file.
+        """
+        path = str(args.get("path") or "").strip()
+        if not path:
+            return None
+        try:
+            key = tools.workspace.relative(path)
+        except Exception:
+            key = path.replace("\\", "/").strip()
+        holder = leases.acquire(agent_name, key)
+        if holder is None:
+            return None
+        if log:
+            log(f"lease conflict: {agent_name} blocked on {key} (held by {holder})")
+        return ToolResult(
+            tool,
+            False,
+            f"File {key} is leased by {holder}; it cannot be edited concurrently. "
+            f"Work on a file you own or hand the file to {holder}.",
+            {"error_type": "file_leased", "path": key, "holder": holder},
+        )
 
     @classmethod
     def _impossible_assignment_error(

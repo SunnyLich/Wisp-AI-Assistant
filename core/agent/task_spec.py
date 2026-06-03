@@ -20,6 +20,20 @@ def role_responsibility(role: str) -> str:
     return ROLE_RESPONSIBILITIES.get(role.strip(), "")
 
 
+def _int_or(value, default: int) -> int:  # noqa: ANN001
+    """Coerce to int, keeping an explicit 0 (used as the 'no token cap' sentinel).
+
+    Unlike ``int(value or default)`` this only falls back when the value is
+    missing, empty, or non-numeric, so a stored 0 survives a save/reload.
+    """
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def is_role_template(text: str) -> bool:
     normalized = " ".join(text.split())
     return any(" ".join(value.split()) == normalized for value in ROLE_RESPONSIBILITIES.values())
@@ -78,12 +92,15 @@ class AgentTaskSpec:
     required_context: str = ""
     completion_criteria: str = ""
     report_format: str = "Summary + changed files + verification"
+    model_fallbacks: str = ""
     agents: list[AgentRoleSpec] = field(default_factory=list)
     communications: list[AgentCommunicationSpec] = field(default_factory=list)
     parallel_read_only_briefing: bool = True
-    full_turn_max_tokens: int = 4096
-    delta_turn_max_tokens: int = 3072
-    read_only_max_tokens: int = 1536
+    parallel_execution: bool = False
+    max_parallel_agents: int = 4
+    full_turn_max_tokens: int = 8192
+    delta_turn_max_tokens: int = 6144
+    read_only_max_tokens: int = 3072
     agent_temperature: float = 0.0
     tool_result_text_limit: int = 6000
     tool_result_command_limit: int = 8000
@@ -259,12 +276,15 @@ def agent_task_spec_from_dict(data: dict) -> AgentTaskSpec:
         required_context=str(data.get("required_context") or ""),
         completion_criteria=str(data.get("completion_criteria") or ""),
         report_format=str(data.get("report_format") or "Summary + changed files + verification"),
+        model_fallbacks=str(data.get("model_fallbacks") or ""),
         agents=agents,
         communications=communications,
         parallel_read_only_briefing=bool(data.get("parallel_read_only_briefing", True)),
-        full_turn_max_tokens=int(data.get("full_turn_max_tokens") or 4096),
-        delta_turn_max_tokens=int(data.get("delta_turn_max_tokens") or 3072),
-        read_only_max_tokens=int(data.get("read_only_max_tokens") or 1536),
+        parallel_execution=bool(data.get("parallel_execution", False)),
+        max_parallel_agents=max(1, _int_or(data.get("max_parallel_agents"), 4)),
+        full_turn_max_tokens=_int_or(data.get("full_turn_max_tokens"), 8192),
+        delta_turn_max_tokens=_int_or(data.get("delta_turn_max_tokens"), 6144),
+        read_only_max_tokens=_int_or(data.get("read_only_max_tokens"), 3072),
         agent_temperature=float(data.get("agent_temperature", 0.0) or 0.0),
         tool_result_text_limit=int(data.get("tool_result_text_limit") or 6000),
         tool_result_command_limit=int(data.get("tool_result_command_limit") or 8000),

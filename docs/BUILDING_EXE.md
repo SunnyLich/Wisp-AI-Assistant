@@ -9,13 +9,11 @@ From PowerShell in the project root:
 ```
 
 The script uses the project `.venv` by default. If `.venv` does not exist, it
-asks before creating it. It also asks before installing or updating dependencies.
+creates it automatically, then checks dependencies and installs anything that is
+missing or out of date — no prompts. Already-satisfied packages are skipped.
 
-To create/use `.venv` and install/update dependencies without prompting:
-
-```powershell
-.\tools\build_exe.ps1 -Clean -Yes
-```
+(`-Yes` is still accepted for backward compatibility but no longer does anything,
+since auto-install is now the default.)
 
 The built app lands at:
 

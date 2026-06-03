@@ -23,7 +23,7 @@ import html
 import json
 import math
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import Qt, QUrl, QPointF, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QPainterPath, QPen, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ui.agent.log_parser import parse_live_log_event
+from ui.settings_panel.helpers import parse_fallback_rows
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 from core.agent.task_spec import (
     ROLE_RESPONSIBILITIES,
@@ -193,6 +194,7 @@ class AgentTaskDialog(QDialog):
         self.task_spec: AgentTaskSpec | None = None
         self._agent_specs: list[dict[str, str]] = []
         self._communication_specs: list[dict[str, str]] = []
+        self._fallback_rows: list[dict] = []
         self._current_agent_row = -1
         self._loading_agent = False
         self._communication_window: AgentCommunicationMapWindow | None = None
@@ -279,6 +281,7 @@ class AgentTaskDialog(QDialog):
         self.approval_combo.setCurrentText(spec.approval_policy)
         self.provider_combo.setCurrentText(getattr(spec, "provider", "same as app"))
         self.model_edit.setText(spec.model)
+        self._set_fallback_rows(getattr(spec, "model_fallbacks", "") or "")
         self.reasoning_combo.setCurrentText(spec.reasoning_effort)
         self.runtime_minutes.setValue(spec.max_runtime_minutes)
         self.max_turns.setValue(spec.max_turns)
@@ -290,9 +293,9 @@ class AgentTaskDialog(QDialog):
         self.allow_delete.setCurrentText(getattr(spec, "file_delete_permission_mode", self._permission_mode_from_bool(spec.allow_file_delete)))
         self.allowed_globs_edit.setText(", ".join(spec.allowed_file_globs))
         self.blocked_globs_edit.setText(", ".join(spec.blocked_file_globs))
-        self.full_turn_tokens.setValue(getattr(spec, "full_turn_max_tokens", 4096))
-        self.delta_turn_tokens.setValue(getattr(spec, "delta_turn_max_tokens", 3072))
-        self.read_only_tokens.setValue(getattr(spec, "read_only_max_tokens", 1536))
+        self.full_turn_tokens.setValue(getattr(spec, "full_turn_max_tokens", 8192))
+        self.delta_turn_tokens.setValue(getattr(spec, "delta_turn_max_tokens", 6144))
+        self.read_only_tokens.setValue(getattr(spec, "read_only_max_tokens", 3072))
         self.agent_temperature.setValue(float(getattr(spec, "agent_temperature", 0.0)))
         self.tool_text_limit.setValue(getattr(spec, "tool_result_text_limit", 6000))
         self.tool_command_limit.setValue(getattr(spec, "tool_result_command_limit", 8000))
@@ -304,6 +307,8 @@ class AgentTaskDialog(QDialog):
         self.completion_edit.setPlainText(spec.completion_criteria)
         self.report_combo.setCurrentText(spec.report_format)
         self.parallel_briefing.setChecked(bool(getattr(spec, "parallel_read_only_briefing", True)))
+        self.parallel_execution.setChecked(bool(getattr(spec, "parallel_execution", False)))
+        self.max_parallel_agents.setValue(int(getattr(spec, "max_parallel_agents", 4) or 4))
         # Agents and communications
         self._agent_specs = [
             {
@@ -354,27 +359,130 @@ class AgentTaskDialog(QDialog):
 
         form.addRow("Title", self.title_edit)
         model_row = QHBoxLayout()
+        model_row.setContentsMargins(0, 0, 0, 0)
+        model_row.setSpacing(8)
         self.provider_combo = QComboBox()
         self.provider_combo.setEditable(True)
-        self.provider_combo.addItems([
-            "same as app",
-            "copilot",
-            "chatgpt",
-            "openai",
-            "anthropic",
-            "groq",
-            "google",
-        ])
+        self.provider_combo.addItems(self._FALLBACK_PROVIDERS)
         self.model_edit = QLineEdit()
         self.model_edit.setPlaceholderText("Type any model name...")
+        copy_app_btn = QPushButton("Copy from app")
+        copy_app_btn.setToolTip(
+            "Fill the provider, model, and fallback models from the app's current LLM settings."
+        )
+        copy_app_btn.setFixedWidth(self._ROW_BTN_WIDTH)
+        copy_app_btn.clicked.connect(self._copy_model_from_app)
         model_row.addWidget(self.provider_combo, stretch=1)
         model_row.addWidget(self.model_edit, stretch=2)
+        model_row.addWidget(copy_app_btn)
         model_widget = QWidget()
         model_widget.setLayout(model_row)
         form.addRow("Model", model_widget)
+        form.addRow("Fallback Model", self._fallback_section())
         form.addRow("Objective", self.objective_edit)
         form.addRow("Context", self.required_context_edit)
         return box
+
+    _FALLBACK_PROVIDERS = [
+        "groq", "openai", "anthropic", "google", "chatgpt", "copilot",
+    ]
+    # Shared width for the trailing button so the Model and Fallback Model rows
+    # line up column-for-column ("Copy from app" / "Remove").
+    _ROW_BTN_WIDTH = 110
+
+    def _fallback_section(self) -> QWidget:
+        """Ordered fallback models tried when the primary model fails.
+
+        Mirrors the per-model fallback rows in Settings: a provider + model pair
+        per row, serialised as ``provider:model`` lines into the task spec.
+        """
+        wrapper = QWidget()
+        v = QVBoxLayout(wrapper)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+
+        self.fallback_rows_layout = QVBoxLayout()
+        self.fallback_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.fallback_rows_layout.setSpacing(6)
+        v.addLayout(self.fallback_rows_layout)
+
+        add_btn = QPushButton("+ Add fallback model")
+        add_btn.clicked.connect(lambda: self._add_fallback_row())
+        add_row = QHBoxLayout()
+        add_row.setContentsMargins(0, 0, 0, 0)
+        add_row.addWidget(add_btn)
+        add_row.addStretch()
+        v.addLayout(add_row)
+
+        note = QLabel("Tried in order if the primary model fails or is unavailable.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #777; font-size: 9pt;")
+        v.addWidget(note)
+        return wrapper
+
+    def _add_fallback_row(self, provider: str = "", model: str = "") -> None:
+        row_w = QWidget()
+        h = QHBoxLayout(row_w)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+
+        provider_combo = QComboBox()
+        provider_combo.setEditable(True)
+        provider_combo.addItems(self._FALLBACK_PROVIDERS)
+        if provider:
+            provider_combo.setCurrentText(provider)
+        else:
+            provider_combo.setCurrentIndex(0)
+
+        model_edit = QLineEdit()
+        model_edit.setPlaceholderText("model name")
+        if model:
+            model_edit.setText(model)
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.setFixedWidth(self._ROW_BTN_WIDTH)
+        h.addWidget(provider_combo, 1)
+        h.addWidget(model_edit, 2)
+        h.addWidget(remove_btn)
+
+        row_info = {"widget": row_w, "provider": provider_combo, "model": model_edit}
+        remove_btn.clicked.connect(lambda: self._remove_fallback_row(row_info))
+        self.fallback_rows_layout.addWidget(row_w)
+        self._fallback_rows.append(row_info)
+
+    def _remove_fallback_row(self, row_info: dict) -> None:
+        if row_info in self._fallback_rows:
+            self._fallback_rows.remove(row_info)
+        row_info["widget"].deleteLater()
+
+    def _clear_fallback_rows(self) -> None:
+        for row in list(self._fallback_rows):
+            self._remove_fallback_row(row)
+
+    def _set_fallback_rows(self, raw: str) -> None:
+        self._clear_fallback_rows()
+        for provider, model in parse_fallback_rows(raw):
+            self._add_fallback_row(provider, model)
+
+    def _collect_fallbacks(self) -> str:
+        parts: list[str] = []
+        for row in self._fallback_rows:
+            provider = row["provider"].currentText().strip()
+            model = row["model"].text().strip()
+            if provider and model:
+                parts.append(f"{provider}:{model}")
+        return "\n".join(parts)
+
+    def _copy_model_from_app(self) -> None:
+        """Fill provider, model, and fallback models from the app's LLM settings."""
+        import config
+        provider = (getattr(config, "LLM_PROVIDER", "") or "").strip()
+        model = (getattr(config, "LLM_MODEL", "") or "").strip()
+        if provider:
+            self.provider_combo.setCurrentText(provider)
+        if model:
+            self.model_edit.setText(model)
+        self._set_fallback_rows(getattr(config, "LLM_FALLBACKS", "") or "")
 
     def _agents_group(self) -> QGroupBox:
         box = QGroupBox("Agents & Communication")
@@ -550,6 +658,11 @@ class AgentTaskDialog(QDialog):
         self.max_turns.setRange(1, 200)
         self.parallel_briefing = QCheckBox("Start with parallel read-only briefing")
         self.parallel_briefing.setChecked(True)
+        self.parallel_execution = QCheckBox("Run implementer agents in parallel (file leases prevent write conflicts)")
+        self.parallel_execution.setChecked(False)
+        self.max_parallel_agents = QSpinBox()
+        self.max_parallel_agents.setRange(1, 20)
+        self.max_parallel_agents.setValue(4)
         self.agent_temperature = QDoubleSpinBox()
         self.agent_temperature.setRange(0.0, 2.0)
         self.agent_temperature.setSingleStep(0.1)
@@ -561,6 +674,8 @@ class AgentTaskDialog(QDialog):
         form.addRow("Time limit", self.runtime_minutes)
         form.addRow("Turn limit", self.max_turns)
         form.addRow("Briefing", self.parallel_briefing)
+        form.addRow("Parallel work", self.parallel_execution)
+        form.addRow("Max parallel agents", self.max_parallel_agents)
         form.addRow("Agent temperature", self.agent_temperature)
         return box
 
@@ -569,9 +684,9 @@ class AgentTaskDialog(QDialog):
         form = QFormLayout(box)
         form.setSpacing(10)
 
-        self.full_turn_tokens = self._number_spin(256, 16000, 4096)
-        self.delta_turn_tokens = self._number_spin(256, 16000, 3072)
-        self.read_only_tokens = self._number_spin(256, 8000, 1536)
+        self.full_turn_tokens = self._number_spin(0, 16000, 8192, "No limit (model max)")
+        self.delta_turn_tokens = self._number_spin(0, 16000, 6144, "No limit (model max)")
+        self.read_only_tokens = self._number_spin(0, 8000, 3072, "No limit (model max)")
         self.tool_text_limit = self._number_spin(500, 50000, 6000)
         self.tool_command_limit = self._number_spin(500, 50000, 8000)
         self.tool_value_limit = self._number_spin(200, 30000, 3000)
@@ -591,9 +706,12 @@ class AgentTaskDialog(QDialog):
         return box
 
     @staticmethod
-    def _number_spin(minimum: int, maximum: int, value: int) -> QSpinBox:
+    def _number_spin(minimum: int, maximum: int, value: int, special_value_text: str = "") -> QSpinBox:
         spin = QSpinBox()
         spin.setRange(minimum, maximum)
+        # Shown when the spin sits at its minimum (e.g. 0 -> "No limit").
+        if special_value_text:
+            spin.setSpecialValueText(special_value_text)
         spin.setValue(value)
         return spin
 
@@ -643,8 +761,9 @@ class AgentTaskDialog(QDialog):
 
     def _load_defaults(self) -> None:
         self.scope_edit.setText(str(Path.cwd()))
-        self.provider_combo.setCurrentText("same as app")
-        self.model_edit.setText("gpt-5.3-codex")
+        # Default the model to the app's configured LLM (provider + model +
+        # fallbacks) instead of the old "same as app" sentinel.
+        self._copy_model_from_app()
         self.allow_shell.setCurrentText("auto")
         self.allow_network.setCurrentText("never permit")
         self.allow_git.setCurrentText("auto")
@@ -654,16 +773,20 @@ class AgentTaskDialog(QDialog):
         self.runtime_minutes.setValue(60)
         self.max_turns.setValue(30)
         self.blocked_globs_edit.setText(".env, private/*, .git/*")
-        self.full_turn_tokens.setValue(4096)
-        self.delta_turn_tokens.setValue(3072)
-        self.read_only_tokens.setValue(1536)
+        self.full_turn_tokens.setValue(8192)
+        self.delta_turn_tokens.setValue(6144)
+        self.read_only_tokens.setValue(3072)
         self.tool_text_limit.setValue(6000)
         self.tool_command_limit.setValue(8000)
         self.tool_value_limit.setValue(3000)
         self.tool_list_limit.setValue(120)
         self.visible_files_full_limit.setValue(200)
         self.visible_files_delta_limit.setValue(80)
-        self._agent_specs = [
+        self.reset_agents_to_default()
+
+    @staticmethod
+    def _default_agent_specs() -> list[dict[str, str]]:
+        return [
             {
                 "name": "Coordinator",
                 "role": "Coordinator",
@@ -686,7 +809,10 @@ class AgentTaskDialog(QDialog):
                 "responsibility": role_responsibility("Reviewer"),
             },
         ]
-        self._communication_specs = [
+
+    @staticmethod
+    def _default_communication_specs() -> list[dict[str, str]]:
+        return [
             {
                 "from_agent": "Coordinator",
                 "to_agent": "Builder",
@@ -709,6 +835,12 @@ class AgentTaskDialog(QDialog):
                 "message": "Send approval status, remaining concerns, and final-report notes.",
             },
         ]
+
+    def reset_agents_to_default(self) -> None:
+        """Restore the default agents and communications, then refresh the lists."""
+        self._agent_specs = self._default_agent_specs()
+        self._communication_specs = self._default_communication_specs()
+        self._current_agent_row = -1
         self._refresh_agent_list()
         self._refresh_communication_list()
         if self.agent_list.count():
@@ -1016,6 +1148,7 @@ class AgentTaskDialog(QDialog):
             approval_policy=self.approval_combo.currentText(),
             provider=provider,
             model=model,
+            model_fallbacks=self._collect_fallbacks(),
             reasoning_effort=self.reasoning_combo.currentText(),
             max_runtime_minutes=self.runtime_minutes.value(),
             max_turns=self.max_turns.value(),
@@ -1039,6 +1172,8 @@ class AgentTaskDialog(QDialog):
             agents=agents,
             communications=communications,
             parallel_read_only_briefing=self.parallel_briefing.isChecked(),
+            parallel_execution=self.parallel_execution.isChecked(),
+            max_parallel_agents=self.max_parallel_agents.value(),
             full_turn_max_tokens=self.full_turn_tokens.value(),
             delta_turn_max_tokens=self.delta_turn_tokens.value(),
             read_only_max_tokens=self.read_only_tokens.value(),
@@ -1203,6 +1338,10 @@ class _LiveAgentItem(QGraphicsItemGroup):
     WIDTH = 220
     HEIGHT = 150
     TEXT_WIDTH = 196
+    GRIP = 16          # bottom-right resize handle, in item-local coords
+    MIN_SCALE = 0.6
+    MAX_SCALE = 2.2
+    _CLICK_SLOP = 5    # scene px of movement below which a press counts as a click
 
     def __init__(
         self,
@@ -1217,11 +1356,19 @@ class _LiveAgentItem(QGraphicsItemGroup):
         health: str,
         active: bool,
         selected: bool,
+        scale: float = 1.0,
+        on_geometry_change: Callable[[int, float, float, float], None] | None = None,
     ):
         super().__init__()
         self._index = index
         self._click_callback = click_callback
+        self._on_geometry_change = on_geometry_change
+        self._scale_factor = scale
+        self._resizing = False
+        self._press_scene = QPointF()
         self.setAcceptHoverEvents(True)
+        self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setZValue(5 if active or selected else 3)
 
         border = "#2f80ed" if active else "#7aa7df"
@@ -1291,6 +1438,14 @@ class _LiveAgentItem(QGraphicsItemGroup):
         health_item.setPos(12, 122)
         health_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.addToGroup(health_item)
+
+        grip = QGraphicsRectItem(self.WIDTH - self.GRIP, self.HEIGHT - self.GRIP, self.GRIP, self.GRIP)
+        grip.setBrush(QBrush(QColor(border)))
+        grip.setPen(QPen(QColor("#ffffff"), 1))
+        grip.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.addToGroup(grip)
+
+        self.setScale(scale)
         self.setPos(x, y)
 
     def hoverEnterEvent(self, event):  # noqa: N802
@@ -1301,9 +1456,63 @@ class _LiveAgentItem(QGraphicsItemGroup):
         self.setOpacity(1.0)
         super().hoverLeaveEvent(event)
 
+    def _in_grip(self, event) -> bool:
+        pos = event.pos()  # item-local coords (independent of the group's scale)
+        return pos.x() >= self.WIDTH - self.GRIP and pos.y() >= self.HEIGHT - self.GRIP
+
+    def _emit_geometry(self) -> None:
+        if self._on_geometry_change is not None:
+            p = self.pos()
+            self._on_geometry_change(self._index, p.x(), p.y(), self._scale_factor)
+
     def mousePressEvent(self, event):  # noqa: N802
-        self._click_callback(self._index)
+        self._press_scene = event.scenePos()
+        if self._in_grip(event):
+            self._resizing = True
+            event.accept()
+            return
+        self._resizing = False
+        super().mousePressEvent(event)  # arms the group's built-in drag-move
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        if self._resizing:
+            origin = self.scenePos()  # top-left; unaffected by setScale
+            dx = event.scenePos().x() - origin.x()
+            dy = event.scenePos().y() - origin.y()
+            raw = max(dx / self.WIDTH, dy / self.HEIGHT)
+            self._scale_factor = max(self.MIN_SCALE, min(self.MAX_SCALE, raw))
+            self.setScale(self._scale_factor)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if self._resizing:
+            self._resizing = False
+            event.accept()
+            self._emit_geometry()
+            return
+        super().mouseReleaseEvent(event)
+        moved = (event.scenePos() - self._press_scene).manhattanLength() >= self._CLICK_SLOP
         event.accept()
+        if moved:
+            self._emit_geometry()
+        else:
+            # A click (not a drag): selection redraws the scene and deletes this
+            # item, so it must be the very last thing we touch on self.
+            self._click_callback(self._index)
+
+
+def _fit_list_to_rows(lw: QListWidget, rows: int) -> None:
+    """Pin a list to exactly *rows* visible rows so two lists stay the same height.
+
+    Uses font metrics (deterministic and identical across empty/populated lists)
+    rather than the row size hint, and fixes the height so the list does not steal
+    vertical space from the editing fields below it when the window grows.
+    """
+    row_h = lw.fontMetrics().height() + 6
+    height = row_h * rows + 2 * lw.frameWidth() + 4
+    lw.setFixedHeight(height)
 
 
 class AgentCommunicationMapWindow(QDialog):
@@ -1339,12 +1548,19 @@ class AgentCommunicationMapWindow(QDialog):
         add_comm_btn = QPushButton("Add Communication")
         remove_comm_btn = QPushButton("Remove Communication")
         pair_btn = QPushButton("Create Pair Exchanges")
+        reset_btn = QPushButton("Reset to Default")
+        reset_btn.setToolTip("Discard the current agents and communications and restore the defaults")
+        reset_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #c0392b; color: #c0392b; }"
+            "QPushButton:hover { background: rgba(192,57,43,0.10); }"
+        )
         refresh_btn = QPushButton("Refresh")
         add_agent_btn.clicked.connect(self._add_agent)
         remove_agent_btn.clicked.connect(self._remove_agent)
         add_comm_btn.clicked.connect(self._add_communication)
         remove_comm_btn.clicked.connect(self._remove_selected_exchange)
         pair_btn.clicked.connect(self._create_pairs)
+        reset_btn.clicked.connect(self._reset_to_default)
         refresh_btn.clicked.connect(self.refresh)
         toolbar.addWidget(add_agent_btn)
         toolbar.addWidget(remove_agent_btn)
@@ -1352,6 +1568,7 @@ class AgentCommunicationMapWindow(QDialog):
         toolbar.addWidget(remove_comm_btn)
         toolbar.addWidget(pair_btn)
         toolbar.addStretch()
+        toolbar.addWidget(reset_btn)
         toolbar.addWidget(refresh_btn)
         content_root.addLayout(toolbar)
 
@@ -1372,6 +1589,7 @@ class AgentCommunicationMapWindow(QDialog):
         agent_layout.addWidget(QLabel("Agents"))
         self.window_agent_list = QListWidget()
         self.window_agent_list.currentRowChanged.connect(self._load_agent_row)
+        _fit_list_to_rows(self.window_agent_list, 5)
         agent_layout.addWidget(self.window_agent_list)
         agent_form = QFormLayout()
         agent_form.setSpacing(8)
@@ -1393,8 +1611,8 @@ class AgentCommunicationMapWindow(QDialog):
         self.map_agent_model = QLineEdit()
         self.map_agent_model.setPlaceholderText("same as task")
         self.map_agent_responsibility = QTextEdit()
-        self.map_agent_responsibility.setMinimumHeight(70)
-        self.map_agent_responsibility.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.map_agent_responsibility.setMinimumHeight(80)
+        self.map_agent_responsibility.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.map_agent_name.textChanged.connect(self._save_agent_form)
         self.map_agent_role.currentTextChanged.connect(self._map_agent_role_changed)
         self.map_agent_provider.currentTextChanged.connect(self._save_agent_form)
@@ -1405,7 +1623,7 @@ class AgentCommunicationMapWindow(QDialog):
         agent_form.addRow("Provider", self.map_agent_provider)
         agent_form.addRow("Model", self.map_agent_model)
         agent_form.addRow("Responsibility", self.map_agent_responsibility)
-        agent_layout.addLayout(agent_form, stretch=0)
+        agent_layout.addLayout(agent_form, stretch=1)
         splitter.addWidget(agent_panel)
 
         comm_panel = QWidget()
@@ -1415,6 +1633,7 @@ class AgentCommunicationMapWindow(QDialog):
         comm_layout.addWidget(QLabel("Communications"))
         self.exchange_list = QListWidget()
         self.exchange_list.currentRowChanged.connect(self._load_exchange_row)
+        _fit_list_to_rows(self.exchange_list, 5)
         comm_layout.addWidget(self.exchange_list)
         comm_form = QFormLayout()
         comm_form.setSpacing(8)
@@ -1466,6 +1685,27 @@ class AgentCommunicationMapWindow(QDialog):
         footer.setStyleSheet("color: #777;")
         content_root.addWidget(footer)
         fit_window_to_screen(self, preferred_width=980, preferred_height=620)
+
+    def _reset_to_default(self) -> None:
+        """Confirm, then restore the default agents and communications."""
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setWindowTitle("Reset to default?")
+        confirm.setText("Replace the current agents and communications with the defaults?")
+        confirm.setInformativeText(
+            "This discards every agent and communication you have configured here "
+            "and restores the default Coordinator / Builder / Reviewer setup. "
+            "This cannot be undone."
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+        self._task_dialog.reset_agents_to_default()
+        self._agent_map_positions.clear()  # reset the relationship-map layout too
+        self.refresh()
 
     def refresh(self) -> None:
         current_agent = self.window_agent_list.currentRow() if hasattr(self, "window_agent_list") else 0
@@ -1896,6 +2136,30 @@ class AgentNudgeDialog(QDialog):
         self.accept()
 
 
+class _FitGraphicsView(QGraphicsView):
+    """A graphics view that always scales its whole scene to fit the viewport,
+    so the meeting diagram shrinks/grows with the panel instead of forcing a
+    large minimum size or showing scrollbars."""
+
+    def __init__(self, scene):
+        super().__init__(scene)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def fit_scene(self) -> None:
+        rect = self.scene().sceneRect() if self.scene() else None
+        if rect is not None and not rect.isEmpty():
+            self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self.fit_scene()
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        self.fit_scene()
+
+
 class AgentRunWindow(QDialog):
     """Small live log window for a background agent run."""
 
@@ -1921,6 +2185,9 @@ class AgentRunWindow(QDialog):
         self._active_agent = self._agent_names[0]
         self._selected_agent = self._active_agent
         self._meeting_messages: list[dict[str, str]] = []
+        # User drag/resize overrides per agent: name -> {"x","y","scale"}. Persisted
+        # here so they survive the full scene rebuild in _draw_live_meeting().
+        self._agent_layout: dict[str, dict[str, float]] = {}
         self._pending_trace_entries: list[str] = []
         self._agent_states = {
             name: {
@@ -1935,7 +2202,7 @@ class AgentRunWindow(QDialog):
             for name in self._agent_names
         }
         self.setWindowTitle(f"Agent Task - {spec.title}")
-        self.setMinimumSize(1100, 680)
+        self.setMinimumSize(820, 560)
         enable_standard_window_controls(self)
 
         root = QVBoxLayout(self)
@@ -1973,8 +2240,10 @@ class AgentRunWindow(QDialog):
 
         self.tabs = QTabWidget()
         self.meeting_scene = QGraphicsScene(self)
-        self.meeting_view = QGraphicsView(self.meeting_scene)
-        self.meeting_view.setMinimumSize(760, 500)
+        self.meeting_view = _FitGraphicsView(self.meeting_scene)
+        # Small minimum so the panel can shrink and the splitter can redistribute;
+        # the view scales its scene to fit, so nothing is clipped.
+        self.meeting_view.setMinimumSize(280, 220)
         self.meeting_view.setStyleSheet("QGraphicsView { background: #edf3fa; border: 1px solid #c2ccda; }")
         agent_detail_panel = QWidget()
         agent_detail_layout = QVBoxLayout(agent_detail_panel)
@@ -1984,9 +2253,11 @@ class AgentRunWindow(QDialog):
         self.agent_summary_view.setReadOnly(True)
         self.agent_summary_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.agent_summary_view.setMaximumHeight(250)
+        self.agent_summary_view.setMinimumWidth(240)
         self.agent_activity_view = QTextEdit()
         self.agent_activity_view.setReadOnly(True)
         self.agent_activity_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        agent_detail_layout.addWidget(QLabel("Agent Detail"))
         agent_detail_layout.addWidget(self.agent_summary_view)
         agent_detail_layout.addWidget(QLabel("Recent Activity"))
         agent_detail_layout.addWidget(self.agent_activity_view, stretch=1)
@@ -1998,16 +2269,31 @@ class AgentRunWindow(QDialog):
         self.shared_board_view = QTextEdit()
         self.shared_board_view.setReadOnly(True)
         self.shared_board_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.shared_board_view.setMinimumWidth(250)
+        self.shared_board_view.setMinimumWidth(200)
         board_layout.addWidget(self.shared_board_view, stretch=1)
+        meeting_panel = QWidget()
+        meeting_panel_layout = QVBoxLayout(meeting_panel)
+        meeting_panel_layout.setContentsMargins(0, 0, 0, 0)
+        meeting_panel_layout.setSpacing(6)
+        meeting_header = QHBoxLayout()
+        meeting_header.addWidget(QLabel("Meeting"))
+        meeting_header.addStretch()
+        self.reset_layout_btn = QPushButton("Reset Layout")
+        self.reset_layout_btn.setToolTip("Restore every agent card to its default position and size")
+        self.reset_layout_btn.clicked.connect(self._reset_agent_layout)
+        meeting_header.addWidget(self.reset_layout_btn)
+        meeting_panel_layout.addLayout(meeting_header)
+        meeting_panel_layout.addWidget(self.meeting_view, stretch=1)
         meeting_splitter = QSplitter(Qt.Orientation.Horizontal)
         meeting_splitter.setChildrenCollapsible(False)
-        meeting_splitter.addWidget(self.meeting_view)
+        meeting_splitter.addWidget(meeting_panel)
         meeting_splitter.addWidget(board_panel)
         meeting_splitter.addWidget(agent_detail_panel)
-        meeting_splitter.setStretchFactor(0, 6)
-        meeting_splitter.setStretchFactor(1, 1)
-        meeting_splitter.setStretchFactor(2, 2)
+        # Give the right-hand "Agent Detail / Recent Activity" panel more room.
+        meeting_splitter.setStretchFactor(0, 4)
+        meeting_splitter.setStretchFactor(1, 2)
+        meeting_splitter.setStretchFactor(2, 4)
+        meeting_splitter.setSizes([460, 240, 460])
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
@@ -2032,7 +2318,7 @@ class AgentRunWindow(QDialog):
         self.diff_btn = QPushButton("View Diff")
         self.diff_btn.setEnabled(False)
         self.diff_btn.clicked.connect(self._open_diff)
-        self.open_result_btn = QPushButton("Open Result Folder")
+        self.open_result_btn = QPushButton("Open Memory Folder")
         self.open_result_btn.setEnabled(False)
         self.open_result_btn.clicked.connect(self._open_result_folder)
         self.open_scope_btn = QPushButton("Open Scope Folder")
@@ -2068,7 +2354,7 @@ class AgentRunWindow(QDialog):
         self.trace_entry.connect(self._append_trace)
         self.finished.connect(self._on_finished)
         self.approval_requested.connect(self._show_approval)
-        fit_window_to_screen(self, preferred_width=1380, preferred_height=820)
+        fit_window_to_screen(self, preferred_width=1180, preferred_height=720)
 
     def showEvent(self, event):  # noqa: N802
         super().showEvent(event)
@@ -2382,7 +2668,14 @@ class AgentRunWindow(QDialog):
         for idx, name in enumerate(self._agent_names):
             state = self._agent_states.get(name, {})
             x, y = positions[idx]
-            centers[name] = (x + _LiveAgentItem.WIDTH / 2, y + _LiveAgentItem.HEIGHT / 2)
+            override = self._agent_layout.get(name) or {}
+            x = float(override.get("x", x))
+            y = float(override.get("y", y))
+            scale = float(override.get("scale", 1.0))
+            centers[name] = (
+                x + _LiveAgentItem.WIDTH * scale / 2,
+                y + _LiveAgentItem.HEIGHT * scale / 2,
+            )
             item = _LiveAgentItem(
                 idx,
                 self._select_live_agent,
@@ -2395,9 +2688,12 @@ class AgentRunWindow(QDialog):
                 self._health_badge(name),
                 name == self._active_agent,
                 name == self._selected_agent,
+                scale=scale,
+                on_geometry_change=self._on_agent_geometry_change,
             )
             self.meeting_scene.addItem(item)
         self._draw_last_message_arrow(centers)
+        self.meeting_view.fit_scene()
         self._refresh_agent_detail()
 
     def _draw_last_message_arrow(self, centers: dict[str, tuple[float, float]]) -> None:
@@ -2480,6 +2776,32 @@ class AgentRunWindow(QDialog):
         if 0 <= index < len(self._agent_names):
             self._selected_agent = self._agent_names[index]
             self._draw_live_meeting()
+
+    def _on_agent_geometry_change(self, index: int, x: float, y: float, scale: float) -> None:
+        """Persist a user drag/resize so it survives the next scene rebuild.
+
+        Fires only when the gesture finishes (mouse release), so the arrow is
+        held steady during the drag/resize and snaps to the card's new position
+        and size as soon as the user lets go. The redraw is deferred to the next
+        event-loop tick because rebuilding the scene deletes the very item whose
+        event handler is calling us.
+        """
+        if not (0 <= index < len(self._agent_names)):
+            return
+        rect = self.meeting_scene.sceneRect()
+        w = _LiveAgentItem.WIDTH * scale
+        h = _LiveAgentItem.HEIGHT * scale
+        x = max(rect.left(), min(x, rect.right() - w))
+        y = max(rect.top(), min(y, rect.bottom() - h))
+        self._agent_layout[self._agent_names[index]] = {"x": x, "y": y, "scale": scale}
+        QTimer.singleShot(0, self._draw_live_meeting)
+
+    def _reset_agent_layout(self) -> None:
+        """Discard all user drag/resize overrides and redraw at the default layout."""
+        if not self._agent_layout:
+            return
+        self._agent_layout.clear()
+        self._draw_live_meeting()
 
     def _refresh_agent_detail(self) -> None:
         name = self._selected_agent
@@ -2754,7 +3076,7 @@ class AgentRunHistoryWindow(QDialog):
         row = QHBoxLayout()
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self._load_runs)
-        open_result_btn = QPushButton("Open Result Folder")
+        open_result_btn = QPushButton("Open Memory Folder")
         open_result_btn.clicked.connect(self._open_current_run)
         retry_btn = QPushButton("Retry")
         retry_btn.clicked.connect(self._retry_current_run)

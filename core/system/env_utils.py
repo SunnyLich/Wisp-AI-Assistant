@@ -10,6 +10,30 @@ from dotenv import dotenv_values
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
 
+# Tri-state screenshot context modes (per caller hotkey):
+#   "off"   — never capture
+#   "auto"  — always capture at hotkey time and attach it to the query
+#   "model" — expose the capture_screen tool so the model grabs one on demand
+SCREENSHOT_MODES = ("off", "auto", "model")
+
+
+def normalize_screenshot_mode(value, default: str = "off") -> str:
+    """Map a raw value (incl. legacy booleans) to "off" | "auto" | "model"."""
+    if value is None:
+        return default
+    v = str(value).strip().lower()
+    if v in {"auto", "on", "true", "1", "yes", "always"}:
+        return "auto"
+    if v in {"model", "decide", "ask", "tool", "tools"}:
+        return "model"
+    if v in {"off", "false", "0", "no", "none", ""}:
+        return "off"
+    return default
+
+
+def env_screenshot_mode(name: str, default: str = "off") -> str:
+    return normalize_screenshot_mode(os.getenv(name), default)
+
 
 def env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)

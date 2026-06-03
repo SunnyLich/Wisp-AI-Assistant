@@ -8,6 +8,7 @@ Send message: Enter (Shift+Enter for newline).
 """
 from __future__ import annotations
 import html
+import re
 import threading
 import config
 from PySide6.QtWidgets import (
@@ -32,6 +33,7 @@ _TEXT       = "#e6e6e6"
 _HINT       = "#888888"
 _ACCENT     = "#a0a0ff"
 _SEL_BG     = "rgba(160,160,255,18)"
+_REVERT_DELAY_MS = 3000   # how long bold words stay highlighted after TTS finishes
 
 
 class _StreamSignals(QObject):
@@ -85,19 +87,90 @@ def _segment_text_to_html(text: str) -> str:
     return html.escape(text).replace("\n", "<br>")
 
 
-def _assistant_segments_to_html(segments: list[tuple[str, bool]]) -> str:
+_WS_RE = re.compile(r"(\s+)")
+
+
+def _accent_color() -> str:
+    """The same colour the speech bubble uses to highlight TTS-read words."""
+    return getattr(config, "BUBBLE_READ_WORD_COLOR", "#4da3ff") or "#4da3ff"
+
+
+def _reply_html(text: str, start_idx: int, read_count: int | None) -> tuple[int, str]:
+    """Render a reply (non-thought) segment.
+
+    Parses ``**``/``__`` markdown bold the same way the speech bubble does. Bold
+    words are accent-coloured only while the TTS read-position is sweeping over
+    them; otherwise they stay bold in the normal text colour. Every whitespace-
+    delimited word advances a running index so it lines up with the bubble's read
+    position. ``read_count`` meanings:
+
+    * ``0``    — no bold words coloured (resting / history / after the highlight
+                 has reverted). This is the default.
+    * ``N>0``  — bold words whose index < N are coloured (live read-position).
+    * ``None`` — all bold words coloured (the brief "fully read" flash before the
+                 colour reverts).
+
+    Returns ``(next_idx, html)``.
+    """
+    accent = _accent_color()
     parts: list[str] = []
+    idx = start_idx
+
+    def flush(segment: str, is_bold: bool) -> None:
+        nonlocal idx
+        for piece in _WS_RE.split(segment):
+            if not piece:
+                continue
+            if piece.isspace():
+                parts.append(piece.replace("\n", "<br>"))
+                continue
+            if is_bold:
+                read = read_count is None or idx < read_count
+                style = "font-weight:bold;"
+                if read:
+                    style += f"color:{accent};"
+                parts.append(f'<span style="{style}">{html.escape(piece)}</span>')
+            else:
+                parts.append(html.escape(piece))
+            idx += 1
+
+    bold = False
+    buf = ""
+    i = 0
+    while i < len(text):
+        if text.startswith("**", i) or text.startswith("__", i):
+            flush(buf, bold)
+            buf = ""
+            bold = not bold
+            i += 2
+            continue
+        buf += text[i]
+        i += 1
+    flush(buf, bold)
+    return idx, "".join(parts)
+
+
+def _assistant_segments_to_html(
+    segments: list[tuple[str, bool]], read_count: int | None = 0
+) -> str:
+    parts: list[str] = []
+    idx = 0
+    prev_is_thought: bool | None = None
     for text, is_thought in segments:
-        body = _segment_text_to_html(text)
         if is_thought:
-            parts.append(f'<span style="color: #8f8f9e;">{body}</span>')
+            parts.append(f'<span style="color: #8f8f9e;">{_segment_text_to_html(text)}</span>')
         else:
+            # Separate the model's thinking from its reply with a line break.
+            if prev_is_thought:
+                parts.append("<br>")
+            idx, body = _reply_html(text, idx, read_count)
             parts.append(body)
+        prev_is_thought = is_thought
     return "".join(parts)
 
 
-def _assistant_text_to_html(text: str) -> str:
-    return _assistant_segments_to_html(split_tagged_text(text))
+def _assistant_text_to_html(text: str, read_count: int | None = 0) -> str:
+    return _assistant_segments_to_html(split_tagged_text(text), read_count)
 
 
 class ChatWindow(QWidget):
@@ -187,17 +260,9 @@ class ChatWindow(QWidget):
         )
         new_chat.clicked.connect(self.start_new_conversation)
         self._new_chat_btn = new_chat
-        close = QPushButton("X")
-        close.setFixedSize(26, 26)
-        close.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: none; font-size: 13px; }"
-            "QPushButton:hover { color: #e66; }"
-        )
-        close.clicked.connect(self.close)
         h.addWidget(title)
         h.addStretch()
         h.addWidget(new_chat)
-        h.addWidget(close)
         return bar
 
     # ------------------------------------------------------------------ Sidebar
@@ -306,6 +371,9 @@ class ChatWindow(QWidget):
 
         self._stack = QStackedWidget()
         self._stack.setStyleSheet(f"background: {_BG};")
+        # When no history exists yet a single placeholder widget sits at index 0;
+        # _has_placeholder lets ingest_new_conversations swap it out for real pages.
+        self._has_placeholder = not self._conversations
         if self._conversations:
             for i, conv in enumerate(self._conversations):
                 self._stack.addWidget(self._make_page(i, conv))
@@ -339,10 +407,11 @@ class ChatWindow(QWidget):
         conv = {"messages": [], "context": ""}
         self._conversations.append(conv)
 
-        if was_empty and self._stack.count() == 1:
+        if was_empty and self._has_placeholder:
             placeholder = self._stack.widget(0)
             self._stack.removeWidget(placeholder)
             placeholder.deleteLater()
+            self._has_placeholder = False
 
         idx = len(self._conversations) - 1
         self._stack.addWidget(self._make_page(idx, conv))
@@ -352,6 +421,33 @@ class ChatWindow(QWidget):
 
         if auto_message:
             QTimer.singleShot(0, lambda: self._send(auto_message))
+
+    def ingest_new_conversations(self):
+        """Build pages for any conversations appended to the shared list since the
+        window was built (e.g. a query started via hotkey while the chat was open).
+
+        The new tab is added to the history sidebar but NOT selected — the user
+        stays on whatever tab they were reading. (Exception: if the window was
+        showing the empty-history placeholder, the newest tab is shown so the
+        window isn't left blank.)"""
+        from_placeholder = self._has_placeholder and self._conversations
+        if from_placeholder:
+            placeholder = self._stack.widget(0)
+            self._stack.removeWidget(placeholder)
+            placeholder.deleteLater()
+            self._has_placeholder = False
+
+        # With no placeholder, stack index aligns 1:1 with _conversations.
+        added = False
+        for idx in range(self._stack.count(), len(self._conversations)):
+            self._stack.addWidget(self._make_page(idx, self._conversations[idx]))
+            added = True
+        if not added:
+            return
+        self._input_frame.setEnabled(True)
+        self._rebuild_sidebar()
+        if from_placeholder:
+            self._switch(len(self._conversations) - 1)
 
     def _make_page(self, idx: int, conv: dict) -> QScrollArea:
         scroll = QScrollArea()
@@ -367,16 +463,54 @@ class ChatWindow(QWidget):
         layout.setSpacing(10)
         layout.addStretch()
 
+        hint = self._context_hint(conv.get("context", ""))
+        if hint is not None:
+            layout.insertWidget(0, hint)  # sits above the first message
+
+        last_ai: _MessageTextView | None = None
         for msg in conv["messages"]:
             display_text = msg.get("display_content", msg["content"])
-            self._bubble(layout, display_text, msg["role"], msg.get("image_base64"))
+            view = self._bubble(layout, display_text, msg["role"], msg.get("image_base64"))
+            if msg["role"] == "assistant":
+                last_ai = view
 
+        scroll._last_assistant_view = last_ai  # type: ignore[attr-defined]
         scroll._msg_layout = layout  # type: ignore[attr-defined]
         scroll.setWidget(container)
         QTimer.singleShot(0, lambda s=scroll: s.verticalScrollBar().setValue(
             s.verticalScrollBar().maximum()
         ))
         return scroll
+
+    def _context_hint(self, context: str) -> QLabel | None:
+        """A small chip hinting at the context attached to this conversation
+        (selected text, dropped files, ambient snapshot, ...). The full context
+        is available on hover. When the document readers cut content off (they
+        leave a ``[…truncated]`` marker), the chip flags it so the user knows the
+        model didn't see everything. Returns None when there was no context."""
+        text = (context or "").strip()
+        if not text:
+            return None
+        truncated = "truncated]" in text  # marker left by the document/PDF readers
+        preview = " ".join(text.split())  # collapse newlines/runs to one line
+        if len(preview) > 160:
+            preview = preview[:160].rstrip() + "…"
+        body = f"Context · {html.escape(preview)}"
+        if truncated:
+            body += " <span style='color:#d6a04a;'>· truncated</span>"
+        lbl = QLabel(body)
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        lbl.setWordWrap(True)
+        lbl.setToolTip(
+            text + "\n\n[context was truncated to fit the limit]" if truncated else text
+        )
+        lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lbl.setStyleSheet(
+            f"QLabel {{ background: rgba(160,160,255,12); color: {_HINT};"
+            f" font-size: 8pt; border: 1px solid {_BORDER}; border-radius: 6px;"
+            f" padding: 5px 9px; }}"
+        )
+        return lbl
 
     def _make_input_area(self) -> QWidget:
         frame = QWidget()
@@ -417,6 +551,7 @@ class ChatWindow(QWidget):
             f"QTextBrowser::selection {{ background: rgba(160,160,255,60); color: {_TEXT}; }}"
         )
         if role == "assistant":
+            lbl._assistant_source = text  # type: ignore[attr-defined]  used by live highlight
             lbl.setHtml(_assistant_text_to_html(text))
         else:
             lbl.setPlainText(text)
@@ -558,6 +693,46 @@ class ChatWindow(QWidget):
         self._streaming = False
         self._send_btn.setEnabled(True)
         self._new_chat_btn.setEnabled(True)
+
+    def update_live_highlight(self, reply_text: str, revealed_count: int, finished: bool):
+        """Mirror the speech bubble's TTS read-position onto the latest reply.
+
+        The voice reply is the last assistant message of the newest conversation.
+        The full streamed text is shown as soon as it arrives; while audio plays
+        we re-render so its bold words light up (accent colour) up to the spoken
+        word. When playback finishes every bold word is highlighted briefly, then
+        the colour reverts to normal a few seconds later. Works whether the chat
+        was already open (the page was ingested) or opened mid-reply.
+        """
+        if not self._conversations:
+            return
+        last_idx = len(self._conversations) - 1
+        if last_idx >= self._stack.count():
+            return  # page not built yet (ingest pending)
+        page = self._stack.widget(last_idx)
+        view = getattr(page, "_last_assistant_view", None)
+        if view is None:
+            return
+        view._assistant_source = reply_text  # type: ignore[attr-defined]
+        if finished:
+            # Flash all bold words highlighted, then revert to the normal colour.
+            view.setHtml(_assistant_text_to_html(reply_text, None))
+            QTimer.singleShot(
+                _REVERT_DELAY_MS,
+                lambda v=view, s=reply_text: self._revert_highlight(v, s),
+            )
+        else:
+            view.setHtml(_assistant_text_to_html(reply_text, max(0, revealed_count)))
+        if last_idx == self._active_idx:
+            self._scroll_bottom()
+
+    @staticmethod
+    def _revert_highlight(view: "_MessageTextView", source: str):
+        """Re-render a finished reply with no highlight (bold words back to normal)."""
+        try:
+            view.setHtml(_assistant_text_to_html(source, 0))
+        except RuntimeError:
+            pass  # the view (or its window) was destroyed before the timer fired
 
     # ------------------------------------------------------------------ Events
 

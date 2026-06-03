@@ -263,17 +263,19 @@ class ContextBadge(QWidget):
         item_type: str,
         on_remove: Callable[[], None] | None = None,
         parent: QWidget | None = None,
+        removable: bool = True,
     ):
         super().__init__(parent)
         self._name      = display_name
         self._type      = item_type
         self._on_remove = on_remove
+        self._removable = removable   # False = read-only "this was sent" badge (no X)
         self._hovered   = False   # is the X button hovered?
         self._removing  = False   # guard against double-remove
 
         self.setFixedSize(_BADGE_W, _BADGE_H)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMouseTracking(True)
+        self.setMouseTracking(removable)
 
     # ------------------------------------------------------------------
     # Public
@@ -307,6 +309,8 @@ class ContextBadge(QWidget):
     # ------------------------------------------------------------------
 
     def mouseMoveEvent(self, event) -> None:
+        if not self._removable:
+            return
         hover = self._x_rect().contains(event.pos())
         if hover != self._hovered:
             self._hovered = hover
@@ -323,7 +327,8 @@ class ContextBadge(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if (
-            event.button() == Qt.MouseButton.LeftButton
+            self._removable
+            and event.button() == Qt.MouseButton.LeftButton
             and self._x_rect().contains(event.pos())
             and not self._removing
             and callable(self._on_remove)
@@ -349,9 +354,10 @@ class ContextBadge(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(8, _BADGE_H // 2 - _DOT_R // 2, _DOT_R, _DOT_R)
 
-        # Display name (elided to leave room for X)
+        # Display name (leaves room for the X button only when removable)
         text_x = 8 + _DOT_R + 6
-        text_w = _BADGE_W - text_x - _X_W - 2
+        reserved = _X_W if self._removable else 8
+        text_w = _BADGE_W - text_x - reserved - 2
         p.setFont(QFont("Segoe UI", 8))
         p.setPen(QColor(210, 210, 235, 225))
         p.drawText(
@@ -359,6 +365,10 @@ class ContextBadge(QWidget):
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             self._name,
         )
+
+        if not self._removable:
+            p.end()
+            return
 
         # X button
         x_alpha = 220 if self._hovered else 110
@@ -404,6 +414,10 @@ class ContextPanel(QWidget):
         self._icon_pos  = QPoint(0, 0)
         self._icon_size = 80
         self._drag_active = False
+        self._summary_mode = False   # showing read-only "context sent" badges
+        self._summary_timer = QTimer(self)
+        self._summary_timer.setSingleShot(True)
+        self._summary_timer.timeout.connect(self.clear_summary)
         self.setFixedWidth(_BADGE_W)
         self.resize(_BADGE_W, _ZONE_H)
 
@@ -416,6 +430,9 @@ class ContextPanel(QWidget):
         self._on_remove_item = cb
 
     def add_item(self, display_name: str, item_type: str) -> None:
+        if self._summary_mode:
+            self._clear_badges()           # a real drop supersedes the sent-summary
+            self._summary_mode = False
         idx = len(self._badges)
         badge = ContextBadge(
             display_name,
@@ -427,10 +444,41 @@ class ContextPanel(QWidget):
         self._relayout()
         self._update_visibility()
 
-    def clear_items(self) -> None:
+    def show_context_summary(self, items: list[tuple[str, str]], timeout_ms: int = 120000) -> None:
+        """Display read-only badges of the context attached to the current prompt
+        (selection, dropped files, clipboard, active document, ...). They sit to
+        the right of the icon just like dropped items, but carry no X button and
+        clear when the reply ends (clear_summary) or after a backstop timeout."""
+        self._summary_timer.stop()
+        self._clear_badges()
+        self._summary_mode = True
+        for name, item_type in items:
+            badge = ContextBadge(name, item_type, on_remove=None, parent=self, removable=False)
+            self._badges.append(badge)
+        self._relayout()
+        self._update_visibility()
+        if timeout_ms > 0:
+            self._summary_timer.start(timeout_ms)
+
+    def clear_summary(self) -> None:
+        """Remove the read-only context-summary badges (no-op for dropped items)."""
+        self._summary_timer.stop()
+        if not self._summary_mode:
+            return
+        self._summary_mode = False
+        self._clear_badges()
+        self._relayout()
+        self._update_visibility()
+
+    def _clear_badges(self) -> None:
         for b in self._badges:
             b.deleteLater()
         self._badges.clear()
+
+    def clear_items(self) -> None:
+        self._summary_timer.stop()
+        self._summary_mode = False
+        self._clear_badges()
         self._relayout()
         self._update_visibility()
 
@@ -442,6 +490,8 @@ class ContextPanel(QWidget):
 
     def set_drag_active(self, active: bool) -> None:
         """Show drop-zone overlay during a drag, hide it when drag ends (unless badges exist)."""
+        if active and self._summary_mode:
+            self.clear_summary()   # a new drag supersedes the sent-context summary
         self._drag_active = active
         self._relayout()
         self._update_visibility()
@@ -500,7 +550,9 @@ class ContextPanel(QWidget):
             badge.move(0, i * (_BADGE_H + _BADGE_GAP))
             badge.show()
 
-        x = self._icon_pos.x() + self._icon_size // 2 - _BADGE_W // 2
+        # Sit just to the right of the icon (matches the bubble's right-side
+        # offset pattern in bubble.icon_pos_for_bubble), not centred over it.
+        x = self._icon_pos.x() + self._icon_size + _BADGE_GAP
         if not self._badges:
             y = self._icon_pos.y() + self._icon_size // 2 - panel_h // 2
         else:

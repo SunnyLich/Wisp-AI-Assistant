@@ -7,6 +7,7 @@ Launch via tray icon â†’ Settings, or call open_settings().
 """
 from __future__ import annotations
 import os
+import logging
 import threading
 from contextlib import contextmanager
 from PySide6.QtWidgets import (
@@ -18,12 +19,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QObject, Signal
 from PySide6.QtGui import QFont
 from core import secret_store
+from core.system.env_utils import normalize_screenshot_mode
 import ui.settings_panel.env as settings_env
 from ui.settings_panel.hotkey_capture import HotkeyCaptureEdit
 from ui.settings_panel.helpers import parse_fallback_rows
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 ENV_PATH = settings_env.ENV_PATH
+_settings_log = logging.getLogger("wisp.settings")
 _settings_dialog: "SettingsDialog | None" = None
 
 
@@ -83,7 +86,7 @@ class SettingsDialog(QDialog):
         self._fields: dict[str, QLineEdit | QComboBox | QCheckBox | QTextEdit] = {}
         self._api_key_rows: list[dict] = []
         self._model_section_rows: dict[str, list[dict]] = {
-            "LLM": [], "CHAT_LLM": [], "VISION_LLM": [], "MEMORY_LLM": []
+            "LLM": [], "VISION_LLM": [], "MEMORY_LLM": []
         }
         self._model_section_layouts: dict[str, "QVBoxLayout"] = {}
         self._fallback_rows: dict = {}
@@ -100,40 +103,72 @@ class SettingsDialog(QDialog):
         fit_window_to_screen(self, preferred_width=620, preferred_height=620)
 
     def _save_api_keys_to_keychain(self) -> bool:
+        """Persist every typed API key to the OS keychain, one at a time.
+
+        Each key is written and verified independently: a failure on one key is
+        logged and collected for the user, but never blocks the other keys or the
+        rest of the settings save. Successfully stored keys have their input field
+        cleared and switched to a "stored" placeholder. Returns True only when all
+        typed keys were saved.
+        """
+        failures: list[str] = []
+
+        def _store(key_name: str, value: str, label: str) -> bool:
+            try:
+                secret_store.set_secret(key_name, value)
+                _settings_log.info("Saved %s (%s) to OS keychain", key_name, label)
+                return True
+            except Exception as exc:  # noqa: BLE001 — reported to the user + log
+                _settings_log.error("Could not save %s (%s) to OS keychain: %s", key_name, label, exc)
+                failures.append(f"{label}: {exc}")
+                return False
+
         try:
             secret_store.migrate_env_secrets(self._env)
-            # LLM provider keys from the API key table
-            for row in self._api_key_rows:
-                provider = _get(row["provider"]).strip()
-                key_name = _PROVIDER_KEY_NAMES.get(provider)
-                if not key_name:
-                    continue
-                value = row["key"].text().strip()
-                if value:
-                    secret_store.set_secret(key_name, value)
-                    row["key"].clear()
-                    row["key"].setPlaceholderText("stored in keychain")
-            # TTS and custom keys still live in self._fields
-            for name, label in [
-                ("CARTESIA_API_KEY",   "Cartesia"),
-                ("ELEVENLABS_API_KEY", "ElevenLabs"),
-                ("CUSTOM_API_KEY",     "Custom provider"),
-            ]:
-                if name not in self._fields:
-                    continue
-                value = _get(self._fields[name]).strip()
-                if value:
-                    secret_store.set_secret(name, value)
-                    self._fields[name].clear()  # type: ignore[attr-defined]
-                    self._fields[name].setPlaceholderText(f"{label} key stored in OS keychain")  # type: ignore[attr-defined]
-            return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — non-fatal: just means no .env keys to migrate
+            _settings_log.warning("Secret migration from .env skipped: %s", exc)
+
+        # LLM provider keys from the API key table
+        for row in self._api_key_rows:
+            provider = _get(row["provider"]).strip()
+            key_name = _PROVIDER_KEY_NAMES.get(provider)
+            if not key_name:
+                continue
+            value = row["key"].text().strip()
+            if not value:
+                continue
+            label = _PROVIDER_LABELS.get(provider, provider)
+            if _store(key_name, value, label):
+                row["key"].clear()
+                row["key"].setPlaceholderText("stored in keychain")
+
+        # TTS and custom keys still live in self._fields
+        for name, label in [
+            ("CARTESIA_API_KEY",   "Cartesia"),
+            ("ELEVENLABS_API_KEY", "ElevenLabs"),
+            ("CUSTOM_API_KEY",     "Custom provider"),
+        ]:
+            if name not in self._fields:
+                continue
+            value = _get(self._fields[name]).strip()
+            if not value:
+                continue
+            if _store(name, value, label):
+                self._fields[name].clear()  # type: ignore[attr-defined]
+                self._fields[name].setPlaceholderText(f"{label} key stored in OS keychain")  # type: ignore[attr-defined]
+
+        if failures:
             QMessageBox.warning(
                 self,
-                "Keychain error",
-                f"Could not save API keys to the OS keychain:\n{exc}",
+                "Some API keys were not saved",
+                "These keys could not be written to the OS keychain and were "
+                "NOT stored:\n\n"
+                + "\n".join(f"• {item}" for item in failures)
+                + "\n\nYour other settings were still saved. See the log for "
+                "details, then try saving the affected keys again.",
             )
             return False
+        return True
 
     # ------------------------------------------------------------------
     # UI construction
@@ -275,6 +310,17 @@ class SettingsDialog(QDialog):
         self._status_lbl = QLabel()
         self._status_lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
         btn_row = QHBoxLayout()
+        reset_btn = QPushButton("Reset All…")
+        reset_btn.setToolTip(
+            "Delete all API keys from the OS keychain and reset every setting to defaults"
+        )
+        reset_btn.setStyleSheet(
+            "QPushButton { border: 1.5px solid #c0392b; color: #c0392b; }"
+            "QPushButton:hover { background: rgba(192,57,43,0.10); }"
+            "QPushButton:pressed { background: rgba(192,57,43,0.20); }"
+        )
+        reset_btn.clicked.connect(self._reset_all)
+        btn_row.addWidget(reset_btn)
         btn_row.addWidget(self._status_lbl)
         btn_row.addStretch()
         apply_btn  = QPushButton("Apply")
@@ -399,8 +445,7 @@ class SettingsDialog(QDialog):
 
         # ── MODEL SECTIONS ─────────────────────────────────────────────────
         section_configs = [
-            ("LLM",        "Main LLM",    "llm_test",      self._test_primary_llm_connection),
-            ("CHAT_LLM",   "Chat model",  "chat_llm_test", self._test_chat_llm_connection),
+            ("LLM",        "Chat model",  "llm_test",      self._test_primary_llm_connection),
             ("VISION_LLM", "Image model", "vision_test",   self._test_vision_connection),
             ("MEMORY_LLM", "Memory model","memory_test",   self._test_memory_connection),
         ]
@@ -664,7 +709,12 @@ class SettingsDialog(QDialog):
         }
 
         # Populate with the curated list for this provider; refresh fetches live.
-        self._fill_model_combo(row_info, _PROVIDER_MODELS.get(provider, []), provider, model)
+        # For a blank "+ Add row" the combo still defaults to the first provider,
+        # so fall back to its current selection rather than leaving the list empty.
+        effective_provider = provider or (api_key_combo.currentData() or "")
+        self._fill_model_combo(
+            row_info, _PROVIDER_MODELS.get(effective_provider, []), effective_provider, model
+        )
 
         model_combo.currentIndexChanged.connect(
             lambda _: self._on_model_combo_changed(row_info)
@@ -886,7 +936,7 @@ class SettingsDialog(QDialog):
                 self._chatgpt_status_lbl.setStyleSheet("color: #80c080;")
             else:
                 self._chatgpt_status_lbl.setText("Not logged in")
-                self._chatgpt_status_lbl.setStyleSheet("color: palette(mid);")
+                self._chatgpt_status_lbl.setStyleSheet("color: palette(placeholder-text);")
         except Exception as exc:
             self._chatgpt_status_lbl.setText(f"Error reading status: {exc}")
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
@@ -961,7 +1011,7 @@ class SettingsDialog(QDialog):
                 self._github_status_lbl.setStyleSheet("color: #80c080;")
             else:
                 self._github_status_lbl.setText("Not logged in")
-                self._github_status_lbl.setStyleSheet("color: palette(mid);")
+                self._github_status_lbl.setStyleSheet("color: palette(placeholder-text);")
         except Exception as exc:
             self._github_status_lbl.setText(f"Error reading status: {exc}")
             self._github_status_lbl.setStyleSheet("color: #c04040;")
@@ -1050,7 +1100,7 @@ class SettingsDialog(QDialog):
             stored, message = copilot_auth.token_status()
             self._copilot_status_lbl.setText(message)
             self._copilot_status_lbl.setStyleSheet(
-                "color: #80c080;" if stored else "color: palette(mid);"
+                "color: #80c080;" if stored else "color: palette(placeholder-text);"
             )
         except Exception as exc:
             self._copilot_status_lbl.setText(f"Keychain error: {exc}")
@@ -1258,7 +1308,7 @@ class SettingsDialog(QDialog):
         h.addWidget(key_edit)
 
         lbl = QLabel(label_text)
-        lbl.setStyleSheet("font-style: italic; color: palette(mid);")
+        lbl.setStyleSheet("font-style: italic; color: palette(placeholder-text);")
         h.addWidget(lbl)
         h.addStretch()
 
@@ -1274,7 +1324,7 @@ class SettingsDialog(QDialog):
         context_ambient: bool = True,
         context_documents: bool = True,
         context_tools: bool = True,
-        context_screenshot: bool = False,
+        context_screenshot: str = "off",
         intents: "list[dict] | None" = None,
     ) -> None:
         """Add a caller block (framed panel with header + intent rows) to the UI."""
@@ -1330,13 +1380,32 @@ class SettingsDialog(QDialog):
         docs_cb.setChecked(context_documents)
         tools_cb = QCheckBox("Tools")
         tools_cb.setChecked(context_tools)
-        screenshot_cb = QCheckBox("Auto screenshot")
-        screenshot_cb.setChecked(context_screenshot)
+        tools_cb.setToolTip(
+            "Let the model fetch more context on demand: web search and open "
+            "documents, when it decides the other context isn't enough."
+        )
+        screenshot_combo = _NoScrollCombo()
+        screenshot_combo.setToolTip(
+            "Screenshot of your screen:\n"
+            "• Off — never capture.\n"
+            "• Let model decide — the model takes a screenshot itself only "
+            "when it needs to see the screen.\n"
+            "• On — always capture at hotkey time and send it with the query."
+        )
+        for _label, _value in (
+            ("Off", "off"),
+            ("Let model decide", "model"),
+            ("On", "auto"),
+        ):
+            screenshot_combo.addItem(_label, _value)
+        _ss_idx = screenshot_combo.findData(context_screenshot)
+        screenshot_combo.setCurrentIndex(_ss_idx if _ss_idx >= 0 else 0)
         context_h.addWidget(QLabel("Context:"))
         context_h.addWidget(ambient_cb)
         context_h.addWidget(docs_cb)
         context_h.addWidget(tools_cb)
-        context_h.addWidget(screenshot_cb)
+        context_h.addWidget(QLabel("Screenshot:"))
+        context_h.addWidget(screenshot_combo)
         context_h.addStretch()
         outer.addWidget(context_row)
 
@@ -1372,7 +1441,7 @@ class SettingsDialog(QDialog):
             "context_ambient": ambient_cb,
             "context_documents": docs_cb,
             "context_tools": tools_cb,
-            "context_screenshot": screenshot_cb,
+            "context_screenshot": screenshot_combo,
             "intents_layout": intents_vlayout,
             "intent_rows":    [],
         }
@@ -1655,7 +1724,7 @@ class SettingsDialog(QDialog):
         self._fields["BUBBLE_WIDTH"] = QLineEdit()
         self._fields["BUBBLE_WIDTH"].setPlaceholderText("e.g. 340")
         self._fields["BUBBLE_LINES"] = QLineEdit()
-        self._fields["BUBBLE_LINES"].setPlaceholderText("e.g. 2")
+        self._fields["BUBBLE_LINES"].setPlaceholderText("e.g. 3")
         _bubble_color_row      = self._color_field("BUBBLE_COLOR",          "e.g. #1c1c24dc")
         _bubble_text_color_row = self._color_field("BUBBLE_TEXT_COLOR",     "e.g. #e6e6e6")
         _read_word_color_row   = self._color_field("BUBBLE_READ_WORD_COLOR", "e.g. #4da3ff")
@@ -1992,9 +2061,8 @@ class SettingsDialog(QDialog):
                 self._add_model_section_row(sk, p, m)
 
         _load_section("LLM",        "LLM_PROVIDER",        "LLM_MODEL",        "LLM_FALLBACKS",        cfg.LLM_PROVIDER,        cfg.LLM_MODEL,        cfg.LLM_FALLBACKS)
-        _load_section("CHAT_LLM",   "CHAT_LLM_PROVIDER",   "CHAT_LLM_MODEL",   "CHAT_LLM_FALLBACKS",   cfg.CHAT_LLM_PROVIDER,   cfg.CHAT_LLM_MODEL,   cfg.CHAT_LLM_FALLBACKS)
         _load_section("VISION_LLM", "VISION_LLM_PROVIDER", "VISION_LLM_MODEL", "VISION_LLM_FALLBACKS", cfg.VISION_LLM_PROVIDER, cfg.VISION_LLM_MODEL, cfg.VISION_LLM_FALLBACKS)
-        _load_section("MEMORY_LLM", "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "",                     cfg.MEMORY_LLM_PROVIDER, cfg.MEMORY_LLM_MODEL, "")
+        _load_section("MEMORY_LLM", "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "MEMORY_LLM_FALLBACKS", cfg.MEMORY_LLM_PROVIDER, cfg.MEMORY_LLM_MODEL, cfg.MEMORY_LLM_FALLBACKS)
 
         # ── TTS / Custom keys (still in self._fields) ─────────────────────
         for name, label in [
@@ -2059,7 +2127,7 @@ class SettingsDialog(QDialog):
                 context_ambient = self._env.get(f"CALLER_{n}_CONTEXT_AMBIENT", str(cr.get("context_ambient", True))).lower() == "true",
                 context_documents = self._env.get(f"CALLER_{n}_CONTEXT_DOCUMENTS", str(cr.get("context_documents", True))).lower() == "true",
                 context_tools = self._env.get(f"CALLER_{n}_CONTEXT_TOOLS", str(cr.get("context_tools", True))).lower() == "true",
-                context_screenshot = self._env.get(f"CALLER_{n}_CONTEXT_SCREENSHOT", str(cr.get("context_screenshot", False))).lower() == "true",
+                context_screenshot = normalize_screenshot_mode(self._env.get(f"CALLER_{n}_CONTEXT_SCREENSHOT", cr.get("context_screenshot", "off"))),
                 intents    = intents,
             )
 
@@ -2101,9 +2169,17 @@ class SettingsDialog(QDialog):
 
         return getattr(cfg, name, "")
 
-    def _set_test_status(self, label: QLabel, ok: bool, message: str) -> None:
+    def _set_test_status(self, label: QLabel, ok, message: str) -> None:
+        """Colour a test status label. ``ok`` is True (green), False (red), or the
+        string "warn" (amber) for a partial pass (e.g. primary works, fallback failed)."""
+        if ok == "warn":
+            color = "#d8932a"
+        elif ok:
+            color = "#80c080"
+        else:
+            color = "#c04040"
         label.setText(message)
-        label.setStyleSheet("color: #80c080;" if ok else "color: #c04040;")
+        label.setStyleSheet(f"color: {color};")
 
     def _set_test_pending(self, label: QLabel, message: str = "Testing...") -> None:
         label.setText(message)
@@ -2148,9 +2224,17 @@ class SettingsDialog(QDialog):
         if not rows:
             self._set_test_status(status_label, False, "No model configured.")
             return
-        primary = rows[0]
-        provider = (primary["api_key_combo"].currentData() or "").strip().lower()
-        model = self._model_value(primary)
+        # Collect the primary plus every fallback row up front — Qt widgets are
+        # not safe to touch from the worker thread, so read them here.
+        routes: list[tuple[str, str]] = []
+        for row in rows:
+            provider = (row["api_key_combo"].currentData() or "").strip().lower()
+            model = self._model_value(row)
+            if provider and model:
+                routes.append((provider, model))
+        if not routes:
+            self._set_test_status(status_label, False, "No model configured.")
+            return
         anthropic_api_key = self._effective_secret_value_from_provider("anthropic")
         custom_base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip()
         compat_keys = {
@@ -2159,37 +2243,55 @@ class SettingsDialog(QDialog):
         }
         test_key = {
             "LLM": "llm_test",
-            "CHAT_LLM": "chat_llm_test",
             "VISION_LLM": "vision_test",
             "MEMORY_LLM": "memory_test",
         }[section_key]
 
-        self._start_async_test(
-            test_key,
-            status_label,
-            lambda: llm.test_route_connection(
-                provider,
-                model,
-                route_name,
-                image=image,
-                anthropic_api_key=anthropic_api_key,
-                custom_base_url=custom_base_url,
-                compat_keys=compat_keys,
-            ),
-        )
+        def _run_all_routes():
+            # Each route is probed independently; a failure on one is reported
+            # against that exact provider/model and never attributed to another.
+            results: list[tuple[str, bool, str, str, str]] = []
+            for idx, (provider, model) in enumerate(routes):
+                label = "Primary" if idx == 0 else f"Fallback {idx}"
+                ok, message = llm.test_route_connection(
+                    provider,
+                    model,
+                    route_name,
+                    image=image,
+                    anthropic_api_key=anthropic_api_key,
+                    custom_base_url=custom_base_url,
+                    compat_keys=compat_keys,
+                )
+                results.append((label, ok, provider, model, message))
+
+            lines: list[str] = []
+            for label, ok, provider, model, message in results:
+                detail = "OK" if ok else _short_test_error(message, route_name)
+                lines.append(f"{'✓' if ok else '✗'} {label} — {provider} / {model}: {detail}")
+
+            primary_ok = results[0][1]
+            failed = [label for label, ok, *_ in results if not ok]
+            if not failed:
+                status: object = True
+            elif primary_ok:
+                # Only fallbacks failed — the model you'll actually use works.
+                status = "warn"
+                lines.append("")
+                lines.append(
+                    f"Primary works. {len(failed)} fallback(s) failed "
+                    f"({', '.join(failed)}) — fix or remove just those rows."
+                )
+            else:
+                status = False
+            return status, "\n".join(lines)
+
+        self._start_async_test(test_key, status_label, _run_all_routes)
 
     def _test_primary_llm_connection(self) -> None:
         self._test_llm_route(
             section_key="LLM",
             route_name="LLM",
             status_label=self._llm_test_status_lbl,
-        )
-
-    def _test_chat_llm_connection(self) -> None:
-        self._test_llm_route(
-            section_key="CHAT_LLM",
-            route_name="CHAT_LLM",
-            status_label=self._chat_llm_test_status_lbl,
         )
 
     def _test_vision_connection(self) -> None:
@@ -2250,10 +2352,133 @@ class SettingsDialog(QDialog):
                 self._on_apply()
             self.accept()
 
+    def _reset_all(self) -> None:
+        """Factory reset: erase every setting and delete all API keys.
+
+        Pops up a detailed warning the user must confirm, then deletes all known
+        secrets from the OS keychain, wipes the .env file (and the matching values
+        from this process), reloads config + live app, and refreshes the dialog.
+        """
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setWindowTitle("Reset all settings?")
+        confirm.setText("Reset Wisp to its defaults? This cannot be undone.")
+        confirm.setInformativeText(
+            "This will permanently:\n"
+            "• DELETE every API key from your OS keychain "
+            "(Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, "
+            "xAI, Together, Cerebras, Cartesia, ElevenLabs, custom)\n"
+            "• ERASE all saved settings (models, hotkeys, prompts, theme, "
+            "callers, and everything else in your .env)\n"
+            "• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)\n\n"
+            "You will need to re-enter your API keys, sign in again, and "
+            "reconfigure the app afterwards.\n\n"
+            "Continue?"
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        _settings_log.warning("User requested full settings reset")
+
+        # 1. Delete every known secret from the OS keychain, verifying removal.
+        key_failures: list[str] = []
+        for name in secret_store.API_KEY_NAMES:
+            try:
+                secret_store.delete_secret(name)
+                if secret_store.get_keychain_secret(name):
+                    key_failures.append(name)
+                    _settings_log.error("Key %s still present in keychain after delete", name)
+                else:
+                    _settings_log.info("Deleted %s from OS keychain", name)
+            except Exception as exc:  # noqa: BLE001 — collected and surfaced
+                key_failures.append(f"{name}: {exc}")
+                _settings_log.error("Failed deleting %s from keychain: %s", name, exc)
+
+        # 1b. Sign out of every OAuth provider.
+        for label, module_path, func_name in (
+            ("ChatGPT",        "core.auth.chatgpt",      "clear_tokens"),
+            ("GitHub",         "core.auth.github",       "clear_tokens"),
+            ("GitHub Copilot", "core.auth.copilot_auth", "clear_token"),
+        ):
+            try:
+                import importlib
+                getattr(importlib.import_module(module_path), func_name)()
+                _settings_log.info("Signed out of %s", label)
+            except Exception as exc:  # noqa: BLE001 — collected and surfaced
+                key_failures.append(f"{label} sign-out: {exc}")
+                _settings_log.error("Failed signing out of %s: %s", label, exc)
+
+        # 2. Wipe the .env file and clear matching values from this process so the
+        #    reset takes effect live (load_dotenv won't unset removed keys itself).
+        try:
+            for key in _read_env():
+                os.environ.pop(key, None)
+            if ENV_PATH.exists():
+                ENV_PATH.unlink()
+            _settings_log.info("Erased settings file %s", ENV_PATH)
+        except OSError as exc:
+            _settings_log.error("Could not erase %s: %s", ENV_PATH, exc)
+            QMessageBox.warning(
+                self, "Reset error",
+                f"Could not erase the settings file:\n{exc}",
+            )
+
+        # 3. Reload config + live app and refresh the dialog to show defaults.
+        try:
+            import config
+            from core.llm_clients import client as _llm
+            from core import tts as _tts
+            from ui.shared.theme import apply_app_theme
+            config.reload()
+            _llm.reset_clients()
+            _tts.reset_connections()
+            apply_app_theme()
+            self._apply_dialog_theme()
+        except Exception as exc:  # noqa: BLE001 — reset already happened on disk
+            _settings_log.error("Live reload after reset failed: %s", exc)
+        self._env = _read_env()
+        self._load_values()
+        for refresh in (
+            getattr(self, "_refresh_chatgpt_status", None),
+            getattr(self, "_refresh_github_status", None),
+            getattr(self, "_refresh_copilot_status", None),
+        ):
+            if callable(refresh):
+                try:
+                    refresh()
+                except Exception:  # noqa: BLE001 — status labels are cosmetic
+                    pass
+        if self._on_apply:
+            self._on_apply()
+
+        if key_failures:
+            QMessageBox.warning(
+                self, "Reset partly complete",
+                "Settings were reset, but these items could not be fully cleared:\n\n"
+                + "\n".join(f"• {item}" for item in key_failures)
+                + "\n\nYou may need to remove them manually (e.g. from your system "
+                "credential store). See the log for details.",
+            )
+        else:
+            QMessageBox.information(
+                self, "Reset complete",
+                "All API keys were removed from the OS keychain, you were signed "
+                "out of all OAuth logins, and every setting was reset to defaults.",
+            )
+
     def _do_save(self) -> bool:
-        """Write .env. Returns True on success, False if validation failed."""
-        if not self._save_api_keys_to_keychain():
-            return False
+        """Write .env. Returns True on success, False if validation failed.
+
+        Keychain key storage is attempted first and reports its own per-key
+        warnings, but a keychain failure does NOT abort the save: the rest of the
+        settings are still written to .env so the user never loses everything just
+        because one API key could not reach the OS keychain.
+        """
+        self._save_api_keys_to_keychain()
 
         def _section_vals(sk):
             rows = self._model_section_rows.get(sk, [])
@@ -2270,22 +2495,19 @@ class SettingsDialog(QDialog):
             return provider, model, fallbacks
 
         llm_p, llm_m, llm_f = _section_vals("LLM")
-        chat_p, chat_m, chat_f = _section_vals("CHAT_LLM")
         vis_p, vis_m, vis_f = _section_vals("VISION_LLM")
-        mem_p, mem_m, _ = _section_vals("MEMORY_LLM")
+        mem_p, mem_m, mem_f = _section_vals("MEMORY_LLM")
 
         vals = {
             "LLM_PROVIDER":      llm_p,
             "LLM_MODEL":         llm_m,
             "LLM_FALLBACKS":     llm_f,
-            "CHAT_LLM_PROVIDER": chat_p,
-            "CHAT_LLM_MODEL":    chat_m,
-            "CHAT_LLM_FALLBACKS": chat_f,
             "VISION_LLM_PROVIDER": vis_p,
             "VISION_LLM_MODEL":    vis_m,
             "VISION_LLM_FALLBACKS": vis_f,
             "MEMORY_LLM_PROVIDER": mem_p,
             "MEMORY_LLM_MODEL":    mem_m,
+            "MEMORY_LLM_FALLBACKS": mem_f,
             "TTS_PROVIDER":      _get(self._fields["TTS_PROVIDER"]),
             "CARTESIA_VOICE_ID": _get(self._fields["CARTESIA_VOICE_ID"]),
             "HOTKEY_ADD_CONTEXT":  _get(self._fields["HOTKEY_ADD_CONTEXT"]),
@@ -2342,14 +2564,46 @@ class SettingsDialog(QDialog):
             vals[f"CALLER_{n}_CONTEXT_AMBIENT"] = str(blk["context_ambient"].isChecked())  # type: ignore
             vals[f"CALLER_{n}_CONTEXT_DOCUMENTS"] = str(blk["context_documents"].isChecked())  # type: ignore
             vals[f"CALLER_{n}_CONTEXT_TOOLS"] = str(blk["context_tools"].isChecked())  # type: ignore
-            vals[f"CALLER_{n}_CONTEXT_SCREENSHOT"] = str(blk["context_screenshot"].isChecked())  # type: ignore
+            vals[f"CALLER_{n}_CONTEXT_SCREENSHOT"] = str(blk["context_screenshot"].currentData())  # type: ignore
             vals[f"CALLER_{n}_INTENT_COUNT"]  = str(len(blk["intent_rows"]))
             for j, row in enumerate(blk["intent_rows"]):
                 m = j + 1
                 vals[f"CALLER_{n}_INTENT_{m}_KEY"]    = _get(row["key"])
                 vals[f"CALLER_{n}_INTENT_{m}_LABEL"]  = _get(row["label"])
                 vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = _get(row["prompt"])
-        _write_env(vals, remove_keys=set(secret_store.API_KEY_NAMES))
+        # The Chat model is combined with the Main LLM, so purge any stale
+        # CHAT_LLM_* keys a previous version may have written.
+        _write_env(
+            vals,
+            remove_keys=set(secret_store.API_KEY_NAMES)
+            | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS"},
+        )
+
+        # Honor the user's choices, but warn if their model setup probably can't
+        # serve them (screenshot → vision; tools → tool-calling provider).
+        warnings: list[str] = []
+        try:
+            from core.llm_clients.client import (
+                screenshot_capability_warnings,
+                tool_capability_warnings,
+            )
+            warnings += screenshot_capability_warnings(
+                [blk["context_screenshot"].currentData() for blk in self._caller_blocks],  # type: ignore
+                llm_provider=vals.get("LLM_PROVIDER", ""),
+                llm_model=vals.get("LLM_MODEL", ""),
+                vision_provider=vals.get("VISION_LLM_PROVIDER", ""),
+                vision_model=vals.get("VISION_LLM_MODEL", ""),
+            )
+            tools_on = any(blk["context_tools"].isChecked() for blk in self._caller_blocks)  # type: ignore
+            warnings += tool_capability_warnings(tools_on, llm_provider=vals.get("LLM_PROVIDER", ""))
+        except Exception:
+            warnings = []
+        if warnings:
+            QMessageBox.warning(
+                self,
+                "Heads up",
+                "Your settings were saved, but:\n\n• " + "\n\n• ".join(warnings),
+            )
         return True
 
 
@@ -2558,7 +2812,7 @@ def _get(widget) -> str:
 def _desc_label(title: str, description: str) -> QLabel:
     lbl = QLabel(description)
     lbl.setWordWrap(True)
-    lbl.setStyleSheet("color: palette(mid); font-size: 9pt;")
+    lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
     return lbl
 
 
@@ -2572,6 +2826,14 @@ def _link_label(text: str, url: str) -> QLabel:
 
 def _parse_fallback_rows(raw: str) -> list[tuple[str, str]]:
     return parse_fallback_rows(raw)
+
+
+def _short_test_error(message: str, route_name: str) -> str:
+    """Trim the redundant '<route> test failed: ' prefix so each route line shows
+    just the underlying reason (the provider/model is already on the line)."""
+    prefix = f"{route_name} test failed: "
+    text = message[len(prefix):] if message.startswith(prefix) else message
+    return " ".join(text.split())
 
 
 def open_settings(parent=None, on_apply=None):

@@ -44,6 +44,9 @@ class ToolSpec:
     executor: ToolExecutor | None = None
     server_schema: dict | None = None
     source: str = "builtin"
+    # Tools excluded from the default schema sets and offered only when a caller
+    # explicitly opts in (e.g. capture_screen, gated by the screenshot setting).
+    opt_in: bool = False
 
     def anthropic_schema(self) -> dict:
         if self.server_schema:
@@ -147,12 +150,22 @@ class ToolRegistry:
         return [spec.openai_schema() for spec in specs]
 
     def list_tools(self, include_server_tools: bool = True) -> list[ToolSpec]:
+        # Opt-in tools are kept out of the default sets; callers add them back
+        # explicitly. Server tools are Anthropic-only, so the OpenAI/Groq path
+        # (include_server_tools=False) drops both.
         tools = []
         for spec in self._builtins.values():
-            if include_server_tools or not spec.server_schema:
-                tools.append(spec)
+            if spec.opt_in:
+                continue
+            if not include_server_tools and spec.server_schema:
+                continue
+            tools.append(spec)
         tools.extend(self._load_script_tools().values())
         return tools
+
+    def get_tool(self, name: str) -> ToolSpec | None:
+        """Return a tool spec by name, including opt-in tools hidden from list_tools."""
+        return self._builtins.get(name) or self._load_script_tools().get(name)
 
     def execute(self, name: str, inputs: dict) -> str:
         spec = self._builtins.get(name) or self._load_script_tools().get(name)

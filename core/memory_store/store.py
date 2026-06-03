@@ -861,52 +861,75 @@ class MemoryManager:
 
     def _call_memory_llm(self, prompt: str, max_tokens: int = 600) -> str:
         """
-        Synchronous LLM call using MEMORY_LLM_PROVIDER / MEMORY_LLM_MODEL.
-        Used for consolidation and mid-session compression.
+        Synchronous LLM call using MEMORY_LLM_PROVIDER / MEMORY_LLM_MODEL, with
+        the MEMORY_LLM_FALLBACKS chain tried in order if the primary route fails
+        or returns nothing. Used for consolidation and mid-session compression.
         Runs on background threads -” never call from Qt main thread.
         """
-        provider = config.MEMORY_LLM_PROVIDER.lower()
-        model    = config.MEMORY_LLM_MODEL
+        from core.llm_clients.routes import route_candidates
 
-        try:
-            if provider in ("groq", "openai", "google"):
-                from openai import OpenAI
-                if provider == "groq":
-                    client = OpenAI(
-                        api_key=config.GROQ_API_KEY,
-                        base_url="https://api.groq.com/openai/v1",
-                    )
-                elif provider == "google":
-                    client = OpenAI(
-                        api_key=config.GOOGLE_API_KEY,
-                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                    )
-                else:
-                    client = OpenAI(api_key=config.OPENAI_API_KEY)
+        candidates = route_candidates(
+            config.MEMORY_LLM_PROVIDER,
+            config.MEMORY_LLM_MODEL,
+            config.MEMORY_LLM_FALLBACKS,
+        )
+        last_error: str = ""
+        for provider_raw, model in candidates:
+            provider = (provider_raw or "").lower()
+            try:
+                text = self._memory_completion(provider, model, prompt, max_tokens)
+            except Exception as exc:
+                last_error = f"{provider}/{model}: {exc}"
+                print(f"[memory] LLM call failed for {provider}/{model}: {exc}")
+                continue
+            if text:
+                return text
+            last_error = f"{provider}/{model}: empty response"
+            print(f"[memory] LLM route {provider}/{model} returned no content; trying next route")
+        if last_error:
+            print(f"[memory] all memory routes failed: {last_error}")
+        return ""
 
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=0.2,
+    def _memory_completion(self, provider: str, model: str, prompt: str, max_tokens: int) -> str:
+        """One blocking completion against a single provider/model route.
+
+        Raises on transport/provider errors or an unknown provider so the caller
+        can fall through to the next route in the fallback chain.
+        """
+        if provider in ("groq", "openai", "google"):
+            from openai import OpenAI
+            if provider == "groq":
+                client = OpenAI(
+                    api_key=config.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1",
                 )
-                return resp.choices[0].message.content or ""
-
-            if provider == "anthropic":
-                import anthropic
-                client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-                resp = client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": prompt}],
+            elif provider == "google":
+                client = OpenAI(
+                    api_key=config.GOOGLE_API_KEY,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 )
-                return resp.content[0].text if resp.content else ""
+            else:
+                client = OpenAI(api_key=config.OPENAI_API_KEY)
 
-            print(f"[memory] Unknown MEMORY_LLM_PROVIDER: {provider!r}")
-            return ""
-        except Exception as exc:
-            print(f"[memory] LLM call failed: {exc}")
-            return ""
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.2,
+            )
+            return resp.choices[0].message.content or ""
+
+        if provider == "anthropic":
+            import anthropic
+            client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            resp = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return resp.content[0].text if resp.content else ""
+
+        raise ValueError(f"Unknown MEMORY_LLM provider: {provider!r}")
 
     # ------------------------------------------------------------------
     # Lifecycle

@@ -1,6 +1,8 @@
 param(
     [switch]$Clean,
     [switch]$SkipInstall,
+    # Kept for backward compatibility (CI passes it). Auto-install is now the
+    # default, so this switch is accepted but no longer changes behavior.
     [switch]$Yes,
     [switch]$UseGlobalPython
 )
@@ -20,9 +22,9 @@ $IconSourcePng = Join-Path $Root "assets\doll\idle.png"
 
 Set-Location $Root
 
-function Test-Yes($Value) {
-    return $Value -match '^(y|yes)$'
-}
+# Force child Python processes (pip, PyInstaller) to stream their output line by
+# line so progress shows up promptly instead of arriving in buffered chunks.
+$env:PYTHONUNBUFFERED = "1"
 
 function Invoke-CheckedPython {
     param(
@@ -57,19 +59,8 @@ function New-BuildRequirementsFile {
 
 if (-not $UseGlobalPython) {
     if (-not (Test-Path $VenvPython)) {
-        $CreateVenv = $false
-        if ($Yes) {
-            $CreateVenv = $true
-        } else {
-            Write-Host "Project virtual environment not found:"
-            Write-Host "  $VenvDir"
-            $Answer = Read-Host "Create it now? [y/N]"
-            $CreateVenv = Test-Yes $Answer
-        }
-
-        if (-not $CreateVenv) {
-            throw "Build cancelled: project .venv is required unless you pass -UseGlobalPython."
-        }
+        Write-Host "Project virtual environment not found; creating it at:"
+        Write-Host "  $VenvDir"
 
         if (Get-Command python -ErrorAction SilentlyContinue) {
             & python -m venv $VenvDir
@@ -103,37 +94,29 @@ if ($Clean) {
 }
 
 if (-not $SkipInstall) {
-    $InstallDeps = $false
-    if ($Yes) {
-        $InstallDeps = $true
-    } else {
-        Write-Host "This can install/update Python packages in the selected environment:"
-        Write-Host "  $Python"
-        $Answer = Read-Host "Install/update dependencies before building? [y/N]"
-        $InstallDeps = Test-Yes $Answer
+    Write-Host "Checking dependencies and installing anything missing into:"
+    Write-Host "  $Python"
+    Write-Host "(already-satisfied packages are skipped automatically)"
+
+    $BuildRequirements = $RequirementsFile
+    $FilteredRequirements = $null
+    if ((-not $UseGlobalPython) -and (Test-LongPathRisk $VenvDir)) {
+        Write-Host "The project path is long enough to hit Windows path limits while installing ElevenLabs."
+        Write-Host "Building without ElevenLabs support in this environment; enable long paths if you need that provider bundled."
+        $FilteredRequirements = New-BuildRequirementsFile -SourcePath $RequirementsFile
+        $BuildRequirements = $FilteredRequirements
     }
 
-    if ($InstallDeps) {
-        $BuildRequirements = $RequirementsFile
-        $FilteredRequirements = $null
-        if ((-not $UseGlobalPython) -and (Test-LongPathRisk $VenvDir)) {
-            Write-Host "The project path is long enough to hit Windows path limits while installing ElevenLabs."
-            Write-Host "Building without ElevenLabs support in this environment; enable long paths if you need that provider bundled."
-            $FilteredRequirements = New-BuildRequirementsFile -SourcePath $RequirementsFile
-            $BuildRequirements = $FilteredRequirements
+    Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "--upgrade", "pip") -StepName "pip upgrade"
+    try {
+        Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "-r", $BuildRequirements, "-r", "requirements-build.txt") -StepName "dependency install"
+    } finally {
+        if ($FilteredRequirements -and (Test-Path $FilteredRequirements)) {
+            Remove-Item -LiteralPath $FilteredRequirements -Force -ErrorAction SilentlyContinue
         }
-
-        Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "--upgrade", "pip") -StepName "pip upgrade"
-        try {
-            Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "-r", $BuildRequirements, "-r", "requirements-build.txt") -StepName "dependency install"
-        } finally {
-            if ($FilteredRequirements -and (Test-Path $FilteredRequirements)) {
-                Remove-Item -LiteralPath $FilteredRequirements -Force -ErrorAction SilentlyContinue
-            }
-        }
-    } else {
-        Write-Host "Skipping dependency install. Use -Yes to install automatically or -SkipInstall to suppress this prompt."
     }
+} else {
+    Write-Host "Skipping dependency install (-SkipInstall)."
 }
 
 if (-not (Test-Path $IconPath)) {

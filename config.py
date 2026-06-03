@@ -4,7 +4,7 @@ config.py — Central configuration loaded from .env
 import os
 from dotenv import load_dotenv
 from core import secret_store
-from core.system.env_utils import env_bool, env_float, env_int
+from core.system.env_utils import env_bool, env_float, env_int, env_screenshot_mode
 from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
 from core.system.paths import USER_FILLER_AUDIO_DIR as DEFAULT_USER_FILLER_AUDIO_DIR
 from core.system.paths import REPO_ROOT, MODEL_TOOLS_DIR
@@ -35,7 +35,7 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_ambient": True,
         "context_documents": True,
         "context_tools": True,
-        "context_screenshot": False,
+        "context_screenshot": "off",   # "off" | "auto" | "model"
         "context_clipboard": False,
         "intents": [
             {"key": "w", "label": "What is this?",      "hint": "Quick explanation, plain English",  "prompt": "What is this? Give me a clear, plain-English explanation in 2-3 sentences."},
@@ -51,7 +51,7 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_ambient": True,
         "context_documents": False,
         "context_tools": False,
-        "context_screenshot": False,
+        "context_screenshot": "off",   # "off" | "auto" | "model"
         "context_clipboard": False,
         "intents": [
             {"key": "w", "label": "Fix grammar",  "hint": "Correct spelling and grammar",     "prompt": "Fix the grammar and spelling of the following text. Output ONLY the corrected text."},
@@ -89,7 +89,7 @@ def _load_caller_rows() -> list[dict]:
             "context_ambient": env_bool(f"CALLER_{n}_CONTEXT_AMBIENT", bool(default.get("context_ambient", True))),
             "context_documents": env_bool(f"CALLER_{n}_CONTEXT_DOCUMENTS", bool(default.get("context_documents", True))),
             "context_tools": env_bool(f"CALLER_{n}_CONTEXT_TOOLS", bool(default.get("context_tools", True))),
-            "context_screenshot": env_bool(f"CALLER_{n}_CONTEXT_SCREENSHOT", bool(default.get("context_screenshot", False))),
+            "context_screenshot": env_screenshot_mode(f"CALLER_{n}_CONTEXT_SCREENSHOT", default.get("context_screenshot", "off")),
             "context_clipboard": env_bool(f"CALLER_{n}_CONTEXT_CLIPBOARD", bool(default.get("context_clipboard", False))),
             "intents":    intents,
         })
@@ -120,7 +120,7 @@ def _load_config() -> None:
     global ICON_SIZE, ICON_BACKSTOP_MS, BUBBLE_HIDE_DELAY_MS
     global BUBBLE_REVEAL_WPM, BUBBLE_HOLD_REVEAL_WPM
     global TTS_PLAYBACK_RATE, TTS_HOLD_PLAYBACK_RATE
-    global MEMORY_LLM_PROVIDER, MEMORY_LLM_MODEL, MEMORY_AUTO_CONSOLIDATE
+    global MEMORY_LLM_PROVIDER, MEMORY_LLM_MODEL, MEMORY_LLM_FALLBACKS, MEMORY_AUTO_CONSOLIDATE
     global MEMORY_CONSOLIDATION_INTERVAL, MEMORY_TOP_K, MEMORY_RELEVANCE_MAX_DISTANCE, MEMORY_STM_TOKEN_BUDGET
     global SYSTEM_PROMPT_UTILITY
 
@@ -145,13 +145,17 @@ def _load_config() -> None:
     LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-5.4")
     LLM_FALLBACKS = os.getenv("LLM_FALLBACKS", "")
 
-    # --- Chat / elaborate LLM (defaults to same as above) ---
-    CHAT_LLM_PROVIDER  = os.getenv("CHAT_LLM_PROVIDER",  LLM_PROVIDER)
-    CHAT_LLM_MODEL     = os.getenv("CHAT_LLM_MODEL",     LLM_MODEL)
-    CHAT_LLM_FALLBACKS = os.getenv("CHAT_LLM_FALLBACKS", "")
+    # --- Chat / elaborate LLM: combined with the Main LLM. ---
+    # The chat window and overlay share one "brain", so these mirror LLM_*.
+    # A legacy CHAT_LLM_* override in .env is intentionally ignored.
+    CHAT_LLM_PROVIDER  = LLM_PROVIDER
+    CHAT_LLM_MODEL     = LLM_MODEL
+    CHAT_LLM_FALLBACKS = LLM_FALLBACKS
 
-    # --- Tool-capable LLM ---
-    TOOL_LLM_MODEL = os.getenv("TOOL_LLM_MODEL", "claude-sonnet-4-5")
+    # --- Tool model override (optional) ---
+    # Empty = use the Main LLM model for tool calls. Set this only to force a
+    # different model when tools are active (e.g. a more capable Anthropic model).
+    TOOL_LLM_MODEL = os.getenv("TOOL_LLM_MODEL", "")
 
     # --- Vision LLM ---
     VISION_LLM_PROVIDER  = os.getenv("VISION_LLM_PROVIDER",  "")
@@ -166,8 +170,8 @@ def _load_config() -> None:
     THEME_MODE            = os.getenv("THEME_MODE", "system")  # "dark" | "light" | "system"
     DARK_MODE             = env_bool("DARK_MODE", THEME_MODE == "dark")
     # ICON_AUTO_HIDE (formerly DOLL_AUTO_HIDE) — old key still honored for back-compat.
-    ICON_AUTO_HIDE        = env_bool("ICON_AUTO_HIDE", env_bool("DOLL_AUTO_HIDE", True))
-    CHAT_AUTO_ELABORATE   = env_bool("CHAT_AUTO_ELABORATE", True)
+    ICON_AUTO_HIDE        = env_bool("ICON_AUTO_HIDE", env_bool("DOLL_AUTO_HIDE", False))
+    CHAT_AUTO_ELABORATE   = env_bool("CHAT_AUTO_ELABORATE", False)
     CHAT_ELABORATE_PROMPT = os.getenv("CHAT_ELABORATE_PROMPT", "Please elaborate on that.")
     GITHUB_DEFAULT_CLIENT_ID = os.getenv("GITHUB_DEFAULT_CLIENT_ID", "")
     GITHUB_CLIENT_ID     = os.getenv("GITHUB_CLIENT_ID", GITHUB_DEFAULT_CLIENT_ID)
@@ -207,7 +211,7 @@ def _load_config() -> None:
 
     # --- UI sizes ---
     BUBBLE_WIDTH           = env_int("BUBBLE_WIDTH",      340)
-    BUBBLE_LINES           = env_int("BUBBLE_LINES",      2)
+    BUBBLE_LINES           = env_int("BUBBLE_LINES",      3)
     BUBBLE_COLOR           = os.getenv("BUBBLE_COLOR",           "#1c1c24dc")
     BUBBLE_TEXT_COLOR      = os.getenv("BUBBLE_TEXT_COLOR",      "#e6e6e6")
     BUBBLE_READ_WORD_COLOR = os.getenv("BUBBLE_READ_WORD_COLOR", "#4da3ff")
@@ -222,8 +226,9 @@ def _load_config() -> None:
     TTS_HOLD_PLAYBACK_RATE = env_float("TTS_HOLD_PLAYBACK_RATE", 1.35)
 
     # --- Memory ---
-    MEMORY_LLM_PROVIDER             = os.getenv("MEMORY_LLM_PROVIDER",             CHAT_LLM_PROVIDER)
-    MEMORY_LLM_MODEL                = os.getenv("MEMORY_LLM_MODEL",                CHAT_LLM_MODEL)
+    MEMORY_LLM_PROVIDER             = os.getenv("MEMORY_LLM_PROVIDER",             LLM_PROVIDER)
+    MEMORY_LLM_MODEL                = os.getenv("MEMORY_LLM_MODEL",                LLM_MODEL)
+    MEMORY_LLM_FALLBACKS            = os.getenv("MEMORY_LLM_FALLBACKS",            "")
     MEMORY_AUTO_CONSOLIDATE         = env_bool("MEMORY_AUTO_CONSOLIDATE", False)
     MEMORY_CONSOLIDATION_INTERVAL   = env_int("MEMORY_CONSOLIDATION_INTERVAL", 15)
     MEMORY_TOP_K                    = env_int("MEMORY_TOP_K", 3)

@@ -120,9 +120,14 @@ class SpeechBubble(QWidget):
 
         # Drag support
         self._drag_offset = None          # QPoint while dragging
+        self._press_pos = None            # global press position (click vs drag)
+        self._press_timer = QElapsedTimer()  # measures press duration (click vs hold-to-speed)
+        self._dragged = False             # True once the press moved past the click threshold
         self._companion_callback = None   # called with new QPoint after each drag move
         self._hide_callback = None        # called when this widget hides (for icon sync)
         self._speed_callback = None       # called with True while hold-to-speed is active
+        self._click_callback = None       # called on a click (no drag) — opens the chat window
+        self._highlight_callback = None   # called(reply_text, revealed_count, finished)
 
     # ------------------------------------------------------------------
     # Drag API
@@ -139,6 +144,18 @@ class SpeechBubble(QWidget):
     def set_speed_callback(self, fn):
         """Register callback(enabled: bool) for hold-to-speed state."""
         self._speed_callback = fn
+
+    def set_click_callback(self, fn):
+        """Register a zero-argument callback fired on a click (press+release without drag)."""
+        self._click_callback = fn
+
+    def set_highlight_callback(self, fn):
+        """Register callback(reply_text, revealed_count, finished) reporting read-position.
+
+        Fires whenever the TTS-synced highlight advances so other surfaces (e.g. the
+        chat window) can mirror the same read position.
+        """
+        self._highlight_callback = fn
 
     def apply_config(self):
         """Apply live bubble size/line/speed settings after config.reload()."""
@@ -170,12 +187,19 @@ class SpeechBubble(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._set_speed_boost(True)
-            self._drag_offset = self.pos() - event.globalPosition().toPoint()
+            self._press_pos = event.globalPosition().toPoint()
+            self._press_timer.restart()
+            self._dragged = False
+            self._drag_offset = self.pos() - self._press_pos
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            new_pos = event.globalPosition().toPoint() + self._drag_offset
+            point = event.globalPosition().toPoint()
+            if (self._press_pos is not None
+                    and (point - self._press_pos).manhattanLength() > 6):
+                self._dragged = True
+            new_pos = point + self._drag_offset
             self.move(new_pos)
             if self._companion_callback:
                 self._companion_callback(new_pos)
@@ -184,7 +208,17 @@ class SpeechBubble(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._set_speed_boost(False)
+            # A click = pressed, didn't drag, and released quickly. A longer press
+            # is the hold-to-speed gesture and must not open the chat window.
+            was_click = (
+                self._drag_offset is not None
+                and not self._dragged
+                and self._press_timer.elapsed() < 350
+            )
             self._drag_offset = None
+            self._press_pos = None
+            if was_click and self._click_callback:
+                self._click_callback()
         super().mouseReleaseEvent(event)
 
     def show_listening(self):
@@ -297,6 +331,9 @@ class SpeechBubble(QWidget):
             self._reveal_mode = False
             self._timestamp_mode = False
             self._hide_timer.start()
+            self._emit_highlight(finished=True)
+        else:
+            self._emit_highlight(finished=False)
 
     def append_chunk(self, chunk: str, is_thought: bool = False):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
@@ -353,6 +390,7 @@ class SpeechBubble(QWidget):
                 self._reveal_mode = False
                 self._timestamp_mode = False
                 self._hide_timer.start()
+                self._emit_highlight(finished=True)
         elif self._revealed_count < len(self._pending_words):
             # WPM timer still has words to show — let it finish naturally, then hide.
             self._finishing = True
@@ -364,6 +402,7 @@ class SpeechBubble(QWidget):
             self._reveal_mode = False
             self._timestamp_mode = False
             self._hide_timer.start()
+            self._emit_highlight(finished=True)
 
     def clear(self):
         """Hard reset — hide immediately."""
@@ -417,6 +456,10 @@ class SpeechBubble(QWidget):
         self._dot_count = (self._dot_count % 3) + 1
         self.update()
 
+    def _emit_highlight(self, finished: bool = False):
+        if self._highlight_callback:
+            self._highlight_callback(self._full_text, self._revealed_count, finished)
+
     def _current_reveal_wpm(self) -> int:
         if self._speed_boosting:
             return max(1, int(getattr(config, "BUBBLE_HOLD_REVEAL_WPM", 480)))
@@ -463,17 +506,22 @@ class SpeechBubble(QWidget):
         lines: list[list[tuple[str, bool, int | None, bool]]] = []
         current: list[tuple[str, bool, int | None, bool]] = []
         current_w = 0
+        prev_is_thought: bool | None = None
         for word, bold, reply_idx, is_thought in words:
             fm = self._bold_fm if bold else self._fm
             word_w = fm.horizontalAdvance(word)
+            # Break onto a new line where the model's thinking ends and the
+            # reply begins, so they're separated by a line, not just colour.
+            force_break = bool(current) and prev_is_thought is True and not is_thought
             extra_space = self._space_w if current else 0
-            if current and current_w + extra_space + word_w > self._text_w:
+            if force_break or (current and current_w + extra_space + word_w > self._text_w):
                 lines.append(current)
                 current = [(word, bold, reply_idx, is_thought)]
                 current_w = word_w
             else:
                 current.append((word, bold, reply_idx, is_thought))
                 current_w += extra_space + word_w
+            prev_is_thought = is_thought
         if current:
             lines.append(current)
         visible_lines = max(1, config.BUBBLE_LINES)

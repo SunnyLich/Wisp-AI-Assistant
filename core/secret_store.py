@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 from pathlib import Path
+
+log = logging.getLogger("wisp.secrets")
 
 _KEYRING_SERVICE = "python-ai-overlay"
 _META_FILE = Path(__file__).parent.parent / "private" / ".secret_status.json"
@@ -23,6 +26,10 @@ API_KEY_NAMES = (
     "TOGETHER_API_KEY",
     "CEREBRAS_API_KEY",
 )
+
+
+class KeychainError(RuntimeError):
+    """Raised when an OS-keychain write cannot be completed or verified."""
 
 
 def _account(name: str) -> str:
@@ -64,10 +71,37 @@ def secret_source(name: str) -> str:
 
 
 def set_secret(name: str, value: str) -> None:
-    import keyring  # type: ignore
+    """Write a secret to the OS keychain and verify it landed.
 
-    keyring.set_password(_KEYRING_SERVICE, _account(name), value)
+    The "configured" marker is only set after a successful read-back, so a
+    silently-dropped write can no longer leave a stale marker without a stored
+    value. Raises KeychainError (after logging) on any failure.
+    """
+    try:
+        import keyring  # type: ignore
+    except Exception as exc:  # noqa: BLE001 — surfaced to the caller + log
+        log.error("Cannot save %s: OS keychain support (keyring) is unavailable: %s", name, exc)
+        raise KeychainError(
+            "OS keychain support (the 'keyring' package) is not available, "
+            f"so {name} could not be saved."
+        ) from exc
+
+    try:
+        keyring.set_password(_KEYRING_SERVICE, _account(name), value)
+    except Exception as exc:  # noqa: BLE001 — surfaced to the caller + log
+        log.error("Failed writing %s to OS keychain: %s", name, exc)
+        raise KeychainError(f"Could not write {name} to the OS keychain: {exc}") from exc
+
+    # Read back to confirm the value actually persisted before trusting it.
+    if get_keychain_secret(name) != value:
+        log.error("Verification failed for %s: keychain read-back did not match the value written", name)
+        set_configured_marker(name, False)
+        raise KeychainError(
+            f"{name} did not persist to the OS keychain (verification read-back failed)."
+        )
+
     set_configured_marker(name, True)
+    log.info("Saved %s to OS keychain", name)
 
 
 def delete_secret(name: str) -> None:

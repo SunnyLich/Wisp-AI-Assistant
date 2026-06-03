@@ -36,14 +36,17 @@ class OverlaySignals(QObject):
     bubble_chunk       = Signal(str, bool)   # (chunk, is_thought)
     bubble_finish      = Signal()      # response done, start hide countdown
     bubble_clear       = Signal()      # hide immediately
+    bubble_highlight   = Signal(str, int, bool)  # (reply_text, revealed_count, finished)
     show_icon          = Signal()      # make icon visible
     hide_icon          = Signal()      # hide icon after short delay
     raise_overlay      = Signal()      # bring overlay to foreground (Linux)
     settings_applied   = Signal()      # settings were applied; re-register hotkeys etc.
     show_new_chat          = Signal()        # tray "New chat" clicked
     show_last_chat         = Signal()        # tray "Last chat" clicked
+    chat_new_conversation  = Signal()        # a voice query created a new conversation
     show_memory_viewer     = Signal()        # tray "Memory-¦" clicked
     context_items_dropped  = Signal(object)  # list[(name, content, type)] from drag-drop
+    show_context_summary   = Signal(object)  # list[(name, type)] of context sent with a prompt
     drop_context_cleared   = Signal()        # context panel should be cleared
     remove_dropped_item    = Signal(int)     # user clicked X on badge at this index
 
@@ -73,6 +76,10 @@ class IconOverlay(QMainWindow):
         self._bubble.set_companion_callback(self._on_bubble_dragged)
         self._bubble.set_hide_callback(self._on_bubble_hidden)
         self._bubble.set_speed_callback(self._on_bubble_speed_boost)
+        self._bubble.set_click_callback(signals.show_last_chat.emit)
+        self._bubble.set_highlight_callback(
+            lambda text, count, finished: signals.bubble_highlight.emit(text, count, finished)
+        )
         self._current_state = "idle"
 
         # Drop-context panel (right side of icon)
@@ -81,6 +88,7 @@ class IconOverlay(QMainWindow):
         self._context_panel.set_remove_callback(signals.remove_dropped_item.emit)
         self._context_panel.reposition(self._icon_label.pos(), config.ICON_SIZE)
         signals.drop_context_cleared.connect(self._context_panel.clear_items)
+        signals.show_context_summary.connect(self._on_show_context_summary)
 
         # Connect signals
         signals.set_state.connect(self._on_state_changed)
@@ -330,8 +338,18 @@ class IconOverlay(QMainWindow):
     def _icon_backstop_ms() -> int:
         return max(500, int(getattr(config, "ICON_BACKSTOP_MS", 5000)))
 
+    def _on_show_context_summary(self, items):
+        """Show read-only badges of the context attached to the current prompt."""
+        if not hasattr(self, "_context_panel"):
+            return
+        if hasattr(self, "_icon_label"):
+            self._context_panel.reposition(self._icon_label.pos(), config.ICON_SIZE)
+        self._context_panel.show_context_summary(items)
+
     def _on_bubble_hidden(self):
         """Called by SpeechBubble.hideEvent -- hides the icon in lockstep with the bubble."""
+        if hasattr(self, "_context_panel"):
+            self._context_panel.clear_summary()
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
         self._on_bubble_speed_boost(False)

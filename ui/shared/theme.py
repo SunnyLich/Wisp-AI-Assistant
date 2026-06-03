@@ -48,6 +48,7 @@ def apply_app_theme(app: QApplication | None = None) -> None:
         palette.setColor(QPalette.ColorRole.Highlight, QColor("#4b67b0"))
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
         palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#8d929d"))
+        palette.setColor(QPalette.ColorRole.Mid, QColor("#454854"))
         palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("#777b86"))
         palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#777b86"))
 
@@ -151,6 +152,7 @@ def apply_app_theme(app: QApplication | None = None) -> None:
     palette.setColor(QPalette.ColorRole.Highlight, QColor("#2f6feb"))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#667085"))
+    palette.setColor(QPalette.ColorRole.Mid, QColor("#cfd6e2"))
     palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("#8a93a3"))
     palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#8a93a3"))
 
