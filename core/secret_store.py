@@ -4,9 +4,19 @@ from __future__ import annotations
 import os
 import json
 import logging
+import threading
 from pathlib import Path
 
 log = logging.getLogger("wisp.secrets")
+
+# Cache keychain reads. On macOS, keyring goes through the Security framework
+# (find_generic_password); calling it repeatedly from worker threads — e.g. the
+# per-query route logging on the TTS/LLM threads — has been observed to segfault
+# when it races other native framework work (CoreAudio). config.reload() reads
+# every key at startup on the main thread, which warms this cache, so subsequent
+# lookups never touch the Security framework off the main thread.
+_keychain_cache: dict[str, str] = {}
+_keychain_cache_lock = threading.Lock()
 
 _KEYRING_SERVICE = "python-ai-overlay"
 _META_FILE = Path(__file__).parent.parent / "private" / ".secret_status.json"
@@ -45,16 +55,24 @@ def get_secret(name: str) -> str:
 
 
 def get_keychain_secret(name: str) -> str:
-    """Return a secret only from the OS keychain."""
+    """Return a secret only from the OS keychain (cached after first read)."""
+    with _keychain_cache_lock:
+        if name in _keychain_cache:
+            return _keychain_cache[name]
+
+    value = ""
     try:
         import keyring  # type: ignore
 
-        value = keyring.get_password(_KEYRING_SERVICE, _account(name))
-        if value:
-            return value
+        result = keyring.get_password(_KEYRING_SERVICE, _account(name))
+        if result:
+            value = result
     except Exception:
         pass
-    return ""
+
+    with _keychain_cache_lock:
+        _keychain_cache[name] = value
+    return value
 
 
 def has_secret(name: str) -> bool:
@@ -91,6 +109,11 @@ def set_secret(name: str, value: str) -> None:
     except Exception as exc:  # noqa: BLE001 — surfaced to the caller + log
         log.error("Failed writing %s to OS keychain: %s", name, exc)
         raise KeychainError(f"Could not write {name} to the OS keychain: {exc}") from exc
+
+    # Drop the cached value so the read-back below (and future reads) see the
+    # freshly written secret rather than a stale cache entry.
+    with _keychain_cache_lock:
+        _keychain_cache.pop(name, None)
 
     # Read back to confirm the value actually persisted before trusting it.
     if get_keychain_secret(name) != value:

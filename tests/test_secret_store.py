@@ -24,6 +24,11 @@ class FakeKeyring(types.SimpleNamespace):
 
 
 class SecretStoreTests(unittest.TestCase):
+    def setUp(self):
+        # get_keychain_secret caches results process-wide; reset between cases so
+        # each test's mocked keychain/env values are read fresh.
+        secret_store._keychain_cache.clear()
+
     def test_get_secret_prefers_keychain_over_env(self):
         fake = FakeKeyring()
         fake.set_password("python-ai-overlay", "openai_api_key", "keychain-value")
