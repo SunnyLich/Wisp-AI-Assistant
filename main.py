@@ -37,17 +37,18 @@ log = logging.getLogger("wisp")
 # faulthandler's default set, so register it (and friends) explicitly. chain=True
 # re-raises after dumping, so the process still crashes as before — we just get the
 # stack first. The fault file is kept open for the lifetime of the process.
-_FAULT_PATH = os.path.join(os.path.dirname(__file__), "wisp_fault.log")
 try:
     import faulthandler
     import signal as _signal
-    _fault_file = open(_FAULT_PATH, "w")
-    faulthandler.enable(file=_fault_file, all_threads=True)
+    # Dump to stderr so the traceback appears inline in the terminal (the dev runs
+    # on a separate Mac and copies terminal output). all_threads=True shows which
+    # thread faulted; chain=True re-raises so the process still crashes afterwards.
+    faulthandler.enable(file=sys.stderr, all_threads=True)
     for _sig_name in ("SIGTRAP", "SIGABRT", "SIGBUS", "SIGILL", "SIGSEGV"):
         _sig = getattr(_signal, _sig_name, None)
         if _sig is not None:
             try:
-                faulthandler.register(_sig, file=_fault_file, all_threads=True, chain=True)
+                faulthandler.register(_sig, file=sys.stderr, all_threads=True, chain=True)
             except (ValueError, OSError, RuntimeError):
                 pass
 except Exception:  # never let diagnostics break startup

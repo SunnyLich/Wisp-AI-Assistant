@@ -14,6 +14,7 @@ from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath
 import config
 
 _IS_WIN = sys.platform == "win32"
+_IS_MAC = sys.platform == "darwin"
 
 
 def _build_rows(caller_idx: int = 0) -> list[dict]:
@@ -326,6 +327,15 @@ class IntentOverlay(QWidget):
                 lambda e: None if (not e or not e.name or self._closed) else self._raw_key.emit(e.name),
                 suppress=False,
             )
+        elif _IS_MAC:
+            # No global keyboard hook on macOS: pynput's Listener installs a
+            # CGEventTap that decodes keystrokes via main-thread-only HIToolbox
+            # APIs on its own thread, which trace-traps (SIGTRAP). This Popup has
+            # StrongFocus and we just activated it, so Qt delivers keys straight
+            # to keyPressEvent on the main thread — and the custom-input QLineEdit
+            # keeps working (grabKeyboard would have stolen its keystrokes).
+            self._kb_hook = None
+            self.setFocus(Qt.FocusReason.PopupFocusReason)
         else:
             from pynput import keyboard as _kb  # type: ignore
 
