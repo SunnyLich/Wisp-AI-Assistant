@@ -183,6 +183,26 @@ def _play_clip(data: np.ndarray, samplerate: int):
 # Streaming TTS playback
 # ------------------------------------------------------------------
 
+# Optional hook: a callable that runs a given function on the GUI main thread and
+# blocks for its result. Set by the app on macOS so the CoreAudio output stream is
+# opened on the main thread (opening it on a worker thread segfaults inside
+# PortAudio when Qt's Cocoa run loop owns the process). None elsewhere -> open inline.
+_main_thread_runner: "callable | None" = None
+
+
+def set_main_thread_runner(runner) -> None:
+    """Register a `runner(fn) -> fn()` that executes `fn` on the GUI main thread."""
+    global _main_thread_runner
+    _main_thread_runner = runner
+
+
+def _run_on_main(fn):
+    """Run `fn` on the main thread if a runner is registered, else inline."""
+    if _main_thread_runner is not None:
+        return _main_thread_runner(fn)
+    return fn()
+
+
 def play_tts_stream(text: str, on_done: callable | None = None):
     """
     Stream TTS for `text` and play it as chunks arrive.
@@ -259,45 +279,62 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
     except Exception:
         pass
 
+    def _open_stream():
+        s = sd.RawOutputStream(samplerate=sample_rate, channels=channels, dtype=dtype)
+        s.start()  # RawOutputStream's context manager normally does this on __enter__
+        return s
+
+    def _close_stream(s):
+        try:
+            s.stop()
+        finally:
+            s.close()
+
     _audio_started = False
+    stream = None
     try:
         print(f"[audio] opening TTS stream (rate={sample_rate}, ch={channels}, dtype={dtype})", flush=True)
-        with sd.RawOutputStream(
-            samplerate=sample_rate,
-            channels=channels,
-            dtype=dtype,
-        ) as stream:
-            print("[audio] TTS stream opened", flush=True)
-            while True:
-                if stop_event.is_set():
-                    stream.abort()  # discard buffered audio immediately
-                    break
-                try:
-                    chunk = chunk_q.get(timeout=0.1)
-                except queue.Empty:
-                    continue
-                if chunk is None:
-                    break
-                if not _audio_started:
-                    _audio_started = True
-                    print(f"[audio] writing first chunk ({len(chunk)} bytes)", flush=True)
-                    if on_audio_start:
-                        try:
-                            on_audio_start()
-                        except Exception:
-                            pass
-                adjusted_chunk = _speed_adjust_pcm(chunk, dtype, _current_tts_rate())
-                stream.write(adjusted_chunk)
-                if on_amplitude:
+        # Open on the main thread (see _run_on_main): CoreAudio + Qt's run loop
+        # segfault if the stream is opened on this worker thread. Writes below
+        # stay on the worker so the UI never blocks during playback.
+        stream = _run_on_main(_open_stream)
+        print("[audio] TTS stream opened", flush=True)
+        while True:
+            if stop_event.is_set():
+                stream.abort()  # discard buffered audio immediately
+                break
+            try:
+                chunk = chunk_q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if chunk is None:
+                break
+            if not _audio_started:
+                _audio_started = True
+                print(f"[audio] writing first chunk ({len(chunk)} bytes)", flush=True)
+                if on_audio_start:
                     try:
-                        amp_dtype = np.float32 if dtype == "float32" else np.int16
-                        samples = np.frombuffer(adjusted_chunk, dtype=amp_dtype)
-                        amp = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
-                        on_amplitude(min(amp, 1.0))
+                        on_audio_start()
                     except Exception:
                         pass
+            adjusted_chunk = _speed_adjust_pcm(chunk, dtype, _current_tts_rate())
+            stream.write(adjusted_chunk)
+            if on_amplitude:
+                try:
+                    amp_dtype = np.float32 if dtype == "float32" else np.int16
+                    samples = np.frombuffer(adjusted_chunk, dtype=amp_dtype)
+                    amp = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+                    on_amplitude(min(amp, 1.0))
+                except Exception:
+                    pass
     except ModuleNotFoundError as exc:
         print(f"[audio] streaming playback unavailable: {exc}")
+    finally:
+        if stream is not None:
+            try:
+                _run_on_main(lambda: _close_stream(stream))
+            except Exception:
+                pass
 
     with _playback_lock:
         if _current_stop_event is stop_event:

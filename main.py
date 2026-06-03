@@ -13,6 +13,7 @@ import logging
 import traceback
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
+from PySide6.QtCore import QObject, Signal, Qt
 
 _IS_WIN = sys.platform == "win32"
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen=false")
@@ -121,6 +122,39 @@ def _build_app_icon() -> QIcon:
     return QIcon(idle_p)
 
 
+class _MainThreadInvoker(QObject):
+    """Runs a callable on the GUI main thread and blocks the caller for its result.
+
+    Used so worker threads can perform main-thread-only macOS work (opening the
+    CoreAudio output stream) without freezing the UI. The slot is connected with a
+    queued connection, so emitting from a worker hops the call onto the main thread;
+    the worker waits on an Event for completion."""
+    _post = Signal(object)
+
+    def __init__(self):
+        super().__init__()
+        self._post.connect(self._run, Qt.ConnectionType.QueuedConnection)
+
+    def _run(self, job: dict) -> None:
+        try:
+            job["result"] = job["fn"]()
+        except BaseException as exc:  # propagate to the waiting worker
+            job["error"] = exc
+        finally:
+            job["event"].set()
+
+    def run_on_main(self, fn):
+        # Already on the main thread → run directly (a queued call would deadlock).
+        if threading.current_thread() is threading.main_thread():
+            return fn()
+        job = {"fn": fn, "event": threading.Event()}
+        self._post.emit(job)
+        job["event"].wait()
+        if "error" in job:
+            raise job["error"]
+        return job.get("result")
+
+
 class App:
     def __init__(self):
         from core.system.paths import PLUGINS_DIR
@@ -175,6 +209,13 @@ class App:
         self._signals.remove_dropped_item.connect(self._on_remove_dropped_item)
         self._signals.summon_caller.connect(self._on_summon_caller)
         self._overlay.set_click_handler(self._on_icon_click)
+
+        # On macOS, route the CoreAudio output-stream open onto the main thread
+        # (opening it on the TTS worker thread segfaults inside PortAudio while
+        # Qt's Cocoa run loop owns the process). No-op on Windows/Linux.
+        if sys.platform == "darwin":
+            self._main_invoker = _MainThreadInvoker()
+            audio.set_main_thread_runner(self._main_invoker.run_on_main)
 
         # Pre-warm connections in background
         threading.Thread(target=self._prewarm, daemon=True).start()

@@ -14,18 +14,27 @@ def _pcm(value: float = 0.5, n: int = 8) -> bytes:
 
 class FakeStream:
     """Stand-in for sd.RawOutputStream: records writes and abort, optionally
-    runs a hook on the first write (used to simulate a mid-playback stop())."""
+    runs a hook on the first write (used to simulate a mid-playback stop()).
+
+    The stream is now opened/closed explicitly (start/stop/close) rather than via
+    a context manager, because on macOS open/close happen on the main thread while
+    writes stay on the worker thread."""
 
     def __init__(self, on_first_write=None):
         self.writes: list[bytes] = []
         self.aborted = False
+        self.started = False
+        self.closed = False
         self._on_first_write = on_first_write
 
-    def __enter__(self):
-        return self
+    def start(self):
+        self.started = True
 
-    def __exit__(self, *exc):
-        return False
+    def stop(self):
+        pass
+
+    def close(self):
+        self.closed = True
 
     def write(self, data):
         if not self.writes and self._on_first_write is not None:
