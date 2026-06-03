@@ -210,9 +210,13 @@ class App:
         self._signals.summon_caller.connect(self._on_summon_caller)
         self._overlay.set_click_handler(self._on_icon_click)
 
-        # On macOS, route the CoreAudio output-stream open onto the main thread
-        # (opening it on the TTS worker thread segfaults inside PortAudio while
-        # Qt's Cocoa run loop owns the process). No-op on Windows/Linux.
+        # On macOS, register a runner that hops main-thread-only native work onto
+        # the GUI thread. One registration covers every module that touches CoreAudio
+        # (filler + TTS streams in core.audio, the mic stream in core.stt) and
+        # AppKit/Quartz (key injection, window focus/enumeration, screen capture via
+        # core.platform_utils / core.capture) — all share core.system.main_thread.
+        # Doing this work on a worker thread segfaults/trace-traps under Qt's Cocoa
+        # run loop. No-op on Windows/Linux (runner stays unregistered -> runs inline).
         if sys.platform == "darwin":
             self._main_invoker = _MainThreadInvoker()
             audio.set_main_thread_runner(self._main_invoker.run_on_main)

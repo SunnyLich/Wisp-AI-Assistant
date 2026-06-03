@@ -173,7 +173,12 @@ def play_filler():
 
 def _play_clip(data: np.ndarray, samplerate: int):
     try:
-        sd.play(data, samplerate)
+        # sd.play opens and starts a PortAudio output stream, so it must run on
+        # the main thread (see _run_on_main): opening it on this worker thread
+        # segfaults inside CoreAudio under Qt's Cocoa run loop, exactly like the
+        # TTS stream below. sd.wait() only blocks on a completion flag and is
+        # safe to keep here, so the filler stays non-blocking for the caller.
+        _run_on_main(lambda: sd.play(data, samplerate))
         sd.wait()
     except Exception as e:
         print(f"[audio] filler playback error: {e}")
@@ -183,24 +188,12 @@ def _play_clip(data: np.ndarray, samplerate: int):
 # Streaming TTS playback
 # ------------------------------------------------------------------
 
-# Optional hook: a callable that runs a given function on the GUI main thread and
-# blocks for its result. Set by the app on macOS so the CoreAudio output stream is
-# opened on the main thread (opening it on a worker thread segfaults inside
-# PortAudio when Qt's Cocoa run loop owns the process). None elsewhere -> open inline.
-_main_thread_runner: "callable | None" = None
-
-
-def set_main_thread_runner(runner) -> None:
-    """Register a `runner(fn) -> fn()` that executes `fn` on the GUI main thread."""
-    global _main_thread_runner
-    _main_thread_runner = runner
-
-
-def _run_on_main(fn):
-    """Run `fn` on the main thread if a runner is registered, else inline."""
-    if _main_thread_runner is not None:
-        return _main_thread_runner(fn)
-    return fn()
+# Every native PortAudio handle (filler clip, TTS output stream) must be opened
+# and torn down on the GUI main thread; doing it on a worker thread segfaults
+# inside CoreAudio while Qt's Cocoa run loop owns the process. set_main_thread_runner
+# is re-exported so existing callers (main.py) register the runner the same way;
+# stt.py and the macOS capture paths share the same runner via core.system.main_thread.
+from core.system.main_thread import run_on_main as _run_on_main, set_main_thread_runner  # noqa: F401
 
 
 def play_tts_stream(text: str, on_done: callable | None = None):
@@ -272,10 +265,12 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
 
     # macOS CoreAudio segfaults when two PortAudio streams are open on the same
     # device at once. The filler clip (play_filler -> sd.play) is still playing
-    # when we get here, so stop it before opening the TTS output stream. Harmless
-    # on Windows/Linux (just ends the filler a few ms early, which is desired).
+    # when we get here, so stop it before opening the TTS output stream. sd.stop()
+    # tears down that PortAudio stream, so it must run on the main thread too (see
+    # _run_on_main). Harmless on Windows/Linux (just ends the filler a few ms
+    # early, which is desired).
     try:
-        sd.stop()
+        _run_on_main(sd.stop)
     except Exception:
         pass
 
@@ -301,7 +296,9 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         print("[audio] TTS stream opened", flush=True)
         while True:
             if stop_event.is_set():
-                stream.abort()  # discard buffered audio immediately
+                # abort() tears down the PortAudio stream — keep it on the main
+                # thread like open/close (writes below stay on this worker).
+                _run_on_main(stream.abort)  # discard buffered audio immediately
                 break
             try:
                 chunk = chunk_q.get(timeout=0.1)

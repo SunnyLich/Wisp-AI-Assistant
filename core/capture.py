@@ -16,6 +16,8 @@ import mss.tools
 from PIL import Image
 import io
 
+from core.system.main_thread import run_on_main
+
 _IS_LINUX = sys.platform.startswith("linux")
 _log = logging.getLogger("wisp.capture")
 
@@ -150,10 +152,16 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
     Returns:
         PIL Image of the captured region.
     """
-    with mss.mss() as sct:
-        monitor = region if region else sct.monitors[1]  # monitors[1] = primary
-        raw = sct.grab(monitor)
-        return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+    # mss talks to CoreGraphics on macOS; capture from the main thread (run_on_main
+    # is inline when already there / off-macOS) so a hotkey-triggered grab on a
+    # worker thread can't trap under Qt's Cocoa run loop.
+    def _grab() -> Image.Image:
+        with mss.mss() as sct:
+            monitor = region if region else sct.monitors[1]  # monitors[1] = primary
+            raw = sct.grab(monitor)
+            return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+    return run_on_main(_grab)
 
 
 def image_to_base64(img: Image.Image) -> str:

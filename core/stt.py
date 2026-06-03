@@ -16,6 +16,7 @@ import threading
 import numpy as np
 import sounddevice as sd
 import config
+from core.system.main_thread import run_on_main
 
 # Suppress noisy HuggingFace Hub warnings before any faster-whisper import
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -71,14 +72,23 @@ def start_recording():
     _recording = True
     with _chunks_lock:
         _chunks.clear()
-    _stream = sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="float32",
-        blocksize=1024,
-        callback=_audio_callback,
-    )
-    _stream.start()
+
+    # Opening/starting the PortAudio input stream touches CoreAudio, which
+    # segfaults off the main thread under Qt's Cocoa run loop. On macOS the voice
+    # hotkey fires this from a worker thread, so open on the main thread (see
+    # run_on_main); inline no-op on Windows/Linux.
+    def _open():
+        s = sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype="float32",
+            blocksize=1024,
+            callback=_audio_callback,
+        )
+        s.start()
+        return s
+
+    _stream = run_on_main(_open)
     print("[stt] Recording started.")
 
 
@@ -101,9 +111,12 @@ def stop_and_transcribe() -> str:
     global _stream, _recording
     _recording = False
     if _stream is not None:
+        # Tearing down the PortAudio stream must run on the main thread too (see
+        # run_on_main) — same CoreAudio hazard as opening it. Transcription below
+        # is plain CPU work and stays on the calling worker thread.
+        stream = _stream
         try:
-            _stream.stop()
-            _stream.close()
+            run_on_main(lambda: (stream.stop(), stream.close()))
         except Exception:
             pass
         _stream = None

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import sys
 
+from core.system.main_thread import run_on_main
+
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
 
@@ -90,13 +92,19 @@ def _send_keys_macos(combo: str) -> None:
     if keycode is None:
         return
 
-    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-    down = Quartz.CGEventCreateKeyboardEvent(src, keycode, True)
-    Quartz.CGEventSetFlags(down, flags)
-    up = Quartz.CGEventCreateKeyboardEvent(src, keycode, False)
-    Quartz.CGEventSetFlags(up, flags)
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+    # CGEventPost drives the HIToolbox run loop, which is main-thread-only:
+    # posting from the hotkey/worker thread trace-traps (SIGTRAP). Hop onto the
+    # main thread (run_on_main is inline when already there / off-macOS).
+    def _post():
+        src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+        down = Quartz.CGEventCreateKeyboardEvent(src, keycode, True)
+        Quartz.CGEventSetFlags(down, flags)
+        up = Quartz.CGEventCreateKeyboardEvent(src, keycode, False)
+        Quartz.CGEventSetFlags(up, flags)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+    run_on_main(_post)
 
 
 def _send_keys_pynput(combo: str) -> None:
@@ -258,35 +266,51 @@ def list_visible_windows() -> list[int]:
 # ---------------------------------------------------------------------------
 
 def _mac_on_screen_windows() -> list:
-    """Return the list of on-screen window dicts from CoreGraphics, or []."""
-    try:
-        from Quartz import (
-            CGWindowListCopyWindowInfo,
-            kCGWindowListOptionOnScreenOnly,
-            kCGWindowListExcludeDesktopElements,
-            kCGNullWindowID,
-        )
-        opts = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements
-        return list(CGWindowListCopyWindowInfo(opts, kCGNullWindowID) or [])
-    except Exception:
-        return []
+    """Return the list of on-screen window dicts from CoreGraphics, or [].
+
+    Runs the CoreGraphics query on the main thread (run_on_main): enumerating
+    windows off the hotkey/worker thread trace-traps under Qt's Cocoa run loop.
+    This is the single choke point for the window-read helpers below, so they
+    inherit the main-thread hop without each needing their own.
+    """
+    def _query() -> list:
+        try:
+            from Quartz import (
+                CGWindowListCopyWindowInfo,
+                kCGWindowListOptionOnScreenOnly,
+                kCGWindowListExcludeDesktopElements,
+                kCGNullWindowID,
+            )
+            opts = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements
+            return list(CGWindowListCopyWindowInfo(opts, kCGNullWindowID) or [])
+        except Exception:
+            return []
+
+    return run_on_main(_query)
 
 
 def _mac_active_window() -> int:
-    """Return the CGWindowNumber of the frontmost app's primary window (0 if none)."""
-    try:
-        from AppKit import NSWorkspace
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if app is None:
-            return 0
-        front_pid = int(app.processIdentifier())
-        # Layer-0 windows are normal app windows; pick the first one owned by the app.
-        for w in _mac_on_screen_windows():
-            if int(w.get("kCGWindowOwnerPID", -1)) == front_pid and int(w.get("kCGWindowLayer", 1)) == 0:
-                return int(w.get("kCGWindowNumber", 0))
-    except Exception:
-        pass
-    return 0
+    """Return the CGWindowNumber of the frontmost app's primary window (0 if none).
+
+    NSWorkspace.frontmostApplication is main-thread-only, so the whole query hops
+    onto the main thread (the nested _mac_on_screen_windows call then runs inline).
+    """
+    def _query() -> int:
+        try:
+            from AppKit import NSWorkspace
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app is None:
+                return 0
+            front_pid = int(app.processIdentifier())
+            # Layer-0 windows are normal app windows; pick the first one owned by the app.
+            for w in _mac_on_screen_windows():
+                if int(w.get("kCGWindowOwnerPID", -1)) == front_pid and int(w.get("kCGWindowLayer", 1)) == 0:
+                    return int(w.get("kCGWindowNumber", 0))
+        except Exception:
+            pass
+        return 0
+
+    return run_on_main(_query)
 
 
 def _mac_window_info(wid: int) -> dict | None:
@@ -309,17 +333,24 @@ def _mac_window_info(wid: int) -> dict | None:
 
 
 def _mac_focus_window(wid: int) -> None:
-    """Bring the application owning window *wid* to the foreground."""
-    try:
-        info = _mac_window_info(wid)
-        if not info or not info.get("pid"):
-            return
-        from AppKit import NSRunningApplication, NSApplicationActivateIgnoringOtherApps
-        app = NSRunningApplication.runningApplicationWithProcessIdentifier_(info["pid"])
-        if app is not None:
-            app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
-    except Exception:
-        pass
+    """Bring the application owning window *wid* to the foreground.
+
+    NSRunningApplication activation is AppKit automation, which trace-traps off
+    the main thread — run the whole thing through run_on_main.
+    """
+    def _focus() -> None:
+        try:
+            info = _mac_window_info(wid)
+            if not info or not info.get("pid"):
+                return
+            from AppKit import NSRunningApplication, NSApplicationActivateIgnoringOtherApps
+            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(info["pid"])
+            if app is not None:
+                app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+        except Exception:
+            pass
+
+    run_on_main(_focus)
 
 
 def _mac_list_windows() -> list[int]:

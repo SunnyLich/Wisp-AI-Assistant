@@ -749,12 +749,20 @@ def _capture_screen_to_file() -> str:
     try:
         import mss
         import mss.tools
+        from core.system.main_thread import run_on_main
 
         out_path = os.path.join(tempfile.gettempdir(), "ai_assistant_screen.png")
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]  # primary monitor
-            raw = sct.grab(monitor)
-            mss.tools.to_png(raw.rgb, raw.size, output=out_path)
+
+        # mss drives CoreGraphics on macOS; this runs from worker threads, so grab
+        # on the main thread (run_on_main is inline off-macOS) to avoid trapping
+        # under Qt's Cocoa run loop.
+        def _grab() -> None:
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]  # primary monitor
+                raw = sct.grab(monitor)
+                mss.tools.to_png(raw.rgb, raw.size, output=out_path)
+
+        run_on_main(_grab)
         return out_path
     except Exception:
         return ""
