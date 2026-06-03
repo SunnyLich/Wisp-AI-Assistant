@@ -29,6 +29,31 @@ logging.basicConfig(
 )
 log = logging.getLogger("wisp")
 
+# --- Native crash diagnostics ----------------------------------------------------
+# Python excepthooks below only see Python exceptions. macOS "trace trap" (SIGTRAP)
+# and aborts come from native frameworks (e.g. AppKit/HIToolbox called off the main
+# thread) and bypass them entirely. faulthandler dumps a traceback of every thread
+# at the moment of the fault, pinpointing the exact crashing call. SIGTRAP is not in
+# faulthandler's default set, so register it (and friends) explicitly. chain=True
+# re-raises after dumping, so the process still crashes as before — we just get the
+# stack first. The fault file is kept open for the lifetime of the process.
+_FAULT_PATH = os.path.join(os.path.dirname(__file__), "wisp_fault.log")
+try:
+    import faulthandler
+    import signal as _signal
+    _fault_file = open(_FAULT_PATH, "w")
+    faulthandler.enable(file=_fault_file, all_threads=True)
+    for _sig_name in ("SIGTRAP", "SIGABRT", "SIGBUS", "SIGILL", "SIGSEGV"):
+        _sig = getattr(_signal, _sig_name, None)
+        if _sig is not None:
+            try:
+                faulthandler.register(_sig, file=_fault_file, all_threads=True, chain=True)
+            except (ValueError, OSError, RuntimeError):
+                pass
+except Exception:  # never let diagnostics break startup
+    pass
+# ---------------------------------------------------------------------------------
+
 def _thread_excepthook(args):
     """Capture unhandled exceptions in daemon threads, log them, and write a crash file."""
     if args.exc_type is SystemExit:
@@ -172,8 +197,19 @@ class App:
     def _build_hotkey_listener(self) -> HotkeyListener:
         """Construct the HotkeyListener with all callbacks wired. Used at startup
         and again whenever settings change re-register hotkeys live."""
+        # On macOS the caller path must not run AppKit/automation off the main
+        # thread (it trace-traps), so route hotkeys through the same main-thread
+        # summon the icon click uses. The Carbon dispatch fires on the main thread
+        # but wraps callbacks in a worker thread; emitting a Qt signal hops safely
+        # back to the main thread either way.
+        if sys.platform == "darwin":
+            on_callers = [lambda i=i: self._signals.summon_caller.emit(i)
+                          for i in range(len(config.CALLER_ROWS))]
+        else:
+            on_callers = [lambda i=i: self._on_caller_hotkey(i)
+                          for i in range(len(config.CALLER_ROWS))]
         return HotkeyListener(
-            on_callers=[lambda i=i: self._on_caller_hotkey(i) for i in range(len(config.CALLER_ROWS))],
+            on_callers=on_callers,
             on_add_context=self._on_add_context,
             on_clear_context=self._on_clear_context,
             on_snip=self._on_snip_hotkey,
@@ -331,15 +367,44 @@ class App:
         self._signals.show_snip_overlay.emit()
 
     def _on_summon_caller(self, caller_idx: int):
-        """Icon clicked — run the caller without a global hotkey (no macOS
-        Accessibility permission required). Dispatched off the Qt main thread
-        because _on_caller_hotkey synthesises a clipboard copy and blocks,
-        mirroring how the hotkey listener invokes callbacks on its own thread."""
-        threading.Thread(
-            target=self._on_caller_hotkey,
-            args=(caller_idx,),
-            daemon=True,
-        ).start()
+        """Summon the prompt without a global hotkey (icon click / tray / macOS
+        hotkey). Runs on the Qt main thread (signal slot)."""
+        if sys.platform == "darwin":
+            # macOS: stay on the main thread and skip the off-main-thread AppKit
+            # automation (foreground capture, synthesised copy, window/document
+            # context) that trace-traps. The user gets a clean prompt; any AppKit
+            # work (focusing the picker) happens here on the main thread.
+            self._summon_caller_macos(caller_idx)
+        else:
+            # Other platforms: _on_caller_hotkey synthesises a clipboard copy and
+            # blocks, so run it off the main thread like the hotkey listener does.
+            threading.Thread(
+                target=self._on_caller_hotkey,
+                args=(caller_idx,),
+                daemon=True,
+            ).start()
+
+    def _summon_caller_macos(self, caller_idx: int) -> None:
+        if config.ICON_AUTO_HIDE:
+            self._signals.show_icon.emit()
+        caller = dict(config.CALLER_ROWS[caller_idx]) if caller_idx < len(config.CALLER_ROWS) else {}
+        # Disable the context sources whose capture queries windows/documents off
+        # the main thread; these are the macOS trace-trap sources.
+        caller["context_ambient"] = False
+        caller["context_documents"] = False
+        caller["context_screenshot"] = "off"
+        caller["paste_back"] = False
+
+        self._pending_caller_idx = caller_idx
+        self._pending_context_policy = caller
+        self._pending_paste_target = 0
+        self._pending_intent_target = 0
+        self._pending_capture = (None, None)
+        self._pending_context = None
+
+        audio.play_filler()
+        self._signals.set_state.emit("listening")
+        self._show_intent_picker(caller_idx)
 
     def _on_caller_hotkey(self, caller_idx: int):
         """Called when any caller hotkey fires. Dispatches based on caller's paste_back flag."""
