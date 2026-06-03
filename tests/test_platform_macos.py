@@ -123,5 +123,30 @@ class MacPlatformTests(unittest.TestCase):
             self.assertEqual(self.pu.get_window_pid(42), 0)
 
 
+class MacHotkeyTests(unittest.TestCase):
+    def setUp(self):
+        self._platform_patch = patch.object(sys, "platform", "darwin")
+        self._platform_patch.start()
+        import core.hotkeys as hotkeys
+        self.hotkeys = importlib.reload(hotkeys)
+
+    def tearDown(self):
+        self._platform_patch.stop()
+        import core.hotkeys as hotkeys
+        importlib.reload(hotkeys)
+
+    def test_ctrl_hotkeys_gain_cmd_alias_on_mac(self):
+        self.assertEqual(
+            self.hotkeys._to_pynput_hotkeys("ctrl+shift+q"),
+            ["<ctrl>+<shift>+q", "<cmd>+<shift>+q"],
+        )
+
+    def test_cmd_hotkeys_do_not_duplicate_aliases_on_mac(self):
+        self.assertEqual(
+            self.hotkeys._to_pynput_hotkeys("win+shift+q"),
+            ["<cmd>+<shift>+q"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

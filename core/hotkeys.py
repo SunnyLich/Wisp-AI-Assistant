@@ -20,6 +20,7 @@ from typing import Callable
 import config
 
 _IS_WIN = sys.platform == "win32"
+_IS_MAC = sys.platform == "darwin"
 
 # ---------------------------------------------------------------------------
 # Windows-only Win32 setup
@@ -126,12 +127,15 @@ _PYNPUT_SPECIAL: dict[str, str] = {
 }
 
 
-def _to_pynput_hotkey(hotkey_str: str) -> str | None:
+def _to_pynput_hotkey(hotkey_str: str, *, ctrl_as_cmd: bool = False) -> str | None:
     """Convert 'ctrl+alt+q' → '<ctrl>+<alt>+q' for pynput GlobalHotKeys."""
     parts: list[str] = []
     for token in hotkey_str.lower().split("+"):
         token = token.strip()
         if token in _PYNPUT_MODS:
+            if _IS_MAC and ctrl_as_cmd and token in {"ctrl", "control"}:
+                parts.append("<cmd>")
+                continue
             parts.append(_PYNPUT_MODS[token])
         elif token.startswith("f") and token[1:].isdigit():
             parts.append(f"<{token}>")
@@ -143,6 +147,25 @@ def _to_pynput_hotkey(hotkey_str: str) -> str | None:
             print(f"[hotkeys] Cannot convert token {token!r} to pynput format")
             return None
     return "+".join(parts) if parts else None
+
+
+def _to_pynput_hotkeys(hotkey_str: str) -> list[str]:
+    primary = _to_pynput_hotkey(hotkey_str)
+    if not primary:
+        return []
+
+    aliases = [primary]
+    if not _IS_MAC:
+        return aliases
+
+    tokens = {token.strip() for token in hotkey_str.lower().split("+")}
+    has_ctrl = bool(tokens & {"ctrl", "control"})
+    has_cmd = bool(tokens & {"cmd", "win"})
+    if has_ctrl and not has_cmd:
+        cmd_alias = _to_pynput_hotkey(hotkey_str, ctrl_as_cmd=True)
+        if cmd_alias and cmd_alias not in aliases:
+            aliases.append(cmd_alias)
+    return aliases
 
 
 # ---------------------------------------------------------------------------
@@ -317,16 +340,20 @@ class _PynputImpl:
 
         mapping: dict[str, Callable] = {}
         for hotkey_str, cb in self._hotkey_defs:
-            pynput_str = _to_pynput_hotkey(hotkey_str)
-            if pynput_str:
-                # Wrap cb so it runs in its own thread (mirrors Win32 behaviour)
-                def _make_cb(f: Callable) -> Callable:
-                    def _cb():
-                        threading.Thread(target=f, daemon=True).start()
-                    return _cb
-                mapping[pynput_str] = _make_cb(cb)
-            else:
+            pynput_hotkeys = _to_pynput_hotkeys(hotkey_str)
+            if not pynput_hotkeys:
                 print(f"[hotkeys] Skipping hotkey {hotkey_str!r}: cannot convert to pynput format")
+                continue
+
+            # Wrap cb so it runs in its own thread (mirrors Win32 behaviour)
+            def _make_cb(f: Callable) -> Callable:
+                def _cb():
+                    threading.Thread(target=f, daemon=True).start()
+                return _cb
+
+            wrapped_cb = _make_cb(cb)
+            for pynput_str in pynput_hotkeys:
+                mapping[pynput_str] = wrapped_cb
 
         if not mapping:
             print("[hotkeys] No hotkeys registered (pynput).")
