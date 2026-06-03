@@ -33,13 +33,70 @@ def send_keys(combo: str) -> None:
     Inject a key combo (e.g. "ctrl+c", "ctrl+v") into the focused window.
 
     Windows: delegates to the *keyboard* library (pywin32-based injection).
+    macOS:   posts CGEvents via Quartz with fixed virtual keycodes. We must NOT
+             use pynput.keyboard.Controller here: its char→keycode translation
+             calls main-thread-only HIToolbox APIs (UCKeyTranslate /
+             keycode_context), and invoking that from the hotkey/worker thread
+             while the global CGEventTap run loop is live trace-traps (SIGTRAP).
     Linux:   uses pynput.keyboard.Controller via Xlib — no root required.
     """
     if IS_WIN:
         import keyboard  # type: ignore
         keyboard.send(combo)
+    elif IS_MAC:
+        _send_keys_macos(combo)
     else:
         _send_keys_pynput(combo)
+
+
+# macOS ANSI virtual keycodes (kVK_*) — fixed layout-independent codes so we
+# never invoke HIToolbox keyboard-layout translation off the main thread.
+_MAC_VK: dict[str, int] = {
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
+    "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
+    "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25,
+    "7": 26, "-": 27, "8": 28, "0": 29, "]": 30, "o": 31, "u": 32, "[": 33,
+    "i": 34, "p": 35, "l": 37, "j": 38, "'": 39, "k": 40, ";": 41, "\\": 42,
+    ",": 43, "/": 44, "n": 45, "m": 46, ".": 47, "`": 50,
+    "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51,
+    "backspace": 51, "escape": 53, "esc": 53, "home": 115, "end": 119,
+    "pageup": 116, "pagedown": 121, "left": 123, "right": 124, "down": 125,
+    "up": 126,
+    **{f"f{n}": vk for n, vk in {
+        1: 122, 2: 120, 3: 99, 4: 118, 5: 96, 6: 97, 7: 98, 8: 100,
+        9: 101, 10: 109, 11: 103, 12: 111,
+    }.items()},
+}
+
+_MAC_MOD_FLAGS: dict[str, int] = {
+    "cmd": 0x100000, "win": 0x100000, "command": 0x100000,  # kCGEventFlagMaskCommand
+    "ctrl": 0x40000, "control": 0x40000,                    # kCGEventFlagMaskControl
+    "shift": 0x20000,                                       # kCGEventFlagMaskShift
+    "alt": 0x80000, "option": 0x80000,                      # kCGEventFlagMaskAlternate
+}
+
+
+def _send_keys_macos(combo: str) -> None:
+    import Quartz  # type: ignore
+
+    flags = 0
+    keycode: int | None = None
+    for token in combo.lower().split("+"):
+        token = token.strip()
+        if token in _MAC_MOD_FLAGS:
+            flags |= _MAC_MOD_FLAGS[token]
+        elif token in _MAC_VK:
+            keycode = _MAC_VK[token]
+    if keycode is None:
+        return
+
+    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    down = Quartz.CGEventCreateKeyboardEvent(src, keycode, True)
+    Quartz.CGEventSetFlags(down, flags)
+    up = Quartz.CGEventCreateKeyboardEvent(src, keycode, False)
+    Quartz.CGEventSetFlags(up, flags)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
 
 def _send_keys_pynput(combo: str) -> None:
