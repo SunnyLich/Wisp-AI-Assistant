@@ -510,6 +510,7 @@ class _CarbonImpl:
             self._callbacks[hk_id] = cb
             self._hotkey_refs.append(ref)
             registered += 1
+            print(f"[hotkeys] Carbon registered {hotkey_str!r} (keycode={keycode}, mods={mods}).")
 
         if registered == 0:
             print("[hotkeys] Carbon: no hotkeys registered.")
@@ -529,6 +530,7 @@ class _CarbonImpl:
                 ctypes.sizeof(hk_id), None, ctypes.byref(hk_id),
             )
             if status == 0 and hk_id.signature == self._signature:
+                print(f"[hotkeys] Carbon hotkey fired (id={hk_id.id}).")
                 cb = self._callbacks.get(hk_id.id)
                 if cb:
                     threading.Thread(target=cb, daemon=True).start()

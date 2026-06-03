@@ -250,13 +250,24 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         channels    = tts_module.CHANNELS
         dtype       = tts_module.DTYPE
 
+    # macOS CoreAudio segfaults when two PortAudio streams are open on the same
+    # device at once. The filler clip (play_filler -> sd.play) is still playing
+    # when we get here, so stop it before opening the TTS output stream. Harmless
+    # on Windows/Linux (just ends the filler a few ms early, which is desired).
+    try:
+        sd.stop()
+    except Exception:
+        pass
+
     _audio_started = False
     try:
+        print(f"[audio] opening TTS stream (rate={sample_rate}, ch={channels}, dtype={dtype})", flush=True)
         with sd.RawOutputStream(
             samplerate=sample_rate,
             channels=channels,
             dtype=dtype,
         ) as stream:
+            print("[audio] TTS stream opened", flush=True)
             while True:
                 if stop_event.is_set():
                     stream.abort()  # discard buffered audio immediately
@@ -269,6 +280,7 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                     break
                 if not _audio_started:
                     _audio_started = True
+                    print(f"[audio] writing first chunk ({len(chunk)} bytes)", flush=True)
                     if on_audio_start:
                         try:
                             on_audio_start()
