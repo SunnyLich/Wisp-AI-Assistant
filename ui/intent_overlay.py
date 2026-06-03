@@ -75,11 +75,18 @@ class IntentOverlay(QWidget):
 
     def __init__(self, caller_idx: int = 0, target_hwnd: int = 0, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(
+        flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Popup
         )
+        if not _IS_MAC:
+            # Popup gives click-outside-to-dismiss on Win/Linux, where we read
+            # keys via a global hook. On macOS a Popup window cannot become the
+            # key window, so the QLineEdit / keyPressEvent would never receive
+            # input — use a plain frameless top-level (Qt overrides
+            # canBecomeKeyWindow for it) and dismiss via Esc / focus-out / timer.
+            flags |= Qt.WindowType.Popup
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -97,6 +104,7 @@ class IntentOverlay(QWidget):
         self._hovered: int | None = None
         self._handled = False
         self._custom_mode = False
+        self._was_activated = False   # macOS: dismiss on focus-out once activated
         self._kb_hook = None
         self._drop_next_keypress = False
         self._raw_key.connect(self._on_raw_key)
@@ -269,6 +277,18 @@ class IntentOverlay(QWidget):
         self._input_line.setFocus()
         self.update()
         self._drop_next_keypress = True
+
+    def changeEvent(self, event):
+        from PySide6.QtCore import QEvent
+        # macOS lacks the Popup flag (it blocks key-window status), so emulate
+        # Popup's click-outside dismissal: once we've gained activation, cancel
+        # when the window loses it (user clicked another app/window).
+        if _IS_MAC and event.type() == QEvent.Type.ActivationChange:
+            if self.isActiveWindow():
+                self._was_activated = True
+            elif self._was_activated and not self._handled:
+                self._cancel()
+        super().changeEvent(event)
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent

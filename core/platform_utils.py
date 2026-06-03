@@ -353,6 +353,28 @@ def _mac_focus_window(wid: int) -> None:
     run_on_main(_focus)
 
 
+def activate_self() -> None:
+    """Bring *our own* application to the foreground and make it the active app.
+
+    Needed on macOS so a freshly-shown overlay can become the key window and
+    receive keystrokes: when a global hotkey fires, another app is frontmost, so
+    Qt's raise_/activateWindow alone cannot grab keyboard focus until our process
+    is the active application. NSApp activation is AppKit automation, so it must
+    run on the main thread. No-op on Windows/Linux (Qt's activateWindow suffices).
+    """
+    if not IS_MAC:
+        return
+
+    def _activate() -> None:
+        try:
+            from AppKit import NSApplication
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+
+    run_on_main(_activate)
+
+
 def _mac_list_windows() -> list[int]:
     """Return CGWindowNumbers for normal (layer-0) on-screen windows."""
     try:

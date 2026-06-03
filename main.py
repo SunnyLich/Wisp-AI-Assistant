@@ -585,11 +585,21 @@ class App:
         self._intent_picker.cancelled.connect(self._on_intent_cancelled)
         self._intent_picker.show()
 
-        # Second focus grab from the Qt main thread — by now the picker has a
-        # real window ID and Qt has had a chance to process the show event.
+        # Grab keyboard focus from the Qt main thread, after the show event.
         try:
-            from core.platform_utils import set_foreground_window
-            set_foreground_window(int(self._intent_picker.winId()))
+            if sys.platform == "darwin":
+                # winId() is an NSView pointer (not a CGWindowNumber), so the
+                # generic set_foreground_window lookup is a no-op here. Activate
+                # our own process so the picker can become the key window, then
+                # raise/activate the specific window.
+                from core.platform_utils import activate_self
+                activate_self()
+                self._intent_picker.raise_()
+                self._intent_picker.activateWindow()
+                self._intent_picker.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+            else:
+                from core.platform_utils import set_foreground_window
+                set_foreground_window(int(self._intent_picker.winId()))
         except Exception:
             pass
 
