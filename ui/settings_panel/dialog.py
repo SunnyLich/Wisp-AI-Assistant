@@ -192,7 +192,7 @@ class SettingsDialog(QDialog):
         QTabWidget::pane { border: none; background: transparent; }
         QTabBar { background: transparent; border: none; }
         QTabBar::tab {
-            color: #636366; padding: 6px 14px; border-radius: 8px;
+            color: #636366; padding: 7px 20px; border-radius: 8px;
             font-size: 9pt; margin: 2px 2px; background: transparent;
         }
         QTabBar::tab:selected { background: white; color: #5856d6; font-weight: 600; }
@@ -234,7 +234,7 @@ class SettingsDialog(QDialog):
         QTabWidget::pane { border: none; background: transparent; }
         QTabBar { background: transparent; border: none; }
         QTabBar::tab {
-            color: #9d9daa; padding: 6px 14px; border-radius: 8px;
+            color: #9d9daa; padding: 7px 20px; border-radius: 8px;
             font-size: 9pt; margin: 2px 2px; background: transparent;
         }
         QTabBar::tab:selected { background: #2b2d3a; color: #8b87ff; font-weight: 600; }
@@ -297,6 +297,9 @@ class SettingsDialog(QDialog):
         root.setSpacing(12)
 
         tabs = QTabWidget()
+        # Never elide tab labels to "…"; macOS sizes the bold selected tab
+        # tighter than Windows, so let each tab grow to fit its full text.
+        tabs.setElideMode(Qt.TextElideMode.ElideNone)
         tabs.addTab(self._tab_llm(),       "LLM")
         tabs.addTab(self._tab_tts(),       "TTS / Voice")
         tabs.addTab(self._tab_prompt(),    "Prompts")

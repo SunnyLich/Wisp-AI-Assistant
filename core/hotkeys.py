@@ -197,8 +197,16 @@ class HotkeyListener:
     def stop(self) -> None:
         self._impl.stop()
         if self._voice_listener:
-            self._voice_listener.stop()
+            vl = self._voice_listener
             self._voice_listener = None
+            vl.stop()
+            # Wait for the listener thread to exit so its Quartz event tap is
+            # released before any replacement tap is created. On macOS two
+            # overlapping CGEventTaps in one process trace-trap (SIGTRAP).
+            try:
+                vl.join(timeout=2.0)
+            except RuntimeError:
+                pass
 
     # ------------------------------------------------------------------
     # Push-to-talk voice listener (pynput, works on both platforms)
@@ -331,5 +339,13 @@ class _PynputImpl:
 
     def stop(self) -> None:
         if self._global_hotkeys is not None:
-            self._global_hotkeys.stop()
+            gh = self._global_hotkeys
             self._global_hotkeys = None
+            gh.stop()
+            # Block until the listener thread has torn down its Quartz event
+            # tap + run loop; creating the next tap before this one is released
+            # trace-traps (SIGTRAP) on macOS. Harmless no-op on Linux.
+            try:
+                gh.join(timeout=2.0)
+            except RuntimeError:
+                pass
