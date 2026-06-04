@@ -1,86 +1,85 @@
 #!/usr/bin/env bash
 # Wisp — double-click to start.
-# Creates the local .venv on first run and installs dependencies; after that it
-# just launches. It prefers Python from .python-version, but will use an existing
-# working environment rather than rebuilding in a loop.
+# Order of preference (no unnecessary downloads):
+#   1. If the local .venv already works, just launch.
+#   2. If it exists but is missing deps, install them.
+#   3. Otherwise build the venv with a Python already on this machine.
+#   4. Only if none of that works, fall back to uv (which fetches Python 3.12),
+#      installing uv first if it isn't present.
 set -e
 cd "$(dirname "$0")"
 
-WANT="$(cat .python-version 2>/dev/null | tr -d '[:space:]')"   # e.g. 3.12.13
-WANT="${WANT:-3.12.13}"
-WANT_MM="$(echo "$WANT" | cut -d. -f1,2)"                        # e.g. 3.12
+WANT="$(cat .python-version 2>/dev/null | tr -d '[:space:]')"; WANT="${WANT:-3.12.13}"
+WANT_MM="$(echo "$WANT" | cut -d. -f1,2)"
 
-py_minor() { "$1" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || true; }
+have_deps() { [ -x ".venv/bin/python" ] && ./.venv/bin/python -c "import PySide6" >/dev/null 2>&1; }
 
-# Locate a Python matching WANT_MM. Works even when pyenv/Homebrew aren't on the
-# PATH that Finder gives a double-clicked .command (a non-login shell).
-find_wanted_python() {
-  local c
-  # pyenv builds (direct paths — no pyenv init required)
-  for c in "$HOME/.pyenv/versions/$WANT/bin/python" "$HOME"/.pyenv/versions/"$WANT_MM".*/bin/python; do
-    [ -x "$c" ] && [ "$(py_minor "$c")" = "$WANT_MM" ] && { echo "$c"; return; }
-  done
-  # python.org framework + Homebrew + PATH
-  for c in \
-    "/Library/Frameworks/Python.framework/Versions/$WANT_MM/bin/python3" \
-    "/opt/homebrew/bin/python$WANT_MM" \
-    "/usr/local/bin/python$WANT_MM" \
-    "$(command -v "python$WANT_MM" 2>/dev/null)"; do
-    [ -n "$c" ] && [ -x "$c" ] && [ "$(py_minor "$c")" = "$WANT_MM" ] && { echo "$c"; return; }
+# --- 1) Already set up? Just run. -------------------------------------------
+if have_deps; then
+  exec ./.venv/bin/python main.py
+fi
+
+echo "Setting up Wisp..."
+
+# --- 2) venv exists but deps missing → install into it ----------------------
+if [ -x ".venv/bin/python" ]; then
+  echo "Installing dependencies into the existing environment..."
+  if ./.venv/bin/python -m pip install -r requirements.txt && have_deps; then
+    exec ./.venv/bin/python main.py
+  fi
+fi
+
+# --- 3) build with a Python already installed (prefer WANT_MM) --------------
+find_local_python() {
+  local root d c
+  root="${PYENV_ROOT:-$HOME/.pyenv}"
+  if [ -d "$root/versions" ]; then
+    for d in $(ls -d "$root/versions/$WANT_MM".* 2>/dev/null | sort -V -r); do
+      for c in "$d/bin/python" "$d/bin/python3"; do [ -x "$c" ] && { echo "$c"; return; }; done
+    done
+  fi
+  for c in "python$WANT_MM" \
+           "/Library/Frameworks/Python.framework/Versions/$WANT_MM/bin/python3" \
+           "/opt/homebrew/bin/python$WANT_MM" "/usr/local/bin/python$WANT_MM" \
+           python3 python; do
+    if command -v "$c" >/dev/null 2>&1; then command -v "$c"; return; fi
+    [ -x "$c" ] && { echo "$c"; return; }
   done
 }
 
-# Any usable Python, for the case where WANT isn't installed at all.
-find_any_python() {
-  command -v python3 >/dev/null 2>&1 && { command -v python3; return; }
-  command -v python  >/dev/null 2>&1 && { command -v python; return; }
-}
-
-# Decide whether to build. Only rebuild for a version mismatch when a correct
-# interpreter actually exists — otherwise keep the working env (no rebuild loop).
-PYTHON=""
-build=0
-if [ ! -x ".venv/bin/python" ]; then
-  build=1
-else
-  have="$(py_minor ./.venv/bin/python)"
-  if [ "$have" != "$WANT_MM" ]; then
-    cand="$(find_wanted_python || true)"
-    if [ -n "$cand" ]; then
-      echo "Environment is Python $have; rebuilding with $WANT_MM ($cand)..."
-      rm -rf .venv
-      PYTHON="$cand"
-      build=1
-    else
-      echo "NOTE: environment is Python $have and $WANT_MM was not found — using it as-is."
-      echo "      For the supported version: pyenv install $WANT  (then delete .venv and relaunch)."
+PY="$(find_local_python || true)"
+if [ -n "$PY" ]; then
+  echo "Building environment with your installed Python: $PY"
+  rm -rf .venv
+  if "$PY" -m venv .venv; then
+    ./.venv/bin/python -m pip install --upgrade pip >/dev/null 2>&1 || true
+    if ./.venv/bin/python -m pip install -r requirements.txt && have_deps; then
+      exec ./.venv/bin/python main.py
     fi
   fi
+  echo "Local Python couldn't produce a working environment — falling back to uv."
+else
+  echo "No suitable Python found locally — using uv."
 fi
 
-if [ "$build" = 1 ]; then
-  [ -z "$PYTHON" ] && PYTHON="$(find_wanted_python || true)"
-  [ -z "$PYTHON" ] && PYTHON="$(find_any_python || true)"
-  if [ -z "$PYTHON" ]; then
-    echo "ERROR: No Python found. Install Python $WANT (recommended: pyenv install $WANT), then relaunch."
-    exit 1
-  fi
-  [ "$(py_minor "$PYTHON")" != "$WANT_MM" ] && \
-    echo "WARNING: building with Python $(py_minor "$PYTHON") (wanted $WANT_MM)."
-  echo "Setting up Wisp with $PYTHON ..."
-  "$PYTHON" -m venv .venv
+# --- 4) uv fallback: provisions Python 3.12 + deps. Install uv if missing. --
+UV=""
+if command -v uv >/dev/null 2>&1; then UV="$(command -v uv)"
+else for c in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do [ -x "$c" ] && { UV="$c"; break; }; done
+fi
+if [ -z "$UV" ]; then
+  echo "Installing uv (one-time)..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh || true
+  for c in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do [ -x "$c" ] && { UV="$c"; break; }; done
+fi
+if [ -z "$UV" ]; then
+  echo "ERROR: setup failed and uv could not be installed."
+  echo "       Install Python $WANT_MM or uv manually: https://docs.astral.sh/uv/"
+  exit 1
 fi
 
-# Ensure dependencies are present (covers a fresh or half-installed venv).
-if ! ./.venv/bin/python -c "import PySide6" >/dev/null 2>&1; then
-  echo "Installing dependencies (this takes a minute)..."
-  ./.venv/bin/python -m pip install --upgrade pip
-  if ! ./.venv/bin/python -m pip install -r requirements.txt; then
-    echo "ERROR: dependency install failed on Python $(py_minor ./.venv/bin/python)."
-    echo "       If you're not on $WANT_MM, install it (pyenv install $WANT), delete .venv, and relaunch."
-    exit 1
-  fi
-  echo "Setup complete — starting Wisp."
-fi
-
+echo "Provisioning Python $WANT_MM with uv..."
+rm -rf .venv
+"$UV" venv --python "$WANT"
+"$UV" pip install --python ./.venv/bin/python -r requirements.txt
 exec ./.venv/bin/python main.py
