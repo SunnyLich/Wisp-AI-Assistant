@@ -1,0 +1,14 @@
+# Normalize line endings so launcher scripts work on every OS regardless of
+# each developer's core.autocrlf setting.
+
+# Unix shell scripts MUST stay LF — macOS/Linux bash fails on CRLF
+# ("bad interpreter: /usr/bin/env bash^M").
+*.command text eol=lf
+*.sh      text eol=lf
+
+# Windows batch files want CRLF.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# Pin file used by pyenv to select the interpreter.
+.python-version text eol=lf
