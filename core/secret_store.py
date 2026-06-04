@@ -1,4 +1,15 @@
-"""Small OS-keychain wrapper for provider API keys."""
+"""Small OS-keychain wrapper for provider API keys.
+
+All API keys are stored in a SINGLE keychain item (one JSON blob) instead of one
+item per key. On macOS every keychain item is guarded by its own ACL, so the old
+one-item-per-key layout made the OS prompt for the login password once per stored
+key at startup (config.reload() reads them all). Consolidating to one item means
+the user authorizes exactly once — click "Always Allow" a single time and every
+key is available.
+
+Existing per-key items from older versions are migrated into the blob on first
+read (a one-time cost), so upgrading loses no keys.
+"""
 from __future__ import annotations
 
 import os
@@ -9,17 +20,22 @@ from pathlib import Path
 
 log = logging.getLogger("wisp.secrets")
 
-# Cache keychain reads. On macOS, keyring goes through the Security framework
-# (find_generic_password); calling it repeatedly from worker threads — e.g. the
-# per-query route logging on the TTS/LLM threads — has been observed to segfault
-# when it races other native framework work (CoreAudio). config.reload() reads
-# every key at startup on the main thread, which warms this cache, so subsequent
-# lookups never touch the Security framework off the main thread.
-_keychain_cache: dict[str, str] = {}
-_keychain_cache_lock = threading.Lock()
-
 _KEYRING_SERVICE = "python-ai-overlay"
+# Single consolidated item holding {KEY_NAME: value} as JSON.
+_BLOB_ACCOUNT = "__wisp_secrets__"
+
 _META_FILE = Path(__file__).parent.parent / "private" / ".secret_status.json"
+# Meta flag recording that the one-time legacy migration has run, so we don't
+# re-probe the old per-key items on every startup.
+_MIGRATED_FLAG = "__consolidated_v1__"
+
+# Cache the whole decrypted blob. The keychain is read at most once per process
+# (warmed by config.reload() at startup on the main thread), so worker-thread
+# lookups never hit the Security framework — which can segfault off-main; see
+# core.system.native_locks — and macOS prompts at most once. The lock is held
+# across the read so two cold loads can't race the framework.
+_blob_cache: dict[str, str] | None = None
+_cache_lock = threading.Lock()
 
 API_KEY_NAMES = (
     "GROQ_API_KEY",
@@ -43,7 +59,74 @@ class KeychainError(RuntimeError):
 
 
 def _account(name: str) -> str:
+    """Legacy per-key account name (still read during migration)."""
     return name.lower()
+
+
+def _write_blob_raw(blob: dict) -> None:
+    import keyring  # type: ignore
+    keyring.set_password(_KEYRING_SERVICE, _BLOB_ACCOUNT, json.dumps(blob))
+
+
+def _migrate_legacy_items() -> dict:
+    """Read any old one-item-per-key secrets into a single dict."""
+    blob: dict[str, str] = {}
+    try:
+        import keyring  # type: ignore
+    except Exception:
+        return blob
+    for name in API_KEY_NAMES:
+        try:
+            value = keyring.get_password(_KEYRING_SERVICE, _account(name))
+        except Exception:
+            value = None
+        if value:
+            blob[name] = value
+    return blob
+
+
+def _load_blob() -> dict:
+    """Return the consolidated secrets dict, reading the keychain once and caching."""
+    global _blob_cache
+    with _cache_lock:
+        if _blob_cache is not None:
+            return _blob_cache
+
+        blob: dict[str, str] = {}
+        try:
+            import keyring  # type: ignore
+            raw = keyring.get_password(_KEYRING_SERVICE, _BLOB_ACCOUNT)
+            if raw:
+                blob = json.loads(raw) or {}
+        except Exception:
+            blob = {}
+
+        # One-time migration from the old one-item-per-key layout.
+        if not blob and not _read_meta().get(_MIGRATED_FLAG):
+            blob = _migrate_legacy_items()
+            if blob:
+                try:
+                    _write_blob_raw(blob)
+                except Exception:
+                    pass
+            set_configured_marker(_MIGRATED_FLAG, True)
+
+        _blob_cache = blob
+        return _blob_cache
+
+
+def _save_blob(blob: dict) -> None:
+    """Persist the consolidated dict and refresh the cache."""
+    global _blob_cache
+    _write_blob_raw(blob)
+    with _cache_lock:
+        _blob_cache = dict(blob)
+
+
+def _invalidate_cache() -> None:
+    global _blob_cache
+    with _cache_lock:
+        _blob_cache = None
 
 
 def get_secret(name: str) -> str:
@@ -56,23 +139,7 @@ def get_secret(name: str) -> str:
 
 def get_keychain_secret(name: str) -> str:
     """Return a secret only from the OS keychain (cached after first read)."""
-    with _keychain_cache_lock:
-        if name in _keychain_cache:
-            return _keychain_cache[name]
-
-    value = ""
-    try:
-        import keyring  # type: ignore
-
-        result = keyring.get_password(_KEYRING_SERVICE, _account(name))
-        if result:
-            value = result
-    except Exception:
-        pass
-
-    with _keychain_cache_lock:
-        _keychain_cache[name] = value
-    return value
+    return _load_blob().get(name, "")
 
 
 def has_secret(name: str) -> bool:
@@ -96,7 +163,7 @@ def set_secret(name: str, value: str) -> None:
     value. Raises KeychainError (after logging) on any failure.
     """
     try:
-        import keyring  # type: ignore
+        import keyring  # type: ignore  # noqa: F401 — ensure backend is importable
     except Exception as exc:  # noqa: BLE001 — surfaced to the caller + log
         log.error("Cannot save %s: OS keychain support (keyring) is unavailable: %s", name, exc)
         raise KeychainError(
@@ -104,18 +171,16 @@ def set_secret(name: str, value: str) -> None:
             f"so {name} could not be saved."
         ) from exc
 
+    blob = dict(_load_blob())
+    blob[name] = value
     try:
-        keyring.set_password(_KEYRING_SERVICE, _account(name), value)
+        _save_blob(blob)
     except Exception as exc:  # noqa: BLE001 — surfaced to the caller + log
         log.error("Failed writing %s to OS keychain: %s", name, exc)
         raise KeychainError(f"Could not write {name} to the OS keychain: {exc}") from exc
 
-    # Drop the cached value so the read-back below (and future reads) see the
-    # freshly written secret rather than a stale cache entry.
-    with _keychain_cache_lock:
-        _keychain_cache.pop(name, None)
-
-    # Read back to confirm the value actually persisted before trusting it.
+    # Read back from the keychain (not the cache) to confirm it persisted.
+    _invalidate_cache()
     if get_keychain_secret(name) != value:
         log.error("Verification failed for %s: keychain read-back did not match the value written", name)
         set_configured_marker(name, False)
@@ -129,9 +194,10 @@ def set_secret(name: str, value: str) -> None:
 
 def delete_secret(name: str) -> None:
     try:
-        import keyring  # type: ignore
-
-        keyring.delete_password(_KEYRING_SERVICE, _account(name))
+        blob = dict(_load_blob())
+        if name in blob:
+            del blob[name]
+            _save_blob(blob)
     except Exception:
         pass
     set_configured_marker(name, False)
@@ -142,15 +208,23 @@ def migrate_env_secrets(env: dict[str, str]) -> list[str]:
     Copy any existing .env API keys into the OS keychain.
     Returns the names that were migrated.
     """
+    try:
+        blob = dict(_load_blob())
+    except Exception:
+        blob = {}
+
     migrated: list[str] = []
     for name in API_KEY_NAMES:
         value = (env.get(name) or "").strip()
-        if not value:
+        if not value or blob.get(name):
             continue
-        if get_keychain_secret(name):
-            continue
-        set_secret(name, value)
+        blob[name] = value
         migrated.append(name)
+
+    if migrated:
+        _save_blob(blob)
+        for name in migrated:
+            set_configured_marker(name, True)
     return migrated
 
 
