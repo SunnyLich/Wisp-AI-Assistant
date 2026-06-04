@@ -91,7 +91,8 @@ final class NativeContextController {
     }
 
     private func accessibilityIsTrusted(prompt: Bool) -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt as String: prompt] as CFDictionary
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [promptKey: prompt] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 

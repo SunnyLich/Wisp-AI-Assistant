@@ -34,7 +34,8 @@ final class HotkeyController {
     func start(promptForPermission: Bool) -> HotkeyInstallResult {
         stop()
 
-        let options = [kAXTrustedCheckOptionPrompt as String: promptForPermission] as CFDictionary
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [promptKey: promptForPermission] as CFDictionary
         guard AXIsProcessTrustedWithOptions(options) else {
             NSLog("[wisp] hotkey unavailable: Accessibility permission is not trusted yet")
             return .accessibilityNeeded

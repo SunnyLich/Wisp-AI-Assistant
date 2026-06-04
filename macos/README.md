@@ -79,6 +79,8 @@ That runs the Python sidecar transport test, `swift test`, and `swift build`.
 Every run writes timestamped logs under `build_logs/macos_phase1_<timestamp>/`
 including `environment.log`, `python-brain-sidecar.log`, `swift-test.log`, and
 `swift-build.log`; the dev app wrapper is summarized in `dev-app-bundle.log`.
+At exit, the launcher also writes `build_logs/wisp-macos-logs_<timestamp>.zip`;
+send that zip for debugging instead of converting logs to `.docx`.
 If it passes, launch the live menubar/overlay handshake with:
 
 ```bash

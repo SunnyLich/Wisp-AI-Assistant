@@ -14,6 +14,7 @@ cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$REPO_ROOT/build_logs/macos_phase1_$RUN_ID"
+ARCHIVE_PATH="$REPO_ROOT/build_logs/wisp-macos-logs_$RUN_ID.zip"
 SUMMARY_LOG="$LOG_DIR/summary.log"
 mkdir -p "$LOG_DIR"
 
@@ -21,11 +22,15 @@ finish() {
   local status=$?
   echo
   if [ "$status" -eq 0 ]; then
+    archive_logs
     echo "Logs written to: $LOG_DIR"
+    [ -f "$ARCHIVE_PATH" ] && echo "Log archive: $ARCHIVE_PATH"
   else
     collect_recent_crash_reports
+    archive_logs
     echo "FAILED or crashed with exit code $status."
     echo "Logs written to: $LOG_DIR"
+    [ -f "$ARCHIVE_PATH" ] && echo "Log archive: $ARCHIVE_PATH"
     echo "If macOS generated a crash report, check:"
     echo "  $HOME/Library/Logs/DiagnosticReports"
   fi
@@ -76,6 +81,18 @@ collect_recent_crash_reports() {
         cp "$path" "$copies_dir/" 2>/dev/null || true
       done
   } > "$report_log" || true
+}
+
+archive_logs() {
+  rm -f "$ARCHIVE_PATH"
+  if command -v ditto >/dev/null 2>&1; then
+    ditto -c -k --keepParent "$LOG_DIR" "$ARCHIVE_PATH" >/dev/null 2>&1 || true
+  elif command -v zip >/dev/null 2>&1; then
+    (
+      cd "$(dirname "$LOG_DIR")"
+      zip -qr "$ARCHIVE_PATH" "$(basename "$LOG_DIR")"
+    ) || true
+  fi
 }
 
 build_dev_app_bundle() {
