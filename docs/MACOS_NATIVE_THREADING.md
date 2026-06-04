@@ -26,6 +26,9 @@ Known protected boundaries:
 - `core.llm_clients.client`, `core.tts`, `core.filler_bake`,
   `core.memory_store.store`, and `core.context_fetcher`: SDK client creation.
 - `core.secret_store` and `core.auth.*`: keyring/keychain access.
+- `core.context_fetcher.start_fs_watcher()`: uses watchdog polling on macOS
+  instead of the native FSEvents observer to avoid `_watchdog_fsevents` callback
+  threads in the Qt/PyObjC process.
 
 When adding a new provider SDK or native macOS API, wrap the smallest possible
 construction/access block. Do not hold the lock for a full streaming response

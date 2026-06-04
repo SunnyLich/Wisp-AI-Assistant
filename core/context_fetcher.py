@@ -176,7 +176,16 @@ def start_fs_watcher(paths: list[str] | None = None) -> None:
         return
 
     try:
-        from watchdog.observers import Observer          # type: ignore
+        if sys.platform == "darwin":
+            # Avoid watchdog's native FSEvents backend in this Qt/PyObjC process.
+            # It spins native callback threads (_watchdog_fsevents), which showed
+            # up in repeated macOS segfault dumps. Polling is slower but keeps this
+            # optional ambient-context feature in pure Python.
+            from watchdog.observers.polling import PollingObserver as Observer  # type: ignore
+            observer_backend = "polling"
+        else:
+            from watchdog.observers import Observer  # type: ignore
+            observer_backend = "native"
         from watchdog.events import FileSystemEventHandler  # type: ignore
 
         class _Handler(FileSystemEventHandler):
@@ -206,7 +215,7 @@ def start_fs_watcher(paths: list[str] | None = None) -> None:
         observer.daemon = True
         observer.start()
         _fs_observer = observer
-        print(f"[context_fetcher] fs watcher started on {len(paths)} path(s).")
+        print(f"[context_fetcher] fs watcher started on {len(paths)} path(s) ({observer_backend}).")
 
     except Exception as exc:
         print(f"[context_fetcher] fs watcher failed to start: {exc}")
