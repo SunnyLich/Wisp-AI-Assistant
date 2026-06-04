@@ -47,6 +47,8 @@ from threading import Lock
 from typing import Optional
 from urllib.parse import urlparse, unquote
 
+from core.system.native_locks import ssl_init_lock
+
 _IS_WIN = sys.platform == "win32"
 
 # ---------------------------------------------------------------------------
@@ -304,7 +306,8 @@ def _search_online(query: str, max_results: int = 5) -> list[dict]:
     try:
         import anthropic  # type: ignore
 
-        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        with ssl_init_lock():
+            client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
         response = client.messages.create(
             model=_SEARCH_MODEL,

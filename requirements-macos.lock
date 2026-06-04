@@ -1,0 +1,619 @@
+aiohappyeyeballs==2.6.2
+    # via aiohttp
+aiohttp==3.14.0
+    # via kubernetes
+aiosignal==1.4.0
+    # via aiohttp
+annotated-doc==0.0.4
+    # via typer
+annotated-types==0.7.0
+    # via pydantic
+anthropic==0.105.2
+    # via -r requirements.txt
+anyio==4.13.0
+    # via
+    #   anthropic
+    #   cartesia
+    #   httpx
+    #   openai
+    #   watchfiles
+attrs==26.1.0
+    # via
+    #   aiohttp
+    #   jsonschema
+    #   referencing
+av==17.0.1
+    # via faster-whisper
+bcrypt==5.0.0
+    # via chromadb
+beautifulsoup4==4.14.3
+    # via -r requirements.txt
+build==1.5.0
+    # via chromadb
+cartesia==3.2.0
+    # via -r requirements.txt
+certifi==2026.5.20
+    # via
+    #   httpcore
+    #   httpx
+    #   kubernetes
+    #   requests
+cffi==2.0.0
+    # via
+    #   sounddevice
+    #   soundfile
+charset-normalizer==3.4.7
+    # via requests
+chromadb==1.5.9
+    # via -r requirements.txt
+click==8.4.1
+    # via
+    #   huggingface-hub
+    #   typer
+    #   uvicorn
+coloredlogs==15.0.1
+    # via onnxruntime
+ctranslate2==4.7.2
+    # via faster-whisper
+defusedxml==0.7.1
+    # via odfpy
+distro==1.9.0
+    # via
+    #   anthropic
+    #   cartesia
+    #   openai
+docstring-parser==0.18.0
+    # via anthropic
+durationpy==0.10
+    # via kubernetes
+elevenlabs==2.51.0
+    # via -r requirements.txt
+et-xmlfile==2.0.0
+    # via openpyxl
+faster-whisper==1.2.1
+    # via -r requirements.txt
+filelock==3.29.1
+    # via
+    #   huggingface-hub
+    #   torch
+flatbuffers==25.12.19
+    # via onnxruntime
+frozenlist==1.8.0
+    # via
+    #   aiohttp
+    #   aiosignal
+fsspec==2026.4.0
+    # via
+    #   huggingface-hub
+    #   torch
+github-copilot-sdk==1.0.0
+    # via -r requirements.txt
+googleapis-common-protos==1.75.0
+    # via opentelemetry-exporter-otlp-proto-grpc
+grpcio==1.81.0
+    # via
+    #   chromadb
+    #   opentelemetry-exporter-otlp-proto-grpc
+h11==0.16.0
+    # via
+    #   httpcore
+    #   uvicorn
+hf-xet==1.5.0
+    # via huggingface-hub
+httpcore==1.0.9
+    # via httpx
+httptools==0.8.0
+    # via uvicorn
+httpx==0.28.1
+    # via
+    #   anthropic
+    #   cartesia
+    #   chromadb
+    #   elevenlabs
+    #   huggingface-hub
+    #   openai
+huggingface-hub==1.17.0
+    # via
+    #   faster-whisper
+    #   sentence-transformers
+    #   tokenizers
+    #   transformers
+humanfriendly==10.0
+    # via coloredlogs
+idna==3.18
+    # via
+    #   anyio
+    #   httpx
+    #   requests
+    #   yarl
+importlib-resources==7.1.0
+    # via chromadb
+jaraco-classes==3.4.0
+    # via keyring
+jaraco-context==6.1.2
+    # via keyring
+jaraco-functools==4.5.0
+    # via keyring
+jinja2==3.1.6
+    # via torch
+jiter==0.15.0
+    # via
+    #   anthropic
+    #   openai
+joblib==1.5.3
+    # via scikit-learn
+jsonschema==4.26.0
+    # via chromadb
+jsonschema-specifications==2025.9.1
+    # via jsonschema
+keyboard==0.13.5
+    # via -r requirements.txt
+keyring==25.7.0
+    # via -r requirements.txt
+kubernetes==36.0.2
+    # via chromadb
+liteparse==2.0.5
+    # via -r requirements.txt
+lxml==6.1.1
+    # via
+    #   python-docx
+    #   python-pptx
+markdown-it-py==4.2.0
+    # via rich
+markupsafe==3.0.3
+    # via jinja2
+mdurl==0.1.2
+    # via markdown-it-py
+mmh3==5.2.1
+    # via chromadb
+more-itertools==11.1.0
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
+mpmath==1.3.0
+    # via sympy
+mss==10.2.0
+    # via -r requirements.txt
+multidict==6.7.1
+    # via
+    #   aiohttp
+    #   yarl
+narwhals==2.22.0
+    # via scikit-learn
+networkx==3.6.1
+    # via torch
+numpy==2.4.6
+    # via
+    #   -r requirements.txt
+    #   chromadb
+    #   ctranslate2
+    #   onnxruntime
+    #   scikit-learn
+    #   scipy
+    #   sentence-transformers
+    #   soundfile
+    #   transformers
+oauthlib==3.3.1
+    # via requests-oauthlib
+odfpy==1.4.1
+    # via -r requirements.txt
+onnxruntime==1.23.2
+    # via
+    #   chromadb
+    #   faster-whisper
+openai==2.41.0
+    # via -r requirements.txt
+openpyxl==3.1.5
+    # via -r requirements.txt
+opentelemetry-api==1.42.1
+    # via
+    #   chromadb
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+opentelemetry-exporter-otlp-proto-common==1.42.1
+    # via opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-grpc==1.42.1
+    # via chromadb
+opentelemetry-proto==1.42.1
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-sdk==1.42.1
+    # via
+    #   chromadb
+    #   opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-semantic-conventions==0.63b1
+    # via opentelemetry-sdk
+orjson==3.11.9
+    # via chromadb
+overrides==7.7.0
+    # via chromadb
+packaging==26.2
+    # via
+    #   build
+    #   huggingface-hub
+    #   onnxruntime
+    #   transformers
+pillow==12.2.0
+    # via
+    #   -r requirements.txt
+    #   python-pptx
+propcache==0.5.2
+    # via
+    #   aiohttp
+    #   yarl
+protobuf==6.33.6
+    # via
+    #   googleapis-common-protos
+    #   onnxruntime
+    #   opentelemetry-proto
+psutil==7.2.2
+    # via -r requirements.txt
+pybase64==1.4.3
+    # via chromadb
+pycparser==3.0
+    # via cffi
+pydantic==2.13.4
+    # via
+    #   anthropic
+    #   cartesia
+    #   chromadb
+    #   elevenlabs
+    #   github-copilot-sdk
+    #   openai
+    #   pydantic-settings
+pydantic-core==2.46.4
+    # via
+    #   elevenlabs
+    #   pydantic
+pydantic-settings==2.14.1
+    # via chromadb
+pygments==2.20.0
+    # via rich
+pynput==1.8.2
+    # via -r requirements.txt
+pyobjc==12.2
+    # via keyboard
+pyobjc-core==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-addressbook
+    #   pyobjc-framework-applescriptkit
+    #   pyobjc-framework-applicationservices
+    #   pyobjc-framework-automator
+    #   pyobjc-framework-carbon
+    #   pyobjc-framework-cfnetwork
+    #   pyobjc-framework-cocoa
+    #   pyobjc-framework-coreaudio
+    #   pyobjc-framework-coreaudiokit
+    #   pyobjc-framework-coredata
+    #   pyobjc-framework-coremidi
+    #   pyobjc-framework-coreservices
+    #   pyobjc-framework-coretext
+    #   pyobjc-framework-discrecording
+    #   pyobjc-framework-discrecordingui
+    #   pyobjc-framework-diskarbitration
+    #   pyobjc-framework-dvdplayback
+    #   pyobjc-framework-exceptionhandling
+    #   pyobjc-framework-fsevents
+    #   pyobjc-framework-installerplugins
+    #   pyobjc-framework-iobluetooth
+    #   pyobjc-framework-iobluetoothui
+    #   pyobjc-framework-latentsemanticmapping
+    #   pyobjc-framework-launchservices
+    #   pyobjc-framework-osakit
+    #   pyobjc-framework-preferencepanes
+    #   pyobjc-framework-quartz
+    #   pyobjc-framework-screensaver
+    #   pyobjc-framework-searchkit
+    #   pyobjc-framework-security
+    #   pyobjc-framework-securityfoundation
+    #   pyobjc-framework-securityinterface
+    #   pyobjc-framework-syncservices
+    #   pyobjc-framework-systemconfiguration
+    #   pyobjc-framework-webkit
+pyobjc-framework-addressbook==12.2
+    # via pyobjc
+pyobjc-framework-applescriptkit==12.2
+    # via pyobjc
+pyobjc-framework-applicationservices==12.2
+    # via
+    #   pynput
+    #   pyobjc
+pyobjc-framework-automator==12.2
+    # via pyobjc
+pyobjc-framework-carbon==12.2
+    # via pyobjc
+pyobjc-framework-cfnetwork==12.2
+    # via pyobjc
+pyobjc-framework-cocoa==12.2
+    # via
+    #   -r requirements.txt
+    #   pyobjc
+    #   pyobjc-framework-addressbook
+    #   pyobjc-framework-applescriptkit
+    #   pyobjc-framework-applicationservices
+    #   pyobjc-framework-automator
+    #   pyobjc-framework-carbon
+    #   pyobjc-framework-cfnetwork
+    #   pyobjc-framework-coreaudio
+    #   pyobjc-framework-coreaudiokit
+    #   pyobjc-framework-coredata
+    #   pyobjc-framework-coremidi
+    #   pyobjc-framework-coreservices
+    #   pyobjc-framework-coretext
+    #   pyobjc-framework-discrecording
+    #   pyobjc-framework-discrecordingui
+    #   pyobjc-framework-diskarbitration
+    #   pyobjc-framework-dvdplayback
+    #   pyobjc-framework-exceptionhandling
+    #   pyobjc-framework-fsevents
+    #   pyobjc-framework-installerplugins
+    #   pyobjc-framework-iobluetooth
+    #   pyobjc-framework-latentsemanticmapping
+    #   pyobjc-framework-osakit
+    #   pyobjc-framework-preferencepanes
+    #   pyobjc-framework-quartz
+    #   pyobjc-framework-screensaver
+    #   pyobjc-framework-security
+    #   pyobjc-framework-securityfoundation
+    #   pyobjc-framework-securityinterface
+    #   pyobjc-framework-syncservices
+    #   pyobjc-framework-systemconfiguration
+    #   pyobjc-framework-webkit
+pyobjc-framework-coreaudio==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-coreaudiokit
+pyobjc-framework-coreaudiokit==12.2
+    # via pyobjc
+pyobjc-framework-coredata==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-syncservices
+pyobjc-framework-coremidi==12.2
+    # via pyobjc
+pyobjc-framework-coreservices==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-launchservices
+    #   pyobjc-framework-searchkit
+pyobjc-framework-coretext==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-applicationservices
+pyobjc-framework-discrecording==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-discrecordingui
+pyobjc-framework-discrecordingui==12.2
+    # via pyobjc
+pyobjc-framework-diskarbitration==12.2
+    # via pyobjc
+pyobjc-framework-dvdplayback==12.2
+    # via pyobjc
+pyobjc-framework-exceptionhandling==12.2
+    # via pyobjc
+pyobjc-framework-fsevents==12.2
+    # via pyobjc-framework-coreservices
+pyobjc-framework-installerplugins==12.2
+    # via pyobjc
+pyobjc-framework-iobluetooth==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-iobluetoothui
+pyobjc-framework-iobluetoothui==12.2
+    # via pyobjc
+pyobjc-framework-latentsemanticmapping==12.2
+    # via pyobjc
+pyobjc-framework-launchservices==12.2
+    # via pyobjc
+pyobjc-framework-osakit==12.2
+    # via pyobjc
+pyobjc-framework-preferencepanes==12.2
+    # via pyobjc
+pyobjc-framework-quartz==12.2
+    # via
+    #   -r requirements.txt
+    #   pynput
+    #   pyobjc
+    #   pyobjc-framework-applicationservices
+    #   pyobjc-framework-coretext
+pyobjc-framework-screensaver==12.2
+    # via pyobjc
+pyobjc-framework-searchkit==12.2
+    # via pyobjc
+pyobjc-framework-security==12.2
+    # via
+    #   pyobjc
+    #   pyobjc-framework-securityfoundation
+    #   pyobjc-framework-securityinterface
+pyobjc-framework-securityfoundation==12.2
+    # via pyobjc
+pyobjc-framework-securityinterface==12.2
+    # via pyobjc
+pyobjc-framework-syncservices==12.2
+    # via pyobjc
+pyobjc-framework-systemconfiguration==12.2
+    # via pyobjc
+pyobjc-framework-webkit==12.2
+    # via pyobjc
+pypdf==6.12.2
+    # via -r requirements.txt
+pyperclip==1.11.0
+    # via -r requirements.txt
+pypika==0.51.1
+    # via chromadb
+pyproject-hooks==1.2.0
+    # via build
+pyside6==6.11.1
+    # via -r requirements.txt
+pyside6-addons==6.11.1
+    # via pyside6
+pyside6-essentials==6.11.1
+    # via
+    #   pyside6
+    #   pyside6-addons
+python-dateutil==2.9.0.post0
+    # via
+    #   github-copilot-sdk
+    #   kubernetes
+python-docx==1.2.0
+    # via -r requirements.txt
+python-dotenv==1.2.2
+    # via
+    #   -r requirements.txt
+    #   pydantic-settings
+    #   uvicorn
+python-pptx==1.0.2
+    # via -r requirements.txt
+pyyaml==6.0.3
+    # via
+    #   chromadb
+    #   ctranslate2
+    #   huggingface-hub
+    #   kubernetes
+    #   transformers
+    #   uvicorn
+referencing==0.37.0
+    # via
+    #   jsonschema
+    #   jsonschema-specifications
+regex==2026.5.9
+    # via transformers
+requests==2.34.2
+    # via
+    #   -r requirements.txt
+    #   elevenlabs
+    #   kubernetes
+    #   requests-oauthlib
+requests-oauthlib==2.0.0
+    # via kubernetes
+rich==15.0.0
+    # via
+    #   chromadb
+    #   typer
+rpds-py==2026.5.1
+    # via
+    #   jsonschema
+    #   referencing
+safetensors==0.7.0
+    # via transformers
+scikit-learn==1.9.0
+    # via sentence-transformers
+scipy==1.17.1
+    # via
+    #   scikit-learn
+    #   sentence-transformers
+sentence-transformers==5.5.1
+    # via -r requirements.txt
+setuptools==81.0.0
+    # via
+    #   ctranslate2
+    #   torch
+shellingham==1.5.4
+    # via typer
+shiboken6==6.11.1
+    # via
+    #   pyside6
+    #   pyside6-addons
+    #   pyside6-essentials
+six==1.17.0
+    # via
+    #   kubernetes
+    #   pynput
+    #   python-dateutil
+sniffio==1.3.1
+    # via
+    #   anthropic
+    #   cartesia
+    #   openai
+sounddevice==0.5.5
+    # via -r requirements.txt
+soundfile==0.13.1
+    # via -r requirements.txt
+soupsieve==2.8.4
+    # via beautifulsoup4
+sympy==1.14.0
+    # via
+    #   onnxruntime
+    #   torch
+tenacity==9.1.4
+    # via chromadb
+threadpoolctl==3.6.0
+    # via scikit-learn
+tokenizers==0.22.2
+    # via
+    #   chromadb
+    #   faster-whisper
+    #   transformers
+torch==2.11.0
+    # via sentence-transformers
+tqdm==4.67.3
+    # via
+    #   chromadb
+    #   faster-whisper
+    #   huggingface-hub
+    #   openai
+    #   sentence-transformers
+    #   transformers
+transformers==5.10.2
+    # via sentence-transformers
+typer==0.25.1
+    # via
+    #   chromadb
+    #   huggingface-hub
+    #   transformers
+typing-extensions==4.15.0
+    # via
+    #   aiohttp
+    #   aiosignal
+    #   anthropic
+    #   anyio
+    #   beautifulsoup4
+    #   cartesia
+    #   chromadb
+    #   elevenlabs
+    #   grpcio
+    #   huggingface-hub
+    #   openai
+    #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+    #   pydantic
+    #   pydantic-core
+    #   python-docx
+    #   python-pptx
+    #   referencing
+    #   sentence-transformers
+    #   torch
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via
+    #   pydantic
+    #   pydantic-settings
+urllib3==2.7.0
+    # via
+    #   kubernetes
+    #   requests
+uvicorn==0.49.0
+    # via chromadb
+uvloop==0.22.1
+    # via uvicorn
+watchdog==6.0.0
+    # via -r requirements.txt
+watchfiles==1.2.0
+    # via uvicorn
+websocket-client==1.9.0
+    # via kubernetes
+websockets==15.0.1
+    # via
+    #   cartesia
+    #   elevenlabs
+    #   uvicorn
+xlsxwriter==3.2.9
+    # via python-pptx
+yarl==1.24.2
+    # via aiohttp

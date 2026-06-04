@@ -24,6 +24,7 @@ import threading
 from typing import Iterable
 
 import config
+from core.system.native_locks import ssl_init_lock
 
 
 # Short, neutral-content phrases. Kept under ~1s of speech (matches
@@ -95,9 +96,10 @@ def _synthesise_cartesia(text: str, voice_id: str, api_key: str) -> bytes:
     from cartesia import Cartesia  # type: ignore
     from core import tts as tts_module
 
-    client = Cartesia(api_key=api_key)
-    ws_manager = client.tts.websocket_connect()
-    ws = ws_manager.__enter__()
+    with ssl_init_lock():
+        client = Cartesia(api_key=api_key)
+        ws_manager = client.tts.websocket_connect()
+        ws = ws_manager.__enter__()
     try:
         ctx = ws.context(
             model_id="sonic-3",

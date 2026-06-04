@@ -25,7 +25,7 @@ from unittest import mock
 
 import config
 import core.system.native_locks as native_locks
-from core.system.native_locks import ssl_init_lock
+from core.system.native_locks import keychain_lock, native_init_lock, ssl_init_lock
 import core.tts as tts_module
 import core.llm_clients.client as llm
 
@@ -77,6 +77,8 @@ class SslInitLockTests(unittest.TestCase):
         with mock.patch.object(native_locks, "_IS_MAC", True):
             self.assertIs(ssl_init_lock(), native_locks._ssl_init_lock)
             self.assertIs(ssl_init_lock(), ssl_init_lock())
+            self.assertIs(native_init_lock(), native_locks._ssl_init_lock)
+            self.assertIs(keychain_lock(), native_locks._ssl_init_lock)
 
     def test_tts_and_llm_use_the_same_lock_function(self):
         # Both modules import the singleton helper by reference, so a build in

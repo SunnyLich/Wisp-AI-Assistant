@@ -11,8 +11,31 @@ cd "$(dirname "$0")"
 
 WANT="$(cat .python-version 2>/dev/null | tr -d '[:space:]')"; WANT="${WANT:-3.12.13}"
 WANT_MM="$(echo "$WANT" | cut -d. -f1,2)"
+REQ_FILE="requirements.txt"
+if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ]; then
+  if [ ! -f "requirements-macos.lock" ]; then
+    echo "ERROR: requirements-macos.lock is required for macOS installs." >&2
+    echo "       Regenerate it with: bash scripts/compile_macos_lock.sh" >&2
+    exit 1
+  fi
+  REQ_FILE="requirements-macos.lock"
+fi
 
-have_deps() { [ -x ".venv/bin/python" ] && ./.venv/bin/python -c "import PySide6" >/dev/null 2>&1; }
+python_mm() {
+  "$1" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true
+}
+
+python_matches_want() {
+  [ -n "$1" ] && [ "$(python_mm "$1")" = "$WANT_MM" ]
+}
+
+venv_python_ok() {
+  [ -x ".venv/bin/python" ] && python_matches_want "./.venv/bin/python"
+}
+
+have_deps() {
+  venv_python_ok && ./.venv/bin/python -c "import PySide6" >/dev/null 2>&1
+}
 
 # --- 1) Already set up? Just run. -------------------------------------------
 if have_deps; then
@@ -22,28 +45,47 @@ fi
 echo "Setting up Wisp..."
 
 # --- 2) venv exists but deps missing → install into it ----------------------
-if [ -x ".venv/bin/python" ]; then
+if [ -x ".venv/bin/python" ] && ! venv_python_ok; then
+  echo "Existing .venv uses Python $(python_mm './.venv/bin/python'); Wisp needs $WANT_MM. Rebuilding."
+fi
+
+if venv_python_ok; then
   echo "Installing dependencies into the existing environment..."
-  if ./.venv/bin/python -m pip install -r requirements.txt && have_deps; then
+  if ./.venv/bin/python -m pip install -r "$REQ_FILE" && have_deps; then
     exec ./.venv/bin/python main.py
   fi
 fi
 
 # --- 3) build with a Python already installed (prefer WANT_MM) --------------
+try_python() {
+  local c="$1" p
+  if command -v "$c" >/dev/null 2>&1; then
+    p="$(command -v "$c")"
+  elif [ -x "$c" ]; then
+    p="$c"
+  else
+    return 1
+  fi
+  if python_matches_want "$p"; then
+    echo "$p"
+    return 0
+  fi
+  return 1
+}
+
 find_local_python() {
   local root d c
   root="${PYENV_ROOT:-$HOME/.pyenv}"
   if [ -d "$root/versions" ]; then
     for d in $(ls -d "$root/versions/$WANT_MM".* 2>/dev/null | sort -V -r); do
-      for c in "$d/bin/python" "$d/bin/python3"; do [ -x "$c" ] && { echo "$c"; return; }; done
+      for c in "$d/bin/python" "$d/bin/python3"; do try_python "$c" && return; done
     done
   fi
   for c in "python$WANT_MM" \
            "/Library/Frameworks/Python.framework/Versions/$WANT_MM/bin/python3" \
            "/opt/homebrew/bin/python$WANT_MM" "/usr/local/bin/python$WANT_MM" \
            python3 python; do
-    if command -v "$c" >/dev/null 2>&1; then command -v "$c"; return; fi
-    [ -x "$c" ] && { echo "$c"; return; }
+    try_python "$c" && return
   done
 }
 
@@ -53,7 +95,7 @@ if [ -n "$PY" ]; then
   rm -rf .venv
   if "$PY" -m venv .venv; then
     ./.venv/bin/python -m pip install --upgrade pip >/dev/null 2>&1 || true
-    if ./.venv/bin/python -m pip install -r requirements.txt && have_deps; then
+    if ./.venv/bin/python -m pip install -r "$REQ_FILE" && have_deps; then
       exec ./.venv/bin/python main.py
     fi
   fi
@@ -81,5 +123,5 @@ fi
 echo "Provisioning Python $WANT_MM with uv..."
 rm -rf .venv
 "$UV" venv --python "$WANT"
-"$UV" pip install --python ./.venv/bin/python -r requirements.txt
+"$UV" pip install --python ./.venv/bin/python -r "$REQ_FILE"
 exec ./.venv/bin/python main.py

@@ -34,6 +34,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable
 from urllib.parse import urlencode, parse_qs, urlparse
 
+from core.system.native_locks import keychain_lock
+
 # ---------------------------------------------------------------------------
 # Constants (sourced from opencode's built-in Codex plugin, MIT)
 # ---------------------------------------------------------------------------
@@ -74,16 +76,18 @@ _TOKEN_FILE = _pathlib.Path(__file__).parent.parent / "private" / ".chatgpt_toke
 
 def _keyring_get() -> str | None:
     try:
-        import keyring  # type: ignore
-        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+        with keychain_lock():
+            import keyring  # type: ignore
+            return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
     except Exception:
         return None
 
 
 def _keyring_set(value: str) -> bool:
     try:
-        import keyring  # type: ignore
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, value)
+        with keychain_lock():
+            import keyring  # type: ignore
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, value)
         return True
     except Exception:
         return False
@@ -91,8 +95,9 @@ def _keyring_set(value: str) -> bool:
 
 def _keyring_delete() -> None:
     try:
-        import keyring  # type: ignore
-        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+        with keychain_lock():
+            import keyring  # type: ignore
+            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
     except Exception:
         pass
 

@@ -13,6 +13,8 @@ import time
 from typing import Callable
 import config
 
+from core.system.native_locks import keychain_lock
+
 _DEVICE_CODE_URL = "https://github.com/login/device/code"
 _ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 _USER_URL = "https://api.github.com/user"
@@ -41,16 +43,18 @@ def has_configured_client_id() -> bool:
 
 def _keyring_get() -> str | None:
     try:
-        import keyring  # type: ignore
-        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+        with keychain_lock():
+            import keyring  # type: ignore
+            return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
     except Exception:
         return None
 
 
 def _keyring_set(value: str) -> bool:
     try:
-        import keyring  # type: ignore
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, value)
+        with keychain_lock():
+            import keyring  # type: ignore
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, value)
         return True
     except Exception:
         return False
@@ -58,8 +62,9 @@ def _keyring_set(value: str) -> bool:
 
 def _keyring_delete() -> None:
     try:
-        import keyring  # type: ignore
-        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+        with keychain_lock():
+            import keyring  # type: ignore
+            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
     except Exception:
         pass
 

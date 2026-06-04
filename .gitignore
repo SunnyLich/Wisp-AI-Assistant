@@ -25,6 +25,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.uv-cache/
+.uv-python/
 *.py[cod]
 *.pyo
 .venv/

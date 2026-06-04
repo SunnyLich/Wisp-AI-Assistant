@@ -18,6 +18,8 @@ import logging
 import threading
 from pathlib import Path
 
+from core.system.native_locks import keychain_lock
+
 log = logging.getLogger("wisp.secrets")
 
 _KEYRING_SERVICE = "python-ai-overlay"
@@ -64,24 +66,26 @@ def _account(name: str) -> str:
 
 
 def _write_blob_raw(blob: dict) -> None:
-    import keyring  # type: ignore
-    keyring.set_password(_KEYRING_SERVICE, _BLOB_ACCOUNT, json.dumps(blob))
+    with keychain_lock():
+        import keyring  # type: ignore
+        keyring.set_password(_KEYRING_SERVICE, _BLOB_ACCOUNT, json.dumps(blob))
 
 
 def _migrate_legacy_items() -> dict:
     """Read any old one-item-per-key secrets into a single dict."""
     blob: dict[str, str] = {}
     try:
-        import keyring  # type: ignore
+        with keychain_lock():
+            import keyring  # type: ignore
+            for name in API_KEY_NAMES:
+                try:
+                    value = keyring.get_password(_KEYRING_SERVICE, _account(name))
+                except Exception:
+                    value = None
+                if value:
+                    blob[name] = value
     except Exception:
         return blob
-    for name in API_KEY_NAMES:
-        try:
-            value = keyring.get_password(_KEYRING_SERVICE, _account(name))
-        except Exception:
-            value = None
-        if value:
-            blob[name] = value
     return blob
 
 
@@ -92,26 +96,29 @@ def _load_blob() -> dict:
         if _blob_cache is not None:
             return _blob_cache
 
-        blob: dict[str, str] = {}
-        try:
+    blob: dict[str, str] = {}
+    try:
+        with keychain_lock():
             import keyring  # type: ignore
             raw = keyring.get_password(_KEYRING_SERVICE, _BLOB_ACCOUNT)
             if raw:
                 blob = json.loads(raw) or {}
-        except Exception:
-            blob = {}
+    except Exception:
+        blob = {}
 
-        # One-time migration from the old one-item-per-key layout.
-        if not blob and not _read_meta().get(_MIGRATED_FLAG):
-            blob = _migrate_legacy_items()
-            if blob:
-                try:
-                    _write_blob_raw(blob)
-                except Exception:
-                    pass
-            set_configured_marker(_MIGRATED_FLAG, True)
+    # One-time migration from the old one-item-per-key layout.
+    if not blob and not _read_meta().get(_MIGRATED_FLAG):
+        blob = _migrate_legacy_items()
+        if blob:
+            try:
+                _write_blob_raw(blob)
+            except Exception:
+                pass
+        set_configured_marker(_MIGRATED_FLAG, True)
 
-        _blob_cache = blob
+    with _cache_lock:
+        if _blob_cache is None:
+            _blob_cache = blob
         return _blob_cache
 
 
@@ -163,7 +170,8 @@ def set_secret(name: str, value: str) -> None:
     value. Raises KeychainError (after logging) on any failure.
     """
     try:
-        import keyring  # type: ignore  # noqa: F401 — ensure backend is importable
+        with keychain_lock():
+            import keyring  # type: ignore  # noqa: F401
     except Exception as exc:  # noqa: BLE001 — surfaced to the caller + log
         log.error("Cannot save %s: OS keychain support (keyring) is unavailable: %s", name, exc)
         raise KeychainError(

@@ -672,6 +672,7 @@ import threading as _threading
 import time as _time
 _route_cooldowns: dict[tuple[str, str], float] = {}
 _route_cooldowns_lock = _threading.Lock()
+_codex_client_lock = _threading.Lock()
 
 
 def _route_key(provider: str, model: str) -> tuple[str, str]:
@@ -775,13 +776,16 @@ class _CodexTransport:
 def _get_codex_client():
     global _codex_client
     if _codex_client is None:
-        import httpx
-        from openai import OpenAI
-        _codex_client = OpenAI(
-            api_key="chatgpt-oauth-dummy",
-            base_url="https://chatgpt.com/backend-api/codex",
-            http_client=httpx.Client(transport=_CodexTransport()),
-        )
+        with _codex_client_lock:
+            if _codex_client is None:
+                import httpx
+                from openai import OpenAI
+                with ssl_init_lock():
+                    _codex_client = OpenAI(
+                        api_key="chatgpt-oauth-dummy",
+                        base_url="https://chatgpt.com/backend-api/codex",
+                        http_client=httpx.Client(transport=_CodexTransport()),
+                    )
     return _codex_client
 
 
@@ -912,7 +916,9 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
         key = api_key or config.ANTHROPIC_API_KEY
         if not key:
             raise ValueError("No Anthropic API key configured")
-        resp = Anthropic(api_key=key).models.list(limit=1000)
+        with ssl_init_lock():
+            client = Anthropic(api_key=key)
+        resp = client.models.list(limit=1000)
         ids = [m.id for m in resp.data]
     else:
         from openai import OpenAI
@@ -920,18 +926,21 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
             url = base_url or config.CUSTOM_BASE_URL
             if not url:
                 raise ValueError("No custom base URL configured")
-            client = OpenAI(api_key=api_key or config.CUSTOM_API_KEY or "no-key", base_url=url)
+            with ssl_init_lock():
+                client = OpenAI(api_key=api_key or config.CUSTOM_API_KEY or "no-key", base_url=url)
         elif provider in _OPENAI_COMPAT_PROVIDERS:
             key_attr, default_base = _OPENAI_COMPAT_PROVIDERS[provider]
             key = api_key or (getattr(config, key_attr) if key_attr else "ollama")
             if key_attr and not key:
                 raise ValueError(f"No API key configured for {provider}")
-            client = OpenAI(api_key=key or "no-key", base_url=base_url or default_base)
+            with ssl_init_lock():
+                client = OpenAI(api_key=key or "no-key", base_url=base_url or default_base)
         elif provider == "openai":
             key = api_key or config.OPENAI_API_KEY
             if not key:
                 raise ValueError("No OpenAI API key configured")
-            client = OpenAI(api_key=key)
+            with ssl_init_lock():
+                client = OpenAI(api_key=key)
         else:
             raise ValueError(f"Unknown provider: {provider}")
         resp = client.models.list()
@@ -1248,14 +1257,15 @@ def _probe_openai_compat_route_with_credentials(
 ) -> None:
     from openai import OpenAI
 
-    if provider == "groq":
-        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-    elif provider == "google":
-        client = OpenAI(api_key=api_key, base_url=_GOOGLE_OPENAI_BASE_URL)
-    elif provider == "custom":
-        client = OpenAI(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
-    else:
-        client = OpenAI(api_key=api_key)
+    with ssl_init_lock():
+        if provider == "groq":
+            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+        elif provider == "google":
+            client = OpenAI(api_key=api_key, base_url=_GOOGLE_OPENAI_BASE_URL)
+        elif provider == "custom":
+            client = OpenAI(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
+        else:
+            client = OpenAI(api_key=api_key)
     _run_openai_compat_probe(
         client,
         model=_normalize_model_for_provider(provider, model),
@@ -1289,7 +1299,8 @@ def _probe_anthropic_route(model: str, image_base64: str | None = None) -> None:
 def _probe_anthropic_route_with_api_key(model: str, api_key: str, image_base64: str | None = None) -> None:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
+    with ssl_init_lock():
+        client = anthropic.Anthropic(api_key=api_key)
     if image_base64:
         content = [
             {

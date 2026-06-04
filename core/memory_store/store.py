@@ -36,6 +36,7 @@ from typing import Optional
 
 import config
 from core.system.paths import MEMORY_DIR
+from core.system.native_locks import ssl_init_lock
 
 try:
     from core.context_router import ContextChunk, ContextRouter
@@ -898,18 +899,19 @@ class MemoryManager:
         """
         if provider in ("groq", "openai", "google"):
             from openai import OpenAI
-            if provider == "groq":
-                client = OpenAI(
-                    api_key=config.GROQ_API_KEY,
-                    base_url="https://api.groq.com/openai/v1",
-                )
-            elif provider == "google":
-                client = OpenAI(
-                    api_key=config.GOOGLE_API_KEY,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                )
-            else:
-                client = OpenAI(api_key=config.OPENAI_API_KEY)
+            with ssl_init_lock():
+                if provider == "groq":
+                    client = OpenAI(
+                        api_key=config.GROQ_API_KEY,
+                        base_url="https://api.groq.com/openai/v1",
+                    )
+                elif provider == "google":
+                    client = OpenAI(
+                        api_key=config.GOOGLE_API_KEY,
+                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    )
+                else:
+                    client = OpenAI(api_key=config.OPENAI_API_KEY)
 
             resp = client.chat.completions.create(
                 model=model,
@@ -921,7 +923,8 @@ class MemoryManager:
 
         if provider == "anthropic":
             import anthropic
-            client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            with ssl_init_lock():
+                client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
             resp = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,

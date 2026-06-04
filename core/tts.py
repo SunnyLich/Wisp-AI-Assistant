@@ -182,7 +182,8 @@ def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
             "ElevenLabs support is not installed in this build. Enable Windows long paths and reinstall dependencies to bundle it."
         ) from exc
 
-    client = ElevenLabs(api_key=config.ELEVENLABS_API_KEY)
+    with ssl_init_lock():
+        client = ElevenLabs(api_key=config.ELEVENLABS_API_KEY)
 
     audio_stream = client.generate(
         text=text,
@@ -216,9 +217,10 @@ def test_connection(
             got_audio = False
             from cartesia import Cartesia  # type: ignore
 
-            client = Cartesia(api_key=cartesia_api_key)
-            ws_manager = client.tts.websocket_connect()
-            ws = ws_manager.__enter__()
+            with ssl_init_lock():
+                client = Cartesia(api_key=cartesia_api_key)
+                ws_manager = client.tts.websocket_connect()
+                ws = ws_manager.__enter__()
             ctx = ws.context(
                 model_id="sonic-3",
                 voice={"mode": "id", "id": cartesia_voice_id},
@@ -248,7 +250,8 @@ def test_connection(
                 raise ValueError("ELEVENLABS_API_KEY is not configured.")
             from elevenlabs.client import ElevenLabs  # type: ignore
 
-            client = ElevenLabs(api_key=elevenlabs_api_key)
+            with ssl_init_lock():
+                client = ElevenLabs(api_key=elevenlabs_api_key)
             audio_stream = client.generate(
                 text="ok",
                 stream=True,

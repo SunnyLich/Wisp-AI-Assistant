@@ -8,6 +8,8 @@ fallback file.
 """
 from __future__ import annotations
 
+from core.system.native_locks import keychain_lock
+
 _KEYRING_SERVICE = "python-ai-overlay"
 _KEYRING_ACCOUNT = "github-copilot-token"
 
@@ -48,27 +50,31 @@ def save_token(token: str) -> None:
     ok, message = validate_token_format(token)
     if not ok:
         raise CopilotTokenError(message)
-    keyring = _keyring_module()
     try:
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, token)
+        with keychain_lock():
+            keyring = _keyring_module()
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, token)
     except Exception as exc:
         raise CopilotTokenError(f"Could not save token to OS keychain: {exc}") from exc
 
 
 def get_token() -> str | None:
-    keyring = _keyring_module()
     try:
-        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+        with keychain_lock():
+            keyring = _keyring_module()
+            return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
     except Exception as exc:
         raise CopilotTokenError(f"Could not read token from OS keychain: {exc}") from exc
 
 
 def clear_token() -> None:
-    keyring = _keyring_module()
     try:
-        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
-    except keyring.errors.PasswordDeleteError:
-        return
+        with keychain_lock():
+            keyring = _keyring_module()
+            try:
+                keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+            except keyring.errors.PasswordDeleteError:
+                return
     except Exception as exc:
         raise CopilotTokenError(f"Could not clear token from OS keychain: {exc}") from exc
 

@@ -176,10 +176,22 @@ def _play_clip(data: np.ndarray, samplerate: int):
         # sd.play opens and starts a PortAudio output stream, so it must run on
         # the main thread (see _run_on_main): opening it on this worker thread
         # segfaults inside CoreAudio under Qt's Cocoa run loop, exactly like the
-        # TTS stream below. sd.wait() only blocks on a completion flag and is
-        # safe to keep here, so the filler stays non-blocking for the caller.
-        _run_on_main(lambda: sd.play(data, samplerate))
-        sd.wait()
+        # TTS stream below.
+        #
+        # sd.wait() is NOT safe to call here: in this sounddevice version it does
+        # `self.event.wait()` then `self.stream.close()` (see
+        # _CallbackContext.wait), so it would tear the CoreAudio stream down from
+        # this worker thread — the same off-main hazard as opening it. Instead
+        # capture the callback context atomically with the play() call (on main),
+        # block on its completion event here (a plain flag wait, safe off-main),
+        # then hop the close back onto the main thread.
+        def _start():
+            sd.play(data, samplerate)
+            return sd._last_callback  # the _CallbackContext play() just created
+        ctx = _run_on_main(_start)
+        if ctx is not None:
+            ctx.event.wait()  # ~<1s; blocks only on a flag, no native call
+            _run_on_main(lambda: ctx.stream.close(ignore_errors=True))
     except Exception as e:
         print(f"[audio] filler playback error: {e}")
 

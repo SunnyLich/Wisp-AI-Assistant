@@ -155,8 +155,21 @@ class _MainThreadInvoker(QObject):
         return job.get("result")
 
 
-class App:
+class App(QObject):
+    # App is a QObject so that signal connections to its own slots (below) carry a
+    # receiver thread affinity. Without it, PySide6 connects a signal to a method of
+    # a non-QObject receiver as a DirectConnection (there is no receiver QThread to
+    # queue against), so the slot runs on whichever thread emits — including the
+    # _query_and_speak / LLM / TTS worker threads and the Carbon hotkey-dispatch
+    # thread. Those slots create and mutate Qt widgets (the intent picker, chat
+    # window, bubble), and doing Cocoa/AppKit work off the main thread segfaults
+    # under Qt's run loop on macOS. With App as a QObject living on the main thread,
+    # Qt.AutoConnection upgrades every cross-thread emit to a QueuedConnection, so
+    # the slots actually run on the main thread (the behaviour the summon/hotkey
+    # comments already assume).
     def __init__(self):
+        super().__init__()  # QObject base — before any attribute assignment or signal wiring
+
         from core.system.paths import PLUGINS_DIR
         self._plugin_manager = _plugin_manager_mod.init(PLUGINS_DIR)
 
