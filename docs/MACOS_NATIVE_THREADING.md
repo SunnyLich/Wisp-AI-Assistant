@@ -39,6 +39,42 @@ When adding a new provider SDK or native macOS API, wrap the smallest possible
 construction/access block. Do not hold the lock for a full streaming response
 unless the native library requires it.
 
+## Out-of-process native worker (`core.macos_helper`)
+
+Beyond routing native work to the main thread, the heaviest / most crash-prone
+native subsystems can be moved out of the GUI process entirely, into a
+supervised worker subprocess (`python -m core.macos_helper.host`). A segfault
+there kills the worker, not Qt; and the worker's CoreAudio/run-loop machinery
+runs on *its own* main thread, never contending with Qt's Cocoa run loop.
+
+Gated behind `WISP_MACOS_HELPER=1` (macOS only) via `core.macos_helper.is_enabled()`;
+off by default, so the in-process paths remain the shipping behavior until the
+worker is proven on the Mac.
+
+Pieces:
+- `protocol.py` — newline-delimited JSON framing (request / response / event).
+- `host.py` — worker entry point; redirects fd 1 → stderr so library prints
+  can't corrupt the protocol channel, then serves requests in order.
+- `handlers.py` — methods that run *inside* the worker. Native deps
+  (sounddevice, faster-whisper) are imported lazily so the worker boots and can
+  answer `ping` on any OS (this is what lets the IPC harness be tested off-mac).
+- `client.py` — parent-side supervisor: lazy spawn, reader thread, request/
+  response correlation, event dispatch, restart-on-death, fail-fast on exit.
+
+**Migrated so far:** STT (faster-whisper/torch + mic). `core.stt` delegates to
+`core.macos_helper.stt_client` when enabled; only the final transcript crosses
+back, so JSON framing suffices and `core.stt` no longer imports `sounddevice`.
+
+**Design note for the audio stage (TTS + playback):** these belong in the worker
+*together*, not separately. If synthesis moved out but playback stayed in the
+GUI, raw PCM would have to stream across IPC just to be played — worst of both
+worlds. Instead the whole "text chunks → synthesized PCM → speaker" pipeline
+runs in the worker: text chunks go worker-ward (small), PCM is played *in* the
+worker and never crosses IPC, and only lightweight events (audio_start,
+amplitude, word_timestamps, done) stream back for bubble/lip-sync. That needs a
+bidirectional streaming session (not plain request/response) and must be
+verified on the Mac on top of a proven STT foundation before it is built.
+
 ## Window parenting (separate from the threading rules above)
 
 The floating icon overlay (`ui/overlay.py`) is a `Qt.WindowType.Tool` window —

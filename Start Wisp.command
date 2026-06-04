@@ -9,6 +9,12 @@
 set -e
 cd "$(dirname "$0")"
 
+# --- macOS native-worker test toggle -----------------------------------------
+# Runs crash-prone native work (STT now; TTS/audio later) in a separate
+# supervised subprocess instead of inside the Qt GUI process. Opt-in and NOT yet
+# proven on the Mac — set to 0 or delete this line before shipping a release.
+export WISP_MACOS_HELPER=1
+
 WANT="$(cat .python-version 2>/dev/null | tr -d '[:space:]')"; WANT="${WANT:-3.12.13}"
 WANT_MM="$(echo "$WANT" | cut -d. -f1,2)"
 REQ_FILE="requirements.txt"

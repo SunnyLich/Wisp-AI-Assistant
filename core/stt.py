@@ -14,9 +14,12 @@ from __future__ import annotations
 import os
 import threading
 import numpy as np
-import sounddevice as sd
 import config
 from core.system.main_thread import run_on_main
+from core import macos_helper
+
+# sounddevice is imported lazily (inside start_recording) so that when the macOS
+# helper owns the mic, this GUI-process module never loads PortAudio at all.
 
 # Suppress noisy HuggingFace Hub warnings before any faster-whisper import
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -27,7 +30,7 @@ SAMPLE_RATE = 16_000   # Whisper expects 16 kHz mono
 _model      = None
 _model_lock = threading.Lock()
 
-_stream: sd.InputStream | None = None
+_stream = None  # sounddevice.InputStream | None (in-process path only)
 _recording  = False
 _chunks: list[np.ndarray] = []
 _chunks_lock = threading.Lock()
@@ -53,6 +56,11 @@ def _get_model():
 
 def prewarm():
     """Load the Whisper model in a background thread to avoid cold start on first use."""
+    if macos_helper.is_enabled():
+        from core.macos_helper import stt_client
+        stt_client.prewarm()
+        return
+
     def _worker() -> None:
         try:
             _get_model()
@@ -69,6 +77,12 @@ def prewarm():
 def start_recording():
     """Open the microphone and start buffering audio. Call from any thread."""
     global _stream, _recording
+    if macos_helper.is_enabled():
+        from core.macos_helper import stt_client
+        stt_client.start_recording()
+        return
+
+    import sounddevice as sd
     _recording = True
     with _chunks_lock:
         _chunks.clear()
@@ -109,6 +123,10 @@ def stop_and_transcribe() -> str:
     Blocks for ~200–600 ms depending on clip length and model size.
     """
     global _stream, _recording
+    if macos_helper.is_enabled():
+        from core.macos_helper import stt_client
+        return stt_client.stop_and_transcribe()
+
     _recording = False
     if _stream is not None:
         # Tearing down the PortAudio stream must run on the main thread too (see
