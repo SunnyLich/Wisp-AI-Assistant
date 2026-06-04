@@ -1,0 +1,156 @@
+import AppKit
+import ApplicationServices
+import AVFoundation
+import CoreGraphics
+
+struct NativeContextSnapshot {
+    var appName: String
+    var bundleID: String
+    var processID: pid_t?
+    var windowTitle: String?
+    var clipboardText: String?
+    var selectedText: String?
+    var accessibilityTrusted: Bool
+
+    var ambientText: String {
+        [
+            "Active app: \(appName)",
+            bundleID.isEmpty ? nil : "Bundle ID: \(bundleID)",
+            processID.map { "PID: \($0)" },
+            nonEmpty(windowTitle).map { "Window: \($0)" },
+            nonEmpty(clipboardText).map { "Clipboard:\n\($0)" },
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n\n")
+    }
+
+    var displayText: String {
+        [
+            "Active app: \(appName)",
+            bundleID.isEmpty ? nil : "Bundle ID: \(bundleID)",
+            processID.map { "PID: \($0)" },
+            nonEmpty(windowTitle).map { "Focused window: \($0)" },
+            "Accessibility: \(accessibilityTrusted ? "trusted" : "not trusted")",
+            nonEmpty(selectedText).map { "Selected text:\n\($0)" } ?? "Selected text: unavailable",
+            nonEmpty(clipboardText).map { "Clipboard:\n\($0)" } ?? "Clipboard: empty or non-text",
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n\n")
+    }
+
+    var logSummary: String {
+        "app=\(appName) bundle=\(bundleID) ax=\(accessibilityTrusted) selected=\(selectedText?.count ?? 0) clipboard=\(clipboardText?.count ?? 0)"
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+struct NativePermissionSnapshot {
+    var accessibilityTrusted: Bool
+    var screenRecordingTrusted: Bool
+    var microphoneStatus: String
+
+    var displayText: String {
+        """
+        Accessibility: \(accessibilityTrusted ? "trusted" : "not trusted")
+        Screen Recording: \(screenRecordingTrusted ? "trusted" : "not trusted")
+        Microphone: \(microphoneStatus)
+        """
+    }
+}
+
+@MainActor
+final class NativeContextController {
+
+    func snapshot(promptForAccessibility: Bool) -> NativeContextSnapshot {
+        let app = NSWorkspace.shared.frontmostApplication
+        let pid = app?.processIdentifier
+        let accessibilityTrusted = accessibilityIsTrusted(prompt: promptForAccessibility)
+
+        return NativeContextSnapshot(
+            appName: app?.localizedName ?? "Unknown",
+            bundleID: app?.bundleIdentifier ?? "",
+            processID: pid,
+            windowTitle: accessibilityTrusted ? focusedWindowTitle(pid: pid) : nil,
+            clipboardText: clippedText(NSPasteboard.general.string(forType: .string), limit: 1600),
+            selectedText: accessibilityTrusted ? clippedText(selectedText(pid: pid), limit: 1600) : nil,
+            accessibilityTrusted: accessibilityTrusted
+        )
+    }
+
+    func permissions(promptForAccessibility: Bool) -> NativePermissionSnapshot {
+        NativePermissionSnapshot(
+            accessibilityTrusted: accessibilityIsTrusted(prompt: promptForAccessibility),
+            screenRecordingTrusted: CGPreflightScreenCaptureAccess(),
+            microphoneStatus: microphoneStatusText()
+        )
+    }
+
+    private func accessibilityIsTrusted(prompt: Bool) -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt as String: prompt] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
+    private func focusedWindowTitle(pid: pid_t?) -> String? {
+        guard let pid else { return nil }
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
+              let windowValue else {
+            return nil
+        }
+
+        let windowElement = windowValue as! AXUIElement
+        var titleValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(windowElement, kAXTitleAttribute as CFString, &titleValue) == .success else {
+            return nil
+        }
+        return titleValue as? String
+    }
+
+    private func selectedText(pid: pid_t?) -> String? {
+        guard let pid else { return nil }
+        let appElement = AXUIElementCreateApplication(pid)
+        var focusedValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedValue) == .success,
+              let focusedValue else {
+            return nil
+        }
+
+        let focusedElement = focusedValue as! AXUIElement
+        var selectedValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focusedElement, kAXSelectedTextAttribute as CFString, &selectedValue) == .success else {
+            return nil
+        }
+        return selectedValue as? String
+    }
+
+    private func clippedText(_ text: String?, limit: Int) -> String? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count > limit else { return trimmed }
+
+        let end = trimmed.index(trimmed.startIndex, offsetBy: limit)
+        return "\(trimmed[..<end])\n...[truncated]"
+    }
+
+    private func microphoneStatusText() -> String {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return "authorized"
+        case .denied:
+            return "denied"
+        case .restricted:
+            return "restricted"
+        case .notDetermined:
+            return "not determined"
+        @unknown default:
+            return "unknown"
+        }
+    }
+}

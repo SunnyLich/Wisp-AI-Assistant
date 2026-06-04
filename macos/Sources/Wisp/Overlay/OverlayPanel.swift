@@ -14,13 +14,15 @@ import SwiftUI
 /// Crucially, normal top-level windows (settings, chat) must be opened with
 /// `parent: nil`, NOT as children of this panel — parenting a regular NSWindow to
 /// an NSPanel is the documented Cocoa crash this whole rewrite avoids.
+@MainActor
 final class OverlayPanel: NSPanel {
 
     enum DollState { case idle, listening, thinking, speaking }
 
-    private let model = OverlayModel()
+    private let model: OverlayModel
 
-    init() {
+    init(onTap: @escaping () -> Void = {}) {
+        self.model = OverlayModel(onTap: onTap)
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 96, height: 96),
             styleMask: [.nonactivatingPanel, .borderless],
@@ -41,6 +43,15 @@ final class OverlayPanel: NSPanel {
 
     func setState(_ state: DollState) { model.state = state }
 
+    func toggleVisibility() {
+        if isVisible {
+            orderOut(nil)
+        } else {
+            positionBottomTrailing()
+            orderFrontRegardless()
+        }
+    }
+
     private func positionBottomTrailing() {
         guard let screen = NSScreen.main else { return }
         let v = screen.visibleFrame
@@ -51,8 +62,15 @@ final class OverlayPanel: NSPanel {
 }
 
 /// Observable backing the SwiftUI overlay view.
+@MainActor
 final class OverlayModel: ObservableObject {
     @Published var state: OverlayPanel.DollState = .idle
+
+    let onTap: () -> Void
+
+    init(onTap: @escaping () -> Void) {
+        self.onTap = onTap
+    }
 }
 
 private struct OverlayView: View {
@@ -74,6 +92,9 @@ private struct OverlayView: View {
             .frame(width: 64, height: 64)
             .shadow(radius: 6)
             .padding(16)
+            .onTapGesture {
+                model.onTap()
+            }
             .animation(.easeInOut(duration: 0.25), value: model.state)
     }
 }

@@ -47,7 +47,9 @@ with the originating request `id`, then return the full text as the response
 
 Implemented methods: `ping`, `brain.echo` (streaming demo), `brain.query`
 (streaming, wired to `core.query_pipeline` + `core.llm_clients.client`),
-`brain.cancel`, `__shutdown__`.
+`brain.transcribe` (Swift-recorded audio path → faster-whisper text),
+`brain.tts.synthesize` (text → WAV path for Swift playback), `brain.cancel`,
+`brain.memory.add`, `brain.memory.search`, `__shutdown__`.
 
 ## Run the verified part now (any OS)
 
@@ -62,10 +64,65 @@ models needed.
 
 ## Run the Swift app (on a Mac)
 
-**Easiest — double-click** `Start Wisp (Mac Native).command` in the repo root. It
-checks for the Swift toolchain, picks a Python for the brain (prefers `.venv`,
-else system `python3`), runs the brain self-test, then `swift run Wisp`. This is
-separate from `Start Wisp.command` (the Qt app), which is left untouched.
+**One-command Mac handoff:** double-click `Start Wisp.command` in the repo root.
+It bootstraps `.venv` from `requirements-macos.lock` when needed, validates the
+Python brain sidecar and Swift package, creates a dev `Wisp.app` bundle with
+macOS privacy usage strings, writes logs, then launches the native Swift app.
+
+**Fast validation pass without launching:** from the repo root, run:
+
+```bash
+bash scripts/macos_phase1_validate.sh
+```
+
+That runs the Python sidecar transport test, `swift test`, and `swift build`.
+Every run writes timestamped logs under `build_logs/macos_phase1_<timestamp>/`
+including `environment.log`, `python-brain-sidecar.log`, `swift-test.log`, and
+`swift-build.log`; the dev app wrapper is summarized in `dev-app-bundle.log`.
+If it passes, launch the live menubar/overlay handshake with:
+
+```bash
+bash scripts/macos_phase1_validate.sh --run
+```
+
+`--run` also writes `wisp-app-run.log`. If the app crashes hard, the same log
+folder includes `recent_diagnostic_reports.txt` with matching macOS crash report
+names from `~/Library/Logs/DiagnosticReports`.
+
+Once Wisp launches, test these in order:
+
+1. Menubar `✦` shows `Brain: ok (...)`.
+2. Menubar `Show Prompt` opens the native prompt panel.
+3. Prompt `Echo` mode streams a response without API keys.
+4. Menubar `Run Echo Smoke` does the same from the tray.
+5. Copy text in any app, select text in the frontmost app, then run menubar
+   `Context Snapshot`. It should report active app, clipboard, selected text
+   when Accessibility is trusted, and the focused window title when available.
+6. Run menubar `Permission Snapshot` and confirm Accessibility, Screen
+   Recording, and Microphone states are visible.
+7. Run menubar `Capture Screen Smoke`. If macOS asks for Screen Recording,
+   grant it in System Settings, rerun the command, then verify the saved
+   `screen-capture-*.png` in the same `build_logs/macos_phase1_<timestamp>/`
+   folder.
+8. Menubar `Open Run Logs` opens the current log/artifact folder in Finder.
+9. Click the floating overlay; it should open the prompt.
+10. Menubar `Toggle Overlay` hides/shows the floating panel.
+11. Press `Ctrl-Option-Space`. If macOS asks for Accessibility permission, grant
+   it in System Settings, then use `Retry Hotkey Permission`.
+12. Prompt `Query` mode exercises the real `brain.query` path once `.env` and
+    the Python dependencies are ready; it includes selected text and ambient
+    active-app/clipboard context when available.
+13. Prompt `Query+Screen` captures the main display, saves the PNG beside the
+    logs, attaches it to `brain.query`, and streams the model response.
+14. Menubar `Start Voice Query`, speak, then `Stop Voice Query`. Swift records
+    a WAV, Python transcribes it with faster-whisper, and the transcript feeds
+    Query mode.
+15. Menubar `Speak Last Response` synthesizes the prompt response to a WAV in
+    the log folder and plays it natively with AVFoundation.
+16. Menubar `Remember Prompt` stores the prompt text in the existing memory
+    store; `Search Memory` retrieves relevant facts for the prompt text.
+
+`Start Wisp (Mac Native).command` is kept as an alias to `Start Wisp.command`.
 
 **Manual:**
 
@@ -75,13 +132,13 @@ cd macos
 export WISP_BRAIN_PYTHON=$(which python3)
 export WISP_BRAIN_DIR="$PWD/brain"
 export WISP_REPO_ROOT="$PWD/.."      # so the sidecar can import `core`
-swift run Wisp                        # menubar ✦ + floating overlay + handshake
+../build/WispNative/Wisp.app/Contents/MacOS/Wisp  # after validation builds it
 swift test                            # protocol framing tests
 ```
 
 If double-click is blocked ("cannot be opened"), run once:
-`chmod +x "Start Wisp (Mac Native).command"` (the git index already marks it
-executable, so a fresh clone/pull won't need this).
+`chmod +x "Start Wisp.command" "Start Wisp (Mac Native).command"` (the git index
+already marks both executable, so a fresh clone/pull should not need this).
 
 `brain.query` additionally needs the `core/` runtime deps (see repo
 `requirements.txt`) and provider API keys/`.env`; `ping`/`brain.echo` do not.

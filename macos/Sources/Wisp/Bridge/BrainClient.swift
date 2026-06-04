@@ -121,19 +121,19 @@ actor BrainClient {
         let req = BrainProtocol.request(id: id, method: method, params: params)
         let line = try BrainProtocol.encodeLine(req)
 
-        return try await withThrowingTaskGroup(of: [String: Any]?.self) { group in
-            group.addTask {
-                try await withCheckedThrowingContinuation { cont in
-                    Task { await self.registerUnary(id: id, cont: cont, line: line) }
-                }
-            }
-            group.addTask {
+        let timeoutTask = Task { [weak self] in
+            do {
                 try await Task.sleep(for: timeout)
-                throw BrainError.remote("\(method) timed out")
+                guard !Task.isCancelled else { return }
+                await self?.timeoutUnary(id: id, method: method)
+            } catch {
+                // The normal response path cancels this task.
             }
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+        }
+        defer { timeoutTask.cancel() }
+
+        return try await withCheckedThrowingContinuation { cont in
+            registerUnary(id: id, cont: cont, line: line)
         }
     }
 
@@ -147,28 +147,45 @@ actor BrainClient {
         }
     }
 
+    private func timeoutUnary(id: Int, method: String) {
+        guard let cont = unaryPending.removeValue(forKey: id) else { return }
+        cont.resume(throwing: BrainError.remote("\(method) timed out"))
+    }
+
     /// Streaming request: yields id-tagged `.event` partials, then one terminal
     /// `.result`, then finishes. Used for `brain.query` / `brain.echo`.
-    func stream(_ method: String, _ params: [String: Any] = [:]) -> AsyncThrowingStream<BrainStreamItem, Error> {
+    nonisolated func stream(_ method: String, _ params: [String: Any] = [:]) -> AsyncThrowingStream<BrainStreamItem, Error> {
         AsyncThrowingStream { continuation in
             Task {
-                do {
-                    try await self.ensureStarted()
-                    let id = await self.allocStream(continuation)
-                    let req = BrainProtocol.request(id: id, method: method, params: params)
-                    let line = try BrainProtocol.encodeLine(req)
-                    try await self.writeLine(line)
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+                await self.startStream(method, params, continuation: continuation)
             }
         }
     }
 
-    private func allocStream(_ cont: AsyncThrowingStream<BrainStreamItem, Error>.Continuation) -> Int {
-        let id = nextID; nextID += 1
-        streamPending[id] = cont
-        return id
+    private func startStream(
+        _ method: String,
+        _ params: [String: Any],
+        continuation: AsyncThrowingStream<BrainStreamItem, Error>.Continuation
+    ) {
+        var streamID: Int?
+        do {
+            try ensureStarted()
+            let id = nextID; nextID += 1
+            streamID = id
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.cancelStreamIfPending(id) }
+            }
+            streamPending[id] = continuation
+
+            let req = BrainProtocol.request(id: id, method: method, params: params)
+            let line = try BrainProtocol.encodeLine(req)
+            try writeLine(line)
+        } catch {
+            if let streamID {
+                streamPending.removeValue(forKey: streamID)
+            }
+            continuation.finish(throwing: error)
+        }
     }
 
     private func writeLine(_ line: Data) throws {
@@ -178,7 +195,21 @@ actor BrainClient {
 
     /// Request cooperative cancellation of an in-flight stream by its id.
     func cancel(streamID id: Int) async {
-        _ = try? await call("brain.cancel", ["target": id])
+        cancelStreamIfPending(id)
+    }
+
+    private func cancelStreamIfPending(_ id: Int) {
+        guard streamPending.removeValue(forKey: id) != nil else { return }
+        sendCancel(for: id)
+    }
+
+    private func sendCancel(for targetID: Int) {
+        guard let stdinHandle else { return }
+        let id = nextID; nextID += 1
+        let req = BrainProtocol.request(id: id, method: "brain.cancel", params: ["target": targetID])
+        if let line = try? BrainProtocol.encodeLine(req) {
+            try? stdinHandle.write(contentsOf: line)
+        }
     }
 
     // MARK: - Receiving
