@@ -13,6 +13,7 @@ from __future__ import annotations
 import config
 from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
+from core.system.native_locks import ssl_init_lock
 from core.llm_clients.routes import (
     GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
     DEEPSEEK_BASE_URL as _DEEPSEEK_BASE_URL,
@@ -710,10 +711,14 @@ def reset_clients() -> None:
     """Discard all cached API clients so they are rebuilt with the current config."""
     global _openai_client, _anthropic_client, _chat_openai_client, _chat_anthropic_client
     global _vision_openai_client, _vision_anthropic_client, _codex_client, _chat_codex_client
+    global _dynamic_anthropic_client_cache
     _openai_client = _anthropic_client = None
     _chat_openai_client = _chat_anthropic_client = None
     _vision_openai_client = _vision_anthropic_client = None
     _codex_client = _chat_codex_client = None
+    with _dynamic_client_lock:
+        _dynamic_openai_clients.clear()
+        _dynamic_anthropic_client_cache = None
     _TOOL_REGISTRY.plugin_dir = Path(config.TOOL_PLUGIN_DIR)
     _TOOL_REGISTRY.refresh()
 
@@ -824,7 +829,17 @@ _OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
 }
 
 
-def _dynamic_openai_client(provider: str):
+# Per-provider cache for the route/fallback clients. Building these on every
+# query rebuilt an SSL context each time; worse, the build raced with the TTS
+# client's SSL build (separate thread, same query) and segfaulted on macOS.
+# Cache + serialize construction so the SSL context is built once, never
+# concurrently. Cleared by reset_clients() when settings change.
+_dynamic_openai_clients: dict[str, object] = {}
+_dynamic_anthropic_client_cache = None
+_dynamic_client_lock = _threading.Lock()
+
+
+def _build_dynamic_openai_client(provider: str):
     from openai import OpenAI
 
     # max_retries=1: allow one quick same-model retry for a transient blip, but
@@ -840,10 +855,44 @@ def _dynamic_openai_client(provider: str):
     return OpenAI(api_key=config.OPENAI_API_KEY, max_retries=_OPENAI_MAX_RETRIES)
 
 
-def _dynamic_anthropic_client():
-    import anthropic
+def _dynamic_openai_client(provider: str):
+    with _dynamic_client_lock:
+        client = _dynamic_openai_clients.get(provider)
+        if client is None:
+            with ssl_init_lock():
+                client = _build_dynamic_openai_client(provider)
+            _dynamic_openai_clients[provider] = client
+        return client
 
-    return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+def _dynamic_anthropic_client():
+    global _dynamic_anthropic_client_cache
+    with _dynamic_client_lock:
+        if _dynamic_anthropic_client_cache is None:
+            import anthropic
+            with ssl_init_lock():
+                _dynamic_anthropic_client_cache = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        return _dynamic_anthropic_client_cache
+
+
+def prewarm() -> None:
+    """Build the primary query-route client once at startup.
+
+    Runs sequentially with tts.prewarm() on the startup thread, so the LLM and
+    TTS SSL contexts are built one after another here instead of racing on the
+    first query (the macOS segfault). Also removes the handshake from the first
+    query. Best-effort: a missing key or unreachable provider must not crash
+    startup — the real query path handles those.
+    """
+    try:
+        provider = (config.LLM_PROVIDER or "").strip().lower()
+        if provider == "anthropic":
+            _dynamic_anthropic_client()
+        elif provider in _OPENAI_COMPAT_PROVIDER_SET:
+            _dynamic_openai_client(provider)
+        # chatgpt/copilot use the Codex transport, which builds no SSL context here.
+    except Exception:
+        pass
 
 
 def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list[str]:
@@ -1091,13 +1140,14 @@ def _get_openai_client():
     global _openai_client
     if _openai_client is None:
         from openai import OpenAI
-        if config.LLM_PROVIDER.lower() == "groq":
-            _openai_client = OpenAI(
-                api_key=config.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-            )
-        else:
-            _openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+        with ssl_init_lock():
+            if config.LLM_PROVIDER.lower() == "groq":
+                _openai_client = OpenAI(
+                    api_key=config.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1",
+                )
+            else:
+                _openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
     return _openai_client
 
 
@@ -1108,13 +1158,14 @@ def _get_chat_openai_client():
     global _chat_openai_client
     if _chat_openai_client is None:
         from openai import OpenAI
-        if config.CHAT_LLM_PROVIDER.lower() == "groq":
-            _chat_openai_client = OpenAI(
-                api_key=config.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-            )
-        else:
-            _chat_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+        with ssl_init_lock():
+            if config.CHAT_LLM_PROVIDER.lower() == "groq":
+                _chat_openai_client = OpenAI(
+                    api_key=config.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1",
+                )
+            else:
+                _chat_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
     return _chat_openai_client
 
 
@@ -1122,7 +1173,8 @@ def _get_anthropic_client():
     global _anthropic_client
     if _anthropic_client is None:
         import anthropic
-        _anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        with ssl_init_lock():
+            _anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     return _anthropic_client
 
 
@@ -1132,7 +1184,8 @@ def _get_chat_anthropic_client():
     global _chat_anthropic_client
     if _chat_anthropic_client is None:
         import anthropic
-        _chat_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        with ssl_init_lock():
+            _chat_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     return _chat_anthropic_client
 
 
@@ -1140,18 +1193,19 @@ def _get_vision_openai_client():
     global _vision_openai_client
     if _vision_openai_client is None:
         from openai import OpenAI
-        if config.VISION_LLM_PROVIDER.lower() == "groq":
-            _vision_openai_client = OpenAI(
-                api_key=config.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-            )
-        elif config.VISION_LLM_PROVIDER.lower() == "google":
-            _vision_openai_client = OpenAI(
-                api_key=config.GOOGLE_API_KEY,
-                base_url=_GOOGLE_OPENAI_BASE_URL,
-            )
-        else:
-            _vision_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+        with ssl_init_lock():
+            if config.VISION_LLM_PROVIDER.lower() == "groq":
+                _vision_openai_client = OpenAI(
+                    api_key=config.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1",
+                )
+            elif config.VISION_LLM_PROVIDER.lower() == "google":
+                _vision_openai_client = OpenAI(
+                    api_key=config.GOOGLE_API_KEY,
+                    base_url=_GOOGLE_OPENAI_BASE_URL,
+                )
+            else:
+                _vision_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
     return _vision_openai_client
 
 
@@ -1159,7 +1213,8 @@ def _get_vision_anthropic_client():
     global _vision_anthropic_client
     if _vision_anthropic_client is None:
         import anthropic
-        _vision_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        with ssl_init_lock():
+            _vision_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     return _vision_anthropic_client
 
 

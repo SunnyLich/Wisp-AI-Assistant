@@ -324,6 +324,11 @@ class App:
     def _prewarm(self):
         audio.prewarm_filler()  # decode filler WAVs so the hotkey path does no disk I/O
         tts_module.prewarm()
+        # Build the LLM client now too, sequentially after TTS — on macOS this
+        # keeps the two SSL contexts from being built concurrently on the first
+        # query (Security-framework segfault); everywhere it removes the first
+        # query's handshake.
+        llm.prewarm()
         print("[main] Connections pre-warmed.")
 
     # ------------------------------------------------------------------

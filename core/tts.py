@@ -19,6 +19,8 @@ import config
 import threading
 from typing import Generator, Iterable
 
+from core.system.native_locks import ssl_init_lock
+
 
 SAMPLE_RATE = 44100   # Hz  (Cartesia / default)
 CHANNELS = 1
@@ -42,9 +44,12 @@ def _get_cartesia_ws():
     with _cartesia_ws_lock:
         if _cartesia_ws is None:
             from cartesia import Cartesia  # type: ignore
-            _cartesia_client = Cartesia(api_key=config.CARTESIA_API_KEY)
-            _cartesia_ws_manager = _cartesia_client.tts.websocket_connect()
-            _cartesia_ws = _cartesia_ws_manager.__enter__()
+            # Building the client creates an SSL context (Security framework on
+            # macOS) — serialize against concurrent LLM-client construction.
+            with ssl_init_lock():
+                _cartesia_client = Cartesia(api_key=config.CARTESIA_API_KEY)
+                _cartesia_ws_manager = _cartesia_client.tts.websocket_connect()
+                _cartesia_ws = _cartesia_ws_manager.__enter__()
         return _cartesia_ws
 
 
