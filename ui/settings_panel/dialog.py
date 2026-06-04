@@ -7,6 +7,7 @@ Launch via tray icon â†’ Settings, or call open_settings().
 """
 from __future__ import annotations
 import os
+import sys
 import logging
 import threading
 from contextlib import contextmanager
@@ -2841,7 +2842,12 @@ def _short_test_error(message: str, route_name: str) -> str:
 
 def open_settings(parent=None, on_apply=None):
     global _settings_dialog
-    dialog_parent = None if os.name == "nt" else parent
+    # Never parent the settings window to the floating icon overlay: that overlay
+    # is a Qt.Tool window (an NSPanel on macOS, a no-taskbar tool window on
+    # Windows), and attaching a normal child window to it crashes Cocoa on show()
+    # and misbehaves on Windows. Only Linux keeps the parent. Elsewhere the dialog
+    # is top-level and grabs focus itself via raise_()/activateWindow() below.
+    dialog_parent = parent if sys.platform.startswith("linux") else None
     if _settings_dialog is None:
         _settings_dialog = SettingsDialog(dialog_parent, on_apply=on_apply)
     else:

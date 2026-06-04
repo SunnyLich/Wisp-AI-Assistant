@@ -38,3 +38,13 @@ Known protected boundaries:
 When adding a new provider SDK or native macOS API, wrap the smallest possible
 construction/access block. Do not hold the lock for a full streaming response
 unless the native library requires it.
+
+## Window parenting (separate from the threading rules above)
+
+The floating icon overlay (`ui/overlay.py`) is a `Qt.WindowType.Tool` window —
+an NSPanel on macOS. Do **not** parent a normal top-level window (settings,
+plugin manager, chat, viewers) to it: attaching a regular child NSWindow to an
+NSPanel segfaults Cocoa on `show()`. Open these windows with `parent=None` and
+let them grab focus via `raise_()` + `activateWindow()`. `open_settings()` and
+`open_plugin_manager()` keep the parent only on Linux; everywhere else they pass
+`None`. This is a Cocoa window-graph hazard, not a worker-thread hazard.

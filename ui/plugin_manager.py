@@ -185,8 +185,12 @@ _dialog_instance: PluginManagerDialog | None = None
 
 def open_plugin_manager(parent=None):
     global _dialog_instance
+    # Don't parent to the floating icon overlay (a Qt.Tool / NSPanel window):
+    # attaching a normal child window to it crashes Cocoa on show(). Match the
+    # settings dialog — only Linux keeps the parent. See ui/settings_panel/dialog.py.
+    dialog_parent = parent if sys.platform.startswith("linux") else None
     if _dialog_instance is None or not _dialog_instance.isVisible():
-        _dialog_instance = PluginManagerDialog(parent)
+        _dialog_instance = PluginManagerDialog(dialog_parent)
     _dialog_instance.show()
     _dialog_instance.raise_()
     _dialog_instance.activateWindow()
