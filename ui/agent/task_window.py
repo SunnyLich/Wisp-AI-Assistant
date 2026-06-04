@@ -98,7 +98,11 @@ def make_agent_task_action(
     """
     action = QAction("Start agent task...", owner)
     notice_callback = _approval_notice_callback_for(owner)
-    action.triggered.connect(lambda: open_agent_task_dialog(None, on_submit, notice_callback))
+    # Defer to the next event-loop turn: opening a window synchronously from a
+    # QMenu action segfaults on macOS while the menu's Cocoa tracking loop unwinds.
+    action.triggered.connect(
+        lambda: QTimer.singleShot(0, lambda: open_agent_task_dialog(None, on_submit, notice_callback))
+    )
     return action
 
 
@@ -106,7 +110,10 @@ def make_agent_history_action(owner: QWidget, parent: QWidget | None = None) -> 
     """Create the tray QAction for browsing previous agent runs."""
     action = QAction("Agent task history...", owner)
     notice_callback = _approval_notice_callback_for(owner)
-    action.triggered.connect(lambda: open_agent_history(None, notice_callback))
+    # Deferred for the same reason as the agent-task action above.
+    action.triggered.connect(
+        lambda: QTimer.singleShot(0, lambda: open_agent_history(None, notice_callback))
+    )
     return action
 
 

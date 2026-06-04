@@ -154,11 +154,61 @@ def stt_stop_and_transcribe() -> str:
     return text
 
 
+def stt_selftest(seconds: float = 1.0) -> dict[str, Any]:
+    """Mic-free verification: load the model and transcribe a synthetic buffer.
+
+    Proves faster-whisper/torch load and run *inside the worker* without any audio
+    device or voice input. The transcript is expected to be empty (the buffer is
+    near-silence) — we are checking the pipeline executes, not accuracy.
+    """
+    import time
+    import numpy as np
+    import config
+
+    t0 = time.time()
+    model = _get_model()
+    load_seconds = time.time() - t0
+
+    n = int(_SAMPLE_RATE * max(0.3, seconds))
+    audio = (np.random.default_rng(0).standard_normal(n).astype("float32")) * 0.001
+
+    t1 = time.time()
+    segments, _info = model.transcribe(audio, beam_size=1, vad_filter=True)
+    text = " ".join(seg.text.strip() for seg in segments).strip()
+    return {
+        "ok": True,
+        "model": config.STT_MODEL,
+        "text": text,
+        "load_seconds": round(load_seconds, 2),
+        "transcribe_seconds": round(time.time() - t1, 2),
+        "pid": os.getpid(),
+    }
+
+
+def stt_mic_probe() -> dict[str, Any]:
+    """Open then immediately close the mic InputStream to confirm CoreAudio in the
+    worker does not segfault. Returns ``opened: False`` (no raise) if the machine
+    has no input device, so a headless/remote Mac degrades gracefully."""
+    import sounddevice as sd
+    try:
+        stream = sd.InputStream(
+            samplerate=_SAMPLE_RATE, channels=1, dtype="float32", blocksize=1024
+        )
+        stream.start()
+        stream.stop()
+        stream.close()
+        return {"opened": True, "error": None, "pid": os.getpid()}
+    except Exception as exc:  # noqa: BLE001 — reported, not raised
+        return {"opened": False, "error": f"{type(exc).__name__}: {exc}", "pid": os.getpid()}
+
+
 HANDLERS: dict[str, Callable[..., Any]] = {
     "ping": ping,
     "stt.prewarm": stt_prewarm,
     "stt.start_recording": stt_start_recording,
     "stt.stop_and_transcribe": stt_stop_and_transcribe,
+    "stt.selftest": stt_selftest,
+    "stt.mic_probe": stt_mic_probe,
 }
 
 

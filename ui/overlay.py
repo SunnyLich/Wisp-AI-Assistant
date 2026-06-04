@@ -288,12 +288,21 @@ class IconOverlay(QMainWindow):
             self._icon_hide_timer.start()
 
     def _open_settings(self):
+        # Defer the actual open to the next event-loop turn. This action fires
+        # from inside the right-click QMenu; showing a window synchronously while
+        # the menu's native Cocoa tracking loop is still unwinding segfaults on
+        # macOS. singleShot(0) lets the menu fully close first. (The menu actions
+        # wired to App's *queued* signals — memory/chat — already get this for
+        # free, which is why they don't crash and Settings did.)
         from ui.settings_panel.dialog import open_settings
-        open_settings(parent=self, on_apply=self.signals.settings_applied.emit)
+        QTimer.singleShot(
+            0, lambda: open_settings(parent=self, on_apply=self.signals.settings_applied.emit)
+        )
 
     def _open_plugin_manager(self):
+        # Deferred for the same reason as _open_settings (opened from a QMenu action).
         from ui.plugin_manager import open_plugin_manager
-        open_plugin_manager(parent=self)
+        QTimer.singleShot(0, lambda: open_plugin_manager(parent=self))
 
     # ------------------------------------------------------------------
     # Icon visibility
