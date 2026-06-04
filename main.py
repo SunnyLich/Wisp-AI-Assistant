@@ -658,7 +658,6 @@ class App(QObject):
     def _rewrite_and_paste(self, intent_prompt: str, capture_data: tuple | None, target_hwnd: int, gen_id: int = 0):
         """Worker: stream LLM rewrite using intent_prompt, then paste into the original window."""
         import time
-        import pyperclip
 
         selected_text = (capture_data[0] or "") if capture_data else ""
 
@@ -708,10 +707,19 @@ class App(QObject):
         # Paste result back into the original window (replaces the selection).
         try:
             from core.platform_utils import set_foreground_window, send_keys, PASTE_COMBO
-            pyperclip.copy(reply_text)
+            if sys.platform == "darwin":
+                from core.platform import macos_native
+            else:
+                import pyperclip
+
+                pyperclip.copy(reply_text)
             set_foreground_window(target_hwnd)
             time.sleep(0.15)   # let the focus switch settle
-            send_keys(PASTE_COMBO)
+            if sys.platform == "darwin":
+                if not macos_native.paste_text(reply_text, PASTE_COMBO):
+                    raise RuntimeError("Could not paste through macOS helper")
+            else:
+                send_keys(PASTE_COMBO)
         except Exception as exc:
             print(f"[main] Paste-back error: {exc}")
 

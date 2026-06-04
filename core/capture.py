@@ -7,18 +7,19 @@ Two modes:
                        falls back to clipboard save/restore if UIA fails.
   2. Screen snippet  — takes a screenshot of the active monitor region.
 """
+from __future__ import annotations
+
 import sys
 import time
 import logging
 import pyperclip
-import mss
-import mss.tools
 from PIL import Image
 import io
 
 from core.system.main_thread import run_on_main
 
 _IS_LINUX = sys.platform.startswith("linux")
+_IS_MAC = sys.platform == "darwin"
 _log = logging.getLogger("wisp.capture")
 
 
@@ -67,6 +68,11 @@ def _get_selected_text_uia() -> str | None:
 def _get_selected_text_clipboard() -> str | None:
     """Fallback: Ctrl+C with save/restore so existing clipboard is preserved."""
     from core.platform_utils import send_keys, COPY_COMBO
+
+    if _IS_MAC:
+        from core.platform import macos_native
+
+        return macos_native.get_selected_text(COPY_COMBO)
 
     previous = _safe_get_clipboard()
     send_keys(COPY_COMBO)
@@ -152,10 +158,22 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
     Returns:
         PIL Image of the captured region.
     """
-    # mss talks to CoreGraphics on macOS; capture from the main thread (run_on_main
-    # is inline when already there / off-macOS) so a hotkey-triggered grab on a
-    # worker thread can't trap under Qt's Cocoa run loop.
+    if _IS_MAC:
+        from tempfile import gettempdir
+        from pathlib import Path
+        from core.platform import macos_native
+
+        out_path = Path(gettempdir()) / "wisp_screen_snippet.png"
+        if macos_native.capture_screen_to_file(out_path, region=region):
+            with Image.open(out_path) as img:
+                return img.convert("RGB")
+        raise RuntimeError("macOS screen capture failed")
+
+    # Windows/Linux path. mss is imported lazily so macOS does not load or drive
+    # the Python CoreGraphics capture backend inside the Qt process.
     def _grab() -> Image.Image:
+        import mss
+
         with mss.mss() as sct:
             monitor = region if region else sct.monitors[1]  # monitors[1] = primary
             raw = sct.grab(monitor)
@@ -177,12 +195,17 @@ def get_clipboard_text() -> str | None:
     Return the current clipboard text as context, without synthesising a copy
     keypress (unlike get_selected_text's fallback path).
 
-    Cross-platform via pyperclip: native on Windows/macOS; on Linux it needs
+    Cross-platform via pyperclip on Windows/Linux; on Linux it needs
     xclip/xsel (X11) or wl-clipboard (Wayland). If none is available pyperclip
     raises, which _safe_get_clipboard swallows — so this degrades to None
     rather than crashing.
     """
-    text = _safe_get_clipboard()
+    if _IS_MAC:
+        from core.platform import macos_native
+
+        text = macos_native.get_clipboard_text()
+    else:
+        text = _safe_get_clipboard()
     if not text:
         return None
     text = text.strip()

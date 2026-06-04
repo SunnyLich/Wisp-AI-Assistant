@@ -50,6 +50,7 @@ from urllib.parse import urlparse, unquote
 from core.system.native_locks import ssl_init_lock
 
 _IS_WIN = sys.platform == "win32"
+_IS_MAC = sys.platform == "darwin"
 
 # ---------------------------------------------------------------------------
 # Snapshot data classes
@@ -505,7 +506,11 @@ _CF_DIB = 8
 
 
 def _fetch_clipboard() -> ClipboardInfo:
-    return _fetch_clipboard_win() if _IS_WIN else _fetch_clipboard_linux()
+    if _IS_WIN:
+        return _fetch_clipboard_win()
+    if _IS_MAC:
+        return _fetch_clipboard_macos()
+    return _fetch_clipboard_linux()
 
 
 def _fetch_clipboard_win() -> ClipboardInfo:
@@ -536,6 +541,22 @@ def _fetch_clipboard_linux() -> ClipboardInfo:
     try:
         import pyperclip  # type: ignore
         text = pyperclip.paste()
+        if text:
+            info.text = _redact(text.strip())
+            info.fmt = "text"
+        else:
+            info.fmt = "empty"
+    except Exception:
+        info.fmt = "empty"
+    return info
+
+
+def _fetch_clipboard_macos() -> ClipboardInfo:
+    info = ClipboardInfo()
+    try:
+        from core.platform import macos_native
+
+        text = macos_native.get_clipboard_text()
         if text:
             info.text = _redact(text.strip())
             info.fmt = "text"
@@ -758,16 +779,20 @@ def _capture_screen_to_file() -> str:
     Take a full-screen screenshot and save it as a PNG next to the JSON
     snapshot.  Returns the path, or "" on failure.
     """
+    out_path = os.path.join(tempfile.gettempdir(), "ai_assistant_screen.png")
+    if sys.platform == "darwin":
+        try:
+            from core.platform import macos_native
+
+            return out_path if macos_native.capture_screen_to_file(out_path) else ""
+        except Exception:
+            return ""
+
     try:
         import mss
         import mss.tools
         from core.system.main_thread import run_on_main
 
-        out_path = os.path.join(tempfile.gettempdir(), "ai_assistant_screen.png")
-
-        # mss drives CoreGraphics on macOS; this runs from worker threads, so grab
-        # on the main thread (run_on_main is inline off-macOS) to avoid trapping
-        # under Qt's Cocoa run loop.
         def _grab() -> None:
             with mss.mss() as sct:
                 monitor = sct.monitors[1]  # primary monitor

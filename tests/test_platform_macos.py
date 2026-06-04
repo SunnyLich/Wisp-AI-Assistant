@@ -73,6 +73,15 @@ class MacPlatformTests(unittest.TestCase):
         self.assertEqual(self.pu.COPY_COMBO, "cmd+c")
         self.assertEqual(self.pu.PASTE_COMBO, "cmd+v")
 
+    def test_send_keys_uses_out_of_process_helper_first(self):
+        from core.platform import macos_native
+
+        calls: list[str] = []
+        with patch.object(macos_native, "send_key_combo", side_effect=lambda combo: calls.append(combo) or True), \
+             patch.dict(sys.modules, {"Quartz": None}):
+            self.pu.send_keys("cmd+c")
+        self.assertEqual(calls, ["cmd+c"])
+
     def test_get_foreground_window_returns_frontmost_layer0_window(self):
         windows = [
             {"kCGWindowNumber": 7, "kCGWindowOwnerPID": 999, "kCGWindowLayer": 25},  # menu bar

@@ -6,13 +6,14 @@ Windows: uses ctypes Win32 APIs.
 Linux:   uses pynput.keyboard.Controller (X11) for key injection and
          python-xlib + ewmh for window management (both pip-installable;
          no system packages required).
-macOS:   uses pynput.keyboard.Controller for key injection and
+macOS:   uses out-of-process system helpers for simple key combos and
          Quartz + AppKit (pyobjc) for window enumeration/focus. Requires the
          user to grant Accessibility (key injection / focus) and Screen
          Recording (window titles) permissions in System Settings.
 """
 from __future__ import annotations
 
+import os
 import sys
 
 from core.system.main_thread import run_on_main
@@ -35,24 +36,27 @@ def send_keys(combo: str) -> None:
     Inject a key combo (e.g. "ctrl+c", "ctrl+v") into the focused window.
 
     Windows: delegates to the *keyboard* library (pywin32-based injection).
-    macOS:   posts CGEvents via Quartz with fixed virtual keycodes. We must NOT
-             use pynput.keyboard.Controller here: its char→keycode translation
-             calls main-thread-only HIToolbox APIs (UCKeyTranslate /
-             keycode_context), and invoking that from the hotkey/worker thread
-             while the global CGEventTap run loop is live trace-traps (SIGTRAP).
+    macOS:   first delegates simple combos to /usr/bin/osascript so Python does
+             not post CGEvents inside the Qt process. The legacy PyObjC CGEvent
+             fallback is opt-in via WISP_MACOS_ALLOW_PYOBJC_KEYS=1.
     Linux:   uses pynput.keyboard.Controller via Xlib — no root required.
     """
     if IS_WIN:
         import keyboard  # type: ignore
         keyboard.send(combo)
     elif IS_MAC:
-        _send_keys_macos(combo)
+        from core.platform import macos_native
+
+        if macos_native.send_key_combo(combo):
+            return
+        if os.environ.get("WISP_MACOS_ALLOW_PYOBJC_KEYS") == "1":
+            _send_keys_macos_pyobjc(combo)
     else:
         _send_keys_pynput(combo)
 
 
-# macOS ANSI virtual keycodes (kVK_*) — fixed layout-independent codes so we
-# never invoke HIToolbox keyboard-layout translation off the main thread.
+# Legacy macOS ANSI virtual keycodes (kVK_*) — fixed layout-independent codes
+# so we never invoke HIToolbox keyboard-layout translation off the main thread.
 _MAC_VK: dict[str, int] = {
     "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
     "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
@@ -78,7 +82,7 @@ _MAC_MOD_FLAGS: dict[str, int] = {
 }
 
 
-def _send_keys_macos(combo: str) -> None:
+def _send_keys_macos_pyobjc(combo: str) -> None:
     import Quartz  # type: ignore
 
     flags = 0

@@ -20,8 +20,13 @@ OpenSSL/Security at the same time after a fresh install or dependency rebuild.
 Known protected boundaries:
 
 - `core.audio` and `core.stt`: sounddevice stream open/start/stop/close.
-- `core.capture` and `core.context_fetcher`: `mss` screen capture.
-- `core.platform_utils`: CGEvent posting, window enumeration, app activation.
+- `core.capture` and `core.context_fetcher`: screen capture uses macOS'
+  out-of-process `screencapture` helper instead of in-process `mss`.
+- `core.platform_utils`: simple copy/paste key combos use out-of-process
+  `osascript`; window enumeration and app activation still hop to the main
+  thread while they remain PyObjC-backed.
+- `core.capture`, `core.context_fetcher`, and paste-back in `main`: macOS
+  clipboard reads/writes use `pbpaste`/`pbcopy` instead of pyperclip.
 - `core.hotkeys` and `ui.intent_overlay`: no pynput global event tap on macOS.
 - `core.llm_clients.client`, `core.tts`, `core.filler_bake`,
   `core.memory_store.store`, and `core.context_fetcher`: SDK client creation.
