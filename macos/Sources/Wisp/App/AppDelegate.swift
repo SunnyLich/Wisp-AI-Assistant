@@ -10,7 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusItemController?
     private var overlay: OverlayPanel?
     private var promptPanel: PromptPanel?
+    private var intentPanel: IntentPanel?
     private var hotkey: HotkeyController?
+    private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
     private let screenCapture = ScreenCaptureController()
     private let audioRecorder = AudioRecorder()
@@ -36,14 +38,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         promptPanel = prompt
 
+        intentPanel = IntentPanel { [weak self] selection in
+            Task { await self?.runIntent(selection) }
+        }
+
         let panel = OverlayPanel { [weak self] in
-            self?.showPrompt()
+            self?.showIntentPicker()
         }
         panel.orderFrontRegardless()
         overlay = panel
 
         let status = StatusItemController(
-            onShowPrompt: { [weak self] in self?.showPrompt() },
+            onShowPrompt: { [weak self] in self?.showIntentPicker() },
             onRunEchoSmoke: { [weak self] in self?.runEchoSmoke() },
             onShowContext: { [weak self] in self?.showContextSnapshot() },
             onShowPermissions: { [weak self] in self?.showPermissionSnapshot() },
@@ -67,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController = status
 
         let hotkey = HotkeyController { [weak self] in
-            self?.showPrompt()
+            self?.showIntentPicker()
         }
         self.hotkey = hotkey
         installHotkey(promptForPermission: true)
@@ -113,6 +119,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPrompt() {
         promptPanel?.showPrompt()
+    }
+
+    private func showIntentPicker(callerIndex: Int = 0) {
+        appConfig = WispConfig.load()
+        let caller = callerIndex < appConfig.callers.count ? appConfig.callers[callerIndex] : CallerConfig.empty
+        intentPanel?.show(caller: caller)
+    }
+
+    private func runIntent(_ selection: IntentSelection) async {
+        promptPanel?.showPrompt()
+        promptPanel?.setPrompt(selection.prompt)
+        await runPrompt(selection.prompt, mode: .query, caller: selection.caller)
     }
 
     private func runEchoSmoke() {
@@ -384,7 +402,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func runPrompt(_ text: String, mode: PromptMode) async {
+    private func runPrompt(_ text: String, mode: PromptMode, caller: CallerConfig? = nil) async {
         guard let client = brain else {
             promptPanel?.failRequest("brain client is not available")
             statusController?.setBrainStatus("error: missing client")
@@ -396,7 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("\(mode.rawValue.lowercased()) running")
 
         do {
-            let params = try paramsForPrompt(text, mode: mode)
+            let params = try paramsForPrompt(text, mode: mode, caller: caller)
             var assembled = ""
 
             for try await item in client.stream(mode.method, params) {
@@ -431,25 +449,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func paramsForPrompt(_ text: String, mode: PromptMode) throws -> [String: Any] {
+    private func paramsForPrompt(_ text: String, mode: PromptMode, caller: CallerConfig? = nil) throws -> [String: Any] {
         switch mode {
         case .echo:
             return ["text": text, "chunk_size": 1, "delay": 0.02]
         case .query, .queryScreen:
+            let policy = caller ?? (appConfig.callers.first ?? CallerConfig.empty)
             let snapshot = nativeContext.snapshot(promptForAccessibility: false)
             var params: [String: Any] = [
                 "intent_prompt": text,
-                "ambient_text": snapshot.ambientText,
-                "use_tools": false,
+                "ambient_text": policy.contextAmbient ? snapshot.ambientText(includeClipboard: policy.contextClipboard) : "",
+                "use_tools": policy.contextTools,
+                "allow_screenshot_tool": policy.contextScreenshot == .model,
             ]
             if let selected = snapshot.selectedText, !selected.isEmpty {
                 params["selected"] = selected
             }
-            if mode == .queryScreen {
+            if mode == .queryScreen || policy.contextScreenshot == .auto {
                 let capture = try screenCapture.captureMainDisplay(promptForPermission: true)
                 let data = try Data(contentsOf: capture.url)
                 params["screenshot_b64"] = data.base64EncodedString()
-                params["ambient_text"] = "\(snapshot.ambientText)\n\nScreenshot saved: \(capture.url.path)"
+                let baseAmbient = params["ambient_text"] as? String ?? ""
+                params["ambient_text"] = "\(baseAmbient)\(baseAmbient.isEmpty ? "" : "\n\n")Screenshot saved: \(capture.url.path)"
                 NSLog("[wisp] query screenshot attached: %@ (%dx%d)", capture.url.path, capture.width, capture.height)
             }
             return params

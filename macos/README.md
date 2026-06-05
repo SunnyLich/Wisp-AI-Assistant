@@ -1,27 +1,29 @@
-# Wisp macOS Native Experiments
+# Wisp macOS Native App
 
-The default macOS product is the shared Python/Qt app launched from the repo
-root with `Start Wisp.command`. It should match the Windows UI in look,
-workflow, and functionality. Platform-specific macOS behavior belongs behind
-that UI in `core/platform*`, `core/macos_helper`, launchers, or packaging.
+The macOS product direction is now the Swift/AppKit host in `Sources/Wisp`.
+It should match the Windows Wisp workflow in look, behavior, configuration,
+and feature coverage while moving crash-prone OS work out of the Python/Qt
+process.
 
-This `macos/` directory contains experimental native-service work:
+This `macos/` directory contains the native app and its Python brain sidecar:
 
 ```text
 macos/
-  brain/             Python sidecar protocol prototype
-  Sources/Wisp/      Swift/AppKit prototype host
+  brain/             Python sidecar for LLM, memory, TTS/STT, and agents
+  Sources/Wisp/      Swift/AppKit product host
   Tests/WispTests/   Swift protocol tests
-  ui_host/           Qt host used by the Swift prototype
+  ui_host/           temporary bridge for windows not yet ported to Swift
 ```
 
-These pieces are useful for validating native macOS services such as sidecar
-IPC, AppKit capture, Swift audio recording/playback, and future packaging. They
-are not the default product UI.
+The Swift app owns the macOS overlay, tray, caller/intent picker, native
+context, screen capture, voice recording, and audio playback surfaces. The
+Python sidecar keeps using the existing OS-agnostic backend modules until their
+visible windows are ported.
 
 ## Default Mac Launch
 
-From the repo root, double-click:
+The shared Python/Qt launcher remains available as a fallback while the Swift UI
+reaches full parity:
 
 ```bash
 Start Wisp.command
@@ -34,13 +36,9 @@ runs:
 .venv/bin/python main.py
 ```
 
-The visible overlay, tray menu, intent picker, chat, settings, memory, plugin
-manager, snip overlay, and agent windows therefore come from the same `ui/`
-modules used on Windows.
+## Native Swift Launch
 
-## Experimental Native Launch
-
-To run the Swift/AppKit prototype on a Mac:
+To run the Swift/AppKit app on a Mac:
 
 ```bash
 bash scripts/macos_phase1_validate.sh --run
@@ -52,6 +50,5 @@ or double-click:
 Start Wisp (Mac Native).command
 ```
 
-This path validates the Python sidecar, Swift package, and prototype menubar
-host. Treat it as backend research unless it is explicitly brought back into the
-shared UI parity contract in `docs/MACOS_PARITY.md`.
+This path validates the Python sidecar, Swift package, native menubar/overlay,
+and the current Swift parity slice.

@@ -303,6 +303,7 @@ def brain_query(
     ambient_text: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allow_screenshot_tool: bool = False,
 ) -> dict[str, Any]:
     """Assemble context and stream an LLM reply, mirroring App._query_and_speak.
 
@@ -330,7 +331,7 @@ def brain_query(
     )
 
     parts: list[str] = []
-    for chunk in _stream_query_reply(built, memory_context, use_tools):
+    for chunk in _stream_query_reply(built, memory_context, use_tools, allow_screenshot_tool):
         if ctx.cancelled:
             break
         parts.append(chunk)
@@ -341,7 +342,12 @@ def brain_query(
     return {"text": full}
 
 
-def _stream_query_reply(built: Any, memory_context: str, use_tools: bool) -> Iterator[str]:
+def _stream_query_reply(
+    built: Any,
+    memory_context: str,
+    use_tools: bool,
+    allow_screenshot_tool: bool,
+) -> Iterator[str]:
     """Token stream for ``brain.query``: real provider, or deterministic offline.
 
     In offline mode (``WISP_BRAIN_FAKE_LLM``) the assembled prompt is still built
@@ -367,6 +373,7 @@ def _stream_query_reply(built: Any, memory_context: str, use_tools: bool) -> Ite
         ambient_context=built.ambient_ctx,
         memory_context=memory_context,
         use_tools=use_tools,
+        allow_screenshot_tool=allow_screenshot_tool,
     )
 
 

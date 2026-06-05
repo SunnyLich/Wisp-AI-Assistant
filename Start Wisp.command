@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Wisp macOS/Linux launcher.
 #
-# Double-click this on macOS. It starts the shared Python/Qt Wisp UI, matching
-# the Windows surface. Platform-specific behavior stays behind that UI in
-# core/platform_* helpers.
+# Double-click this on macOS/Linux to start the shared Python/Qt Wisp UI.
+# On macOS this is now the fallback/bridge path while the Swift/AppKit product
+# host reaches full Windows feature parity.
 set -euo pipefail
 
 cd "$(dirname "$0")"

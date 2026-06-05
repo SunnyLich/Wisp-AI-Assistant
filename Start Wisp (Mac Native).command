@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Experimental native macOS launcher.
+# Native macOS launcher.
 #
-# The default macOS product UI is `Start Wisp.command`, which launches the same
-# Python/Qt interface as Windows. This script is retained for validating the
-# Swift/AppKit prototype and native-service work.
+# This starts the Swift/AppKit Wisp host and its Python brain sidecar. The
+# shared Python/Qt launcher remains available as a fallback while remaining
+# product windows are ported.
 set -euo pipefail
 
 cd "$(dirname "$0")"

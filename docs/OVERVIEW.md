@@ -1,8 +1,9 @@
 # Wisp Code Overview
 
-Wisp is a cross-platform desktop assistant with one shared Python/Qt product UI
-on Windows and macOS. The app is organized around a small overlay, global
-hotkeys, context capture, model routing, streaming audio, and local memory.
+Wisp is a desktop assistant with a Python/Qt product UI on Windows and a
+Swift/AppKit product UI in progress on macOS. Both surfaces share the same
+configuration, model routing, local memory, tool, and agent contracts; the macOS
+Swift host talks to a Python brain sidecar for OS-agnostic backend work.
 
 ## Top-Level Layout
 
@@ -33,11 +34,14 @@ hotkeys, context capture, model routing, streaming audio, and local memory.
 - `tests/` covers parser helpers, config/settings behavior, model route
   fallback logic, tool discovery, secret storage, TTS config, and the agent
   runner.
+- `macos/Sources/Wisp/` contains the Swift/AppKit macOS host, while
+  `macos/brain/` contains its Python sidecar.
 
 ## Runtime Flow
 
-1. `main.App` starts Qt, registers hotkeys, initializes the overlay, and warms
-   TTS/STT connections.
+1. On Windows, `main.App` starts Qt, registers hotkeys, initializes the overlay,
+   and warms TTS/STT connections. On macOS, the Swift host starts AppKit
+   surfaces and a Python brain sidecar.
 2. A caller hotkey captures selected text or a screen snippet, then opens the
    intent picker.
 3. The selected intent builds a prompt with optional ambient context, documents,

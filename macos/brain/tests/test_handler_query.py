@@ -53,6 +53,29 @@ def test_query_includes_intent_and_selected_in_prompt(record_ctx):
     assert "def add(a, b)" in result["text"]
 
 
+def test_query_forwards_screenshot_tool_policy(record_ctx, monkeypatch):
+    captured = {}
+
+    def fake_stream(_built, _memory_context, use_tools, allow_screenshot_tool):
+        captured["use_tools"] = use_tools
+        captured["allow_screenshot_tool"] = allow_screenshot_tool
+        yield "ok"
+
+    monkeypatch.setattr(handlers, "_stream_query_reply", fake_stream)
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="look if needed",
+        memory_context="(none)",
+        use_tools=True,
+        allow_screenshot_tool=True,
+    )
+
+    assert result["text"] == "ok"
+    assert "".join(_chunks(events)) == "ok"
+    assert captured == {"use_tools": True, "allow_screenshot_tool": True}
+
+
 def test_query_precancelled_yields_empty(record_ctx):
     events, ctx = record_ctx()
     ctx.cancelled = True

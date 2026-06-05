@@ -13,12 +13,16 @@ struct NativeContextSnapshot {
     var accessibilityTrusted: Bool
 
     var ambientText: String {
+        ambientText(includeClipboard: true)
+    }
+
+    func ambientText(includeClipboard: Bool) -> String {
         [
             "Active app: \(appName)",
             bundleID.isEmpty ? nil : "Bundle ID: \(bundleID)",
             processID.map { "PID: \($0)" },
             nonEmpty(windowTitle).map { "Window: \($0)" },
-            nonEmpty(clipboardText).map { "Clipboard:\n\($0)" },
+            includeClipboard ? nonEmpty(clipboardText).map { "Clipboard:\n\($0)" } : nil,
         ]
         .compactMap { $0 }
         .joined(separator: "\n\n")

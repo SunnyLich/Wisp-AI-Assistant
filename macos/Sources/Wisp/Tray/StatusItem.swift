@@ -1,8 +1,8 @@
 import AppKit
 
 /// The menubar presence (`NSStatusItem`) — replaces the Qt system tray. For the
-/// native rewrite it doubles as a compact smoke-test console: prompt, echo,
-/// overlay toggle, hotkey retry, status, quit.
+/// native rewrite it owns the product tray actions: ask, chat, memory, settings,
+/// voice, overlay visibility, permissions, logs, and quit.
 @MainActor
 final class StatusItemController: NSObject {
 
@@ -89,7 +89,7 @@ final class StatusItemController: NSObject {
         menu.addItem(hotkeyMenuItem)
         menu.addItem(.separator())
 
-        let promptItem = NSMenuItem(title: "Show Prompt", action: #selector(showPrompt), keyEquivalent: " ")
+        let promptItem = NSMenuItem(title: "Ask Wisp", action: #selector(showPrompt), keyEquivalent: " ")
         promptItem.keyEquivalentModifierMask = [.control, .option]
         promptItem.target = self
         menu.addItem(promptItem)
