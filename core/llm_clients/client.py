@@ -12,6 +12,7 @@ calls, eliminating handshake overhead from every request.
 from __future__ import annotations
 import gzip
 import json as _stdlib_json
+import ssl as _ssl
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
 import config
@@ -865,6 +866,21 @@ def _use_macos_openai_compat_non_streaming(provider: str) -> bool:
     return not macos_safety.openai_compat_streaming_enabled(provider)
 
 
+_openai_compat_stdlib_ssl_context = None
+_openai_compat_stdlib_ssl_context_lock = _threading.Lock()
+
+
+def _get_openai_compat_stdlib_ssl_context():
+    """Return a cached certifi-backed SSL context for urllib compatibility calls."""
+    global _openai_compat_stdlib_ssl_context
+    with _openai_compat_stdlib_ssl_context_lock:
+        if _openai_compat_stdlib_ssl_context is None:
+            import certifi
+
+            _openai_compat_stdlib_ssl_context = _ssl.create_default_context(cafile=certifi.where())
+        return _openai_compat_stdlib_ssl_context
+
+
 def _openai_compat_message_text(response) -> str:
     choice = response.choices[0] if getattr(response, "choices", None) else None
     if choice is None:
@@ -899,7 +915,10 @@ def _openai_compat_stdlib_completion_text(provider: str, kwargs: dict) -> str:
         if api_key and provider != "ollama":
             headers["Authorization"] = f"Bearer {api_key}"
         request = _urllib_request.Request(url, data=body, headers=headers, method="POST")
-        opener = _urllib_request.build_opener(_urllib_request.ProxyHandler({}))
+        opener = _urllib_request.build_opener(
+            _urllib_request.ProxyHandler({}),
+            _urllib_request.HTTPSHandler(context=_get_openai_compat_stdlib_ssl_context()),
+        )
         try:
             with opener.open(request, timeout=60) as response:
                 raw = response.read()

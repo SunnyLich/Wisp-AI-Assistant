@@ -213,6 +213,58 @@ class DynamicClientCachingTests(unittest.TestCase):
                 "ok",
             )
 
+    def test_stdlib_openai_compat_request_uses_cached_certifi_ssl_context(self):
+        probe = self
+        llm._openai_compat_stdlib_ssl_context = None
+        self.addCleanup(setattr, llm, "_openai_compat_stdlib_ssl_context", None)
+        context = object()
+        build_calls = []
+        handler_contexts = []
+
+        class _FakeCertifi(types.ModuleType):
+            def where(self):
+                return "/tmp/cacert.pem"
+
+        class _FakeResponse:
+            headers = {"Content-Encoding": ""}
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeOpener:
+            def open(self, _request, timeout=0):
+                return _FakeResponse()
+
+        class _FakeHTTPSHandler:
+            def __init__(self, *, context):
+                handler_contexts.append(context)
+
+        def fake_create_default_context(*, cafile=None):
+            probe.assertEqual(cafile, "/tmp/cacert.pem")
+            build_calls.append(cafile)
+            return context
+
+        with mock.patch.dict(sys.modules, {"certifi": _FakeCertifi("certifi")}), \
+             mock.patch.object(llm._ssl, "create_default_context", fake_create_default_context), \
+             mock.patch.object(llm._urllib_request, "HTTPSHandler", _FakeHTTPSHandler), \
+             mock.patch.object(llm, "_openai_compat_base_url", return_value="https://example.test"), \
+             mock.patch.object(llm, "_openai_compat_api_key", return_value="k"), \
+             mock.patch("urllib.request.build_opener", return_value=_FakeOpener()):
+            for _ in range(2):
+                self.assertEqual(
+                    llm._openai_compat_stdlib_completion_text("google", {"model": "m", "messages": []}),
+                    "ok",
+                )
+
+        self.assertEqual(build_calls, ["/tmp/cacert.pem"])
+        self.assertEqual(handler_contexts, [context, context])
+
 
 class PrewarmTests(unittest.TestCase):
     def setUp(self):
