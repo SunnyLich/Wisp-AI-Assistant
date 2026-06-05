@@ -16,10 +16,12 @@ import threading
 import numpy as np
 import config
 from core.system.main_thread import run_on_main
+from core.system import macos_safety
 from core import macos_helper
 
 # sounddevice is imported lazily (inside start_recording) so that when the macOS
-# helper owns the mic, this GUI-process module never loads PortAudio at all.
+# helper owns the mic, or safe mode disables in-process recording, this
+# GUI-process module never loads PortAudio at all.
 
 # Suppress noisy HuggingFace Hub warnings before any faster-whisper import
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -60,6 +62,9 @@ def prewarm():
         from core.macos_helper import stt_client
         stt_client.prewarm()
         return
+    if not macos_safety.stt_prewarm_enabled():
+        print("[stt] prewarm skipped in macOS safe mode.")
+        return
 
     def _worker() -> None:
         try:
@@ -80,6 +85,10 @@ def start_recording():
     if macos_helper.is_enabled():
         from core.macos_helper import stt_client
         stt_client.start_recording()
+        return
+    if not macos_safety.audio_enabled():
+        _recording = False
+        print("[stt] recording disabled in macOS safe mode.")
         return
 
     import sounddevice as sd
@@ -126,6 +135,8 @@ def stop_and_transcribe() -> str:
     if macos_helper.is_enabled():
         from core.macos_helper import stt_client
         return stt_client.stop_and_transcribe()
+    if not _recording and _stream is None:
+        return ""
 
     _recording = False
     if _stream is not None:

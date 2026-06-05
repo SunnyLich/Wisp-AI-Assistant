@@ -19,6 +19,7 @@ import config
 import threading
 from typing import Generator, Iterable
 
+from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
 
 
@@ -76,6 +77,9 @@ def prewarm():
     Open connections eagerly at app startup so the first user query is fast.
     Call once from main.py after the event loop starts.
     """
+    if not macos_safety.tts_prewarm_enabled():
+        print("[tts] prewarm skipped in macOS safe mode.")
+        return
     if config.TTS_PROVIDER.lower() == "cartesia":
         _get_cartesia_ws()
 
@@ -115,6 +119,10 @@ def stream_audio_from_chunks(text_chunks: Iterable[str],
     Yields:
         Raw PCM float32 audio bytes.
     """
+    if not macos_safety.audio_enabled():
+        for _ in text_chunks:
+            pass
+        return
     provider = config.TTS_PROVIDER.lower()
     if provider == "cartesia":
         yield from _stream_cartesia(text_chunks, on_word_timestamps)

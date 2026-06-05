@@ -14,58 +14,102 @@ import queue
 import numpy as np
 import config
 from core import tts as tts_module
+from core.system import macos_safety
+
+
+def _macos_audio_enabled() -> bool:
+    """Return True when in-process macOS audio playback is explicitly enabled."""
+    return macos_safety.audio_enabled()
 
 _SD_IMPORT_ERROR: Exception | None = None
 _SF_IMPORT_ERROR: ImportError | None = None
-try:
-    import sounddevice as sd
-except (ImportError, OSError) as exc:
-    _SD_IMPORT_ERROR = exc
+_sd_loaded = False
+_sf_loaded = False
 
-    def _raise_sounddevice_unavailable() -> None:
-        raise ModuleNotFoundError("sounddevice is required for audio playback") from _SD_IMPORT_ERROR
 
-    class _MissingRawOutputStream:
-        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
-            _raise_sounddevice_unavailable()
+def _raise_sounddevice_unavailable() -> None:
+    raise ModuleNotFoundError("sounddevice is required for audio playback") from _SD_IMPORT_ERROR
 
-        def __enter__(self):
-            return self
 
-        def __exit__(self, *exc):  # noqa: ANN002, ANN003
-            return False
+class _MissingRawOutputStream:
+    def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        _raise_sounddevice_unavailable()
 
-    class _MissingSoundDevice:
-        RawOutputStream = _MissingRawOutputStream
+    def __enter__(self):
+        return self
 
-        class default:
-            device = (None, None)
+    def __exit__(self, *exc):  # noqa: ANN002, ANN003
+        return False
 
-        @staticmethod
-        def play(*args, **kwargs):  # noqa: ANN002, ANN003
-            _raise_sounddevice_unavailable()
 
-        @staticmethod
-        def wait() -> None:
-            _raise_sounddevice_unavailable()
+class _MissingSoundDevice:
+    RawOutputStream = _MissingRawOutputStream
 
-        @staticmethod
-        def query_devices():  # noqa: ANN201
-            _raise_sounddevice_unavailable()
+    class default:
+        device = (None, None)
 
-    sd = _MissingSoundDevice()
+    @staticmethod
+    def play(*args, **kwargs):  # noqa: ANN002, ANN003
+        _raise_sounddevice_unavailable()
 
-try:
-    import soundfile as sf
-except ImportError as exc:
-    _SF_IMPORT_ERROR = exc
+    @staticmethod
+    def wait() -> None:
+        _raise_sounddevice_unavailable()
 
-    class _MissingSoundFile:
-        @staticmethod
-        def read(*args, **kwargs):  # noqa: ANN002, ANN003
-            raise ModuleNotFoundError("soundfile is required for filler audio decoding") from _SF_IMPORT_ERROR
+    @staticmethod
+    def stop() -> None:
+        _raise_sounddevice_unavailable()
 
-    sf = _MissingSoundFile()
+    @staticmethod
+    def query_devices():  # noqa: ANN201
+        _raise_sounddevice_unavailable()
+
+
+class _MissingSoundFile:
+    @staticmethod
+    def read(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise ModuleNotFoundError("soundfile is required for filler audio decoding") from _SF_IMPORT_ERROR
+
+
+sd = _MissingSoundDevice()
+sf = _MissingSoundFile()
+
+
+def _load_sounddevice_if_allowed():
+    global sd, _SD_IMPORT_ERROR, _sd_loaded
+    if _sd_loaded:
+        return sd
+    if not _macos_audio_enabled():
+        return sd
+    try:
+        import sounddevice as _sd
+        sd = _sd
+    except (ImportError, OSError) as exc:
+        _SD_IMPORT_ERROR = exc
+    finally:
+        _sd_loaded = True
+    return sd
+
+
+def _load_soundfile_if_allowed():
+    global sf, _SF_IMPORT_ERROR, _sf_loaded
+    if _sf_loaded:
+        return sf
+    if not _macos_audio_enabled():
+        return sf
+    try:
+        import soundfile as _sf
+        sf = _sf
+    except ImportError as exc:
+        _SF_IMPORT_ERROR = exc
+    finally:
+        _sf_loaded = True
+    return sf
+
+
+if _macos_audio_enabled():
+    _load_sounddevice_if_allowed()
+    _load_soundfile_if_allowed()
 
 _tts_speed_boost = False
 _tts_speed_lock = threading.Lock()
@@ -139,7 +183,10 @@ def prewarm_filler() -> None:
     Loads from both the bundled assets dir and the user-data dir (where
     TTS-baked voice-matched clips live), so a user with a Cartesia voice gets
     a mix of stock + voice-matched fillers."""
+    if not _macos_audio_enabled():
+        return
     global _filler_clips, _filler_loaded
+    sf_mod = _load_soundfile_if_allowed()
     clips: list[tuple[np.ndarray, int]] = []
     dirs = [config.FILLER_AUDIO_DIR, getattr(config, "USER_FILLER_AUDIO_DIR", "")]
     for d in dirs:
@@ -149,7 +196,7 @@ def prewarm_filler() -> None:
             if not f.lower().endswith(".wav"):
                 continue
             try:
-                data, samplerate = sf.read(os.path.join(d, f), dtype="float32")
+                data, samplerate = sf_mod.read(os.path.join(d, f), dtype="float32")
                 clips.append((data, samplerate))
             except Exception as e:
                 print(f"[audio] filler precache error for {f}: {e}")
@@ -162,6 +209,8 @@ def play_filler():
     Play a random pre-decoded filler clip instantly (non-blocking).
     Safe to call from any thread.
     """
+    if not _macos_audio_enabled():
+        return
     if not _filler_loaded:
         prewarm_filler()
     if not _filler_clips:
@@ -173,6 +222,7 @@ def play_filler():
 
 def _play_clip(data: np.ndarray, samplerate: int):
     try:
+        sd_mod = _load_sounddevice_if_allowed()
         # sd.play opens and starts a PortAudio output stream, so it must run on
         # the main thread (see _run_on_main): opening it on this worker thread
         # segfaults inside CoreAudio under Qt's Cocoa run loop, exactly like the
@@ -186,8 +236,8 @@ def _play_clip(data: np.ndarray, samplerate: int):
         # block on its completion event here (a plain flag wait, safe off-main),
         # then hop the close back onto the main thread.
         def _start():
-            sd.play(data, samplerate)
-            return sd._last_callback  # the _CallbackContext play() just created
+            sd_mod.play(data, samplerate)
+            return sd_mod._last_callback  # the _CallbackContext play() just created
         ctx = _run_on_main(_start)
         if ctx is not None:
             ctx.event.wait()  # ~<1s; blocks only on a flag, no native call
@@ -241,6 +291,8 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                             on_word_timestamps: callable | None,
                             on_amplitude: callable | None):
     provider = config.TTS_PROVIDER.lower()
+    if not _macos_audio_enabled():
+        provider = "none"
     if provider == "none":
         # No audio device should be opened in text-only mode. On macOS, even an
         # unused PortAudio stream can enter CoreAudio and crash under Qt/Cocoa.
@@ -254,6 +306,8 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         if on_done:
             on_done()
         return
+
+    sd_mod = _load_sounddevice_if_allowed()
 
     chunk_q: queue.Queue[bytes | None] = queue.Queue()
 
@@ -296,12 +350,12 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
     # _run_on_main). Harmless on Windows/Linux (just ends the filler a few ms
     # early, which is desired).
     try:
-        _run_on_main(sd.stop)
+        _run_on_main(sd_mod.stop)
     except Exception:
         pass
 
     def _open_stream():
-        s = sd.RawOutputStream(samplerate=sample_rate, channels=channels, dtype=dtype)
+        s = sd_mod.RawOutputStream(samplerate=sample_rate, channels=channels, dtype=dtype)
         s.start()  # RawOutputStream's context manager normally does this on __enter__
         return s
 

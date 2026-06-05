@@ -20,6 +20,9 @@ OpenSSL/Security at the same time after a fresh install or dependency rebuild.
 Known protected boundaries:
 
 - `core.audio` and `core.stt`: sounddevice stream open/start/stop/close.
+  In-process macOS playback, filler prewarm, TTS prewarm, and STT prewarm are
+  disabled in safe mode; set `WISP_MACOS_ENABLE_AUDIO=1` only when validating
+  CoreAudio stability, or `WISP_MACOS_ENABLE_STT_PREWARM=1` for STT-only warmup.
 - `core.capture` and `core.context_fetcher`: screen capture uses macOS'
   out-of-process `screencapture` helper instead of in-process `mss`.
 - `core.platform_utils`: simple copy/paste key combos use out-of-process
@@ -31,9 +34,15 @@ Known protected boundaries:
 - `core.llm_clients.client`, `core.tts`, `core.filler_bake`,
   `core.memory_store.store`, and `core.context_fetcher`: SDK client creation.
 - `core.secret_store` and `core.auth.*`: keyring/keychain access.
-- `core.context_fetcher.start_fs_watcher()`: uses watchdog polling on macOS
-  instead of the native FSEvents observer to avoid `_watchdog_fsevents` callback
-  threads in the Qt/PyObjC process.
+- `core.context_fetcher.start_fs_watcher()`: disabled in macOS safe mode; when
+  explicitly enabled it uses watchdog polling instead of the native FSEvents
+  observer to avoid `_watchdog_fsevents` callback threads in the Qt/PyObjC
+  process.
+- `core.llm_clients.client`: OpenAI-compatible query, vision, rewrite, chat, and
+  route-test probes run non-streaming in macOS safe mode after a reproducible
+  segfault during `stream=True`; set `WISP_MACOS_OPENAI_COMPAT_STREAMING=1` only
+  while validating a fix. Live OpenAI-compatible context tools are separately
+  gated behind `WISP_MACOS_ENABLE_OPENAI_TOOLS=1`.
 
 When adding a new provider SDK or native macOS API, wrap the smallest possible
 construction/access block. Do not hold the lock for a full streaming response

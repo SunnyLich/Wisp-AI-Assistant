@@ -13,6 +13,7 @@ from __future__ import annotations
 import config
 from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
+from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
 from core.llm_clients.routes import (
     GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
@@ -833,6 +834,32 @@ _OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
 }
 
 
+def _use_macos_openai_compat_non_streaming(provider: str) -> bool:
+    """Avoid macOS native crashes in OpenAI-compatible streaming paths."""
+    return not macos_safety.openai_compat_streaming_enabled(provider)
+
+
+def _openai_compat_message_text(response) -> str:
+    choice = response.choices[0] if getattr(response, "choices", None) else None
+    if choice is None:
+        return ""
+    message = getattr(choice, "message", None)
+    content = getattr(message, "content", "") if message is not None else ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("text") or ""))
+            else:
+                parts.append(str(getattr(item, "text", "") or ""))
+        return "".join(parts).strip()
+    return str(content or "").strip()
+
+
 # Per-provider cache for the route/fallback clients. Building these on every
 # query rebuilt an SSL context each time; worse, the build raced with the TTS
 # client's SSL build (separate thread, same query) and segfaulted on macOS.
@@ -1227,13 +1254,17 @@ def _get_vision_anthropic_client():
     return _vision_anthropic_client
 
 
-def _run_openai_compat_probe(client, *, model: str, messages: list) -> None:
-    with client.chat.completions.create(
-        model=model,
-        messages=messages,
-        stream=True,
-        max_tokens=8,
-    ) as stream:
+def _run_openai_compat_probe(client, *, provider: str, model: str, messages: list) -> None:
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "stream": not _use_macos_openai_compat_non_streaming(provider),
+        "max_tokens": 8,
+    }
+    if not kwargs["stream"]:
+        client.chat.completions.create(**kwargs)
+        return
+    with client.chat.completions.create(**kwargs) as stream:
         for _chunk in stream:
             break
 
@@ -1242,6 +1273,7 @@ def _probe_openai_compat_route(provider: str, model: str, image_base64: str | No
     client = _dynamic_openai_client(provider)
     _run_openai_compat_probe(
         client,
+        provider=provider,
         model=_normalize_model_for_provider(provider, model),
         messages=_build_openai_messages("Reply with OK.", image_base64),
     )
@@ -1268,6 +1300,7 @@ def _probe_openai_compat_route_with_credentials(
             client = OpenAI(api_key=api_key)
     _run_openai_compat_probe(
         client,
+        provider=provider,
         model=_normalize_model_for_provider(provider, model),
         messages=_build_openai_messages("Reply with OK.", image_base64),
     )
@@ -1609,7 +1642,10 @@ def _stream_single_response_route(
         if (provider == "anthropic" and anthropic_tools and config.TOOL_LLM_MODEL.strip())
         else model
     )
-    _log_model_route("vision" if image_base64 else "query", provider, effective_model, use_tools=(anthropic_tools and not image_base64))
+    tools_for_log = anthropic_tools and not image_base64
+    if provider in _OPENAI_COMPAT_PROVIDER_SET and not macos_safety.openai_compat_tools_enabled():
+        tools_for_log = False
+    _log_model_route("vision" if image_base64 else "query", provider, effective_model, use_tools=tools_for_log)
     if image_base64:
         if provider in _OPENAI_COMPAT_PROVIDER_SET:
             yield from _stream_openai_compat(
@@ -1617,6 +1653,7 @@ def _stream_single_response_route(
                 image_base64,
                 model,
                 _dynamic_openai_client(provider),
+                provider=provider,
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
@@ -1714,7 +1751,11 @@ def _stream_openai_compat(
     import json as _json
 
     messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
-    expose_screenshot = allow_screenshot_tool and not image_base64 and not json_mode
+    tools_requested = (use_tools or allow_screenshot_tool) and not image_base64 and not json_mode
+    tools_allowed = macos_safety.openai_compat_tools_enabled()
+    if tools_requested and not tools_allowed:
+        print("[llm] macOS safe mode: OpenAI-compatible live tools disabled", flush=True)
+    expose_screenshot = tools_allowed and allow_screenshot_tool and not image_base64 and not json_mode
     if expose_screenshot and messages and messages[0].get("role") == "system":
         messages[0]["content"] = _with_screenshot_note(messages[0]["content"], True)
     # JSON mode (used by the agent protocol) forces a single JSON object as the
@@ -1727,7 +1768,7 @@ def _stream_openai_compat(
             include_general=use_tools,
             include_screenshot=allow_screenshot_tool,
         )
-        if (use_tools or allow_screenshot_tool) and not image_base64 and not json_mode
+        if tools_requested and tools_allowed
         else None
     )
 
@@ -1745,6 +1786,19 @@ def _stream_openai_compat(
         kwargs["tools"] = tools
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+
+    if _use_macos_openai_compat_non_streaming(provider):
+        # OpenAI-compatible streaming was the crash source in macOS logs for a
+        # plain "hi" prompt. Keep the same UI path by yielding the final text as
+        # one chunk, and keep live tool loops opt-in while this path is validated.
+        kwargs["stream"] = False
+        kwargs.pop("tools", None)
+        print("[llm] macOS OpenAI-compatible route using non-streaming safe mode", flush=True)
+        response = client.chat.completions.create(**kwargs)
+        text = _openai_compat_message_text(response)
+        if text:
+            yield text
+        return
 
     # Stream first round — yield text, accumulate any tool-call deltas.
     tool_calls_acc: dict[int, dict] = {}  # index → {id, name, arguments}
@@ -2165,16 +2219,23 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
     _log_model_route("rewrite", provider, model, use_tools=False)
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
         client = _dynamic_openai_client(provider)
-        with client.chat.completions.create(
-            model=model,
-            messages=[
+        kwargs = {
+            "model": model,
+            "messages": [
                 {"role": "system", "content": _REWRITE_SYSTEM_PROMPT},
                 {"role": "user",   "content": user_message},
             ],
-            stream=True,
-            max_tokens=1024,
-            temperature=0.3,
-        ) as stream:
+            "stream": not _use_macos_openai_compat_non_streaming(provider),
+            "max_tokens": 1024,
+            "temperature": 0.3,
+        }
+        if not kwargs["stream"]:
+            print("[llm] macOS OpenAI-compatible rewrite using non-streaming safe mode", flush=True)
+            text = _openai_compat_message_text(client.chat.completions.create(**kwargs))
+            if text:
+                yield text
+            return
+        with client.chat.completions.create(**kwargs) as stream:
             for chunk in stream:
                 delta = chunk.choices[0].delta.content
                 if delta:
@@ -2260,13 +2321,20 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
     _log_model_route("chat", provider, model, use_tools=(provider == "anthropic"))
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
         client = _dynamic_openai_client(provider)
-        with client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-            max_tokens=1024,
-            temperature=0.7,
-        ) as stream:
+        kwargs = {
+            "model": model,
+            "messages": messages,
+            "stream": not _use_macos_openai_compat_non_streaming(provider),
+            "max_tokens": 1024,
+            "temperature": 0.7,
+        }
+        if not kwargs["stream"]:
+            print("[llm] macOS OpenAI-compatible chat using non-streaming safe mode", flush=True)
+            text = _openai_compat_message_text(client.chat.completions.create(**kwargs))
+            if text:
+                yield text
+            return
+        with client.chat.completions.create(**kwargs) as stream:
             for chunk in stream:
                 delta = chunk.choices[0].delta.content
                 if delta:

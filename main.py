@@ -102,6 +102,7 @@ from core import tts as tts_module
 from core.memory_store import store as memory_module
 from core.query_pipeline import GenerationCounter, ContextInputs, build_context
 from core.system.app_platform import configure_windows_app_identity
+from core.system import macos_safety
 from core.system.paths import ASSETS_DIR
 from core.memory_store.commands import extract_remember_fact
 from ui.overlay import IconOverlay, OverlaySignals
@@ -241,7 +242,8 @@ class App(QObject):
         context_fetcher.start_fs_watcher()
 
         # Pre-load the Whisper model so the first voice query has no cold start
-        stt.prewarm()
+        if macos_safety.stt_prewarm_enabled():
+            stt.prewarm()
 
         # Notify mods that the app is fully initialised
         from core.plugin_manager import AppContext
@@ -335,12 +337,14 @@ class App(QObject):
     # ------------------------------------------------------------------
 
     def _prewarm(self):
-        audio.prewarm_filler()  # decode filler WAVs so the hotkey path does no disk I/O
-        tts_module.prewarm()
-        # Build the LLM client now too, sequentially after TTS — on macOS this
-        # keeps the two SSL contexts from being built concurrently on the first
-        # query (Security-framework segfault); everywhere it removes the first
-        # query's handshake.
+        if macos_safety.audio_enabled():
+            audio.prewarm_filler()  # decode filler WAVs so the hotkey path does no disk I/O
+        if macos_safety.tts_prewarm_enabled():
+            tts_module.prewarm()
+        # Build the LLM client now too. When TTS is enabled, doing this
+        # sequentially keeps the two SSL contexts from being built concurrently
+        # on the first query (Security-framework segfault); otherwise it still
+        # removes the first query's handshake.
         llm.prewarm()
         print("[main] Connections pre-warmed.")
 

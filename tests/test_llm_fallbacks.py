@@ -107,6 +107,46 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(calls[0]["model"], "gemini-2.5-flash")
         self.assertTrue(calls[0]["stream"])
 
+    def test_macos_openai_compat_query_uses_non_streaming_safe_mode(self):
+        calls = []
+
+        class FakeMessage:
+            content = "hello"
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                return FakeResponse()
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            chat = FakeChat()
+
+        with patch.object(llm.macos_safety.sys, "platform", "darwin"), \
+             patch.dict(llm.macos_safety.os.environ, {}, clear=True):
+            chunks = list(
+                llm._stream_openai_compat(
+                    "hi",
+                    None,
+                    "gpt-4o",
+                    FakeClient(),
+                    use_tools=True,
+                    provider="openai",
+                )
+            )
+
+        self.assertEqual(chunks, ["hello"])
+        self.assertEqual(calls[0]["stream"], False)
+        self.assertNotIn("tools", calls[0])
+
     def test_vision_route_probe_uses_test_image(self):
         calls = []
 

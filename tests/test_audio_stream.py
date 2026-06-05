@@ -129,6 +129,36 @@ class AudioStreamTests(unittest.TestCase):
         self.assertEqual(started, [1])
         self.assertEqual(done, [1])
 
+    def test_macos_audio_disabled_drains_text_without_opening_stream(self):
+        started = []
+        done = []
+        drained = []
+
+        def text_chunks():
+            drained.append("a")
+            yield "hello"
+            drained.append("b")
+            yield " world"
+
+        with mock.patch.object(audio.macos_safety.sys, "platform", "darwin"), \
+             mock.patch.dict(audio.macos_safety.os.environ, {}, clear=True), \
+             mock.patch.object(config, "TTS_PROVIDER", "cartesia"), \
+             mock.patch.object(audio.sd, "RawOutputStream",
+                               side_effect=AssertionError("no audio stream on macOS by default")), \
+             mock.patch.object(tts_module, "stream_audio_from_chunks",
+                               side_effect=AssertionError("audio TTS generator should not run")):
+            audio._stream_and_play_chunks(
+                text_chunks(),
+                on_done=lambda: done.append(1),
+                on_audio_start=lambda: started.append(1),
+                on_word_timestamps=None,
+                on_amplitude=None,
+            )
+
+        self.assertEqual(drained, ["a", "b"])
+        self.assertEqual(started, [1])
+        self.assertEqual(done, [1])
+
 
 class FillerPrecacheTests(unittest.TestCase):
     def test_prewarm_decodes_wavs_into_memory(self):

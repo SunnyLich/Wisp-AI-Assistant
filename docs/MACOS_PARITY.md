@@ -48,13 +48,13 @@ implement the backend differently, but the user-facing behavior must match.
 | Tray/menu | Ask, chat, memory, plugins, settings, quit | Done | Shared Qt UI |
 | Intent picker | Caller rows from `CALLER_*`; W/A/D + custom prompt | Done | Shared Qt UI |
 | Text prompt | Query path selected through the intent picker | Done | Shared Qt UI |
-| Streaming reply | Bubble and chat receive streamed chunks | Done | Shared Qt UI |
+| Streaming reply | Bubble and chat receive streamed chunks | Done | Shared Qt UI; macOS safe mode may yield one final chunk for OpenAI-compatible routes |
 | Selected text | Include selected text when enabled | Done | macOS backend helper |
 | Clipboard context | Include clipboard when enabled | Done | macOS backend helper |
 | Screenshot context | Caller config controls screenshot behavior | Done | macOS backend helper |
 | Ambient app/window context | Active app/window/document context | Done | macOS backend helper |
 | Voice query | Push-to-talk, local STT, query | Done | Backend in progress |
-| TTS playback | Stream reply audio and sync bubble | Done | Backend in progress |
+| TTS playback | Stream reply audio and sync bubble | Done | Disabled in macOS safe mode; opt in with `WISP_MACOS_ENABLE_AUDIO=1` while validating CoreAudio stability |
 | Memory add/search | `core.memory_store` | Done | Shared Qt UI |
 | Settings UI | Edits same `.env` keys | Done | Shared Qt UI |
 | Chat window | Persistent conversation UI | Done | Shared Qt UI |
@@ -95,3 +95,25 @@ A feature is parity-ready only when:
 4. Keep the Swift/AppKit prototype available only for native-service
    experiments until it can support the same shared UI contract.
 5. Build signed/notarized packaging around the shared UI.
+
+## macOS Stability Gates
+
+`WISP_MACOS_SAFE_MODE` is enabled by default on macOS. It keeps the shared UI
+intact while routing crash-prone backend work through conservative paths. Set
+`WISP_MACOS_SAFE_MODE=0` only when validating the native stack on a Mac.
+
+- OpenAI-compatible streaming routes are non-streaming in safe mode after a
+  reproducible segfault in `client.chat.completions.create(..., stream=True)`.
+  This covers query, vision, rewrite, chat, and route-test probes. The same
+  prompt is yielded into the same bubble/chat UI as one final chunk. Set
+  `WISP_MACOS_OPENAI_COMPAT_STREAMING=1` only when validating a runtime fix
+  (`WISP_MACOS_GOOGLE_STREAMING=1` remains as a Google-only validation switch).
+- OpenAI-compatible live context/screenshot tools are disabled in safe mode; set
+  `WISP_MACOS_ENABLE_OPENAI_TOOLS=1` only while validating that tool loop.
+- In-process macOS audio, filler playback, TTS prewarm, and TTS playback are
+  disabled in safe mode so text prompts can complete without touching CoreAudio
+  inside the Qt process. Set `WISP_MACOS_ENABLE_AUDIO=1` only when testing audio.
+- STT model prewarm is skipped in safe mode unless `WISP_MACOS_ENABLE_AUDIO=1`
+  or `WISP_MACOS_ENABLE_STT_PREWARM=1` is set.
+- The optional background filesystem watcher is disabled in safe mode; set
+  `WISP_MACOS_ENABLE_FS_WATCHER=1` only when validating watchdog on macOS.

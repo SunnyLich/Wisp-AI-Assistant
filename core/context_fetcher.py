@@ -47,6 +47,7 @@ from threading import Lock
 from typing import Optional
 from urllib.parse import urlparse, unquote
 
+from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
 
 _IS_WIN = sys.platform == "win32"
@@ -174,6 +175,10 @@ def start_fs_watcher(paths: list[str] | None = None) -> None:
     """
     global _fs_observer
     if _fs_observer is not None:
+        return
+    if not macos_safety.fs_watcher_enabled():
+        _fs_observer = False
+        print("[context_fetcher] fs watcher disabled in macOS safe mode.")
         return
 
     try:
