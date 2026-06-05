@@ -10,6 +10,10 @@ Clients are module-level singletons so the TLS connection is reused across
 calls, eliminating handshake overhead from every request.
 """
 from __future__ import annotations
+import gzip
+import json as _stdlib_json
+import urllib.error as _urllib_error
+import urllib.request as _urllib_request
 import config
 from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
@@ -884,28 +888,23 @@ def _openai_compat_message_text(response) -> str:
 
 def _openai_compat_stdlib_completion_text(provider: str, kwargs: dict) -> str:
     """Blocking OpenAI-compatible completion without importing provider SDKs."""
-    import gzip
-    import json as _json
-    import urllib.error
-    import urllib.request
-
     def _request_completion() -> str:
         base_url = _openai_compat_base_url(provider).rstrip("/")
         if not base_url:
             raise ValueError(f"No OpenAI-compatible base URL configured for {provider!r}")
         api_key = _openai_compat_api_key(provider)
         url = f"{base_url}/chat/completions"
-        body = _json.dumps(kwargs).encode("utf-8")
+        body = _stdlib_json.dumps(kwargs).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if api_key and provider != "ollama":
             headers["Authorization"] = f"Bearer {api_key}"
-        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        request = _urllib_request.Request(url, data=body, headers=headers, method="POST")
+        opener = _urllib_request.build_opener(_urllib_request.ProxyHandler({}))
         try:
             with opener.open(request, timeout=60) as response:
                 raw = response.read()
                 encoding = response.headers.get("Content-Encoding", "")
-        except urllib.error.HTTPError as exc:
+        except _urllib_error.HTTPError as exc:
             raw = exc.read()
             encoding = exc.headers.get("Content-Encoding", "") if exc.headers else ""
             if "gzip" in encoding.lower() and raw:
@@ -914,7 +913,7 @@ def _openai_compat_stdlib_completion_text(provider: str, kwargs: dict) -> str:
             raise RuntimeError(f"Error code: {exc.code} - {message}") from exc
         if "gzip" in encoding.lower() and raw:
             raw = gzip.decompress(raw)
-        payload = _json.loads(raw.decode("utf-8"))
+        payload = _stdlib_json.loads(raw.decode("utf-8"))
         choices = payload.get("choices") or []
         if not choices:
             return ""
