@@ -1,0 +1,4 @@
+module WispPackageTests {
+    header "/Volumes/Macintosh_HD/Users/user952714/Desktop/Python-AI-assistant-overlay/macos/.build/arm64-apple-macosx/debug/WispPackageTests.build/WispPackageTests-Swift.h"
+    requires objc
+}
