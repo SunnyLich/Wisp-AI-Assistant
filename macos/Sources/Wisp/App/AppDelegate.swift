@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusController: StatusItemController?
     private var overlay: OverlayPanel?
+    private var responseBubble: ResponseBubblePanel?
     private var promptPanel: PromptPanel?
     private var intentPanel: IntentPanel?
     private var hotkey: HotkeyController?
@@ -37,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await self?.runPrompt(text, mode: mode) }
         }
         promptPanel = prompt
+
+        responseBubble = ResponseBubblePanel { [weak self] in
+            self?.promptPanel?.showPrompt()
+        }
 
         intentPanel = IntentPanel { [weak self] selection in
             Task { await self?.runIntent(selection) }
@@ -128,7 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func runIntent(_ selection: IntentSelection) async {
-        promptPanel?.showPrompt()
         promptPanel?.setPrompt(selection.prompt)
         await runPrompt(selection.prompt, mode: .query, caller: selection.caller)
     }
@@ -253,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startVoiceQuery() {
         promptPanel?.showPrompt()
         overlay?.setState(.listening)
+        responseBubble?.showListening(anchor: overlay?.frame)
         promptPanel?.setResponse("Listening...")
         statusController?.setBrainStatus("voice recording")
 
@@ -273,6 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopVoiceQuery() {
         promptPanel?.showPrompt()
         overlay?.setState(.thinking)
+        responseBubble?.startThinking(anchor: overlay?.frame)
         promptPanel?.setResponse("Stopping recording and transcribing...")
         statusController?.setBrainStatus("transcribing")
 
@@ -411,6 +417,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         promptPanel?.beginRequest(mode: mode)
         overlay?.setState(mode == .echo ? .speaking : .thinking)
+        if mode == .echo {
+            responseBubble?.showNotice("Running local echo smoke...", anchor: overlay?.frame, timeout: 2.0)
+        } else {
+            responseBubble?.startThinking(anchor: overlay?.frame)
+        }
         statusController?.setBrainStatus("\(mode.rawValue.lowercased()) running")
 
         do {
@@ -422,11 +433,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .event(let name, let data) where name == "reply.chunk":
                     if let chunk = data?["text"] as? String {
                         assembled += chunk
+                        responseBubble?.appendChunk(chunk)
                         promptPanel?.setResponse(assembled)
                     }
                 case .result(let result):
                     if let finalText = result?["text"] as? String {
                         assembled = finalText
+                        responseBubble?.setText(finalText)
                         promptPanel?.setResponse(finalText)
                     }
                 default:
@@ -436,13 +449,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if assembled.isEmpty {
                 promptPanel?.setResponse("(empty response)")
+                responseBubble?.showNotice("No reply from model. Check model name or API key in Settings.", anchor: overlay?.frame)
+            } else {
+                responseBubble?.finish()
             }
             promptPanel?.finishRequest()
             overlay?.setState(.idle)
             statusController?.setBrainStatus("\(mode.rawValue.lowercased()) ok")
             NSLog("[wisp] %@ prompt completed: %@", mode.rawValue, assembled)
         } catch {
-            promptPanel?.failRequest(String(describing: error))
+            let message = String(describing: error)
+            promptPanel?.failRequest(message)
+            responseBubble?.showNotice("Error: \(message)", anchor: overlay?.frame)
             overlay?.setState(.idle)
             statusController?.setBrainStatus("error: \(error)")
             NSLog("[wisp] %@ prompt failed: %@", mode.rawValue, String(describing: error))

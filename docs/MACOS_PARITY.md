@@ -36,7 +36,7 @@ work until each visible surface is ported.
 | Tray/menu | Done | Partial |
 | Caller intent picker | Done | In progress |
 | Text prompt/query | Done | In progress through `brain.query` |
-| Streaming reply surface | Done | Partial prompt panel |
+| Streaming reply surface | Done | In progress native bubble |
 | Selected text and ambient context | Done | Partial |
 | Screenshot context | Done | Partial |
 | Voice query | Done | Partial |
