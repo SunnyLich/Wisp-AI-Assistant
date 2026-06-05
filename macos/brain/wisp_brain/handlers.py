@@ -377,6 +377,68 @@ def _stream_query_reply(
     )
 
 
+@handler("brain.chat", streaming=True)
+def brain_chat(
+    ctx: StreamContext,
+    messages: list[dict[str, Any]] | None = None,
+    memory_context: str = "",
+) -> dict[str, Any]:
+    """Stream a multi-turn chat reply from the existing chat LLM path."""
+    turns = _normalize_chat_messages(messages or [])
+    if not turns:
+        raise ValueError("messages must include at least one user turn")
+
+    if not memory_context:
+        last_user = next(
+            (str(m.get("content") or "") for m in reversed(turns) if m.get("role") == "user"),
+            "",
+        )
+        if last_user:
+            try:
+                from core.memory_store import store
+                memory_context = store.get_manager().retrieve_relevant(last_user) or ""
+            except Exception as exc:  # memory should not block chat
+                _log(f"chat memory retrieval skipped: {type(exc).__name__}: {exc}")
+
+    parts: list[str] = []
+    for chunk in _stream_chat_reply(turns, memory_context):
+        if ctx.cancelled:
+            break
+        parts.append(chunk)
+        ctx.emit("reply.chunk", {"text": chunk})
+
+    full = "".join(parts)
+    ctx.emit("reply.done", {"text": full})
+    return {"text": full}
+
+
+def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    allowed_roles = {"system", "user", "assistant"}
+    turns: list[dict[str, str]] = []
+    for raw in messages:
+        role = str(raw.get("role") or "").strip().lower()
+        content = raw.get("content")
+        if role not in allowed_roles or content is None:
+            continue
+        text = str(content).strip()
+        if text:
+            turns.append({"role": role, "content": text})
+    return turns
+
+
+def _stream_chat_reply(messages: list[dict[str, str]], memory_context: str) -> Iterator[str]:
+    if _offline_brain():
+        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        reply = f"[fake-chat] {last_user}".strip()
+        for word in reply.split(" "):
+            yield word + " "
+        return
+
+    from core.llm_clients.client import stream_response_with_history
+
+    yield from stream_response_with_history(messages, memory_context=memory_context)
+
+
 @handler("brain.memory.add")
 def brain_memory_add(text: str = "", category: str | None = None) -> dict[str, Any]:
     """Add a durable memory fact through the existing memory store."""

@@ -24,7 +24,8 @@ work until each visible surface is ported.
 | Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` |
 | Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController` and `ScreenCaptureController` |
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback + Python sidecar models |
-| Chat/settings/memory/plugins/agents | same user-facing windows and config | Qt windows | Temporary Qt bridge, to port to Swift |
+| Chat | multi-turn conversation history and streaming replies | Qt window | Swift `ChatPanel` in progress |
+| Settings/memory/plugins/agents | same user-facing windows and config | Qt windows | Temporary Qt bridge, to port to Swift |
 | Packaging | distributable app | PyInstaller path | Swift `.app` bundle path |
 
 ## Capability Status
@@ -41,7 +42,7 @@ work until each visible surface is ported.
 | Screenshot context | Done | Partial |
 | Voice query | Done | Partial |
 | TTS playback | Done | Partial |
-| Chat window | Done | Bridge only |
+| Chat window | Done | In progress native |
 | Settings window | Done | Bridge only |
 | Memory window | Done | Bridge only |
 | Plugin manager | Done | Bridge only |
@@ -54,8 +55,8 @@ work until each visible surface is ported.
 1. Replace the prototype Swift prompt entry with the Windows caller/intent
    workflow backed by the same `CALLER_*` keys.
 2. Make the Swift response surface behave like the Windows bubble/chat stream.
-3. Port settings, chat, memory, plugin manager, snip, and agent task windows out
-   of the temporary Qt bridge.
+3. Port settings, memory, plugin manager, snip, and agent task windows out of
+   the temporary Qt bridge.
 4. Finish native paste-back, multi-caller hotkeys, context buffering, and voice
    parity.
 5. Build a signed/notarized `.app`.

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var responseBubble: ResponseBubblePanel?
     private var promptPanel: PromptPanel?
     private var intentPanel: IntentPanel?
+    private var chatPanel: ChatPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
@@ -40,11 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         promptPanel = prompt
 
         responseBubble = ResponseBubblePanel { [weak self] in
-            self?.promptPanel?.showPrompt()
+            self?.showNativeChat(new: false)
         }
 
         intentPanel = IntentPanel { [weak self] selection in
             Task { await self?.runIntent(selection) }
+        }
+
+        chatPanel = ChatPanel { [weak self] text in
+            Task { await self?.runChatMessage(text) }
         }
 
         let panel = OverlayPanel { [weak self] in
@@ -61,8 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onCaptureScreen: { [weak self] in self?.captureScreenSmoke() },
             onOpenRunLogs: { [weak self] in self?.openRunLogs() },
             onShowSettings: { [weak self] in self?.showQtSettings() },
-            onShowChat: { [weak self] in self?.showQtChat(new: false) },
-            onShowNewChat: { [weak self] in self?.showQtChat(new: true) },
+            onShowChat: { [weak self] in self?.showNativeChat(new: false) },
+            onShowNewChat: { [weak self] in self?.showNativeChat(new: true) },
             onShowMemory: { [weak self] in self?.showQtMemory() },
             onShowPluginManager: { [weak self] in self?.showQtPluginManager() },
             onShowAgentTask: { [weak self] in self?.showQtAgentTask() },
@@ -238,6 +243,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         withQtUI(new ? "New chat" : "Chat") { try $0.showChat(new: new) }
     }
 
+    private func showNativeChat(new: Bool) {
+        chatPanel?.showChat(startNew: new)
+        statusController?.setBrainStatus(new ? "new chat opened" : "chat opened")
+    }
+
     private func showQtMemory() {
         withQtUI("Memory") { try $0.showMemory() }
     }
@@ -408,6 +418,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func runChatMessage(_ text: String) async {
+        guard let client = brain else {
+            chatPanel?.failAssistant("brain client is not available")
+            statusController?.setBrainStatus("chat error")
+            return
+        }
+
+        chatPanel?.showChat(startNew: false)
+        let messages = chatPanel?.beginUserMessage(text) ?? [["role": "user", "content": text]]
+        overlay?.setState(.thinking)
+        statusController?.setBrainStatus("chat running")
+
+        do {
+            var assembled = ""
+            for try await item in client.stream("brain.chat", ["messages": messages]) {
+                switch item {
+                case .event(let name, let data) where name == "reply.chunk":
+                    if let chunk = data?["text"] as? String {
+                        assembled += chunk
+                        chatPanel?.appendAssistantChunk(chunk)
+                    }
+                case .result(let result):
+                    if let finalText = result?["text"] as? String {
+                        assembled = finalText
+                        chatPanel?.finishAssistant(finalText)
+                    }
+                default:
+                    break
+                }
+            }
+            if assembled.isEmpty {
+                chatPanel?.failAssistant("No reply from model. Check model name or API key in Settings.")
+            } else {
+                chatPanel?.finishAssistant(assembled)
+            }
+            overlay?.setState(.idle)
+            statusController?.setBrainStatus("chat ok")
+        } catch {
+            let message = String(describing: error)
+            chatPanel?.failAssistant(message)
+            overlay?.setState(.idle)
+            statusController?.setBrainStatus("chat error")
+            NSLog("[wisp] chat failed: %@", message)
+        }
+    }
+
     private func runPrompt(_ text: String, mode: PromptMode, caller: CallerConfig? = nil) async {
         guard let client = brain else {
             promptPanel?.failRequest("brain client is not available")
@@ -452,6 +508,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 responseBubble?.showNotice("No reply from model. Check model name or API key in Settings.", anchor: overlay?.frame)
             } else {
                 responseBubble?.finish()
+                if mode != .echo {
+                    chatPanel?.recordExchange(user: text, assistant: assembled)
+                }
             }
             promptPanel?.finishRequest()
             overlay?.setState(.idle)
