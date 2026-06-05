@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var chatPanel: ChatPanel?
     private var memoryPanel: MemoryPanel?
     private var settingsPanel: SettingsPanel?
+    private var pluginPanel: PluginManagerPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
@@ -76,6 +77,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await self?.saveSettings(draft) }
         }
 
+        pluginPanel = PluginManagerPanel(
+            onRefresh: { [weak self] in
+                Task { await self?.loadPlugins() }
+            },
+            onOpenFolder: { path in
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            }
+        )
+
         let panel = OverlayPanel { [weak self] in
             self?.showIntentPicker()
         }
@@ -93,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowChat: { [weak self] in self?.showNativeChat(new: false) },
             onShowNewChat: { [weak self] in self?.showNativeChat(new: true) },
             onShowMemory: { [weak self] in self?.showNativeMemory() },
-            onShowPluginManager: { [weak self] in self?.showQtPluginManager() },
+            onShowPluginManager: { [weak self] in self?.showNativePluginManager() },
             onShowAgentTask: { [weak self] in self?.showQtAgentTask() },
             onShowAgentHistory: { [weak self] in self?.showQtAgentHistory() },
             onStartVoiceQuery: { [weak self] in self?.startVoiceQuery() },
@@ -265,10 +275,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("settings opened")
     }
 
-    private func showQtChat(new: Bool) {
-        withQtUI(new ? "New chat" : "Chat") { try $0.showChat(new: new) }
-    }
-
     private func showNativeChat(new: Bool) {
         chatPanel?.showChat(startNew: new)
         statusController?.setBrainStatus(new ? "new chat opened" : "chat opened")
@@ -279,12 +285,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("memory opened")
     }
 
-    private func showQtMemory() {
-        withQtUI("Memory") { try $0.showMemory() }
-    }
-
-    private func showQtPluginManager() {
-        withQtUI("Plugin manager") { try $0.showPluginManager() }
+    private func showNativePluginManager() {
+        pluginPanel?.showPluginManager()
+        statusController?.setBrainStatus("plugins opened")
     }
 
     private func showQtAgentTask() {
@@ -592,6 +595,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func reloadBrainConfig() async throws {
         guard let client = brain else { throw BrainError.notRunning }
         _ = try await client.call("brain.config.reload", timeout: .seconds(30))
+    }
+
+    private func loadPlugins() async {
+        guard let client = brain else {
+            pluginPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("plugins error")
+            return
+        }
+
+        pluginPanel?.beginLoading("Loading plugins...")
+        do {
+            let result = try await client.call("brain.plugins.list", timeout: .seconds(30))
+            let rows = result?["plugins"] as? [[String: Any]] ?? []
+            let plugins = rows.compactMap { PluginSummary(payload: $0) }
+            let pluginsDir = result?["plugins_dir"] as? String ?? ""
+            pluginPanel?.setPlugins(plugins, pluginsDir: pluginsDir)
+            statusController?.setBrainStatus("plugins loaded")
+        } catch {
+            pluginPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("plugins error")
+            NSLog("[wisp] plugin list failed: %@", String(describing: error))
+        }
     }
 
     private func runChatMessage(_ text: String) async {

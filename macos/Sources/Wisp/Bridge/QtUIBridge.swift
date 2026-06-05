@@ -28,18 +28,6 @@ final class QtUIBridge {
         self.config = config
     }
 
-    func showChat(new: Bool = false) throws {
-        try send("ui.show_chat", ["new": new])
-    }
-
-    func showMemory() throws {
-        try send("ui.show_memory")
-    }
-
-    func showPluginManager() throws {
-        try send("ui.show_plugin_manager")
-    }
-
     func showAgentTask() throws {
         try send("ui.show_agent_task")
     }

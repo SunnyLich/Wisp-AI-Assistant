@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import ast
 import threading
 import time
 import wave
@@ -168,6 +169,132 @@ def brain_config_reload() -> dict[str, Any]:
         "llm_model": getattr(config, "LLM_MODEL", ""),
         "tts_provider": getattr(config, "TTS_PROVIDER", ""),
     }
+
+
+@handler("brain.plugins.list")
+def brain_plugins_list() -> dict[str, Any]:
+    """Return loaded/discoverable plugins for the native macOS Plugin Manager."""
+    from core.system.paths import PLUGINS_DIR
+
+    plugins_dir = Path(PLUGINS_DIR)
+    return {
+        "plugins_dir": str(plugins_dir),
+        "plugins": _plugin_summaries(plugins_dir),
+    }
+
+
+def _plugin_summaries(plugins_dir: Path) -> list[dict[str, Any]]:
+    try:
+        from core.plugin_manager import get_manager
+
+        manager = get_manager()
+        mods = getattr(manager, "_mods", [])
+        return [_loaded_plugin_payload(mod) for mod in mods]
+    except Exception:
+        return _discover_plugin_payloads(plugins_dir)
+
+
+def _loaded_plugin_payload(mod: Any) -> dict[str, Any]:
+    module = getattr(mod, "module", None)
+    path = getattr(module, "__file__", "") or ""
+    hooks = _plugin_hook_names(module)
+    return {
+        "name": str(getattr(mod, "name", "")),
+        "path": str(Path(path).parent) if path else "",
+        "status": "loaded",
+        "hooks": hooks,
+        "tray_actions": _safe_tray_action_labels(module),
+        "tools": _safe_tool_names(module),
+        "error": "",
+    }
+
+
+def _discover_plugin_payloads(plugins_dir: Path) -> list[dict[str, Any]]:
+    if not plugins_dir.exists():
+        return []
+
+    payloads: list[dict[str, Any]] = []
+    for child in sorted(p for p in plugins_dir.iterdir() if p.is_dir()):
+        init_path = child / "__init__.py"
+        if not init_path.exists():
+            continue
+        hooks = _declared_hook_names(init_path)
+        payloads.append({
+            "name": child.name,
+            "path": str(child),
+            "status": "discovered",
+            "hooks": hooks,
+            "tray_actions": [],
+            "tools": [],
+            "error": "",
+        })
+    return payloads
+
+
+def _plugin_hook_names(module: Any) -> list[str]:
+    return [
+        hook
+        for hook in _PLUGIN_HOOKS
+        if module is not None and hasattr(module, hook)
+    ]
+
+
+def _declared_hook_names(init_path: Path) -> list[str]:
+    try:
+        tree = ast.parse(init_path.read_text(encoding="utf-8"), filename=str(init_path))
+    except Exception:
+        return []
+    declared = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    return [hook for hook in _PLUGIN_HOOKS if hook in declared]
+
+
+def _safe_tray_action_labels(module: Any) -> list[str]:
+    fn = getattr(module, "get_tray_actions", None)
+    if not callable(fn):
+        return []
+    try:
+        items = fn()
+    except Exception:
+        return []
+    if not isinstance(items, list):
+        return []
+    return [
+        str(item.get("label", "Action"))
+        for item in items
+        if isinstance(item, dict)
+    ]
+
+
+def _safe_tool_names(module: Any) -> list[str]:
+    fn = getattr(module, "get_tools", None)
+    if not callable(fn):
+        return []
+    try:
+        items = fn()
+    except Exception:
+        return []
+    if not isinstance(items, list):
+        return []
+    return [
+        str(item.get("name", "?"))
+        for item in items
+        if isinstance(item, dict)
+    ]
+
+
+_PLUGIN_HOOKS = (
+    "on_startup",
+    "on_shutdown",
+    "before_query",
+    "after_response",
+    "get_tools",
+    "get_tray_actions",
+    "get_system_prompt_section",
+)
 
 
 @handler("brain.echo", streaming=True)

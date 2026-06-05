@@ -16,7 +16,7 @@ macos/
 ```
 
 The Swift app owns the macOS overlay, tray, caller/intent picker, chat, memory,
-core settings, native context, screen capture, voice recording, and audio
+core settings, plugin manager, native context, screen capture, voice recording, and audio
 playback surfaces. The Python sidecar keeps using the existing OS-agnostic
 backend modules until their visible windows are ported.
 
