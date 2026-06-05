@@ -15,10 +15,10 @@ macos/
   ui_host/           temporary bridge for windows not yet ported to Swift
 ```
 
-The Swift app owns the macOS overlay, tray, caller/intent picker, native
-context, screen capture, voice recording, and audio playback surfaces. The
-Python sidecar keeps using the existing OS-agnostic backend modules until their
-visible windows are ported.
+The Swift app owns the macOS overlay, tray, caller/intent picker, chat, memory,
+core settings, native context, screen capture, voice recording, and audio
+playback surfaces. The Python sidecar keeps using the existing OS-agnostic
+backend modules until their visible windows are ported.
 
 ## Default Mac Launch
 

@@ -26,7 +26,8 @@ work until each visible surface is ported.
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback + Python sidecar models |
 | Chat | multi-turn conversation history and streaming replies | Qt window | Swift `ChatPanel` in progress |
 | Memory | durable facts: list, add, edit, delete, search | Qt `MemoryViewer` | Swift `MemoryPanel` + `brain.memory.*` |
-| Settings/plugins/agents | same user-facing windows and config | Qt windows | Temporary Qt bridge, to port to Swift |
+| Settings | shared `.env` config, models, callers, voice, memory knobs | Qt `SettingsDialog` | Swift `SettingsPanel` in progress |
+| Plugins/agents | same user-facing windows and config | Qt windows | Temporary Qt bridge, to port to Swift |
 | Packaging | distributable app | PyInstaller path | Swift `.app` bundle path |
 
 ## Capability Status
@@ -44,7 +45,7 @@ work until each visible surface is ported.
 | Voice query | Done | Partial |
 | TTS playback | Done | Partial |
 | Chat window | Done | In progress native |
-| Settings window | Done | Bridge only |
+| Settings window | Done | In progress native |
 | Memory window | Done | In progress native |
 | Plugin manager | Done | Bridge only |
 | Snip overlay | Done | Missing native UI |
@@ -56,8 +57,8 @@ work until each visible surface is ported.
 1. Replace the prototype Swift prompt entry with the Windows caller/intent
    workflow backed by the same `CALLER_*` keys.
 2. Make the Swift response surface behave like the Windows bubble/chat stream.
-3. Port settings, plugin manager, snip, and agent task windows out of the
-   temporary Qt bridge.
+3. Port plugin manager, snip, and agent task windows out of the temporary Qt
+   bridge.
 4. Finish native paste-back, context buffering, and voice parity.
 5. Build a signed/notarized `.app`.
 

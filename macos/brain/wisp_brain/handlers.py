@@ -156,6 +156,20 @@ def ping(value: Any = None) -> dict[str, Any]:
     return {"pong": True, "value": value, "pid": os.getpid()}
 
 
+@handler("brain.config.reload")
+def brain_config_reload() -> dict[str, Any]:
+    """Reload .env-backed Python config after the native Settings panel saves."""
+    import config
+
+    config.reload()
+    return {
+        "ok": True,
+        "llm_provider": getattr(config, "LLM_PROVIDER", ""),
+        "llm_model": getattr(config, "LLM_MODEL", ""),
+        "tts_provider": getattr(config, "TTS_PROVIDER", ""),
+    }
+
+
 @handler("brain.echo", streaming=True)
 def brain_echo(ctx: StreamContext, text: str = "", chunk_size: int = 1, delay: float = 0.0) -> dict[str, Any]:
     """Stream *text* back word-by-word as ``reply.chunk`` events, then return the

@@ -28,10 +28,6 @@ final class QtUIBridge {
         self.config = config
     }
 
-    func showSettings() throws {
-        try send("ui.show_settings")
-    }
-
     func showChat(new: Bool = false) throws {
         try send("ui.show_chat", ["new": new])
     }

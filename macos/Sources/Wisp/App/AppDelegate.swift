@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var intentPanel: IntentPanel?
     private var chatPanel: ChatPanel?
     private var memoryPanel: MemoryPanel?
+    private var settingsPanel: SettingsPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
@@ -71,6 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        settingsPanel = SettingsPanel { [weak self] draft in
+            Task { await self?.saveSettings(draft) }
+        }
+
         let panel = OverlayPanel { [weak self] in
             self?.showIntentPicker()
         }
@@ -84,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowPermissions: { [weak self] in self?.showPermissionSnapshot() },
             onCaptureScreen: { [weak self] in self?.captureScreenSmoke() },
             onOpenRunLogs: { [weak self] in self?.openRunLogs() },
-            onShowSettings: { [weak self] in self?.showQtSettings() },
+            onShowSettings: { [weak self] in self?.showNativeSettings() },
             onShowChat: { [weak self] in self?.showNativeChat(new: false) },
             onShowNewChat: { [weak self] in self?.showNativeChat(new: true) },
             onShowMemory: { [weak self] in self?.showNativeMemory() },
@@ -255,8 +260,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showQtSettings() {
-        withQtUI("Settings") { try $0.showSettings() }
+    private func showNativeSettings() {
+        settingsPanel?.showSettings(draft: SettingsDraft.load())
+        statusController?.setBrainStatus("settings opened")
     }
 
     private func showQtChat(new: Bool) {
@@ -565,6 +571,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusController?.setBrainStatus("memory error")
             NSLog("[wisp] memory panel search failed: %@", String(describing: error))
         }
+    }
+
+    private func saveSettings(_ draft: SettingsDraft) async {
+        do {
+            try draft.save()
+            appConfig = WispConfig.load()
+            installHotkey(promptForPermission: false)
+            try await reloadBrainConfig()
+            settingsPanel?.setStatus("Settings saved")
+            statusController?.setBrainStatus("settings saved")
+            NSLog("[wisp] native settings saved")
+        } catch {
+            settingsPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("settings error")
+            NSLog("[wisp] native settings save failed: %@", String(describing: error))
+        }
+    }
+
+    private func reloadBrainConfig() async throws {
+        guard let client = brain else { throw BrainError.notRunning }
+        _ = try await client.call("brain.config.reload", timeout: .seconds(30))
     }
 
     private func runChatMessage(_ text: String) async {

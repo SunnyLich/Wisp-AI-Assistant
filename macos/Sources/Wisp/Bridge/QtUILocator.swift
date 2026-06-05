@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The Swift app still owns native macOS capabilities, but it can launch a
 /// separate Python/Qt process for product windows that already work well:
-/// Settings, Chat, Memory, Plugin Manager, and Agent task views.
+/// Plugin Manager and Agent task views that have not moved to Swift yet.
 enum QtUILocator {
 
     static func resolve() -> QtUIBridge.Config? {

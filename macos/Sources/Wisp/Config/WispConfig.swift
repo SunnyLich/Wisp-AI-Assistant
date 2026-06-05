@@ -47,11 +47,21 @@ struct WispConfig: Equatable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         readDotEnv: Bool = true
     ) -> WispConfig {
-        let repoRoot = environment["WISP_REPO_ROOT"].map { URL(fileURLWithPath: $0) }
+        WispConfig(callers: loadCallers(loadValues(environment: environment, readDotEnv: readDotEnv)))
+    }
+
+    static func repoRoot(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        environment["WISP_REPO_ROOT"].map { URL(fileURLWithPath: $0) }
             ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent()
-        let fileValues = readDotEnv ? DotEnvFile.read(repoRoot.appendingPathComponent(".env")) : [:]
-        let values = fileValues.merging(environment) { _, environmentValue in environmentValue }
-        return WispConfig(callers: loadCallers(values))
+    }
+
+    static func loadValues(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        readDotEnv: Bool = true
+    ) -> [String: String] {
+        let root = repoRoot(environment: environment)
+        let fileValues = readDotEnv ? DotEnvFile.read(root.appendingPathComponent(".env")) : [:]
+        return fileValues.merging(environment) { _, environmentValue in environmentValue }
     }
 
     private static func loadCallers(_ values: [String: String]) -> [CallerConfig] {
@@ -197,6 +207,10 @@ private extension IntentConfig {
 enum DotEnvFile {
     static func read(_ url: URL) -> [String: String] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+        return readValues(fromText: text)
+    }
+
+    static func readValues(fromText text: String) -> [String: String] {
         var values: [String: String] = [:]
         for rawLine in text.split(whereSeparator: { $0.isNewline }) {
             let line = String(rawLine).trimmingCharacters(in: .whitespaces)
@@ -212,6 +226,71 @@ enum DotEnvFile {
             }
         }
         return values
+    }
+
+    static func write(
+        _ updates: [String: String],
+        removing removeKeys: Set<String> = [],
+        removingPrefixes removePrefixes: [String] = [],
+        to url: URL
+    ) throws {
+        let current = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let rendered = renderUpdating(
+            current,
+            updates: updates,
+            removing: removeKeys,
+            removingPrefixes: removePrefixes
+        )
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try rendered.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    static func renderUpdating(
+        _ text: String,
+        updates: [String: String],
+        removing removeKeys: Set<String> = [],
+        removingPrefixes removePrefixes: [String] = []
+    ) -> String {
+        var seen: Set<String> = []
+        var lines: [String] = []
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            guard let key = key(in: rawLine) else {
+                lines.append(rawLine)
+                continue
+            }
+
+            if shouldRemove(key, removeKeys: removeKeys, removePrefixes: removePrefixes) {
+                continue
+            }
+
+            if let value = updates[key] {
+                lines.append("\(key)=\(formatValue(value))")
+                seen.insert(key)
+            } else {
+                lines.append(rawLine)
+            }
+        }
+
+        let newKeys = updates.keys
+            .filter { !seen.contains($0) && !shouldRemove($0, removeKeys: removeKeys, removePrefixes: removePrefixes) }
+            .sorted()
+
+        if !newKeys.isEmpty, lines.contains(where: { !$0.isEmpty }) {
+            while lines.last == "" {
+                lines.removeLast()
+            }
+            lines.append("")
+        }
+
+        for key in newKeys {
+            lines.append("\(key)=\(formatValue(updates[key] ?? ""))")
+        }
+
+        return lines.joined(separator: "\n") + "\n"
     }
 
     private static func parseValue(_ raw: String) -> String {
@@ -230,5 +309,35 @@ enum DotEnvFile {
             .replacingOccurrences(of: "\\n", with: "\n")
             .replacingOccurrences(of: "\\\"", with: "\"")
             .replacingOccurrences(of: "\\\\", with: "\\")
+    }
+
+    private static func key(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("#"), trimmed.contains("=") else {
+            return nil
+        }
+        let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let rawKey = parts.first else { return nil }
+        let key = String(rawKey).trimmingCharacters(in: .whitespaces)
+        return key.isEmpty ? nil : key
+    }
+
+    private static func shouldRemove(_ key: String, removeKeys: Set<String>, removePrefixes: [String]) -> Bool {
+        removeKeys.contains(key) || removePrefixes.contains { key.hasPrefix($0) }
+    }
+
+    private static func formatValue(_ value: String) -> String {
+        let needsQuotes = value.isEmpty
+            || value.contains(where: { $0.isWhitespace })
+            || value.contains("#")
+            || value.contains("\"")
+            || value.contains("'")
+            || value.contains("\\")
+        guard needsQuotes else { return value }
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return "\"\(escaped)\""
     }
 }

@@ -60,4 +60,75 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(ScreenshotMode.normalized("no"), .off)
         XCTAssertEqual(ScreenshotMode.normalized("???", default: .model), .model)
     }
+
+    func testDotEnvRenderUpdatesAndRemovesCallerRows() {
+        let original = """
+        # keep comments
+        LLM_PROVIDER=chatgpt
+        CALLER_COUNT=2
+        CALLER_1_LABEL=Old
+        CALLER_2_LABEL=Stale
+        TTS_PROVIDER=none
+        """
+
+        let rendered = DotEnvFile.renderUpdating(
+            original,
+            updates: [
+                "LLM_PROVIDER": "openai",
+                "CALLER_COUNT": "1",
+                "CALLER_1_LABEL": "General",
+                "CALLER_1_INTENT_1_PROMPT": "Explain this clearly.",
+            ],
+            removingPrefixes: ["CALLER_"]
+        )
+
+        XCTAssertTrue(rendered.contains("# keep comments"))
+        XCTAssertTrue(rendered.contains("LLM_PROVIDER=openai"))
+        XCTAssertTrue(rendered.contains("TTS_PROVIDER=none"))
+        XCTAssertTrue(rendered.contains("CALLER_COUNT=1"))
+        XCTAssertTrue(rendered.contains("CALLER_1_LABEL=General"))
+        XCTAssertTrue(rendered.contains("CALLER_1_INTENT_1_PROMPT=\"Explain this clearly.\""))
+        XCTAssertFalse(rendered.contains("CALLER_2_LABEL"))
+        XCTAssertEqual(DotEnvFile.readValues(fromText: rendered)["CALLER_1_LABEL"], "General")
+    }
+
+    func testSettingsDraftSerializesCallerContract() {
+        var draft = SettingsDraft.empty
+        draft.llmProvider = "anthropic"
+        draft.llmModel = "claude-sonnet-4-5"
+        draft.callers = [
+            SettingsCallerDraft(
+                hotkey: "ctrl+option+space",
+                label: "Research",
+                pasteBack: true,
+                customKey: "x",
+                contextAmbient: false,
+                contextDocuments: true,
+                contextTools: false,
+                contextScreenshot: .model,
+                contextClipboard: true,
+                intents: [
+                    SettingsIntentDraft(
+                        key: "r",
+                        label: "Review",
+                        hint: "Find risks",
+                        prompt: "Review this."
+                    )
+                ]
+            )
+        ]
+
+        let values = draft.envValues()
+
+        XCTAssertEqual(values["LLM_PROVIDER"], "anthropic")
+        XCTAssertEqual(values["LLM_MODEL"], "claude-sonnet-4-5")
+        XCTAssertEqual(values["CALLER_COUNT"], "1")
+        XCTAssertEqual(values["CALLER_1_LABEL"], "Research")
+        XCTAssertEqual(values["CALLER_1_PASTE_BACK"], "true")
+        XCTAssertEqual(values["CALLER_1_CONTEXT_SCREENSHOT"], "model")
+        XCTAssertEqual(values["CALLER_1_CONTEXT_CLIPBOARD"], "true")
+        XCTAssertEqual(values["CALLER_1_INTENT_COUNT"], "1")
+        XCTAssertEqual(values["CALLER_1_INTENT_1_KEY"], "r")
+        XCTAssertEqual(values["CALLER_1_INTENT_1_PROMPT"], "Review this.")
+    }
 }
