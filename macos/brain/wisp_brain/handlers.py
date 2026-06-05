@@ -15,11 +15,13 @@ tested from Windows/CI without the LLM stack.
 """
 from __future__ import annotations
 
+import json
 import os
+import threading
 import time
 import wave
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 # Keep optional-dependency chatter off the protocol channel's stderr mirror.
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -68,6 +70,80 @@ def _runtime_output_dir() -> Path:
         out = Path(tempfile.gettempdir()) / "wisp-brain"
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Offline / deterministic seams (tests + dev smoke; OFF in production).
+#
+# These are guarded by environment variables that are unset in the shipped app,
+# so the real LLM / TTS paths run normally on the Mac. When set, the brain
+# produces deterministic output with no network or models, which is what lets
+# the full handler set -- including ``brain.query`` and ``brain.agent.run`` --
+# be exercised end-to-end from Windows/CI. This mirrors the existing
+# ``WISP_MACOS_*`` env-flag style used elsewhere in the codebase.
+# ---------------------------------------------------------------------------
+
+def _offline_brain() -> bool:
+    """True when the brain should answer deterministically without network/models.
+
+    Driven by ``WISP_BRAIN_FAKE_LLM`` (any non-empty value). Used by the query,
+    tts, and agent handlers so an off-Mac integration run never touches a real
+    provider, model, or API key.
+    """
+    return bool(os.getenv("WISP_BRAIN_FAKE_LLM"))
+
+
+def _write_silent_wav(path: Path, *, sample_rate: int = 22_050, milliseconds: int = 120) -> int:
+    """Write a mono int16 silent WAV and return the byte count of its frames."""
+    frames = max(1, int(sample_rate * milliseconds / 1000))
+    silence = b"\x00\x00" * frames
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(silence)
+    return len(silence)
+
+
+def _agent_test_model_callback() -> Callable[[str], str] | None:
+    """Return a model callback that drives the agent loop without a real LLM.
+
+    Resolution order:
+      1. ``WISP_BRAIN_AGENT_TEST_SCRIPT`` -> path to a JSON array of agent
+         response strings (or objects). Each model turn pops the next entry; once
+         exhausted the agent is told to finish. This lets a test script multi-turn
+         tool-call behavior deterministically.
+      2. ``WISP_BRAIN_FAKE_LLM`` -> single-turn callback that immediately returns a
+         valid ``final`` agent response, so the loop completes in one turn offline.
+      3. Otherwise ``None`` -> the runner calls the configured provider (production).
+    """
+    script_path = os.getenv("WISP_BRAIN_AGENT_TEST_SCRIPT")
+    if script_path:
+        raw = json.loads(Path(script_path).read_text(encoding="utf-8"))
+        responses = [r if isinstance(r, str) else json.dumps(r) for r in raw]
+        index = {"i": 0}
+        lock = threading.Lock()
+        done = json.dumps({"thought": "script exhausted", "final": "Done.", "tool_calls": []})
+
+        def scripted(_prompt: str) -> str:
+            with lock:
+                i = index["i"]
+                index["i"] = i + 1
+            return responses[i] if i < len(responses) else done
+
+        return scripted
+
+    if _offline_brain():
+        canned = json.dumps(
+            {"thought": "fake offline run", "final": "Fake agent run complete.", "tool_calls": []}
+        )
+
+        def fake(_prompt: str) -> str:
+            return canned
+
+        return fake
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +245,11 @@ def brain_tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, 
     if not text.strip():
         raise ValueError("text is required")
 
+    if _offline_brain():
+        out_path = _runtime_output_dir() / f"tts-{int(time.time() * 1000)}.wav"
+        n_bytes = _write_silent_wav(out_path, sample_rate=22_050, milliseconds=120)
+        return {"path": str(out_path), "sample_rate": 22_050, "bytes": n_bytes, "provider": "fake"}
+
     import numpy as np
     import config
     from core import tts
@@ -190,8 +271,11 @@ def brain_tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, 
         pcm_i16 = b"".join(chunks)
     else:
         sample_rate = tts.SAMPLE_RATE
+        # np.frombuffer yields a read-only view over the immutable bytes, so
+        # nan_to_num must copy (copy=False raises "assignment destination is
+        # read-only"). clip then returns its own writable array.
         audio_f32 = np.frombuffer(b"".join(chunks), dtype=np.float32)
-        audio_f32 = np.nan_to_num(audio_f32, copy=False)
+        audio_f32 = np.nan_to_num(audio_f32)
         audio_f32 = np.clip(audio_f32, -1.0, 1.0)
         pcm_i16 = (audio_f32 * 32767.0).astype("<i2").tobytes()
 
@@ -228,7 +312,6 @@ def brain_query(
     request's id; the full text is the final response result.
     """
     from core.query_pipeline import ContextInputs, build_context
-    from core.llm_clients.client import stream_response
 
     if not memory_context:
         try:
@@ -247,13 +330,7 @@ def brain_query(
     )
 
     parts: list[str] = []
-    for chunk in stream_response(
-        built.user_message,
-        image_base64=built.screenshot_b64,
-        ambient_context=built.ambient_ctx,
-        memory_context=memory_context,
-        use_tools=use_tools,
-    ):
+    for chunk in _stream_query_reply(built, memory_context, use_tools):
         if ctx.cancelled:
             break
         parts.append(chunk)
@@ -262,6 +339,35 @@ def brain_query(
     full = "".join(parts)
     ctx.emit("reply.done", {"text": full})
     return {"text": full}
+
+
+def _stream_query_reply(built: Any, memory_context: str, use_tools: bool) -> Iterator[str]:
+    """Token stream for ``brain.query``: real provider, or deterministic offline.
+
+    In offline mode (``WISP_BRAIN_FAKE_LLM``) the assembled prompt is still built
+    by ``core.query_pipeline.build_context`` -- so context precedence is exercised
+    for real -- and the reply just echoes the intent plus the assembled ambient
+    context (selected text, clipboard, app/window) with a ``[fake-llm]`` tag, so
+    tests can assert reassembly and that each of their inputs reached the model.
+    """
+    if _offline_brain():
+        prompt = (getattr(built, "user_message", "") or "").strip()
+        ambient = (getattr(built, "ambient_ctx", "") or "").strip()
+        combined = (prompt + ("\n" + ambient if ambient else "")).strip()
+        reply = f"[fake-llm] {combined}".strip()
+        for word in reply.split(" "):
+            yield word + " "
+        return
+
+    from core.llm_clients.client import stream_response
+
+    yield from stream_response(
+        built.user_message,
+        image_base64=built.screenshot_b64,
+        ambient_context=built.ambient_ctx,
+        memory_context=memory_context,
+        use_tools=use_tools,
+    )
 
 
 @handler("brain.memory.add")
@@ -293,6 +399,88 @@ def brain_memory_search(query: str = "", top_k: int | None = None) -> dict[str, 
 
     text = store.get_manager().retrieve_relevant(query, top_k=top_k) or ""
     return {"text": text}
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime -- the scoped multi-agent task runner behind the Windows tray's
+# "Start agent task" dialog, exposed to the native shell. Reuses the OS-agnostic
+# ``core.agent`` verbatim; only the log/trace plumbing and cancel bridging are
+# brain-specific. Run artifacts are written under the run-log dir (never the
+# repo's memory/agent_runs) so the sidecar stays self-contained on the Mac.
+# ---------------------------------------------------------------------------
+
+@handler("brain.agent.run", streaming=True)
+def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None = None) -> dict[str, Any]:
+    """Run one scoped agent task, streaming its log/trace lines as events.
+
+    ``spec`` is the same serialized ``AgentTaskSpec`` dict the Windows GUI builds
+    (title/objective/scope_folder/permissions/agents/...). Each run.log line is
+    emitted as an ``agent.log`` event and each verbose entry as ``agent.trace``,
+    both tagged with this request id so the host can render live progress. The
+    final result carries the run directory and the final report; the runner never
+    raises (it captures failures into ``error.txt``), so a failed task returns its
+    error text rather than erroring the call.
+    """
+    if not isinstance(spec, dict):
+        raise ValueError("spec (a serialized agent task dict) is required")
+
+    from core.agent.task_spec import agent_task_spec_from_dict
+    from core.agent.runner import AgentTaskRunner
+    from core.agent.runtime import AgentRunControl
+
+    task_spec = agent_task_spec_from_dict(spec)
+    control = AgentRunControl()
+
+    # Bridge cooperative cancel: the host cancels the stream (brain.cancel) ->
+    # ctx.cancelled flips -> propagate into the agent's own cancel token so the
+    # run loop stops at its next checkpoint.
+    stop_watch = threading.Event()
+
+    def _watch_cancel() -> None:
+        while not stop_watch.wait(0.1):
+            if ctx.cancelled:
+                control.cancel()
+                return
+
+    watcher = threading.Thread(target=_watch_cancel, daemon=True)
+    watcher.start()
+
+    runs_dir = Path(log_root) if log_root else (_runtime_output_dir() / "agent-runs")
+    runner = AgentTaskRunner(
+        log_root=runs_dir,
+        model_callback=_agent_test_model_callback(),
+        control=control,
+    )
+
+    def on_log(line: str) -> None:
+        ctx.emit("agent.log", {"line": line})
+
+    def on_trace(entry: str) -> None:
+        ctx.emit("agent.trace", {"entry": entry})
+
+    try:
+        run_dir = runner.run(task_spec, on_log, on_trace)
+    finally:
+        stop_watch.set()
+
+    run_dir = Path(run_dir)
+    final_text = ""
+    final_path = run_dir / "final.md"
+    if final_path.exists():
+        final_text = final_path.read_text(encoding="utf-8", errors="replace")
+    error_text = ""
+    error_path = run_dir / "error.txt"
+    if error_path.exists():
+        error_text = error_path.read_text(encoding="utf-8", errors="replace")
+
+    result = {
+        "run_dir": str(run_dir),
+        "final": final_text,
+        "error": error_text,
+        "cancelled": control.is_cancelled(),
+    }
+    ctx.emit("agent.done", result)
+    return result
 
 
 __all__ = ["HANDLERS", "STREAMING", "StreamContext", "handler"]

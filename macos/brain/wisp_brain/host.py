@@ -43,6 +43,10 @@ def _bootstrap_path() -> None:
 def _main() -> int:
     _bootstrap_path()
 
+    if os.getenv("WISP_BRAIN_FAULTHANDLER"):
+        import faulthandler
+        faulthandler.dump_traceback_later(15, exit=False)
+
     # Protect the protocol channel: keep a private binary handle to the *real*
     # stdout, then point fd 1 at stderr so stray prints don't land on the wire.
     real_out = os.fdopen(os.dup(1), "wb", buffering=0)
@@ -52,6 +56,18 @@ def _main() -> int:
 
     from wisp_brain import protocol
     from wisp_brain.handlers import HANDLERS, STREAMING, StreamContext
+
+    # Pre-warm native extensions on the MAIN thread. Every request below is
+    # dispatched on its own daemon thread, and some C extensions -- notably numpy
+    # on Python 3.14 -- deadlock when first imported from a worker thread. Doing
+    # the first import here (best-effort) makes the first real audio/query request
+    # safe. It stays dependency-free: if these aren't installed the sidecar still
+    # boots and answers ``ping``/``brain.echo``.
+    for _prewarm in ("numpy", "soundfile"):
+        try:
+            __import__(_prewarm)
+        except Exception:  # noqa: BLE001 -- absence is fine; ping still works
+            pass
 
     write_lock = threading.Lock()
     # Active streaming contexts, keyed by request id, for cooperative cancel.

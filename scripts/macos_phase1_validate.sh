@@ -354,7 +354,20 @@ export WISP_RUN_LOG_DIR="$LOG_DIR"
 
 log_info "Log directory: $LOG_DIR"
 
-run_logged "python-brain-sidecar" "$BRAIN_PY" macos/brain/tests/test_brain_host.py
+# Full brain handler + integration suite when pytest is available; otherwise the
+# dependency-free transport test still proves the seam. The suite runs offline
+# via the WISP_BRAIN_FAKE_LLM seam, so it needs no API keys or models.
+ensure_pytest() {
+  "$1" -c "import pytest" >/dev/null 2>&1 && return 0
+  "$1" -m pip install pytest >/dev/null 2>&1
+}
+
+if ensure_pytest "$BRAIN_PY"; then
+  run_logged "python-brain-tests" "$BRAIN_PY" -m pytest macos/brain/tests/ -q
+else
+  log_info "pytest unavailable; running the transport test directly"
+  run_logged "python-brain-sidecar" "$BRAIN_PY" macos/brain/tests/test_brain_host.py
+fi
 
 cd macos
 run_logged "swift-test" swift test
