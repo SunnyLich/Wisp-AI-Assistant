@@ -121,3 +121,8 @@ intact while routing crash-prone backend work through conservative paths. Set
   safe mode; memory falls back to plain JSON storage. Set
   `WISP_MACOS_ENABLE_CHROMADB=1` or
   `WISP_MACOS_ENABLE_MEMORY_BACKGROUND_LLM=1` only while validating those paths.
+- SDK clients ignore macOS environment/system proxy discovery in safe mode, and
+  startup installs a process-wide urllib proxy guard for SDKs that build HTTP
+  clients internally. This avoids `getproxies_macosx_sysconf` native crashes on
+  worker threads. Set `WISP_MACOS_TRUST_ENV_PROXIES=1` only if proxy validation
+  is required.

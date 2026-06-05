@@ -21,6 +21,7 @@ from typing import Generator, Iterable
 
 from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
+from core.system import sdk_clients
 
 
 SAMPLE_RATE = 44100   # Hz  (Cartesia / default)
@@ -44,6 +45,7 @@ def _get_cartesia_ws():
     global _cartesia_client, _cartesia_ws_manager, _cartesia_ws
     with _cartesia_ws_lock:
         if _cartesia_ws is None:
+            sdk_clients.install_proxy_guard()
             from cartesia import Cartesia  # type: ignore
             # Building the client creates an SSL context (Security framework on
             # macOS) — serialize against concurrent LLM-client construction.
@@ -184,6 +186,7 @@ def _stream_cartesia(text_chunks: Iterable[str],
 
 def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
     try:
+        sdk_clients.install_proxy_guard()
         from elevenlabs.client import ElevenLabs  # type: ignore
     except ImportError as exc:
         raise RuntimeError(
@@ -223,6 +226,7 @@ def test_connection(
             if not cartesia_voice_id:
                 raise ValueError("CARTESIA_VOICE_ID is not configured.")
             got_audio = False
+            sdk_clients.install_proxy_guard()
             from cartesia import Cartesia  # type: ignore
 
             with ssl_init_lock():
@@ -256,6 +260,7 @@ def test_connection(
         if provider == "elevenlabs":
             if not elevenlabs_api_key:
                 raise ValueError("ELEVENLABS_API_KEY is not configured.")
+            sdk_clients.install_proxy_guard()
             from elevenlabs.client import ElevenLabs  # type: ignore
 
             with ssl_init_lock():

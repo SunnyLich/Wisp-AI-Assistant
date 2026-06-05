@@ -38,6 +38,7 @@ import config
 from core.system.paths import MEMORY_DIR
 from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
+from core.system import sdk_clients
 
 try:
     from core.context_router import ContextChunk, ContextRouter
@@ -910,20 +911,19 @@ class MemoryManager:
         can fall through to the next route in the fallback chain.
         """
         if provider in ("groq", "openai", "google"):
-            from openai import OpenAI
             with ssl_init_lock():
                 if provider == "groq":
-                    client = OpenAI(
+                    client = sdk_clients.openai_client(
                         api_key=config.GROQ_API_KEY,
                         base_url="https://api.groq.com/openai/v1",
                     )
                 elif provider == "google":
-                    client = OpenAI(
+                    client = sdk_clients.openai_client(
                         api_key=config.GOOGLE_API_KEY,
                         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     )
                 else:
-                    client = OpenAI(api_key=config.OPENAI_API_KEY)
+                    client = sdk_clients.openai_client(api_key=config.OPENAI_API_KEY)
 
             resp = client.chat.completions.create(
                 model=model,
@@ -934,9 +934,8 @@ class MemoryManager:
             return resp.choices[0].message.content or ""
 
         if provider == "anthropic":
-            import anthropic
             with ssl_init_lock():
-                client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+                client = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
             resp = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,

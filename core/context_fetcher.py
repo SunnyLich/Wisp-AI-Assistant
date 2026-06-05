@@ -49,6 +49,7 @@ from urllib.parse import urlparse, unquote
 
 from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
+from core.system import sdk_clients
 
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
@@ -319,10 +320,8 @@ def _search_online(query: str, max_results: int = 5) -> list[dict]:
         return []
 
     try:
-        import anthropic  # type: ignore
-
         with ssl_init_lock():
-            client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            client = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
 
         response = client.messages.create(
             model=_SEARCH_MODEL,

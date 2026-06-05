@@ -103,6 +103,7 @@ from core.memory_store import store as memory_module
 from core.query_pipeline import GenerationCounter, ContextInputs, build_context
 from core.system.app_platform import configure_windows_app_identity
 from core.system import macos_safety
+from core.system import sdk_clients
 from core.system.paths import ASSETS_DIR
 from core.memory_store.commands import extract_remember_fact
 from ui.overlay import IconOverlay, OverlaySignals
@@ -110,6 +111,8 @@ from ui.intent_overlay import IntentOverlay
 from ui.snip_overlay import SnipOverlay
 from ui.chat_window import ChatWindow
 from ui.shared.theme import apply_app_theme
+
+sdk_clients.install_proxy_guard()
 
 
 def _build_app_icon() -> QIcon:

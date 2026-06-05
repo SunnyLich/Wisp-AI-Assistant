@@ -48,6 +48,12 @@ Known protected boundaries:
   facts still work through the plain JSON fallback; set `WISP_MACOS_ENABLE_CHROMADB=1`
   or `WISP_MACOS_ENABLE_MEMORY_BACKGROUND_LLM=1` only while validating those
   native/background paths.
+- `core.system.sdk_clients`: OpenAI/Anthropic/httpx clients disable environment
+  proxy discovery in macOS safe mode, and startup installs a process-wide urllib
+  proxy guard for SDKs that build their own HTTP clients. This avoids Python's
+  `urllib.request.getproxies_macosx_sysconf` path, which enters macOS
+  SystemConfiguration from whichever worker thread is constructing the SDK
+  client. Set `WISP_MACOS_TRUST_ENV_PROXIES=1` only while validating proxy use.
 
 When adding a new provider SDK or native macOS API, wrap the smallest possible
 construction/access block. Do not hold the lock for a full streaming response

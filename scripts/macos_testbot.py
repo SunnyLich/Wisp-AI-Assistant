@@ -68,19 +68,19 @@ def _note_platform() -> None:
 # ---------------------------------------------------------------------------
 
 def _build_openai(unsafe: bool) -> None:
-    from openai import OpenAI
     from core.system.native_locks import ssl_init_lock
+    from core.system import sdk_clients
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
     with cm:
-        OpenAI(api_key=_DUMMY_KEYS["openai"], max_retries=0)
+        sdk_clients.openai_client(api_key=_DUMMY_KEYS["openai"], max_retries=0)
 
 
 def _build_anthropic(unsafe: bool) -> None:
-    import anthropic
     from core.system.native_locks import ssl_init_lock
+    from core.system import sdk_clients
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
     with cm:
-        anthropic.Anthropic(api_key=_DUMMY_KEYS["anthropic"])
+        sdk_clients.anthropic_client(api_key=_DUMMY_KEYS["anthropic"])
 
 
 def _build_cartesia(unsafe: bool) -> None:

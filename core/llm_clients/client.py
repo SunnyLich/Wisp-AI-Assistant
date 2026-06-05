@@ -15,6 +15,7 @@ from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
 from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
+from core.system import sdk_clients
 from core.llm_clients.routes import (
     GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
     DEEPSEEK_BASE_URL as _DEEPSEEK_BASE_URL,
@@ -779,13 +780,11 @@ def _get_codex_client():
     if _codex_client is None:
         with _codex_client_lock:
             if _codex_client is None:
-                import httpx
-                from openai import OpenAI
                 with ssl_init_lock():
-                    _codex_client = OpenAI(
+                    _codex_client = sdk_clients.openai_client(
                         api_key="chatgpt-oauth-dummy",
                         base_url="https://chatgpt.com/backend-api/codex",
-                        http_client=httpx.Client(transport=_CodexTransport()),
+                        http_client=sdk_clients.httpx_client(transport=_CodexTransport()),
                     )
     return _codex_client
 
@@ -871,8 +870,6 @@ _dynamic_client_lock = _threading.Lock()
 
 
 def _build_dynamic_openai_client(provider: str):
-    from openai import OpenAI
-
     # max_retries=1: allow one quick same-model retry for a transient blip, but
     # not the SDK default (2) which slowly re-hammers an exhausted model every
     # turn with backoff before the fallback chain (which switches models) is
@@ -880,10 +877,10 @@ def _build_dynamic_openai_client(provider: str):
     if provider in _OPENAI_COMPAT_PROVIDERS:
         key_attr, base_url = _OPENAI_COMPAT_PROVIDERS[provider]
         api_key = getattr(config, key_attr) if key_attr else "ollama"
-        return OpenAI(api_key=api_key or "no-key", base_url=base_url, max_retries=_OPENAI_MAX_RETRIES)
+        return sdk_clients.openai_client(api_key=api_key or "no-key", base_url=base_url, max_retries=_OPENAI_MAX_RETRIES)
     if provider == "custom":
-        return OpenAI(api_key=config.CUSTOM_API_KEY or "no-key", base_url=config.CUSTOM_BASE_URL, max_retries=_OPENAI_MAX_RETRIES)
-    return OpenAI(api_key=config.OPENAI_API_KEY, max_retries=_OPENAI_MAX_RETRIES)
+        return sdk_clients.openai_client(api_key=config.CUSTOM_API_KEY or "no-key", base_url=config.CUSTOM_BASE_URL, max_retries=_OPENAI_MAX_RETRIES)
+    return sdk_clients.openai_client(api_key=config.OPENAI_API_KEY, max_retries=_OPENAI_MAX_RETRIES)
 
 
 def _dynamic_openai_client(provider: str):
@@ -900,9 +897,8 @@ def _dynamic_anthropic_client():
     global _dynamic_anthropic_client_cache
     with _dynamic_client_lock:
         if _dynamic_anthropic_client_cache is None:
-            import anthropic
             with ssl_init_lock():
-                _dynamic_anthropic_client_cache = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+                _dynamic_anthropic_client_cache = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
         return _dynamic_anthropic_client_cache
 
 
@@ -939,35 +935,33 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
         raise NotImplementedError(f"{provider} does not support model listing")
 
     if provider == "anthropic":
-        from anthropic import Anthropic
         key = api_key or config.ANTHROPIC_API_KEY
         if not key:
             raise ValueError("No Anthropic API key configured")
         with ssl_init_lock():
-            client = Anthropic(api_key=key)
+            client = sdk_clients.anthropic_client(api_key=key)
         resp = client.models.list(limit=1000)
         ids = [m.id for m in resp.data]
     else:
-        from openai import OpenAI
         if provider == "custom":
             url = base_url or config.CUSTOM_BASE_URL
             if not url:
                 raise ValueError("No custom base URL configured")
             with ssl_init_lock():
-                client = OpenAI(api_key=api_key or config.CUSTOM_API_KEY or "no-key", base_url=url)
+                client = sdk_clients.openai_client(api_key=api_key or config.CUSTOM_API_KEY or "no-key", base_url=url)
         elif provider in _OPENAI_COMPAT_PROVIDERS:
             key_attr, default_base = _OPENAI_COMPAT_PROVIDERS[provider]
             key = api_key or (getattr(config, key_attr) if key_attr else "ollama")
             if key_attr and not key:
                 raise ValueError(f"No API key configured for {provider}")
             with ssl_init_lock():
-                client = OpenAI(api_key=key or "no-key", base_url=base_url or default_base)
+                client = sdk_clients.openai_client(api_key=key or "no-key", base_url=base_url or default_base)
         elif provider == "openai":
             key = api_key or config.OPENAI_API_KEY
             if not key:
                 raise ValueError("No OpenAI API key configured")
             with ssl_init_lock():
-                client = OpenAI(api_key=key)
+                client = sdk_clients.openai_client(api_key=key)
         else:
             raise ValueError(f"Unknown provider: {provider}")
         resp = client.models.list()
@@ -1175,15 +1169,14 @@ def _check_route_config_with_credentials(
 def _get_openai_client():
     global _openai_client
     if _openai_client is None:
-        from openai import OpenAI
         with ssl_init_lock():
             if config.LLM_PROVIDER.lower() == "groq":
-                _openai_client = OpenAI(
+                _openai_client = sdk_clients.openai_client(
                     api_key=config.GROQ_API_KEY,
                     base_url="https://api.groq.com/openai/v1",
                 )
             else:
-                _openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+                _openai_client = sdk_clients.openai_client(api_key=config.OPENAI_API_KEY)
     return _openai_client
 
 
@@ -1193,24 +1186,22 @@ def _get_chat_openai_client():
         return _get_openai_client()
     global _chat_openai_client
     if _chat_openai_client is None:
-        from openai import OpenAI
         with ssl_init_lock():
             if config.CHAT_LLM_PROVIDER.lower() == "groq":
-                _chat_openai_client = OpenAI(
+                _chat_openai_client = sdk_clients.openai_client(
                     api_key=config.GROQ_API_KEY,
                     base_url="https://api.groq.com/openai/v1",
                 )
             else:
-                _chat_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+                _chat_openai_client = sdk_clients.openai_client(api_key=config.OPENAI_API_KEY)
     return _chat_openai_client
 
 
 def _get_anthropic_client():
     global _anthropic_client
     if _anthropic_client is None:
-        import anthropic
         with ssl_init_lock():
-            _anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            _anthropic_client = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
     return _anthropic_client
 
 
@@ -1219,38 +1210,35 @@ def _get_chat_anthropic_client():
         return _get_anthropic_client()
     global _chat_anthropic_client
     if _chat_anthropic_client is None:
-        import anthropic
         with ssl_init_lock():
-            _chat_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            _chat_anthropic_client = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
     return _chat_anthropic_client
 
 
 def _get_vision_openai_client():
     global _vision_openai_client
     if _vision_openai_client is None:
-        from openai import OpenAI
         with ssl_init_lock():
             if config.VISION_LLM_PROVIDER.lower() == "groq":
-                _vision_openai_client = OpenAI(
+                _vision_openai_client = sdk_clients.openai_client(
                     api_key=config.GROQ_API_KEY,
                     base_url="https://api.groq.com/openai/v1",
                 )
             elif config.VISION_LLM_PROVIDER.lower() == "google":
-                _vision_openai_client = OpenAI(
+                _vision_openai_client = sdk_clients.openai_client(
                     api_key=config.GOOGLE_API_KEY,
                     base_url=_GOOGLE_OPENAI_BASE_URL,
                 )
             else:
-                _vision_openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+                _vision_openai_client = sdk_clients.openai_client(api_key=config.OPENAI_API_KEY)
     return _vision_openai_client
 
 
 def _get_vision_anthropic_client():
     global _vision_anthropic_client
     if _vision_anthropic_client is None:
-        import anthropic
         with ssl_init_lock():
-            _vision_anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            _vision_anthropic_client = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
     return _vision_anthropic_client
 
 
@@ -1287,17 +1275,15 @@ def _probe_openai_compat_route_with_credentials(
     base_url: str = "",
     image_base64: str | None = None,
 ) -> None:
-    from openai import OpenAI
-
     with ssl_init_lock():
         if provider == "groq":
-            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            client = sdk_clients.openai_client(api_key=api_key, base_url="https://api.groq.com/openai/v1")
         elif provider == "google":
-            client = OpenAI(api_key=api_key, base_url=_GOOGLE_OPENAI_BASE_URL)
+            client = sdk_clients.openai_client(api_key=api_key, base_url=_GOOGLE_OPENAI_BASE_URL)
         elif provider == "custom":
-            client = OpenAI(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
+            client = sdk_clients.openai_client(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
         else:
-            client = OpenAI(api_key=api_key)
+            client = sdk_clients.openai_client(api_key=api_key)
     _run_openai_compat_probe(
         client,
         provider=provider,
@@ -1330,10 +1316,8 @@ def _probe_anthropic_route(model: str, image_base64: str | None = None) -> None:
 
 
 def _probe_anthropic_route_with_api_key(model: str, api_key: str, image_base64: str | None = None) -> None:
-    import anthropic
-
     with ssl_init_lock():
-        client = anthropic.Anthropic(api_key=api_key)
+        client = sdk_clients.anthropic_client(api_key=api_key)
     if image_base64:
         content = [
             {
