@@ -2,14 +2,14 @@ import AppKit
 import ApplicationServices
 
 enum HotkeyInstallResult: Equatable {
-    case installed
+    case installed(Int)
     case accessibilityNeeded
     case failed(String)
 
     var statusText: String {
         switch self {
-        case .installed:
-            return "Ctrl-Option-Space ready"
+        case .installed(let count):
+            return count == 1 ? "1 caller hotkey ready" : "\(count) caller hotkeys ready"
         case .accessibilityNeeded:
             return "Accessibility permission needed"
         case .failed(let message):
@@ -18,21 +18,130 @@ enum HotkeyInstallResult: Equatable {
     }
 }
 
+struct HotkeyDefinition: Equatable {
+    var callerIndex: Int
+    var label: String
+    var display: String
+    var keyCode: Int64
+    var modifiers: CGEventFlags
+
+    static func parse(_ raw: String, callerIndex: Int, label: String = "") -> HotkeyDefinition? {
+        let tokens = raw
+            .split(separator: "+")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        guard !tokens.isEmpty else { return nil }
+
+        var modifiers = CGEventFlags(rawValue: 0)
+        var keyCode: Int64?
+
+        for token in tokens {
+            switch token {
+            case "ctrl", "control":
+                modifiers.insert(.maskControl)
+            case "alt", "option", "opt":
+                modifiers.insert(.maskAlternate)
+            case "shift":
+                modifiers.insert(.maskShift)
+            case "cmd", "command", "meta", "win":
+                modifiers.insert(.maskCommand)
+            default:
+                guard keyCode == nil, let parsedCode = keyCodeForToken(token) else {
+                    return nil
+                }
+                keyCode = parsedCode
+            }
+        }
+
+        guard let keyCode else { return nil }
+        return HotkeyDefinition(
+            callerIndex: callerIndex,
+            label: label,
+            display: raw,
+            keyCode: keyCode,
+            modifiers: modifiers
+        )
+    }
+
+    func matches(keyCode: Int64, flags: CGEventFlags) -> Bool {
+        guard self.keyCode == keyCode else { return false }
+        let checkedModifiers: [CGEventFlags] = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
+        for required in checkedModifiers {
+            if flags.contains(required) != modifiers.contains(required) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func keyCodeForToken(_ token: String) -> Int64? {
+        if let code = namedKeyCodes[token] {
+            return code
+        }
+        if token.count == 1, let code = ansiKeyCodes[token] {
+            return code
+        }
+        if token.hasPrefix("f"),
+           let number = Int(token.dropFirst()),
+           let code = functionKeyCodes[number] {
+            return code
+        }
+        return nil
+    }
+
+    private static let ansiKeyCodes: [String: Int64] = [
+        "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7,
+        "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15,
+        "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22,
+        "5": 23, "=": 24, "9": 25, "7": 26, "-": 27, "8": 28, "0": 29,
+        "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35, "l": 37,
+        "j": 38, "'": 39, "k": 40, ";": 41, "\\": 42, ",": 43, "/": 44,
+        "n": 45, "m": 46, ".": 47, "`": 50,
+    ]
+
+    private static let namedKeyCodes: [String: Int64] = [
+        "space": 49,
+        "spacebar": 49,
+        "space_bar": 49,
+        "tab": 48,
+        "enter": 36,
+        "return": 36,
+        "backspace": 51,
+        "delete": 51,
+        "escape": 53,
+        "esc": 53,
+        "left": 123,
+        "right": 124,
+        "down": 125,
+        "up": 126,
+    ]
+
+    private static let functionKeyCodes: [Int: Int64] = [
+        1: 122, 2: 120, 3: 99, 4: 118, 5: 96, 6: 97,
+        7: 98, 8: 100, 9: 101, 10: 109, 11: 103, 12: 111,
+    ]
+}
+
 @MainActor
 final class HotkeyController {
 
-    private static let spaceKeyCode: Int64 = 49
-
-    private let onTrigger: () -> Void
+    private let onTrigger: (Int) -> Void
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var definitions: [HotkeyDefinition] = []
 
-    init(onTrigger: @escaping () -> Void) {
+    init(onTrigger: @escaping (Int) -> Void) {
         self.onTrigger = onTrigger
     }
 
-    func start(promptForPermission: Bool) -> HotkeyInstallResult {
+    func start(callers: [CallerConfig], promptForPermission: Bool) -> HotkeyInstallResult {
         stop()
+        definitions = callers.enumerated().compactMap { index, caller in
+            HotkeyDefinition.parse(caller.hotkey, callerIndex: index, label: caller.label)
+        }
+        guard !definitions.isEmpty else {
+            return .failed("no valid caller hotkeys configured")
+        }
 
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let options = [promptKey: promptForPermission] as CFDictionary
@@ -62,8 +171,8 @@ final class HotkeyController {
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        NSLog("[wisp] hotkey installed: Ctrl-Option-Space")
-        return .installed
+        NSLog("[wisp] hotkeys installed: %@", definitions.map(\.display).joined(separator: ", "))
+        return .installed(definitions.count)
     }
 
     func stop() {
@@ -87,14 +196,14 @@ final class HotkeyController {
             return
         }
 
-        guard typeRawValue == CGEventType.keyDown.rawValue else { return }
-        guard keyCode == Self.spaceKeyCode, !isRepeat else { return }
+        guard typeRawValue == CGEventType.keyDown.rawValue, !isRepeat else { return }
 
         let flags = CGEventFlags(rawValue: flagsRawValue)
-        guard flags.contains(.maskControl), flags.contains(.maskAlternate) else { return }
-
-        NSLog("[wisp] hotkey triggered")
-        onTrigger()
+        guard let definition = definitions.first(where: { $0.matches(keyCode: keyCode, flags: flags) }) else {
+            return
+        }
+        NSLog("[wisp] caller hotkey triggered: %@ (%d)", definition.display, definition.callerIndex)
+        onTrigger(definition.callerIndex)
     }
 }
 

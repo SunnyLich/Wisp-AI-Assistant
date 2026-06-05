@@ -20,7 +20,7 @@ work until each visible surface is ported.
 |---|---|---|---|
 | Floating overlay | Wisp state art: idle/listening/thinking/speaking | Qt overlay | Swift `OverlayPanel` |
 | Tray/menu | Ask, chat, memory, plugins, settings, voice, quit | Qt tray | Swift `StatusItemController` |
-| Caller intents | `CALLER_*` config, W/A/D/custom picker | Qt `IntentOverlay` | Swift `IntentPanel` |
+| Caller intents/hotkeys | `CALLER_*` config, caller hotkeys, W/A/D/custom picker | Qt `IntentOverlay` | Swift `HotkeyController` + `IntentPanel` |
 | Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` |
 | Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController` and `ScreenCaptureController` |
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback + Python sidecar models |
@@ -35,7 +35,7 @@ work until each visible surface is ported.
 | Native launch | Done | In progress |
 | Floating overlay | Done | Done |
 | Tray/menu | Done | Partial |
-| Caller intent picker | Done | In progress |
+| Caller intent picker/hotkeys | Done | In progress native |
 | Text prompt/query | Done | In progress through `brain.query` |
 | Streaming reply surface | Done | In progress native bubble |
 | Selected text and ambient context | Done | Partial |
@@ -57,8 +57,7 @@ work until each visible surface is ported.
 2. Make the Swift response surface behave like the Windows bubble/chat stream.
 3. Port settings, memory, plugin manager, snip, and agent task windows out of
    the temporary Qt bridge.
-4. Finish native paste-back, multi-caller hotkeys, context buffering, and voice
-   parity.
+4. Finish native paste-back, context buffering, and voice parity.
 5. Build a signed/notarized `.app`.
 
 ## Stability Gates

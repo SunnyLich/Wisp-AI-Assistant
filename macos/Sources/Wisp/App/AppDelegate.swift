@@ -82,8 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         statusController = status
 
-        let hotkey = HotkeyController { [weak self] in
-            self?.showIntentPicker()
+        let hotkey = HotkeyController { [weak self] callerIndex in
+            self?.showIntentPicker(callerIndex: callerIndex)
         }
         self.hotkey = hotkey
         installHotkey(promptForPermission: true)
@@ -149,7 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installHotkey(promptForPermission: Bool) {
         guard let hotkey else { return }
-        let result = hotkey.start(promptForPermission: promptForPermission)
+        appConfig = WispConfig.load()
+        let result = hotkey.start(callers: appConfig.callers, promptForPermission: promptForPermission)
         statusController?.setHotkeyStatus(result.statusText)
     }
 
