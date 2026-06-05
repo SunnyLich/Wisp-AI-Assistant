@@ -17,7 +17,7 @@ import SwiftUI
 @MainActor
 final class OverlayPanel: NSPanel {
 
-    enum DollState { case idle, listening, thinking, speaking }
+    enum DollState: Hashable { case idle, listening, thinking, speaking }
 
     private let model: OverlayModel
 
@@ -67,9 +67,15 @@ final class OverlayModel: ObservableObject {
     @Published var state: OverlayPanel.DollState = .idle
 
     let onTap: () -> Void
+    private let images: [OverlayPanel.DollState: NSImage]
 
     init(onTap: @escaping () -> Void) {
         self.onTap = onTap
+        self.images = DollAssetLocator.loadImages()
+    }
+
+    func image(for state: OverlayPanel.DollState) -> NSImage? {
+        images[state]
     }
 }
 
@@ -86,15 +92,69 @@ private struct OverlayView: View {
     }
 
     var body: some View {
-        Circle()
-            .fill(color.opacity(0.9))
-            .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 2))
-            .frame(width: 64, height: 64)
-            .shadow(radius: 6)
-            .padding(16)
-            .onTapGesture {
-                model.onTap()
+        Group {
+            if let image = model.image(for: model.state) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 78, height: 78)
+                    .shadow(radius: 6)
+            } else {
+                Circle()
+                    .fill(color.opacity(0.9))
+                    .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 2))
+                    .frame(width: 64, height: 64)
+                    .shadow(radius: 6)
             }
-            .animation(.easeInOut(duration: 0.25), value: model.state)
+        }
+        .padding(9)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.onTap()
+        }
+        .animation(.easeInOut(duration: 0.25), value: model.state)
+    }
+}
+
+private enum DollAssetLocator {
+
+    static func loadImages() -> [OverlayPanel.DollState: NSImage] {
+        let names: [OverlayPanel.DollState: String] = [
+            .idle: "idle.png",
+            .listening: "listening.png",
+            .thinking: "thinking.png",
+            .speaking: "speaking.png",
+        ]
+
+        for directory in candidateDirectories() {
+            var images: [OverlayPanel.DollState: NSImage] = [:]
+            for (state, name) in names {
+                let url = directory.appendingPathComponent(name)
+                if let image = NSImage(contentsOf: url) {
+                    images[state] = image
+                }
+            }
+            if images[.idle] != nil {
+                return images
+            }
+        }
+        return [:]
+    }
+
+    private static func candidateDirectories() -> [URL] {
+        var directories: [URL] = []
+        if let resourceURL = Bundle.main.resourceURL {
+            directories.append(resourceURL.appendingPathComponent("assets/doll"))
+            directories.append(resourceURL.appendingPathComponent("doll"))
+        }
+        if let repoRoot = ProcessInfo.processInfo.environment["WISP_REPO_ROOT"] {
+            directories.append(URL(fileURLWithPath: repoRoot).appendingPathComponent("assets/doll"))
+        }
+        directories.append(
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("../assets/doll")
+                .standardizedFileURL
+        )
+        return directories
     }
 }

@@ -2,9 +2,18 @@
 
 This directory is the from-scratch macOS rewrite described in
 [`../MACOS_NATIVE_PLAN.md`](../MACOS_NATIVE_PLAN.md) (repo root, gitignored).
-**Option A**: a native Swift/AppKit app owns every OS-bound API on the main
-thread; the existing OS-agnostic Python `core/` runs as a headless sidecar over a
-newline-delimited JSON seam.
+**Hybrid Option A**: a native Swift/AppKit app owns every OS-bound API on the
+main thread; the existing OS-agnostic Python `core/` runs as a headless sidecar
+over a newline-delimited JSON seam. Existing normal Qt product windows
+(Settings, Chat, Memory, Plugin Manager, Agent) are reused through a separate
+Qt UI host so the macOS app can recover UI parity without reintroducing the old
+tray/overlay/hotkey/audio crash surface.
+
+Parity with the Windows/Qt app is tracked in
+[`../docs/MACOS_PARITY.md`](../docs/MACOS_PARITY.md). The current native UI is a
+functional skeleton; the overlay loads the existing Wisp doll state art when
+launched from the repo and only falls back to a circle if those assets are
+unavailable.
 
 ```
 macos/
@@ -12,10 +21,11 @@ macos/
 │   ├── wisp_brain/            #   protocol.py · handlers.py · host.py
 │   └── tests/test_brain_host.py
 └── Sources/Wisp/             # Swift app (compiles on macOS only)
-    ├── Bridge/               #   Protocol · BrainClient · BrainLocator
+    ├── Bridge/               #   Protocol · BrainClient · QtUIBridge
     ├── App/                  #   main · AppDelegate
     ├── Overlay/              #   OverlayPanel (NSPanel + SwiftUI)
     └── Tray/                 #   StatusItem (NSStatusItem)
+macos/ui_host/                 # Python/Qt host for reusable product windows
 ```
 
 ## Status — Phase 1 (skeleton + brain handshake)
@@ -109,19 +119,22 @@ Once Wisp launches, test these in order:
 8. Menubar `Open Run Logs` opens the current log/artifact folder in Finder.
 9. Click the floating overlay; it should open the prompt.
 10. Menubar `Toggle Overlay` hides/shows the floating panel.
-11. Press `Ctrl-Option-Space`. If macOS asks for Accessibility permission, grant
+11. Menubar `Settings`, `New Chat`, `Last Chat`, `Memory`, `Plugin Manager`,
+    `Start Agent Task`, and `Agent Task History` should open the existing Qt
+    product windows from the separate UI host.
+12. Press `Ctrl-Option-Space`. If macOS asks for Accessibility permission, grant
    it in System Settings, then use `Retry Hotkey Permission`.
-12. Prompt `Query` mode exercises the real `brain.query` path once `.env` and
+13. Prompt `Query` mode exercises the real `brain.query` path once `.env` and
     the Python dependencies are ready; it includes selected text and ambient
     active-app/clipboard context when available.
-13. Prompt `Query+Screen` captures the main display, saves the PNG beside the
+14. Prompt `Query+Screen` captures the main display, saves the PNG beside the
     logs, attaches it to `brain.query`, and streams the model response.
-14. Menubar `Start Voice Query`, speak, then `Stop Voice Query`. Swift records
+15. Menubar `Start Voice Query`, speak, then `Stop Voice Query`. Swift records
     a WAV, Python transcribes it with faster-whisper, and the transcript feeds
     Query mode.
-15. Menubar `Speak Last Response` synthesizes the prompt response to a WAV in
+16. Menubar `Speak Last Response` synthesizes the prompt response to a WAV in
     the log folder and plays it natively with AVFoundation.
-16. Menubar `Remember Prompt` stores the prompt text in the existing memory
+17. Menubar `Remember Prompt` stores the prompt text in the existing memory
     store; `Search Memory` retrieves relevant facts for the prompt text.
 
 `Start Wisp (Mac Native).command` is kept as an alias to `Start Wisp.command`.

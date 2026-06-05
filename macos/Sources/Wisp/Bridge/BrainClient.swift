@@ -95,7 +95,13 @@ actor BrainClient {
         if let line = try? BrainProtocol.encodeLine(msg) {
             try? stdinHandle?.write(contentsOf: line)
         }
-        proc.waitUntilExit()
+        // Bounded wait so quitting Wisp never hangs on a wedged sidecar (stuck
+        // mid-LLM-call, blocked socket, etc.). Force-terminate if it overstays.
+        let deadline = Date().addingTimeInterval(2.0)
+        while proc.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if proc.isRunning { proc.terminate() }
     }
 
     private func handleTermination() {

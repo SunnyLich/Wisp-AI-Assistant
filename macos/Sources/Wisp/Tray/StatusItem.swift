@@ -16,6 +16,13 @@ final class StatusItemController: NSObject {
     private let onShowPermissions: () -> Void
     private let onCaptureScreen: () -> Void
     private let onOpenRunLogs: () -> Void
+    private let onShowSettings: () -> Void
+    private let onShowChat: () -> Void
+    private let onShowNewChat: () -> Void
+    private let onShowMemory: () -> Void
+    private let onShowPluginManager: () -> Void
+    private let onShowAgentTask: () -> Void
+    private let onShowAgentHistory: () -> Void
     private let onStartVoiceQuery: () -> Void
     private let onStopVoiceQuery: () -> Void
     private let onSpeakResponse: () -> Void
@@ -31,6 +38,13 @@ final class StatusItemController: NSObject {
         onShowPermissions: @escaping () -> Void,
         onCaptureScreen: @escaping () -> Void,
         onOpenRunLogs: @escaping () -> Void,
+        onShowSettings: @escaping () -> Void,
+        onShowChat: @escaping () -> Void,
+        onShowNewChat: @escaping () -> Void,
+        onShowMemory: @escaping () -> Void,
+        onShowPluginManager: @escaping () -> Void,
+        onShowAgentTask: @escaping () -> Void,
+        onShowAgentHistory: @escaping () -> Void,
         onStartVoiceQuery: @escaping () -> Void,
         onStopVoiceQuery: @escaping () -> Void,
         onSpeakResponse: @escaping () -> Void,
@@ -45,6 +59,13 @@ final class StatusItemController: NSObject {
         self.onShowPermissions = onShowPermissions
         self.onCaptureScreen = onCaptureScreen
         self.onOpenRunLogs = onOpenRunLogs
+        self.onShowSettings = onShowSettings
+        self.onShowChat = onShowChat
+        self.onShowNewChat = onShowNewChat
+        self.onShowMemory = onShowMemory
+        self.onShowPluginManager = onShowPluginManager
+        self.onShowAgentTask = onShowAgentTask
+        self.onShowAgentHistory = onShowAgentHistory
         self.onStartVoiceQuery = onStartVoiceQuery
         self.onStopVoiceQuery = onStopVoiceQuery
         self.onSpeakResponse = onSpeakResponse
@@ -88,6 +109,36 @@ final class StatusItemController: NSObject {
         let captureItem = NSMenuItem(title: "Capture Screen Smoke", action: #selector(captureScreen), keyEquivalent: "s")
         captureItem.target = self
         menu.addItem(captureItem)
+
+        menu.addItem(.separator())
+
+        let newChatItem = NSMenuItem(title: "New Chat", action: #selector(showNewChat), keyEquivalent: "n")
+        newChatItem.target = self
+        menu.addItem(newChatItem)
+
+        let chatItem = NSMenuItem(title: "Last Chat", action: #selector(showChat), keyEquivalent: "g")
+        chatItem.target = self
+        menu.addItem(chatItem)
+
+        let memoryWindowItem = NSMenuItem(title: "Memory", action: #selector(showMemory), keyEquivalent: "")
+        memoryWindowItem.target = self
+        menu.addItem(memoryWindowItem)
+
+        let pluginManagerItem = NSMenuItem(title: "Plugin Manager", action: #selector(showPluginManager), keyEquivalent: "")
+        pluginManagerItem.target = self
+        menu.addItem(pluginManagerItem)
+
+        let agentTaskItem = NSMenuItem(title: "Start Agent Task", action: #selector(showAgentTask), keyEquivalent: "")
+        agentTaskItem.target = self
+        menu.addItem(agentTaskItem)
+
+        let agentHistoryItem = NSMenuItem(title: "Agent Task History", action: #selector(showAgentHistory), keyEquivalent: "")
+        agentHistoryItem.target = self
+        menu.addItem(agentHistoryItem)
+
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
 
@@ -171,6 +222,34 @@ final class StatusItemController: NSObject {
 
     @objc private func openRunLogs() {
         onOpenRunLogs()
+    }
+
+    @objc private func showSettings() {
+        onShowSettings()
+    }
+
+    @objc private func showChat() {
+        onShowChat()
+    }
+
+    @objc private func showNewChat() {
+        onShowNewChat()
+    }
+
+    @objc private func showMemory() {
+        onShowMemory()
+    }
+
+    @objc private func showPluginManager() {
+        onShowPluginManager()
+    }
+
+    @objc private func showAgentTask() {
+        onShowAgentTask()
+    }
+
+    @objc private func showAgentHistory() {
+        onShowAgentHistory()
     }
 
     @objc private func startVoiceQuery() {

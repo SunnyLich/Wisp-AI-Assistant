@@ -16,10 +16,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let audioRecorder = AudioRecorder()
     private let audioPlayer = AudioPlayer()
     private var brain: BrainClient?
+    private var qtUI: QtUIBridge?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let client = BrainClient(config: BrainLocator.resolve())
         brain = client
+        if let qtConfig = QtUILocator.resolve() {
+            let bridge = QtUIBridge(config: qtConfig)
+            bridge.onEvent = { [weak self] event, payload in
+                self?.handleQtUIEvent(event, payload)
+            }
+            qtUI = bridge
+        } else {
+            NSLog("[wisp] Qt UI host unavailable; WISP_REPO_ROOT/WISP_BRAIN_PYTHON not resolved")
+        }
 
         let prompt = PromptPanel { [weak self] text, mode in
             Task { await self?.runPrompt(text, mode: mode) }
@@ -39,6 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowPermissions: { [weak self] in self?.showPermissionSnapshot() },
             onCaptureScreen: { [weak self] in self?.captureScreenSmoke() },
             onOpenRunLogs: { [weak self] in self?.openRunLogs() },
+            onShowSettings: { [weak self] in self?.showQtSettings() },
+            onShowChat: { [weak self] in self?.showQtChat(new: false) },
+            onShowNewChat: { [weak self] in self?.showQtChat(new: true) },
+            onShowMemory: { [weak self] in self?.showQtMemory() },
+            onShowPluginManager: { [weak self] in self?.showQtPluginManager() },
+            onShowAgentTask: { [weak self] in self?.showQtAgentTask() },
+            onShowAgentHistory: { [weak self] in self?.showQtAgentHistory() },
             onStartVoiceQuery: { [weak self] in self?.startVoiceQuery() },
             onStopVoiceQuery: { [weak self] in self?.stopVoiceQuery() },
             onSpeakResponse: { [weak self] in self?.speakLastResponse() },
@@ -59,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        qtUI?.shutdown()
         let client = brain
         Task { await client?.shutdown() }
     }
@@ -151,6 +169,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             promptPanel?.setResponse("Run log directory is unavailable. Launch with scripts/macos_phase1_validate.sh --run to enable this.")
             NSLog("[wisp] run log directory unavailable")
         }
+    }
+
+    private func withQtUI(_ label: String, action: (QtUIBridge) throws -> Void) {
+        guard let qtUI else {
+            promptPanel?.showPrompt()
+            promptPanel?.setResponse("The Qt UI host is unavailable. Launch through Start Wisp.command so the Python .venv and repo path are exported.")
+            statusController?.setBrainStatus("Qt UI unavailable")
+            NSLog("[wisp] Qt UI action unavailable: %@", label)
+            return
+        }
+
+        do {
+            try action(qtUI)
+            statusController?.setBrainStatus("\(label) opened")
+        } catch {
+            promptPanel?.showPrompt()
+            promptPanel?.failRequest(String(describing: error))
+            statusController?.setBrainStatus("\(label) error")
+            NSLog("[wisp] Qt UI action failed (%@): %@", label, String(describing: error))
+        }
+    }
+
+    /// Surface asynchronous status from the Qt UI host. Commands are sent
+    /// fire-and-forget, so a window that fails to open only reports back here via
+    /// a `ui.error` event — correct the optimistic "opened" status when it does.
+    private func handleQtUIEvent(_ event: String, _ payload: [String: Any]) {
+        switch event {
+        case "ui.error":
+            let detail = (payload["error"] as? String) ?? "unknown error"
+            promptPanel?.showPrompt()
+            promptPanel?.setResponse("Qt UI host error:\n\(detail)")
+            statusController?.setBrainStatus("Qt UI error")
+        case "ui.ready":
+            NSLog("[wisp] Qt UI host ready")
+        default:
+            break
+        }
+    }
+
+    private func showQtSettings() {
+        withQtUI("Settings") { try $0.showSettings() }
+    }
+
+    private func showQtChat(new: Bool) {
+        withQtUI(new ? "New chat" : "Chat") { try $0.showChat(new: new) }
+    }
+
+    private func showQtMemory() {
+        withQtUI("Memory") { try $0.showMemory() }
+    }
+
+    private func showQtPluginManager() {
+        withQtUI("Plugin manager") { try $0.showPluginManager() }
+    }
+
+    private func showQtAgentTask() {
+        withQtUI("Agent task") { try $0.showAgentTask() }
+    }
+
+    private func showQtAgentHistory() {
+        withQtUI("Agent history") { try $0.showAgentHistory() }
     }
 
     private func startVoiceQuery() {

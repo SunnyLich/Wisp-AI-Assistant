@@ -32,6 +32,10 @@ jobs:
           name: wisp-windows
           path: dist/Wisp
           if-no-files-found: error
+          # These bundles are multi-GB (torch/chromadb/PySide6). Keep them short
+          # to stay under the Actions storage quota; default retention is 90 days.
+          retention-days: 14
+          compression-level: 9
 
   build-linux:
     name: Linux build
@@ -65,3 +69,6 @@ jobs:
           name: wisp-linux
           path: dist/Wisp
           if-no-files-found: error
+          # See the Windows job: keep these large bundles short-lived.
+          retention-days: 14
+          compression-level: 9
