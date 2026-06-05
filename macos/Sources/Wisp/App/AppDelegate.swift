@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var promptPanel: PromptPanel?
     private var intentPanel: IntentPanel?
     private var chatPanel: ChatPanel?
+    private var memoryPanel: MemoryPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
@@ -52,6 +53,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await self?.runChatMessage(text) }
         }
 
+        memoryPanel = MemoryPanel(
+            onRefresh: { [weak self] in
+                Task { await self?.loadMemoryFacts() }
+            },
+            onAdd: { [weak self] text, category in
+                Task { await self?.addMemoryFact(text, category: category) }
+            },
+            onUpdate: { [weak self] fact in
+                Task { await self?.updateMemoryFact(fact) }
+            },
+            onDelete: { [weak self] fact in
+                Task { await self?.deleteMemoryFact(fact) }
+            },
+            onSearch: { [weak self] query in
+                Task { await self?.searchMemoryPanel(query) }
+            }
+        )
+
         let panel = OverlayPanel { [weak self] in
             self?.showIntentPicker()
         }
@@ -68,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowSettings: { [weak self] in self?.showQtSettings() },
             onShowChat: { [weak self] in self?.showNativeChat(new: false) },
             onShowNewChat: { [weak self] in self?.showNativeChat(new: true) },
-            onShowMemory: { [weak self] in self?.showQtMemory() },
+            onShowMemory: { [weak self] in self?.showNativeMemory() },
             onShowPluginManager: { [weak self] in self?.showQtPluginManager() },
             onShowAgentTask: { [weak self] in self?.showQtAgentTask() },
             onShowAgentHistory: { [weak self] in self?.showQtAgentHistory() },
@@ -249,6 +268,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus(new ? "new chat opened" : "chat opened")
     }
 
+    private func showNativeMemory() {
+        memoryPanel?.showMemory()
+        statusController?.setBrainStatus("memory opened")
+    }
+
     private func showQtMemory() {
         withQtUI("Memory") { try $0.showMemory() }
     }
@@ -382,6 +406,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let stored = result?["text"] as? String ?? text
                 promptPanel?.setResponse("Remembered:\n\(stored)")
                 statusController?.setBrainStatus("memory saved")
+                if memoryPanel?.isVisible == true {
+                    await self.loadMemoryFacts()
+                }
                 NSLog("[wisp] memory saved: %@", stored)
             } catch {
                 promptPanel?.failRequest(String(describing: error))
@@ -416,6 +443,127 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 statusController?.setBrainStatus("memory error")
                 NSLog("[wisp] memory search failed: %@", String(describing: error))
             }
+        }
+    }
+
+    private func loadMemoryFacts() async {
+        guard let client = brain else {
+            memoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("memory error")
+            return
+        }
+
+        memoryPanel?.beginLoading("Loading memory...")
+        do {
+            let result = try await client.call("brain.memory.list", timeout: .seconds(60))
+            let rows = result?["facts"] as? [[String: Any]] ?? []
+            let facts = rows.compactMap { MemoryFact(payload: $0) }
+            memoryPanel?.setFacts(facts)
+            statusController?.setBrainStatus("memory loaded")
+        } catch {
+            memoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("memory error")
+            NSLog("[wisp] memory list failed: %@", String(describing: error))
+        }
+    }
+
+    private func addMemoryFact(_ text: String, category: String) async {
+        guard let client = brain else {
+            memoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("memory error")
+            return
+        }
+
+        memoryPanel?.beginLoading("Saving memory...")
+        do {
+            _ = try await client.call(
+                "brain.memory.add",
+                ["text": text, "category": category],
+                timeout: .seconds(60)
+            )
+            await loadMemoryFacts()
+            memoryPanel?.setStatus("Memory saved")
+            statusController?.setBrainStatus("memory saved")
+            NSLog("[wisp] memory panel saved fact")
+        } catch {
+            memoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("memory error")
+            NSLog("[wisp] memory panel save failed: %@", String(describing: error))
+        }
+    }
+
+    private func updateMemoryFact(_ fact: MemoryFact) async {
+        guard let client = brain else {
+            memoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("memory error")
+            return
+        }
+
+        memoryPanel?.beginLoading("Saving memory...")
+        do {
+            _ = try await client.call(
+                "brain.memory.update",
+                ["fact_id": fact.id, "text": fact.text, "category": fact.category],
+                timeout: .seconds(60)
+            )
+            await loadMemoryFacts()
+            memoryPanel?.setStatus("Memory updated")
+            statusController?.setBrainStatus("memory updated")
+            NSLog("[wisp] memory panel updated fact %@", fact.id)
+        } catch {
+            memoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("memory error")
+            NSLog("[wisp] memory panel update failed: %@", String(describing: error))
+        }
+    }
+
+    private func deleteMemoryFact(_ fact: MemoryFact) async {
+        guard let client = brain else {
+            memoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("memory error")
+            return
+        }
+
+        memoryPanel?.beginLoading("Deleting memory...")
+        do {
+            _ = try await client.call(
+                "brain.memory.delete",
+                ["fact_id": fact.id],
+                timeout: .seconds(60)
+            )
+            await loadMemoryFacts()
+            memoryPanel?.setStatus("Memory deleted")
+            statusController?.setBrainStatus("memory deleted")
+            NSLog("[wisp] memory panel deleted fact %@", fact.id)
+        } catch {
+            memoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("memory error")
+            NSLog("[wisp] memory panel delete failed: %@", String(describing: error))
+        }
+    }
+
+    private func searchMemoryPanel(_ query: String) async {
+        guard let client = brain else {
+            memoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("memory error")
+            return
+        }
+
+        memoryPanel?.beginLoading("Searching memory...")
+        do {
+            let result = try await client.call(
+                "brain.memory.search",
+                ["query": query, "top_k": 5],
+                timeout: .seconds(60)
+            )
+            let found = result?["text"] as? String ?? ""
+            memoryPanel?.setSearchResult(query: query, text: found)
+            statusController?.setBrainStatus("memory searched")
+            NSLog("[wisp] memory panel searched for: %@", query)
+        } catch {
+            memoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("memory error")
+            NSLog("[wisp] memory panel search failed: %@", String(describing: error))
         }
     }
 

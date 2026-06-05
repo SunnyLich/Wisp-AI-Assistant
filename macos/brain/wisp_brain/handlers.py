@@ -470,6 +470,55 @@ def brain_memory_search(query: str = "", top_k: int | None = None) -> dict[str, 
     return {"text": text}
 
 
+@handler("brain.memory.list")
+def brain_memory_list() -> dict[str, Any]:
+    """Return active memory facts for the native macOS memory panel."""
+    from core.memory_store import store
+
+    facts = store.get_manager().get_all_facts()
+    return {"facts": [_memory_fact_payload(fact) for fact in facts]}
+
+
+@handler("brain.memory.update")
+def brain_memory_update(fact_id: str = "", text: str = "", category: str | None = None) -> dict[str, Any]:
+    """Update one durable memory fact through the existing memory store."""
+    cleaned_id = fact_id.strip()
+    cleaned_text = text.strip()
+    if not cleaned_id:
+        raise ValueError("fact_id is required")
+    if not cleaned_text:
+        raise ValueError("text is required")
+
+    from core.memory_store import store
+
+    store.get_manager().update_fact(cleaned_id, cleaned_text, category)
+    return {"ok": True, "id": cleaned_id, "text": cleaned_text, "category": category}
+
+
+@handler("brain.memory.delete")
+def brain_memory_delete(fact_id: str = "") -> dict[str, Any]:
+    """Delete one durable memory fact through the existing memory store."""
+    cleaned_id = fact_id.strip()
+    if not cleaned_id:
+        raise ValueError("fact_id is required")
+
+    from core.memory_store import store
+
+    store.get_manager().delete_fact(cleaned_id)
+    return {"ok": True, "id": cleaned_id}
+
+
+def _memory_fact_payload(fact: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(fact.get("id") or ""),
+        "text": str(fact.get("text") or ""),
+        "category": str(fact.get("category") or "general"),
+        "source": str(fact.get("source") or "unknown"),
+        "created_at": str(fact.get("created_at") or ""),
+        "last_seen": str(fact.get("last_seen") or ""),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Agent runtime -- the scoped multi-agent task runner behind the Windows tray's
 # "Start agent task" dialog, exposed to the native shell. Reuses the OS-agnostic
