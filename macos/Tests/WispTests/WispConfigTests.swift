@@ -20,7 +20,7 @@ final class WispConfigTests: XCTestCase {
         XCTAssertFalse(config.snip.contextTools)
     }
 
-    func testCallerEnvironmentOverridesUseSameKeysAsPythonSettings() {
+    func testCallerEnvironmentOverridesUseSameKeysAsPythonSettings() throws {
         let config = WispConfig.load(environment: [
             "CALLER_COUNT": "1",
             "CALLER_1_HOTKEY": "ctrl+option+space",
