@@ -1,5 +1,12 @@
 import AppKit
 
+private struct PendingSnipContext {
+    var screenshotB64: String
+    var ambientText: String
+    var useTools: Bool
+    var capturePath: String
+}
+
 /// Phase-1/2 app wiring: bring up the menubar item and the floating overlay, then
 /// perform the brain handshake (spawn the Python sidecar, `ping` it, stream a
 /// `brain.echo`) and surface the result in the menu. This is the runnable proof
@@ -16,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var memoryPanel: MemoryPanel?
     private var settingsPanel: SettingsPanel?
     private var pluginPanel: PluginManagerPanel?
+    private var snipPanel: SnipOverlayPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
@@ -24,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let audioPlayer = AudioPlayer()
     private var brain: BrainClient?
     private var qtUI: QtUIBridge?
+    private var pendingSnip: PendingSnipContext?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let client = BrainClient(config: BrainLocator.resolve())
@@ -86,6 +95,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        snipPanel = SnipOverlayPanel(
+            onSelection: { [weak self] selection in
+                self?.handleSnipSelection(selection)
+            },
+            onCancel: { [weak self] in
+                self?.cancelSnip()
+            }
+        )
+
         let panel = OverlayPanel { [weak self] in
             self?.showIntentPicker()
         }
@@ -98,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowContext: { [weak self] in self?.showContextSnapshot() },
             onShowPermissions: { [weak self] in self?.showPermissionSnapshot() },
             onCaptureScreen: { [weak self] in self?.captureScreenSmoke() },
+            onStartSnip: { [weak self] in self?.startSnip() },
             onOpenRunLogs: { [weak self] in self?.openRunLogs() },
             onShowSettings: { [weak self] in self?.showNativeSettings() },
             onShowChat: { [weak self] in self?.showNativeChat(new: false) },
@@ -116,8 +135,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         statusController = status
 
-        let hotkey = HotkeyController { [weak self] callerIndex in
-            self?.showIntentPicker(callerIndex: callerIndex)
+        let hotkey = HotkeyController { [weak self] action in
+            switch action {
+            case .caller(let callerIndex):
+                self?.showIntentPicker(callerIndex: callerIndex)
+            case .snip:
+                self?.startSnip()
+            }
         }
         self.hotkey = hotkey
         installHotkey(promptForPermission: true)
@@ -184,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installHotkey(promptForPermission: Bool) {
         guard let hotkey else { return }
         appConfig = WispConfig.load()
-        let result = hotkey.start(callers: appConfig.callers, promptForPermission: promptForPermission)
+        let result = hotkey.start(callers: appConfig.callers, snip: appConfig.snip, promptForPermission: promptForPermission)
         statusController?.setHotkeyStatus(result.statusText)
     }
 
@@ -223,6 +247,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusController?.setBrainStatus("screen capture error")
             NSLog("[wisp] screen capture failed: %@", String(describing: error))
         }
+    }
+
+    private func startSnip() {
+        appConfig = WispConfig.load()
+        pendingSnip = nil
+        overlay?.setState(.listening)
+        statusController?.setBrainStatus("snip selecting")
+        snipPanel?.showSnip()
+    }
+
+    private func handleSnipSelection(_ selection: SnipSelection) {
+        do {
+            let result = try screenCapture.captureRegion(selection.captureRect, promptForPermission: true)
+            let data = try Data(contentsOf: result.url)
+            let snapshot = nativeContext.snapshot(promptForAccessibility: false)
+            let snip = appConfig.snip
+            pendingSnip = PendingSnipContext(
+                screenshotB64: data.base64EncodedString(),
+                ambientText: snip.contextAmbient ? snapshot.ambientText(includeClipboard: false) : "",
+                useTools: snip.contextTools,
+                capturePath: result.url.path
+            )
+            let caller = snipCaller()
+            statusController?.setBrainStatus("snip captured")
+            intentPanel?.show(caller: caller)
+            NSLog("[wisp] snip captured: %@ (%dx%d)", result.url.path, result.width, result.height)
+        } catch {
+            pendingSnip = nil
+            overlay?.setState(.idle)
+            promptPanel?.showPrompt()
+            promptPanel?.failRequest(String(describing: error))
+            statusController?.setBrainStatus("snip error")
+            NSLog("[wisp] snip failed: %@", String(describing: error))
+        }
+    }
+
+    private func cancelSnip() {
+        pendingSnip = nil
+        overlay?.setState(.idle)
+        statusController?.setBrainStatus("snip cancelled")
+    }
+
+    private func snipCaller() -> CallerConfig {
+        let base = appConfig.callers.first ?? CallerConfig.empty
+        let snip = appConfig.snip
+        return CallerConfig(
+            hotkey: snip.hotkey,
+            label: "Screen Snip",
+            pasteBack: false,
+            customKey: base.customKey,
+            contextAmbient: snip.contextAmbient,
+            contextDocuments: snip.contextDocuments,
+            contextTools: snip.contextTools,
+            contextScreenshot: .off,
+            contextClipboard: false,
+            intents: base.intents
+        )
     }
 
     private func openRunLogs() {
@@ -732,6 +813,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .echo:
             return ["text": text, "chunk_size": 1, "delay": 0.02]
         case .query, .queryScreen:
+            if let snip = pendingSnip {
+                pendingSnip = nil
+                var ambient = snip.ambientText
+                if !snip.capturePath.isEmpty {
+                    ambient += "\(ambient.isEmpty ? "" : "\n\n")Screen snip saved: \(snip.capturePath)"
+                }
+                return [
+                    "intent_prompt": text,
+                    "ambient_text": ambient,
+                    "screenshot_b64": snip.screenshotB64,
+                    "use_tools": snip.useTools,
+                    "allow_screenshot_tool": false,
+                ]
+            }
             let policy = caller ?? (appConfig.callers.first ?? CallerConfig.empty)
             let snapshot = nativeContext.snapshot(promptForAccessibility: false)
             var params: [String: Any] = [

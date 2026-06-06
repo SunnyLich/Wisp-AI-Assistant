@@ -9,7 +9,7 @@ enum HotkeyInstallResult: Equatable {
     var statusText: String {
         switch self {
         case .installed(let count):
-            return count == 1 ? "1 caller hotkey ready" : "\(count) caller hotkeys ready"
+            return count == 1 ? "1 hotkey ready" : "\(count) hotkeys ready"
         case .accessibilityNeeded:
             return "Accessibility permission needed"
         case .failed(let message):
@@ -18,14 +18,23 @@ enum HotkeyInstallResult: Equatable {
     }
 }
 
+enum HotkeyAction: Equatable {
+    case caller(Int)
+    case snip
+}
+
 struct HotkeyDefinition: Equatable {
-    var callerIndex: Int
+    var action: HotkeyAction
     var label: String
     var display: String
     var keyCode: Int64
     var modifiers: CGEventFlags
 
     static func parse(_ raw: String, callerIndex: Int, label: String = "") -> HotkeyDefinition? {
+        parse(raw, action: .caller(callerIndex), label: label)
+    }
+
+    static func parse(_ raw: String, action: HotkeyAction, label: String = "") -> HotkeyDefinition? {
         let tokens = raw
             .split(separator: "+")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -55,7 +64,7 @@ struct HotkeyDefinition: Equatable {
 
         guard let keyCode else { return nil }
         return HotkeyDefinition(
-            callerIndex: callerIndex,
+            action: action,
             label: label,
             display: raw,
             keyCode: keyCode,
@@ -125,22 +134,25 @@ struct HotkeyDefinition: Equatable {
 @MainActor
 final class HotkeyController {
 
-    private let onTrigger: (Int) -> Void
+    private let onTrigger: (HotkeyAction) -> Void
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var definitions: [HotkeyDefinition] = []
 
-    init(onTrigger: @escaping (Int) -> Void) {
+    init(onTrigger: @escaping (HotkeyAction) -> Void) {
         self.onTrigger = onTrigger
     }
 
-    func start(callers: [CallerConfig], promptForPermission: Bool) -> HotkeyInstallResult {
+    func start(callers: [CallerConfig], snip: SnipConfig? = nil, promptForPermission: Bool) -> HotkeyInstallResult {
         stop()
         definitions = callers.enumerated().compactMap { index, caller in
             HotkeyDefinition.parse(caller.hotkey, callerIndex: index, label: caller.label)
         }
+        if let snipDefinition = snip.flatMap({ HotkeyDefinition.parse($0.hotkey, action: .snip, label: "Snip") }) {
+            definitions.append(snipDefinition)
+        }
         guard !definitions.isEmpty else {
-            return .failed("no valid caller hotkeys configured")
+            return .failed("no valid hotkeys configured")
         }
 
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -202,8 +214,8 @@ final class HotkeyController {
         guard let definition = definitions.first(where: { $0.matches(keyCode: keyCode, flags: flags) }) else {
             return
         }
-        NSLog("[wisp] caller hotkey triggered: %@ (%d)", definition.display, definition.callerIndex)
-        onTrigger(definition.callerIndex)
+        NSLog("[wisp] hotkey triggered: %@", definition.display)
+        onTrigger(definition.action)
     }
 }
 

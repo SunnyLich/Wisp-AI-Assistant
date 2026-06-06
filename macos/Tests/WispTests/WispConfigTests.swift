@@ -14,6 +14,10 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(config.callers[0].intents.map(\.key), ["w", "a", "d"])
         XCTAssertEqual(config.callers[1].label, "Rewrite & Paste")
         XCTAssertTrue(config.callers[1].pasteBack)
+        XCTAssertEqual(config.snip.hotkey, "ctrl+alt+q")
+        XCTAssertTrue(config.snip.contextAmbient)
+        XCTAssertFalse(config.snip.contextDocuments)
+        XCTAssertFalse(config.snip.contextTools)
     }
 
     func testCallerEnvironmentOverridesUseSameKeysAsPythonSettings() {
@@ -52,6 +56,20 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(caller.intents.map(\.key), ["r", "f"])
         XCTAssertEqual(caller.intents[0].hint, "Find risks")
         XCTAssertEqual(caller.intents[1].prompt, "Fix this.")
+    }
+
+    func testSnipEnvironmentOverridesUseSameKeysAsPythonSettings() {
+        let config = WispConfig.load(environment: [
+            "HOTKEY_SNIP": "ctrl+option+4",
+            "SNIP_CONTEXT_AMBIENT": "false",
+            "SNIP_CONTEXT_DOCUMENTS": "true",
+            "SNIP_CONTEXT_TOOLS": "true",
+        ], readDotEnv: false)
+
+        XCTAssertEqual(config.snip.hotkey, "ctrl+option+4")
+        XCTAssertFalse(config.snip.contextAmbient)
+        XCTAssertTrue(config.snip.contextDocuments)
+        XCTAssertTrue(config.snip.contextTools)
     }
 
     func testScreenshotModeAcceptsLegacyBooleanValues() {
@@ -130,5 +148,9 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["CALLER_1_INTENT_COUNT"], "1")
         XCTAssertEqual(values["CALLER_1_INTENT_1_KEY"], "r")
         XCTAssertEqual(values["CALLER_1_INTENT_1_PROMPT"], "Review this.")
+        XCTAssertEqual(values["HOTKEY_SNIP"], "ctrl+alt+q")
+        XCTAssertEqual(values["SNIP_CONTEXT_AMBIENT"], "true")
+        XCTAssertEqual(values["SNIP_CONTEXT_DOCUMENTS"], "false")
+        XCTAssertEqual(values["SNIP_CONTEXT_TOOLS"], "false")
     }
 }

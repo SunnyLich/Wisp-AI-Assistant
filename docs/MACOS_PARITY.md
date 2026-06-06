@@ -28,6 +28,7 @@ work until each visible surface is ported.
 | Memory | durable facts: list, add, edit, delete, search | Qt `MemoryViewer` | Swift `MemoryPanel` + `brain.memory.*` |
 | Settings | shared `.env` config, models, callers, voice, memory knobs | Qt `SettingsDialog` | Swift `SettingsPanel` in progress |
 | Plugins | loaded/discoverable plugin list, hooks, tools, folder open | Qt `PluginManagerDialog` | Swift `PluginManagerPanel` in progress |
+| Snip overlay | drag-select region, attach image to intent query | Qt `SnipOverlay` | Swift `SnipOverlayPanel` in progress |
 | Agents | same user-facing task/history windows and config | Qt windows | Temporary Qt bridge, to port to Swift |
 | Packaging | distributable app | PyInstaller path | Swift `.app` bundle path |
 
@@ -49,7 +50,7 @@ work until each visible surface is ported.
 | Settings window | Done | In progress native |
 | Memory window | Done | In progress native |
 | Plugin manager | Done | In progress native |
-| Snip overlay | Done | Missing native UI |
+| Snip overlay | Done | In progress native |
 | Agent task window | Done | Bridge/backend partial |
 | Packaging | Partial | Partial dev app bundle |
 
@@ -58,7 +59,7 @@ work until each visible surface is ported.
 1. Replace the prototype Swift prompt entry with the Windows caller/intent
    workflow backed by the same `CALLER_*` keys.
 2. Make the Swift response surface behave like the Windows bubble/chat stream.
-3. Port snip and agent task/history windows out of the temporary Qt bridge.
+3. Port agent task/history windows out of the temporary Qt bridge.
 4. Finish native paste-back, context buffering, and voice parity.
 5. Build a signed/notarized `.app`.
 

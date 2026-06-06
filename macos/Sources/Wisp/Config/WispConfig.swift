@@ -42,12 +42,14 @@ struct CallerConfig: Equatable {
 
 struct WispConfig: Equatable {
     var callers: [CallerConfig]
+    var snip: SnipConfig
 
     static func load(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         readDotEnv: Bool = true
     ) -> WispConfig {
-        WispConfig(callers: loadCallers(loadValues(environment: environment, readDotEnv: readDotEnv)))
+        let values = loadValues(environment: environment, readDotEnv: readDotEnv)
+        return WispConfig(callers: loadCallers(values), snip: loadSnip(values))
     }
 
     static func repoRoot(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
@@ -98,6 +100,15 @@ struct WispConfig: Equatable {
                 intents: intents
             )
         }
+    }
+
+    private static func loadSnip(_ values: [String: String]) -> SnipConfig {
+        SnipConfig(
+            hotkey: values["HOTKEY_SNIP"] ?? "ctrl+alt+q",
+            contextAmbient: boolValue(values["SNIP_CONTEXT_AMBIENT"], default: true),
+            contextDocuments: boolValue(values["SNIP_CONTEXT_DOCUMENTS"], default: false),
+            contextTools: boolValue(values["SNIP_CONTEXT_TOOLS"], default: false)
+        )
     }
 
     private static func boolValue(_ raw: String?, default fallback: Bool) -> Bool {
@@ -183,6 +194,13 @@ struct WispConfig: Equatable {
             ]
         ),
     ]
+}
+
+struct SnipConfig: Equatable {
+    var hotkey: String
+    var contextAmbient: Bool
+    var contextDocuments: Bool
+    var contextTools: Bool
 }
 
 extension CallerConfig {

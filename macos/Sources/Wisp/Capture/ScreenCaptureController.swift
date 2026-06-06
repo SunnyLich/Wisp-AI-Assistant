@@ -47,7 +47,44 @@ final class ScreenCaptureController {
         )
     }
 
-    private func outputURL() -> URL {
+    func captureRegion(_ rect: CGRect, promptForPermission: Bool) throws -> ScreenCaptureResult {
+        if promptForPermission, !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+        }
+
+        guard CGPreflightScreenCaptureAccess() else {
+            throw ScreenCaptureError.permissionDenied
+        }
+
+        let normalized = rect.integral
+        guard normalized.width > 4, normalized.height > 4 else {
+            throw ScreenCaptureError.emptyRegion
+        }
+
+        guard let image = CGWindowListCreateImage(
+            normalized,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution]
+        ) else {
+            throw ScreenCaptureError.captureFailed
+        }
+
+        let url = outputURL(prefix: "screen-snip")
+        let rep = NSBitmapImageRep(cgImage: image)
+        guard let data = rep.representation(using: .png, properties: [:]) else {
+            throw ScreenCaptureError.encodeFailed
+        }
+        try data.write(to: url, options: [.atomic])
+
+        return ScreenCaptureResult(
+            url: url,
+            width: image.width,
+            height: image.height
+        )
+    }
+
+    private func outputURL(prefix: String = "screen-capture") -> URL {
         let env = ProcessInfo.processInfo.environment
         let base: URL
         if let logDir = env["WISP_RUN_LOG_DIR"], !logDir.isEmpty {
@@ -59,7 +96,7 @@ final class ScreenCaptureController {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let stamp = formatter.string(from: Date())
-        return base.appendingPathComponent("screen-capture-\(stamp).png")
+        return base.appendingPathComponent("\(prefix)-\(stamp).png")
     }
 }
 
@@ -67,6 +104,7 @@ enum ScreenCaptureError: Error, CustomStringConvertible {
     case permissionDenied
     case captureFailed
     case encodeFailed
+    case emptyRegion
 
     var description: String {
         switch self {
@@ -76,6 +114,8 @@ enum ScreenCaptureError: Error, CustomStringConvertible {
             return "CoreGraphics did not return a screen image"
         case .encodeFailed:
             return "screen image could not be encoded as PNG"
+        case .emptyRegion:
+            return "selected screen region is too small"
         }
     }
 }

@@ -9,7 +9,7 @@ final class HotkeyControllerTests: XCTestCase {
             HotkeyDefinition.parse("ctrl+shift+q", callerIndex: 1, label: "Rewrite")
         )
 
-        XCTAssertEqual(hotkey.callerIndex, 1)
+        XCTAssertEqual(hotkey.action, .caller(1))
         XCTAssertEqual(hotkey.keyCode, 12)
         XCTAssertTrue(hotkey.modifiers.contains(.maskControl))
         XCTAssertTrue(hotkey.modifiers.contains(.maskShift))
@@ -39,5 +39,16 @@ final class HotkeyControllerTests: XCTestCase {
         XCTAssertNil(HotkeyDefinition.parse("ctrl+unknown-key", callerIndex: 0))
         XCTAssertNil(HotkeyDefinition.parse("ctrl+q+w", callerIndex: 0))
         XCTAssertNil(HotkeyDefinition.parse("", callerIndex: 0))
+    }
+
+    func testParsesSnipHotkeyAction() throws {
+        let hotkey = try XCTUnwrap(
+            HotkeyDefinition.parse("ctrl+alt+q", action: .snip, label: "Snip")
+        )
+
+        XCTAssertEqual(hotkey.action, .snip)
+        XCTAssertEqual(hotkey.keyCode, 12)
+        XCTAssertTrue(hotkey.modifiers.contains(.maskControl))
+        XCTAssertTrue(hotkey.modifiers.contains(.maskAlternate))
     }
 }

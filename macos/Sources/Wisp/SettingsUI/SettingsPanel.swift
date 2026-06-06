@@ -50,6 +50,11 @@ struct SettingsDraft: Equatable {
     var memoryRelevanceMaxDistance: String
     var memorySTMTokenBudget: String
 
+    var snipHotkey: String
+    var snipContextAmbient: Bool
+    var snipContextDocuments: Bool
+    var snipContextTools: Bool
+
     var callers: [SettingsCallerDraft]
 
     static func load(
@@ -86,6 +91,10 @@ struct SettingsDraft: Equatable {
             memoryTopK: values["MEMORY_TOP_K"] ?? "3",
             memoryRelevanceMaxDistance: values["MEMORY_RELEVANCE_MAX_DISTANCE"] ?? "0.55",
             memorySTMTokenBudget: values["MEMORY_STM_TOKEN_BUDGET"] ?? "4000",
+            snipHotkey: values["HOTKEY_SNIP"] ?? "ctrl+alt+q",
+            snipContextAmbient: boolValue(values["SNIP_CONTEXT_AMBIENT"], default: true),
+            snipContextDocuments: boolValue(values["SNIP_CONTEXT_DOCUMENTS"], default: false),
+            snipContextTools: boolValue(values["SNIP_CONTEXT_TOOLS"], default: false),
             callers: config.callers.map(SettingsCallerDraft.init(caller:))
         )
     }
@@ -114,6 +123,10 @@ struct SettingsDraft: Equatable {
         memoryTopK: "3",
         memoryRelevanceMaxDistance: "0.55",
         memorySTMTokenBudget: "4000",
+        snipHotkey: "ctrl+alt+q",
+        snipContextAmbient: true,
+        snipContextDocuments: false,
+        snipContextTools: false,
         callers: WispConfig.defaultCallers.map(SettingsCallerDraft.init(caller:))
     )
 
@@ -151,6 +164,10 @@ struct SettingsDraft: Equatable {
             "MEMORY_TOP_K": memoryTopK,
             "MEMORY_RELEVANCE_MAX_DISTANCE": memoryRelevanceMaxDistance,
             "MEMORY_STM_TOKEN_BUDGET": memorySTMTokenBudget,
+            "HOTKEY_SNIP": snipHotkey,
+            "SNIP_CONTEXT_AMBIENT": snipContextAmbient ? "true" : "false",
+            "SNIP_CONTEXT_DOCUMENTS": snipContextDocuments ? "true" : "false",
+            "SNIP_CONTEXT_TOOLS": snipContextTools ? "true" : "false",
             "CALLER_COUNT": String(callers.count),
         ]
 
@@ -455,6 +472,13 @@ private struct SettingsPanelView: View {
                     SettingsTextField("Top K", text: $model.draft.memoryTopK)
                     SettingsTextField("Max distance", text: $model.draft.memoryRelevanceMaxDistance)
                     SettingsTextField("STM token budget", text: $model.draft.memorySTMTokenBudget)
+                }
+
+                SettingsSection("Snip") {
+                    SettingsTextField("Hotkey", text: $model.draft.snipHotkey)
+                    Toggle("Ambient context", isOn: $model.draft.snipContextAmbient)
+                    Toggle("Open documents", isOn: $model.draft.snipContextDocuments)
+                    Toggle("Tools", isOn: $model.draft.snipContextTools)
                 }
             }
             .padding(4)

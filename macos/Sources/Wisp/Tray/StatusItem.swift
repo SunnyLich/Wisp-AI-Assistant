@@ -15,6 +15,7 @@ final class StatusItemController: NSObject {
     private let onShowContext: () -> Void
     private let onShowPermissions: () -> Void
     private let onCaptureScreen: () -> Void
+    private let onStartSnip: () -> Void
     private let onOpenRunLogs: () -> Void
     private let onShowSettings: () -> Void
     private let onShowChat: () -> Void
@@ -37,6 +38,7 @@ final class StatusItemController: NSObject {
         onShowContext: @escaping () -> Void,
         onShowPermissions: @escaping () -> Void,
         onCaptureScreen: @escaping () -> Void,
+        onStartSnip: @escaping () -> Void,
         onOpenRunLogs: @escaping () -> Void,
         onShowSettings: @escaping () -> Void,
         onShowChat: @escaping () -> Void,
@@ -58,6 +60,7 @@ final class StatusItemController: NSObject {
         self.onShowContext = onShowContext
         self.onShowPermissions = onShowPermissions
         self.onCaptureScreen = onCaptureScreen
+        self.onStartSnip = onStartSnip
         self.onOpenRunLogs = onOpenRunLogs
         self.onShowSettings = onShowSettings
         self.onShowChat = onShowChat
@@ -109,6 +112,10 @@ final class StatusItemController: NSObject {
         let captureItem = NSMenuItem(title: "Capture Screen Smoke", action: #selector(captureScreen), keyEquivalent: "s")
         captureItem.target = self
         menu.addItem(captureItem)
+
+        let snipItem = NSMenuItem(title: "Snip Screen Region", action: #selector(startSnip), keyEquivalent: "")
+        snipItem.target = self
+        menu.addItem(snipItem)
 
         menu.addItem(.separator())
 
@@ -210,6 +217,10 @@ final class StatusItemController: NSObject {
 
     @objc private func captureScreen() {
         onCaptureScreen()
+    }
+
+    @objc private func startSnip() {
+        onStartSnip()
     }
 
     @objc private func toggleOverlay() {
