@@ -44,5 +44,6 @@ final class AgentHistoryPanelTests: XCTestCase {
         XCTAssertEqual(detail.error, "boom")
         XCTAssertEqual(detail.runLog, "agent run failed")
         XCTAssertEqual(detail.diffPatch, "diff --git a/a b/a")
+        XCTAssertTrue(detail.hasDisplayableDiff)
     }
 }

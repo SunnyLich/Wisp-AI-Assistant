@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pluginPanel: PluginManagerPanel?
     private var agentTaskPanel: AgentTaskPanel?
     private var agentHistoryPanel: AgentHistoryPanel?
+    private var agentDiffPanel: AgentDiffPanel?
     private var snipPanel: SnipOverlayPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
@@ -120,6 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        agentDiffPanel = AgentDiffPanel(
+            onOpenFolder: { path in
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            }
+        )
+
         agentHistoryPanel = AgentHistoryPanel(
             onRefresh: { [weak self] in
                 Task { await self?.loadAgentHistory() }
@@ -132,6 +139,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onContinueRun: { [weak self] run in
                 Task { await self?.startAgentHistoryRun(run, mode: .continueRun) }
+            },
+            onOpenDiff: { [weak self] detail in
+                self?.showAgentDiff(detail)
             },
             onOpenFolder: { path in
                 NSWorkspace.shared.open(URL(fileURLWithPath: path))
@@ -466,6 +476,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showNativeAgentHistory() {
         agentHistoryPanel?.showHistory()
         statusController?.setBrainStatus("agent history opened")
+    }
+
+    private func showAgentDiff(_ detail: AgentRunDetail) {
+        agentDiffPanel?.showDiff(
+            title: detail.summary.title,
+            runDir: detail.summary.runDir,
+            diffPatch: detail.diffPatch
+        )
+        statusController?.setBrainStatus("agent diff opened")
     }
 
     private func loadAgentHistory() async {

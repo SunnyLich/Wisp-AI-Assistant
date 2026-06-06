@@ -44,6 +44,10 @@ struct AgentRunDetail: Equatable {
         self.runLog = payload["run_log"] as? String ?? ""
         self.diffPatch = payload["diff_patch"] as? String ?? ""
     }
+
+    var hasDisplayableDiff: Bool {
+        !diffPatch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 @MainActor
@@ -56,6 +60,7 @@ final class AgentHistoryPanel: NSPanel {
         onSelectRun: @escaping (AgentRunSummary) -> Void,
         onRetryRun: @escaping (AgentRunSummary) -> Void,
         onContinueRun: @escaping (AgentRunSummary) -> Void,
+        onOpenDiff: @escaping (AgentRunDetail) -> Void,
         onOpenFolder: @escaping (String) -> Void
     ) {
         self.model = AgentHistoryModel(
@@ -63,6 +68,7 @@ final class AgentHistoryPanel: NSPanel {
             onSelectRun: onSelectRun,
             onRetryRun: onRetryRun,
             onContinueRun: onContinueRun,
+            onOpenDiff: onOpenDiff,
             onOpenFolder: onOpenFolder
         )
         super.init(
@@ -140,6 +146,7 @@ private final class AgentHistoryModel: ObservableObject {
     private let onSelectRun: (AgentRunSummary) -> Void
     private let onRetryRun: (AgentRunSummary) -> Void
     private let onContinueRun: (AgentRunSummary) -> Void
+    private let onOpenDiff: (AgentRunDetail) -> Void
     private let onOpenFolder: (String) -> Void
 
     init(
@@ -147,12 +154,14 @@ private final class AgentHistoryModel: ObservableObject {
         onSelectRun: @escaping (AgentRunSummary) -> Void,
         onRetryRun: @escaping (AgentRunSummary) -> Void,
         onContinueRun: @escaping (AgentRunSummary) -> Void,
+        onOpenDiff: @escaping (AgentRunDetail) -> Void,
         onOpenFolder: @escaping (String) -> Void
     ) {
         self.onRefresh = onRefresh
         self.onSelectRun = onSelectRun
         self.onRetryRun = onRetryRun
         self.onContinueRun = onContinueRun
+        self.onOpenDiff = onOpenDiff
         self.onOpenFolder = onOpenFolder
     }
 
@@ -180,6 +189,11 @@ private final class AgentHistoryModel: ObservableObject {
     func continueSelectedRun() {
         guard let selectedRun, !isLoading else { return }
         onContinueRun(selectedRun)
+    }
+
+    func openDiff() {
+        guard let detail, detail.hasDisplayableDiff else { return }
+        onOpenDiff(detail)
     }
 
     func openRootFolder() {
@@ -345,6 +359,14 @@ private struct AgentHistoryPanelView: View {
             .help("Continue selected run")
             .buttonStyle(.borderless)
             .disabled(model.selectedRun == nil || model.isLoading)
+            Button {
+                model.openDiff()
+            } label: {
+                Image(systemName: "doc.text")
+            }
+            .help("Open diff")
+            .buttonStyle(.borderless)
+            .disabled(model.detail?.hasDisplayableDiff != true)
             Button {
                 model.openSelectedFolder()
             } label: {
