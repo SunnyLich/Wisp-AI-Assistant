@@ -110,9 +110,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
-        settingsPanel = SettingsPanel { [weak self] draft in
-            Task { await self?.saveSettings(draft) }
-        }
+        settingsPanel = SettingsPanel(
+            onSave: { [weak self] draft in
+                Task { await self?.saveSettings(draft) }
+            },
+            onTestTTS: { [weak self] draft in
+                Task { await self?.testTTSSettings(draft) }
+            }
+        )
 
         pluginPanel = PluginManagerPanel(
             onRefresh: { [weak self] in
@@ -924,6 +929,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsPanel?.fail(String(describing: error))
             statusController?.setBrainStatus("settings error")
             NSLog("[wisp] native settings save failed: %@", String(describing: error))
+        }
+    }
+
+    private func testTTSSettings(_ draft: SettingsDraft) async {
+        guard let client = brain else {
+            settingsPanel?.setTTSStatus("brain client is not available", ok: false)
+            statusController?.setBrainStatus("tts test error")
+            return
+        }
+
+        do {
+            let values = draft.envValues()
+            let result = try await client.call(
+                "brain.tts.test",
+                [
+                    "provider": values["TTS_PROVIDER"] ?? "none",
+                    "cartesia_voice_id": values["CARTESIA_VOICE_ID"] ?? "",
+                ],
+                timeout: .seconds(60)
+            )
+            let ok = result?["ok"] as? Bool ?? false
+            let message = result?["message"] as? String ?? (ok ? "TTS route OK" : "TTS test failed")
+            settingsPanel?.setTTSStatus(message, ok: ok)
+            statusController?.setBrainStatus(ok ? "tts test ok" : "tts test failed")
+            NSLog("[wisp] tts settings test: %@", message)
+        } catch {
+            let message = String(describing: error)
+            settingsPanel?.setTTSStatus(message, ok: false)
+            statusController?.setBrainStatus("tts test error")
+            NSLog("[wisp] tts settings test failed: %@", message)
         }
     }
 

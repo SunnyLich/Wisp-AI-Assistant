@@ -48,6 +48,11 @@ def test_tts_is_registered_unary():
     assert "brain.tts.synthesize" not in handlers.STREAMING
 
 
+def test_tts_test_is_registered_unary():
+    assert "brain.tts.test" in handlers.HANDLERS
+    assert "brain.tts.test" not in handlers.STREAMING
+
+
 def test_tts_requires_text():
     with pytest.raises(ValueError):
         handlers.HANDLERS["brain.tts.synthesize"](text="   ")
@@ -61,6 +66,36 @@ def test_tts_offline_seam_writes_silent_wav(monkeypatch):
     channels, width, rate, frames = _read_wav(result["path"])
     assert (channels, width, rate) == (1, 2, 22_050)
     assert frames > 0
+
+
+def test_tts_test_offline_seam(monkeypatch):
+    monkeypatch.setenv("WISP_BRAIN_FAKE_LLM", "1")
+    result = handlers.HANDLERS["brain.tts.test"](provider="cartesia")
+    assert result == {"ok": True, "message": "TTS route OK: cartesia", "provider": "cartesia"}
+
+
+def test_tts_test_forwards_provider_and_voice(monkeypatch):
+    import config
+
+    captured = {}
+    fake_tts = types.ModuleType("core.tts")
+
+    def fake_test_connection(provider, *, cartesia_voice_id=None):
+        captured["provider"] = provider
+        captured["cartesia_voice_id"] = cartesia_voice_id
+        return True, "ok"
+
+    fake_tts.test_connection = fake_test_connection
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setitem(sys.modules, "core.tts", fake_tts)
+
+    result = handlers.HANDLERS["brain.tts.test"](
+        provider="cartesia",
+        cartesia_voice_id="voice-123",
+    )
+
+    assert result == {"ok": True, "message": "ok", "provider": "cartesia"}
+    assert captured == {"provider": "cartesia", "cartesia_voice_id": "voice-123"}
 
 
 def test_tts_none_provider_writes_empty_wav(monkeypatch):

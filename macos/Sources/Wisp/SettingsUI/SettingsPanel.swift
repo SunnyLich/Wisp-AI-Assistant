@@ -266,8 +266,11 @@ final class SettingsPanel: NSPanel {
 
     private let model: SettingsModel
 
-    init(onSave: @escaping (SettingsDraft) -> Void) {
-        self.model = SettingsModel(onSave: onSave)
+    init(
+        onSave: @escaping (SettingsDraft) -> Void,
+        onTestTTS: @escaping (SettingsDraft) -> Void
+    ) {
+        self.model = SettingsModel(onSave: onSave, onTestTTS: onTestTTS)
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -297,13 +300,22 @@ final class SettingsPanel: NSPanel {
 
     func setStatus(_ status: String) {
         model.isSaving = false
+        model.isTestingTTS = false
         model.status = status
     }
 
     func fail(_ message: String) {
         model.isSaving = false
+        model.isTestingTTS = false
         model.status = "Settings error"
         model.errorText = message
+    }
+
+    func setTTSStatus(_ message: String, ok: Bool) {
+        model.isTestingTTS = false
+        model.status = ok ? "TTS test OK" : "TTS test failed"
+        model.errorText = ok ? "" : message
+        model.ttsTestText = message
     }
 }
 
@@ -312,19 +324,28 @@ private final class SettingsModel: ObservableObject {
     @Published var draft = SettingsDraft.empty
     @Published var status = "Ready"
     @Published var errorText = ""
+    @Published var ttsTestText = ""
     @Published var isSaving = false
+    @Published var isTestingTTS = false
 
     private let onSave: (SettingsDraft) -> Void
+    private let onTestTTS: (SettingsDraft) -> Void
 
-    init(onSave: @escaping (SettingsDraft) -> Void) {
+    init(
+        onSave: @escaping (SettingsDraft) -> Void,
+        onTestTTS: @escaping (SettingsDraft) -> Void
+    ) {
         self.onSave = onSave
+        self.onTestTTS = onTestTTS
     }
 
     func load(_ draft: SettingsDraft) {
         self.draft = draft
         self.status = "Ready"
         self.errorText = ""
+        self.ttsTestText = ""
         self.isSaving = false
+        self.isTestingTTS = false
     }
 
     func save() {
@@ -333,6 +354,15 @@ private final class SettingsModel: ObservableObject {
         isSaving = true
         status = "Saving..."
         onSave(draft)
+    }
+
+    func testTTS() {
+        guard !isTestingTTS else { return }
+        errorText = ""
+        ttsTestText = ""
+        isTestingTTS = true
+        status = "Testing TTS..."
+        onTestTTS(draft)
     }
 
     func addCaller() {
@@ -377,7 +407,7 @@ private struct SettingsPanelView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
-            if model.isSaving {
+            if model.isSaving || model.isTestingTTS {
                 ProgressView()
                     .controlSize(.small)
             }
@@ -451,6 +481,23 @@ private struct SettingsPanelView: View {
                     SettingsTextField("Cartesia voice", text: $model.draft.cartesiaVoiceID)
                     SettingsTextField("Playback rate", text: $model.draft.ttsPlaybackRate)
                     SettingsTextField("Hold playback rate", text: $model.draft.ttsHoldPlaybackRate)
+                    HStack(spacing: 10) {
+                        Spacer()
+                            .frame(width: 135)
+                        Button {
+                            model.testTTS()
+                        } label: {
+                            Image(systemName: "waveform")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Test TTS route")
+                        .disabled(model.isTestingTTS || model.isSaving)
+                        Text(model.ttsTestText)
+                            .font(.caption)
+                            .foregroundStyle(model.errorText.isEmpty ? Color.secondary : Color.red)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 SettingsSection("STT") {
@@ -501,7 +548,7 @@ private struct SettingsPanelView: View {
                 Image(systemName: "checkmark")
             }
             .help("Save")
-            .disabled(model.isSaving)
+            .disabled(model.isSaving || model.isTestingTTS)
         }
         .padding(12)
     }

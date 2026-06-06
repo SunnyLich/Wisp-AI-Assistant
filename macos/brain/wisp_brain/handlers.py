@@ -431,6 +431,25 @@ def brain_tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, 
     return {"path": str(out_path), "sample_rate": sample_rate, "bytes": len(pcm_i16), "provider": provider}
 
 
+@handler("brain.tts.test")
+def brain_tts_test(provider: str = "", cartesia_voice_id: str = "") -> dict[str, Any]:
+    """Validate the configured TTS route for the native Settings panel."""
+    if _offline_brain():
+        selected = (provider or "fake").strip().lower()
+        return {"ok": True, "message": f"TTS route OK: {selected}", "provider": selected}
+
+    import config
+    from core import tts
+
+    selected = (provider or config.TTS_PROVIDER or "none").strip().lower()
+    voice = cartesia_voice_id if cartesia_voice_id is not None else config.CARTESIA_VOICE_ID
+    ok, message = tts.test_connection(
+        selected,
+        cartesia_voice_id=voice,
+    )
+    return {"ok": ok, "message": message, "provider": selected}
+
+
 # ---------------------------------------------------------------------------
 # Real query path -- wired to the existing pipeline, exercised on the Mac / online.
 # Imports are lazy so this module still loads with no LLM deps/keys present.
