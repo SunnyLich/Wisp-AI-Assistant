@@ -318,6 +318,49 @@ def brain_auth_chatgpt_start_browser_login() -> dict[str, Any]:
     return {"ok": True, "message": "Opening browser for ChatGPT sign-in"}
 
 
+@handler("brain.auth.chatgpt.browser_login", streaming=True)
+def brain_auth_chatgpt_browser_login(
+    ctx: StreamContext,
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    """Run ChatGPT browser OAuth and stream completion back to Swift."""
+    from core.auth import chatgpt as chatgpt_auth
+
+    done = threading.Event()
+    result: dict[str, Any] = {
+        "ok": False,
+        "provider": "chatgpt",
+        "message": "ChatGPT sign-in did not finish.",
+    }
+
+    def on_success(tokens: dict) -> None:
+        account = tokens.get("account_id") if isinstance(tokens, dict) else ""
+        result.update({
+            "ok": True,
+            "provider": "chatgpt",
+            "message": "Logged in" + (f" as {account}" if account else ""),
+        })
+        ctx.emit("auth.done", result)
+        done.set()
+
+    def on_error(message: str) -> None:
+        result.update({"ok": False, "provider": "chatgpt", "message": message})
+        ctx.emit("auth.error", result)
+        done.set()
+
+    ctx.emit("auth.started", {"provider": "chatgpt", "message": "Opening browser for ChatGPT sign-in"})
+    chatgpt_auth.start_browser_login(on_success=on_success, on_error=on_error)
+    deadline = time.time() + max(1, int(timeout_seconds or 300))
+    while not done.wait(0.25):
+        if ctx.cancelled:
+            return {"ok": False, "provider": "chatgpt", "cancelled": True, "message": "ChatGPT sign-in cancelled"}
+        if time.time() >= deadline:
+            result.update({"ok": False, "provider": "chatgpt", "message": "Timed out waiting for ChatGPT login"})
+            ctx.emit("auth.error", result)
+            break
+    return result
+
+
 @handler("brain.auth.chatgpt.clear")
 def brain_auth_chatgpt_clear() -> dict[str, Any]:
     from core.auth import chatgpt as chatgpt_auth

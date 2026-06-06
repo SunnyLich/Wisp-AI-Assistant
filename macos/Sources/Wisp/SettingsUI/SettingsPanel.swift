@@ -630,10 +630,10 @@ final class SettingsPanel: NSPanel {
         }
     }
 
-    func setAuthProgress(_ message: String) {
+    func setAuthProgress(_ message: String, provider: String) {
         model.status = message
         model.errorText = ""
-        if let index = model.authStatuses.firstIndex(where: { $0.name == "github" }) {
+        if let index = model.authStatuses.firstIndex(where: { $0.name == provider }) {
             model.authStatuses[index].message = message
         }
     }

@@ -1257,15 +1257,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            let result = try await client.call("brain.auth.chatgpt.start_browser_login", timeout: .seconds(30))
-            let message = result?["message"] as? String ?? "Opening browser for ChatGPT sign-in"
-            await loadSettingsAuth(statusMessage: message)
-            statusController?.setBrainStatus("chatgpt auth started")
-            NSLog("[wisp] chatgpt auth started")
+            var finalMessage = "Opening browser for ChatGPT sign-in"
+            var finalOK = false
+            for try await item in client.stream("brain.auth.chatgpt.browser_login") {
+                switch item {
+                case .event(let name, let data) where name == "auth.started":
+                    let message = data?["message"] as? String ?? "Opening browser for ChatGPT sign-in"
+                    settingsPanel?.setAuthProgress(message, provider: "chatgpt")
+                    statusController?.setBrainStatus("chatgpt auth started")
+                    NSLog("[wisp] chatgpt auth started")
+                case .event(let name, let data) where name == "auth.done":
+                    finalOK = data?["ok"] as? Bool ?? true
+                    finalMessage = data?["message"] as? String ?? "ChatGPT signed in"
+                case .event(let name, let data) where name == "auth.error":
+                    finalOK = false
+                    finalMessage = data?["message"] as? String ?? "ChatGPT sign-in failed"
+                case .result(let result):
+                    finalOK = result?["ok"] as? Bool ?? finalOK
+                    finalMessage = result?["message"] as? String ?? finalMessage
+                default:
+                    break
+                }
+            }
+            await loadSettingsAuth(statusMessage: finalMessage)
+            statusController?.setBrainStatus(finalOK ? "chatgpt auth ok" : "chatgpt auth failed")
+            NSLog("[wisp] chatgpt auth finished: %@", finalMessage)
         } catch {
             settingsPanel?.fail(String(describing: error))
             statusController?.setBrainStatus("chatgpt auth error")
-            NSLog("[wisp] chatgpt auth start failed: %@", String(describing: error))
+            NSLog("[wisp] chatgpt auth failed: %@", String(describing: error))
         }
     }
 
@@ -1294,7 +1314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         NSWorkspace.shared.open(url)
                     }
                     let message = code.isEmpty ? "GitHub sign-in started" : "GitHub code: \(code)"
-                    settingsPanel?.setAuthProgress(message)
+                    settingsPanel?.setAuthProgress(message, provider: "github")
                     statusController?.setBrainStatus("github auth code ready")
                     NSLog("[wisp] github auth code emitted")
                 case .event(let name, let data) where name == "auth.done":

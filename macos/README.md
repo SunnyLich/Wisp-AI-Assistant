@@ -102,7 +102,7 @@ clear actions. Those actions call the Python brain sidecar and reuse the shared
 OS-keychain secret store; stored key values are never shown and are not written
 to `.env`.
 It also includes an `Auth` tab for ChatGPT/GitHub/Copilot auth status,
-ChatGPT browser sign-in launch, GitHub device sign-in, sign-out actions, and
+ChatGPT browser sign-in, GitHub device sign-in, sign-out actions, and
 Copilot token save/test/clear through the same shared auth modules used by
 Windows.
 The footer reset action asks for confirmation, clears stored credentials through

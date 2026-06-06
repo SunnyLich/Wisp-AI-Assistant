@@ -26,6 +26,7 @@ def test_secret_handlers_registered():
 def test_auth_handlers_registered():
     assert "brain.auth.status" in handlers.HANDLERS
     assert "brain.auth.chatgpt.start_browser_login" in handlers.HANDLERS
+    assert "brain.auth.chatgpt.browser_login" in handlers.HANDLERS
     assert "brain.auth.chatgpt.clear" in handlers.HANDLERS
     assert "brain.auth.github.device_login" in handlers.HANDLERS
     assert "brain.auth.github.clear" in handlers.HANDLERS
@@ -34,6 +35,7 @@ def test_auth_handlers_registered():
     assert "brain.auth.copilot.clear" in handlers.HANDLERS
     assert "brain.settings.reset_credentials" in handlers.HANDLERS
     assert "brain.auth.status" not in handlers.STREAMING
+    assert "brain.auth.chatgpt.browser_login" in handlers.STREAMING
     assert "brain.auth.github.device_login" in handlers.STREAMING
 
 
@@ -397,6 +399,82 @@ def test_auth_chatgpt_start_browser_login_uses_shared_module(monkeypatch):
 
     assert result == {"ok": True, "message": "Opening browser for ChatGPT sign-in"}
     assert captured == {"success": True, "error": True}
+
+
+def test_auth_chatgpt_browser_login_streams_started_and_success(monkeypatch):
+    from core.auth import chatgpt as chatgpt_auth
+
+    events = []
+
+    def start_browser_login(on_success, on_error):
+        on_success({"account_id": "acct_123"})
+
+    monkeypatch.setattr(chatgpt_auth, "start_browser_login", start_browser_login)
+
+    ctx = handlers.StreamContext(lambda name, data, req_id: events.append((name, data, req_id)), req_id=7)
+    result = handlers.HANDLERS["brain.auth.chatgpt.browser_login"](ctx, timeout_seconds=1)
+
+    assert events == [
+        (
+            "auth.started",
+            {
+                "provider": "chatgpt",
+                "message": "Opening browser for ChatGPT sign-in",
+            },
+            7,
+        ),
+        (
+            "auth.done",
+            {
+                "ok": True,
+                "provider": "chatgpt",
+                "message": "Logged in as acct_123",
+            },
+            7,
+        ),
+    ]
+    assert result == {
+        "ok": True,
+        "provider": "chatgpt",
+        "message": "Logged in as acct_123",
+    }
+
+
+def test_auth_chatgpt_browser_login_streams_error(monkeypatch):
+    from core.auth import chatgpt as chatgpt_auth
+
+    events = []
+
+    def start_browser_login(on_success, on_error):
+        on_error("browser failed")
+
+    monkeypatch.setattr(chatgpt_auth, "start_browser_login", start_browser_login)
+
+    ctx = handlers.StreamContext(lambda name, data, req_id: events.append((name, data, req_id)), req_id=8)
+    result = handlers.HANDLERS["brain.auth.chatgpt.browser_login"](ctx, timeout_seconds=1)
+
+    assert events[0] == (
+        "auth.started",
+        {
+            "provider": "chatgpt",
+            "message": "Opening browser for ChatGPT sign-in",
+        },
+        8,
+    )
+    assert events[1] == (
+        "auth.error",
+        {
+            "ok": False,
+            "provider": "chatgpt",
+            "message": "browser failed",
+        },
+        8,
+    )
+    assert result == {
+        "ok": False,
+        "provider": "chatgpt",
+        "message": "browser failed",
+    }
 
 
 def test_settings_reset_credentials_clears_secrets_auth_and_env(monkeypatch, tmp_path):
