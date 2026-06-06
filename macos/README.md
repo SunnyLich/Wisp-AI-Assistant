@@ -176,5 +176,8 @@ WISP_VALIDATE_APP_LAUNCH=1
 ```
 
 That marker is expected in the same `build_logs/macos_package_<timestamp>/`
-folder. A complete public release still requires a real Developer ID identity,
-successful notarization, and this signed-app launch validation on a Mac.
+folder. The package script also writes a zipped log archive under `build_logs/`
+and copies recent Wisp/Python/Swift crash reports into
+`build_logs/macos_package_<timestamp>/crash_reports/` when the flow fails. A
+complete public release still requires a real Developer ID identity, successful
+notarization, and this signed-app launch validation on a Mac.

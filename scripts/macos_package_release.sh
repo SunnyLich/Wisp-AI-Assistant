@@ -20,8 +20,24 @@ SUMMARY_LOG="$LOG_DIR/summary.log"
 APP_BUNDLE="$REPO_ROOT/build/WispNative/Wisp.app"
 ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-$RUN_ID.zip"
 NOTARY_ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-notary-submit-$RUN_ID.zip"
+LOG_ARCHIVE_PATH="$REPO_ROOT/build_logs/wisp-macos-package-logs_$RUN_ID.zip"
 CODESIGN_ENTITLEMENTS="${WISP_CODESIGN_ENTITLEMENTS:-$REPO_ROOT/macos/Wisp.entitlements}"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/build/WispNative"
+
+finish() {
+  local status=$?
+  echo
+  if [ "$status" -ne 0 ]; then
+    collect_recent_crash_reports
+    echo "FAILED: native macOS package flow exited with $status." | tee -a "$SUMMARY_LOG"
+    echo "If macOS generated a crash report, check:" | tee -a "$SUMMARY_LOG"
+    echo "  $HOME/Library/Logs/DiagnosticReports" | tee -a "$SUMMARY_LOG"
+  fi
+  archive_logs
+  echo "Logs: $LOG_DIR"
+  [ -f "$LOG_ARCHIVE_PATH" ] && echo "Log archive: $LOG_ARCHIVE_PATH"
+}
+trap finish EXIT
 
 log_info() {
   echo "$@" | tee -a "$SUMMARY_LOG"
@@ -43,6 +59,42 @@ run_logged() {
     return "$status"
   fi
   log_info "PASS: $name"
+}
+
+collect_recent_crash_reports() {
+  local report_dir="$HOME/Library/Logs/DiagnosticReports"
+  local report_log="$LOG_DIR/recent_diagnostic_reports.txt"
+  local copies_dir="$LOG_DIR/crash_reports"
+  if [ ! -d "$report_dir" ]; then
+    return
+  fi
+
+  mkdir -p "$copies_dir"
+  {
+    echo "Recent Wisp/Python/Swift crash reports, newest first:"
+    find "$report_dir" -maxdepth 1 -type f \
+      \( -name "Wisp*.crash" -o -name "python*.crash" -o -name "python3*.crash" -o -name "swift*.crash" \) \
+      -print0 2>/dev/null |
+      xargs -0 stat -f "%m|%Sm|%N" -t "%Y-%m-%d %H:%M:%S" 2>/dev/null |
+      sort -rn |
+      head -20 |
+      while IFS="|" read -r _stamp human_time path; do
+        echo "$human_time $path"
+        cp "$path" "$copies_dir/" 2>/dev/null || true
+      done
+  } > "$report_log" || true
+}
+
+archive_logs() {
+  rm -f "$LOG_ARCHIVE_PATH"
+  if command -v ditto >/dev/null 2>&1; then
+    ditto -c -k --keepParent "$LOG_DIR" "$LOG_ARCHIVE_PATH" >/dev/null 2>&1 || true
+  elif command -v zip >/dev/null 2>&1; then
+    (
+      cd "$(dirname "$LOG_DIR")"
+      zip -qr "$LOG_ARCHIVE_PATH" "$(basename "$LOG_DIR")"
+    ) || true
+  fi
 }
 
 require_macos_tools() {
