@@ -204,6 +204,7 @@ struct ResponseBubbleConfig {
     var lines: Int
     var bubbleColor: NSColor
     var textColor: NSColor
+    var readWordColor: NSColor
 
     var tailWidth: CGFloat { 12 }
     var bubbleHeight: CGFloat { CGFloat(lines) * 20 + 28 }
@@ -216,7 +217,8 @@ struct ResponseBubbleConfig {
             bubbleWidth: CGFloat(max(220, min(720, intValue(values["BUBBLE_WIDTH"], default: 340)))),
             lines: max(1, min(8, intValue(values["BUBBLE_LINES"], default: 3))),
             bubbleColor: color(values["BUBBLE_COLOR"], fallback: NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.15, alpha: 0.92)),
-            textColor: color(values["BUBBLE_TEXT_COLOR"], fallback: NSColor(calibratedWhite: 0.92, alpha: 1.0))
+            textColor: color(values["BUBBLE_TEXT_COLOR"], fallback: NSColor(calibratedWhite: 0.92, alpha: 1.0)),
+            readWordColor: color(values["BUBBLE_READ_WORD_COLOR"], fallback: NSColor(calibratedRed: 0.30, green: 0.64, blue: 1.0, alpha: 1.0))
         )
     }
 
@@ -297,9 +299,13 @@ final class ResponseBubbleModel: ObservableObject {
     }
 
     private var visibleReplyText: String {
+        visibleWords.joined(separator: " ")
+    }
+
+    var visibleWords: [String] {
         let revealed = Array(words.prefix(revealedCount))
-        guard !revealed.isEmpty else { return fullText.isEmpty ? "" : " " }
-        return revealed.suffix(54).joined(separator: " ")
+        guard !revealed.isEmpty else { return fullText.isEmpty ? [] : [" "] }
+        return Array(revealed.suffix(54))
     }
 
     func resetText() {
@@ -342,14 +348,13 @@ private struct ResponseBubbleView: View {
                             .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     )
 
-                Text(model.displayText.isEmpty ? " " : model.displayText)
-                    .font(.system(size: 13))
-                    .foregroundStyle(textColor)
-                    .lineLimit(model.config.lines)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                bubbleText
+                .font(.system(size: 13))
+                .lineLimit(model.config.lines)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
             .frame(width: model.config.bubbleWidth, height: model.config.bubbleHeight)
 
@@ -375,6 +380,30 @@ private struct ResponseBubbleView: View {
         default:
             return Color(nsColor: model.config.textColor)
         }
+    }
+
+    @ViewBuilder
+    private var bubbleText: some View {
+        if model.mode == .reply, model.visibleWords.isEmpty == false {
+            highlightedReplyText
+        } else {
+            Text(model.displayText.isEmpty ? " " : model.displayText)
+                .foregroundStyle(textColor)
+        }
+    }
+
+    private var highlightedReplyText: Text {
+        let words = model.visibleWords
+        let normal = Color(nsColor: model.config.textColor)
+        let highlight = Color(nsColor: model.config.readWordColor)
+        var text = Text("")
+        for (index, word) in words.enumerated() {
+            if index > 0 {
+                text = text + Text(" ").foregroundColor(normal)
+            }
+            text = text + Text(word).foregroundColor(index == words.count - 1 ? highlight : normal)
+        }
+        return text
     }
 }
 
