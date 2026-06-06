@@ -22,9 +22,10 @@ final class OverlayPanel: NSPanel {
     private let model: OverlayModel
 
     init(onTap: @escaping () -> Void = {}) {
-        self.model = OverlayModel(onTap: onTap)
+        let model = OverlayModel(onTap: onTap)
+        self.model = model
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 96, height: 96),
+            contentRect: NSRect(x: 0, y: 0, width: model.panelSize, height: model.panelSize),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -67,15 +68,28 @@ final class OverlayModel: ObservableObject {
     @Published var state: OverlayPanel.DollState = .idle
 
     let onTap: () -> Void
+    let iconSize: CGFloat
     private let images: [OverlayPanel.DollState: NSImage]
 
     init(onTap: @escaping () -> Void) {
         self.onTap = onTap
+        self.iconSize = Self.loadIconSize()
         self.images = DollAssetLocator.loadImages()
     }
 
     func image(for state: OverlayPanel.DollState) -> NSImage? {
         images[state]
+    }
+
+    var panelSize: CGFloat {
+        iconSize + 18
+    }
+
+    private static func loadIconSize() -> CGFloat {
+        let values = WispConfig.loadValues()
+        let raw = values["ICON_SIZE"] ?? values["DOLL_SIZE"] ?? "80"
+        let parsed = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 80
+        return CGFloat(max(32, min(160, parsed)))
     }
 }
 
@@ -97,13 +111,13 @@ private struct OverlayView: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 78, height: 78)
+                    .frame(width: model.iconSize, height: model.iconSize)
                     .shadow(radius: 6)
             } else {
                 Circle()
                     .fill(color.opacity(0.9))
                     .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 2))
-                    .frame(width: 64, height: 64)
+                    .frame(width: model.iconSize, height: model.iconSize)
                     .shadow(radius: 6)
             }
         }

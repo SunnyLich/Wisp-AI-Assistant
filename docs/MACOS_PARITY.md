@@ -18,7 +18,7 @@ work until each visible surface is ported.
 
 | Layer | Shared contract | Windows implementation | macOS implementation |
 |---|---|---|---|
-| Floating overlay | Wisp state art: idle/listening/thinking/speaking | Qt overlay | Swift `OverlayPanel` |
+| Floating overlay | Wisp state art: idle/listening/thinking/speaking | Qt overlay | Swift `OverlayPanel` with shared icon sizing |
 | Tray/menu | Ask, chat, memory, plugins, settings, voice, quit | Qt tray | Swift `StatusItemController` |
 | Caller intents/hotkeys | `CALLER_*` config, caller hotkeys, W/A/D/custom picker | Qt `IntentOverlay` | Swift `HotkeyController` + `IntentPanel` |
 | Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` and `brain.rewrite` |
