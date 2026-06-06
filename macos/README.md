@@ -116,3 +116,22 @@ build_logs/macos_native_tests_<timestamp>/
 ```
 
 Start with `summary.log`; individual command logs sit beside it.
+
+## Native Package Signing
+
+To build a release-shaped app with an embedded runtime and Developer ID
+signature, run this on macOS after storing notarization credentials in
+notarytool:
+
+```bash
+WISP_PYTHON_RUNTIME_DIR=/path/to/python-runtime \
+WISP_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+WISP_NOTARY_PROFILE=wisp-notary \
+bash scripts/macos_package_release.sh
+```
+
+For a local signed-only package, add `WISP_SKIP_NOTARIZATION=1`. The packaging
+script writes logs under `build_logs/macos_package_<timestamp>/` and creates a
+zip under `build/WispNative/`. A complete public release still requires a real
+Developer ID identity, successful notarization, and a final Mac validation pass
+on the signed app.

@@ -31,7 +31,7 @@ work until each visible surface is ported.
 | Plugins | loaded/discoverable plugin list, hooks, tools, folder open, tray actions | Qt `PluginManagerDialog` | Swift `PluginManagerPanel` with action execution and status refresh |
 | Snip overlay | drag-select region, attach image to intent query | Qt `SnipOverlay` | Swift `SnipOverlayPanel` + `ScreenCaptureController` region capture |
 | Agents | same user-facing task/history windows and config | Qt windows | Swift `AgentTaskPanel`, `AgentHistoryPanel`, and `AgentDiffPanel` |
-| Packaging | distributable app | PyInstaller path | Swift dev `.app` bundle with staged `brain`, `core`, art resources, and optional embedded Python runtime; signing/notarization still open |
+| Packaging | distributable app | PyInstaller path | Swift dev `.app` bundle with staged `brain`, `core`, art resources, optional embedded Python runtime, and scripted signing/notarization flow |
 
 ## Capability Status
 
@@ -54,7 +54,7 @@ work until each visible surface is ported.
 | Snip overlay | Done | Native |
 | Agent task window | Done | Native |
 | Agent task history | Done | Native |
-| Packaging | Partial | Partial dev app bundle with release-shaped resources and optional runtime staging |
+| Packaging | Partial | Release-shaped dev bundle plus signing/notary script; needs credentials and signed-app validation |
 
 ## Current Migration Order
 
@@ -64,7 +64,8 @@ work until each visible surface is ported.
    menu, chat contrast, snip query, voice query, TTS playback, memory/plugin
    actions, and agent task/history flows.
 3. Close any remaining live-behavior gaps found by the Mac validation loop.
-4. Build a signed/notarized `.app`.
+4. Run `scripts/macos_package_release.sh` with Developer ID/notary credentials
+   and validate the signed/notarized `.app`.
 
 ## Stability Gates
 

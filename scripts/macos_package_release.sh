@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Build, sign, and optionally notarize the native macOS Wisp.app bundle.
+#
+# Required:
+#   WISP_PYTHON_RUNTIME_DIR=/path/to/python-runtime
+#   WISP_CODESIGN_IDENTITY="Developer ID Application: ..."
+#
+# Optional:
+#   WISP_NOTARY_PROFILE=keychain-profile-name
+#   WISP_SKIP_NOTARIZATION=1
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+REPO_ROOT="$(pwd)"
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
+LOG_DIR="$REPO_ROOT/build_logs/macos_package_$RUN_ID"
+SUMMARY_LOG="$LOG_DIR/summary.log"
+APP_BUNDLE="$REPO_ROOT/build/WispNative/Wisp.app"
+ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-$RUN_ID.zip"
+mkdir -p "$LOG_DIR" "$REPO_ROOT/build/WispNative"
+
+log_info() {
+  echo "$@" | tee -a "$SUMMARY_LOG"
+}
+
+run_logged() {
+  local name="$1"
+  shift
+  local log="$LOG_DIR/$name.log"
+
+  log_info "== $name =="
+  log_info "command: $*"
+  set +e
+  "$@" 2>&1 | tee "$log"
+  local status=${PIPESTATUS[0]}
+  set -e
+  if [ "$status" -ne 0 ]; then
+    log_info "FAILED: $name (exit $status)"
+    return "$status"
+  fi
+  log_info "PASS: $name"
+}
+
+require_macos_tools() {
+  if [ "$(uname -s 2>/dev/null || true)" != "Darwin" ]; then
+    echo "ERROR: this packaging script must run on macOS." >&2
+    exit 1
+  fi
+  for tool in codesign ditto spctl xcrun; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "ERROR: required macOS packaging tool not found: $tool" >&2
+      exit 1
+    fi
+  done
+}
+
+require_inputs() {
+  if [ -z "${WISP_PYTHON_RUNTIME_DIR:-}" ]; then
+    echo "ERROR: WISP_PYTHON_RUNTIME_DIR is required for a release-shaped package." >&2
+    exit 1
+  fi
+  if [ ! -x "$WISP_PYTHON_RUNTIME_DIR/bin/python3" ]; then
+    echo "ERROR: WISP_PYTHON_RUNTIME_DIR must contain bin/python3: $WISP_PYTHON_RUNTIME_DIR" >&2
+    exit 1
+  fi
+  if [ -z "${WISP_CODESIGN_IDENTITY:-}" ]; then
+    echo "ERROR: WISP_CODESIGN_IDENTITY is required, for example:" >&2
+    echo "       WISP_CODESIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)'" >&2
+    exit 1
+  fi
+}
+
+build_release_shaped_bundle() {
+  log_info "Building release-shaped Wisp.app with embedded runtime..."
+  WISP_PYTHON_RUNTIME_DIR="$WISP_PYTHON_RUNTIME_DIR" \
+    /bin/bash scripts/macos_phase1_validate.sh | tee "$LOG_DIR/phase1.log"
+
+  if [ ! -d "$APP_BUNDLE" ]; then
+    echo "ERROR: expected app bundle was not built: $APP_BUNDLE" >&2
+    exit 1
+  fi
+  if [ ! -x "$APP_BUNDLE/Contents/Resources/python-runtime/bin/python3" ]; then
+    echo "ERROR: app bundle is missing embedded python-runtime/bin/python3." >&2
+    exit 1
+  fi
+}
+
+sign_bundle() {
+  run_logged "codesign-app" \
+    codesign --force --deep --options runtime --timestamp \
+      --sign "$WISP_CODESIGN_IDENTITY" "$APP_BUNDLE"
+  run_logged "codesign-verify" codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+}
+
+zip_bundle() {
+  rm -f "$ZIP_PATH"
+  run_logged "zip-app" ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+  log_info "Zip: $ZIP_PATH"
+}
+
+notarize_if_requested() {
+  if [ "${WISP_SKIP_NOTARIZATION:-0}" = "1" ]; then
+    log_info "Skipping notarization because WISP_SKIP_NOTARIZATION=1."
+    log_info "Gatekeeper assessment is skipped because the app is not notarized."
+    return 0
+  fi
+  if [ -z "${WISP_NOTARY_PROFILE:-}" ]; then
+    echo "ERROR: WISP_NOTARY_PROFILE is required unless WISP_SKIP_NOTARIZATION=1." >&2
+    echo "       Create one with: xcrun notarytool store-credentials <profile-name>" >&2
+    exit 1
+  fi
+
+  run_logged "notary-submit" \
+    xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$WISP_NOTARY_PROFILE" --wait
+  run_logged "staple-app" xcrun stapler staple "$APP_BUNDLE"
+  run_logged "spctl-assess-stapled" spctl --assess --type execute --verbose "$APP_BUNDLE"
+}
+
+require_macos_tools
+require_inputs
+build_release_shaped_bundle
+sign_bundle
+zip_bundle
+notarize_if_requested
+
+log_info "Native macOS package flow completed."
+log_info "Logs: $LOG_DIR"
