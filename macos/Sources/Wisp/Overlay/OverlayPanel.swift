@@ -205,6 +205,11 @@ private final class OverlayHostingView: NSHostingView<OverlayView> {
         super.init(rootView: rootView)
     }
 
+    required init(rootView: OverlayView) {
+        self.onRightClick = { _ in }
+        super.init(rootView: rootView)
+    }
+
     @MainActor
     required dynamic init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
