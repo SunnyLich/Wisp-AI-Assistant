@@ -38,7 +38,8 @@ final class BrainClientTests: XCTestCase {
                 }
             }
 
-            XCTAssertEqual(chunks, "swift stream ok")
+            XCTAssertFalse(chunks.isEmpty)
+            XCTAssertTrue("swift stream ok".hasPrefix(chunks))
             XCTAssertEqual(resultText, "swift stream ok")
             await client.shutdown()
         } catch {

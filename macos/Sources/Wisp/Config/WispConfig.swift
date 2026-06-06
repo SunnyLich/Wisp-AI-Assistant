@@ -281,20 +281,18 @@ enum DotEnvFile {
                 continue
             }
 
-            if shouldRemove(key, removeKeys: removeKeys, removePrefixes: removePrefixes) {
-                continue
-            }
-
             if let value = updates[key] {
                 lines.append("\(key)=\(formatValue(value))")
                 seen.insert(key)
+            } else if shouldRemove(key, removeKeys: removeKeys, removePrefixes: removePrefixes) {
+                continue
             } else {
                 lines.append(rawLine)
             }
         }
 
         let newKeys = updates.keys
-            .filter { !seen.contains($0) && !shouldRemove($0, removeKeys: removeKeys, removePrefixes: removePrefixes) }
+            .filter { !seen.contains($0) }
             .sorted()
 
         if !newKeys.isEmpty, lines.contains(where: { !$0.isEmpty }) {
