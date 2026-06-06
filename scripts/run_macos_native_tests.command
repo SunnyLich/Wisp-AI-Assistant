@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+#
+# Quick native macOS verification for migrated Wisp features.
+#
+# Default mode runs the fast functional checks we expect after each native macOS
+# parity slice:
+#   - Python brain sidecar handler + integration tests
+#   - shared config environment tests
+#   - Swift package tests for the AppKit host
+#
+# Use --build to also run swift build.
+# Use --full or --run to delegate to scripts/macos_phase1_validate.sh.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+REPO_ROOT="$(pwd)"
+
+if [ "${1:-}" = "--full" ]; then
+  exec /bin/bash scripts/macos_phase1_validate.sh
+fi
+
+if [ "${1:-}" = "--run" ]; then
+  exec /bin/bash scripts/macos_phase1_validate.sh --run
+fi
+
+RUN_BUILD=0
+if [ "${1:-}" = "--build" ]; then
+  RUN_BUILD=1
+fi
+
+if [ "$(uname -s 2>/dev/null || true)" != "Darwin" ]; then
+  echo "ERROR: this quick native test runner must run on macOS." >&2
+  exit 1
+fi
+
+if ! command -v swift >/dev/null 2>&1; then
+  echo "ERROR: swift was not found. Install Xcode Command Line Tools:" >&2
+  echo "       xcode-select --install" >&2
+  exit 1
+fi
+
+PY="$REPO_ROOT/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+  PY="$(command -v python3 || true)"
+fi
+
+if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
+  echo "ERROR: no Python found." >&2
+  echo "       Run scripts/macos_phase1_validate.sh once to create the .venv." >&2
+  exit 1
+fi
+
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
+LOG_DIR="$REPO_ROOT/build_logs/macos_native_tests_$RUN_ID"
+mkdir -p "$LOG_DIR"
+
+run_logged() {
+  local name="$1"
+  shift
+  local log="$LOG_DIR/$name.log"
+
+  echo
+  echo "== $name =="
+  echo "command: $*"
+  set +e
+  "$@" 2>&1 | tee "$log"
+  local status=${PIPESTATUS[0]}
+  set -e
+  if [ "$status" -ne 0 ]; then
+    echo "FAILED: $name (exit $status)"
+    echo "Logs written to: $LOG_DIR"
+    return "$status"
+  fi
+  echo "PASS: $name"
+}
+
+export WISP_BRAIN_PYTHON="$PY"
+export WISP_BRAIN_DIR="$REPO_ROOT/macos/brain"
+export WISP_REPO_ROOT="$REPO_ROOT"
+export WISP_RUN_LOG_DIR="$LOG_DIR"
+
+echo "Repo: $REPO_ROOT"
+echo "Python: $PY"
+"$PY" --version
+swift --version
+echo "Logs: $LOG_DIR"
+
+if ! "$PY" -c "import pytest" >/dev/null 2>&1; then
+  echo
+  echo "pytest is missing in this environment; installing it now..."
+  "$PY" -m pip install pytest
+fi
+
+run_logged "python-brain-and-config-tests" \
+  "$PY" -m pytest macos/brain/tests tests/test_config_env.py -q
+
+(
+  cd macos
+  run_logged "swift-test" swift test
+  if [ "$RUN_BUILD" -eq 1 ]; then
+    run_logged "swift-build" swift build
+  fi
+)
+
+echo
+echo "Quick native macOS verification passed."
+echo "Logs written to: $LOG_DIR"

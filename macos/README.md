@@ -53,3 +53,21 @@ Start Wisp (Mac Native).command
 
 This path validates the Python sidecar, Swift package, native menubar/overlay,
 and the current Swift parity slice.
+
+## Native Test Button
+
+For quick verification after a macOS parity change, double-click:
+
+```bash
+Test Wisp (Mac Native).command
+```
+
+or run:
+
+```bash
+bash scripts/run_macos_native_tests.command
+```
+
+That runs the offline Python brain tests, shared config environment tests, and
+Swift package tests. Use `--build` to include `swift build`, or `--full` for the
+slower provisioning/package validation path.
