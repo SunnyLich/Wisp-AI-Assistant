@@ -39,7 +39,11 @@ final class BrainClientTests: XCTestCase {
             }
 
             XCTAssertFalse(chunks.isEmpty)
-            XCTAssertTrue("swift stream ok".hasPrefix(chunks))
+            XCTAssertEqual(
+                chunks.trimmingCharacters(in: .whitespacesAndNewlines),
+                "swift stream ok",
+                "Unexpected streamed chunks: \(String(reflecting: chunks))"
+            )
             XCTAssertEqual(resultText, "swift stream ok")
             await client.shutdown()
         } catch {
