@@ -79,8 +79,13 @@ struct SettingsDraft: Equatable {
     var bubbleRevealWPM: String
     var bubbleHoldRevealWPM: String
     var bubbleHideDelayMS: String
+    var systemPromptUtility: String
 
     var callers: [SettingsCallerDraft]
+
+    private static let defaultSystemPromptUtility = """
+    You are a concise desktop assistant. Answer in 1-3 short sentences. Be direct and plain. No markdown. If a [Memory] section appears in this prompt, it contains facts about the user from previous sessions - consider using them to personalize your answers without announcing that you are doing so. You have access to a web_search tool and a get_context tool. Use web_search for current information and use get_context with a URL when the user asks about a specific page. Never print or simulate tool calls in the reply.
+    """
 
     static func load(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -147,6 +152,7 @@ struct SettingsDraft: Equatable {
             bubbleRevealWPM: values["BUBBLE_REVEAL_WPM"] ?? "170",
             bubbleHoldRevealWPM: values["BUBBLE_HOLD_REVEAL_WPM"] ?? "480",
             bubbleHideDelayMS: values["BUBBLE_HIDE_DELAY_MS"] ?? "3500",
+            systemPromptUtility: values["SYSTEM_PROMPT_UTILITY"] ?? defaultSystemPromptUtility,
             callers: config.callers.map(SettingsCallerDraft.init(caller:))
         )
     }
@@ -203,6 +209,7 @@ struct SettingsDraft: Equatable {
         bubbleRevealWPM: "170",
         bubbleHoldRevealWPM: "480",
         bubbleHideDelayMS: "3500",
+        systemPromptUtility: defaultSystemPromptUtility,
         callers: WispConfig.defaultCallers.map(SettingsCallerDraft.init(caller:))
     )
 
@@ -268,6 +275,7 @@ struct SettingsDraft: Equatable {
             "BUBBLE_REVEAL_WPM": bubbleRevealWPM,
             "BUBBLE_HOLD_REVEAL_WPM": bubbleHoldRevealWPM,
             "BUBBLE_HIDE_DELAY_MS": bubbleHideDelayMS,
+            "SYSTEM_PROMPT_UTILITY": systemPromptUtility,
             "CALLER_COUNT": String(callers.count),
         ]
 
@@ -625,6 +633,10 @@ private struct SettingsPanelView: View {
                     SettingsTextField("Fallbacks", text: $model.draft.memoryFallbacks)
                     llmTestRow(.memory)
                 }
+
+                SettingsSection("System Prompt") {
+                    SettingsTextEditor("Utility prompt", text: $model.draft.systemPromptUtility, minHeight: 150)
+                }
             }
             .padding(4)
         }
@@ -848,6 +860,33 @@ private struct SettingsTextField: View {
                 .foregroundStyle(.secondary)
             TextField(label, text: $text)
                 .textFieldStyle(.roundedBorder)
+        }
+    }
+}
+
+private struct SettingsTextEditor: View {
+    var label: String
+    @Binding var text: String
+    var minHeight: CGFloat
+
+    init(_ label: String, text: Binding<String>, minHeight: CGFloat = 100) {
+        self.label = label
+        self._text = text
+        self.minHeight = minHeight
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(label)
+                .frame(width: 135, alignment: .trailing)
+                .foregroundStyle(.secondary)
+            TextEditor(text: $text)
+                .font(.system(size: 12))
+                .frame(minHeight: minHeight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(nsColor: NSColor.separatorColor), lineWidth: 1)
+                )
         }
     }
 }
