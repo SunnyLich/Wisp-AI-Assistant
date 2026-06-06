@@ -66,10 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingVoiceContext: PendingNativeContext?
     private var pendingSnip: PendingSnipContext?
     private var agentRunTask: Task<Void, Never>?
+    private var activeTTSPlaybackID: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let client = BrainClient(config: BrainLocator.resolve())
         brain = client
+        audioPlayer.onFinish = { [weak self] playbackID, success in
+            self?.finishSpeechPlayback(playbackID: playbackID, successfully: success)
+        }
 
         let prompt = PromptPanel { [weak self] text, mode in
             Task { await self?.runPrompt(text, mode: mode) }
@@ -418,6 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startNativeAgentTask(_ draft: AgentTaskDraft) {
+        cancelSpeechPlayback()
         guard agentRunTask == nil else {
             agentTaskPanel?.fail("An agent task is already running.")
             return
@@ -596,6 +601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startVoiceQuery() {
+        cancelSpeechPlayback()
         appConfig = WispConfig.load()
         pendingVoiceContext = PendingNativeContext(
             snapshot: nativeContext.snapshot(promptForAccessibility: false)
@@ -680,16 +686,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             do {
                 let url = try await synthesizeSpeech(text)
-                try audioPlayer.play(url: url)
+                let playbackID = try audioPlayer.play(url: url)
+                activeTTSPlaybackID = playbackID
                 statusController?.setBrainStatus("tts playing")
                 promptPanel?.setResponse("\(text)\n\nSpeaking:\n\(url.path)")
+                NSLog("[wisp] tts playback started id=%d", playbackID)
             } catch {
+                activeTTSPlaybackID = nil
                 overlay?.setState(.idle)
                 promptPanel?.failRequest(String(describing: error))
                 statusController?.setBrainStatus("tts error")
                 NSLog("[wisp] tts failed: %@", String(describing: error))
             }
         }
+    }
+
+    private func finishSpeechPlayback(playbackID: Int, successfully: Bool) {
+        guard activeTTSPlaybackID == playbackID else { return }
+        activeTTSPlaybackID = nil
+        overlay?.setState(.idle)
+        statusController?.setBrainStatus(successfully ? "tts finished" : "tts stopped")
+    }
+
+    private func cancelSpeechPlayback() {
+        activeTTSPlaybackID = nil
+        audioPlayer.stop()
     }
 
     private func transcribe(_ url: URL) async throws -> String {
@@ -940,6 +961,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        cancelSpeechPlayback()
         chatPanel?.showChat(startNew: false)
         let messages = chatPanel?.beginUserMessage(text) ?? [["role": "user", "content": text]]
         overlay?.setState(.thinking)
@@ -986,6 +1008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        cancelSpeechPlayback()
         let selected = context?.snapshot.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !selected.isEmpty else {
             promptPanel?.showPrompt()
@@ -1065,6 +1088,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        cancelSpeechPlayback()
         promptPanel?.beginRequest(mode: mode)
         overlay?.setState(mode == .echo ? .speaking : .thinking)
         if mode == .echo {

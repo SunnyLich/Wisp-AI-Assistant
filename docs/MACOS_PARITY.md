@@ -45,7 +45,7 @@ work until each visible surface is ported.
 | Selected text and ambient context | Done | In progress native snapshot |
 | Screenshot context | Done | Partial |
 | Voice query | Done | In progress native with buffered context |
-| TTS playback | Done | Partial |
+| TTS playback | Done | In progress native playback lifecycle |
 | Chat window | Done | In progress native |
 | Settings window | Done | In progress native |
 | Memory window | Done | In progress native |
