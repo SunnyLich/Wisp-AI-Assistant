@@ -242,11 +242,13 @@ private struct ChatPanelView: View {
             HStack {
                 Text("Chat")
                     .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.94))
                 Spacer()
                 Button {
                     model.startNewConversation()
                 } label: {
                     Image(systemName: "plus")
+                        .foregroundStyle(Color.white.opacity(0.86))
                 }
                 .buttonStyle(.borderless)
                 .help("New chat")
@@ -261,6 +263,7 @@ private struct ChatPanelView: View {
                         } label: {
                             Text(conversation.title)
                                 .font(.system(size: 12))
+                                .foregroundStyle(conversation.id == model.activeID ? Color.white.opacity(0.96) : Color.white.opacity(0.72))
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 10)
@@ -309,7 +312,7 @@ private struct ChatPanelView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if model.activeConversation.messages.isEmpty {
                         Text("Ask Wisp anything.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                             .frame(maxWidth: .infinity, minHeight: 240)
                     } else {
                         ForEach(model.activeConversation.messages) { message in
@@ -359,7 +362,7 @@ private struct ChatMessageView: View {
             Text(message.content.isEmpty ? " " : message.content)
                 .font(.system(size: 13))
                 .textSelection(.enabled)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.white.opacity(0.94))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
                 .background(
