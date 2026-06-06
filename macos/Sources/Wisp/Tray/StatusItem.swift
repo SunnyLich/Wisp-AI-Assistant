@@ -9,6 +9,7 @@ final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let statusMenuItem: NSMenuItem
     private let hotkeyMenuItem: NSMenuItem
+    private let loginItemMenuItem: NSMenuItem
 
     private let onShowPrompt: () -> Void
     private let onRunEchoSmoke: () -> Void
@@ -30,6 +31,7 @@ final class StatusItemController: NSObject {
     private let onRememberPrompt: () -> Void
     private let onSearchMemory: () -> Void
     private let onToggleOverlay: () -> Void
+    private let onToggleLoginItem: () -> Void
     private let onRetryHotkey: () -> Void
 
     init(
@@ -53,6 +55,7 @@ final class StatusItemController: NSObject {
         onRememberPrompt: @escaping () -> Void,
         onSearchMemory: @escaping () -> Void,
         onToggleOverlay: @escaping () -> Void,
+        onToggleLoginItem: @escaping () -> Void,
         onRetryHotkey: @escaping () -> Void
     ) {
         self.onShowPrompt = onShowPrompt
@@ -75,10 +78,12 @@ final class StatusItemController: NSObject {
         self.onRememberPrompt = onRememberPrompt
         self.onSearchMemory = onSearchMemory
         self.onToggleOverlay = onToggleOverlay
+        self.onToggleLoginItem = onToggleLoginItem
         self.onRetryHotkey = onRetryHotkey
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusMenuItem = NSMenuItem(title: "Brain: starting...", action: nil, keyEquivalent: "")
         hotkeyMenuItem = NSMenuItem(title: "Hotkey: starting...", action: nil, keyEquivalent: "")
+        loginItemMenuItem = NSMenuItem(title: "Launch at Login: checking...", action: #selector(toggleLoginItem), keyEquivalent: "")
 
         super.init()
 
@@ -177,6 +182,9 @@ final class StatusItemController: NSObject {
         overlayItem.target = self
         menu.addItem(overlayItem)
 
+        loginItemMenuItem.target = self
+        menu.addItem(loginItemMenuItem)
+
         let retryHotkeyItem = NSMenuItem(title: "Retry Hotkey Permission", action: #selector(retryHotkey), keyEquivalent: "h")
         retryHotkeyItem.target = self
         menu.addItem(retryHotkeyItem)
@@ -197,6 +205,12 @@ final class StatusItemController: NSObject {
 
     func setHotkeyStatus(_ text: String) {
         hotkeyMenuItem.title = "Hotkey: \(text)"
+    }
+
+    func setLoginItemStatus(_ status: LoginItemStatus) {
+        loginItemMenuItem.title = status.menuTitle
+        loginItemMenuItem.state = status.isChecked ? .on : .off
+        loginItemMenuItem.isEnabled = status.isActionable
     }
 
     @objc private func showPrompt() {
@@ -225,6 +239,10 @@ final class StatusItemController: NSObject {
 
     @objc private func toggleOverlay() {
         onToggleOverlay()
+    }
+
+    @objc private func toggleLoginItem() {
+        onToggleLoginItem()
     }
 
     @objc private func retryHotkey() {

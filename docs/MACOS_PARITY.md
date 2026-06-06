@@ -56,6 +56,7 @@ work until each visible surface is ported.
 | Agent task history | Done | Native |
 | Packaging | Partial | Release-shaped dev bundle plus runtime probe, entitlements, signing/notary script, and optional signed-app launch gate; needs credentials and live signed-app validation |
 | Permissions/TCC onboarding | Partial | Native permissions panel for Accessibility, Screen Recording, and Microphone status plus System Settings/request actions; needs live Mac validation |
+| Launch at login | Partial | Native tray toggle backed by `SMAppService.mainApp`; needs live Mac validation in System Settings |
 
 ## Current Migration Order
 
@@ -63,7 +64,7 @@ work until each visible surface is ported.
    pass Python brain/config tests and Swift package tests.
 2. Validate live native flows on a real Mac: caller intents, right-click overlay
    menu, chat contrast, snip query, voice query, TTS playback, memory/plugin
-   actions, and agent task/history flows.
+   actions, launch-at-login toggle, and agent task/history flows.
 3. Close any remaining live-behavior gaps found by the Mac validation loop.
 4. Run `scripts/macos_package_release.sh` with Developer ID/notary credentials
    and validate the signed/notarized `.app`.

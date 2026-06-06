@@ -90,6 +90,9 @@ directory. The validation script waits for
 `build_logs/macos_phase1_<timestamp>/native-app-launch.log`, which proves the
 app reached native startup after LaunchServices opened it.
 
+The tray menu includes a `Launch at Login` toggle backed by macOS
+`SMAppService.mainApp`; validate it from System Settings after toggling.
+
 ## Native Test Button
 
 For quick verification after a macOS parity change, double-click:

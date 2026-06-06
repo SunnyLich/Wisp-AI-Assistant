@@ -242,8 +242,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onRememberPrompt: { [weak self] in self?.rememberPrompt() },
             onSearchMemory: { [weak self] in self?.searchMemory() },
             onToggleOverlay: { [weak self] in self?.overlay?.toggleVisibility() },
+            onToggleLoginItem: { [weak self] in self?.toggleLaunchAtLogin() },
             onRetryHotkey: { [weak self] in self?.installHotkey(promptForPermission: true) }
         )
+        status.setLoginItemStatus(LoginItemController.status)
         statusController = status
 
         let hotkey = HotkeyController { [weak self] action in
@@ -538,6 +540,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             promptPanel?.showPrompt()
             promptPanel?.setResponse("Run log directory is unavailable. Launch with scripts/macos_phase1_validate.sh --run to enable this.")
             NSLog("[wisp] run log directory unavailable")
+        }
+    }
+
+    private func toggleLaunchAtLogin() {
+        do {
+            let status = try LoginItemController.toggle()
+            statusController?.setLoginItemStatus(status)
+            statusController?.setBrainStatus("launch at login \(status.displayText)")
+        } catch {
+            statusController?.setBrainStatus("launch at login error")
+            NSLog("[wisp] launch-at-login toggle failed: %@", String(describing: error))
         }
     }
 
