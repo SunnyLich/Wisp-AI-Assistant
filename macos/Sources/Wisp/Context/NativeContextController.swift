@@ -105,11 +105,10 @@ final class NativeContextController {
         let appElement = AXUIElementCreateApplication(pid)
         var windowValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
-              let windowValue else {
+              let windowElement = axElement(windowValue) else {
             return nil
         }
 
-        let windowElement = windowValue as! AXUIElement
         var titleValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(windowElement, kAXTitleAttribute as CFString, &titleValue) == .success else {
             return nil
@@ -122,16 +121,22 @@ final class NativeContextController {
         let appElement = AXUIElementCreateApplication(pid)
         var focusedValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedValue) == .success,
-              let focusedValue else {
+              let focusedElement = axElement(focusedValue) else {
             return nil
         }
 
-        let focusedElement = focusedValue as! AXUIElement
         var selectedValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(focusedElement, kAXSelectedTextAttribute as CFString, &selectedValue) == .success else {
             return nil
         }
         return selectedValue as? String
+    }
+
+    private func axElement(_ value: CFTypeRef?) -> AXUIElement? {
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return value as! AXUIElement
     }
 
     private func clippedText(_ text: String?, limit: Int) -> String? {

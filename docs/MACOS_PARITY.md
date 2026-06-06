@@ -22,7 +22,7 @@ work until each visible surface is ported.
 | Tray/menu | Ask, chat, memory, plugins, settings, voice, quit | Qt tray | Swift `StatusItemController` |
 | Caller intents/hotkeys | `CALLER_*` config, caller hotkeys, W/A/D/custom picker | Qt `IntentOverlay` | Swift `HotkeyController` + `IntentPanel` |
 | Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` and `brain.rewrite` |
-| Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController`, `NativePastebackController`, and `ScreenCaptureController` |
+| Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController` with hardened AX reads, `NativePastebackController`, and `ScreenCaptureController` |
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback with buffered native context + Python sidecar models |
 | Chat | multi-turn conversation history and streaming replies | Qt window | Swift `ChatPanel` with native history controls in progress |
 | Memory | durable facts: list, add, edit, delete, search | Qt `MemoryViewer` | Swift `MemoryPanel` + `brain.memory.*` |
