@@ -39,6 +39,8 @@ def _noop_spec(scope, *, title, objective):
 def test_agent_is_registered_as_streaming():
     assert "brain.agent.run" in handlers.HANDLERS
     assert "brain.agent.run" in handlers.STREAMING
+    assert "brain.agent.history.list" in handlers.HANDLERS
+    assert "brain.agent.history.read" in handlers.HANDLERS
 
 
 def test_agent_requires_spec_dict():
@@ -90,3 +92,40 @@ def test_agent_runs_a_scripted_model(record_ctx, tmp_path, monkeypatch):
     assert result["final"] == "Scripted final report."
     assert result["error"] == ""
     assert _events_of(events, "agent.done") == [result]
+
+
+def test_agent_history_lists_recent_runs(tmp_path):
+    root = tmp_path / "runs"
+    old = root / "20260101-010101-old"
+    new = root / "20260102-010101-new"
+    old.mkdir(parents=True)
+    new.mkdir(parents=True)
+    (old / "task.json").write_text(json.dumps({"title": "Old", "objective": "Earlier"}), encoding="utf-8")
+    (old / "final.md").write_text("Done old", encoding="utf-8")
+    (new / "task.json").write_text(json.dumps({"title": "New", "objective": "Later"}), encoding="utf-8")
+    (new / "error.txt").write_text("boom", encoding="utf-8")
+
+    result = handlers.HANDLERS["brain.agent.history.list"](log_root=str(root))
+
+    assert result["runs_root"] == str(root)
+    assert [run["title"] for run in result["runs"]] == ["New", "Old"]
+    assert result["runs"][0]["status"] == "failed"
+    assert result["runs"][1]["status"] == "complete"
+
+
+def test_agent_history_reads_run_artifacts(tmp_path):
+    run = tmp_path / "runs" / "20260101-010101-demo"
+    run.mkdir(parents=True)
+    (run / "task.json").write_text(json.dumps({"title": "Demo", "objective": "Inspect"}), encoding="utf-8")
+    (run / "final.md").write_text("Final report", encoding="utf-8")
+    (run / "run.log").write_text("[00:00:00] agent run finished", encoding="utf-8")
+    (run / "diff.patch").write_text("diff --git a/a b/a", encoding="utf-8")
+
+    result = handlers.HANDLERS["brain.agent.history.read"](run_dir=str(run))
+
+    assert result["title"] == "Demo"
+    assert result["objective"] == "Inspect"
+    assert result["status"] == "complete"
+    assert result["final"] == "Final report"
+    assert "agent run finished" in result["run_log"]
+    assert result["diff_patch"].startswith("diff --git")

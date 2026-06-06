@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsPanel: SettingsPanel?
     private var pluginPanel: PluginManagerPanel?
     private var agentTaskPanel: AgentTaskPanel?
+    private var agentHistoryPanel: AgentHistoryPanel?
     private var snipPanel: SnipOverlayPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
@@ -32,22 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let audioRecorder = AudioRecorder()
     private let audioPlayer = AudioPlayer()
     private var brain: BrainClient?
-    private var qtUI: QtUIBridge?
     private var pendingSnip: PendingSnipContext?
     private var agentRunTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let client = BrainClient(config: BrainLocator.resolve())
         brain = client
-        if let qtConfig = QtUILocator.resolve() {
-            let bridge = QtUIBridge(config: qtConfig)
-            bridge.onEvent = { [weak self] event, payload in
-                self?.handleQtUIEvent(event, payload)
-            }
-            qtUI = bridge
-        } else {
-            NSLog("[wisp] Qt UI host unavailable; WISP_REPO_ROOT/WISP_BRAIN_PYTHON not resolved")
-        }
 
         let prompt = PromptPanel { [weak self] text, mode in
             Task { await self?.runPrompt(text, mode: mode) }
@@ -106,6 +97,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        agentHistoryPanel = AgentHistoryPanel(
+            onRefresh: { [weak self] in
+                Task { await self?.loadAgentHistory() }
+            },
+            onSelectRun: { [weak self] run in
+                Task { await self?.loadAgentRunDetail(run) }
+            },
+            onOpenFolder: { path in
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            }
+        )
+
         snipPanel = SnipOverlayPanel(
             onSelection: { [weak self] selection in
                 self?.handleSnipSelection(selection)
@@ -135,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowMemory: { [weak self] in self?.showNativeMemory() },
             onShowPluginManager: { [weak self] in self?.showNativePluginManager() },
             onShowAgentTask: { [weak self] in self?.showNativeAgentTask() },
-            onShowAgentHistory: { [weak self] in self?.showQtAgentHistory() },
+            onShowAgentHistory: { [weak self] in self?.showNativeAgentHistory() },
             onStartVoiceQuery: { [weak self] in self?.startVoiceQuery() },
             onStopVoiceQuery: { [weak self] in self?.stopVoiceQuery() },
             onSpeakResponse: { [weak self] in self?.speakLastResponse() },
@@ -162,7 +165,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         agentRunTask?.cancel()
-        qtUI?.shutdown()
         let client = brain
         Task { await client?.shutdown() }
     }
@@ -326,43 +328,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func withQtUI(_ label: String, action: (QtUIBridge) throws -> Void) {
-        guard let qtUI else {
-            promptPanel?.showPrompt()
-            promptPanel?.setResponse("The Qt UI host is unavailable. Launch through Start Wisp.command so the Python .venv and repo path are exported.")
-            statusController?.setBrainStatus("Qt UI unavailable")
-            NSLog("[wisp] Qt UI action unavailable: %@", label)
-            return
-        }
-
-        do {
-            try action(qtUI)
-            statusController?.setBrainStatus("\(label) opened")
-        } catch {
-            promptPanel?.showPrompt()
-            promptPanel?.failRequest(String(describing: error))
-            statusController?.setBrainStatus("\(label) error")
-            NSLog("[wisp] Qt UI action failed (%@): %@", label, String(describing: error))
-        }
-    }
-
-    /// Surface asynchronous status from the Qt UI host. Commands are sent
-    /// fire-and-forget, so a window that fails to open only reports back here via
-    /// a `ui.error` event — correct the optimistic "opened" status when it does.
-    private func handleQtUIEvent(_ event: String, _ payload: [String: Any]) {
-        switch event {
-        case "ui.error":
-            let detail = (payload["error"] as? String) ?? "unknown error"
-            promptPanel?.showPrompt()
-            promptPanel?.setResponse("Qt UI host error:\n\(detail)")
-            statusController?.setBrainStatus("Qt UI error")
-        case "ui.ready":
-            NSLog("[wisp] Qt UI host ready")
-        default:
-            break
-        }
-    }
-
     private func showNativeSettings() {
         settingsPanel?.showSettings(draft: SettingsDraft.load())
         statusController?.setBrainStatus("settings opened")
@@ -469,8 +434,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func showQtAgentHistory() {
-        withQtUI("Agent history") { try $0.showAgentHistory() }
+    private func showNativeAgentHistory() {
+        agentHistoryPanel?.showHistory()
+        statusController?.setBrainStatus("agent history opened")
+    }
+
+    private func loadAgentHistory() async {
+        guard let client = brain else {
+            agentHistoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("agent history error")
+            return
+        }
+
+        agentHistoryPanel?.beginLoading("Loading agent runs...")
+        do {
+            let result = try await client.call("brain.agent.history.list", timeout: .seconds(30))
+            let rows = result?["runs"] as? [[String: Any]] ?? []
+            let runs = rows.compactMap { AgentRunSummary(payload: $0) }
+            let runsRoot = result?["runs_root"] as? String ?? ""
+            agentHistoryPanel?.setRuns(runs, runsRoot: runsRoot)
+            statusController?.setBrainStatus("agent history loaded")
+        } catch {
+            agentHistoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("agent history error")
+            NSLog("[wisp] agent history list failed: %@", String(describing: error))
+        }
+    }
+
+    private func loadAgentRunDetail(_ run: AgentRunSummary) async {
+        guard let client = brain else {
+            agentHistoryPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("agent history error")
+            return
+        }
+
+        agentHistoryPanel?.beginLoading("Loading run...")
+        do {
+            let result = try await client.call(
+                "brain.agent.history.read",
+                ["run_dir": run.runDir],
+                timeout: .seconds(30)
+            )
+            if let result, let detail = AgentRunDetail(payload: result) {
+                agentHistoryPanel?.setDetail(detail)
+                statusController?.setBrainStatus("agent run loaded")
+            } else {
+                agentHistoryPanel?.fail("agent run payload was empty")
+                statusController?.setBrainStatus("agent history error")
+            }
+        } catch {
+            agentHistoryPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("agent history error")
+            NSLog("[wisp] agent history read failed: %@", String(describing: error))
+        }
     }
 
     private func startVoiceQuery() {

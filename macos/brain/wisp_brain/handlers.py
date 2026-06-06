@@ -660,6 +660,101 @@ def _memory_fact_payload(fact: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _agent_runs_root(log_root: str | None = None) -> Path:
+    if log_root:
+        root = Path(log_root)
+    else:
+        root = _runtime_output_dir() / "agent-runs"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+@handler("brain.agent.history.list")
+def brain_agent_history_list(log_root: str | None = None, limit: int = 100) -> dict[str, Any]:
+    """Return recent agent run folders and lightweight metadata for native UI."""
+    root = _agent_runs_root(log_root)
+    runs = [
+        _agent_run_summary(path)
+        for path in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+        if (path / "task.json").exists() or (path / "final.md").exists() or (path / "run.log").exists()
+    ]
+    return {"runs_root": str(root), "runs": runs[:max(1, int(limit or 100))]}
+
+
+@handler("brain.agent.history.read")
+def brain_agent_history_read(run_dir: str = "") -> dict[str, Any]:
+    """Return full readable artifacts for one agent run."""
+    cleaned = run_dir.strip()
+    if not cleaned:
+        raise ValueError("run_dir is required")
+
+    path = Path(cleaned).expanduser().resolve()
+    if not path.is_dir():
+        raise ValueError("run_dir does not exist")
+    if not any((path / name).exists() for name in ("task.json", "final.md", "run.log", "error.txt")):
+        raise ValueError("run_dir is not an agent run")
+
+    return {
+        **_agent_run_summary(path),
+        "task_json": _read_text(path / "task.json"),
+        "final": _read_text(path / "final.md"),
+        "error": _read_text(path / "error.txt"),
+        "run_log": _read_text(path / "run.log"),
+        "diff_patch": _read_text(path / "diff.patch"),
+    }
+
+
+def _agent_run_summary(run_dir: Path) -> dict[str, Any]:
+    task = _read_json(run_dir / "task.json")
+    final = _read_text(run_dir / "final.md")
+    error = _read_text(run_dir / "error.txt")
+    run_log = _read_text(run_dir / "run.log", max_chars=12_000)
+    title = str((task or {}).get("title") or run_dir.name)
+    status = _agent_run_status(final, error, run_log)
+    modified = run_dir.stat().st_mtime
+    return {
+        "id": run_dir.name,
+        "run_dir": str(run_dir),
+        "title": title,
+        "objective": str((task or {}).get("objective") or ""),
+        "status": status,
+        "modified": modified,
+        "modified_display": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(modified)),
+        "has_final": bool(final.strip()),
+        "has_error": bool(error.strip()),
+        "has_diff": (run_dir / "diff.patch").exists(),
+    }
+
+
+def _agent_run_status(final: str, error: str, run_log: str) -> str:
+    if error.strip():
+        return "failed"
+    if "agent run cancelled" in run_log:
+        return "cancelled"
+    if final.strip() or "agent run finished" in run_log:
+        return "complete"
+    return "in progress"
+
+
+def _read_text(path: Path, *, max_chars: int | None = None) -> str:
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if max_chars is not None and len(text) > max_chars:
+        return text[-max_chars:]
+    return text
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 # ---------------------------------------------------------------------------
 # Agent runtime -- the scoped multi-agent task runner behind the Windows tray's
 # "Start agent task" dialog, exposed to the native shell. Reuses the OS-agnostic
@@ -704,7 +799,7 @@ def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None =
     watcher = threading.Thread(target=_watch_cancel, daemon=True)
     watcher.start()
 
-    runs_dir = Path(log_root) if log_root else (_runtime_output_dir() / "agent-runs")
+    runs_dir = _agent_runs_root(log_root)
     runner = AgentTaskRunner(
         log_root=runs_dir,
         model_callback=_agent_test_model_callback(),

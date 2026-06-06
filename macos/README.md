@@ -12,14 +12,14 @@ macos/
   brain/             Python sidecar for LLM, memory, TTS/STT, and agents
   Sources/Wisp/      Swift/AppKit product host
   Tests/WispTests/   Swift protocol tests
-  ui_host/           temporary fallback host; Swift invokes it for agent history
+  ui_host/           legacy Python/Qt fallback host kept outside the Swift path
 ```
 
 The Swift app owns the macOS overlay, tray, caller/intent picker, chat, memory,
 core settings, plugin manager, snip overlay, agent task starter/run monitor,
-native context, screen capture, voice recording, and audio playback surfaces.
-The Python sidecar keeps using the existing OS-agnostic backend modules until
-their visible windows are ported.
+agent history browser, native context, screen capture, voice recording, and
+audio playback surfaces. The Python sidecar keeps using the existing
+OS-agnostic backend modules until their visible windows are ported.
 
 ## Default Mac Launch
 

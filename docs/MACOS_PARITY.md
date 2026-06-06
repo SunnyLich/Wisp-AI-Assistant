@@ -11,8 +11,8 @@ work until each visible surface is ported.
 2. macOS visible UI belongs in Swift/AppKit under `macos/Sources/Wisp`.
 3. Both platforms must keep the same `.env` keys, caller/intents model, prompt
    semantics, LLM routing, memory behavior, tools, and agent contracts.
-4. The temporary Qt UI bridge may remain only for windows that are not yet
-   ported to Swift.
+4. The macOS Swift app should not depend on the Python/Qt UI bridge for visible
+   product windows.
 
 ## Source Of Truth
 
@@ -29,7 +29,7 @@ work until each visible surface is ported.
 | Settings | shared `.env` config, models, callers, voice, memory knobs | Qt `SettingsDialog` | Swift `SettingsPanel` in progress |
 | Plugins | loaded/discoverable plugin list, hooks, tools, folder open | Qt `PluginManagerDialog` | Swift `PluginManagerPanel` in progress |
 | Snip overlay | drag-select region, attach image to intent query | Qt `SnipOverlay` | Swift `SnipOverlayPanel` in progress |
-| Agents | same user-facing task/history windows and config | Qt windows | Swift `AgentTaskPanel` in progress; history still bridged |
+| Agents | same user-facing task/history windows and config | Qt windows | Swift `AgentTaskPanel` + `AgentHistoryPanel` in progress |
 | Packaging | distributable app | PyInstaller path | Swift `.app` bundle path |
 
 ## Capability Status
@@ -52,7 +52,7 @@ work until each visible surface is ported.
 | Plugin manager | Done | In progress native |
 | Snip overlay | Done | In progress native |
 | Agent task window | Done | In progress native |
-| Agent task history | Done | Bridge/backend partial |
+| Agent task history | Done | In progress native |
 | Packaging | Partial | Partial dev app bundle |
 
 ## Current Migration Order
@@ -60,7 +60,7 @@ work until each visible surface is ported.
 1. Replace the prototype Swift prompt entry with the Windows caller/intent
    workflow backed by the same `CALLER_*` keys.
 2. Make the Swift response surface behave like the Windows bubble/chat stream.
-3. Port agent task history out of the temporary Qt bridge and broaden native task controls.
+3. Broaden native agent task/history controls to match Windows retry, continue, and diff flows.
 4. Finish native paste-back, context buffering, and voice parity.
 5. Build a signed/notarized `.app`.
 
