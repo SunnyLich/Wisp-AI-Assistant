@@ -518,7 +518,8 @@ final class SettingsPanel: NSPanel {
         onStartGitHubLogin: @escaping (SettingsDraft) -> Void,
         onClearAuthProvider: @escaping (String) -> Void,
         onSaveCopilotToken: @escaping (String) -> Void,
-        onTestCopilotToken: @escaping () -> Void
+        onTestCopilotToken: @escaping () -> Void,
+        onResetAll: @escaping () -> Void
     ) {
         self.model = SettingsModel(
             onSave: onSave,
@@ -532,7 +533,8 @@ final class SettingsPanel: NSPanel {
             onStartGitHubLogin: onStartGitHubLogin,
             onClearAuthProvider: onClearAuthProvider,
             onSaveCopilotToken: onSaveCopilotToken,
-            onTestCopilotToken: onTestCopilotToken
+            onTestCopilotToken: onTestCopilotToken,
+            onResetAll: onResetAll
         )
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 620),
@@ -571,6 +573,7 @@ final class SettingsPanel: NSPanel {
         model.savingSecretName = nil
         model.clearingSecretName = nil
         model.authOperation = nil
+        model.isResetting = false
         model.status = status
     }
 
@@ -583,6 +586,7 @@ final class SettingsPanel: NSPanel {
         model.savingSecretName = nil
         model.clearingSecretName = nil
         model.authOperation = nil
+        model.isResetting = false
         model.status = "Settings error"
         model.errorText = message
     }
@@ -654,6 +658,7 @@ private final class SettingsModel: ObservableObject {
     @Published var copilotToken = ""
     @Published var isLoadingAuth = false
     @Published var authOperation: String?
+    @Published var isResetting = false
 
     private let onSave: (SettingsDraft) -> Void
     private let onTestLLM: (SettingsDraft, SettingsLLMTestRoute) -> Void
@@ -667,6 +672,7 @@ private final class SettingsModel: ObservableObject {
     private let onClearAuthProvider: (String) -> Void
     private let onSaveCopilotToken: (String) -> Void
     private let onTestCopilotToken: () -> Void
+    private let onResetAll: () -> Void
 
     var hasBlockingOperation: Bool {
         return isSaving
@@ -677,6 +683,7 @@ private final class SettingsModel: ObservableObject {
             || clearingSecretName != nil
             || isLoadingAuth
             || authOperation != nil
+            || isResetting
     }
 
     init(
@@ -691,7 +698,8 @@ private final class SettingsModel: ObservableObject {
         onStartGitHubLogin: @escaping (SettingsDraft) -> Void,
         onClearAuthProvider: @escaping (String) -> Void,
         onSaveCopilotToken: @escaping (String) -> Void,
-        onTestCopilotToken: @escaping () -> Void
+        onTestCopilotToken: @escaping () -> Void,
+        onResetAll: @escaping () -> Void
     ) {
         self.onSave = onSave
         self.onTestLLM = onTestLLM
@@ -705,6 +713,7 @@ private final class SettingsModel: ObservableObject {
         self.onClearAuthProvider = onClearAuthProvider
         self.onSaveCopilotToken = onSaveCopilotToken
         self.onTestCopilotToken = onTestCopilotToken
+        self.onResetAll = onResetAll
     }
 
     func load(_ draft: SettingsDraft) {
@@ -722,6 +731,7 @@ private final class SettingsModel: ObservableObject {
         self.clearingSecretName = nil
         self.isLoadingAuth = false
         self.authOperation = nil
+        self.isResetting = false
     }
 
     func save() {
@@ -854,6 +864,14 @@ private final class SettingsModel: ObservableObject {
         authOperation = "copilot-test"
         status = "Testing Copilot token..."
         onTestCopilotToken()
+    }
+
+    func resetAll() {
+        guard !hasBlockingOperation else { return }
+        errorText = ""
+        isResetting = true
+        status = "Resetting settings..."
+        onResetAll()
     }
 }
 
@@ -1327,6 +1345,13 @@ private struct SettingsPanelView: View {
                     .textSelection(.enabled)
             }
             Spacer()
+            Button {
+                model.resetAll()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .help("Reset all settings")
+            .disabled(model.hasBlockingOperation)
             Button {
                 model.save()
             } label: {

@@ -410,6 +410,43 @@ def brain_auth_copilot_clear() -> dict[str, Any]:
     return {"ok": True, "configured": configured, "message": message}
 
 
+@handler("brain.settings.reset_credentials")
+def brain_settings_reset_credentials() -> dict[str, Any]:
+    """Clear shared credential stores during native Settings factory reset."""
+    from core import secret_store
+
+    cleared: list[str] = []
+    failures: list[str] = []
+    for name in secret_store.API_KEY_NAMES:
+        try:
+            secret_store.delete_secret(name)
+            cleared.append(name)
+        except Exception as exc:  # noqa: BLE001 - surfaced in reset summary
+            failures.append(f"{name}: {exc}")
+
+    for label, module_path, function_name in (
+        ("ChatGPT", "core.auth.chatgpt", "clear_tokens"),
+        ("GitHub", "core.auth.github", "clear_tokens"),
+        ("GitHub Copilot", "core.auth.copilot_auth", "clear_token"),
+    ):
+        try:
+            import importlib
+
+            getattr(importlib.import_module(module_path), function_name)()
+            cleared.append(label)
+        except Exception as exc:  # noqa: BLE001 - surfaced in reset summary
+            failures.append(f"{label}: {exc}")
+
+    try:
+        import config
+
+        config.reload()
+    except Exception as exc:  # noqa: BLE001 - reset already cleared credentials
+        failures.append(f"config reload: {exc}")
+
+    return {"ok": not failures, "cleared": cleared, "failures": failures}
+
+
 @handler("brain.plugins.list")
 def brain_plugins_list() -> dict[str, Any]:
     """Return loaded/discoverable plugins for the native macOS Plugin Manager."""

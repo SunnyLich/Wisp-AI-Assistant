@@ -159,6 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onTestCopilotToken: { [weak self] in
                 Task { await self?.testSettingsCopilotToken() }
+            },
+            onResetAll: { [weak self] in
+                Task { await self?.resetAllSettings() }
             }
         )
 
@@ -1405,6 +1408,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusController?.setBrainStatus("copilot auth error")
             NSLog("[wisp] copilot token test failed: %@", String(describing: error))
         }
+    }
+
+    private func resetAllSettings() async {
+        guard confirmResetAllSettings() else {
+            settingsPanel?.setStatus("Ready")
+            return
+        }
+
+        guard let client = brain else {
+            settingsPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("settings reset error")
+            return
+        }
+
+        var failures: [String] = []
+        do {
+            let result = try await client.call("brain.settings.reset_credentials", timeout: .seconds(60))
+            failures = result?["failures"] as? [String] ?? []
+        } catch {
+            failures.append(String(describing: error))
+        }
+
+        let dotEnv = WispConfig.dotEnvURL()
+        do {
+            if FileManager.default.fileExists(atPath: dotEnv.path) {
+                try FileManager.default.removeItem(at: dotEnv)
+            }
+            NSLog("[wisp] reset removed settings file: %@", dotEnv.path)
+        } catch {
+            failures.append("settings file: \(error)")
+            NSLog("[wisp] reset could not remove settings file: %@", String(describing: error))
+        }
+
+        do {
+            try await reloadBrainConfig()
+        } catch {
+            failures.append("config reload: \(error)")
+        }
+
+        applyTheme(SettingsDraft.load().themeMode)
+        appConfig = WispConfig.load()
+        installHotkey(promptForPermission: false)
+        settingsPanel?.showSettings(draft: SettingsDraft.load())
+
+        if failures.isEmpty {
+            settingsPanel?.setStatus("Settings reset")
+            statusController?.setBrainStatus("settings reset")
+            NSLog("[wisp] native settings reset complete")
+        } else {
+            let message = "Reset partly complete: " + failures.joined(separator: "; ")
+            settingsPanel?.fail(message)
+            statusController?.setBrainStatus("settings reset partial")
+            NSLog("[wisp] native settings reset partial: %@", message)
+        }
+    }
+
+    private func confirmResetAllSettings() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Reset Wisp settings?"
+        alert.informativeText = "This removes API keys, signs out auth providers, and deletes the active .env settings file."
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func saveSettings(_ draft: SettingsDraft) async {

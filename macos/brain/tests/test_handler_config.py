@@ -31,6 +31,7 @@ def test_auth_handlers_registered():
     assert "brain.auth.copilot.set" in handlers.HANDLERS
     assert "brain.auth.copilot.test" in handlers.HANDLERS
     assert "brain.auth.copilot.clear" in handlers.HANDLERS
+    assert "brain.settings.reset_credentials" in handlers.HANDLERS
     assert "brain.auth.status" not in handlers.STREAMING
     assert "brain.auth.github.device_login" in handlers.STREAMING
 
@@ -395,3 +396,70 @@ def test_auth_chatgpt_start_browser_login_uses_shared_module(monkeypatch):
 
     assert result == {"ok": True, "message": "Opening browser for ChatGPT sign-in"}
     assert captured == {"success": True, "error": True}
+
+
+def test_settings_reset_credentials_clears_secrets_and_auth(monkeypatch):
+    from core import secret_store
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    calls: list[str] = []
+    monkeypatch.setattr(secret_store, "API_KEY_NAMES", ("OPENAI_API_KEY", "GROQ_API_KEY"))
+    monkeypatch.setattr(secret_store, "delete_secret", lambda name: calls.append(f"secret:{name}"))
+    monkeypatch.setattr(chatgpt_auth, "clear_tokens", lambda: calls.append("chatgpt"))
+    monkeypatch.setattr(github_auth, "clear_tokens", lambda: calls.append("github"))
+    monkeypatch.setattr(copilot_auth, "clear_token", lambda: calls.append("copilot"))
+
+    fake_config = types.ModuleType("config")
+    fake_config.reload = lambda: calls.append("reload")
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+
+    result = handlers.HANDLERS["brain.settings.reset_credentials"]()
+
+    assert result == {
+        "ok": True,
+        "cleared": [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "ChatGPT",
+            "GitHub",
+            "GitHub Copilot",
+        ],
+        "failures": [],
+    }
+    assert calls == [
+        "secret:OPENAI_API_KEY",
+        "secret:GROQ_API_KEY",
+        "chatgpt",
+        "github",
+        "copilot",
+        "reload",
+    ]
+
+
+def test_settings_reset_credentials_collects_failures(monkeypatch):
+    from core import secret_store
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    monkeypatch.setattr(secret_store, "API_KEY_NAMES", ("OPENAI_API_KEY",))
+
+    def fail_secret(_name: str) -> None:
+        raise RuntimeError("keychain denied")
+
+    monkeypatch.setattr(secret_store, "delete_secret", fail_secret)
+    monkeypatch.setattr(chatgpt_auth, "clear_tokens", lambda: None)
+    monkeypatch.setattr(github_auth, "clear_tokens", lambda: None)
+    monkeypatch.setattr(copilot_auth, "clear_token", lambda: None)
+
+    fake_config = types.ModuleType("config")
+    fake_config.reload = lambda: None
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+
+    result = handlers.HANDLERS["brain.settings.reset_credentials"]()
+
+    assert result["ok"] is False
+    assert result["cleared"] == ["ChatGPT", "GitHub", "GitHub Copilot"]
+    assert result["failures"] == ["OPENAI_API_KEY: keychain denied"]

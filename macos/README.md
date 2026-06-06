@@ -105,6 +105,8 @@ It also includes an `Auth` tab for ChatGPT/GitHub/Copilot auth status,
 ChatGPT browser sign-in launch, GitHub device sign-in, sign-out actions, and
 Copilot token save/test/clear through the same shared auth modules used by
 Windows.
+The footer reset action asks for confirmation, clears stored credentials through
+the Python sidecar, deletes the active `.env`, and reloads native settings.
 
 ## Native Test Button
 
