@@ -14,13 +14,14 @@ enum RunLogLocator {
         environment: [String: String],
         currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         resourceURL: URL? = nil,
+        userLogBaseDirectory: URL? = nil,
         fileManager: FileManager = .default
     ) -> URL? {
         if let path = environment["WISP_RUN_LOG_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !path.isEmpty {
             return URL(fileURLWithPath: path)
         }
-        return latestLogDirectory(
+        if let latest = latestLogDirectory(
             repoRoot: repoRoot(
                 environment: environment,
                 currentDirectory: currentDirectory,
@@ -28,13 +29,28 @@ enum RunLogLocator {
                 fileManager: fileManager
             ),
             fileManager: fileManager
-        )
+        ) {
+            return latest
+        }
+        return userLogDirectory(baseDirectory: userLogBaseDirectory, fileManager: fileManager)
+    }
+
+    static func writableLogDirectory(fileManager: FileManager = .default) -> URL? {
+        guard let url = logDirectory(fileManager: fileManager) else { return nil }
+        do {
+            try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        } catch {
+            NSLog("[wisp] could not create run log directory: %@", String(describing: error))
+            return nil
+        }
     }
 
     static func environmentByResolvingLogDirectory(
         environment: [String: String],
         currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         resourceURL: URL? = nil,
+        userLogBaseDirectory: URL? = nil,
         fileManager: FileManager = .default
     ) -> [String: String] {
         var resolved = environment
@@ -51,6 +67,7 @@ enum RunLogLocator {
             environment: resolved,
             currentDirectory: currentDirectory,
             resourceURL: resourceURL,
+            userLogBaseDirectory: userLogBaseDirectory,
             fileManager: fileManager
         ) else {
             return resolved
@@ -149,5 +166,12 @@ enum RunLogLocator {
                 return lhs.lastPathComponent > rhs.lastPathComponent
             }
             .first
+    }
+
+    private static func userLogDirectory(baseDirectory: URL?, fileManager: FileManager) -> URL? {
+        let library = baseDirectory ?? fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first
+        return library?
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("Wisp", isDirectory: true)
     }
 }

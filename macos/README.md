@@ -117,6 +117,14 @@ build_logs/macos_native_tests_<timestamp>/
 
 Start with `summary.log`; individual command logs sit beside it.
 
+When the packaged app is launched outside the checkout and no validation log
+environment is present, Wisp writes runtime artifacts and native launch markers
+under:
+
+```bash
+~/Library/Logs/Wisp/
+```
+
 ## Native Package Signing
 
 To build a release-shaped app with an embedded runtime and Developer ID

@@ -85,7 +85,7 @@ final class ScreenCaptureController {
     }
 
     private func outputURL(prefix: String = "screen-capture") -> URL {
-        let base = RunLogLocator.logDirectory ?? FileManager.default.temporaryDirectory
+        let base = RunLogLocator.writableLogDirectory() ?? FileManager.default.temporaryDirectory
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

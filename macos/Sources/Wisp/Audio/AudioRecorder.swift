@@ -125,7 +125,7 @@ final class AudioRecorder {
     }
 
     private func outputURL() -> URL {
-        let base = RunLogLocator.logDirectory ?? FileManager.default.temporaryDirectory
+        let base = RunLogLocator.writableLogDirectory() ?? FileManager.default.temporaryDirectory
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

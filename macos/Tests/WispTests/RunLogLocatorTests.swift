@@ -119,6 +119,48 @@ final class RunLogLocatorTests: XCTestCase {
         )
     }
 
+    func testFallsBackToUserLogDirectoryForPackagedAppOutsideCheckout() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-run-log-locator-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let library = root.appendingPathComponent("Library")
+        let resourceURL = root.appendingPathComponent("Applications/Wisp.app/Contents/Resources")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+
+        let url = RunLogLocator.logDirectory(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            userLogBaseDirectory: library
+        )
+
+        XCTAssertEqual(
+            url?.standardizedFileURL.path,
+            library.appendingPathComponent("Logs/Wisp").standardizedFileURL.path
+        )
+    }
+
+    func testResolvedEnvironmentSeedsUserLogDirectoryForPackagedApp() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-run-log-locator-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let library = root.appendingPathComponent("Library")
+        let environment = RunLogLocator.environmentByResolvingLogDirectory(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: root.appendingPathComponent("Applications/Wisp.app/Contents/Resources"),
+            userLogBaseDirectory: library
+        )
+
+        XCTAssertEqual(
+            environment["WISP_RUN_LOG_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            library.appendingPathComponent("Logs/Wisp").standardizedFileURL.path
+        )
+        XCTAssertNil(environment["WISP_REPO_ROOT"])
+    }
+
     func testResolvedEnvironmentDoesNotReplaceExplicitRunLogDirectory() throws {
         let environment = RunLogLocator.environmentByResolvingLogDirectory(
             environment: [
