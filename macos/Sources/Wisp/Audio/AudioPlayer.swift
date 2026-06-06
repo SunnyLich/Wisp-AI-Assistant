@@ -41,7 +41,7 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         activePlaybackID = nil
     }
 
-    static func normalizedAmplitude(averagePower: Float) -> Double {
+    nonisolated static func normalizedAmplitude(averagePower: Float) -> Double {
         guard averagePower.isFinite else { return 0 }
         let clamped = min(0, max(-60, averagePower))
         return pow(10, Double(clamped) / 20)
@@ -77,7 +77,7 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         stopAmplitudeMeter()
         onAmplitude?(playbackID, 0)
         amplitudeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 24.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 guard let self else { return }
                 guard self.activePlaybackID == playbackID,
                       let player = self.player,
