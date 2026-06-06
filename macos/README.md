@@ -52,7 +52,9 @@ Start Wisp (Mac Native).command
 ```
 
 This path validates the Python sidecar, Swift package, native menubar/overlay,
-and the current Swift parity slice.
+and the current Swift parity slice. The generated dev bundle lives at
+`build/WispNative/Wisp.app` and includes the shared overlay art under
+`Contents/Resources/assets/doll`.
 
 ## Native Test Button
 

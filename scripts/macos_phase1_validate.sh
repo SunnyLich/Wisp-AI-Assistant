@@ -96,7 +96,7 @@ archive_logs() {
 }
 
 build_dev_app_bundle() {
-  local bin_dir app_dir contents_dir macos_dir resources_dir plist executable
+  local bin_dir app_dir contents_dir macos_dir resources_dir plist executable doll_src doll_dst
   bin_dir="$(swift build --show-bin-path 2>"$LOG_DIR/swift-bin-path.err")"
   executable="$bin_dir/Wisp"
   if [ ! -x "$executable" ]; then
@@ -112,6 +112,13 @@ build_dev_app_bundle() {
   rm -rf "$app_dir"
   mkdir -p "$macos_dir" "$resources_dir"
   cp "$executable" "$macos_dir/Wisp"
+
+  doll_src="$REPO_ROOT/assets/doll"
+  doll_dst="$resources_dir/assets/doll"
+  if [ -d "$doll_src" ]; then
+    mkdir -p "$(dirname "$doll_dst")"
+    cp -R "$doll_src" "$doll_dst"
+  fi
 
   plist="$contents_dir/Info.plist"
   cat > "$plist" <<'PLIST'
@@ -154,6 +161,7 @@ PLIST
     echo "app_dir=$app_dir"
     echo "executable=$macos_dir/Wisp"
     echo "plist=$plist"
+    [ -d "$doll_dst" ] && echo "doll_assets=$doll_dst"
   } > "$LOG_DIR/dev-app-bundle.log"
 
   echo "$macos_dir/Wisp"
