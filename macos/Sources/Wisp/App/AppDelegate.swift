@@ -141,6 +141,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onClearSecret: { [weak self] secret in
                 Task { await self?.clearSettingsSecret(secret) }
+            },
+            onRefreshAuth: { [weak self] in
+                Task { await self?.loadSettingsAuth() }
+            },
+            onStartChatGPTLogin: { [weak self] in
+                Task { await self?.startSettingsChatGPTLogin() }
+            },
+            onClearAuthProvider: { [weak self] provider in
+                Task { await self?.clearSettingsAuthProvider(provider) }
+            },
+            onSaveCopilotToken: { [weak self] token in
+                Task { await self?.saveSettingsCopilotToken(token) }
+            },
+            onTestCopilotToken: { [weak self] in
+                Task { await self?.testSettingsCopilotToken() }
             }
         )
 
@@ -1202,6 +1217,139 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsPanel?.fail(String(describing: error))
             statusController?.setBrainStatus("settings key error")
             NSLog("[wisp] api key clear failed for %@: %@", secret.name, String(describing: error))
+        }
+    }
+
+    private func loadSettingsAuth(statusMessage: String? = nil) async {
+        guard let client = brain else {
+            settingsPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("settings auth error")
+            return
+        }
+
+        do {
+            let result = try await client.call("brain.auth.status", timeout: .seconds(30))
+            let rows = result?["providers"] as? [[String: Any]] ?? []
+            let statuses = rows.compactMap { SettingsProviderAuthStatus(payload: $0) }
+            settingsPanel?.setAuthStatuses(
+                statuses.isEmpty ? SettingsProviderAuthStatus.defaultRows : statuses,
+                status: statusMessage ?? "Auth status loaded"
+            )
+            statusController?.setBrainStatus("auth status loaded")
+        } catch {
+            settingsPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("settings auth error")
+            NSLog("[wisp] auth status failed: %@", String(describing: error))
+        }
+    }
+
+    private func startSettingsChatGPTLogin() async {
+        guard let client = brain else {
+            settingsPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("chatgpt auth error")
+            return
+        }
+
+        do {
+            let result = try await client.call("brain.auth.chatgpt.start_browser_login", timeout: .seconds(30))
+            let message = result?["message"] as? String ?? "Opening browser for ChatGPT sign-in"
+            await loadSettingsAuth(statusMessage: message)
+            statusController?.setBrainStatus("chatgpt auth started")
+            NSLog("[wisp] chatgpt auth started")
+        } catch {
+            settingsPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("chatgpt auth error")
+            NSLog("[wisp] chatgpt auth start failed: %@", String(describing: error))
+        }
+    }
+
+    private func clearSettingsAuthProvider(_ provider: String) async {
+        guard let client = brain else {
+            settingsPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("settings auth error")
+            return
+        }
+
+        let method: String
+        let label: String
+        switch provider {
+        case "chatgpt":
+            method = "brain.auth.chatgpt.clear"
+            label = "ChatGPT"
+        case "github":
+            method = "brain.auth.github.clear"
+            label = "GitHub"
+        case "copilot":
+            method = "brain.auth.copilot.clear"
+            label = "Copilot"
+        default:
+            settingsPanel?.fail("Unknown auth provider: \(provider)")
+            statusController?.setBrainStatus("settings auth error")
+            return
+        }
+
+        do {
+            _ = try await client.call(method, timeout: .seconds(30))
+            try await reloadBrainConfig()
+            await loadSettingsAuth(statusMessage: "\(label) signed out")
+            statusController?.setBrainStatus("auth cleared")
+            NSLog("[wisp] auth cleared: %@", provider)
+        } catch {
+            settingsPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("settings auth error")
+            NSLog("[wisp] auth clear failed for %@: %@", provider, String(describing: error))
+        }
+    }
+
+    private func saveSettingsCopilotToken(_ token: String) async {
+        guard let client = brain else {
+            settingsPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("copilot auth error")
+            return
+        }
+
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            settingsPanel?.fail("Copilot token is empty")
+            statusController?.setBrainStatus("copilot auth error")
+            return
+        }
+
+        do {
+            _ = try await client.call(
+                "brain.auth.copilot.set",
+                ["token": trimmed],
+                timeout: .seconds(60)
+            )
+            try await reloadBrainConfig()
+            await loadSettingsAuth(statusMessage: "Copilot token saved")
+            statusController?.setBrainStatus("copilot token saved")
+            NSLog("[wisp] copilot token saved")
+        } catch {
+            settingsPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("copilot auth error")
+            NSLog("[wisp] copilot token save failed: %@", String(describing: error))
+        }
+    }
+
+    private func testSettingsCopilotToken() async {
+        guard let client = brain else {
+            settingsPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("copilot auth error")
+            return
+        }
+
+        do {
+            let result = try await client.call("brain.auth.copilot.test", timeout: .seconds(60))
+            let ok = result?["ok"] as? Bool ?? false
+            let message = result?["message"] as? String ?? (ok ? "Copilot token OK" : "Copilot token test failed")
+            await loadSettingsAuth(statusMessage: message)
+            statusController?.setBrainStatus(ok ? "copilot test ok" : "copilot test failed")
+            NSLog("[wisp] copilot token test: %@", message)
+        } catch {
+            settingsPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("copilot auth error")
+            NSLog("[wisp] copilot token test failed: %@", String(describing: error))
         }
     }
 

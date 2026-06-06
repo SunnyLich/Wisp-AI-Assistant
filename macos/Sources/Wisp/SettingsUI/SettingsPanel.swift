@@ -471,6 +471,36 @@ struct SettingsSecretStatus: Identifiable, Equatable {
     ]
 }
 
+struct SettingsProviderAuthStatus: Identifiable, Equatable {
+    var name: String
+    var label: String
+    var configured: Bool
+    var message: String
+
+    var id: String { name }
+
+    init(name: String, label: String, configured: Bool = false, message: String = "Not logged in") {
+        self.name = name
+        self.label = label
+        self.configured = configured
+        self.message = message
+    }
+
+    init?(payload: [String: Any]) {
+        guard let name = payload["name"] as? String else { return nil }
+        self.name = name
+        self.label = payload["label"] as? String ?? name
+        self.configured = payload["configured"] as? Bool ?? false
+        self.message = payload["message"] as? String ?? (configured ? "Configured" : "Not configured")
+    }
+
+    static let defaultRows = [
+        SettingsProviderAuthStatus(name: "chatgpt", label: "ChatGPT"),
+        SettingsProviderAuthStatus(name: "github", label: "GitHub"),
+        SettingsProviderAuthStatus(name: "copilot", label: "GitHub Copilot", message: "Not configured"),
+    ]
+}
+
 @MainActor
 final class SettingsPanel: NSPanel {
 
@@ -482,7 +512,12 @@ final class SettingsPanel: NSPanel {
         onTestTTS: @escaping (SettingsDraft) -> Void,
         onRefreshSecrets: @escaping () -> Void,
         onSaveSecret: @escaping (SettingsSecretStatus) -> Void,
-        onClearSecret: @escaping (SettingsSecretStatus) -> Void
+        onClearSecret: @escaping (SettingsSecretStatus) -> Void,
+        onRefreshAuth: @escaping () -> Void,
+        onStartChatGPTLogin: @escaping () -> Void,
+        onClearAuthProvider: @escaping (String) -> Void,
+        onSaveCopilotToken: @escaping (String) -> Void,
+        onTestCopilotToken: @escaping () -> Void
     ) {
         self.model = SettingsModel(
             onSave: onSave,
@@ -490,7 +525,12 @@ final class SettingsPanel: NSPanel {
             onTestTTS: onTestTTS,
             onRefreshSecrets: onRefreshSecrets,
             onSaveSecret: onSaveSecret,
-            onClearSecret: onClearSecret
+            onClearSecret: onClearSecret,
+            onRefreshAuth: onRefreshAuth,
+            onStartChatGPTLogin: onStartChatGPTLogin,
+            onClearAuthProvider: onClearAuthProvider,
+            onSaveCopilotToken: onSaveCopilotToken,
+            onTestCopilotToken: onTestCopilotToken
         )
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 620),
@@ -512,7 +552,7 @@ final class SettingsPanel: NSPanel {
 
     func showSettings(draft: SettingsDraft) {
         model.load(draft)
-        model.refreshSecrets()
+        model.refreshSettingsStatus()
         if !isVisible {
             center()
         }
@@ -525,8 +565,10 @@ final class SettingsPanel: NSPanel {
         model.isTestingTTS = false
         model.testingLLMRoute = nil
         model.isLoadingSecrets = false
+        model.isLoadingAuth = false
         model.savingSecretName = nil
         model.clearingSecretName = nil
+        model.authOperation = nil
         model.status = status
     }
 
@@ -535,8 +577,10 @@ final class SettingsPanel: NSPanel {
         model.isTestingTTS = false
         model.testingLLMRoute = nil
         model.isLoadingSecrets = false
+        model.isLoadingAuth = false
         model.savingSecretName = nil
         model.clearingSecretName = nil
+        model.authOperation = nil
         model.status = "Settings error"
         model.errorText = message
     }
@@ -568,6 +612,17 @@ final class SettingsPanel: NSPanel {
             model.status = status
         }
     }
+
+    func setAuthStatuses(_ statuses: [SettingsProviderAuthStatus], status: String? = nil) {
+        model.isLoadingAuth = false
+        model.authOperation = nil
+        model.authStatuses = statuses
+        model.copilotToken = ""
+        model.errorText = ""
+        if let status {
+            model.status = status
+        }
+    }
 }
 
 @MainActor
@@ -585,6 +640,10 @@ private final class SettingsModel: ObservableObject {
     @Published var isLoadingSecrets = false
     @Published var savingSecretName: String?
     @Published var clearingSecretName: String?
+    @Published var authStatuses = SettingsProviderAuthStatus.defaultRows
+    @Published var copilotToken = ""
+    @Published var isLoadingAuth = false
+    @Published var authOperation: String?
 
     private let onSave: (SettingsDraft) -> Void
     private let onTestLLM: (SettingsDraft, SettingsLLMTestRoute) -> Void
@@ -592,6 +651,11 @@ private final class SettingsModel: ObservableObject {
     private let onRefreshSecrets: () -> Void
     private let onSaveSecret: (SettingsSecretStatus) -> Void
     private let onClearSecret: (SettingsSecretStatus) -> Void
+    private let onRefreshAuth: () -> Void
+    private let onStartChatGPTLogin: () -> Void
+    private let onClearAuthProvider: (String) -> Void
+    private let onSaveCopilotToken: (String) -> Void
+    private let onTestCopilotToken: () -> Void
 
     var hasBlockingOperation: Bool {
         return isSaving
@@ -600,6 +664,8 @@ private final class SettingsModel: ObservableObject {
             || isLoadingSecrets
             || savingSecretName != nil
             || clearingSecretName != nil
+            || isLoadingAuth
+            || authOperation != nil
     }
 
     init(
@@ -608,7 +674,12 @@ private final class SettingsModel: ObservableObject {
         onTestTTS: @escaping (SettingsDraft) -> Void,
         onRefreshSecrets: @escaping () -> Void,
         onSaveSecret: @escaping (SettingsSecretStatus) -> Void,
-        onClearSecret: @escaping (SettingsSecretStatus) -> Void
+        onClearSecret: @escaping (SettingsSecretStatus) -> Void,
+        onRefreshAuth: @escaping () -> Void,
+        onStartChatGPTLogin: @escaping () -> Void,
+        onClearAuthProvider: @escaping (String) -> Void,
+        onSaveCopilotToken: @escaping (String) -> Void,
+        onTestCopilotToken: @escaping () -> Void
     ) {
         self.onSave = onSave
         self.onTestLLM = onTestLLM
@@ -616,6 +687,11 @@ private final class SettingsModel: ObservableObject {
         self.onRefreshSecrets = onRefreshSecrets
         self.onSaveSecret = onSaveSecret
         self.onClearSecret = onClearSecret
+        self.onRefreshAuth = onRefreshAuth
+        self.onStartChatGPTLogin = onStartChatGPTLogin
+        self.onClearAuthProvider = onClearAuthProvider
+        self.onSaveCopilotToken = onSaveCopilotToken
+        self.onTestCopilotToken = onTestCopilotToken
     }
 
     func load(_ draft: SettingsDraft) {
@@ -631,6 +707,8 @@ private final class SettingsModel: ObservableObject {
         self.isLoadingSecrets = false
         self.savingSecretName = nil
         self.clearingSecretName = nil
+        self.isLoadingAuth = false
+        self.authOperation = nil
     }
 
     func save() {
@@ -676,6 +754,15 @@ private final class SettingsModel: ObservableObject {
         onRefreshSecrets()
     }
 
+    func refreshSettingsStatus() {
+        errorText = ""
+        isLoadingSecrets = true
+        isLoadingAuth = true
+        status = "Loading settings status..."
+        onRefreshSecrets()
+        onRefreshAuth()
+    }
+
     func saveSecret(_ secret: SettingsSecretStatus) {
         guard !hasBlockingOperation else { return }
         let value = secret.value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -700,6 +787,52 @@ private final class SettingsModel: ObservableObject {
 
     func isSecretBusy(_ secret: SettingsSecretStatus) -> Bool {
         savingSecretName == secret.name || clearingSecretName == secret.name
+    }
+
+    func refreshAuth() {
+        guard !hasBlockingOperation else { return }
+        errorText = ""
+        isLoadingAuth = true
+        status = "Loading auth status..."
+        onRefreshAuth()
+    }
+
+    func startChatGPTLogin() {
+        guard !hasBlockingOperation else { return }
+        errorText = ""
+        authOperation = "chatgpt"
+        status = "Starting ChatGPT sign-in..."
+        onStartChatGPTLogin()
+    }
+
+    func clearAuthProvider(_ provider: String) {
+        guard !hasBlockingOperation else { return }
+        errorText = ""
+        authOperation = provider
+        status = "Signing out..."
+        onClearAuthProvider(provider)
+    }
+
+    func saveCopilotToken() {
+        guard !hasBlockingOperation else { return }
+        let token = copilotToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            errorText = "Copilot token is empty"
+            status = "Copilot token not saved"
+            return
+        }
+        errorText = ""
+        authOperation = "copilot"
+        status = "Saving Copilot token..."
+        onSaveCopilotToken(token)
+    }
+
+    func testCopilotToken() {
+        guard !hasBlockingOperation else { return }
+        errorText = ""
+        authOperation = "copilot-test"
+        status = "Testing Copilot token..."
+        onTestCopilotToken()
     }
 }
 
@@ -750,6 +883,57 @@ private struct SecretKeyRow: View {
     }
 }
 
+private struct ProviderAuthRow: View {
+    var status: SettingsProviderAuthStatus
+    var actionsDisabled: Bool
+    var primaryIcon: String?
+    var primaryHelp: String = ""
+    var onPrimary: (() -> Void)?
+    var onClear: (() -> Void)?
+
+    private var statusColor: Color {
+        status.configured ? Color.green : Color.secondary
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(status.label)
+                    .foregroundStyle(.secondary)
+                Text(status.message)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+                    .lineLimit(2)
+            }
+            .frame(width: 135, alignment: .trailing)
+
+            if let primaryIcon, let onPrimary {
+                Button {
+                    onPrimary()
+                } label: {
+                    Image(systemName: primaryIcon)
+                }
+                .buttonStyle(.borderless)
+                .help(primaryHelp)
+                .disabled(actionsDisabled)
+            }
+
+            if let onClear {
+                Button {
+                    onClear()
+                } label: {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                }
+                .buttonStyle(.borderless)
+                .help("Sign out")
+                .disabled(actionsDisabled || !status.configured)
+            }
+
+            Spacer()
+        }
+    }
+}
+
 private struct SettingsPanelView: View {
     @ObservedObject var model: SettingsModel
 
@@ -762,6 +946,8 @@ private struct SettingsPanelView: View {
                     .tabItem { Text("Models") }
                 keysTab
                     .tabItem { Text("Keys") }
+                authTab
+                    .tabItem { Text("Auth") }
                 callersTab
                     .tabItem { Text("Callers") }
                 voiceTab
@@ -888,6 +1074,86 @@ private struct SettingsPanelView: View {
             }
             .padding(4)
         }
+    }
+
+    private var authTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsSection("Provider Auth") {
+                    HStack(spacing: 10) {
+                        Spacer()
+                            .frame(width: 135)
+                        Button {
+                            model.refreshAuth()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Refresh auth status")
+                        .disabled(model.hasBlockingOperation)
+                        Spacer()
+                    }
+
+                    ProviderAuthRow(
+                        status: authStatus("chatgpt"),
+                        actionsDisabled: model.hasBlockingOperation,
+                        primaryIcon: "person.crop.circle.badge.plus",
+                        primaryHelp: "Sign in with ChatGPT",
+                        onPrimary: { model.startChatGPTLogin() },
+                        onClear: { model.clearAuthProvider("chatgpt") }
+                    )
+
+                    ProviderAuthRow(
+                        status: authStatus("github"),
+                        actionsDisabled: model.hasBlockingOperation,
+                        primaryIcon: nil,
+                        onPrimary: nil,
+                        onClear: { model.clearAuthProvider("github") }
+                    )
+                }
+
+                SettingsSection("GitHub Copilot") {
+                    ProviderAuthRow(
+                        status: authStatus("copilot"),
+                        actionsDisabled: model.hasBlockingOperation,
+                        primaryIcon: nil,
+                        onPrimary: nil,
+                        onClear: { model.clearAuthProvider("copilot") }
+                    )
+
+                    HStack(spacing: 10) {
+                        Text("Token")
+                            .frame(width: 135, alignment: .trailing)
+                            .foregroundStyle(.secondary)
+                        SecureField("GitHub Copilot token", text: $model.copilotToken)
+                            .textFieldStyle(.roundedBorder)
+                        Button {
+                            model.saveCopilotToken()
+                        } label: {
+                            Image(systemName: "key.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Save Copilot token")
+                        .disabled(model.hasBlockingOperation || model.copilotToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button {
+                            model.testCopilotToken()
+                        } label: {
+                            Image(systemName: "checkmark.seal")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Test Copilot token")
+                        .disabled(model.hasBlockingOperation)
+                    }
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    private func authStatus(_ name: String) -> SettingsProviderAuthStatus {
+        model.authStatuses.first { $0.name == name }
+            ?? SettingsProviderAuthStatus.defaultRows.first { $0.name == name }
+            ?? SettingsProviderAuthStatus(name: name, label: name, message: "Not configured")
     }
 
     private var callersTab: some View {

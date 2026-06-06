@@ -22,6 +22,17 @@ def test_secret_handlers_registered():
     assert "brain.secrets.status" not in handlers.STREAMING
 
 
+def test_auth_handlers_registered():
+    assert "brain.auth.status" in handlers.HANDLERS
+    assert "brain.auth.chatgpt.start_browser_login" in handlers.HANDLERS
+    assert "brain.auth.chatgpt.clear" in handlers.HANDLERS
+    assert "brain.auth.github.clear" in handlers.HANDLERS
+    assert "brain.auth.copilot.set" in handlers.HANDLERS
+    assert "brain.auth.copilot.test" in handlers.HANDLERS
+    assert "brain.auth.copilot.clear" in handlers.HANDLERS
+    assert "brain.auth.status" not in handlers.STREAMING
+
+
 def test_config_reload_calls_config_reload(monkeypatch):
     calls: list[str] = []
 
@@ -210,3 +221,111 @@ def test_secret_set_rejects_unknown_names(monkeypatch):
         assert "Unknown API key name" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_auth_status_does_not_expose_tokens(monkeypatch):
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "get_tokens",
+        lambda: {"access": "secret-access-token", "account_id": "acct_123"},
+    )
+    monkeypatch.setattr(
+        github_auth,
+        "get_tokens",
+        lambda: {"access": "gh-secret", "user": {"login": "octo"}},
+    )
+    monkeypatch.setattr(copilot_auth, "token_status", lambda: (True, "Stored in OS keychain. Token format OK."))
+
+    result = handlers.HANDLERS["brain.auth.status"]()
+
+    assert result == {
+        "providers": [
+            {
+                "name": "chatgpt",
+                "label": "ChatGPT",
+                "configured": True,
+                "message": "Logged in as acct_123",
+            },
+            {
+                "name": "github",
+                "label": "GitHub",
+                "configured": True,
+                "message": "Logged in as octo",
+            },
+            {
+                "name": "copilot",
+                "label": "GitHub Copilot",
+                "configured": True,
+                "message": "Stored in OS keychain. Token format OK.",
+            },
+        ]
+    }
+    assert "secret-access-token" not in repr(result)
+    assert "gh-secret" not in repr(result)
+
+
+def test_auth_clear_handlers_call_shared_modules(monkeypatch):
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    calls: list[str] = []
+    monkeypatch.setattr(chatgpt_auth, "clear_tokens", lambda: calls.append("chatgpt"))
+    monkeypatch.setattr(github_auth, "clear_tokens", lambda: calls.append("github"))
+    monkeypatch.setattr(copilot_auth, "clear_token", lambda: calls.append("copilot"))
+    monkeypatch.setattr(copilot_auth, "token_status", lambda: (False, "Not configured"))
+
+    assert handlers.HANDLERS["brain.auth.chatgpt.clear"]() == {"ok": True, "name": "chatgpt"}
+    assert handlers.HANDLERS["brain.auth.github.clear"]() == {"ok": True, "name": "github"}
+    assert handlers.HANDLERS["brain.auth.copilot.clear"]() == {
+        "ok": True,
+        "configured": False,
+        "message": "Not configured",
+    }
+    assert calls == ["chatgpt", "github", "copilot"]
+
+
+def test_auth_copilot_set_and_test_call_shared_modules(monkeypatch):
+    from core.auth import copilot_auth
+    from core.auth import copilot_client
+
+    calls: list[tuple[str, str | None]] = []
+
+    def save_token(token: str) -> None:
+        calls.append(("save", token))
+
+    monkeypatch.setattr(copilot_auth, "save_token", save_token)
+    monkeypatch.setattr(copilot_auth, "token_status", lambda: (True, "Stored in OS keychain."))
+    monkeypatch.setattr(copilot_client, "test_copilot_token", lambda: (True, "Copilot token OK"))
+
+    assert handlers.HANDLERS["brain.auth.copilot.set"](" github_pat_test ") == {
+        "ok": True,
+        "configured": True,
+        "message": "Stored in OS keychain.",
+    }
+    assert handlers.HANDLERS["brain.auth.copilot.test"]() == {
+        "ok": True,
+        "message": "Copilot token OK",
+    }
+    assert calls == [("save", "github_pat_test")]
+
+
+def test_auth_chatgpt_start_browser_login_uses_shared_module(monkeypatch):
+    from core.auth import chatgpt as chatgpt_auth
+
+    captured = {}
+
+    def start_browser_login(on_success, on_error):
+        captured["success"] = callable(on_success)
+        captured["error"] = callable(on_error)
+
+    monkeypatch.setattr(chatgpt_auth, "start_browser_login", start_browser_login)
+
+    result = handlers.HANDLERS["brain.auth.chatgpt.start_browser_login"]()
+
+    assert result == {"ok": True, "message": "Opening browser for ChatGPT sign-in"}
+    assert captured == {"success": True, "error": True}

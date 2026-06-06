@@ -250,6 +250,116 @@ def brain_secrets_clear(name: str = "") -> dict[str, Any]:
     }
 
 
+@handler("brain.auth.status")
+def brain_auth_status() -> dict[str, Any]:
+    """Return OAuth/token-auth provider status without exposing credentials."""
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    chatgpt_tokens = chatgpt_auth.get_tokens()
+    chatgpt_account = ""
+    if isinstance(chatgpt_tokens, dict):
+        chatgpt_account = str(chatgpt_tokens.get("account_id") or "")
+
+    github_tokens = github_auth.get_tokens()
+    github_login = ""
+    if isinstance(github_tokens, dict):
+        user = github_tokens.get("user")
+        if isinstance(user, dict):
+            github_login = str(user.get("login") or "")
+
+    try:
+        copilot_configured, copilot_message = copilot_auth.token_status()
+    except Exception as exc:  # noqa: BLE001 - shown as status, never fatal
+        copilot_configured = False
+        copilot_message = f"Keychain error: {exc}"
+
+    return {
+        "providers": [
+            {
+                "name": "chatgpt",
+                "label": "ChatGPT",
+                "configured": bool(chatgpt_tokens),
+                "message": "Logged in" + (f" as {chatgpt_account}" if chatgpt_account else "")
+                if chatgpt_tokens
+                else "Not logged in",
+            },
+            {
+                "name": "github",
+                "label": "GitHub",
+                "configured": bool(github_tokens),
+                "message": "Logged in" + (f" as {github_login}" if github_login else "")
+                if github_tokens
+                else "Not logged in",
+            },
+            {
+                "name": "copilot",
+                "label": "GitHub Copilot",
+                "configured": bool(copilot_configured),
+                "message": copilot_message,
+            },
+        ]
+    }
+
+
+@handler("brain.auth.chatgpt.start_browser_login")
+def brain_auth_chatgpt_start_browser_login() -> dict[str, Any]:
+    """Start ChatGPT browser OAuth through the shared auth module."""
+    from core.auth import chatgpt as chatgpt_auth
+
+    def on_success(_tokens: dict) -> None:
+        _log("chatgpt login complete")
+
+    def on_error(message: str) -> None:
+        _log(f"chatgpt login error: {message}")
+
+    chatgpt_auth.start_browser_login(on_success=on_success, on_error=on_error)
+    return {"ok": True, "message": "Opening browser for ChatGPT sign-in"}
+
+
+@handler("brain.auth.chatgpt.clear")
+def brain_auth_chatgpt_clear() -> dict[str, Any]:
+    from core.auth import chatgpt as chatgpt_auth
+
+    chatgpt_auth.clear_tokens()
+    return {"ok": True, "name": "chatgpt"}
+
+
+@handler("brain.auth.github.clear")
+def brain_auth_github_clear() -> dict[str, Any]:
+    from core.auth import github as github_auth
+
+    github_auth.clear_tokens()
+    return {"ok": True, "name": "github"}
+
+
+@handler("brain.auth.copilot.set")
+def brain_auth_copilot_set(token: str = "") -> dict[str, Any]:
+    from core.auth import copilot_auth
+
+    copilot_auth.save_token((token or "").strip())
+    configured, message = copilot_auth.token_status()
+    return {"ok": True, "configured": configured, "message": message}
+
+
+@handler("brain.auth.copilot.test")
+def brain_auth_copilot_test() -> dict[str, Any]:
+    from core.auth import copilot_client
+
+    ok, message = copilot_client.test_copilot_token()
+    return {"ok": ok, "message": message}
+
+
+@handler("brain.auth.copilot.clear")
+def brain_auth_copilot_clear() -> dict[str, Any]:
+    from core.auth import copilot_auth
+
+    copilot_auth.clear_token()
+    configured, message = copilot_auth.token_status()
+    return {"ok": True, "configured": configured, "message": message}
+
+
 @handler("brain.plugins.list")
 def brain_plugins_list() -> dict[str, Any]:
     """Return loaded/discoverable plugins for the native macOS Plugin Manager."""

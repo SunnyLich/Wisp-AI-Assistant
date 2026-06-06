@@ -387,6 +387,27 @@ final class WispConfigTests: XCTestCase {
         )
     }
 
+    func testSettingsProviderAuthStatusParsesBrainPayloadWithoutTokenValue() throws {
+        let status = try XCTUnwrap(SettingsProviderAuthStatus(payload: [
+            "name": "copilot",
+            "label": "GitHub Copilot",
+            "configured": true,
+            "message": "Stored in OS keychain.",
+        ]))
+
+        XCTAssertEqual(status.name, "copilot")
+        XCTAssertEqual(status.label, "GitHub Copilot")
+        XCTAssertTrue(status.configured)
+        XCTAssertEqual(status.message, "Stored in OS keychain.")
+    }
+
+    func testSettingsProviderAuthStatusDefaultRowsMatchNativeAuthProviders() {
+        XCTAssertEqual(
+            SettingsProviderAuthStatus.defaultRows.map(\.name),
+            ["chatgpt", "github", "copilot"]
+        )
+    }
+
     func testScreenshotModeAcceptsLegacyBooleanValues() {
         XCTAssertEqual(ScreenshotMode.normalized("true"), .auto)
         XCTAssertEqual(ScreenshotMode.normalized("tool"), .model)
