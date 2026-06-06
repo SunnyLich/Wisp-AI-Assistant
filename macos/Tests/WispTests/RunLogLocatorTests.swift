@@ -172,4 +172,22 @@ final class RunLogLocatorTests: XCTestCase {
 
         XCTAssertEqual(environment["WISP_RUN_LOG_DIR"], "/tmp/explicit-wisp-logs")
     }
+
+    func testWritableLogDirectoryUsesProcessEnvironmentAndCreatesDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-writable-run-log-\(UUID().uuidString)")
+        defer {
+            unsetenv("WISP_RUN_LOG_DIR")
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        setenv("WISP_RUN_LOG_DIR", root.path, 1)
+
+        let url = try XCTUnwrap(RunLogLocator.writableLogDirectory())
+
+        XCTAssertEqual(url.standardizedFileURL.path, root.standardizedFileURL.path)
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+    }
 }

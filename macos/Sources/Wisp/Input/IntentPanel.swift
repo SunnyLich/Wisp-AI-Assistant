@@ -101,10 +101,8 @@ final class IntentPanel: NSPanel {
     private func installKeyMonitor() {
         removeKeyMonitor()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            MainActor.assumeIsolated {
-                guard let self, self.isVisible else { return event }
-                return self.handleKeyDown(event)
-            }
+            guard let self, self.isVisible else { return event }
+            return self.handleKeyDown(event)
         }
     }
 

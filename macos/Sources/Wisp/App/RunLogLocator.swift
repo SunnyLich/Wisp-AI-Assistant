@@ -36,7 +36,11 @@ enum RunLogLocator {
     }
 
     static func writableLogDirectory(fileManager: FileManager = .default) -> URL? {
-        guard let url = logDirectory(fileManager: fileManager) else { return nil }
+        guard let url = logDirectory(
+            environment: ProcessInfo.processInfo.environment,
+            resourceURL: Bundle.main.resourceURL,
+            fileManager: fileManager
+        ) else { return nil }
         do {
             try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
             return url
