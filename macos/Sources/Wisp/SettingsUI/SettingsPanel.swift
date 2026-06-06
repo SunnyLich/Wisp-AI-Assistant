@@ -65,6 +65,7 @@ struct SettingsDraft: Equatable {
     var snipContextDocuments: Bool
     var snipContextTools: Bool
 
+    var themeMode: String
     var iconAutoHide: Bool
     var iconSize: String
     var iconBackstopMS: String
@@ -132,6 +133,7 @@ struct SettingsDraft: Equatable {
             snipContextAmbient: boolValue(values["SNIP_CONTEXT_AMBIENT"], default: true),
             snipContextDocuments: boolValue(values["SNIP_CONTEXT_DOCUMENTS"], default: false),
             snipContextTools: boolValue(values["SNIP_CONTEXT_TOOLS"], default: false),
+            themeMode: values["THEME_MODE"] ?? "system",
             iconAutoHide: boolValue(values["ICON_AUTO_HIDE"] ?? values["DOLL_AUTO_HIDE"], default: false),
             iconSize: values["ICON_SIZE"] ?? values["DOLL_SIZE"] ?? "80",
             iconBackstopMS: values["ICON_BACKSTOP_MS"] ?? values["DOLL_ICON_BACKSTOP_MS"] ?? "5000",
@@ -187,6 +189,7 @@ struct SettingsDraft: Equatable {
         snipContextAmbient: true,
         snipContextDocuments: false,
         snipContextTools: false,
+        themeMode: "system",
         iconAutoHide: false,
         iconSize: "80",
         iconBackstopMS: "5000",
@@ -251,6 +254,7 @@ struct SettingsDraft: Equatable {
             "SNIP_CONTEXT_AMBIENT": snipContextAmbient ? "true" : "false",
             "SNIP_CONTEXT_DOCUMENTS": snipContextDocuments ? "true" : "false",
             "SNIP_CONTEXT_TOOLS": snipContextTools ? "true" : "false",
+            "THEME_MODE": themeMode,
             "ICON_AUTO_HIDE": iconAutoHide ? "true" : "false",
             "ICON_SIZE": iconSize,
             "ICON_BACKSTOP_MS": iconBackstopMS,
@@ -755,6 +759,10 @@ private struct SettingsPanelView: View {
     private var uiTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                SettingsSection("Appearance") {
+                    PickerRow("Theme", selection: $model.draft.themeMode, options: ["system", "dark", "light"])
+                }
+
                 SettingsSection("Overlay") {
                     Toggle("Auto-hide icon", isOn: $model.draft.iconAutoHide)
                     SettingsTextField("Icon size", text: $model.draft.iconSize)

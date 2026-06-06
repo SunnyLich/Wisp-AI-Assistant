@@ -84,6 +84,7 @@ final class WispConfigTests: XCTestCase {
             "HOTKEY_VOICE": "f8",
             "GITHUB_CLIENT_ID": "github-client",
             "GITHUB_OAUTH_SCOPES": "repo read:user",
+            "THEME_MODE": "dark",
         ], readDotEnv: false)
 
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
@@ -96,6 +97,7 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(draft.voiceHotkey, "f8")
         XCTAssertEqual(draft.githubClientID, "github-client")
         XCTAssertEqual(draft.githubOAuthScopes, "repo read:user")
+        XCTAssertEqual(draft.themeMode, "dark")
     }
 
     func testSettingsDraftDefaultsToolPluginDirectoryToRepoModelTools() {
@@ -203,6 +205,7 @@ final class WispConfigTests: XCTestCase {
         draft.voiceHotkey = "f8"
         draft.githubClientID = "github-client"
         draft.githubOAuthScopes = "repo read:user"
+        draft.themeMode = "dark"
         draft.callers = [
             SettingsCallerDraft(
                 hotkey: "ctrl+option+space",
@@ -239,6 +242,7 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["HOTKEY_VOICE"], "f8")
         XCTAssertEqual(values["GITHUB_CLIENT_ID"], "github-client")
         XCTAssertEqual(values["GITHUB_OAUTH_SCOPES"], "repo read:user")
+        XCTAssertEqual(values["THEME_MODE"], "dark")
         XCTAssertEqual(values["CALLER_COUNT"], "1")
         XCTAssertEqual(values["CALLER_1_LABEL"], "Research")
         XCTAssertEqual(values["CALLER_1_PASTE_BACK"], "true")
