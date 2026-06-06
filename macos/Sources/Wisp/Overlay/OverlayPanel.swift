@@ -20,10 +20,15 @@ final class OverlayPanel: NSPanel {
     enum DollState: Hashable { case idle, listening, thinking, speaking }
 
     private let model: OverlayModel
+    private let autoHide: Bool
+    private let autoHideDelay: TimeInterval
+    private var hideTimer: Timer?
 
     init(onTap: @escaping () -> Void = {}) {
         let model = OverlayModel(onTap: onTap)
         self.model = model
+        self.autoHide = Self.loadAutoHide()
+        self.autoHideDelay = Self.loadAutoHideDelay()
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: model.panelSize, height: model.panelSize),
             styleMask: [.nonactivatingPanel, .borderless],
@@ -42,9 +47,37 @@ final class OverlayPanel: NSPanel {
         positionBottomTrailing()
     }
 
-    func setState(_ state: DollState) { model.state = state }
+    func showAtLaunch() {
+        if autoHide {
+            orderOut(nil)
+        } else {
+            positionBottomTrailing()
+            orderFrontRegardless()
+        }
+    }
+
+    func setState(_ state: DollState) {
+        model.state = state
+        guard autoHide else {
+            if !isVisible {
+                positionBottomTrailing()
+                orderFrontRegardless()
+            }
+            return
+        }
+
+        switch state {
+        case .idle:
+            scheduleAutoHide()
+        case .listening, .thinking, .speaking:
+            hideTimer?.invalidate()
+            positionBottomTrailing()
+            orderFrontRegardless()
+        }
+    }
 
     func toggleVisibility() {
+        hideTimer?.invalidate()
         if isVisible {
             orderOut(nil)
         } else {
@@ -59,6 +92,33 @@ final class OverlayPanel: NSPanel {
         let margin: CGFloat = 24
         setFrameOrigin(NSPoint(x: v.maxX - frame.width - margin,
                                y: v.minY + margin))
+    }
+
+    private func scheduleAutoHide() {
+        hideTimer?.invalidate()
+        hideTimer = Timer.scheduledTimer(withTimeInterval: autoHideDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.orderOut(nil)
+            }
+        }
+    }
+
+    private static func loadAutoHide() -> Bool {
+        let values = WispConfig.loadValues()
+        let raw = values["ICON_AUTO_HIDE"] ?? values["DOLL_AUTO_HIDE"] ?? "false"
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func loadAutoHideDelay() -> TimeInterval {
+        let values = WispConfig.loadValues()
+        let raw = values["ICON_BACKSTOP_MS"] ?? values["DOLL_ICON_BACKSTOP_MS"] ?? "5000"
+        let milliseconds = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 5000
+        return Double(max(500, milliseconds)) / 1000.0
     }
 }
 

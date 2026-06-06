@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = OverlayPanel { [weak self] in
             self?.showIntentPicker()
         }
-        panel.orderFrontRegardless()
+        panel.showAtLaunch()
         overlay = panel
 
         let status = StatusItemController(
