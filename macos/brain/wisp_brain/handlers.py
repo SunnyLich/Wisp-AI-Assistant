@@ -184,6 +184,38 @@ def brain_plugins_list() -> dict[str, Any]:
     }
 
 
+@handler("brain.plugins.run_action")
+def brain_plugins_run_action(plugin_name: str = "", label: str = "") -> dict[str, Any]:
+    """Run a loaded plugin tray action by plugin name and label."""
+    plugin_name = plugin_name.strip()
+    label = label.strip()
+    if not plugin_name:
+        raise ValueError("plugin_name is required")
+    if not label:
+        raise ValueError("label is required")
+
+    from core.plugin_manager import get_manager
+
+    manager = get_manager()
+    for mod in getattr(manager, "_mods", []):
+        if str(getattr(mod, "name", "")) != plugin_name:
+            continue
+        module = getattr(mod, "module", None)
+        actions_fn = getattr(module, "get_tray_actions", None)
+        actions = actions_fn() if callable(actions_fn) else []
+        for item in actions if isinstance(actions, list) else []:
+            if not isinstance(item, dict) or str(item.get("label", "")) != label:
+                continue
+            callback = item.get("callback")
+            if not callable(callback):
+                raise ValueError(f"Plugin action is not callable: {plugin_name} / {label}")
+            callback()
+            return {"ok": True, "message": f"Ran plugin action: {plugin_name} / {label}"}
+        raise ValueError(f"Plugin action not found: {plugin_name} / {label}")
+
+    raise ValueError(f"Plugin not loaded: {plugin_name}")
+
+
 def _plugin_summaries(plugins_dir: Path) -> list[dict[str, Any]]:
     try:
         from core.plugin_manager import get_manager

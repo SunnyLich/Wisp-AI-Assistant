@@ -30,9 +30,14 @@ final class PluginManagerPanel: NSPanel {
 
     init(
         onRefresh: @escaping () -> Void,
+        onRunAction: @escaping (PluginSummary, String) -> Void,
         onOpenFolder: @escaping (String) -> Void
     ) {
-        self.model = PluginManagerModel(onRefresh: onRefresh, onOpenFolder: onOpenFolder)
+        self.model = PluginManagerModel(
+            onRefresh: onRefresh,
+            onRunAction: onRunAction,
+            onOpenFolder: onOpenFolder
+        )
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -88,10 +93,16 @@ private final class PluginManagerModel: ObservableObject {
     @Published var isLoading = false
 
     private let onRefresh: () -> Void
+    private let onRunAction: (PluginSummary, String) -> Void
     private let onOpenFolder: (String) -> Void
 
-    init(onRefresh: @escaping () -> Void, onOpenFolder: @escaping (String) -> Void) {
+    init(
+        onRefresh: @escaping () -> Void,
+        onRunAction: @escaping (PluginSummary, String) -> Void,
+        onOpenFolder: @escaping (String) -> Void
+    ) {
         self.onRefresh = onRefresh
+        self.onRunAction = onRunAction
         self.onOpenFolder = onOpenFolder
     }
 
@@ -103,6 +114,17 @@ private final class PluginManagerModel: ObservableObject {
     func openFolder() {
         guard !pluginsDir.isEmpty else { return }
         onOpenFolder(pluginsDir)
+    }
+
+    func openFolder(_ path: String) {
+        guard !path.isEmpty else { return }
+        onOpenFolder(path)
+    }
+
+    func runAction(_ plugin: PluginSummary, label: String) {
+        guard !isLoading else { return }
+        status = "Running \(label)..."
+        onRunAction(plugin, label)
     }
 }
 
@@ -162,7 +184,11 @@ private struct PluginManagerView: View {
                         .frame(maxWidth: .infinity, minHeight: 260)
                 } else {
                     ForEach(model.plugins) { plugin in
-                        PluginSummaryRow(plugin: plugin)
+                        PluginSummaryRow(
+                            plugin: plugin,
+                            onOpenFolder: { model.openFolder(plugin.path) },
+                            onRunAction: { action in model.runAction(plugin, label: action) }
+                        )
                     }
                 }
             }
@@ -193,6 +219,8 @@ private struct PluginManagerView: View {
 
 private struct PluginSummaryRow: View {
     var plugin: PluginSummary
+    var onOpenFolder: () -> Void
+    var onRunAction: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -210,6 +238,14 @@ private struct PluginSummaryRow: View {
                             .fill(Color(nsColor: NSColor.quaternaryLabelColor))
                     )
                 Spacer()
+                Button {
+                    onOpenFolder()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .buttonStyle(.borderless)
+                .help("Open plugin folder")
+                .disabled(plugin.path.isEmpty)
             }
 
             if !plugin.path.isEmpty {
@@ -223,7 +259,27 @@ private struct PluginSummaryRow: View {
 
             PluginTagLine(title: "Hooks", values: plugin.hooks)
             PluginTagLine(title: "Tools", values: plugin.tools)
-            PluginTagLine(title: "Tray", values: plugin.trayActions)
+            if !plugin.trayActions.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Text("Tray")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, alignment: .trailing)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], alignment: .leading, spacing: 6) {
+                        ForEach(plugin.trayActions, id: \.self) { action in
+                            Button {
+                                onRunAction(action)
+                            } label: {
+                                Text(action)
+                                    .font(.system(size: 10))
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Run plugin action")
+                        }
+                    }
+                }
+            }
 
             if !plugin.error.isEmpty {
                 Text(plugin.error)

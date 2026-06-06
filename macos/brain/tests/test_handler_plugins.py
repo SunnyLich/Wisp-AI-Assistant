@@ -8,6 +8,7 @@ from wisp_brain import handlers
 
 def test_plugins_list_handler_registered():
     assert "brain.plugins.list" in handlers.HANDLERS
+    assert "brain.plugins.run_action" in handlers.HANDLERS
 
 
 def test_plugins_list_returns_discovered_plugin_folder(tmp_path, monkeypatch):
@@ -77,3 +78,57 @@ def test_plugins_list_prefers_loaded_manager(monkeypatch, tmp_path):
             "error": "",
         }
     ]
+
+
+def test_plugins_run_action_invokes_loaded_tray_action(monkeypatch, tmp_path):
+    calls: list[str] = []
+    module = types.ModuleType("plugins.loaded")
+    module.__file__ = str(tmp_path / "plugins" / "loaded" / "__init__.py")
+
+    def action():
+        calls.append("ran")
+
+    def get_tray_actions():
+        return [{"label": "Do Thing", "callback": action}]
+
+    module.get_tray_actions = get_tray_actions
+    mod = types.SimpleNamespace(name="loaded", module=module)
+    manager = types.SimpleNamespace(_mods=[mod])
+    fake_plugin_manager = types.ModuleType("core.plugin_manager")
+    fake_plugin_manager.get_manager = lambda: manager
+    monkeypatch.setitem(sys.modules, "core.plugin_manager", fake_plugin_manager)
+
+    result = handlers.HANDLERS["brain.plugins.run_action"](
+        plugin_name="loaded",
+        label="Do Thing",
+    )
+
+    assert result == {"ok": True, "message": "Ran plugin action: loaded / Do Thing"}
+    assert calls == ["ran"]
+
+
+def test_plugins_run_action_validates_inputs():
+    import pytest
+
+    with pytest.raises(ValueError, match="plugin_name"):
+        handlers.HANDLERS["brain.plugins.run_action"](plugin_name="", label="Do Thing")
+    with pytest.raises(ValueError, match="label"):
+        handlers.HANDLERS["brain.plugins.run_action"](plugin_name="loaded", label="")
+
+
+def test_plugins_run_action_reports_missing_action(monkeypatch):
+    module = types.ModuleType("plugins.loaded")
+    module.get_tray_actions = lambda: [{"label": "Other", "callback": lambda: None}]
+    mod = types.SimpleNamespace(name="loaded", module=module)
+    manager = types.SimpleNamespace(_mods=[mod])
+    fake_plugin_manager = types.ModuleType("core.plugin_manager")
+    fake_plugin_manager.get_manager = lambda: manager
+    monkeypatch.setitem(sys.modules, "core.plugin_manager", fake_plugin_manager)
+
+    import pytest
+
+    with pytest.raises(ValueError, match="Plugin action not found"):
+        handlers.HANDLERS["brain.plugins.run_action"](
+            plugin_name="loaded",
+            label="Do Thing",
+        )

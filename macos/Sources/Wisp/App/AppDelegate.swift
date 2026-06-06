@@ -126,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onRefresh: { [weak self] in
                 Task { await self?.loadPlugins() }
             },
+            onRunAction: { [weak self] plugin, action in
+                Task { await self?.runPluginAction(plugin, action: action) }
+            },
             onOpenFolder: { path in
                 NSWorkspace.shared.open(URL(fileURLWithPath: path))
             }
@@ -1021,6 +1024,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pluginPanel?.fail(String(describing: error))
             statusController?.setBrainStatus("plugins error")
             NSLog("[wisp] plugin list failed: %@", String(describing: error))
+        }
+    }
+
+    private func runPluginAction(_ plugin: PluginSummary, action: String) async {
+        guard let client = brain else {
+            pluginPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("plugin action error")
+            return
+        }
+
+        pluginPanel?.beginLoading("Running \(action)...")
+        do {
+            let result = try await client.call(
+                "brain.plugins.run_action",
+                ["plugin_name": plugin.name, "label": action],
+                timeout: .seconds(60)
+            )
+            let message = result?["message"] as? String ?? "Plugin action complete"
+            statusController?.setBrainStatus("plugin action ok")
+            NSLog("[wisp] %@", message)
+            await loadPlugins()
+        } catch {
+            pluginPanel?.fail(String(describing: error))
+            statusController?.setBrainStatus("plugin action error")
+            NSLog("[wisp] plugin action failed: %@", String(describing: error))
         }
     }
 
