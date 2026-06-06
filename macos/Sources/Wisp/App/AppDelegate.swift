@@ -70,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeTTSPlaybackID: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyTheme(SettingsDraft.load().themeMode)
+
         let client = BrainClient(config: BrainLocator.resolve())
         brain = client
         audioPlayer.onFinish = { [weak self] playbackID, success in
@@ -1000,6 +1002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func saveSettings(_ draft: SettingsDraft) async {
         do {
             try draft.save()
+            applyTheme(draft.themeMode)
             appConfig = WispConfig.load()
             installHotkey(promptForPermission: false)
             try await reloadBrainConfig()
@@ -1011,6 +1014,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusController?.setBrainStatus("settings error")
             NSLog("[wisp] native settings save failed: %@", String(describing: error))
         }
+    }
+
+    private func applyTheme(_ raw: String) {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        case "light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+        default:
+            NSApp.appearance = nil
+        }
+        NSLog("[wisp] theme applied: %@", raw)
     }
 
     private func testTTSSettings(_ draft: SettingsDraft) async {
