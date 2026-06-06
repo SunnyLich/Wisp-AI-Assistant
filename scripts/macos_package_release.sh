@@ -9,6 +9,7 @@
 #   WISP_CODESIGN_ENTITLEMENTS=macos/Wisp.entitlements
 #   WISP_NOTARY_PROFILE=keychain-profile-name
 #   WISP_SKIP_NOTARIZATION=1
+#   WISP_VALIDATE_APP_LAUNCH=1
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -173,6 +174,35 @@ notarize_if_requested() {
   zip_app "zip-stapled-app" "$ZIP_PATH"
 }
 
+validate_signed_app_launch_if_requested() {
+  if [ "${WISP_VALIDATE_APP_LAUNCH:-0}" != "1" ]; then
+    return 0
+  fi
+
+  local marker="$LOG_DIR/native-app-launch.log"
+  rm -f "$marker"
+
+  log_info "Launching signed Wisp.app for native startup validation..."
+  run_logged "signed-app-open" /usr/bin/open -n "$APP_BUNDLE"
+
+  local i=0
+  while [ "$i" -lt 20 ]; do
+    if [ -s "$marker" ]; then
+      log_info "Signed app launch marker detected: $marker"
+      sed 's/^/  /' "$marker" | tee -a "$SUMMARY_LOG"
+      /usr/bin/osascript -e 'tell application id "dev.wisp.native" to quit' >/dev/null 2>&1 || true
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+
+  log_info "FAILED: signed app launch marker was not written within 20 seconds"
+  log_info "Expected marker: $marker"
+  log_info "If Wisp is still running, quit it from the tray menu before rerunning packaging."
+  return 1
+}
+
 require_macos_tools
 require_inputs
 build_release_shaped_bundle
@@ -182,6 +212,7 @@ notarize_if_requested
 if [ "${WISP_SKIP_NOTARIZATION:-0}" = "1" ]; then
   zip_app "zip-signed-app" "$ZIP_PATH"
 fi
+validate_signed_app_launch_if_requested
 
 log_info "Native macOS package flow completed."
 log_info "Final zip: $ZIP_PATH"

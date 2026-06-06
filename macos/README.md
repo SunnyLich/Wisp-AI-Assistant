@@ -158,6 +158,15 @@ For a local signed-only package, add `WISP_SKIP_NOTARIZATION=1`. The packaging
 script first runs an embedded Python import probe against the bundled runtime,
 then writes logs under `build_logs/macos_package_<timestamp>/` and creates a zip
 under `build/WispNative/`. When notarization is enabled, the final zip is
-created after stapling so it contains the notarized app. A complete public
-release still requires a real Developer ID identity, successful notarization,
-and a final Mac validation pass on the signed app.
+created after stapling so it contains the notarized app.
+
+To make the package script launch the signed app through macOS `open` and wait
+for `native-app-launch.log`, add:
+
+```bash
+WISP_VALIDATE_APP_LAUNCH=1
+```
+
+That marker is expected in the same `build_logs/macos_package_<timestamp>/`
+folder. A complete public release still requires a real Developer ID identity,
+successful notarization, and this signed-app launch validation on a Mac.

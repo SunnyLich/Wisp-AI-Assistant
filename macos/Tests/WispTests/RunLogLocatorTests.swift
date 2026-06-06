@@ -23,7 +23,7 @@ final class RunLogLocatorTests: XCTestCase {
         let logs = root.appendingPathComponent("build_logs")
         try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
         let old = logs.appendingPathComponent("macos_native_tests_20260101-010101")
-        let newest = logs.appendingPathComponent("macos_phase1_20260202-020202")
+        let newest = logs.appendingPathComponent("macos_package_20260202-020202")
         let ignored = logs.appendingPathComponent("windows_build_20260303-030303")
         try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: newest, withIntermediateDirectories: true)
@@ -51,7 +51,7 @@ final class RunLogLocatorTests: XCTestCase {
         let resourceURL = root
             .appendingPathComponent("build/WispNative/Wisp.app/Contents/Resources")
         let logs = root.appendingPathComponent("build_logs")
-        let newest = logs.appendingPathComponent("macos_phase1_20260404-040404")
+        let newest = logs.appendingPathComponent("macos_package_20260404-040404")
         try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("macos/brain"),

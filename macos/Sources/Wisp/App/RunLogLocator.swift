@@ -151,7 +151,9 @@ enum RunLogLocator {
         return urls
             .filter { url in
                 let name = url.lastPathComponent
-                return name.hasPrefix("macos_phase1_") || name.hasPrefix("macos_native_tests_")
+                return name.hasPrefix("macos_phase1_")
+                    || name.hasPrefix("macos_native_tests_")
+                    || name.hasPrefix("macos_package_")
             }
             .filter { url in
                 let values = try? url.resourceValues(forKeys: [.isDirectoryKey])

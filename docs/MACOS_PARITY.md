@@ -54,7 +54,7 @@ work until each visible surface is ported.
 | Snip overlay | Done | Native |
 | Agent task window | Done | Native |
 | Agent task history | Done | Native |
-| Packaging | Partial | Release-shaped dev bundle plus runtime probe, entitlements, and signing/notary script; needs credentials and signed-app validation |
+| Packaging | Partial | Release-shaped dev bundle plus runtime probe, entitlements, signing/notary script, and optional signed-app launch gate; needs credentials and live signed-app validation |
 | Permissions/TCC onboarding | Partial | Native permissions panel for Accessibility, Screen Recording, and Microphone status plus System Settings/request actions; needs live Mac validation |
 
 ## Current Migration Order
