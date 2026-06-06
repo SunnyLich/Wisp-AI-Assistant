@@ -182,9 +182,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
-        let panel = OverlayPanel { [weak self] in
-            self?.showIntentPicker()
-        }
+        let panel = OverlayPanel(
+            onTap: { [weak self] in
+                self?.showIntentPicker()
+            },
+            onRightClick: { [weak self] event in
+                self?.showOverlayMenu(event)
+            }
+        )
         panel.showAtLaunch()
         overlay = panel
 
@@ -273,6 +278,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPrompt() {
         promptPanel?.showPrompt()
+    }
+
+    private func showOverlayMenu(_ event: NSEvent) {
+        guard let overlay, let view = overlay.contentView else { return }
+        let menu = NSMenu()
+
+        func addItem(_ title: String, _ action: Selector) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+
+        addItem("Ask Wisp", #selector(overlayMenuAskWisp))
+        addItem("New Chat", #selector(overlayMenuNewChat))
+        addItem("Snip Screen Region", #selector(overlayMenuSnip))
+        menu.addItem(.separator())
+        addItem("Settings", #selector(overlayMenuSettings))
+        addItem("Open Run Logs", #selector(overlayMenuOpenLogs))
+        menu.addItem(.separator())
+        addItem("Hide Overlay", #selector(overlayMenuHide))
+        let quitItem = NSMenuItem(title: "Quit Wisp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        quitItem.target = NSApp
+        menu.addItem(quitItem)
+
+        let point = view.convert(event.locationInWindow, from: nil)
+        menu.popUp(positioning: nil, at: point, in: view)
+    }
+
+    @objc private func overlayMenuAskWisp() {
+        showIntentPicker()
+    }
+
+    @objc private func overlayMenuNewChat() {
+        showNativeChat(new: true)
+    }
+
+    @objc private func overlayMenuSnip() {
+        startSnip()
+    }
+
+    @objc private func overlayMenuSettings() {
+        showNativeSettings()
+    }
+
+    @objc private func overlayMenuOpenLogs() {
+        openRunLogs()
+    }
+
+    @objc private func overlayMenuHide() {
+        overlay?.orderOut(nil)
     }
 
     private func showIntentPicker(callerIndex: Int = 0) {

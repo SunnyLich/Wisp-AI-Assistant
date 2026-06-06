@@ -20,13 +20,15 @@ final class OverlayPanel: NSPanel {
     enum DollState: Hashable { case idle, listening, thinking, speaking }
 
     private let model: OverlayModel
+    private let onRightClick: (NSEvent) -> Void
     private let autoHide: Bool
     private let autoHideDelay: TimeInterval
     private var hideTimer: Timer?
 
-    init(onTap: @escaping () -> Void = {}) {
+    init(onTap: @escaping () -> Void = {}, onRightClick: @escaping (NSEvent) -> Void = { _ in }) {
         let model = OverlayModel(onTap: onTap)
         self.model = model
+        self.onRightClick = onRightClick
         self.autoHide = Self.loadAutoHide()
         self.autoHideDelay = Self.loadAutoHideDelay()
         super.init(
@@ -43,8 +45,12 @@ final class OverlayPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         isMovableByWindowBackground = true
 
-        contentView = NSHostingView(rootView: OverlayView(model: model))
+        contentView = OverlayHostingView(rootView: OverlayView(model: model), onRightClick: onRightClick)
         positionBottomTrailing()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onRightClick(event)
     }
 
     func showAtLaunch() {
@@ -187,6 +193,25 @@ private struct OverlayView: View {
             model.onTap()
         }
         .animation(.easeInOut(duration: 0.25), value: model.state)
+    }
+}
+
+@MainActor
+private final class OverlayHostingView: NSHostingView<OverlayView> {
+    private let onRightClick: (NSEvent) -> Void
+
+    init(rootView: OverlayView, onRightClick: @escaping (NSEvent) -> Void) {
+        self.onRightClick = onRightClick
+        super.init(rootView: rootView)
+    }
+
+    @MainActor
+    required dynamic init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onRightClick(event)
     }
 }
 
