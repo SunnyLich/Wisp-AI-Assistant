@@ -17,6 +17,7 @@ LOG_DIR="$REPO_ROOT/build_logs/macos_package_$RUN_ID"
 SUMMARY_LOG="$LOG_DIR/summary.log"
 APP_BUNDLE="$REPO_ROOT/build/WispNative/Wisp.app"
 ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-$RUN_ID.zip"
+NOTARY_ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-notary-submit-$RUN_ID.zip"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/build/WispNative"
 
 log_info() {
@@ -136,10 +137,11 @@ sign_bundle() {
   run_logged "codesign-verify" codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 }
 
-zip_bundle() {
-  rm -f "$ZIP_PATH"
-  run_logged "zip-app" ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
-  log_info "Zip: $ZIP_PATH"
+zip_app() {
+  local name="$1" output="$2"
+  rm -f "$output"
+  run_logged "$name" ditto -c -k --keepParent "$APP_BUNDLE" "$output"
+  log_info "Zip: $output"
 }
 
 notarize_if_requested() {
@@ -154,10 +156,12 @@ notarize_if_requested() {
     exit 1
   fi
 
+  zip_app "zip-notary-submit" "$NOTARY_ZIP_PATH"
   run_logged "notary-submit" \
-    xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$WISP_NOTARY_PROFILE" --wait
+    xcrun notarytool submit "$NOTARY_ZIP_PATH" --keychain-profile "$WISP_NOTARY_PROFILE" --wait
   run_logged "staple-app" xcrun stapler staple "$APP_BUNDLE"
   run_logged "spctl-assess-stapled" spctl --assess --type execute --verbose "$APP_BUNDLE"
+  zip_app "zip-stapled-app" "$ZIP_PATH"
 }
 
 require_macos_tools
@@ -165,8 +169,11 @@ require_inputs
 build_release_shaped_bundle
 validate_embedded_python
 sign_bundle
-zip_bundle
 notarize_if_requested
+if [ "${WISP_SKIP_NOTARIZATION:-0}" = "1" ]; then
+  zip_app "zip-signed-app" "$ZIP_PATH"
+fi
 
 log_info "Native macOS package flow completed."
+log_info "Final zip: $ZIP_PATH"
 log_info "Logs: $LOG_DIR"
