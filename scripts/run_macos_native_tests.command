@@ -28,14 +28,22 @@ if [ "${1:-}" = "--build" ]; then
   RUN_BUILD=1
 fi
 
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
+LOG_DIR="$REPO_ROOT/build_logs/macos_native_tests_$RUN_ID"
+SUMMARY_LOG="$LOG_DIR/summary.log"
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$SUMMARY_LOG") 2>&1
+
 if [ "$(uname -s 2>/dev/null || true)" != "Darwin" ]; then
   echo "ERROR: this quick native test runner must run on macOS." >&2
+  echo "Logs written to: $LOG_DIR"
   exit 1
 fi
 
 if ! command -v swift >/dev/null 2>&1; then
   echo "ERROR: swift was not found. Install Xcode Command Line Tools:" >&2
   echo "       xcode-select --install" >&2
+  echo "Logs written to: $LOG_DIR"
   exit 1
 fi
 
@@ -47,12 +55,9 @@ fi
 if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
   echo "ERROR: no Python found." >&2
   echo "       Run scripts/macos_phase1_validate.sh once to create the .venv." >&2
+  echo "Logs written to: $LOG_DIR"
   exit 1
 fi
-
-RUN_ID="$(date +%Y%m%d-%H%M%S)"
-LOG_DIR="$REPO_ROOT/build_logs/macos_native_tests_$RUN_ID"
-mkdir -p "$LOG_DIR"
 
 run_logged() {
   local name="$1"

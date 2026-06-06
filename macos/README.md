@@ -71,3 +71,11 @@ bash scripts/run_macos_native_tests.command
 That runs the offline Python brain tests, shared config environment tests, and
 Swift package tests. Use `--build` to include `swift build`, or `--full` for the
 slower provisioning/package validation path.
+
+Quick-test logs are written to:
+
+```bash
+build_logs/macos_native_tests_<timestamp>/
+```
+
+Start with `summary.log`; individual command logs sit beside it.
