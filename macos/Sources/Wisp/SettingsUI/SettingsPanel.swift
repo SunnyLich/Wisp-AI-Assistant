@@ -35,6 +35,7 @@ struct SettingsDraft: Equatable {
     var memoryFallbacks: String
     var toolModel: String
     var toolPluginDir: String
+    var toolGitRoot: String
     var customBaseURL: String
 
     var ttsProvider: String
@@ -103,6 +104,7 @@ struct SettingsDraft: Equatable {
             memoryFallbacks: values["MEMORY_LLM_FALLBACKS"] ?? "",
             toolModel: values["TOOL_LLM_MODEL"] ?? "",
             toolPluginDir: values["TOOL_PLUGIN_DIR"] ?? defaultToolPluginDir,
+            toolGitRoot: values["TOOL_GIT_ROOT"] ?? WispConfig.repoRoot(environment: environment).path,
             customBaseURL: values["CUSTOM_BASE_URL"] ?? "",
             ttsProvider: values["TTS_PROVIDER"] ?? "none",
             cartesiaVoiceID: values["CARTESIA_VOICE_ID"] ?? "",
@@ -155,6 +157,7 @@ struct SettingsDraft: Equatable {
         memoryFallbacks: "",
         toolModel: "",
         toolPluginDir: "model_tools",
+        toolGitRoot: "",
         customBaseURL: "",
         ttsProvider: "none",
         cartesiaVoiceID: "",
@@ -216,6 +219,7 @@ struct SettingsDraft: Equatable {
             "MEMORY_LLM_FALLBACKS": memoryFallbacks,
             "TOOL_LLM_MODEL": toolModel,
             "TOOL_PLUGIN_DIR": toolPluginDir,
+            "TOOL_GIT_ROOT": toolGitRoot,
             "CUSTOM_BASE_URL": customBaseURL,
             "TTS_PROVIDER": normalizedTTSProvider(ttsProvider),
             "CARTESIA_VOICE_ID": cartesiaVoiceID,
@@ -586,6 +590,7 @@ private struct SettingsPanelView: View {
                     SettingsTextField("Fallbacks", text: $model.draft.llmFallbacks)
                     SettingsTextField("Tool model", text: $model.draft.toolModel)
                     SettingsTextField("Tool plugin folder", text: $model.draft.toolPluginDir)
+                    SettingsTextField("Tool git root", text: $model.draft.toolGitRoot)
                     SettingsTextField("Custom base URL", text: $model.draft.customBaseURL)
                     llmTestRow(.main)
                 }

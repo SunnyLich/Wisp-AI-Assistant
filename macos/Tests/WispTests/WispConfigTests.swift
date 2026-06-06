@@ -75,6 +75,7 @@ final class WispConfigTests: XCTestCase {
     func testSettingsDraftLoadsToolPluginDirectoryKey() {
         let draft = SettingsDraft.load(environment: [
             "TOOL_PLUGIN_DIR": "/Users/example/wisp/model_tools",
+            "TOOL_GIT_ROOT": "/Users/example/work",
             "CONTEXT_BROWSER_MAX_CHARS": "6000",
             "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": "9000",
             "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": "65000",
@@ -84,6 +85,7 @@ final class WispConfigTests: XCTestCase {
         ], readDotEnv: false)
 
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
+        XCTAssertEqual(draft.toolGitRoot, "/Users/example/work")
         XCTAssertEqual(draft.contextBrowserMaxChars, "6000")
         XCTAssertEqual(draft.contextAmbientDocumentMaxChars, "9000")
         XCTAssertEqual(draft.contextToolDocumentMaxChars, "65000")
@@ -98,6 +100,7 @@ final class WispConfigTests: XCTestCase {
         ], readDotEnv: false)
 
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
+        XCTAssertEqual(draft.toolGitRoot, "/Users/example/wisp")
     }
 
     func testSettingsDraftLoadsNativeUIEnvironmentKeys() {
@@ -187,6 +190,7 @@ final class WispConfigTests: XCTestCase {
         draft.llmProvider = "anthropic"
         draft.llmModel = "claude-sonnet-4-5"
         draft.toolPluginDir = "/Users/example/wisp/model_tools"
+        draft.toolGitRoot = "/Users/example/work"
         draft.contextBrowserMaxChars = "6100"
         draft.contextAmbientDocumentMaxChars = "9100"
         draft.contextToolDocumentMaxChars = "66000"
@@ -220,6 +224,7 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["LLM_PROVIDER"], "anthropic")
         XCTAssertEqual(values["LLM_MODEL"], "claude-sonnet-4-5")
         XCTAssertEqual(values["TOOL_PLUGIN_DIR"], "/Users/example/wisp/model_tools")
+        XCTAssertEqual(values["TOOL_GIT_ROOT"], "/Users/example/work")
         XCTAssertEqual(values["CONTEXT_BROWSER_MAX_CHARS"], "6100")
         XCTAssertEqual(values["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"], "9100")
         XCTAssertEqual(values["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"], "66000")
