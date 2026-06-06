@@ -413,6 +413,8 @@ def brain_auth_copilot_clear() -> dict[str, Any]:
 @handler("brain.settings.reset_credentials")
 def brain_settings_reset_credentials() -> dict[str, Any]:
     """Clear shared credential stores during native Settings factory reset."""
+    import os
+
     from core import secret_store
 
     cleared: list[str] = []
@@ -439,6 +441,10 @@ def brain_settings_reset_credentials() -> dict[str, Any]:
 
     try:
         import config
+        from core.system.env_utils import read_env_file
+
+        for key in read_env_file(getattr(config, "_ENV_FILE")):
+            os.environ.pop(key, None)
 
         config.reload()
     except Exception as exc:  # noqa: BLE001 - reset already cleared credentials

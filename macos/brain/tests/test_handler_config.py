@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+import os
 
 from wisp_brain import handlers
 
@@ -398,7 +399,7 @@ def test_auth_chatgpt_start_browser_login_uses_shared_module(monkeypatch):
     assert captured == {"success": True, "error": True}
 
 
-def test_settings_reset_credentials_clears_secrets_and_auth(monkeypatch):
+def test_settings_reset_credentials_clears_secrets_auth_and_env(monkeypatch, tmp_path):
     from core import secret_store
     from core.auth import chatgpt as chatgpt_auth
     from core.auth import copilot_auth
@@ -411,7 +412,13 @@ def test_settings_reset_credentials_clears_secrets_and_auth(monkeypatch):
     monkeypatch.setattr(github_auth, "clear_tokens", lambda: calls.append("github"))
     monkeypatch.setattr(copilot_auth, "clear_token", lambda: calls.append("copilot"))
 
+    env_file = tmp_path / ".env"
+    env_file.write_text("LLM_PROVIDER=anthropic\nTHEME_MODE=dark\n", encoding="utf-8")
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("THEME_MODE", "dark")
+
     fake_config = types.ModuleType("config")
+    fake_config._ENV_FILE = env_file
     fake_config.reload = lambda: calls.append("reload")
     monkeypatch.setitem(sys.modules, "config", fake_config)
 
@@ -436,9 +443,11 @@ def test_settings_reset_credentials_clears_secrets_and_auth(monkeypatch):
         "copilot",
         "reload",
     ]
+    assert "LLM_PROVIDER" not in os.environ
+    assert "THEME_MODE" not in os.environ
 
 
-def test_settings_reset_credentials_collects_failures(monkeypatch):
+def test_settings_reset_credentials_collects_failures(monkeypatch, tmp_path):
     from core import secret_store
     from core.auth import chatgpt as chatgpt_auth
     from core.auth import copilot_auth
@@ -455,6 +464,7 @@ def test_settings_reset_credentials_collects_failures(monkeypatch):
     monkeypatch.setattr(copilot_auth, "clear_token", lambda: None)
 
     fake_config = types.ModuleType("config")
+    fake_config._ENV_FILE = tmp_path / ".env"
     fake_config.reload = lambda: None
     monkeypatch.setitem(sys.modules, "config", fake_config)
 
