@@ -13,9 +13,22 @@ enum BrainLocator {
 
     static func resolve() -> BrainClient.Config {
         let fm = FileManager.default
+        return resolve(
+            environment: ProcessInfo.processInfo.environment,
+            currentDirectory: URL(fileURLWithPath: fm.currentDirectoryPath),
+            resourceURL: Bundle.main.resourceURL,
+            fileManager: fm
+        )
+    }
 
+    static func resolve(
+        environment: [String: String],
+        currentDirectory: URL,
+        resourceURL: URL?,
+        fileManager fm: FileManager
+    ) -> BrainClient.Config {
         // 1. Bundled runtime (release).
-        if let res = Bundle.main.resourceURL {
+        if let res = resourceURL {
             let python = res.appendingPathComponent("python-runtime/bin/python3")
             let brain = res.appendingPathComponent("brain")
             if fm.fileExists(atPath: python.path), fm.fileExists(atPath: brain.path) {
@@ -29,17 +42,54 @@ enum BrainLocator {
         }
 
         // 2. Dev fallback via environment.
-        let env = ProcessInfo.processInfo.environment
-        let python = env["WISP_BRAIN_PYTHON"].map { URL(fileURLWithPath: $0) }
-            ?? URL(fileURLWithPath: "/usr/bin/python3")
-        let brainDir = env["WISP_BRAIN_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("brain")
-        let repoRoot = env["WISP_REPO_ROOT"].map { URL(fileURLWithPath: $0) }
+        if environment["WISP_BRAIN_PYTHON"] != nil
+            || environment["WISP_BRAIN_DIR"] != nil
+            || environment["WISP_REPO_ROOT"] != nil {
+            let python = environment["WISP_BRAIN_PYTHON"].map { URL(fileURLWithPath: $0) }
+                ?? URL(fileURLWithPath: "/usr/bin/python3")
+            let brainDir = environment["WISP_BRAIN_DIR"].map { URL(fileURLWithPath: $0) }
+                ?? currentDirectory.appendingPathComponent("brain")
+            let repoRoot = environment["WISP_REPO_ROOT"].map { URL(fileURLWithPath: $0) }
+            return BrainClient.Config(
+                pythonExecutable: python,
+                brainDirectory: brainDir,
+                extraPythonPath: repoRoot.map { [$0] } ?? []
+            )
+        }
+
+        // 3. Finder-launched dev bundle from build/WispNative/Wisp.app.
+        if let res = resourceURL,
+           let repoRoot = repoRootForDevBundle(resourceURL: res, fileManager: fm) {
+            return BrainClient.Config(
+                pythonExecutable: repoRoot.appendingPathComponent(".venv/bin/python"),
+                brainDirectory: repoRoot.appendingPathComponent("macos/brain"),
+                extraPythonPath: [repoRoot]
+            )
+        }
+
+        // 4. Plain swift run/build fallback from the macos package directory.
+        let python = URL(fileURLWithPath: "/usr/bin/python3")
+        let brainDir = currentDirectory.appendingPathComponent("brain")
 
         return BrainClient.Config(
             pythonExecutable: python,
             brainDirectory: brainDir,
-            extraPythonPath: repoRoot.map { [$0] } ?? []
+            extraPythonPath: []
         )
+    }
+
+    private static func repoRootForDevBundle(resourceURL: URL, fileManager fm: FileManager) -> URL? {
+        let repoRoot = resourceURL
+            .deletingLastPathComponent() // Contents
+            .deletingLastPathComponent() // Wisp.app
+            .deletingLastPathComponent() // WispNative
+            .deletingLastPathComponent() // build
+            .deletingLastPathComponent()
+        let python = repoRoot.appendingPathComponent(".venv/bin/python")
+        let brain = repoRoot.appendingPathComponent("macos/brain")
+        guard fm.fileExists(atPath: python.path), fm.fileExists(atPath: brain.path) else {
+            return nil
+        }
+        return repoRoot
     }
 }
