@@ -232,8 +232,10 @@ private struct ChatPanelView: View {
                 Divider()
                 composer
             }
+            .background(ChatPanelPalette.contentBackground)
         }
         .frame(minWidth: 560, minHeight: 420)
+        .background(ChatPanelPalette.contentBackground)
         .onAppear { inputFocused = true }
     }
 
@@ -242,13 +244,13 @@ private struct ChatPanelView: View {
             HStack {
                 Text("Chat")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.94))
+                    .foregroundStyle(ChatPanelPalette.primaryText)
                 Spacer()
                 Button {
                     model.startNewConversation()
                 } label: {
                     Image(systemName: "plus")
-                        .foregroundStyle(Color.white.opacity(0.86))
+                        .foregroundStyle(ChatPanelPalette.secondaryText)
                 }
                 .buttonStyle(.borderless)
                 .help("New chat")
@@ -263,7 +265,7 @@ private struct ChatPanelView: View {
                         } label: {
                             Text(conversation.title)
                                 .font(.system(size: 12))
-                                .foregroundStyle(conversation.id == model.activeID ? Color.white.opacity(0.96) : Color.white.opacity(0.72))
+                                .foregroundStyle(conversation.id == model.activeID ? ChatPanelPalette.primaryText : ChatPanelPalette.secondaryText)
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 10)
@@ -280,13 +282,14 @@ private struct ChatPanelView: View {
             }
         }
         .frame(width: 190)
-        .background(Color(nsColor: NSColor(calibratedWhite: 0.075, alpha: 1.0)))
+        .background(ChatPanelPalette.sidebarBackground)
     }
 
     private var header: some View {
         HStack {
             Text(model.activeConversation.title)
                 .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(ChatPanelPalette.primaryText)
                 .lineLimit(1)
             Spacer()
             if model.isStreaming {
@@ -297,6 +300,7 @@ private struct ChatPanelView: View {
                 model.deleteActiveConversation()
             } label: {
                 Image(systemName: "trash")
+                    .foregroundStyle(ChatPanelPalette.secondaryText)
             }
             .buttonStyle(.borderless)
             .help("Delete selected conversation")
@@ -304,6 +308,7 @@ private struct ChatPanelView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 42)
+        .background(ChatPanelPalette.headerBackground)
     }
 
     private var transcript: some View {
@@ -312,7 +317,7 @@ private struct ChatPanelView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if model.activeConversation.messages.isEmpty {
                         Text("Ask Wisp anything.")
-                            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                            .foregroundStyle(ChatPanelPalette.secondaryText)
                             .frame(maxWidth: .infinity, minHeight: 240)
                     } else {
                         ForEach(model.activeConversation.messages) { message in
@@ -323,6 +328,7 @@ private struct ChatPanelView: View {
                 }
                 .padding(16)
             }
+            .background(ChatPanelPalette.contentBackground)
             .onChange(of: model.scrollToken) { _ in
                 if let last = model.activeConversation.messages.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
@@ -347,6 +353,7 @@ private struct ChatPanelView: View {
             .disabled(model.isStreaming || model.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(12)
+        .background(ChatPanelPalette.composerBackground)
     }
 }
 
@@ -362,7 +369,7 @@ private struct ChatMessageView: View {
             Text(message.content.isEmpty ? " " : message.content)
                 .font(.system(size: 13))
                 .textSelection(.enabled)
-                .foregroundStyle(Color.white.opacity(0.94))
+                .foregroundStyle(ChatPanelPalette.primaryText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
                 .background(
@@ -380,8 +387,19 @@ private struct ChatMessageView: View {
 
     private var background: Color {
         if message.role == "user" {
-            return Color(nsColor: NSColor(calibratedRed: 0.23, green: 0.23, blue: 0.36, alpha: 1.0))
+            return ChatPanelPalette.userBubbleBackground
         }
-        return Color(nsColor: NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.22, alpha: 1.0))
+        return ChatPanelPalette.assistantBubbleBackground
     }
+}
+
+private enum ChatPanelPalette {
+    static let sidebarBackground = Color(nsColor: NSColor(calibratedWhite: 0.10, alpha: 1.0))
+    static let headerBackground = Color(nsColor: NSColor(calibratedWhite: 0.14, alpha: 1.0))
+    static let contentBackground = Color(nsColor: NSColor(calibratedWhite: 0.16, alpha: 1.0))
+    static let composerBackground = Color(nsColor: NSColor(calibratedWhite: 0.13, alpha: 1.0))
+    static let userBubbleBackground = Color(nsColor: NSColor(calibratedRed: 0.28, green: 0.30, blue: 0.42, alpha: 1.0))
+    static let assistantBubbleBackground = Color(nsColor: NSColor(calibratedRed: 0.22, green: 0.23, blue: 0.30, alpha: 1.0))
+    static let primaryText = Color(nsColor: NSColor(calibratedWhite: 0.96, alpha: 1.0))
+    static let secondaryText = Color(nsColor: NSColor(calibratedWhite: 0.76, alpha: 1.0))
 }

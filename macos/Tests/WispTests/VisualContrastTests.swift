@@ -7,16 +7,45 @@ final class VisualContrastTests: XCTestCase {
         for url in try swiftSourcesWithCustomDarkSurfaces() {
             let source = try String(contentsOf: url, encoding: .utf8)
             let path = sourceRoot().relativePath(to: url)
+            for forbiddenTextStyle in forbiddenAdaptiveTextStyles {
+                XCTAssertFalse(
+                    source.contains(forbiddenTextStyle),
+                    "\(path) has a custom dark surface; use explicit readable colors instead of \(forbiddenTextStyle)."
+                )
+            }
+        }
+    }
+
+    func testChatPanelUsesExplicitReadablePalette() throws {
+        let source = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/Chat/ChatPanel.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("private enum ChatPanelPalette"))
+        XCTAssertTrue(source.contains("primaryText"))
+        XCTAssertTrue(source.contains("secondaryText"))
+
+        for forbiddenTextStyle in forbiddenAdaptiveTextStyles {
             XCTAssertFalse(
-                source.contains(".foregroundStyle(.primary)"),
-                "\(path) has a custom dark surface; use explicit readable colors instead of .primary."
-            )
-            XCTAssertFalse(
-                source.contains(".foregroundStyle(.secondary)"),
-                "\(path) has a custom dark surface; use explicit readable colors instead of .secondary."
+                source.contains(forbiddenTextStyle),
+                "ChatPanel has a fixed dark surface; use ChatPanelPalette text colors instead of \(forbiddenTextStyle)."
             )
         }
     }
+
+    private let forbiddenAdaptiveTextStyles = [
+        ".foregroundStyle(.primary)",
+        ".foregroundStyle(.secondary)",
+        ".foregroundColor(.primary)",
+        ".foregroundColor(.secondary)",
+        "Color.primary",
+        "Color.secondary",
+        ".labelColor",
+        ".secondaryLabelColor",
+        ".tertiaryLabelColor",
+        ".quaternaryLabelColor"
+    ]
 
     private func swiftSourcesWithCustomDarkSurfaces() throws -> [URL] {
         let root = sourceRoot().appendingPathComponent("Sources/Wisp")
