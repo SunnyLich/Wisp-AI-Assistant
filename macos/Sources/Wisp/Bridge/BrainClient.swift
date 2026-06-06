@@ -47,7 +47,10 @@ actor BrainClient {
         proc.arguments = ["-m", "wisp_brain.host"]
         proc.currentDirectoryURL = config.brainDirectory
 
-        var env = ProcessInfo.processInfo.environment
+        var env = RunLogLocator.environmentByResolvingLogDirectory(
+            environment: ProcessInfo.processInfo.environment,
+            resourceURL: Bundle.main.resourceURL
+        )
         env["PYTHONUNBUFFERED"] = "1"
         if !config.extraPythonPath.isEmpty {
             let joined = config.extraPythonPath.map(\.path).joined(separator: ":")

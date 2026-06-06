@@ -53,6 +53,10 @@ final class RunLogLocatorTests: XCTestCase {
         let logs = root.appendingPathComponent("build_logs")
         let newest = logs.appendingPathComponent("macos_phase1_20260404-040404")
         try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("macos/brain"),
+            withIntermediateDirectories: true
+        )
         try FileManager.default.createDirectory(at: newest, withIntermediateDirectories: true)
 
         let url = RunLogLocator.logDirectory(
@@ -62,5 +66,68 @@ final class RunLogLocatorTests: XCTestCase {
         )
 
         XCTAssertEqual(url?.standardizedFileURL.path, newest.standardizedFileURL.path)
+    }
+
+    func testResolvedEnvironmentSeedsMissingRunLogDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-run-log-locator-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let logs = root.appendingPathComponent("build_logs")
+        let newest = logs.appendingPathComponent("macos_native_tests_20260505-050505")
+        try FileManager.default.createDirectory(at: newest, withIntermediateDirectories: true)
+
+        let environment = RunLogLocator.environmentByResolvingLogDirectory(
+            environment: ["WISP_REPO_ROOT": root.path],
+            currentDirectory: root.appendingPathComponent("macos")
+        )
+
+        XCTAssertEqual(
+            environment["WISP_RUN_LOG_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            newest.standardizedFileURL.path
+        )
+    }
+
+    func testResolvedEnvironmentSeedsRepoRootFromDevBundlePath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-run-log-locator-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root
+            .appendingPathComponent("build/WispNative/Wisp.app/Contents/Resources")
+        let newest = root.appendingPathComponent("build_logs/macos_phase1_20260606-060606")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("macos/brain"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(at: newest, withIntermediateDirectories: true)
+
+        let environment = RunLogLocator.environmentByResolvingLogDirectory(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL
+        )
+
+        XCTAssertEqual(
+            environment["WISP_REPO_ROOT"].map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            root.standardizedFileURL.path
+        )
+        XCTAssertEqual(
+            environment["WISP_RUN_LOG_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            newest.standardizedFileURL.path
+        )
+    }
+
+    func testResolvedEnvironmentDoesNotReplaceExplicitRunLogDirectory() throws {
+        let environment = RunLogLocator.environmentByResolvingLogDirectory(
+            environment: [
+                "WISP_RUN_LOG_DIR": "/tmp/explicit-wisp-logs",
+                "WISP_REPO_ROOT": "/tmp/repo",
+            ],
+            currentDirectory: URL(fileURLWithPath: "/tmp/repo/macos")
+        )
+
+        XCTAssertEqual(environment["WISP_RUN_LOG_DIR"], "/tmp/explicit-wisp-logs")
     }
 }

@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import Wisp
 
 final class WispConfigTests: XCTestCase {
@@ -109,6 +110,28 @@ final class WispConfigTests: XCTestCase {
 
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
         XCTAssertEqual(draft.toolGitRoot, "/Users/example/wisp")
+    }
+
+    func testRepoRootCanBeInferredFromDevAppBundlePath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root
+            .appendingPathComponent("build/WispNative/Wisp.app/Contents/Resources")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("macos/brain"),
+            withIntermediateDirectories: true
+        )
+
+        let repoRoot = WispConfig.repoRoot(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL
+        )
+
+        XCTAssertEqual(repoRoot.standardizedFileURL.path, root.standardizedFileURL.path)
     }
 
     func testSettingsDraftLoadsNativeUIEnvironmentKeys() {

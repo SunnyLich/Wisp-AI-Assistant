@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 
 enum RunLogLocator {
 
@@ -28,6 +29,52 @@ enum RunLogLocator {
             ),
             fileManager: fileManager
         )
+    }
+
+    static func environmentByResolvingLogDirectory(
+        environment: [String: String],
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> [String: String] {
+        var resolved = environment
+        if missingEnvironmentValue(resolved["WISP_REPO_ROOT"]),
+           let resourceURL,
+           let devRoot = repoRootForDevBundle(resourceURL: resourceURL, fileManager: fileManager) {
+            resolved["WISP_REPO_ROOT"] = devRoot.path
+        }
+
+        if !missingEnvironmentValue(resolved["WISP_RUN_LOG_DIR"]) {
+            return resolved
+        }
+        guard let logDirectory = logDirectory(
+            environment: resolved,
+            currentDirectory: currentDirectory,
+            resourceURL: resourceURL,
+            fileManager: fileManager
+        ) else {
+            return resolved
+        }
+        resolved["WISP_RUN_LOG_DIR"] = logDirectory.path
+        return resolved
+    }
+
+    static func seedProcessEnvironmentIfMissing() {
+        let environment = ProcessInfo.processInfo.environment
+        let resolved = environmentByResolvingLogDirectory(
+            environment: environment,
+            resourceURL: Bundle.main.resourceURL
+        )
+        if missingEnvironmentValue(environment["WISP_REPO_ROOT"]),
+           let repoRoot = resolved["WISP_REPO_ROOT"] {
+            setenv("WISP_REPO_ROOT", repoRoot, 0)
+            NSLog("[wisp] inferred repo root: %@", repoRoot)
+        }
+        if missingEnvironmentValue(environment["WISP_RUN_LOG_DIR"]),
+           let logDirectory = resolved["WISP_RUN_LOG_DIR"] {
+            setenv("WISP_RUN_LOG_DIR", logDirectory, 0)
+            NSLog("[wisp] inferred run log directory: %@", logDirectory)
+        }
     }
 
     @MainActor
@@ -64,11 +111,15 @@ enum RunLogLocator {
             .deletingLastPathComponent() // WispNative
             .deletingLastPathComponent() // build
             .deletingLastPathComponent()
-        let buildLogs = repoRoot.appendingPathComponent("build_logs")
-        guard fileManager.fileExists(atPath: buildLogs.path) else {
+        let brain = repoRoot.appendingPathComponent("macos/brain")
+        guard fileManager.fileExists(atPath: brain.path) else {
             return nil
         }
         return repoRoot
+    }
+
+    private static func missingEnvironmentValue(_ value: String?) -> Bool {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
     }
 
     private static func latestLogDirectory(repoRoot: URL, fileManager: FileManager) -> URL? {

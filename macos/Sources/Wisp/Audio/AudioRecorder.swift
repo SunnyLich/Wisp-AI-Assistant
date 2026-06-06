@@ -125,13 +125,7 @@ final class AudioRecorder {
     }
 
     private func outputURL() -> URL {
-        let env = ProcessInfo.processInfo.environment
-        let base: URL
-        if let logDir = env["WISP_RUN_LOG_DIR"], !logDir.isEmpty {
-            base = URL(fileURLWithPath: logDir)
-        } else {
-            base = FileManager.default.temporaryDirectory
-        }
+        let base = RunLogLocator.logDirectory ?? FileManager.default.temporaryDirectory
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

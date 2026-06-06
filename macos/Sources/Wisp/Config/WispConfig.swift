@@ -52,9 +52,21 @@ struct WispConfig: Equatable {
         return WispConfig(callers: loadCallers(values), snip: loadSnip(values))
     }
 
-    static func repoRoot(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        environment["WISP_REPO_ROOT"].map { URL(fileURLWithPath: $0) }
-            ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent()
+    static func repoRoot(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
+    ) -> URL {
+        if let path = environment["WISP_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !path.isEmpty {
+            return URL(fileURLWithPath: path)
+        }
+        if let resourceURL,
+           let devRoot = repoRootForDevBundle(resourceURL: resourceURL, fileManager: fileManager) {
+            return devRoot
+        }
+        return currentDirectory.deletingLastPathComponent()
     }
 
     static func loadValues(
@@ -64,6 +76,20 @@ struct WispConfig: Equatable {
         let root = repoRoot(environment: environment)
         let fileValues = readDotEnv ? DotEnvFile.read(root.appendingPathComponent(".env")) : [:]
         return fileValues.merging(environment) { _, environmentValue in environmentValue }
+    }
+
+    private static func repoRootForDevBundle(resourceURL: URL, fileManager: FileManager) -> URL? {
+        let repoRoot = resourceURL
+            .deletingLastPathComponent() // Contents
+            .deletingLastPathComponent() // Wisp.app
+            .deletingLastPathComponent() // WispNative
+            .deletingLastPathComponent() // build
+            .deletingLastPathComponent()
+        let brain = repoRoot.appendingPathComponent("macos/brain")
+        guard fileManager.fileExists(atPath: brain.path) else {
+            return nil
+        }
+        return repoRoot
     }
 
     private static func loadCallers(_ values: [String: String]) -> [CallerConfig] {

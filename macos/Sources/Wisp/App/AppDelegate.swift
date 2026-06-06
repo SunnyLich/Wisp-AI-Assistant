@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var agentDiffPanel: AgentDiffPanel?
     private var snipPanel: SnipOverlayPanel?
     private var hotkey: HotkeyController?
-    private var appConfig = WispConfig.load()
+    private var appConfig = WispConfig.load(environment: [:], readDotEnv: false)
     private let nativeContext = NativeContextController()
     private let pasteback = NativePastebackController()
     private let screenCapture = ScreenCaptureController()
@@ -70,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeTTSPlaybackID: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        RunLogLocator.seedProcessEnvironmentIfMissing()
+        appConfig = WispConfig.load()
         applyTheme(SettingsDraft.load().themeMode)
 
         let client = BrainClient(config: BrainLocator.resolve())

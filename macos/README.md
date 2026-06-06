@@ -66,6 +66,13 @@ it, without relying on `WISP_BRAIN_*` environment variables:
 bash scripts/macos_phase1_validate.sh --open
 ```
 
+In `--open` mode, Wisp infers the checkout root and newest native log folder
+from the dev bundle location, then seeds `WISP_REPO_ROOT` and
+`WISP_RUN_LOG_DIR` before starting the Python brain. The native app should read
+the same `.env` as the terminal path, and voice recordings or screen captures
+should land beside the validation logs instead of in a random temporary
+directory.
+
 ## Native Test Button
 
 For quick verification after a macOS parity change, double-click:
