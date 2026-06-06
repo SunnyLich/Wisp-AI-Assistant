@@ -37,6 +37,8 @@ struct SettingsDraft: Equatable {
     var toolPluginDir: String
     var toolGitRoot: String
     var customBaseURL: String
+    var githubClientID: String
+    var githubOAuthScopes: String
 
     var ttsProvider: String
     var cartesiaVoiceID: String
@@ -106,6 +108,8 @@ struct SettingsDraft: Equatable {
             toolPluginDir: values["TOOL_PLUGIN_DIR"] ?? defaultToolPluginDir,
             toolGitRoot: values["TOOL_GIT_ROOT"] ?? WispConfig.repoRoot(environment: environment).path,
             customBaseURL: values["CUSTOM_BASE_URL"] ?? "",
+            githubClientID: values["GITHUB_CLIENT_ID"] ?? values["GITHUB_DEFAULT_CLIENT_ID"] ?? "",
+            githubOAuthScopes: values["GITHUB_OAUTH_SCOPES"] ?? "repo read:user user:email",
             ttsProvider: values["TTS_PROVIDER"] ?? "none",
             cartesiaVoiceID: values["CARTESIA_VOICE_ID"] ?? "",
             sttModel: values["STT_MODEL"] ?? "base",
@@ -159,6 +163,8 @@ struct SettingsDraft: Equatable {
         toolPluginDir: "model_tools",
         toolGitRoot: "",
         customBaseURL: "",
+        githubClientID: "",
+        githubOAuthScopes: "repo read:user user:email",
         ttsProvider: "none",
         cartesiaVoiceID: "",
         sttModel: "base",
@@ -221,6 +227,8 @@ struct SettingsDraft: Equatable {
             "TOOL_PLUGIN_DIR": toolPluginDir,
             "TOOL_GIT_ROOT": toolGitRoot,
             "CUSTOM_BASE_URL": customBaseURL,
+            "GITHUB_CLIENT_ID": githubClientID,
+            "GITHUB_OAUTH_SCOPES": githubOAuthScopes,
             "TTS_PROVIDER": normalizedTTSProvider(ttsProvider),
             "CARTESIA_VOICE_ID": cartesiaVoiceID,
             "STT_MODEL": sttModel,
@@ -600,6 +608,11 @@ private struct SettingsPanelView: View {
                     SettingsTextField("Model", text: $model.draft.visionModel)
                     SettingsTextField("Fallbacks", text: $model.draft.visionFallbacks)
                     llmTestRow(.vision)
+                }
+
+                SettingsSection("GitHub") {
+                    SettingsTextField("Client ID", text: $model.draft.githubClientID)
+                    SettingsTextField("OAuth scopes", text: $model.draft.githubOAuthScopes)
                 }
 
                 SettingsSection("Memory Model") {
