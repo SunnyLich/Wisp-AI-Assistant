@@ -158,6 +158,12 @@ build_dev_app_bundle() {
   if [ -f "$REPO_ROOT/.env.example" ]; then
     cp "$REPO_ROOT/.env.example" "$resources_dir/.env.example"
   fi
+  cat > "$resources_dir/dev-launch.env" <<EOF
+WISP_REPO_ROOT=$REPO_ROOT
+WISP_BRAIN_PYTHON=$BRAIN_PY
+WISP_BRAIN_DIR=$REPO_ROOT/macos/brain
+WISP_RUN_LOG_DIR=$LOG_DIR
+EOF
 
   doll_src="$REPO_ROOT/assets/doll"
   doll_dst="$resources_dir/assets/doll"
@@ -209,6 +215,7 @@ PLIST
     echo "plist=$plist"
     echo "brain_bundle=$brain_dst"
     echo "core_bundle=$core_dst"
+    echo "dev_launch_env=$resources_dir/dev-launch.env"
     [ -f "$resources_dir/.env.example" ] && echo "env_template=$resources_dir/.env.example"
     if [ -x "$runtime_dst/bin/python3" ]; then
       echo "python_runtime=$runtime_dst"

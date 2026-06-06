@@ -44,6 +44,25 @@ enum BrainLocator {
             }
         }
 
+        if let devLaunch = resourceURL.flatMap({ devLaunchEnvironment(resourceURL: $0, fileManager: fm) }) {
+            let repoRoot = nonEmpty(devLaunch["WISP_REPO_ROOT"])
+                .map { URL(fileURLWithPath: $0) }
+                ?? resourceURL.flatMap { repoRootForDevBundle(resourceURL: $0, fileManager: fm) }
+            return BrainClient.Config(
+                pythonExecutable: devPython(
+                    environmentValue: devLaunch["WISP_BRAIN_PYTHON"],
+                    repoRoot: repoRoot,
+                    fileManager: fm
+                ),
+                brainDirectory: devBrainDirectory(
+                    environmentValue: devLaunch["WISP_BRAIN_DIR"],
+                    repoRoot: repoRoot,
+                    currentDirectory: currentDirectory
+                ),
+                extraPythonPath: repoRoot.map { [$0] } ?? []
+            )
+        }
+
         let devBundleRepoRoot = resourceURL.flatMap {
             repoRootForDevBundle(resourceURL: $0, fileManager: fm)
         }
@@ -146,6 +165,28 @@ enum BrainLocator {
     private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func devLaunchEnvironment(resourceURL: URL, fileManager fm: FileManager) -> [String: String]? {
+        let url = resourceURL.appendingPathComponent("dev-launch.env")
+        guard fm.fileExists(atPath: url.path),
+              let raw = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+        var values: [String: String] = [:]
+        for line in raw.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#"),
+                  let separator = trimmed.firstIndex(of: "=") else {
+                continue
+            }
+            let key = trimmed[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = trimmed[trimmed.index(after: separator)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                values[String(key)] = String(value)
+            }
+        }
+        return values.isEmpty ? nil : values
     }
 
     private static func repoRootForDevBundle(resourceURL: URL, fileManager fm: FileManager) -> URL? {

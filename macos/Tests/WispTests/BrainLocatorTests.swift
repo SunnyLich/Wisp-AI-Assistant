@@ -233,4 +233,35 @@ final class BrainLocatorTests: XCTestCase {
         )
         XCTAssertEqual(config.extraPythonPath.map { $0.standardizedFileURL.path }, [root.standardizedFileURL.path])
     }
+
+    func testDevLaunchResourceWinsOverBarePythonEnvironment() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-brain-locator-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root
+            .appendingPathComponent("build/WispNative/Wisp.app/Contents/Resources")
+        let python = root.appendingPathComponent(".venv/bin/python")
+        let brain = root.appendingPathComponent("macos/brain")
+        try FileManager.default.createDirectory(at: python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: brain, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: python.path, contents: Data()))
+        try """
+        WISP_REPO_ROOT=\(root.path)
+        WISP_BRAIN_PYTHON=\(python.path)
+        WISP_BRAIN_DIR=\(brain.path)
+        """.write(to: resourceURL.appendingPathComponent("dev-launch.env"), atomically: true, encoding: .utf8)
+
+        let config = BrainLocator.resolve(
+            environment: ["WISP_BRAIN_PYTHON": "python"],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            fileManager: .default
+        )
+
+        XCTAssertEqual(config.pythonExecutable.standardizedFileURL.path, python.standardizedFileURL.path)
+        XCTAssertEqual(config.brainDirectory.standardizedFileURL.path, brain.standardizedFileURL.path)
+        XCTAssertEqual(config.extraPythonPath.map { $0.standardizedFileURL.path }, [root.standardizedFileURL.path])
+    }
 }

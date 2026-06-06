@@ -145,3 +145,29 @@ def test_native_permission_and_launch_login_sources_are_guarded():
         "setLoginItemStatus(_ status: LoginItemStatus)",
     ]:
         assert expected in permissions_test
+
+
+def test_phase1_dev_bundle_writes_launch_environment_resource():
+    script = (REPO_ROOT / "scripts" / "macos_phase1_validate.sh").read_text(encoding="utf-8")
+    locator = (
+        REPO_ROOT / "macos" / "Sources" / "Wisp" / "Bridge" / "BrainLocator.swift"
+    ).read_text(encoding="utf-8")
+
+    for expected in [
+        'cat > "$resources_dir/dev-launch.env"',
+        "WISP_REPO_ROOT=$REPO_ROOT",
+        "WISP_BRAIN_PYTHON=$BRAIN_PY",
+        "WISP_BRAIN_DIR=$REPO_ROOT/macos/brain",
+        "WISP_RUN_LOG_DIR=$LOG_DIR",
+        "dev_launch_env=$resources_dir/dev-launch.env",
+    ]:
+        assert expected in script
+
+    for expected in [
+        "devLaunchEnvironment(resourceURL:",
+        'resourceURL.appendingPathComponent("dev-launch.env")',
+        'devLaunch["WISP_BRAIN_PYTHON"]',
+        'devLaunch["WISP_BRAIN_DIR"]',
+        'devLaunch["WISP_REPO_ROOT"]',
+    ]:
+        assert expected in locator
