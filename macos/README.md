@@ -60,6 +60,19 @@ Finder, that dev bundle can infer the checkout-relative `.venv` and
 bundle still needs `Contents/Resources/python-runtime/bin/python3` plus signing
 and notarization.
 
+To test the embedded-runtime packaging path before signing, point
+`WISP_PYTHON_RUNTIME_DIR` at an existing Python runtime whose layout contains
+`bin/python3`:
+
+```bash
+WISP_PYTHON_RUNTIME_DIR=/path/to/python-runtime bash scripts/macos_phase1_validate.sh --open
+```
+
+The builder copies that directory to
+`Wisp.app/Contents/Resources/python-runtime`. The launch marker records
+`brain_python=.../Contents/Resources/python-runtime/bin/python3` when the app is
+using the embedded runtime.
+
 Use `--run` when you want the app attached to Terminal stdout/stderr. Use
 `--open` when you want to test the generated `.app` bundle the way Finder opens
 it, without relying on `WISP_BRAIN_*` environment variables:

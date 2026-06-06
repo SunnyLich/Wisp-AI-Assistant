@@ -100,7 +100,7 @@ archive_logs() {
 }
 
 build_dev_app_bundle() {
-  local bin_dir app_dir contents_dir macos_dir resources_dir plist executable doll_src doll_dst brain_dst core_dst
+  local bin_dir app_dir contents_dir macos_dir resources_dir plist executable doll_src doll_dst brain_dst core_dst runtime_dst
   bin_dir="$(swift build --show-bin-path 2>"$LOG_DIR/swift-bin-path.err")"
   executable="$bin_dir/Wisp"
   if [ ! -x "$executable" ]; then
@@ -119,8 +119,10 @@ build_dev_app_bundle() {
 
   brain_dst="$resources_dir/brain"
   core_dst="$resources_dir/core"
+  runtime_dst="$resources_dir/python-runtime"
   copy_bundle_source_tree "$REPO_ROOT/macos/brain" "$brain_dst"
   copy_bundle_source_tree "$REPO_ROOT/core" "$core_dst"
+  copy_python_runtime_if_requested "$runtime_dst"
 
   doll_src="$REPO_ROOT/assets/doll"
   doll_dst="$resources_dir/assets/doll"
@@ -172,6 +174,13 @@ PLIST
     echo "plist=$plist"
     echo "brain_bundle=$brain_dst"
     echo "core_bundle=$core_dst"
+    if [ -x "$runtime_dst/bin/python3" ]; then
+      echo "python_runtime=$runtime_dst"
+      echo "bundle_mode=standalone-shaped"
+    else
+      echo "python_runtime=(not embedded; set WISP_PYTHON_RUNTIME_DIR to stage one)"
+      echo "bundle_mode=checkout-dev"
+    fi
     [ -d "$doll_dst" ] && echo "doll_assets=$doll_dst"
   } > "$LOG_DIR/dev-app-bundle.log"
 
@@ -191,8 +200,22 @@ copy_bundle_source_tree() {
   find "$dst" \( -name "*.pyc" -o -name "*.pyo" \) -type f -delete
 }
 
+copy_python_runtime_if_requested() {
+  local dst="$1" src="${WISP_PYTHON_RUNTIME_DIR:-}"
+  if [ -z "$src" ]; then
+    return 0
+  fi
+  if [ ! -x "$src/bin/python3" ]; then
+    echo "ERROR: WISP_PYTHON_RUNTIME_DIR must contain bin/python3: $src" >&2
+    return 1
+  fi
+  rm -rf "$dst"
+  mkdir -p "$(dirname "$dst")"
+  cp -R "$src" "$dst"
+}
+
 open_dev_app_without_wisp_env() {
-  unset WISP_BRAIN_PYTHON WISP_BRAIN_DIR WISP_REPO_ROOT WISP_RUN_LOG_DIR
+  unset WISP_BRAIN_PYTHON WISP_BRAIN_DIR WISP_REPO_ROOT WISP_RUN_LOG_DIR WISP_PYTHON_RUNTIME_DIR
   /usr/bin/open -n "$APP_BUNDLE"
 }
 

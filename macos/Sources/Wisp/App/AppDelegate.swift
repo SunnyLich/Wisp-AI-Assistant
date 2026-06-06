@@ -72,10 +72,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         RunLogLocator.seedProcessEnvironmentIfMissing()
         appConfig = WispConfig.load()
-        NativeLaunchDiagnostics.writeStartupRecord(config: appConfig)
         applyTheme(SettingsDraft.load().themeMode)
 
-        let client = BrainClient(config: BrainLocator.resolve())
+        let brainConfig = BrainLocator.resolve()
+        NativeLaunchDiagnostics.writeStartupRecord(config: appConfig, brainConfig: brainConfig)
+        let client = BrainClient(config: brainConfig)
         brain = client
         audioPlayer.onFinish = { [weak self] playbackID, success in
             self?.finishSpeechPlayback(playbackID: playbackID, successfully: success)

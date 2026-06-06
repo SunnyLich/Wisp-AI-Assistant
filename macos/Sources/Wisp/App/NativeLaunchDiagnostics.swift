@@ -3,7 +3,7 @@ import Foundation
 enum NativeLaunchDiagnostics {
     static let startupMarkerName = "native-app-launch.log"
 
-    static func writeStartupRecord(config: WispConfig) {
+    static func writeStartupRecord(config: WispConfig, brainConfig: BrainClient.Config) {
         let environment = RunLogLocator.environmentByResolvingLogDirectory(
             environment: ProcessInfo.processInfo.environment,
             resourceURL: Bundle.main.resourceURL
@@ -15,7 +15,7 @@ enum NativeLaunchDiagnostics {
         do {
             try FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             let url = logDirectory.appendingPathComponent(startupMarkerName)
-            let record = startupRecord(environment: environment, config: config)
+            let record = startupRecord(environment: environment, config: config, brainConfig: brainConfig)
             try record.write(to: url, atomically: true, encoding: .utf8)
             NSLog("[wisp] native launch marker written: %@", url.path)
         } catch {
@@ -27,6 +27,7 @@ enum NativeLaunchDiagnostics {
         now: Date = Date(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
         config: WispConfig,
+        brainConfig: BrainClient.Config,
         resourceURL: URL? = Bundle.main.resourceURL
     ) -> String {
         let formatter = ISO8601DateFormatter()
@@ -37,6 +38,9 @@ enum NativeLaunchDiagnostics {
             "repo_root=\(environment["WISP_REPO_ROOT"] ?? "")",
             "run_log_dir=\(environment["WISP_RUN_LOG_DIR"] ?? "")",
             "resource_url=\(resourceURL?.path ?? "")",
+            "brain_python=\(brainConfig.pythonExecutable.path)",
+            "brain_dir=\(brainConfig.brainDirectory.path)",
+            "brain_pythonpath=\(brainConfig.extraPythonPath.map(\.path).joined(separator: ":"))",
             "caller_count=\(config.callers.count)",
             "snip_hotkey=\(config.snip.hotkey)",
         ].joined(separator: "\n") + "\n"

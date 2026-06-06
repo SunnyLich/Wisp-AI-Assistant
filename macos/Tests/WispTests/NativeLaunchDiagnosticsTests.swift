@@ -21,6 +21,11 @@ final class NativeLaunchDiagnosticsTests: XCTestCase {
                 "OPENAI_API_KEY": "should-not-be-written",
             ],
             config: config,
+            brainConfig: BrainClient.Config(
+                pythonExecutable: URL(fileURLWithPath: "/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources/python-runtime/bin/python3"),
+                brainDirectory: URL(fileURLWithPath: "/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources/brain"),
+                extraPythonPath: [URL(fileURLWithPath: "/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources")]
+            ),
             resourceURL: URL(fileURLWithPath: "/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources")
         )
 
@@ -28,6 +33,9 @@ final class NativeLaunchDiagnosticsTests: XCTestCase {
         XCTAssertTrue(record.contains("repo_root=/tmp/wisp"))
         XCTAssertTrue(record.contains("run_log_dir=/tmp/wisp/build_logs/macos_phase1_20260101-000000"))
         XCTAssertTrue(record.contains("resource_url=/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources"))
+        XCTAssertTrue(record.contains("brain_python=/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources/python-runtime/bin/python3"))
+        XCTAssertTrue(record.contains("brain_dir=/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources/brain"))
+        XCTAssertTrue(record.contains("brain_pythonpath=/tmp/wisp/build/WispNative/Wisp.app/Contents/Resources"))
         XCTAssertTrue(record.contains("caller_count=1"))
         XCTAssertTrue(record.contains("snip_hotkey=ctrl+option+4"))
         XCTAssertFalse(record.contains("should-not-be-written"))
