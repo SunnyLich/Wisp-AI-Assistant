@@ -58,6 +58,14 @@ and the current Swift parity slice. The generated dev bundle lives at
 infer the checkout-relative `.venv` and `macos/brain` sidecar from its
 `build/WispNative` location.
 
+Use `--run` when you want the app attached to Terminal stdout/stderr. Use
+`--open` when you want to test the generated `.app` bundle the way Finder opens
+it, without relying on `WISP_BRAIN_*` environment variables:
+
+```bash
+bash scripts/macos_phase1_validate.sh --open
+```
+
 ## Native Test Button
 
 For quick verification after a macOS parity change, double-click:
@@ -74,7 +82,8 @@ bash scripts/run_macos_native_tests.command
 
 That runs the offline Python brain tests, shared config environment tests, and
 Swift package tests. Use `--build` to include `swift build`, or `--full` for the
-slower provisioning/package validation path.
+slower provisioning/package validation path. Use `--open` to run the full checks
+and then launch the generated dev `.app` bundle through macOS `open`.
 
 Quick-test logs are written to:
 

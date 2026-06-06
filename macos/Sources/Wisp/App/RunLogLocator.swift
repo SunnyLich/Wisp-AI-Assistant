@@ -3,12 +3,16 @@ import AppKit
 enum RunLogLocator {
 
     static var logDirectory: URL? {
-        logDirectory(environment: ProcessInfo.processInfo.environment)
+        logDirectory(
+            environment: ProcessInfo.processInfo.environment,
+            resourceURL: Bundle.main.resourceURL
+        )
     }
 
     static func logDirectory(
         environment: [String: String],
         currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = nil,
         fileManager: FileManager = .default
     ) -> URL? {
         if let path = environment["WISP_RUN_LOG_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -16,7 +20,12 @@ enum RunLogLocator {
             return URL(fileURLWithPath: path)
         }
         return latestLogDirectory(
-            repoRoot: repoRoot(environment: environment, currentDirectory: currentDirectory),
+            repoRoot: repoRoot(
+                environment: environment,
+                currentDirectory: currentDirectory,
+                resourceURL: resourceURL,
+                fileManager: fileManager
+            ),
             fileManager: fileManager
         )
     }
@@ -28,15 +37,38 @@ enum RunLogLocator {
         return true
     }
 
-    private static func repoRoot(environment: [String: String], currentDirectory: URL) -> URL {
+    private static func repoRoot(
+        environment: [String: String],
+        currentDirectory: URL,
+        resourceURL: URL?,
+        fileManager: FileManager
+    ) -> URL {
         if let path = environment["WISP_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !path.isEmpty {
             return URL(fileURLWithPath: path)
+        }
+        if let resourceURL,
+           let devRoot = repoRootForDevBundle(resourceURL: resourceURL, fileManager: fileManager) {
+            return devRoot
         }
         if currentDirectory.lastPathComponent == "macos" {
             return currentDirectory.deletingLastPathComponent()
         }
         return currentDirectory
+    }
+
+    private static func repoRootForDevBundle(resourceURL: URL, fileManager: FileManager) -> URL? {
+        let repoRoot = resourceURL
+            .deletingLastPathComponent() // Contents
+            .deletingLastPathComponent() // Wisp.app
+            .deletingLastPathComponent() // WispNative
+            .deletingLastPathComponent() // build
+            .deletingLastPathComponent()
+        let buildLogs = repoRoot.appendingPathComponent("build_logs")
+        guard fileManager.fileExists(atPath: buildLogs.path) else {
+            return nil
+        }
+        return repoRoot
     }
 
     private static func latestLogDirectory(repoRoot: URL, fileManager: FileManager) -> URL? {

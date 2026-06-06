@@ -42,4 +42,25 @@ final class RunLogLocatorTests: XCTestCase {
 
         XCTAssertEqual(url?.standardizedFileURL.path, newest.standardizedFileURL.path)
     }
+
+    func testFinderLaunchedDevBundleInfersRunLogsFromBundlePath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-run-log-locator-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root
+            .appendingPathComponent("build/WispNative/Wisp.app/Contents/Resources")
+        let logs = root.appendingPathComponent("build_logs")
+        let newest = logs.appendingPathComponent("macos_phase1_20260404-040404")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newest, withIntermediateDirectories: true)
+
+        let url = RunLogLocator.logDirectory(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL
+        )
+
+        XCTAssertEqual(url?.standardizedFileURL.path, newest.standardizedFileURL.path)
+    }
 }

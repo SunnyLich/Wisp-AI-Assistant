@@ -9,7 +9,7 @@
 #   - Swift package tests for the AppKit host
 #
 # Use --build to also run swift build.
-# Use --full or --run to delegate to scripts/macos_phase1_validate.sh.
+# Use --full, --run, or --open to delegate to scripts/macos_phase1_validate.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -21,6 +21,10 @@ fi
 
 if [ "${1:-}" = "--run" ]; then
   exec /bin/bash scripts/macos_phase1_validate.sh --run
+fi
+
+if [ "${1:-}" = "--open" ]; then
+  exec /bin/bash scripts/macos_phase1_validate.sh --open
 fi
 
 RUN_BUILD=0

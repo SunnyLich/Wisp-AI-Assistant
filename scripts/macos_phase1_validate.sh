@@ -7,7 +7,9 @@
 #   - Swift package tests
 #   - Swift package build
 #
-# Pass --run to launch the Wisp menubar/overlay handshake after those checks.
+# Pass --run to launch the Wisp executable with terminal-attached logs after
+# those checks. Pass --open to launch the generated Wisp.app bundle the way
+# Finder does, without the shell-provided brain/log environment.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -17,6 +19,8 @@ LOG_DIR="$REPO_ROOT/build_logs/macos_phase1_$RUN_ID"
 ARCHIVE_PATH="$REPO_ROOT/build_logs/wisp-macos-logs_$RUN_ID.zip"
 SUMMARY_LOG="$LOG_DIR/summary.log"
 mkdir -p "$LOG_DIR"
+
+RUN_MODE="${1:-}"
 
 finish() {
   local status=$?
@@ -165,6 +169,11 @@ PLIST
   } > "$LOG_DIR/dev-app-bundle.log"
 
   echo "$macos_dir/Wisp"
+}
+
+open_dev_app_without_wisp_env() {
+  unset WISP_BRAIN_PYTHON WISP_BRAIN_DIR WISP_REPO_ROOT WISP_RUN_LOG_DIR
+  /usr/bin/open -n "$APP_BUNDLE"
 }
 
 if [ "$(uname -s 2>/dev/null || true)" != "Darwin" ]; then
@@ -381,14 +390,27 @@ cd macos
 run_logged "swift-test" swift test
 run_logged "swift-build" swift build
 APP_EXECUTABLE="$(build_dev_app_bundle)"
+APP_BUNDLE="$(cd "$(dirname "$APP_EXECUTABLE")/../.." && pwd)"
 log_info "Dev app bundle ready: $APP_EXECUTABLE"
 
-if [ "${1:-}" = "--run" ]; then
+if [ "$RUN_MODE" = "--run" ]; then
   collect_recent_crash_reports
   run_logged "wisp-app-run" "$APP_EXECUTABLE"
   collect_recent_crash_reports
   exit 0
 fi
 
+if [ "$RUN_MODE" = "--open" ]; then
+  collect_recent_crash_reports
+  log_info "Launching dev app bundle through macOS open: $APP_BUNDLE"
+  log_info "This exercises Finder-style brain/log/resource inference without WISP_BRAIN_* env vars."
+  run_logged "wisp-app-open" open_dev_app_without_wisp_env
+  collect_recent_crash_reports
+  echo
+  echo "Phase-1 validation passed and Wisp.app launch was requested."
+  echo "Use the tray menu or overlay right-click menu to quit Wisp when done."
+  exit 0
+fi
+
 echo
-echo "Phase-1 validation passed. Re-run with --run to launch the live handshake."
+echo "Phase-1 validation passed. Re-run with --run for terminal logs or --open for Finder-style app launch."
