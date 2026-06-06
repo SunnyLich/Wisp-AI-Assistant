@@ -178,6 +178,97 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["HOTKEY_SNIP"], "ctrl+option+5")
     }
 
+    func testPackagedAppSeedsDotEnvFromBundledTemplateWhenMissing() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root.appendingPathComponent("Applications/Wisp.app/Contents/Resources")
+        let applicationSupport = root.appendingPathComponent("Application Support")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try "LLM_PROVIDER=groq\nHOTKEY_SNIP=ctrl+alt+q\n".write(
+            to: resourceURL.appendingPathComponent(".env.example"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let seeded = WispConfig.seedUserDotEnvIfMissing(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupport
+        )
+
+        let target = applicationSupport.appendingPathComponent("Wisp/.env")
+        XCTAssertEqual(seeded?.standardizedFileURL.path, target.standardizedFileURL.path)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "LLM_PROVIDER=groq\nHOTKEY_SNIP=ctrl+alt+q\n")
+    }
+
+    func testPackagedAppDoesNotOverwriteExistingDotEnv() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root.appendingPathComponent("Applications/Wisp.app/Contents/Resources")
+        let applicationSupport = root.appendingPathComponent("Application Support")
+        let configRoot = applicationSupport.appendingPathComponent("Wisp")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: configRoot, withIntermediateDirectories: true)
+        try "LLM_PROVIDER=template\n".write(
+            to: resourceURL.appendingPathComponent(".env.example"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "LLM_PROVIDER=user\n".write(
+            to: configRoot.appendingPathComponent(".env"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let seeded = WispConfig.seedUserDotEnvIfMissing(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupport
+        )
+
+        XCTAssertNil(seeded)
+        XCTAssertEqual(
+            try String(contentsOf: configRoot.appendingPathComponent(".env"), encoding: .utf8),
+            "LLM_PROVIDER=user\n"
+        )
+    }
+
+    func testDevBundleDoesNotSeedCheckoutDotEnvFromBundledTemplate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resourceURL = root.appendingPathComponent("build/WispNative/Wisp.app/Contents/Resources")
+        let applicationSupport = root.appendingPathComponent("Application Support")
+        try FileManager.default.createDirectory(at: resourceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("macos/brain"),
+            withIntermediateDirectories: true
+        )
+        try "LLM_PROVIDER=template\n".write(
+            to: resourceURL.appendingPathComponent(".env.example"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let seeded = WispConfig.seedUserDotEnvIfMissing(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupport
+        )
+
+        XCTAssertNil(seeded)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".env").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: applicationSupport.appendingPathComponent("Wisp/.env").path))
+    }
+
     func testSettingsDraftLoadsNativeUIEnvironmentKeys() {
         let draft = SettingsDraft.load(environment: [
             "ICON_AUTO_HIDE": "yes",

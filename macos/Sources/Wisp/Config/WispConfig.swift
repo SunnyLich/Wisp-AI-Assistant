@@ -85,6 +85,43 @@ struct WispConfig: Equatable {
         NSLog("[wisp] inferred config root: %@", root.path)
     }
 
+    @discardableResult
+    static func seedUserDotEnvIfMissing(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = Bundle.main.resourceURL,
+        applicationSupportBaseDirectory: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let resourceURL,
+              let configRoot = packagedConfigRootForSeeding(
+                environment: environment,
+                currentDirectory: currentDirectory,
+                resourceURL: resourceURL,
+                applicationSupportBaseDirectory: applicationSupportBaseDirectory,
+                fileManager: fileManager
+              ) else {
+            return nil
+        }
+
+        let template = resourceURL.appendingPathComponent(".env.example")
+        let target = configRoot.appendingPathComponent(".env")
+        guard fileManager.fileExists(atPath: template.path),
+              !fileManager.fileExists(atPath: target.path) else {
+            return nil
+        }
+
+        do {
+            try fileManager.createDirectory(at: configRoot, withIntermediateDirectories: true)
+            try fileManager.copyItem(at: template, to: target)
+            NSLog("[wisp] seeded user config from bundled template: %@", target.path)
+            return target
+        } catch {
+            NSLog("[wisp] failed to seed bundled config template: %@", String(describing: error))
+            return nil
+        }
+    }
+
     static func loadValues(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         readDotEnv: Bool = true,
@@ -102,6 +139,35 @@ struct WispConfig: Equatable {
         )
         let fileValues = readDotEnv ? DotEnvFile.read(root.appendingPathComponent(".env")) : [:]
         return fileValues.merging(environment) { _, environmentValue in environmentValue }
+    }
+
+    private static func packagedConfigRootForSeeding(
+        environment: [String: String],
+        currentDirectory: URL,
+        resourceURL: URL,
+        applicationSupportBaseDirectory: URL?,
+        fileManager: FileManager
+    ) -> URL? {
+        if repoRootForDevBundle(resourceURL: resourceURL, fileManager: fileManager) != nil {
+            return nil
+        }
+        if currentDirectory.lastPathComponent == "macos" {
+            return nil
+        }
+        if fileManager.fileExists(atPath: currentDirectory.appendingPathComponent("macos/brain").path) {
+            return nil
+        }
+
+        let configRoot = userConfigRoot(
+            baseDirectory: applicationSupportBaseDirectory,
+            fileManager: fileManager
+        )
+        if let path = environment["WISP_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !path.isEmpty,
+           URL(fileURLWithPath: path).standardizedFileURL.path != configRoot.standardizedFileURL.path {
+            return nil
+        }
+        return configRoot
     }
 
     private static func repoRootForDevBundle(resourceURL: URL, fileManager: FileManager) -> URL? {

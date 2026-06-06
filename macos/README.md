@@ -54,8 +54,8 @@ Start Wisp (Mac Native).command
 This path validates the Python sidecar, Swift package, native menubar/overlay,
 and the current Swift parity slice. The generated dev bundle lives at
 `build/WispNative/Wisp.app` and stages release-shaped resources under
-`Contents/Resources`: `brain`, `core`, and `assets/doll`. When launched from
-Finder, that dev bundle can infer the checkout-relative `.venv` and
+`Contents/Resources`: `brain`, `core`, `.env.example`, and `assets/doll`.
+When launched from Finder, that dev bundle can infer the checkout-relative `.venv` and
 `macos/brain` sidecar from its `build/WispNative` location. A fully standalone
 bundle still needs `Contents/Resources/python-runtime/bin/python3` plus signing
 and notarization.
@@ -130,6 +130,10 @@ Packaged app settings are read from and saved to:
 ```bash
 ~/Library/Application Support/Wisp/.env
 ```
+
+On first packaged launch, if that file does not exist yet, Wisp copies the
+bundled `Contents/Resources/.env.example` template there. Existing user config
+is never overwritten.
 
 ## Native Package Signing
 
