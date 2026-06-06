@@ -7,6 +7,10 @@ private struct PendingSnipContext {
     var capturePath: String
 }
 
+private struct PendingIntentContext {
+    var snapshot: NativeContextSnapshot
+}
+
 private enum AgentHistoryStartMode {
     case retry
     case continueRun
@@ -53,10 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
     private let nativeContext = NativeContextController()
+    private let pasteback = NativePastebackController()
     private let screenCapture = ScreenCaptureController()
     private let audioRecorder = AudioRecorder()
     private let audioPlayer = AudioPlayer()
     private var brain: BrainClient?
+    private var pendingIntentContext: PendingIntentContext?
     private var pendingSnip: PendingSnipContext?
     private var agentRunTask: Task<Void, Never>?
 
@@ -245,12 +251,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showIntentPicker(callerIndex: Int = 0) {
         appConfig = WispConfig.load()
         let caller = callerIndex < appConfig.callers.count ? appConfig.callers[callerIndex] : CallerConfig.empty
+        pendingIntentContext = PendingIntentContext(
+            snapshot: nativeContext.snapshot(promptForAccessibility: false)
+        )
         intentPanel?.show(caller: caller)
     }
 
     private func runIntent(_ selection: IntentSelection) async {
+        let pendingContext = pendingIntentContext
+        pendingIntentContext = nil
         promptPanel?.setPrompt(selection.prompt)
-        await runPrompt(selection.prompt, mode: .query, caller: selection.caller)
+        if selection.caller.pasteBack {
+            await runPasteBack(selection.prompt, context: pendingContext)
+        } else {
+            await runPrompt(
+                selection.prompt,
+                mode: .query,
+                caller: selection.caller,
+                contextSnapshot: pendingContext?.snapshot
+            )
+        }
     }
 
     private func runEchoSmoke() {
@@ -304,6 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startSnip() {
         appConfig = WispConfig.load()
+        pendingIntentContext = nil
         pendingSnip = nil
         overlay?.setState(.listening)
         statusController?.setBrainStatus("snip selecting")
@@ -323,6 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 capturePath: result.url.path
             )
             let caller = snipCaller()
+            pendingIntentContext = nil
             statusController?.setBrainStatus("snip captured")
             intentPanel?.show(caller: caller)
             NSLog("[wisp] snip captured: %@ (%dx%d)", result.url.path, result.width, result.height)
@@ -337,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cancelSnip() {
+        pendingIntentContext = nil
         pendingSnip = nil
         overlay?.setState(.idle)
         statusController?.setBrainStatus("snip cancelled")
@@ -938,7 +961,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func runPrompt(_ text: String, mode: PromptMode, caller: CallerConfig? = nil) async {
+    private func runPasteBack(_ intentPrompt: String, context: PendingIntentContext?) async {
+        guard let client = brain else {
+            promptPanel?.failRequest("brain client is not available")
+            statusController?.setBrainStatus("paste-back error")
+            return
+        }
+
+        let selected = context?.snapshot.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !selected.isEmpty else {
+            promptPanel?.showPrompt()
+            promptPanel?.setResponse("No selected text was captured for paste-back.")
+            responseBubble?.showNotice("No selected text was captured for paste-back.", anchor: overlay?.frame)
+            overlay?.setState(.idle)
+            statusController?.setBrainStatus("paste-back skipped")
+            return
+        }
+
+        promptPanel?.beginRequest(mode: .query)
+        overlay?.setState(.thinking)
+        responseBubble?.startThinking(anchor: overlay?.frame)
+        statusController?.setBrainStatus("paste-back running")
+
+        var assembled = ""
+        do {
+            for try await item in client.stream(
+                "brain.rewrite",
+                ["intent_prompt": intentPrompt, "selected_text": selected]
+            ) {
+                switch item {
+                case .event(let name, let data) where name == "reply.chunk":
+                    if let chunk = data?["text"] as? String {
+                        assembled += chunk
+                        responseBubble?.appendChunk(chunk)
+                        promptPanel?.setResponse(assembled)
+                    }
+                case .result(let result):
+                    if let finalText = result?["text"] as? String {
+                        assembled = finalText
+                        responseBubble?.setText(finalText)
+                        promptPanel?.setResponse(finalText)
+                    }
+                default:
+                    break
+                }
+            }
+
+            let reply = assembled.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !reply.isEmpty else {
+                promptPanel?.setResponse("(empty rewrite)")
+                responseBubble?.showNotice("The rewrite was empty.", anchor: overlay?.frame)
+                statusController?.setBrainStatus("paste-back empty")
+                overlay?.setState(.idle)
+                promptPanel?.finishRequest()
+                return
+            }
+
+            try await pasteback.paste(reply, intoProcessID: context?.snapshot.processID)
+            promptPanel?.setResponse(reply)
+            responseBubble?.finish()
+            chatPanel?.recordExchange(user: "\(intentPrompt):\n\n\(selected)", assistant: reply)
+            statusController?.setBrainStatus("paste-back ok")
+            NSLog("[wisp] paste-back completed for %@", context?.snapshot.appName ?? "unknown app")
+        } catch {
+            let message = String(describing: error)
+            promptPanel?.failRequest(message)
+            responseBubble?.showNotice("Paste-back error: \(message)", anchor: overlay?.frame)
+            statusController?.setBrainStatus("paste-back error")
+            NSLog("[wisp] paste-back failed: %@", message)
+        }
+
+        overlay?.setState(.idle)
+        promptPanel?.finishRequest()
+    }
+
+    private func runPrompt(
+        _ text: String,
+        mode: PromptMode,
+        caller: CallerConfig? = nil,
+        contextSnapshot: NativeContextSnapshot? = nil
+    ) async {
         guard let client = brain else {
             promptPanel?.failRequest("brain client is not available")
             statusController?.setBrainStatus("error: missing client")
@@ -955,7 +1057,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("\(mode.rawValue.lowercased()) running")
 
         do {
-            let params = try paramsForPrompt(text, mode: mode, caller: caller)
+            let params = try paramsForPrompt(text, mode: mode, caller: caller, contextSnapshot: contextSnapshot)
             var assembled = ""
 
             for try await item in client.stream(mode.method, params) {
@@ -1000,7 +1102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func paramsForPrompt(_ text: String, mode: PromptMode, caller: CallerConfig? = nil) throws -> [String: Any] {
+    private func paramsForPrompt(
+        _ text: String,
+        mode: PromptMode,
+        caller: CallerConfig? = nil,
+        contextSnapshot: NativeContextSnapshot? = nil
+    ) throws -> [String: Any] {
         switch mode {
         case .echo:
             return ["text": text, "chunk_size": 1, "delay": 0.02]
@@ -1020,7 +1127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ]
             }
             let policy = caller ?? (appConfig.callers.first ?? CallerConfig.empty)
-            let snapshot = nativeContext.snapshot(promptForAccessibility: false)
+            let snapshot = contextSnapshot ?? nativeContext.snapshot(promptForAccessibility: false)
             var params: [String: Any] = [
                 "intent_prompt": text,
                 "ambient_text": policy.contextAmbient ? snapshot.ambientText(includeClipboard: policy.contextClipboard) : "",

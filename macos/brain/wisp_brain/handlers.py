@@ -519,6 +519,41 @@ def _stream_query_reply(
     )
 
 
+@handler("brain.rewrite", streaming=True)
+def brain_rewrite(
+    ctx: StreamContext,
+    selected_text: str = "",
+    intent_prompt: str = "Rewrite or fix the following text",
+) -> dict[str, Any]:
+    """Stream an inline rewrite for native paste-back callers."""
+    selected_text = selected_text.strip()
+    if not selected_text:
+        raise ValueError("selected_text is required")
+
+    parts: list[str] = []
+    for chunk in _stream_rewrite_reply(selected_text, intent_prompt):
+        if ctx.cancelled:
+            break
+        parts.append(chunk)
+        ctx.emit("reply.chunk", {"text": chunk})
+
+    full = "".join(parts)
+    ctx.emit("reply.done", {"text": full})
+    return {"text": full}
+
+
+def _stream_rewrite_reply(selected_text: str, intent_prompt: str) -> Iterator[str]:
+    if _offline_brain():
+        reply = f"[fake-rewrite] {intent_prompt}: {selected_text}"
+        for word in reply.split(" "):
+            yield word + " "
+        return
+
+    from core.llm_clients.client import stream_rewrite
+
+    yield from stream_rewrite(selected_text, intent_prompt)
+
+
 @handler("brain.chat", streaming=True)
 def brain_chat(
     ctx: StreamContext,

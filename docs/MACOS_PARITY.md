@@ -21,8 +21,8 @@ work until each visible surface is ported.
 | Floating overlay | Wisp state art: idle/listening/thinking/speaking | Qt overlay | Swift `OverlayPanel` |
 | Tray/menu | Ask, chat, memory, plugins, settings, voice, quit | Qt tray | Swift `StatusItemController` |
 | Caller intents/hotkeys | `CALLER_*` config, caller hotkeys, W/A/D/custom picker | Qt `IntentOverlay` | Swift `HotkeyController` + `IntentPanel` |
-| Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` |
-| Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController` and `ScreenCaptureController` |
+| Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` and `brain.rewrite` |
+| Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController`, `NativePastebackController`, and `ScreenCaptureController` |
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback + Python sidecar models |
 | Chat | multi-turn conversation history and streaming replies | Qt window | Swift `ChatPanel` in progress |
 | Memory | durable facts: list, add, edit, delete, search | Qt `MemoryViewer` | Swift `MemoryPanel` + `brain.memory.*` |
@@ -42,7 +42,7 @@ work until each visible surface is ported.
 | Caller intent picker/hotkeys | Done | In progress native |
 | Text prompt/query | Done | In progress through `brain.query` |
 | Streaming reply surface | Done | In progress native bubble |
-| Selected text and ambient context | Done | Partial |
+| Selected text and ambient context | Done | In progress native snapshot |
 | Screenshot context | Done | Partial |
 | Voice query | Done | Partial |
 | TTS playback | Done | Partial |

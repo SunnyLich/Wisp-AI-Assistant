@@ -84,3 +84,31 @@ def test_query_precancelled_yields_empty(record_ctx):
     )
     assert result["text"] == ""
     assert _chunks(events) == []
+
+
+def test_rewrite_is_registered_as_streaming():
+    assert "brain.rewrite" in handlers.HANDLERS
+    assert "brain.rewrite" in handlers.STREAMING
+
+
+def test_rewrite_streams_selected_text(record_ctx):
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.rewrite"](
+        ctx,
+        intent_prompt="Fix grammar",
+        selected_text="this are rough",
+    )
+
+    assert result["text"].startswith("[fake-rewrite]")
+    assert "Fix grammar" in result["text"]
+    assert "this are rough" in result["text"]
+    assert "".join(_chunks(events)) == result["text"]
+    done = [data for event, data in events if event == "reply.done"]
+    assert done == [{"text": result["text"]}]
+
+
+def test_rewrite_requires_selected_text(record_ctx):
+    _events, ctx = record_ctx()
+
+    with pytest.raises(ValueError, match="selected_text"):
+        handlers.HANDLERS["brain.rewrite"](ctx, intent_prompt="Fix grammar")
