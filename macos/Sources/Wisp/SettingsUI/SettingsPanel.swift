@@ -54,6 +54,8 @@ struct SettingsDraft: Equatable {
     var contextAmbientDocumentMaxChars: String
     var contextToolDocumentMaxChars: String
 
+    var addContextHotkey: String
+    var clearContextHotkey: String
     var snipHotkey: String
     var snipContextAmbient: Bool
     var snipContextDocuments: Bool
@@ -116,6 +118,8 @@ struct SettingsDraft: Equatable {
             contextBrowserMaxChars: values["CONTEXT_BROWSER_MAX_CHARS"] ?? "4000",
             contextAmbientDocumentMaxChars: values["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"] ?? "8000",
             contextToolDocumentMaxChars: values["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"] ?? "50000",
+            addContextHotkey: values["HOTKEY_ADD_CONTEXT"] ?? "alt+q",
+            clearContextHotkey: values["HOTKEY_CLEAR_CONTEXT"] ?? "alt+w",
             snipHotkey: values["HOTKEY_SNIP"] ?? "ctrl+alt+q",
             snipContextAmbient: boolValue(values["SNIP_CONTEXT_AMBIENT"], default: true),
             snipContextDocuments: boolValue(values["SNIP_CONTEXT_DOCUMENTS"], default: false),
@@ -165,6 +169,8 @@ struct SettingsDraft: Equatable {
         contextBrowserMaxChars: "4000",
         contextAmbientDocumentMaxChars: "8000",
         contextToolDocumentMaxChars: "50000",
+        addContextHotkey: "alt+q",
+        clearContextHotkey: "alt+w",
         snipHotkey: "ctrl+alt+q",
         snipContextAmbient: true,
         snipContextDocuments: false,
@@ -223,6 +229,8 @@ struct SettingsDraft: Equatable {
             "CONTEXT_BROWSER_MAX_CHARS": contextBrowserMaxChars,
             "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": contextAmbientDocumentMaxChars,
             "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": contextToolDocumentMaxChars,
+            "HOTKEY_ADD_CONTEXT": addContextHotkey,
+            "HOTKEY_CLEAR_CONTEXT": clearContextHotkey,
             "HOTKEY_SNIP": snipHotkey,
             "SNIP_CONTEXT_AMBIENT": snipContextAmbient ? "true" : "false",
             "SNIP_CONTEXT_DOCUMENTS": snipContextDocuments ? "true" : "false",
@@ -622,6 +630,12 @@ private struct SettingsPanelView: View {
                 SettingsTextField("Browser chars", text: $model.draft.contextBrowserMaxChars)
                 SettingsTextField("Auto doc chars", text: $model.draft.contextAmbientDocumentMaxChars)
                 SettingsTextField("Tool doc chars", text: $model.draft.contextToolDocumentMaxChars)
+            }
+            .padding(4)
+
+            SettingsSection("Context Hotkeys") {
+                SettingsTextField("Add context", text: $model.draft.addContextHotkey)
+                SettingsTextField("Clear context", text: $model.draft.clearContextHotkey)
             }
             .padding(4)
 

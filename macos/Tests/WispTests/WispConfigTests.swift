@@ -78,12 +78,16 @@ final class WispConfigTests: XCTestCase {
             "CONTEXT_BROWSER_MAX_CHARS": "6000",
             "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": "9000",
             "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": "65000",
+            "HOTKEY_ADD_CONTEXT": "ctrl+option+a",
+            "HOTKEY_CLEAR_CONTEXT": "ctrl+option+c",
         ], readDotEnv: false)
 
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
         XCTAssertEqual(draft.contextBrowserMaxChars, "6000")
         XCTAssertEqual(draft.contextAmbientDocumentMaxChars, "9000")
         XCTAssertEqual(draft.contextToolDocumentMaxChars, "65000")
+        XCTAssertEqual(draft.addContextHotkey, "ctrl+option+a")
+        XCTAssertEqual(draft.clearContextHotkey, "ctrl+option+c")
     }
 
     func testSettingsDraftDefaultsToolPluginDirectoryToRepoModelTools() {
@@ -184,6 +188,8 @@ final class WispConfigTests: XCTestCase {
         draft.contextBrowserMaxChars = "6100"
         draft.contextAmbientDocumentMaxChars = "9100"
         draft.contextToolDocumentMaxChars = "66000"
+        draft.addContextHotkey = "ctrl+option+a"
+        draft.clearContextHotkey = "ctrl+option+c"
         draft.callers = [
             SettingsCallerDraft(
                 hotkey: "ctrl+option+space",
@@ -214,6 +220,8 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["CONTEXT_BROWSER_MAX_CHARS"], "6100")
         XCTAssertEqual(values["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"], "9100")
         XCTAssertEqual(values["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"], "66000")
+        XCTAssertEqual(values["HOTKEY_ADD_CONTEXT"], "ctrl+option+a")
+        XCTAssertEqual(values["HOTKEY_CLEAR_CONTEXT"], "ctrl+option+c")
         XCTAssertEqual(values["CALLER_COUNT"], "1")
         XCTAssertEqual(values["CALLER_1_LABEL"], "Research")
         XCTAssertEqual(values["CALLER_1_PASTE_BACK"], "true")
