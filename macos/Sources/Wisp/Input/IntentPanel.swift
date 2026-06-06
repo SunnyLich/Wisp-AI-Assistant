@@ -181,7 +181,7 @@ private struct IntentPickerView: View {
         VStack(spacing: 0) {
             Text(model.title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.72))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
                 .padding(.top, 10)
@@ -214,7 +214,7 @@ private struct IntentPickerView: View {
 
             Text("ESC to cancel")
                 .font(.caption2)
-                .foregroundStyle(.secondary.opacity(0.7))
+                .foregroundStyle(Color.white.opacity(0.48))
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
@@ -251,11 +251,11 @@ private struct IntentRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.label)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.white.opacity(0.94))
                     .lineLimit(1)
                 Text(row.subtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.62))
                     .lineLimit(1)
             }
             Spacer()
