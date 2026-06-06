@@ -75,9 +75,15 @@ final class WispConfigTests: XCTestCase {
     func testSettingsDraftLoadsToolPluginDirectoryKey() {
         let draft = SettingsDraft.load(environment: [
             "TOOL_PLUGIN_DIR": "/Users/example/wisp/model_tools",
+            "CONTEXT_BROWSER_MAX_CHARS": "6000",
+            "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": "9000",
+            "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": "65000",
         ], readDotEnv: false)
 
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
+        XCTAssertEqual(draft.contextBrowserMaxChars, "6000")
+        XCTAssertEqual(draft.contextAmbientDocumentMaxChars, "9000")
+        XCTAssertEqual(draft.contextToolDocumentMaxChars, "65000")
     }
 
     func testSettingsDraftDefaultsToolPluginDirectoryToRepoModelTools() {
@@ -175,6 +181,9 @@ final class WispConfigTests: XCTestCase {
         draft.llmProvider = "anthropic"
         draft.llmModel = "claude-sonnet-4-5"
         draft.toolPluginDir = "/Users/example/wisp/model_tools"
+        draft.contextBrowserMaxChars = "6100"
+        draft.contextAmbientDocumentMaxChars = "9100"
+        draft.contextToolDocumentMaxChars = "66000"
         draft.callers = [
             SettingsCallerDraft(
                 hotkey: "ctrl+option+space",
@@ -202,6 +211,9 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["LLM_PROVIDER"], "anthropic")
         XCTAssertEqual(values["LLM_MODEL"], "claude-sonnet-4-5")
         XCTAssertEqual(values["TOOL_PLUGIN_DIR"], "/Users/example/wisp/model_tools")
+        XCTAssertEqual(values["CONTEXT_BROWSER_MAX_CHARS"], "6100")
+        XCTAssertEqual(values["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"], "9100")
+        XCTAssertEqual(values["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"], "66000")
         XCTAssertEqual(values["CALLER_COUNT"], "1")
         XCTAssertEqual(values["CALLER_1_LABEL"], "Research")
         XCTAssertEqual(values["CALLER_1_PASTE_BACK"], "true")

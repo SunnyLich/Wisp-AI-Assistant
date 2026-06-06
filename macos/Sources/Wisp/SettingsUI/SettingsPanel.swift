@@ -50,6 +50,9 @@ struct SettingsDraft: Equatable {
     var memoryTopK: String
     var memoryRelevanceMaxDistance: String
     var memorySTMTokenBudget: String
+    var contextBrowserMaxChars: String
+    var contextAmbientDocumentMaxChars: String
+    var contextToolDocumentMaxChars: String
 
     var snipHotkey: String
     var snipContextAmbient: Bool
@@ -110,6 +113,9 @@ struct SettingsDraft: Equatable {
             memoryTopK: values["MEMORY_TOP_K"] ?? "3",
             memoryRelevanceMaxDistance: values["MEMORY_RELEVANCE_MAX_DISTANCE"] ?? "0.55",
             memorySTMTokenBudget: values["MEMORY_STM_TOKEN_BUDGET"] ?? "4000",
+            contextBrowserMaxChars: values["CONTEXT_BROWSER_MAX_CHARS"] ?? "4000",
+            contextAmbientDocumentMaxChars: values["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"] ?? "8000",
+            contextToolDocumentMaxChars: values["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"] ?? "50000",
             snipHotkey: values["HOTKEY_SNIP"] ?? "ctrl+alt+q",
             snipContextAmbient: boolValue(values["SNIP_CONTEXT_AMBIENT"], default: true),
             snipContextDocuments: boolValue(values["SNIP_CONTEXT_DOCUMENTS"], default: false),
@@ -156,6 +162,9 @@ struct SettingsDraft: Equatable {
         memoryTopK: "3",
         memoryRelevanceMaxDistance: "0.55",
         memorySTMTokenBudget: "4000",
+        contextBrowserMaxChars: "4000",
+        contextAmbientDocumentMaxChars: "8000",
+        contextToolDocumentMaxChars: "50000",
         snipHotkey: "ctrl+alt+q",
         snipContextAmbient: true,
         snipContextDocuments: false,
@@ -211,6 +220,9 @@ struct SettingsDraft: Equatable {
             "MEMORY_TOP_K": memoryTopK,
             "MEMORY_RELEVANCE_MAX_DISTANCE": memoryRelevanceMaxDistance,
             "MEMORY_STM_TOKEN_BUDGET": memorySTMTokenBudget,
+            "CONTEXT_BROWSER_MAX_CHARS": contextBrowserMaxChars,
+            "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": contextAmbientDocumentMaxChars,
+            "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": contextToolDocumentMaxChars,
             "HOTKEY_SNIP": snipHotkey,
             "SNIP_CONTEXT_AMBIENT": snipContextAmbient ? "true" : "false",
             "SNIP_CONTEXT_DOCUMENTS": snipContextDocuments ? "true" : "false",
@@ -606,6 +618,13 @@ private struct SettingsPanelView: View {
 
     private var callersTab: some View {
         VStack(spacing: 10) {
+            SettingsSection("Context Limits") {
+                SettingsTextField("Browser chars", text: $model.draft.contextBrowserMaxChars)
+                SettingsTextField("Auto doc chars", text: $model.draft.contextAmbientDocumentMaxChars)
+                SettingsTextField("Tool doc chars", text: $model.draft.contextToolDocumentMaxChars)
+            }
+            .padding(4)
+
             HStack {
                 Text("\(model.draft.callers.count) caller\(model.draft.callers.count == 1 ? "" : "s")")
                     .font(.system(size: 12, weight: .semibold))
