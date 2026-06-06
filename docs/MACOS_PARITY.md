@@ -24,7 +24,7 @@ work until each visible surface is ported.
 | Prompt/query brain | `core.query_pipeline`, `core.llm_clients` | Direct Python calls | Python sidecar `brain.query` and `brain.rewrite` |
 | Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController` with hardened AX reads, `NativePastebackController`, and `ScreenCaptureController` |
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback with buffered native context + Python sidecar models |
-| Response bubble | live compact reply surface, reveal timing, click-through to chat | Qt `SpeechBubble` | Swift `ResponseBubblePanel` with native word reveal in progress |
+| Response bubble | live compact reply surface, reveal timing, click-through to chat | Qt `SpeechBubble` | Swift `ResponseBubblePanel` with native word reveal and shared sizing/colors in progress |
 | Chat | multi-turn conversation history and streaming replies | Qt window | Swift `ChatPanel` with native history controls in progress |
 | Memory | durable facts: list, add, edit, delete, search | Qt `MemoryViewer` | Swift `MemoryPanel` + `brain.memory.*` |
 | Settings | shared `.env` config, models, callers, voice, memory, UI knobs | Qt `SettingsDialog` | Swift `SettingsPanel` with LLM/TTS tests and bubble UI keys in progress |

@@ -10,9 +10,10 @@ final class ResponseBubblePanel: NSPanel {
     private var hideTimer: Timer?
 
     init(onTap: @escaping () -> Void = {}) {
-        self.model = ResponseBubbleModel(onTap: onTap)
+        let config = ResponseBubbleConfig.load()
+        self.model = ResponseBubbleModel(onTap: onTap, config: config)
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 356, height: 96),
+            contentRect: NSRect(x: 0, y: 0, width: config.panelWidth, height: config.panelHeight),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -198,6 +199,62 @@ final class ResponseBubblePanel: NSPanel {
     }
 }
 
+struct ResponseBubbleConfig {
+    var bubbleWidth: CGFloat
+    var lines: Int
+    var bubbleColor: NSColor
+    var textColor: NSColor
+
+    var tailWidth: CGFloat { 12 }
+    var bubbleHeight: CGFloat { CGFloat(lines) * 20 + 28 }
+    var panelWidth: CGFloat { bubbleWidth + tailWidth + 4 }
+    var panelHeight: CGFloat { bubbleHeight + 8 }
+
+    static func load() -> ResponseBubbleConfig {
+        let values = WispConfig.loadValues()
+        return ResponseBubbleConfig(
+            bubbleWidth: CGFloat(max(220, min(720, intValue(values["BUBBLE_WIDTH"], default: 340)))),
+            lines: max(1, min(8, intValue(values["BUBBLE_LINES"], default: 3))),
+            bubbleColor: color(values["BUBBLE_COLOR"], fallback: NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.15, alpha: 0.92)),
+            textColor: color(values["BUBBLE_TEXT_COLOR"], fallback: NSColor(calibratedWhite: 0.92, alpha: 1.0))
+        )
+    }
+
+    private static func intValue(_ raw: String?, default fallback: Int) -> Int {
+        guard let raw, let value = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return fallback
+        }
+        return value
+    }
+
+    private static func color(_ raw: String?, fallback: NSColor) -> NSColor {
+        let value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.hasPrefix("#") else {
+            return fallback
+        }
+        let hex = String(value.dropFirst())
+        guard hex.count == 6 || hex.count == 8, let number = UInt64(hex, radix: 16) else {
+            return fallback
+        }
+        let r: CGFloat
+        let g: CGFloat
+        let b: CGFloat
+        let a: CGFloat
+        if hex.count == 8 {
+            r = CGFloat((number >> 24) & 0xff) / 255.0
+            g = CGFloat((number >> 16) & 0xff) / 255.0
+            b = CGFloat((number >> 8) & 0xff) / 255.0
+            a = CGFloat(number & 0xff) / 255.0
+        } else {
+            r = CGFloat((number >> 16) & 0xff) / 255.0
+            g = CGFloat((number >> 8) & 0xff) / 255.0
+            b = CGFloat(number & 0xff) / 255.0
+            a = 1.0
+        }
+        return NSColor(calibratedRed: r, green: g, blue: b, alpha: a)
+    }
+}
+
 @MainActor
 final class ResponseBubbleModel: ObservableObject {
     enum Mode {
@@ -215,9 +272,11 @@ final class ResponseBubbleModel: ObservableObject {
     var isFinishing = false
 
     let onTap: () -> Void
+    let config: ResponseBubbleConfig
 
-    init(onTap: @escaping () -> Void) {
+    init(onTap: @escaping () -> Void, config: ResponseBubbleConfig) {
         self.onTap = onTap
+        self.config = config
     }
 
     var displayText: String {
@@ -277,7 +336,7 @@ private struct ResponseBubbleView: View {
         HStack(spacing: 0) {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(nsColor: NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.15, alpha: 0.92)))
+                    .fill(Color(nsColor: model.config.bubbleColor))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(Color.white.opacity(0.08), lineWidth: 1)
@@ -286,19 +345,19 @@ private struct ResponseBubbleView: View {
                 Text(model.displayText.isEmpty ? " " : model.displayText)
                     .font(.system(size: 13))
                     .foregroundStyle(textColor)
-                    .lineLimit(3)
+                    .lineLimit(model.config.lines)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
             }
-            .frame(width: 340, height: 88)
+            .frame(width: model.config.bubbleWidth, height: model.config.bubbleHeight)
 
             BubbleTail()
-                .fill(Color(nsColor: NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.15, alpha: 0.92)))
-                .frame(width: 12, height: 18)
+                .fill(Color(nsColor: model.config.bubbleColor))
+                .frame(width: model.config.tailWidth, height: 18)
         }
-        .frame(width: 356, height: 96)
+        .frame(width: model.config.panelWidth, height: model.config.panelHeight)
         .contentShape(Rectangle())
         .onTapGesture {
             model.onTap()
@@ -314,7 +373,7 @@ private struct ResponseBubbleView: View {
         case .notice:
             return Color(nsColor: .systemYellow)
         default:
-            return Color(nsColor: NSColor(calibratedWhite: 0.92, alpha: 1.0))
+            return Color(nsColor: model.config.textColor)
         }
     }
 }
