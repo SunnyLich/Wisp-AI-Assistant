@@ -72,6 +72,50 @@ final class WispConfigTests: XCTestCase {
         XCTAssertTrue(config.snip.contextTools)
     }
 
+    func testSettingsDraftLoadsNativeUIEnvironmentKeys() {
+        let draft = SettingsDraft.load(environment: [
+            "ICON_AUTO_HIDE": "yes",
+            "ICON_SIZE": "112",
+            "ICON_BACKSTOP_MS": "2750",
+            "CHAT_AUTO_ELABORATE": "on",
+            "CHAT_ELABORATE_PROMPT": "Say more with examples.",
+            "BUBBLE_WIDTH": "420",
+            "BUBBLE_LINES": "5",
+            "BUBBLE_COLOR": "#101820ee",
+            "BUBBLE_TEXT_COLOR": "#f7f7f7",
+            "BUBBLE_READ_WORD_COLOR": "#ffcc33",
+            "BUBBLE_REVEAL_WPM": "155",
+            "BUBBLE_HOLD_REVEAL_WPM": "430",
+            "BUBBLE_HIDE_DELAY_MS": "4800",
+        ], readDotEnv: false)
+
+        XCTAssertTrue(draft.iconAutoHide)
+        XCTAssertEqual(draft.iconSize, "112")
+        XCTAssertEqual(draft.iconBackstopMS, "2750")
+        XCTAssertTrue(draft.chatAutoElaborate)
+        XCTAssertEqual(draft.chatElaboratePrompt, "Say more with examples.")
+        XCTAssertEqual(draft.bubbleWidth, "420")
+        XCTAssertEqual(draft.bubbleLines, "5")
+        XCTAssertEqual(draft.bubbleColor, "#101820ee")
+        XCTAssertEqual(draft.bubbleTextColor, "#f7f7f7")
+        XCTAssertEqual(draft.bubbleReadWordColor, "#ffcc33")
+        XCTAssertEqual(draft.bubbleRevealWPM, "155")
+        XCTAssertEqual(draft.bubbleHoldRevealWPM, "430")
+        XCTAssertEqual(draft.bubbleHideDelayMS, "4800")
+    }
+
+    func testSettingsDraftLoadsLegacyIconEnvironmentFallbacks() {
+        let draft = SettingsDraft.load(environment: [
+            "DOLL_AUTO_HIDE": "true",
+            "DOLL_SIZE": "96",
+            "DOLL_ICON_BACKSTOP_MS": "6400",
+        ], readDotEnv: false)
+
+        XCTAssertTrue(draft.iconAutoHide)
+        XCTAssertEqual(draft.iconSize, "96")
+        XCTAssertEqual(draft.iconBackstopMS, "6400")
+    }
+
     func testScreenshotModeAcceptsLegacyBooleanValues() {
         XCTAssertEqual(ScreenshotMode.normalized("true"), .auto)
         XCTAssertEqual(ScreenshotMode.normalized("tool"), .model)
@@ -152,5 +196,38 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(values["SNIP_CONTEXT_AMBIENT"], "true")
         XCTAssertEqual(values["SNIP_CONTEXT_DOCUMENTS"], "false")
         XCTAssertEqual(values["SNIP_CONTEXT_TOOLS"], "false")
+    }
+
+    func testSettingsDraftSerializesNativeUIEnvironmentContract() {
+        var draft = SettingsDraft.empty
+        draft.iconAutoHide = true
+        draft.iconSize = "104"
+        draft.iconBackstopMS = "3750"
+        draft.chatAutoElaborate = true
+        draft.chatElaboratePrompt = "Continue the last answer."
+        draft.bubbleWidth = "390"
+        draft.bubbleLines = "4"
+        draft.bubbleColor = "#202530dd"
+        draft.bubbleTextColor = "#eeeeee"
+        draft.bubbleReadWordColor = "#7ab8ff"
+        draft.bubbleRevealWPM = "165"
+        draft.bubbleHoldRevealWPM = "460"
+        draft.bubbleHideDelayMS = "4100"
+
+        let values = draft.envValues()
+
+        XCTAssertEqual(values["ICON_AUTO_HIDE"], "true")
+        XCTAssertEqual(values["ICON_SIZE"], "104")
+        XCTAssertEqual(values["ICON_BACKSTOP_MS"], "3750")
+        XCTAssertEqual(values["CHAT_AUTO_ELABORATE"], "true")
+        XCTAssertEqual(values["CHAT_ELABORATE_PROMPT"], "Continue the last answer.")
+        XCTAssertEqual(values["BUBBLE_WIDTH"], "390")
+        XCTAssertEqual(values["BUBBLE_LINES"], "4")
+        XCTAssertEqual(values["BUBBLE_COLOR"], "#202530dd")
+        XCTAssertEqual(values["BUBBLE_TEXT_COLOR"], "#eeeeee")
+        XCTAssertEqual(values["BUBBLE_READ_WORD_COLOR"], "#7ab8ff")
+        XCTAssertEqual(values["BUBBLE_REVEAL_WPM"], "165")
+        XCTAssertEqual(values["BUBBLE_HOLD_REVEAL_WPM"], "460")
+        XCTAssertEqual(values["BUBBLE_HIDE_DELAY_MS"], "4100")
     }
 }
