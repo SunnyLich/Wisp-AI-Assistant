@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var memoryPanel: MemoryPanel?
     private var settingsPanel: SettingsPanel?
     private var pluginPanel: PluginManagerPanel?
+    private var agentTaskPanel: AgentTaskPanel?
     private var snipPanel: SnipOverlayPanel?
     private var hotkey: HotkeyController?
     private var appConfig = WispConfig.load()
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var brain: BrainClient?
     private var qtUI: QtUIBridge?
     private var pendingSnip: PendingSnipContext?
+    private var agentRunTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let client = BrainClient(config: BrainLocator.resolve())
@@ -95,6 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        agentTaskPanel = AgentTaskPanel(
+            onStart: { [weak self] draft in
+                self?.startNativeAgentTask(draft)
+            },
+            onCancel: { [weak self] in
+                self?.cancelNativeAgentTask()
+            }
+        )
+
         snipPanel = SnipOverlayPanel(
             onSelection: { [weak self] selection in
                 self?.handleSnipSelection(selection)
@@ -123,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowNewChat: { [weak self] in self?.showNativeChat(new: true) },
             onShowMemory: { [weak self] in self?.showNativeMemory() },
             onShowPluginManager: { [weak self] in self?.showNativePluginManager() },
-            onShowAgentTask: { [weak self] in self?.showQtAgentTask() },
+            onShowAgentTask: { [weak self] in self?.showNativeAgentTask() },
             onShowAgentHistory: { [weak self] in self?.showQtAgentHistory() },
             onStartVoiceQuery: { [weak self] in self?.startVoiceQuery() },
             onStopVoiceQuery: { [weak self] in self?.stopVoiceQuery() },
@@ -150,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        agentRunTask?.cancel()
         qtUI?.shutdown()
         let client = brain
         Task { await client?.shutdown() }
@@ -371,8 +383,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("plugins opened")
     }
 
-    private func showQtAgentTask() {
-        withQtUI("Agent task") { try $0.showAgentTask() }
+    private func showNativeAgentTask() {
+        agentTaskPanel?.reloadDraft()
+        agentTaskPanel?.showTask()
+        statusController?.setBrainStatus("agent task opened")
+    }
+
+    private func startNativeAgentTask(_ draft: AgentTaskDraft) {
+        guard agentRunTask == nil else {
+            agentTaskPanel?.fail("An agent task is already running.")
+            return
+        }
+        guard brain != nil else {
+            agentTaskPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("agent error")
+            return
+        }
+
+        agentTaskPanel?.beginRun()
+        overlay?.setState(.thinking)
+        statusController?.setBrainStatus("agent running")
+        let params: [String: Any] = ["spec": draft.payload]
+        agentRunTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runNativeAgentTask(params: params)
+        }
+    }
+
+    private func cancelNativeAgentTask() {
+        agentRunTask?.cancel()
+        statusController?.setBrainStatus("agent cancelling")
+    }
+
+    private func runNativeAgentTask(params: [String: Any]) async {
+        guard let client = brain else { return }
+        defer {
+            agentRunTask = nil
+            overlay?.setState(.idle)
+        }
+
+        var resultPayload: [String: Any]?
+        do {
+            for try await item in client.stream("brain.agent.run", params) {
+                try Task.checkCancellation()
+                switch item {
+                case .event(let name, let data) where name == "agent.log":
+                    if let line = data?["line"] as? String {
+                        agentTaskPanel?.appendLog(line)
+                    }
+                case .event(let name, let data) where name == "agent.trace":
+                    if let entry = data?["entry"] as? String {
+                        agentTaskPanel?.appendTrace(entry)
+                    }
+                case .event(let name, let data) where name == "agent.done":
+                    resultPayload = data
+                case .result(let result):
+                    resultPayload = result
+                default:
+                    break
+                }
+            }
+
+            let result = agentRunResult(from: resultPayload)
+            agentTaskPanel?.finishRun(result)
+            statusController?.setBrainStatus(result.cancelled ? "agent cancelled" : "agent done")
+            NSLog("[wisp] agent run finished: %@", result.runDir)
+        } catch is CancellationError {
+            agentTaskPanel?.finishRun(AgentRunResult(runDir: "", final: "", error: "", cancelled: true))
+            statusController?.setBrainStatus("agent cancelled")
+            NSLog("[wisp] agent run cancelled")
+        } catch {
+            let message = String(describing: error)
+            agentTaskPanel?.fail(message)
+            statusController?.setBrainStatus("agent error")
+            NSLog("[wisp] agent run failed: %@", message)
+        }
+    }
+
+    private func agentRunResult(from payload: [String: Any]?) -> AgentRunResult {
+        AgentRunResult(
+            runDir: payload?["run_dir"] as? String ?? "",
+            final: payload?["final"] as? String ?? "",
+            error: payload?["error"] as? String ?? "",
+            cancelled: payload?["cancelled"] as? Bool ?? false
+        )
     }
 
     private func showQtAgentHistory() {

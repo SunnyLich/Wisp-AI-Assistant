@@ -28,10 +28,6 @@ final class QtUIBridge {
         self.config = config
     }
 
-    func showAgentTask() throws {
-        try send("ui.show_agent_task")
-    }
-
     func showAgentHistory() throws {
         try send("ui.show_agent_history")
     }
