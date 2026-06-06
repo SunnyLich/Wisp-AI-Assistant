@@ -3,12 +3,10 @@ import Foundation
 
 final class VisualContrastTests: XCTestCase {
 
-    func testCustomDarkSurfacesDoNotUseAdaptivePrimaryOrSecondaryText() throws {
-        for path in [
-            "Sources/Wisp/Chat/ChatPanel.swift",
-            "Sources/Wisp/Input/IntentPanel.swift",
-        ] {
-            let source = try readSource(path)
+    func testCustomDarkSwiftUISurfacesDoNotUseAdaptivePrimaryOrSecondaryText() throws {
+        for url in try swiftSourcesWithCustomDarkSurfaces() {
+            let source = try String(contentsOf: url, encoding: .utf8)
+            let path = sourceRoot().relativePath(to: url)
             XCTAssertFalse(
                 source.contains(".foregroundStyle(.primary)"),
                 "\(path) has a custom dark surface; use explicit readable colors instead of .primary."
@@ -20,11 +18,32 @@ final class VisualContrastTests: XCTestCase {
         }
     }
 
-    private func readSource(_ relativePath: String) throws -> String {
+    private func swiftSourcesWithCustomDarkSurfaces() throws -> [URL] {
+        let root = sourceRoot().appendingPathComponent("Sources/Wisp")
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: nil
+        ) else {
+            return []
+        }
+
+        return try enumerator.compactMap { item in
+            guard let url = item as? URL, url.pathExtension == "swift" else { return nil }
+            let source = try String(contentsOf: url, encoding: .utf8)
+            return hasCustomDarkSurface(source) ? url : nil
+        }
+    }
+
+    private func hasCustomDarkSurface(_ source: String) -> Bool {
+        source.contains("calibratedWhite: 0.")
+            || source.contains("calibratedRed: 0.")
+            || source.contains("NSColor.black")
+            || source.contains("Color.black")
+    }
+
+    private func sourceRoot() -> URL {
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let url = sourceRoot(from: currentDirectory)
-            .appendingPathComponent(relativePath)
-        return try String(contentsOf: url, encoding: .utf8)
+        return sourceRoot(from: currentDirectory)
     }
 
     private func sourceRoot(from currentDirectory: URL) -> URL {
@@ -33,5 +52,14 @@ final class VisualContrastTests: XCTestCase {
             return currentDirectory
         }
         return currentDirectory.appendingPathComponent("macos")
+    }
+}
+
+private extension URL {
+    func relativePath(to child: URL) -> String {
+        let base = standardizedFileURL.path
+        let target = child.standardizedFileURL.path
+        guard target.hasPrefix(base) else { return target }
+        return String(target.dropFirst(base.count + 1))
     }
 }
