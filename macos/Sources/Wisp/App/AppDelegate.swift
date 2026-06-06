@@ -1095,7 +1095,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = try await client.call("brain.config.reload", timeout: .seconds(30))
     }
 
-    private func loadPlugins() async {
+    private func loadPlugins(statusMessage: String? = nil) async {
         guard let client = brain else {
             pluginPanel?.fail("brain client is not available")
             statusController?.setBrainStatus("plugins error")
@@ -1108,7 +1108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let rows = result?["plugins"] as? [[String: Any]] ?? []
             let plugins = rows.compactMap { PluginSummary(payload: $0) }
             let pluginsDir = result?["plugins_dir"] as? String ?? ""
-            pluginPanel?.setPlugins(plugins, pluginsDir: pluginsDir)
+            pluginPanel?.setPlugins(plugins, pluginsDir: pluginsDir, status: statusMessage)
             statusController?.setBrainStatus("plugins loaded")
         } catch {
             pluginPanel?.fail(String(describing: error))
@@ -1134,7 +1134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let message = result?["message"] as? String ?? "Plugin action complete"
             statusController?.setBrainStatus("plugin action ok")
             NSLog("[wisp] %@", message)
-            await loadPlugins()
+            await loadPlugins(statusMessage: message)
         } catch {
             pluginPanel?.fail(String(describing: error))
             statusController?.setBrainStatus("plugin action error")

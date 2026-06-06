@@ -68,13 +68,17 @@ final class PluginManagerPanel: NSPanel {
     func beginLoading(_ status: String) {
         model.isLoading = true
         model.status = status
+        model.errorText = ""
     }
 
-    func setPlugins(_ plugins: [PluginSummary], pluginsDir: String) {
+    func setPlugins(_ plugins: [PluginSummary], pluginsDir: String, status: String? = nil) {
         model.plugins = plugins
         model.pluginsDir = pluginsDir
         model.isLoading = false
-        model.status = plugins.isEmpty ? "No plugins loaded" : "\(plugins.count) plugin\(plugins.count == 1 ? "" : "s")"
+        model.errorText = ""
+        model.status = status ?? (
+            plugins.isEmpty ? "No plugins loaded" : "\(plugins.count) plugin\(plugins.count == 1 ? "" : "s")"
+        )
     }
 
     func fail(_ message: String) {
