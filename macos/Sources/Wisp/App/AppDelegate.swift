@@ -7,7 +7,7 @@ private struct PendingSnipContext {
     var capturePath: String
 }
 
-private struct PendingIntentContext {
+private struct PendingNativeContext {
     var snapshot: NativeContextSnapshot
 }
 
@@ -62,7 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let audioRecorder = AudioRecorder()
     private let audioPlayer = AudioPlayer()
     private var brain: BrainClient?
-    private var pendingIntentContext: PendingIntentContext?
+    private var pendingIntentContext: PendingNativeContext?
+    private var pendingVoiceContext: PendingNativeContext?
     private var pendingSnip: PendingSnipContext?
     private var agentRunTask: Task<Void, Never>?
 
@@ -251,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showIntentPicker(callerIndex: Int = 0) {
         appConfig = WispConfig.load()
         let caller = callerIndex < appConfig.callers.count ? appConfig.callers[callerIndex] : CallerConfig.empty
-        pendingIntentContext = PendingIntentContext(
+        pendingIntentContext = PendingNativeContext(
             snapshot: nativeContext.snapshot(promptForAccessibility: false)
         )
         intentPanel?.show(caller: caller)
@@ -595,6 +596,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startVoiceQuery() {
+        appConfig = WispConfig.load()
+        pendingVoiceContext = PendingNativeContext(
+            snapshot: nativeContext.snapshot(promptForAccessibility: false)
+        )
         promptPanel?.showPrompt()
         overlay?.setState(.listening)
         responseBubble?.showListening(anchor: overlay?.frame)
@@ -605,8 +610,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let url = try await audioRecorder.start()
                 promptPanel?.setResponse("Listening...\n\nRecording to:\n\(url.path)")
-                NSLog("[wisp] voice query recording started: %@", url.path)
+                NSLog(
+                    "[wisp] voice query recording started: %@ context=%@",
+                    url.path,
+                    self.pendingVoiceContext?.snapshot.logSummary ?? "none"
+                )
             } catch {
+                pendingVoiceContext = nil
                 overlay?.setState(.idle)
                 promptPanel?.failRequest(String(describing: error))
                 statusController?.setBrainStatus("voice error")
@@ -625,6 +635,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             do {
                 let recording = try audioRecorder.stop()
+                let voiceContext = pendingVoiceContext
+                pendingVoiceContext = nil
                 promptPanel?.setResponse(recording.displayText + "\n\nTranscribing...")
                 let transcript = try await transcribe(recording.url)
                 guard !transcript.isEmpty else {
@@ -637,8 +649,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 promptPanel?.setPrompt(transcript)
                 promptPanel?.setResponse("Transcript:\n\(transcript)\n\nQuerying...")
                 NSLog("[wisp] voice transcript: %@", transcript)
-                await self.runPrompt(transcript, mode: .query)
+                await self.runPrompt(
+                    transcript,
+                    mode: .query,
+                    caller: appConfig.callers.first,
+                    contextSnapshot: voiceContext?.snapshot
+                )
             } catch {
+                pendingVoiceContext = nil
                 overlay?.setState(.idle)
                 promptPanel?.failRequest(String(describing: error))
                 statusController?.setBrainStatus("voice error")
@@ -961,7 +979,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func runPasteBack(_ intentPrompt: String, context: PendingIntentContext?) async {
+    private func runPasteBack(_ intentPrompt: String, context: PendingNativeContext?) async {
         guard let client = brain else {
             promptPanel?.failRequest("brain client is not available")
             statusController?.setBrainStatus("paste-back error")
