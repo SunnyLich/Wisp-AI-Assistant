@@ -130,6 +130,12 @@ WISP_NOTARY_PROFILE=wisp-notary \
 bash scripts/macos_package_release.sh
 ```
 
+By default the script signs with `macos/Wisp.entitlements`, which allows
+microphone input, Apple Events automation prompts, and loading the bundled
+Python/native-wheel libraries under the hardened runtime. Override with
+`WISP_CODESIGN_ENTITLEMENTS=/path/to/entitlements.plist` when testing a stricter
+release profile.
+
 For a local signed-only package, add `WISP_SKIP_NOTARIZATION=1`. The packaging
 script first runs an embedded Python import probe against the bundled runtime,
 then writes logs under `build_logs/macos_package_<timestamp>/` and creates a zip

@@ -6,6 +6,7 @@
 #   WISP_CODESIGN_IDENTITY="Developer ID Application: ..."
 #
 # Optional:
+#   WISP_CODESIGN_ENTITLEMENTS=macos/Wisp.entitlements
 #   WISP_NOTARY_PROFILE=keychain-profile-name
 #   WISP_SKIP_NOTARIZATION=1
 set -euo pipefail
@@ -18,6 +19,7 @@ SUMMARY_LOG="$LOG_DIR/summary.log"
 APP_BUNDLE="$REPO_ROOT/build/WispNative/Wisp.app"
 ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-$RUN_ID.zip"
 NOTARY_ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-notary-submit-$RUN_ID.zip"
+CODESIGN_ENTITLEMENTS="${WISP_CODESIGN_ENTITLEMENTS:-$REPO_ROOT/macos/Wisp.entitlements}"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/build/WispNative"
 
 log_info() {
@@ -67,6 +69,10 @@ require_inputs() {
   if [ -z "${WISP_CODESIGN_IDENTITY:-}" ]; then
     echo "ERROR: WISP_CODESIGN_IDENTITY is required, for example:" >&2
     echo "       WISP_CODESIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)'" >&2
+    exit 1
+  fi
+  if [ ! -f "$CODESIGN_ENTITLEMENTS" ]; then
+    echo "ERROR: codesign entitlements file not found: $CODESIGN_ENTITLEMENTS" >&2
     exit 1
   fi
 }
@@ -131,10 +137,13 @@ PY
 }
 
 sign_bundle() {
+  log_info "Codesign entitlements: $CODESIGN_ENTITLEMENTS"
   run_logged "codesign-app" \
     codesign --force --deep --options runtime --timestamp \
+      --entitlements "$CODESIGN_ENTITLEMENTS" \
       --sign "$WISP_CODESIGN_IDENTITY" "$APP_BUNDLE"
   run_logged "codesign-verify" codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+  run_logged "codesign-entitlements" codesign -d --entitlements :- "$APP_BUNDLE"
 }
 
 zip_app() {
