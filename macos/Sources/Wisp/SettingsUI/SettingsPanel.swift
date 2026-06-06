@@ -57,6 +57,7 @@ struct SettingsDraft: Equatable {
 
     var iconAutoHide: Bool
     var iconSize: String
+    var iconBackstopMS: String
     var bubbleWidth: String
     var bubbleLines: String
     var bubbleColor: String
@@ -108,6 +109,7 @@ struct SettingsDraft: Equatable {
             snipContextTools: boolValue(values["SNIP_CONTEXT_TOOLS"], default: false),
             iconAutoHide: boolValue(values["ICON_AUTO_HIDE"] ?? values["DOLL_AUTO_HIDE"], default: false),
             iconSize: values["ICON_SIZE"] ?? values["DOLL_SIZE"] ?? "80",
+            iconBackstopMS: values["ICON_BACKSTOP_MS"] ?? values["DOLL_ICON_BACKSTOP_MS"] ?? "5000",
             bubbleWidth: values["BUBBLE_WIDTH"] ?? "340",
             bubbleLines: values["BUBBLE_LINES"] ?? "3",
             bubbleColor: values["BUBBLE_COLOR"] ?? "#1c1c24dc",
@@ -150,6 +152,7 @@ struct SettingsDraft: Equatable {
         snipContextTools: false,
         iconAutoHide: false,
         iconSize: "80",
+        iconBackstopMS: "5000",
         bubbleWidth: "340",
         bubbleLines: "3",
         bubbleColor: "#1c1c24dc",
@@ -201,6 +204,7 @@ struct SettingsDraft: Equatable {
             "SNIP_CONTEXT_TOOLS": snipContextTools ? "true" : "false",
             "ICON_AUTO_HIDE": iconAutoHide ? "true" : "false",
             "ICON_SIZE": iconSize,
+            "ICON_BACKSTOP_MS": iconBackstopMS,
             "BUBBLE_WIDTH": bubbleWidth,
             "BUBBLE_LINES": bubbleLines,
             "BUBBLE_COLOR": bubbleColor,
@@ -679,6 +683,7 @@ private struct SettingsPanelView: View {
                 SettingsSection("Overlay") {
                     Toggle("Auto-hide icon", isOn: $model.draft.iconAutoHide)
                     SettingsTextField("Icon size", text: $model.draft.iconSize)
+                    SettingsTextField("Backstop ms", text: $model.draft.iconBackstopMS)
                 }
 
                 SettingsSection("Bubble") {
