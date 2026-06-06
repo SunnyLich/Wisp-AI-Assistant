@@ -141,4 +141,73 @@ final class AgentTaskPanelTests: XCTestCase {
         XCTAssertEqual(draft.agents[1].name, "Reviewer")
         XCTAssertEqual(draft.agents[1].provider, "anthropic")
     }
+
+    func testDraftSerializesAgentCommunications() throws {
+        var draft = AgentTaskDraft.load(environment: ["WISP_REPO_ROOT": "/tmp/wisp"], readDotEnv: false)
+        draft.title = "Communication task"
+        draft.objective = "Coordinate planned handoffs."
+        draft.scopeFolder = "/tmp"
+        draft.agents = [
+            AgentTaskAgentDraft(
+                name: "Planner",
+                role: "Planner",
+                provider: "same as task",
+                model: "same as task",
+                responsibility: "Plan."
+            ),
+            AgentTaskAgentDraft(
+                name: "Reviewer",
+                role: "Reviewer",
+                provider: "same as task",
+                model: "same as task",
+                responsibility: "Review."
+            ),
+        ]
+        draft.communications = [
+            AgentTaskCommunicationDraft(
+                fromAgent: "Planner",
+                toAgent: "Reviewer",
+                phase: "review",
+                trigger: "ready_for_review",
+                message: "Review the implementation."
+            )
+        ]
+
+        let payload = draft.payload
+        let communications = try XCTUnwrap(payload["communications"] as? [[String: String]])
+
+        XCTAssertEqual(communications.count, 1)
+        XCTAssertEqual(communications[0]["from_agent"], "Planner")
+        XCTAssertEqual(communications[0]["to_agent"], "Reviewer")
+        XCTAssertEqual(communications[0]["phase"], "review")
+        XCTAssertEqual(communications[0]["trigger"], "ready_for_review")
+        XCTAssertEqual(communications[0]["message"], "Review the implementation.")
+    }
+
+    func testDraftParsesAgentCommunications() throws {
+        let draft = try XCTUnwrap(AgentTaskDraft(payload: [
+            "title": "Communication task",
+            "objective": "Coordinate planned handoffs.",
+            "scope_folder": "/tmp",
+            "agents": [
+                ["name": "Planner", "role": "Planner"],
+                ["name": "Reviewer", "role": "Reviewer"],
+            ],
+            "communications": [
+                [
+                    "from_agent": "Planner",
+                    "to_agent": "Reviewer",
+                    "phase": "review",
+                    "trigger": "ready_for_review",
+                    "message": "Review the implementation.",
+                ]
+            ],
+        ]))
+
+        XCTAssertEqual(draft.communications.count, 1)
+        XCTAssertEqual(draft.communications[0].fromAgent, "Planner")
+        XCTAssertEqual(draft.communications[0].toAgent, "Reviewer")
+        XCTAssertEqual(draft.communications[0].phase, "review")
+        XCTAssertEqual(draft.communications[0].trigger, "ready_for_review")
+    }
 }

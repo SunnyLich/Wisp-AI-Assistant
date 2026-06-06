@@ -53,6 +53,49 @@ struct AgentTaskAgentDraft: Identifiable, Equatable {
     }
 }
 
+struct AgentTaskCommunicationDraft: Identifiable, Equatable {
+    var id = UUID()
+    var fromAgent: String
+    var toAgent: String
+    var phase: String
+    var trigger: String
+    var message: String
+
+    init(fromAgent: String, toAgent: String, phase: String, trigger: String, message: String) {
+        self.fromAgent = fromAgent
+        self.toAgent = toAgent
+        self.phase = phase
+        self.trigger = trigger
+        self.message = message
+    }
+
+    init?(payload: [String: Any]) {
+        let fromAgent = payload["from_agent"] as? String ?? ""
+        let toAgent = payload["to_agent"] as? String ?? ""
+        if fromAgent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || toAgent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return nil
+        }
+        self.init(
+            fromAgent: fromAgent,
+            toAgent: toAgent,
+            phase: payload["phase"] as? String ?? "handoff",
+            trigger: payload["trigger"] as? String ?? "when useful",
+            message: payload["message"] as? String ?? ""
+        )
+    }
+
+    var payload: [String: String] {
+        [
+            "from_agent": fromAgent.trimmingCharacters(in: .whitespacesAndNewlines),
+            "to_agent": toAgent.trimmingCharacters(in: .whitespacesAndNewlines),
+            "phase": phase.trimmingCharacters(in: .whitespacesAndNewlines),
+            "trigger": trigger.trimmingCharacters(in: .whitespacesAndNewlines),
+            "message": message.trimmingCharacters(in: .whitespacesAndNewlines),
+        ]
+    }
+}
+
 struct AgentTaskDraft: Equatable {
     var title: String
     var objective: String
@@ -75,6 +118,7 @@ struct AgentTaskDraft: Equatable {
     var agentRole: String
     var agentResponsibility: String
     var agents: [AgentTaskAgentDraft]
+    var communications: [AgentTaskCommunicationDraft]
 
     static func load(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -105,7 +149,8 @@ struct AgentTaskDraft: Equatable {
             agentName: "Builder",
             agentRole: "Implementer",
             agentResponsibility: AgentRoleDefaults.responsibility(for: "Implementer"),
-            agents: [AgentTaskAgentDraft.defaultBuilder()]
+            agents: [AgentTaskAgentDraft.defaultBuilder()],
+            communications: []
         )
     }
 
@@ -130,7 +175,8 @@ struct AgentTaskDraft: Equatable {
         agentName: String,
         agentRole: String,
         agentResponsibility: String,
-        agents: [AgentTaskAgentDraft] = []
+        agents: [AgentTaskAgentDraft] = [],
+        communications: [AgentTaskCommunicationDraft] = []
     ) {
         self.title = title
         self.objective = objective
@@ -155,12 +201,15 @@ struct AgentTaskDraft: Equatable {
         self.agents = agents.isEmpty
             ? [AgentTaskAgentDraft(name: agentName, role: agentRole, provider: "same as task", model: "same as task", responsibility: agentResponsibility)]
             : agents
+        self.communications = communications
     }
 
     init?(payload: [String: Any]) {
         let rawAgents = payload["agents"] as? [[String: Any]] ?? []
         let parsedAgents = rawAgents.compactMap { AgentTaskAgentDraft(payload: $0) }
         let primaryAgent = parsedAgents.first ?? AgentTaskAgentDraft.defaultBuilder()
+        let rawCommunications = payload["communications"] as? [[String: Any]] ?? []
+        let parsedCommunications = rawCommunications.compactMap { AgentTaskCommunicationDraft(payload: $0) }
         self.init(
             title: payload["title"] as? String ?? "",
             objective: payload["objective"] as? String ?? "",
@@ -182,7 +231,8 @@ struct AgentTaskDraft: Equatable {
             agentName: primaryAgent.name,
             agentRole: primaryAgent.role,
             agentResponsibility: primaryAgent.responsibility,
-            agents: parsedAgents.isEmpty ? [primaryAgent] : parsedAgents
+            agents: parsedAgents.isEmpty ? [primaryAgent] : parsedAgents,
+            communications: parsedCommunications
         )
         if cleaned(title).isEmpty || cleaned(objective).isEmpty {
             return nil
@@ -220,7 +270,7 @@ struct AgentTaskDraft: Equatable {
             "report_format": "Summary + changed files + verification",
             "model_fallbacks": cleaned(modelFallbacks),
             "agents": normalizedAgents().map(\.payload),
-            "communications": [],
+            "communications": normalizedCommunications().map(\.payload),
             "parallel_read_only_briefing": true,
             "parallel_execution": false,
             "max_parallel_agents": 4,
@@ -259,6 +309,17 @@ struct AgentTaskDraft: Equatable {
         if Set(agentNames).count != agentNames.count {
             return "Agent names must be unique."
         }
+        let nameSet = Set(agentNames)
+        for communication in normalizedCommunications() {
+            let from = cleaned(communication.fromAgent).lowercased()
+            let to = cleaned(communication.toAgent).lowercased()
+            if !nameSet.contains(from) || !nameSet.contains(to) {
+                return "Every communication must reference existing agents."
+            }
+            if from == to {
+                return "Communication endpoints must be different agents."
+            }
+        }
         return nil
     }
 
@@ -283,6 +344,21 @@ struct AgentTaskDraft: Equatable {
                 provider: cleaned(agent.provider).isEmpty ? "same as task" : cleaned(agent.provider),
                 model: cleaned(agent.model).isEmpty ? "same as task" : cleaned(agent.model),
                 responsibility: cleaned(agent.responsibility)
+            )
+        }
+    }
+
+    private func normalizedCommunications() -> [AgentTaskCommunicationDraft] {
+        communications.compactMap { communication in
+            let from = cleaned(communication.fromAgent)
+            let to = cleaned(communication.toAgent)
+            guard !from.isEmpty, !to.isEmpty else { return nil }
+            return AgentTaskCommunicationDraft(
+                fromAgent: from,
+                toAgent: to,
+                phase: cleaned(communication.phase).isEmpty ? "handoff" : cleaned(communication.phase),
+                trigger: cleaned(communication.trigger).isEmpty ? "when useful" : cleaned(communication.trigger),
+                message: cleaned(communication.message)
             )
         }
     }
@@ -490,6 +566,25 @@ private final class AgentTaskModel: ObservableObject {
         guard draft.agents.count > 1 else { return }
         draft.agents.removeAll { $0.id == id }
     }
+
+    func addCommunication() {
+        let agents = draft.agents.map(\.name).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let from = agents.first ?? "Planner"
+        let to = agents.dropFirst().first ?? agents.first ?? "Reviewer"
+        draft.communications.append(
+            AgentTaskCommunicationDraft(
+                fromAgent: from,
+                toAgent: to,
+                phase: "handoff",
+                trigger: "when useful",
+                message: "Share findings and next steps."
+            )
+        )
+    }
+
+    func removeCommunication(_ id: UUID) {
+        draft.communications.removeAll { $0.id == id }
+    }
 }
 
 private struct AgentTaskPanelView: View {
@@ -582,6 +677,50 @@ private struct AgentTaskPanelView: View {
                             model.addAgent()
                         } label: {
                             Label("Add Agent", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+
+                    AgentSection("Communication") {
+                        if model.draft.communications.isEmpty {
+                            Text("No planned communication rules")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach($model.draft.communications) { $communication in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("\(communication.fromAgent.isEmpty ? "From" : communication.fromAgent) -> \(communication.toAgent.isEmpty ? "To" : communication.toAgent)")
+                                        .font(.caption.weight(.semibold))
+                                    Spacer()
+                                    Button {
+                                        model.removeCommunication(communication.id)
+                                    } label: {
+                                        Image(systemName: "minus.circle")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Remove communication")
+                                }
+                                HStack(spacing: 10) {
+                                    AgentTextField("From", text: $communication.fromAgent)
+                                    AgentTextField("To", text: $communication.toAgent)
+                                }
+                                HStack(spacing: 10) {
+                                    AgentTextField("Phase", text: $communication.phase)
+                                    AgentTextField("Trigger", text: $communication.trigger)
+                                }
+                                AgentTextEditor("Message", text: $communication.message, minHeight: 58)
+                            }
+                            .padding(9)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                            )
+                        }
+                        Button {
+                            model.addCommunication()
+                        } label: {
+                            Label("Add Communication", systemImage: "plus")
                         }
                         .buttonStyle(.borderless)
                     }
