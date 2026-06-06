@@ -40,6 +40,11 @@ def _bundle_root() -> Path:
 
 def _repo_root() -> Path:
     """Return the repo root in dev mode; user data dir when frozen."""
+    override = os.environ.get("WISP_REPO_ROOT")
+    if override:
+        d = Path(override).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        return d
     if getattr(sys, "frozen", False):
         d = _user_data_dir()
         d.mkdir(parents=True, exist_ok=True)

@@ -46,8 +46,7 @@ enum BrainLocator {
 
         // 2. Dev fallback via environment.
         if environment["WISP_BRAIN_PYTHON"] != nil
-            || environment["WISP_BRAIN_DIR"] != nil
-            || environment["WISP_REPO_ROOT"] != nil {
+            || environment["WISP_BRAIN_DIR"] != nil {
             let python = environment["WISP_BRAIN_PYTHON"].map { URL(fileURLWithPath: $0) }
                 ?? URL(fileURLWithPath: "/usr/bin/python3")
             let brainDir = environment["WISP_BRAIN_DIR"].map { URL(fileURLWithPath: $0) }

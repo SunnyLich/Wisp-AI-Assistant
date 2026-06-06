@@ -134,6 +134,50 @@ final class WispConfigTests: XCTestCase {
         XCTAssertEqual(repoRoot.standardizedFileURL.path, root.standardizedFileURL.path)
     }
 
+    func testRepoRootFallsBackToApplicationSupportForPackagedApp() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let applicationSupport = root.appendingPathComponent("Application Support")
+        let repoRoot = WispConfig.repoRoot(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: root.appendingPathComponent("Applications/Wisp.app/Contents/Resources"),
+            applicationSupportBaseDirectory: applicationSupport
+        )
+
+        XCTAssertEqual(
+            repoRoot.standardizedFileURL.path,
+            applicationSupport.appendingPathComponent("Wisp").standardizedFileURL.path
+        )
+    }
+
+    func testLoadValuesReadsDotEnvFromApplicationSupportFallback() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let applicationSupport = root.appendingPathComponent("Application Support")
+        let configRoot = applicationSupport.appendingPathComponent("Wisp")
+        try FileManager.default.createDirectory(at: configRoot, withIntermediateDirectories: true)
+        try "LLM_PROVIDER=anthropic\nHOTKEY_SNIP=ctrl+option+5\n".write(
+            to: configRoot.appendingPathComponent(".env"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let values = WispConfig.loadValues(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: root.appendingPathComponent("Applications/Wisp.app/Contents/Resources"),
+            applicationSupportBaseDirectory: applicationSupport
+        )
+
+        XCTAssertEqual(values["LLM_PROVIDER"], "anthropic")
+        XCTAssertEqual(values["HOTKEY_SNIP"], "ctrl+option+5")
+    }
+
     func testSettingsDraftLoadsNativeUIEnvironmentKeys() {
         let draft = SettingsDraft.load(environment: [
             "ICON_AUTO_HIDE": "yes",

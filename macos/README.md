@@ -125,6 +125,12 @@ under:
 ~/Library/Logs/Wisp/
 ```
 
+Packaged app settings are read from and saved to:
+
+```bash
+~/Library/Application Support/Wisp/.env
+```
+
 ## Native Package Signing
 
 To build a release-shaped app with an embedded runtime and Developer ID

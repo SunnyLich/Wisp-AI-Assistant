@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum ScreenshotMode: String {
     case off
@@ -56,6 +57,7 @@ struct WispConfig: Equatable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         resourceURL: URL? = Bundle.main.resourceURL,
+        applicationSupportBaseDirectory: URL? = nil,
         fileManager: FileManager = .default
     ) -> URL {
         if let path = environment["WISP_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -66,14 +68,38 @@ struct WispConfig: Equatable {
            let devRoot = repoRootForDevBundle(resourceURL: resourceURL, fileManager: fileManager) {
             return devRoot
         }
-        return currentDirectory.deletingLastPathComponent()
+        if currentDirectory.lastPathComponent == "macos" {
+            return currentDirectory.deletingLastPathComponent()
+        }
+        if fileManager.fileExists(atPath: currentDirectory.appendingPathComponent("macos/brain").path) {
+            return currentDirectory
+        }
+        return userConfigRoot(baseDirectory: applicationSupportBaseDirectory, fileManager: fileManager)
+    }
+
+    static func seedProcessEnvironmentIfMissing() {
+        let environment = ProcessInfo.processInfo.environment
+        guard missingEnvironmentValue(environment["WISP_REPO_ROOT"]) else { return }
+        let root = repoRoot(environment: environment)
+        setenv("WISP_REPO_ROOT", root.path, 0)
+        NSLog("[wisp] inferred config root: %@", root.path)
     }
 
     static func loadValues(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        readDotEnv: Bool = true
+        readDotEnv: Bool = true,
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = Bundle.main.resourceURL,
+        applicationSupportBaseDirectory: URL? = nil,
+        fileManager: FileManager = .default
     ) -> [String: String] {
-        let root = repoRoot(environment: environment)
+        let root = repoRoot(
+            environment: environment,
+            currentDirectory: currentDirectory,
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupportBaseDirectory,
+            fileManager: fileManager
+        )
         let fileValues = readDotEnv ? DotEnvFile.read(root.appendingPathComponent(".env")) : [:]
         return fileValues.merging(environment) { _, environmentValue in environmentValue }
     }
@@ -90,6 +116,17 @@ struct WispConfig: Equatable {
             return nil
         }
         return repoRoot
+    }
+
+    private static func userConfigRoot(baseDirectory: URL?, fileManager: FileManager) -> URL {
+        let applicationSupport = baseDirectory
+            ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return applicationSupport.appendingPathComponent("Wisp", isDirectory: true)
+    }
+
+    private static func missingEnvironmentValue(_ value: String?) -> Bool {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
     }
 
     private static func loadCallers(_ values: [String: String]) -> [CallerConfig] {

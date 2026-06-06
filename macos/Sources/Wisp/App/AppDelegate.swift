@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         RunLogLocator.seedProcessEnvironmentIfMissing()
+        WispConfig.seedProcessEnvironmentIfMissing()
         appConfig = WispConfig.load()
         applyTheme(SettingsDraft.load().themeMode)
 
