@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingIntentContext: PendingNativeContext?
     private var pendingVoiceContext: PendingNativeContext?
     private var pendingSnip: PendingSnipContext?
+    private var contextBuffer: [String] = []
     private var agentRunTask: Task<Void, Never>?
     private var activeTTSPlaybackID: Int?
 
@@ -216,6 +217,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showIntentPicker(callerIndex: callerIndex)
             case .snip:
                 self?.startSnip()
+            case .addContext:
+                self?.addNativeContext()
+            case .clearContext:
+                self?.clearNativeContext()
             }
         }
         self.hotkey = hotkey
@@ -297,8 +302,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installHotkey(promptForPermission: Bool) {
         guard let hotkey else { return }
         appConfig = WispConfig.load()
-        let result = hotkey.start(callers: appConfig.callers, snip: appConfig.snip, promptForPermission: promptForPermission)
+        let settings = SettingsDraft.load()
+        let result = hotkey.start(
+            callers: appConfig.callers,
+            snip: appConfig.snip,
+            addContextHotkey: settings.addContextHotkey,
+            clearContextHotkey: settings.clearContextHotkey,
+            promptForPermission: promptForPermission
+        )
         statusController?.setHotkeyStatus(result.statusText)
+    }
+
+    private func addNativeContext() {
+        let snapshot = nativeContext.snapshot(promptForAccessibility: false)
+        let selected = snapshot.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let text = selected.isEmpty ? snapshot.ambientText : selected
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            statusController?.setBrainStatus("no context captured")
+            responseBubble?.showNotice("No context captured.", anchor: overlay?.frame, timeout: 2.0)
+            return
+        }
+
+        contextBuffer.append(trimmed)
+        statusController?.setBrainStatus("\(contextBuffer.count) context item\(contextBuffer.count == 1 ? "" : "s") queued")
+        responseBubble?.showNotice("Context added for next prompt.", anchor: overlay?.frame, timeout: 2.0)
+        NSLog("[wisp] native context queued: %@", snapshot.logSummary)
+    }
+
+    private func clearNativeContext() {
+        contextBuffer.removeAll()
+        statusController?.setBrainStatus("context cleared")
+        responseBubble?.showNotice("Context cleared.", anchor: overlay?.frame, timeout: 2.0)
+        NSLog("[wisp] native context buffer cleared")
+    }
+
+    private func consumeBufferedContext() -> String {
+        guard !contextBuffer.isEmpty else { return "" }
+        let text = contextBuffer
+            .enumerated()
+            .map { index, item in "[Context item \(index + 1)]\n\(item)" }
+            .joined(separator: "\n\n")
+        contextBuffer.removeAll()
+        return text
     }
 
     private func showContextSnapshot() {
@@ -1277,6 +1323,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let snip = pendingSnip {
                 pendingSnip = nil
                 var ambient = snip.ambientText
+                let bufferedContext = consumeBufferedContext()
+                if !bufferedContext.isEmpty {
+                    ambient += "\(ambient.isEmpty ? "" : "\n\n")[Buffered context]\n\(bufferedContext)"
+                }
                 if !snip.capturePath.isEmpty {
                     ambient += "\(ambient.isEmpty ? "" : "\n\n")Screen snip saved: \(snip.capturePath)"
                 }
@@ -1290,9 +1340,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let policy = caller ?? (appConfig.callers.first ?? CallerConfig.empty)
             let snapshot = contextSnapshot ?? nativeContext.snapshot(promptForAccessibility: false)
+            let bufferedContext = consumeBufferedContext()
+            var ambientText = policy.contextAmbient ? snapshot.ambientText(includeClipboard: policy.contextClipboard) : ""
+            if !bufferedContext.isEmpty {
+                ambientText += "\(ambientText.isEmpty ? "" : "\n\n")[Buffered context]\n\(bufferedContext)"
+            }
             var params: [String: Any] = [
                 "intent_prompt": text,
-                "ambient_text": policy.contextAmbient ? snapshot.ambientText(includeClipboard: policy.contextClipboard) : "",
+                "ambient_text": ambientText,
                 "use_tools": policy.contextTools,
                 "allow_screenshot_tool": policy.contextScreenshot == .model,
             ]

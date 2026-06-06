@@ -51,4 +51,20 @@ final class HotkeyControllerTests: XCTestCase {
         XCTAssertTrue(hotkey.modifiers.contains(.maskControl))
         XCTAssertTrue(hotkey.modifiers.contains(.maskAlternate))
     }
+
+    func testParsesContextHotkeyActions() throws {
+        let add = try XCTUnwrap(
+            HotkeyDefinition.parse("alt+q", action: .addContext, label: "Add context")
+        )
+        let clear = try XCTUnwrap(
+            HotkeyDefinition.parse("alt+w", action: .clearContext, label: "Clear context")
+        )
+
+        XCTAssertEqual(add.action, .addContext)
+        XCTAssertEqual(add.keyCode, 12)
+        XCTAssertTrue(add.modifiers.contains(.maskAlternate))
+        XCTAssertEqual(clear.action, .clearContext)
+        XCTAssertEqual(clear.keyCode, 13)
+        XCTAssertTrue(clear.modifiers.contains(.maskAlternate))
+    }
 }

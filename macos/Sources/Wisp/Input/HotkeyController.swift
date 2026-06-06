@@ -21,6 +21,8 @@ enum HotkeyInstallResult: Equatable {
 enum HotkeyAction: Equatable {
     case caller(Int)
     case snip
+    case addContext
+    case clearContext
 }
 
 struct HotkeyDefinition: Equatable {
@@ -143,13 +145,29 @@ final class HotkeyController {
         self.onTrigger = onTrigger
     }
 
-    func start(callers: [CallerConfig], snip: SnipConfig? = nil, promptForPermission: Bool) -> HotkeyInstallResult {
+    func start(
+        callers: [CallerConfig],
+        snip: SnipConfig? = nil,
+        addContextHotkey: String? = nil,
+        clearContextHotkey: String? = nil,
+        promptForPermission: Bool
+    ) -> HotkeyInstallResult {
         stop()
         definitions = callers.enumerated().compactMap { index, caller in
             HotkeyDefinition.parse(caller.hotkey, callerIndex: index, label: caller.label)
         }
         if let snipDefinition = snip.flatMap({ HotkeyDefinition.parse($0.hotkey, action: .snip, label: "Snip") }) {
             definitions.append(snipDefinition)
+        }
+        if let addDefinition = addContextHotkey.flatMap({
+            HotkeyDefinition.parse($0, action: .addContext, label: "Add context")
+        }) {
+            definitions.append(addDefinition)
+        }
+        if let clearDefinition = clearContextHotkey.flatMap({
+            HotkeyDefinition.parse($0, action: .clearContext, label: "Clear context")
+        }) {
+            definitions.append(clearDefinition)
         }
         guard !definitions.isEmpty else {
             return .failed("no valid hotkeys configured")
