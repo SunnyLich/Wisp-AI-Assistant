@@ -25,9 +25,9 @@ work until each visible surface is ported.
 | Native context | app/window/selected/clipboard/screenshot policy | Win32/Python helpers | Swift `NativeContextController` with hardened AX reads, `NativePastebackController`, and `ScreenCaptureController` |
 | Voice/TTS | same provider config and playback behavior | Python audio path | Swift capture/playback with buffered native context + Python sidecar models |
 | Response bubble | live compact reply surface, reveal timing, click-through to chat | Qt `SpeechBubble` | Swift `ResponseBubblePanel` with native word reveal, read-word highlight, and shared sizing/colors in progress |
-| Chat | multi-turn conversation history and streaming replies | Qt window | Swift `ChatPanel` with native history controls in progress |
+| Chat | multi-turn conversation history, auto-elaborate, and streaming replies | Qt window | Swift `ChatPanel` with native history controls and auto-elaborate in progress |
 | Memory | durable facts: list, add, edit, delete, search | Qt `MemoryViewer` | Swift `MemoryPanel` + `brain.memory.*` |
-| Settings | shared `.env` config, models, callers, voice, memory, UI knobs | Qt `SettingsDialog` | Swift `SettingsPanel` with LLM/TTS tests and overlay/bubble UI keys in progress |
+| Settings | shared `.env` config, models, callers, voice, memory, chat, UI knobs | Qt `SettingsDialog` | Swift `SettingsPanel` with LLM/TTS tests and chat/overlay/bubble UI keys in progress |
 | Plugins | loaded/discoverable plugin list, hooks, tools, folder open | Qt `PluginManagerDialog` | Swift `PluginManagerPanel` with action execution in progress |
 | Snip overlay | drag-select region, attach image to intent query | Qt `SnipOverlay` | Swift `SnipOverlayPanel` with multi-display selection in progress |
 | Agents | same user-facing task/history windows and config | Qt windows | Swift `AgentTaskPanel` multi-agent/communication setup + `AgentHistoryPanel` with retry/continue and `AgentDiffPanel` in progress |

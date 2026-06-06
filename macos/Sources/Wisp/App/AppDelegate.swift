@@ -412,8 +412,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showNativeChat(new: Bool) {
-        chatPanel?.showChat(startNew: new)
+        let autoMessage = new ? nil : chatAutoElaboratePrompt()
+        chatPanel?.showChat(startNew: new, autoMessage: autoMessage)
         statusController?.setBrainStatus(new ? "new chat opened" : "chat opened")
+    }
+
+    private func chatAutoElaboratePrompt() -> String? {
+        guard chatPanel?.hasConversationHistory() == true else { return nil }
+        let values = WispConfig.loadValues()
+        guard boolValue(values["CHAT_AUTO_ELABORATE"], default: false) else { return nil }
+        let prompt = (values["CHAT_ELABORATE_PROMPT"] ?? "Please elaborate on that.")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return prompt.isEmpty ? nil : prompt
+    }
+
+    private func boolValue(_ raw: String?, default fallback: Bool) -> Bool {
+        guard let raw else { return fallback }
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return fallback
+        }
     }
 
     private func showNativeMemory() {

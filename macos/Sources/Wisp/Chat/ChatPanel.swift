@@ -32,7 +32,7 @@ final class ChatPanel: NSPanel {
         center()
     }
 
-    func showChat(startNew: Bool = false) {
+    func showChat(startNew: Bool = false, autoMessage: String? = nil) {
         if startNew {
             model.startNewConversation()
         }
@@ -41,6 +41,13 @@ final class ChatPanel: NSPanel {
         }
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if let autoMessage {
+            model.sendAutoMessage(autoMessage)
+        }
+    }
+
+    func hasConversationHistory() -> Bool {
+        model.hasConversationHistory
     }
 
     func recordExchange(user: String, assistant: String) {
@@ -97,11 +104,22 @@ private final class ChatModel: ObservableObject {
         }
     }
 
+    var hasConversationHistory: Bool {
+        conversations.contains { $0.messages.isEmpty == false }
+    }
+
     func sendInput() {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
         input = ""
         onSend(text)
+    }
+
+    func sendAutoMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isStreaming, hasConversationHistory else { return }
+        input = ""
+        onSend(trimmed)
     }
 
     func select(_ id: UUID) {
