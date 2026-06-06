@@ -85,6 +85,50 @@ build_release_shaped_bundle() {
   fi
 }
 
+validate_embedded_python() {
+  local resources="$APP_BUNDLE/Contents/Resources"
+  local py="$resources/python-runtime/bin/python3"
+  local probe="$LOG_DIR/embedded_python_probe.py"
+
+  cat > "$probe" <<'PY'
+from __future__ import annotations
+
+import importlib
+import sys
+
+required = [
+    "wisp_brain.host",
+    "wisp_brain.handlers",
+    "core.llm_clients.client",
+    "dotenv",
+    "numpy",
+    "soundfile",
+    "faster_whisper",
+    "openai",
+    "anthropic",
+]
+
+failed: list[tuple[str, str]] = []
+for name in required:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:  # noqa: BLE001 - packaging probe reports all failures.
+        failed.append((name, f"{type(exc).__name__}: {exc}"))
+
+if failed:
+    print("Embedded Python import probe failed:", file=sys.stderr)
+    for name, message in failed:
+        print(f"  {name}: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+print("Embedded Python import probe passed.")
+PY
+
+  run_logged "embedded-python-imports" /usr/bin/env \
+    "PYTHONPATH=$resources:$resources/brain${PYTHONPATH:+:$PYTHONPATH}" \
+    "$py" "$probe"
+}
+
 sign_bundle() {
   run_logged "codesign-app" \
     codesign --force --deep --options runtime --timestamp \
@@ -119,6 +163,7 @@ notarize_if_requested() {
 require_macos_tools
 require_inputs
 build_release_shaped_bundle
+validate_embedded_python
 sign_bundle
 zip_bundle
 notarize_if_requested
