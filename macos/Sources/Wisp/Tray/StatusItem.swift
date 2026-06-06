@@ -18,6 +18,7 @@ final class StatusItemController: NSObject {
     private let onCaptureScreen: () -> Void
     private let onStartSnip: () -> Void
     private let onOpenRunLogs: () -> Void
+    private let onOpenConfigFolder: () -> Void
     private let onShowSettings: () -> Void
     private let onShowChat: () -> Void
     private let onShowNewChat: () -> Void
@@ -42,6 +43,7 @@ final class StatusItemController: NSObject {
         onCaptureScreen: @escaping () -> Void,
         onStartSnip: @escaping () -> Void,
         onOpenRunLogs: @escaping () -> Void,
+        onOpenConfigFolder: @escaping () -> Void,
         onShowSettings: @escaping () -> Void,
         onShowChat: @escaping () -> Void,
         onShowNewChat: @escaping () -> Void,
@@ -65,6 +67,7 @@ final class StatusItemController: NSObject {
         self.onCaptureScreen = onCaptureScreen
         self.onStartSnip = onStartSnip
         self.onOpenRunLogs = onOpenRunLogs
+        self.onOpenConfigFolder = onOpenConfigFolder
         self.onShowSettings = onShowSettings
         self.onShowChat = onShowChat
         self.onShowNewChat = onShowNewChat
@@ -193,6 +196,10 @@ final class StatusItemController: NSObject {
         logsItem.target = self
         menu.addItem(logsItem)
 
+        let configItem = NSMenuItem(title: "Open Config Folder", action: #selector(openConfigFolder), keyEquivalent: "")
+        configItem.target = self
+        menu.addItem(configItem)
+
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Wisp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -251,6 +258,10 @@ final class StatusItemController: NSObject {
 
     @objc private func openRunLogs() {
         onOpenRunLogs()
+    }
+
+    @objc private func openConfigFolder() {
+        onOpenConfigFolder()
     }
 
     @objc private func showSettings() {

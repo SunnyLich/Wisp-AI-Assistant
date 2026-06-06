@@ -48,7 +48,7 @@ work until each visible surface is ported.
 | Voice query | Done | Native capture + sidecar transcription |
 | TTS playback | Done | Native playback lifecycle with amplitude-driven overlay pulse |
 | Chat window | Done | Native |
-| Settings window | Done | Native |
+| Settings window | Done | Native, with tray/overlay access to active `.env` config folder |
 | Memory window | Done | Native |
 | Plugin manager | Done | Native |
 | Snip overlay | Done | Native |

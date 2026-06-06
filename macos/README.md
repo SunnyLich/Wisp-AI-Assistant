@@ -94,6 +94,9 @@ The tray menu includes a `Launch at Login` toggle backed by macOS
 `SMAppService.mainApp`; validate it from System Settings after toggling.
 Use `Speak Last Response` to validate native TTS playback and the
 amplitude-driven overlay pulse.
+Use `Open Config Folder` from the tray or overlay menu to jump to the active
+`.env` directory, whether that is the checkout or
+`~/Library/Application Support/Wisp`.
 
 ## Native Test Button
 

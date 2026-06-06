@@ -153,6 +153,43 @@ final class WispConfigTests: XCTestCase {
         )
     }
 
+    func testConfigDirectoryUsesSameRootAsDotEnvURL() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let applicationSupport = root.appendingPathComponent("Application Support")
+        let resourceURL = root.appendingPathComponent("Applications/Wisp.app/Contents/Resources")
+        let directory = WispConfig.configDirectory(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupport
+        )
+        let dotEnv = WispConfig.dotEnvURL(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupport
+        )
+
+        XCTAssertEqual(
+            directory.standardizedFileURL.path,
+            applicationSupport.appendingPathComponent("Wisp").standardizedFileURL.path
+        )
+        XCTAssertEqual(dotEnv.standardizedFileURL.path, directory.appendingPathComponent(".env").standardizedFileURL.path)
+    }
+
+    func testConfigDirectoryHonorsExplicitRepoRoot() throws {
+        let directory = WispConfig.configDirectory(
+            environment: ["WISP_REPO_ROOT": "/Users/example/wisp"],
+            currentDirectory: URL(fileURLWithPath: "/"),
+            resourceURL: nil
+        )
+
+        XCTAssertEqual(directory.standardizedFileURL.path, "/Users/example/wisp")
+    }
+
     func testLoadValuesReadsDotEnvFromApplicationSupportFallback() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("wisp-config-\(UUID().uuidString)")

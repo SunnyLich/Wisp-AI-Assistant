@@ -1,5 +1,6 @@
-import Foundation
 import Darwin
+import Foundation
+import AppKit
 
 enum ScreenshotMode: String {
     case off
@@ -77,6 +78,39 @@ struct WispConfig: Equatable {
         return userConfigRoot(baseDirectory: applicationSupportBaseDirectory, fileManager: fileManager)
     }
 
+    static func configDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = Bundle.main.resourceURL,
+        applicationSupportBaseDirectory: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> URL {
+        repoRoot(
+            environment: environment,
+            currentDirectory: currentDirectory,
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupportBaseDirectory,
+            fileManager: fileManager
+        )
+    }
+
+    static func dotEnvURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        resourceURL: URL? = Bundle.main.resourceURL,
+        applicationSupportBaseDirectory: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> URL {
+        configDirectory(
+            environment: environment,
+            currentDirectory: currentDirectory,
+            resourceURL: resourceURL,
+            applicationSupportBaseDirectory: applicationSupportBaseDirectory,
+            fileManager: fileManager
+        )
+        .appendingPathComponent(".env")
+    }
+
     static func seedProcessEnvironmentIfMissing() {
         let environment = ProcessInfo.processInfo.environment
         guard missingEnvironmentValue(environment["WISP_REPO_ROOT"]) else { return }
@@ -139,6 +173,20 @@ struct WispConfig: Equatable {
         )
         let fileValues = readDotEnv ? DotEnvFile.read(root.appendingPathComponent(".env")) : [:]
         return fileValues.merging(environment) { _, environmentValue in environmentValue }
+    }
+
+    @MainActor
+    @discardableResult
+    static func openConfigDirectory(fileManager: FileManager = .default) -> Bool {
+        let directory = configDirectory(fileManager: fileManager)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(directory)
+            return true
+        } catch {
+            NSLog("[wisp] could not open config directory: %@", String(describing: error))
+            return false
+        }
     }
 
     private static func packagedConfigRootForSeeding(

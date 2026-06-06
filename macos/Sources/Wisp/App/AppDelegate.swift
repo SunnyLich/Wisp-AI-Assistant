@@ -232,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onCaptureScreen: { [weak self] in self?.captureScreenSmoke() },
             onStartSnip: { [weak self] in self?.startSnip() },
             onOpenRunLogs: { [weak self] in self?.openRunLogs() },
+            onOpenConfigFolder: { [weak self] in self?.openConfigFolder() },
             onShowSettings: { [weak self] in self?.showNativeSettings() },
             onShowChat: { [weak self] in self?.showNativeChat(new: false) },
             onShowNewChat: { [weak self] in self?.showNativeChat(new: true) },
@@ -329,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         addItem("Settings", #selector(overlayMenuSettings))
         addItem("Open Run Logs", #selector(overlayMenuOpenLogs))
+        addItem("Open Config Folder", #selector(overlayMenuOpenConfigFolder))
         menu.addItem(.separator())
         addItem("Hide Overlay", #selector(overlayMenuHide))
         let quitItem = NSMenuItem(title: "Quit Wisp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
@@ -357,6 +359,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func overlayMenuOpenLogs() {
         openRunLogs()
+    }
+
+    @objc private func overlayMenuOpenConfigFolder() {
+        openConfigFolder()
     }
 
     @objc private func overlayMenuHide() {
@@ -543,6 +549,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             promptPanel?.showPrompt()
             promptPanel?.setResponse("Run log directory is unavailable. Launch with scripts/macos_phase1_validate.sh --run to enable this.")
             NSLog("[wisp] run log directory unavailable")
+        }
+    }
+
+    private func openConfigFolder() {
+        if WispConfig.openConfigDirectory() {
+            statusController?.setBrainStatus("opened config folder")
+        } else {
+            promptPanel?.showPrompt()
+            promptPanel?.setResponse("Config folder is unavailable: \(WispConfig.configDirectory().path)")
+            statusController?.setBrainStatus("config folder unavailable")
         }
     }
 
