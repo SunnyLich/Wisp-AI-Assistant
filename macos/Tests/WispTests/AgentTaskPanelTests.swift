@@ -78,4 +78,67 @@ final class AgentTaskPanelTests: XCTestCase {
         XCTAssertEqual(draft.agentRole, "Reviewer")
         XCTAssertEqual(draft.agentResponsibility, "Check the work.")
     }
+
+    func testDraftSerializesMultipleAgents() throws {
+        var draft = AgentTaskDraft.load(environment: ["WISP_REPO_ROOT": "/tmp/wisp"], readDotEnv: false)
+        draft.title = "Multi-agent task"
+        draft.objective = "Plan, build, and review."
+        draft.scopeFolder = "/tmp"
+        draft.agents = [
+            AgentTaskAgentDraft(
+                name: "Planner",
+                role: "Planner",
+                provider: "same as task",
+                model: "same as task",
+                responsibility: "Plan the work."
+            ),
+            AgentTaskAgentDraft(
+                name: "Reviewer",
+                role: "Reviewer",
+                provider: "anthropic",
+                model: "claude-test",
+                responsibility: "Review the result."
+            ),
+        ]
+
+        let payload = draft.payload
+        let agents = try XCTUnwrap(payload["agents"] as? [[String: String]])
+
+        XCTAssertEqual(agents.count, 2)
+        XCTAssertEqual(agents[0]["name"], "Planner")
+        XCTAssertEqual(agents[0]["role"], "Planner")
+        XCTAssertEqual(agents[1]["name"], "Reviewer")
+        XCTAssertEqual(agents[1]["provider"], "anthropic")
+        XCTAssertEqual(agents[1]["model"], "claude-test")
+    }
+
+    func testDraftParsesMultipleAgents() throws {
+        let draft = try XCTUnwrap(AgentTaskDraft(payload: [
+            "title": "Multi-agent task",
+            "objective": "Plan, build, and review.",
+            "scope_folder": "/tmp",
+            "agents": [
+                [
+                    "name": "Planner",
+                    "role": "Planner",
+                    "provider": "same as task",
+                    "model": "same as task",
+                    "responsibility": "Plan the work.",
+                ],
+                [
+                    "name": "Reviewer",
+                    "role": "Reviewer",
+                    "provider": "anthropic",
+                    "model": "claude-test",
+                    "responsibility": "Review the result.",
+                ],
+            ],
+        ]))
+
+        XCTAssertEqual(draft.agents.count, 2)
+        XCTAssertEqual(draft.agentName, "Planner")
+        XCTAssertEqual(draft.agents[0].role, "Planner")
+        XCTAssertEqual(draft.agents[1].name, "Reviewer")
+        XCTAssertEqual(draft.agents[1].provider, "anthropic")
+    }
 }

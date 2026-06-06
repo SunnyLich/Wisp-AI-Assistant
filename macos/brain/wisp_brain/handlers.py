@@ -674,9 +674,14 @@ def _agent_runs_root(log_root: str | None = None) -> Path:
 def brain_agent_history_list(log_root: str | None = None, limit: int = 100) -> dict[str, Any]:
     """Return recent agent run folders and lightweight metadata for native UI."""
     root = _agent_runs_root(log_root)
+    run_dirs = sorted(
+        (p for p in root.iterdir() if p.is_dir()),
+        key=lambda p: (p.stat().st_mtime, p.name),
+        reverse=True,
+    )
     runs = [
         _agent_run_summary(path)
-        for path in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+        for path in run_dirs
         if (path / "task.json").exists() or (path / "final.md").exists() or (path / "run.log").exists()
     ]
     return {"runs_root": str(root), "runs": runs[:max(1, int(limit or 100))]}

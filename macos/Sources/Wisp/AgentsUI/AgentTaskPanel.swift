@@ -1,6 +1,58 @@
 import AppKit
 import SwiftUI
 
+struct AgentTaskAgentDraft: Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var role: String
+    var provider: String
+    var model: String
+    var responsibility: String
+
+    static func defaultBuilder() -> AgentTaskAgentDraft {
+        AgentTaskAgentDraft(
+            name: "Builder",
+            role: "Implementer",
+            provider: "same as task",
+            model: "same as task",
+            responsibility: AgentRoleDefaults.responsibility(for: "Implementer")
+        )
+    }
+
+    init(name: String, role: String, provider: String, model: String, responsibility: String) {
+        self.name = name
+        self.role = role
+        self.provider = provider
+        self.model = model
+        self.responsibility = responsibility
+    }
+
+    init?(payload: [String: Any]) {
+        let name = payload["name"] as? String ?? ""
+        let role = payload["role"] as? String ?? "Implementer"
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return nil
+        }
+        self.init(
+            name: name,
+            role: role,
+            provider: payload["provider"] as? String ?? "same as task",
+            model: payload["model"] as? String ?? "same as task",
+            responsibility: payload["responsibility"] as? String ?? AgentRoleDefaults.responsibility(for: role)
+        )
+    }
+
+    var payload: [String: String] {
+        [
+            "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
+            "role": role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Implementer" : role.trimmingCharacters(in: .whitespacesAndNewlines),
+            "provider": provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "same as task" : provider.trimmingCharacters(in: .whitespacesAndNewlines),
+            "model": model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "same as task" : model.trimmingCharacters(in: .whitespacesAndNewlines),
+            "responsibility": responsibility.trimmingCharacters(in: .whitespacesAndNewlines),
+        ]
+    }
+}
+
 struct AgentTaskDraft: Equatable {
     var title: String
     var objective: String
@@ -22,6 +74,7 @@ struct AgentTaskDraft: Equatable {
     var agentName: String
     var agentRole: String
     var agentResponsibility: String
+    var agents: [AgentTaskAgentDraft]
 
     static func load(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -51,7 +104,8 @@ struct AgentTaskDraft: Equatable {
             allowFileDelete: false,
             agentName: "Builder",
             agentRole: "Implementer",
-            agentResponsibility: AgentRoleDefaults.responsibility(for: "Implementer")
+            agentResponsibility: AgentRoleDefaults.responsibility(for: "Implementer"),
+            agents: [AgentTaskAgentDraft.defaultBuilder()]
         )
     }
 
@@ -75,7 +129,8 @@ struct AgentTaskDraft: Equatable {
         allowFileDelete: Bool,
         agentName: String,
         agentRole: String,
-        agentResponsibility: String
+        agentResponsibility: String,
+        agents: [AgentTaskAgentDraft] = []
     ) {
         self.title = title
         self.objective = objective
@@ -97,11 +152,15 @@ struct AgentTaskDraft: Equatable {
         self.agentName = agentName
         self.agentRole = agentRole
         self.agentResponsibility = agentResponsibility
+        self.agents = agents.isEmpty
+            ? [AgentTaskAgentDraft(name: agentName, role: agentRole, provider: "same as task", model: "same as task", responsibility: agentResponsibility)]
+            : agents
     }
 
     init?(payload: [String: Any]) {
-        let agents = payload["agents"] as? [[String: Any]] ?? []
-        let firstAgent = agents.first ?? [:]
+        let rawAgents = payload["agents"] as? [[String: Any]] ?? []
+        let parsedAgents = rawAgents.compactMap { AgentTaskAgentDraft(payload: $0) }
+        let primaryAgent = parsedAgents.first ?? AgentTaskAgentDraft.defaultBuilder()
         self.init(
             title: payload["title"] as? String ?? "",
             objective: payload["objective"] as? String ?? "",
@@ -120,9 +179,10 @@ struct AgentTaskDraft: Equatable {
             allowFileCreate: payload["allow_file_create"] as? Bool ?? true,
             allowFileEdit: payload["allow_file_edit"] as? Bool ?? true,
             allowFileDelete: payload["allow_file_delete"] as? Bool ?? false,
-            agentName: firstAgent["name"] as? String ?? "Builder",
-            agentRole: firstAgent["role"] as? String ?? "Implementer",
-            agentResponsibility: firstAgent["responsibility"] as? String ?? AgentRoleDefaults.responsibility(for: "Implementer")
+            agentName: primaryAgent.name,
+            agentRole: primaryAgent.role,
+            agentResponsibility: primaryAgent.responsibility,
+            agents: parsedAgents.isEmpty ? [primaryAgent] : parsedAgents
         )
         if cleaned(title).isEmpty || cleaned(objective).isEmpty {
             return nil
@@ -159,15 +219,7 @@ struct AgentTaskDraft: Equatable {
             "completion_criteria": cleaned(completionCriteria),
             "report_format": "Summary + changed files + verification",
             "model_fallbacks": cleaned(modelFallbacks),
-            "agents": [
-                [
-                    "name": cleaned(agentName).isEmpty ? "Builder" : cleaned(agentName),
-                    "role": cleaned(agentRole).isEmpty ? "Implementer" : cleaned(agentRole),
-                    "provider": "same as task",
-                    "model": "same as task",
-                    "responsibility": cleaned(agentResponsibility),
-                ]
-            ],
+            "agents": normalizedAgents().map(\.payload),
             "communications": [],
             "parallel_read_only_briefing": true,
             "parallel_execution": false,
@@ -200,6 +252,13 @@ struct AgentTaskDraft: Equatable {
         if !FileManager.default.fileExists(atPath: scope, isDirectory: &isDirectory) || !isDirectory.boolValue {
             return "Scope folder does not exist."
         }
+        let agentNames = normalizedAgents().map { cleaned($0.name).lowercased() }
+        if agentNames.isEmpty {
+            return "Add at least one agent."
+        }
+        if Set(agentNames).count != agentNames.count {
+            return "Agent names must be unique."
+        }
         return nil
     }
 
@@ -209,6 +268,23 @@ struct AgentTaskDraft: Equatable {
 
     private func intValue(_ value: String, default fallback: Int) -> Int {
         Int(cleaned(value)) ?? fallback
+    }
+
+    private func normalizedAgents() -> [AgentTaskAgentDraft] {
+        let candidates = agents.isEmpty
+            ? [AgentTaskAgentDraft(name: agentName, role: agentRole, provider: "same as task", model: "same as task", responsibility: agentResponsibility)]
+            : agents
+        return candidates.compactMap { agent in
+            let name = cleaned(agent.name)
+            guard !name.isEmpty else { return nil }
+            return AgentTaskAgentDraft(
+                name: name,
+                role: cleaned(agent.role).isEmpty ? "Implementer" : cleaned(agent.role),
+                provider: cleaned(agent.provider).isEmpty ? "same as task" : cleaned(agent.provider),
+                model: cleaned(agent.model).isEmpty ? "same as task" : cleaned(agent.model),
+                responsibility: cleaned(agent.responsibility)
+            )
+        }
     }
 
     private static func stringValue(_ value: Any?, default fallback: String) -> String {
@@ -396,6 +472,24 @@ private final class AgentTaskModel: ObservableObject {
         }
         scrollToken += 1
     }
+
+    func addAgent() {
+        let number = draft.agents.count + 1
+        draft.agents.append(
+            AgentTaskAgentDraft(
+                name: "Agent \(number)",
+                role: "Implementer",
+                provider: "same as task",
+                model: "same as task",
+                responsibility: AgentRoleDefaults.responsibility(for: "Implementer")
+            )
+        )
+    }
+
+    func removeAgent(_ id: UUID) {
+        guard draft.agents.count > 1 else { return }
+        draft.agents.removeAll { $0.id == id }
+    }
 }
 
 private struct AgentTaskPanelView: View {
@@ -451,16 +545,45 @@ private struct AgentTaskPanelView: View {
                     }
 
                     AgentSection("Agent") {
-                        AgentTextField("Name", text: $model.draft.agentName)
-                        Picker("Role", selection: $model.draft.agentRole) {
-                            ForEach(AgentRoleDefaults.roles, id: \.self) { role in
-                                Text(role).tag(role)
+                        ForEach($model.draft.agents) { $agent in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text(agent.name.isEmpty ? "Agent" : agent.name)
+                                        .font(.caption.weight(.semibold))
+                                    Spacer()
+                                    Button {
+                                        model.removeAgent(agent.id)
+                                    } label: {
+                                        Image(systemName: "minus.circle")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Remove agent")
+                                    .disabled(model.draft.agents.count <= 1)
+                                }
+                                AgentTextField("Name", text: $agent.name)
+                                Picker("Role", selection: $agent.role) {
+                                    ForEach(AgentRoleDefaults.roles, id: \.self) { role in
+                                        Text(role).tag(role)
+                                    }
+                                }
+                                HStack(spacing: 10) {
+                                    AgentTextField("Provider", text: $agent.provider)
+                                    AgentTextField("Model", text: $agent.model)
+                                }
+                                AgentTextEditor("Responsibility", text: $agent.responsibility, minHeight: 68)
                             }
+                            .padding(9)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                            )
                         }
-                        .onChange(of: model.draft.agentRole) { newRole in
-                            model.draft.agentResponsibility = AgentRoleDefaults.responsibility(for: newRole)
+                        Button {
+                            model.addAgent()
+                        } label: {
+                            Label("Add Agent", systemImage: "plus")
                         }
-                        AgentTextEditor("Responsibility", text: $model.draft.agentResponsibility, minHeight: 76)
+                        .buttonStyle(.borderless)
                     }
 
                     AgentSection("Runtime") {
