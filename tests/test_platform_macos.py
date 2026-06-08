@@ -168,6 +168,10 @@ class MacHotkeyTests(unittest.TestCase):
     def test_carbon_hotkey_parser_rejects_modifier_only(self):
         self.assertIsNone(self.hotkeys._parse_hotkey_carbon("ctrl+shift"))
 
+    def test_carbon_hotkey_event_kind_constants_match_hitevents(self):
+        self.assertEqual(self.hotkeys._kEventHotKeyPressed, 5)
+        self.assertEqual(self.hotkeys._kEventHotKeyReleased, 6)
+
     def test_accessibility_check_uses_application_services_trust(self):
         class FakeAppServices:
             def __init__(self):

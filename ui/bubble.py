@@ -330,7 +330,7 @@ class SpeechBubble(QWidget):
             self._finishing = False
             self._reveal_mode = False
             self._timestamp_mode = False
-            self._hide_timer.start()
+            self._start_hide_timer()
             self._emit_highlight(finished=True)
         else:
             self._emit_highlight(finished=False)
@@ -373,9 +373,20 @@ class SpeechBubble(QWidget):
         self.raise_()
         self.update()
 
-    def finish(self):
+    def finish(self, *, flush_remaining: bool = False):
         """Called when TTS playback finishes; reveals remaining words then hides."""
         self._dot_timer.stop()
+        if flush_remaining:
+            self._revealed_count = len(self._pending_words)
+            self._rewrap()
+            self.update()
+            self._reveal_timer.stop()
+            self._finishing = False
+            self._reveal_mode = False
+            self._timestamp_mode = False
+            self._start_hide_timer()
+            self._emit_highlight(finished=True)
+            return
         if self._timestamp_mode:
             # Timestamp mode: words are highlighted by per-word QTimer.singleShot
             # callbacks that may still be pending when playback reports done. Hold
@@ -389,7 +400,7 @@ class SpeechBubble(QWidget):
             else:
                 self._reveal_mode = False
                 self._timestamp_mode = False
-                self._hide_timer.start()
+                self._start_hide_timer()
                 self._emit_highlight(finished=True)
         elif self._revealed_count < len(self._pending_words):
             # WPM timer still has words to show — let it finish naturally, then hide.
@@ -401,7 +412,7 @@ class SpeechBubble(QWidget):
             self._reveal_timer.stop()
             self._reveal_mode = False
             self._timestamp_mode = False
-            self._hide_timer.start()
+            self._start_hide_timer()
             self._emit_highlight(finished=True)
 
     def clear(self):
@@ -445,8 +456,7 @@ class SpeechBubble(QWidget):
         self.raise_()
         self.update()
         if timeout_ms > 0:
-            self._hide_timer.setInterval(timeout_ms)
-            self._hide_timer.start()
+            self._start_hide_timer(timeout_ms)
 
     # ------------------------------------------------------------------
     # Internals
@@ -478,6 +488,12 @@ class SpeechBubble(QWidget):
 
     def _apply_reveal_speed(self):
         self._reveal_timer.setInterval(max(1, int(60_000 / self._current_reveal_wpm())))
+
+    def _start_hide_timer(self, delay_ms: int | None = None) -> None:
+        self._hide_timer.setInterval(
+            max(1, int(self._hide_delay_ms() if delay_ms is None else delay_ms))
+        )
+        self._hide_timer.start()
 
     def _set_speed_boost(self, enabled: bool):
         if self._speed_boosting == enabled:

@@ -151,6 +151,7 @@ def open_agent_task_dialog(
     parent: QWidget | None = None,
     on_submit: TaskSubmitCallback | None = None,
     approval_notice_callback: ApprovalNoticeCallback | None = None,
+    initial_spec: AgentTaskSpec | None = None,
 ) -> AgentTaskSpec | None:
     """
     Show the mock dialog and return the accepted task spec.
@@ -162,6 +163,7 @@ def open_agent_task_dialog(
         parent=parent,
         on_submit=on_submit,
         approval_notice_callback=approval_notice_callback,
+        initial_spec=initial_spec,
     )
     _agent_task_dialogs.append(dialog)
     dialog.destroyed.connect(
@@ -194,6 +196,7 @@ class AgentTaskDialog(QDialog):
         parent: QWidget | None = None,
         on_submit: TaskSubmitCallback | None = None,
         approval_notice_callback: ApprovalNoticeCallback | None = None,
+        initial_spec: AgentTaskSpec | None = None,
     ):
         super().__init__(parent)
         self._on_submit = on_submit
@@ -214,6 +217,8 @@ class AgentTaskDialog(QDialog):
 
         self._build_ui()
         self._load_defaults()
+        if initial_spec is not None:
+            self._load_from_spec(initial_spec)
         self._fit_to_screen()
 
     # ------------------------------------------------------------------ UI

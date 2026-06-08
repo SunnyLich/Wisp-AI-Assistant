@@ -31,7 +31,7 @@ old behavior before implementation.
 | Drag/drop and buffered context | `main.py`, `ui/overlay.py`, `ui/drop_zone.py` | Keep as invariant | Dropped/buffered context is collected by UI/native, consumed once by the supervisor, summarized in UI, and sent to `wisp-brain` as prompt context. |
 | Chat window LLM calls | `ui/chat_window.py`, `main.py` | Replace with clean structure | `wisp-ui` keeps the existing chat widget, but its `send_fn` emits `ui.chat.request`; supervisor streams `brain.chat` chunks back through UI methods. |
 | Memory viewer | `ui/memory_viewer.py`, `core/memory_store` | Replace with clean structure | `wisp-ui` uses a small cache/proxy for the existing viewer. Open/add/update/delete events are routed to `wisp-brain` memory handlers. |
-| Agent notifications | `ui/agent/task_window.py`, `core.agent`, `macos/brain/wisp_brain` | Partial clean structure | Brain-emitted agent log/done/approval events now have supervisor-to-UI routes, and tray actions no longer import agent windows during macOS Python overlay startup. The existing full agent task/history dialogs still need a dedicated async brain-backed adapter before this target can claim complete UI-only ownership. |
+| Agent task/history | `ui/agent/task_window.py`, `core.agent`, `macos/brain/wisp_brain` | Replace with clean structure | Task collection reuses the shared Qt spec dialog, but run/history/cancel/approval behavior is protocol-backed: `wisp-ui` emits task/history intents, the supervisor streams `brain.agent.*`, and only `wisp-brain` runs `core.agent`. |
 | Plugin manager | `ui/plugin_manager.py`, `core.plugin_manager`, `macos/brain/wisp_brain` | Replace with clean structure | Query-time plugin hooks and plugin-manager list/action behavior run in `wisp-brain`; the macOS Python UI shows a protocol-fed plugin dialog instead of importing `core.plugin_manager`. |
 | Existing Swift path | `macos/Sources/Wisp` | Parallel target | Read for parity only. The pure-Python target does not link or require Swift. |
 
@@ -44,7 +44,7 @@ old behavior before implementation.
 - `macos_py.workers.audio_host` owns audio/STT/TTS imports and playback.
 - `macos_py.supervisor.flows` wires feature flows across workers and contains
   regression coverage for caller/query, rewrite/pasteback, snip, voice, chat,
-  memory, dropped context, and settings reload.
+  memory, dropped context, settings reload, and agent task/history routing.
 
 ## Live-Mac Follow-Up
 
@@ -55,6 +55,4 @@ need live macOS validation before release:
 - Hotkey delivery from the isolated native worker.
 - Screen region capture backend choice.
 - Fullscreen Spaces, multi-monitor overlay placement, and sleep/wake recovery.
-- Async brain-backed adapters for the full agent task/history dialogs, replacing
-  the remaining old direct UI imports for those windows.
 - Developer ID signing, notarization, and stable TCC identity.

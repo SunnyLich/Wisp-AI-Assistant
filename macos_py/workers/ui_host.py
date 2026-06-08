@@ -55,6 +55,393 @@ class MemoryProxy:
         self._emit("ui.memory.delete", {"id": fact_id})
 
 
+class MacAgentRunDialog:
+    """Protocol-backed agent run window for the pure-Python macOS target."""
+
+    def __init__(self, host: "QtProtocolHost", spec: dict[str, Any]) -> None:
+        from PySide6.QtCore import Qt, QUrl
+        from PySide6.QtGui import QDesktopServices, QTextCursor
+        from PySide6.QtWidgets import (
+            QApplication,
+            QDialog,
+            QFrame,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QTabWidget,
+            QTextEdit,
+            QVBoxLayout,
+        )
+
+        self._host = host
+        self._spec = dict(spec or {})
+        self._run_dir = ""
+        self._pending_approval_id = ""
+        self._QApplication = QApplication
+        self._QDesktopServices = QDesktopServices
+        self._QTextCursor = QTextCursor
+        self._QUrl = QUrl
+
+        title = str(self._spec.get("title") or "Agent Task")
+        self.dialog = QDialog()
+        self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.dialog.setWindowTitle(f"Agent Task - {title}")
+        self.dialog.setMinimumSize(820, 560)
+
+        root = QVBoxLayout(self.dialog)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        title_label = QLabel(f"<b>{title}</b>")
+        title_label.setTextFormat(Qt.TextFormat.RichText)
+        root.addWidget(title_label)
+
+        self.approval_panel = QFrame()
+        self.approval_panel.setStyleSheet(
+            "QFrame { background: #fff3d6; border: 1px solid #f59e0b; border-radius: 6px; }"
+            "QLabel { color: #3a2500; background: transparent; font-weight: 600; }"
+        )
+        approval_row = QHBoxLayout(self.approval_panel)
+        approval_row.setContentsMargins(10, 8, 10, 8)
+        self.approval_label = QLabel()
+        self.approval_label.setWordWrap(True)
+        approve_btn = QPushButton("Approve")
+        decline_btn = QPushButton("Decline")
+        approve_btn.clicked.connect(lambda: self._resolve_approval(True))
+        decline_btn.clicked.connect(lambda: self._resolve_approval(False))
+        approval_row.addWidget(self.approval_label, 1)
+        approval_row.addWidget(approve_btn)
+        approval_row.addWidget(decline_btn)
+        self.approval_panel.hide()
+        root.addWidget(self.approval_panel)
+
+        self.tabs = QTabWidget()
+        self.log_view = QTextEdit()
+        self.trace_view = QTextEdit()
+        self.final_view = QTextEdit()
+        for view in (self.log_view, self.trace_view, self.final_view):
+            view.setReadOnly(True)
+        self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.trace_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.final_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.tabs.addTab(self.log_view, "Live Log")
+        self.tabs.addTab(self.trace_view, "Model Trace")
+        self.tabs.addTab(self.final_view, "Final Report")
+        root.addWidget(self.tabs, 1)
+
+        row = QHBoxLayout()
+        self.status_label = QLabel("Running...")
+        self.open_result_btn = QPushButton("Open Run Folder")
+        self.open_result_btn.setEnabled(False)
+        self.open_result_btn.clicked.connect(self._open_result_folder)
+        self.open_scope_btn = QPushButton("Open Scope Folder")
+        self.open_scope_btn.clicked.connect(self._open_scope_folder)
+        self.retry_btn = QPushButton("Retry")
+        self.retry_btn.setEnabled(False)
+        self.retry_btn.clicked.connect(self._retry_run)
+        self.continue_btn = QPushButton("Continue")
+        self.continue_btn.setEnabled(False)
+        self.continue_btn.clicked.connect(self._continue_run)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self._cancel_run)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.dialog.close)
+        row.addWidget(self.status_label)
+        row.addStretch()
+        row.addWidget(self.open_result_btn)
+        row.addWidget(self.open_scope_btn)
+        row.addWidget(self.retry_btn)
+        row.addWidget(self.continue_btn)
+        row.addWidget(self.cancel_btn)
+        row.addWidget(close_btn)
+        root.addLayout(row)
+
+    def show(self) -> None:
+        self.dialog.show()
+        self.dialog.raise_()
+        self.dialog.activateWindow()
+
+    def close(self) -> None:
+        self.dialog.close()
+
+    def append_log(self, data: dict[str, Any]) -> None:
+        payload = self._payload(data)
+        line = str(payload.get("line") or payload.get("text") or payload.get("data") or "")
+        if line:
+            self._append_text(self.log_view, line)
+            self.status_label.setText("Running...")
+
+    def append_trace(self, data: dict[str, Any]) -> None:
+        payload = self._payload(data)
+        entry = str(payload.get("entry") or payload.get("text") or payload.get("data") or "")
+        if entry:
+            self._append_text(self.trace_view, entry)
+
+    def finish(self, data: dict[str, Any]) -> None:
+        payload = self._payload(data)
+        self._run_dir = str(payload.get("run_dir") or self._run_dir or "")
+        final_text = str(payload.get("final") or "")
+        error_text = str(payload.get("error") or "")
+        if final_text:
+            self.final_view.setPlainText(final_text)
+        elif error_text:
+            self.final_view.setPlainText(error_text)
+        elif payload.get("cancelled"):
+            self.final_view.setPlainText("Agent task cancelled.")
+        else:
+            self.final_view.setPlainText("(no final report)")
+
+        if error_text:
+            self.status_label.setText("Failed")
+        elif payload.get("cancelled"):
+            self.status_label.setText("Cancelled")
+        else:
+            self.status_label.setText("Finished")
+        self.approval_panel.hide()
+        self.cancel_btn.setEnabled(False)
+        self.open_result_btn.setEnabled(bool(self._run_dir))
+        self.retry_btn.setEnabled(True)
+        self.continue_btn.setEnabled(bool(self._run_dir))
+
+    def request_approval(self, data: dict[str, Any]) -> None:
+        payload = self._payload(data)
+        self._pending_approval_id = str(payload.get("approval_id") or "")
+        action = str(payload.get("action") or "approval")
+        details = payload.get("details")
+        detail_text = ""
+        if isinstance(details, dict):
+            detail_text = ", ".join(f"{key}={value}" for key, value in details.items())
+        if not detail_text:
+            detail_text = str(payload.get("detail") or payload.get("reason") or "")
+        text = f"Permission needed: {action}"
+        if detail_text:
+            text += f"\n{detail_text}"
+        self.approval_label.setText(text)
+        self.approval_panel.show()
+        self.status_label.setText("Permission needed")
+        self._host._agent_notify_approval(
+            text + "\nApprove or decline in the Agent Task window.",
+            resolved=False,
+            data=payload,
+        )
+        self.dialog.raise_()
+        self._QApplication.alert(self.dialog, 0)
+
+    @staticmethod
+    def _payload(data: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data, dict) and isinstance(data.get("data"), dict) and len(data) == 1:
+            return data["data"]
+        return data if isinstance(data, dict) else {"data": data}
+
+    def _append_text(self, view, text: str) -> None:
+        if not text:
+            return
+        cursor = view.textCursor()
+        cursor.movePosition(self._QTextCursor.MoveOperation.End)
+        if view.toPlainText():
+            cursor.insertText("\n")
+        cursor.insertText(text.rstrip("\n"))
+        bar = view.verticalScrollBar()
+        bar.setValue(bar.maximum())
+
+    def _resolve_approval(self, approved: bool) -> None:
+        if not self._pending_approval_id:
+            return
+        approval_id = self._pending_approval_id
+        self._pending_approval_id = ""
+        self.approval_panel.hide()
+        self._host.emit(
+            "ui.agent.approval.respond",
+            {"approval_id": approval_id, "approved": bool(approved)},
+        )
+        self._host._agent_notify_approval(
+            "Permission approved." if approved else "Permission declined.",
+            resolved=True,
+            data={"approval_id": approval_id, "approved": bool(approved)},
+        )
+
+    def _cancel_run(self) -> None:
+        self.status_label.setText("Cancelling...")
+        self.cancel_btn.setEnabled(False)
+        self._host.emit("ui.agent.cancel_requested", {})
+
+    def _retry_run(self) -> None:
+        self._host._start_agent_run(self._spec)
+
+    def _continue_run(self) -> None:
+        if self._run_dir:
+            self._host.emit("ui.agent.history.continue", {"run_dir": self._run_dir})
+
+    def _open_result_folder(self) -> None:
+        if self._run_dir:
+            self._QDesktopServices.openUrl(self._QUrl.fromLocalFile(self._run_dir))
+
+    def _open_scope_folder(self) -> None:
+        scope = str(self._spec.get("scope_folder") or "")
+        if scope:
+            self._QDesktopServices.openUrl(self._QUrl.fromLocalFile(scope))
+
+
+class MacAgentHistoryDialog:
+    """Protocol-backed agent history browser for the pure-Python macOS target."""
+
+    def __init__(self, host: "QtProtocolHost") -> None:
+        from PySide6.QtCore import Qt, QUrl
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtWidgets import (
+            QDialog,
+            QHBoxLayout,
+            QListWidget,
+            QListWidgetItem,
+            QPushButton,
+            QSplitter,
+            QTabWidget,
+            QTextEdit,
+            QVBoxLayout,
+        )
+
+        self._host = host
+        self._QDesktopServices = QDesktopServices
+        self._QListWidgetItem = QListWidgetItem
+        self._Qt = Qt
+        self._QUrl = QUrl
+        self._loading = False
+        self._current_run_dir = ""
+        self._runs_root = ""
+
+        self.dialog = QDialog()
+        self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.dialog.setWindowTitle("Agent Task History")
+        self.dialog.setMinimumSize(820, 520)
+
+        root = QVBoxLayout(self.dialog)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.run_list = QListWidget()
+        self.run_list.currentItemChanged.connect(self._selected_run_changed)
+        splitter.addWidget(self.run_list)
+
+        self.tabs = QTabWidget()
+        self.summary_view = QTextEdit()
+        self.log_view = QTextEdit()
+        self.trace_view = QTextEdit()
+        self.diff_view = QTextEdit()
+        for view in (self.summary_view, self.log_view, self.trace_view, self.diff_view):
+            view.setReadOnly(True)
+        self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.trace_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.diff_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.tabs.addTab(self.summary_view, "Summary")
+        self.tabs.addTab(self.log_view, "Run Log")
+        self.tabs.addTab(self.trace_view, "Model Trace")
+        self.tabs.addTab(self.diff_view, "Diff")
+        splitter.addWidget(self.tabs)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+        root.addWidget(splitter, 1)
+
+        row = QHBoxLayout()
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(lambda: self._host.emit("ui.agent.history.refresh", {}))
+        open_btn = QPushButton("Open Run Folder")
+        open_btn.clicked.connect(self._open_current_run)
+        retry_btn = QPushButton("Retry")
+        retry_btn.clicked.connect(lambda: self._emit_current("ui.agent.history.retry"))
+        continue_btn = QPushButton("Continue")
+        continue_btn.clicked.connect(lambda: self._emit_current("ui.agent.history.continue"))
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.dialog.close)
+        row.addStretch()
+        row.addWidget(refresh_btn)
+        row.addWidget(open_btn)
+        row.addWidget(retry_btn)
+        row.addWidget(continue_btn)
+        row.addWidget(close_btn)
+        root.addLayout(row)
+
+    def show(self) -> None:
+        self.dialog.show()
+        self.dialog.raise_()
+        self.dialog.activateWindow()
+
+    def replace_runs(self, runs: list[dict[str, Any]] | None, runs_root: str = "") -> None:
+        self._runs_root = str(runs_root or "")
+        self._loading = True
+        self.run_list.clear()
+        for run in runs or []:
+            if not isinstance(run, dict):
+                continue
+            run_dir = str(run.get("run_dir") or "")
+            if not run_dir:
+                continue
+            item = self._QListWidgetItem(self._display_name(run))
+            item.setData(self._Qt.ItemDataRole.UserRole, run_dir)
+            self.run_list.addItem(item)
+        self._loading = False
+        if self.run_list.count():
+            self.run_list.setCurrentRow(0)
+        else:
+            self._current_run_dir = ""
+            self._clear_views("No agent task runs yet.")
+
+    def update_detail(self, data: dict[str, Any]) -> None:
+        payload = data if isinstance(data, dict) else {"error": str(data)}
+        if isinstance(payload.get("data"), dict) and len(payload) == 1:
+            payload = payload["data"]
+        run_dir = str(payload.get("run_dir") or self._current_run_dir or "")
+        if run_dir:
+            self._current_run_dir = run_dir
+        error = str(payload.get("error") or "")
+        final = str(payload.get("final") or "")
+        task_json = str(payload.get("task_json") or "")
+        if error and not final:
+            summary = f"Run folder:\n{run_dir}\n\nError:\n{error}"
+        else:
+            summary = (
+                f"Run folder:\n{run_dir}\n\n"
+                f"Final report:\n{final or '(no final report)'}\n\n"
+                f"Task spec:\n{task_json or '(missing task.json)'}"
+            )
+            if error:
+                summary += f"\n\nError:\n{error}"
+        self.summary_view.setPlainText(summary)
+        self.log_view.setPlainText(str(payload.get("run_log") or ""))
+        self.trace_view.setPlainText(str(payload.get("verbose_log") or ""))
+        self.diff_view.setPlainText(str(payload.get("diff_patch") or "(no diff artifact)"))
+
+    def _selected_run_changed(self, current, _previous) -> None:
+        if self._loading or current is None:
+            return
+        run_dir = str(current.data(self._Qt.ItemDataRole.UserRole) or "")
+        self._current_run_dir = run_dir
+        if run_dir:
+            self._host.emit("ui.agent.history.read", {"run_dir": run_dir})
+
+    def _emit_current(self, event: str) -> None:
+        if self._current_run_dir:
+            self._host.emit(event, {"run_dir": self._current_run_dir})
+
+    def _open_current_run(self) -> None:
+        if self._current_run_dir:
+            self._QDesktopServices.openUrl(self._QUrl.fromLocalFile(self._current_run_dir))
+        elif self._runs_root:
+            self._QDesktopServices.openUrl(self._QUrl.fromLocalFile(self._runs_root))
+
+    def _clear_views(self, text: str) -> None:
+        for view in (self.summary_view, self.log_view, self.trace_view, self.diff_view):
+            view.setPlainText(text)
+
+    @staticmethod
+    def _display_name(run: dict[str, Any]) -> str:
+        status = str(run.get("status") or "unknown")
+        modified = str(run.get("modified_display") or "")
+        title = str(run.get("title") or run.get("id") or "Agent run")
+        suffix = f" - {modified}" if modified else ""
+        return f"{title} [{status}]{suffix}"
+
+
 def _protect_stdout():
     real_out = os.fdopen(os.dup(1), "wb", buffering=0)
     os.dup2(2, 1)
@@ -81,6 +468,8 @@ class QtProtocolHost:
         self._memory = None
         self._memory_viewer = None
         self._plugins_dialog = None
+        self._agent_run_dialog: MacAgentRunDialog | None = None
+        self._agent_history_dialog: MacAgentHistoryDialog | None = None
         self._all_conversations: list[dict] = []
         self._chat_request_ids = itertools.count(1)
         self._chat_streams: dict[str, "queue.Queue[tuple[str, Any]]"] = {}
@@ -207,13 +596,21 @@ class QtProtocolHost:
         if method == "ui.show_plugins":
             return self._show_plugins(**params)
         if method == "ui.show_agent_task":
-            return self._show_agent_task()
+            return self._show_agent_task(**params)
         if method == "ui.show_agent_history":
-            return self._show_agent_history()
+            return self._show_agent_history(**params)
         if method == "ui.agent.notify_approval":
             return self._agent_notify_approval(**params)
-        if method in {"ui.agent.log", "ui.agent.trace", "ui.agent.done", "ui.agent.approval.request"}:
-            return {"accepted": True}
+        if method == "ui.agent.log":
+            return self._agent_log(**params)
+        if method == "ui.agent.trace":
+            return self._agent_trace(**params)
+        if method == "ui.agent.done":
+            return self._agent_done(**params)
+        if method == "ui.agent.approval.request":
+            return self._agent_approval_request(**params)
+        if method == "ui.agent.history.detail":
+            return self._agent_history_detail(**params)
         raise ValueError(f"unknown method: {method}")
 
     def _reload_config(self) -> dict[str, Any]:
@@ -282,9 +679,12 @@ class QtProtocolHost:
 
     def _ensure_bubble(self):
         if self._bubble is None:
-            from ui.bubble import SpeechBubble
+            overlay = self._ensure_overlay()
+            self._bubble = getattr(overlay, "_bubble", None)
+            if self._bubble is None:
+                from ui.bubble import SpeechBubble
 
-            self._bubble = SpeechBubble()
+                self._bubble = SpeechBubble()
         return self._bubble
 
     def _show_overlay(self) -> dict[str, Any]:
@@ -362,7 +762,7 @@ class QtProtocolHost:
 
     def _reply_done(self) -> dict[str, Any]:
         bubble = self._ensure_bubble()
-        bubble.finish()
+        bubble.finish(flush_remaining=True)
         return {"done": True}
 
     @staticmethod
@@ -673,17 +1073,88 @@ class QtProtocolHost:
             layout.addWidget(error_lbl)
         return card
 
-    def _show_agent_task(self) -> dict[str, Any]:
+    def _show_agent_task(self, spec: dict[str, Any] | None = None) -> dict[str, Any]:
+        from core.agent.task_spec import agent_task_spec_from_dict
         from ui.agent.task_window import open_agent_task_dialog
 
-        open_agent_task_dialog(parent=None)
-        return {"shown": True}
+        initial_spec = None
+        if isinstance(spec, dict) and spec:
+            initial_spec = agent_task_spec_from_dict(spec)
 
-    def _show_agent_history(self) -> dict[str, Any]:
-        from ui.agent.task_window import open_agent_history
+        def on_submit(task_spec) -> None:
+            from dataclasses import asdict
 
-        open_agent_history(parent=None)
-        return {"shown": True}
+            self._start_agent_run(asdict(task_spec))
+
+        open_agent_task_dialog(
+            parent=None,
+            on_submit=on_submit,
+            approval_notice_callback=lambda text, resolved: self._agent_notify_approval(
+                text,
+                resolved=resolved,
+            ),
+            initial_spec=initial_spec,
+        )
+        return {"shown": True, "prefilled": initial_spec is not None}
+
+    def _start_agent_run(self, spec: dict[str, Any]) -> None:
+        if self._agent_run_dialog is not None:
+            self._agent_run_dialog.close()
+        dialog = MacAgentRunDialog(self, spec)
+        self._agent_run_dialog = dialog
+        dialog.dialog.destroyed.connect(
+            lambda _obj=None, w=dialog: setattr(self, "_agent_run_dialog", None)
+            if self._agent_run_dialog is w else None
+        )
+        dialog.show()
+        self.emit("ui.agent.run_requested", {"spec": spec})
+
+    def _show_agent_history(
+        self,
+        runs: list[dict[str, Any]] | None = None,
+        runs_root: str = "",
+    ) -> dict[str, Any]:
+        if self._agent_history_dialog is None:
+            dialog = MacAgentHistoryDialog(self)
+            self._agent_history_dialog = dialog
+            dialog.dialog.destroyed.connect(
+                lambda _obj=None, w=dialog: setattr(self, "_agent_history_dialog", None)
+                if self._agent_history_dialog is w else None
+            )
+        self._agent_history_dialog.replace_runs(runs or [], runs_root)
+        self._agent_history_dialog.show()
+        return {"shown": True, "runs": len(runs or [])}
+
+    def _agent_log(self, **params: Any) -> dict[str, Any]:
+        if self._agent_run_dialog is not None:
+            self._agent_run_dialog.append_log(params)
+            return {"accepted": True}
+        return {"accepted": False}
+
+    def _agent_trace(self, **params: Any) -> dict[str, Any]:
+        if self._agent_run_dialog is not None:
+            self._agent_run_dialog.append_trace(params)
+            return {"accepted": True}
+        return {"accepted": False}
+
+    def _agent_done(self, **params: Any) -> dict[str, Any]:
+        if self._agent_run_dialog is not None:
+            self._agent_run_dialog.finish(params)
+            return {"accepted": True}
+        return {"accepted": False}
+
+    def _agent_approval_request(self, **params: Any) -> dict[str, Any]:
+        if self._agent_run_dialog is not None:
+            self._agent_run_dialog.request_approval(params)
+            return {"accepted": True}
+        self._agent_notify_approval("Agent approval requested.", resolved=False, data=params)
+        return {"accepted": False}
+
+    def _agent_history_detail(self, **params: Any) -> dict[str, Any]:
+        if self._agent_history_dialog is not None:
+            self._agent_history_dialog.update_detail(params)
+            return {"accepted": True}
+        return {"accepted": False}
 
     def _agent_notify_approval(
         self,

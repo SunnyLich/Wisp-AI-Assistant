@@ -208,6 +208,7 @@ class WorkerClient:
         *,
         timeout: float = 30.0,
         on_event: Callable[[str, Any, Any], None],
+        on_started: Callable[[Any], None] | None = None,
     ) -> Any:
         """Call a worker method and route events tagged with its request id.
 
@@ -224,6 +225,11 @@ class WorkerClient:
             self._pending[rid] = slot
         with self._scoped_event_lock:
             self._scoped_event_handlers[rid] = on_event
+        if on_started is not None:
+            try:
+                on_started(rid)
+            except Exception:  # noqa: BLE001
+                log.exception("%s stream start callback failed for %s", self.spec.name, method)
         try:
             try:
                 self._write(req)

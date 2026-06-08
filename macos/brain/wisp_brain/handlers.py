@@ -1403,6 +1403,7 @@ def brain_agent_history_read(run_dir: str = "") -> dict[str, Any]:
         "final": _read_text(path / "final.md"),
         "error": _read_text(path / "error.txt"),
         "run_log": _read_text(path / "run.log"),
+        "verbose_log": _read_text(path / "verbose.log"),
         "diff_patch": _read_text(path / "diff.patch"),
     }
 

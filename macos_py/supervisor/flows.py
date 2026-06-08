@@ -34,6 +34,7 @@ class WorkerLike(Protocol):
         *,
         timeout: float = 30.0,
         on_event: Callable[[str, Any, Any], None],
+        on_started: Callable[[Any], None] | None = None,
     ) -> Any:
         ...
 
@@ -75,6 +76,7 @@ class FlowController:
         self._context_buffer: list[str] = []
         self._drop_context_items: list[dict[str, Any]] = []
         self._last_reply = ""
+        self._active_agent_stream_id: Any = None
 
     # -- lifecycle -----------------------------------------------------
 
@@ -97,6 +99,13 @@ class FlowController:
         self.ui.on_event("ui.plugins.run_action", self._on_plugins_run_action)
         self.ui.on_event("ui.agent.task_requested", self._on_agent_task_requested)
         self.ui.on_event("ui.agent.history_requested", self._on_agent_history_requested)
+        self.ui.on_event("ui.agent.run_requested", self._on_agent_run_requested)
+        self.ui.on_event("ui.agent.cancel_requested", self._on_agent_cancel_requested)
+        self.ui.on_event("ui.agent.approval.respond", self._on_agent_approval_respond)
+        self.ui.on_event("ui.agent.history.refresh", self._on_agent_history_refresh)
+        self.ui.on_event("ui.agent.history.read", self._on_agent_history_read)
+        self.ui.on_event("ui.agent.history.retry", self._on_agent_history_retry)
+        self.ui.on_event("ui.agent.history.continue", self._on_agent_history_continue)
         self.ui.on_event("ui.settings.applied", self._on_settings_applied)
         self.ui.on_event("ui.bubble.speed", self._on_bubble_speed)
         self.brain.on_event("reply.chunk", self._on_reply_chunk)
@@ -113,8 +122,15 @@ class FlowController:
         except Exception:
             log.exception("audio prewarm did not start")
 
-    def start_hotkeys(self) -> None:
-        self.native.call("native.hotkeys.start", timeout=10.0)
+    def start_hotkeys(self) -> dict[str, Any]:
+        result = self.native.call("native.hotkeys.start", timeout=10.0) or {}
+        if not isinstance(result, dict):
+            result = {"started": False, "reason": "unexpected native response"}
+        if not result.get("started"):
+            reason = str(result.get("reason") or result.get("error") or "unknown error")
+            log.warning("native hotkeys did not start: %s", reason)
+            self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
+        return result
 
     # -- event handlers ------------------------------------------------
 
@@ -186,6 +202,27 @@ class FlowController:
 
     def _on_agent_history_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         self._schedule(self.open_agent_history)
+
+    def _on_agent_run_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.run_agent_task, dict((data or {}).get("spec") or {}))
+
+    def _on_agent_cancel_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.cancel_agent_task)
+
+    def _on_agent_approval_respond(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.respond_agent_approval, data or {})
+
+    def _on_agent_history_refresh(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.open_agent_history)
+
+    def _on_agent_history_read(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.read_agent_history, str((data or {}).get("run_dir") or ""))
+
+    def _on_agent_history_retry(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.retry_agent_history, str((data or {}).get("run_dir") or ""))
+
+    def _on_agent_history_continue(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.continue_agent_history, str((data or {}).get("run_dir") or ""))
 
     def _on_settings_applied(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         self._schedule(self.reload_settings)
@@ -357,7 +394,9 @@ class FlowController:
         self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
         self._safe_call(self.audio, "audio.prewarm", timeout=30.0)
         self._safe_call(self.native, "native.hotkeys.stop", timeout=10.0)
-        self._safe_call(self.native, "native.hotkeys.start", timeout=10.0)
+        result = self._safe_call(self.native, "native.hotkeys.start", timeout=10.0) or {}
+        if isinstance(result, dict) and not result.get("started"):
+            self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
 
     def chat_request(self, data: dict[str, Any]) -> None:
         request_id = str(data.get("request_id") or "")
@@ -468,11 +507,144 @@ class FlowController:
             message = str(result["message"])
         self._notice(message)
 
-    def open_agent_task(self) -> None:
-        self._safe_call(self.ui, "ui.show_agent_task", timeout=30.0)
+    def open_agent_task(self, spec: dict[str, Any] | None = None) -> None:
+        params = {"spec": spec} if isinstance(spec, dict) and spec else {}
+        self._safe_call(self.ui, "ui.show_agent_task", params, timeout=30.0)
 
     def open_agent_history(self) -> None:
-        self._safe_call(self.ui, "ui.show_agent_history", timeout=30.0)
+        result = self._safe_call(
+            self.brain,
+            "brain.agent.history.list",
+            {"limit": 100},
+            timeout=30.0,
+        ) or {}
+        if not isinstance(result, dict):
+            result = {}
+        self._safe_call(
+            self.ui,
+            "ui.show_agent_history",
+            {
+                "runs_root": str(result.get("runs_root") or ""),
+                "runs": list(result.get("runs") or []),
+            },
+            timeout=30.0,
+        )
+
+    def run_agent_task(self, spec: dict[str, Any]) -> None:
+        if not isinstance(spec, dict) or not spec:
+            self._notice("Agent task spec was empty.")
+            return
+
+        timeout = max(600.0, float(spec.get("max_runtime_minutes") or 60) * 60.0 + 120.0)
+        done_seen = False
+        stream_id: Any = None
+
+        def on_started(req_id: Any) -> None:
+            nonlocal stream_id
+            stream_id = req_id
+            with self._lock:
+                self._active_agent_stream_id = req_id
+
+        def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
+            nonlocal done_seen
+            params = payload if isinstance(payload, dict) else {"data": payload}
+            if event == "agent.log":
+                self._safe_call(self.ui, "ui.agent.log", params, timeout=30.0)
+            elif event == "agent.trace":
+                self._safe_call(self.ui, "ui.agent.trace", params, timeout=30.0)
+            elif event == "agent.approval.request":
+                self._safe_call(self.ui, "ui.agent.approval.request", params, timeout=30.0)
+            elif event == "agent.done":
+                done_seen = True
+                self._safe_call(self.ui, "ui.agent.done", params, timeout=30.0)
+
+        try:
+            result = self._brain_call_with_events(
+                "brain.agent.run",
+                {"spec": spec},
+                timeout=timeout,
+                on_event=on_event,
+                on_started=on_started,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.exception("agent task failed")
+            self._safe_call(
+                self.ui,
+                "ui.agent.done",
+                {"error": f"{type(exc).__name__}: {exc}"},
+                timeout=30.0,
+            )
+            return
+        finally:
+            with self._lock:
+                if self._active_agent_stream_id == stream_id:
+                    self._active_agent_stream_id = None
+
+        if not done_seen and isinstance(result, dict):
+            self._safe_call(self.ui, "ui.agent.done", result, timeout=30.0)
+
+    def cancel_agent_task(self) -> None:
+        with self._lock:
+            target = self._active_agent_stream_id
+        if target is None:
+            self._notice("No agent task is running.")
+            return
+        result = self._safe_call(self.brain, "brain.cancel", {"target": target}, timeout=10.0) or {}
+        if isinstance(result, dict) and result.get("cancelled"):
+            self._notice("Agent task cancellation requested.")
+        else:
+            self._notice("Agent task was not running.")
+
+    def respond_agent_approval(self, data: dict[str, Any]) -> None:
+        approval_id = str(data.get("approval_id") or "").strip()
+        if not approval_id:
+            self._notice("Agent approval response was missing an id.")
+            return
+        result = self._safe_call(
+            self.brain,
+            "brain.agent.approval.respond",
+            {"approval_id": approval_id, "approved": bool(data.get("approved", False))},
+            timeout=30.0,
+        ) or {}
+        if isinstance(result, dict) and result.get("message"):
+            self._notice(str(result["message"]))
+
+    def read_agent_history(self, run_dir: str) -> None:
+        if not run_dir:
+            self._safe_call(
+                self.ui,
+                "ui.agent.history.detail",
+                {"error": "run_dir is required"},
+                timeout=30.0,
+            )
+            return
+        try:
+            result = self.brain.call(
+                "brain.agent.history.read",
+                {"run_dir": run_dir},
+                timeout=30.0,
+            ) or {}
+        except Exception as exc:  # noqa: BLE001
+            log.exception("agent history read failed")
+            result = {"run_dir": run_dir, "error": f"{type(exc).__name__}: {exc}"}
+        self._safe_call(self.ui, "ui.agent.history.detail", result, timeout=30.0)
+
+    def retry_agent_history(self, run_dir: str) -> None:
+        self._open_agent_spec_from_history("brain.agent.history.retry_spec", run_dir)
+
+    def continue_agent_history(self, run_dir: str) -> None:
+        self._open_agent_spec_from_history("brain.agent.history.continue_spec", run_dir)
+
+    def _open_agent_spec_from_history(self, method: str, run_dir: str) -> None:
+        if not run_dir:
+            self._notice("Choose an agent run first.")
+            return
+        result = self._safe_call(self.brain, method, {"run_dir": run_dir}, timeout=30.0) or {}
+        spec = result.get("spec") if isinstance(result, dict) else None
+        if isinstance(spec, dict) and spec:
+            self.open_agent_task(spec)
+        else:
+            self._notice("Could not load that agent task spec.")
 
     # -- core flows -----------------------------------------------------
 
@@ -583,10 +755,17 @@ class FlowController:
         *,
         timeout: float,
         on_event: Callable[[str, Any, Any], None],
+        on_started: Callable[[Any], None] | None = None,
     ) -> Any:
         call_with_events = getattr(self.brain, "call_with_events", None)
         if callable(call_with_events):
-            return call_with_events(method, params, timeout=timeout, on_event=on_event)
+            return call_with_events(
+                method,
+                params,
+                timeout=timeout,
+                on_event=on_event,
+                on_started=on_started,
+            )
         return self.brain.call(method, params, timeout=timeout)
 
     def _new_generation(self) -> int:

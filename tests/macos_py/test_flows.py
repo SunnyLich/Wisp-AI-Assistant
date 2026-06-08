@@ -44,11 +44,15 @@ class FakeWorker:
         *,
         timeout: float = 30.0,
         on_event,
+        on_started=None,
     ) -> Any:
         payload = params or {}
+        request_id = len(self.calls) + 1
         self.calls.append(
             {"method": method, "params": payload, "timeout": timeout, "wait": True, "stream": True}
         )
+        if on_started is not None:
+            on_started(request_id)
         handler = self.stream_handlers.get(method)
         if handler is not None:
             return handler(payload, on_event)
@@ -312,6 +316,10 @@ def test_plugin_and_agent_tray_events_route_through_supervisor():
                 "plugins": [{"name": "demo", "status": "loaded", "tray_actions": ["Run"]}],
             },
             "brain.plugins.run_action": lambda _params: {"ok": True, "message": "ran demo"},
+            "brain.agent.history.list": lambda _params: {
+                "runs_root": "/tmp/runs",
+                "runs": [{"title": "recent", "run_dir": "/tmp/runs/1"}],
+            },
         }
     )
     _flow, _native, ui, brain, _audio = make_flow(brain=brain)
@@ -325,7 +333,94 @@ def test_plugin_and_agent_tray_events_route_through_supervisor():
     assert brain.last_call("brain.plugins.run_action")["params"]["plugin_name"] == "demo"
     assert ui.last_call("ui.reply.notice")["params"]["text"] == "ran demo"
     assert ui.calls_for("ui.show_agent_task")
-    assert ui.calls_for("ui.show_agent_history")
+    assert ui.last_call("ui.show_agent_history")["params"]["runs"][0]["title"] == "recent"
+
+
+def test_agent_run_request_streams_through_brain_agent_run():
+    def agent_stream(params: dict[str, Any], on_event) -> dict[str, Any]:
+        assert params["spec"]["title"] == "demo task"
+        on_event("agent.log", {"line": "started"}, 1)
+        on_event("agent.trace", {"entry": "trace"}, 1)
+        on_event("agent.approval.request", {"approval_id": "abc", "action": "shell"}, 1)
+        on_event("agent.done", {"run_dir": "/tmp/run", "final": "done"}, 1)
+        return {"run_dir": "/tmp/run", "final": "done"}
+
+    brain = FakeWorker(stream_handlers={"brain.agent.run": agent_stream})
+    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.agent.run_requested",
+        {"spec": {"title": "demo task", "max_runtime_minutes": 1}},
+    )
+
+    assert brain.last_call("brain.agent.run")["params"]["spec"]["title"] == "demo task"
+    assert ui.last_call("ui.agent.log")["params"]["line"] == "started"
+    assert ui.last_call("ui.agent.trace")["params"]["entry"] == "trace"
+    assert ui.last_call("ui.agent.approval.request")["params"]["approval_id"] == "abc"
+    assert ui.last_call("ui.agent.done")["params"]["final"] == "done"
+
+
+def test_agent_approval_and_cancel_route_to_brain():
+    held_on_event = {}
+
+    def agent_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        held_on_event["handler"] = on_event
+        return {"run_dir": "/tmp/run", "cancelled": True}
+
+    brain = FakeWorker(
+        handlers={
+            "brain.cancel": lambda params: {"cancelled": params.get("target") == 1},
+            "brain.agent.approval.respond": lambda params: {"ok": True, "approved": params["approved"]},
+        },
+        stream_handlers={"brain.agent.run": agent_stream},
+    )
+    flow, _native, ui, brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.agent.run_requested",
+        {"spec": {"title": "demo task", "max_runtime_minutes": 1}},
+    )
+    with flow._lock:
+        flow._active_agent_stream_id = 1
+    ui.emit("ui.agent.cancel_requested", {})
+    ui.emit("ui.agent.approval.respond", {"approval_id": "abc", "approved": True})
+
+    assert brain.last_call("brain.cancel")["params"]["target"] == 1
+    assert brain.last_call("brain.agent.approval.respond")["params"] == {
+        "approval_id": "abc",
+        "approved": True,
+    }
+
+
+def test_agent_history_routes_read_retry_and_continue_specs():
+    brain = FakeWorker(
+        {
+            "brain.agent.history.list": lambda _params: {
+                "runs_root": "/tmp/runs",
+                "runs": [{"title": "recent", "run_dir": "/tmp/runs/1"}],
+            },
+            "brain.agent.history.read": lambda params: {
+                "run_dir": params["run_dir"],
+                "final": "final",
+                "run_log": "log",
+                "verbose_log": "trace",
+            },
+            "brain.agent.history.retry_spec": lambda _params: {"spec": {"title": "retry"}},
+            "brain.agent.history.continue_spec": lambda _params: {"spec": {"title": "continue"}},
+        }
+    )
+    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+
+    ui.emit("ui.agent.history_requested", {})
+    ui.emit("ui.agent.history.read", {"run_dir": "/tmp/runs/1"})
+    ui.emit("ui.agent.history.retry", {"run_dir": "/tmp/runs/1"})
+    ui.emit("ui.agent.history.continue", {"run_dir": "/tmp/runs/1"})
+
+    assert ui.last_call("ui.show_agent_history")["params"]["runs_root"] == "/tmp/runs"
+    assert ui.last_call("ui.agent.history.detail")["params"]["verbose_log"] == "trace"
+    task_calls = ui.calls_for("ui.show_agent_task")
+    assert task_calls[-2]["params"]["spec"]["title"] == "retry"
+    assert task_calls[-1]["params"]["spec"]["title"] == "continue"
 
 
 def test_settings_reload_refreshes_brain_audio_and_hotkeys():
@@ -337,3 +432,15 @@ def test_settings_reload_refreshes_brain_audio_and_hotkeys():
     assert audio.calls_for("audio.prewarm")
     assert native.calls_for("native.hotkeys.stop")
     assert native.calls_for("native.hotkeys.start")
+
+
+def test_start_hotkeys_surfaces_failed_registration_to_user():
+    native = FakeWorker(
+        {"native.hotkeys.start": lambda _params: {"started": False, "reason": "Carbon unavailable"}}
+    )
+    flow, _native, ui, _brain, _audio = make_flow(native=native)
+
+    result = flow.start_hotkeys()
+
+    assert result["started"] is False
+    assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Global hotkeys did not start")

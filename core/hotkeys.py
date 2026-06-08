@@ -228,7 +228,12 @@ class HotkeyListener:
         if _IS_WIN:
             self._impl = _Win32Impl(self._hotkey_defs)
         elif _IS_MAC:
-            self._impl = _CarbonImpl(self._hotkey_defs)
+            self._impl = _CarbonImpl(
+                self._hotkey_defs,
+                voice_hotkey=config.HOTKEY_VOICE,
+                on_voice_start=on_voice_start,
+                on_voice_stop=on_voice_stop,
+            )
         else:
             self._impl = _PynputImpl(self._hotkey_defs)
         self._voice_listener = None
@@ -385,7 +390,8 @@ if _IS_MAC:
         return (ord(s[0]) << 24) | (ord(s[1]) << 16) | (ord(s[2]) << 8) | ord(s[3])
 
     _kEventClassKeyboard     = _four_char_code("keyb")
-    _kEventHotKeyPressed     = 6
+    _kEventHotKeyPressed     = 5
+    _kEventHotKeyReleased    = 6
     _kEventParamDirectObject = _four_char_code("----")  # kEventParamDirectObject is '----'
     _typeEventHotKeyID       = _four_char_code("hkid")
 
@@ -408,6 +414,9 @@ if _IS_MAC:
             ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p,
         ]
         _carbon.GetEventParameter.restype = ctypes.c_int32
+        if hasattr(_carbon, "GetEventKind"):
+            _carbon.GetEventKind.argtypes = [ctypes.c_void_p]
+            _carbon.GetEventKind.restype = ctypes.c_uint32
         if hasattr(_carbon, "RemoveEventHandler"):
             _carbon.RemoveEventHandler.argtypes = [ctypes.c_void_p]
             _carbon.RemoveEventHandler.restype = ctypes.c_int32
@@ -455,11 +464,22 @@ if _IS_MAC:
 
 
 class _CarbonImpl:
-    def __init__(self, hotkey_defs: list[tuple[str, Callable]]):
+    def __init__(
+        self,
+        hotkey_defs: list[tuple[str, Callable]],
+        *,
+        voice_hotkey: str = "",
+        on_voice_start: Callable[[], None] | None = None,
+        on_voice_stop: Callable[[], None] | None = None,
+    ):
         self._hotkey_defs = hotkey_defs
         self._handler_ref = ctypes.c_void_p()
         self._hotkey_refs: list = []
         self._callbacks: dict[int, Callable] = {}
+        self._voice_hotkey = voice_hotkey
+        self._on_voice_start = on_voice_start
+        self._on_voice_stop = on_voice_stop
+        self._voice_id = 0
         self._handler_upp = None  # keep the CFUNCTYPE alive while installed
         self._signature = _four_char_code("Wisp")
 
@@ -474,7 +494,10 @@ class _CarbonImpl:
 
         # One handler dispatches all of our registered hot keys.
         self._handler_upp = _CARBON_HANDLER(self._dispatch)
-        spec = _EventTypeSpec(_kEventClassKeyboard, _kEventHotKeyPressed)
+        specs = (_EventTypeSpec * 2)(
+            _EventTypeSpec(_kEventClassKeyboard, _kEventHotKeyPressed),
+            _EventTypeSpec(_kEventClassKeyboard, _kEventHotKeyReleased),
+        )
         install = getattr(_carbon, "InstallEventHandlerUPP", None) or _carbon.InstallEventHandler
         install.argtypes = [
             ctypes.c_void_p, _CARBON_HANDLER, ctypes.c_uint32,
@@ -483,7 +506,7 @@ class _CarbonImpl:
         ]
         install.restype = ctypes.c_int32
         status = install(
-            target, self._handler_upp, 1, ctypes.byref(spec), None,
+            target, self._handler_upp, len(specs), specs, None,
             ctypes.byref(self._handler_ref),
         )
         if status != 0:
@@ -512,6 +535,32 @@ class _CarbonImpl:
             registered += 1
             print(f"[hotkeys] Carbon registered {hotkey_str!r} (keycode={keycode}, mods={mods}).")
 
+        if self._voice_hotkey and (self._on_voice_start or self._on_voice_stop):
+            parsed = _parse_hotkey_carbon(self._voice_hotkey)
+            if parsed is None:
+                print(f"[hotkeys] Carbon: cannot parse voice hotkey {self._voice_hotkey!r}.")
+            else:
+                mods, keycode = parsed
+                hk_id = len(self._hotkey_defs) + 1
+                ref = ctypes.c_void_p()
+                status = _carbon.RegisterEventHotKey(
+                    keycode, mods, _EventHotKeyID(self._signature, hk_id),
+                    target, 0, ctypes.byref(ref),
+                )
+                if status != 0:
+                    print(
+                        f"[hotkeys] Carbon RegisterEventHotKey({self._voice_hotkey!r}) "
+                        f"failed (status {status})."
+                    )
+                else:
+                    self._voice_id = hk_id
+                    self._hotkey_refs.append(ref)
+                    registered += 1
+                    print(
+                        f"[hotkeys] Carbon registered voice {self._voice_hotkey!r} "
+                        f"(keycode={keycode}, mods={mods})."
+                    )
+
         if registered == 0:
             print("[hotkeys] Carbon: no hotkeys registered.")
             self.stop()
@@ -536,8 +585,22 @@ class _CarbonImpl:
                 ctypes.sizeof(hk_id), None, ctypes.byref(hk_id),
             )
             if status == 0 and hk_id.signature == self._signature:
-                print(f"[hotkeys] Carbon hotkey fired (id={hk_id.id}).")
-                cb = self._callbacks.get(hk_id.id)
+                kind = (
+                    int(_carbon.GetEventKind(event))
+                    if hasattr(_carbon, "GetEventKind")
+                    else _kEventHotKeyPressed
+                )
+                print(f"[hotkeys] Carbon hotkey fired (id={hk_id.id}, kind={kind}).")
+                if hk_id.id == self._voice_id:
+                    cb = (
+                        self._on_voice_start
+                        if kind == _kEventHotKeyPressed
+                        else self._on_voice_stop
+                        if kind == _kEventHotKeyReleased
+                        else None
+                    )
+                else:
+                    cb = self._callbacks.get(hk_id.id) if kind == _kEventHotKeyPressed else None
                 if cb:
                     threading.Thread(target=cb, daemon=True).start()
         except Exception as exc:
@@ -552,6 +615,7 @@ class _CarbonImpl:
                 pass
         self._hotkey_refs = []
         self._callbacks = {}
+        self._voice_id = 0
         if self._handler_ref and hasattr(_carbon, "RemoveEventHandler"):
             try:
                 _carbon.RemoveEventHandler(self._handler_ref)

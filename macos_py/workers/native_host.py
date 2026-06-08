@@ -2,18 +2,105 @@
 
 from __future__ import annotations
 
+import atexit
+import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 
+from macos_py.bootstrap import repo_root
 from macos_py.service_host import run_host
 
 IS_MAC = sys.platform == "darwin"
 _emit: Callable[[str, Any, Any], None] | None = None
 _hotkeys = None
+
+
+class _HotkeyHelper:
+    def __init__(self) -> None:
+        self.proc: subprocess.Popen | None = None
+        self._ready = threading.Event()
+        self._status: dict[str, Any] = {
+            "started": False,
+            "backend": "carbon-helper",
+            "reason": "not started",
+        }
+
+    def start(self) -> dict[str, Any]:
+        env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        env.setdefault("WISP_REPO_ROOT", str(repo_root()))
+        self.proc = subprocess.Popen(
+            [sys.executable, "-m", "macos_py.workers.hotkey_helper"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(repo_root()),
+            env=env,
+            bufsize=0,
+        )
+        threading.Thread(target=self._stdout_loop, daemon=True).start()
+        threading.Thread(target=self._stderr_loop, daemon=True).start()
+        if not self._ready.wait(timeout=5.0):
+            self._status = {
+                "started": False,
+                "backend": "carbon-helper",
+                "reason": "helper did not report readiness",
+            }
+            self.stop()
+        return dict(self._status)
+
+    def stop(self) -> None:
+        proc = self.proc
+        self.proc = None
+        if proc is None or proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5.0)
+
+    def _stdout_loop(self) -> None:
+        proc = self.proc
+        if proc is None or proc.stdout is None:
+            return
+        for raw in iter(proc.stdout.readline, b""):
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                print(f"[hotkeys] helper stdout: {line}", file=sys.stderr)
+                continue
+            if "status" in msg:
+                self._status = msg
+                self._ready.set()
+                continue
+            if msg.get("event") == "native.hotkey":
+                _event("native.hotkey", msg.get("data") or {})
+        if not self._ready.is_set():
+            self._status = {
+                "started": False,
+                "backend": "carbon-helper",
+                "reason": "helper exited before readiness",
+            }
+            self._ready.set()
+
+    def _stderr_loop(self) -> None:
+        proc = self.proc
+        if proc is None or proc.stderr is None:
+            return
+        for raw in iter(proc.stderr.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip()
+            if line:
+                print(f"[hotkeys] helper: {line}", file=sys.stderr)
 
 
 def set_event_sink(fn: Callable[[str, Any, Any], None]) -> None:
@@ -247,35 +334,23 @@ def open_privacy_settings(pane: str = "Privacy") -> dict[str, Any]:
 def hotkeys_start() -> dict[str, Any]:
     """Start global hotkeys in the native process.
 
-    This deliberately keeps the legacy Carbon/pynput code out of the UI process.
-    The first implementation reuses ``core.hotkeys`` as an isolated backend and
-    emits protocol events back to the supervisor.
+    Carbon hotkeys need a Carbon event loop. The native worker's main thread is
+    reserved for IPC, so a tiny helper process owns that loop and streams events
+    back here.
     """
     global _hotkeys
     if not IS_MAC:
         return {"started": False, "backend": "unavailable", "reason": "not macOS"}
     if _hotkeys is not None:
         return {"started": True, "backend": "existing"}
-    import config
-    from core.hotkeys import HotkeyListener
-
-    caller_count = len(getattr(config, "CALLER_ROWS", []))
-    callers = [
-        (lambda idx=idx: _event("native.hotkey", {"kind": "caller", "index": idx}))
-        for idx in range(caller_count)
-    ]
-    _hotkeys = HotkeyListener(
-        on_callers=callers,
-        on_add_context=lambda: _event("native.hotkey", {"kind": "add_context"}),
-        on_clear_context=lambda: _event("native.hotkey", {"kind": "clear_context"}),
-        on_snip=lambda: _event("native.hotkey", {"kind": "snip"}),
-        on_voice_start=lambda: _event("native.hotkey", {"kind": "voice_start"}),
-        on_voice_stop=lambda: _event("native.hotkey", {"kind": "voice_stop"}),
-    )
-    started = bool(_hotkeys.start())
-    if not started:
-        _hotkeys = None
-    return {"started": started, "backend": "core.hotkeys"}
+    helper = _HotkeyHelper()
+    result = helper.start()
+    if result.get("started"):
+        _hotkeys = helper
+        return result
+    helper.stop()
+    _hotkeys = None
+    return result
 
 
 def hotkeys_stop() -> dict[str, Any]:
@@ -284,6 +359,9 @@ def hotkeys_stop() -> dict[str, Any]:
         _hotkeys.stop()
         _hotkeys = None
     return {"stopped": True}
+
+
+atexit.register(hotkeys_stop)
 
 
 HANDLERS = {
