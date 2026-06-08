@@ -46,6 +46,8 @@ class WorkerClient:
         self._pending_lock = threading.Lock()
         self._pending: dict[int, dict[str, Any]] = {}
         self._event_handlers: dict[str, list[Callable[[Any, Any], None]]] = {}
+        self._scoped_event_lock = threading.Lock()
+        self._scoped_event_handlers: dict[int, Callable[[str, Any, Any], None]] = {}
         self._restart_count = 0
         self._shutting_down = False
         atexit.register(self.shutdown)
@@ -124,6 +126,16 @@ class WorkerClient:
             self._pending.clear()
 
     def _dispatch_event(self, event: str, data: Any, req_id: Any) -> None:
+        scoped = None
+        if req_id is not None:
+            with self._scoped_event_lock:
+                scoped = self._scoped_event_handlers.get(req_id)
+        if scoped is not None:
+            try:
+                scoped(event, data, req_id)
+            except Exception:  # noqa: BLE001
+                log.exception("%s scoped event handler failed for %s", self.spec.name, event)
+            return
         for handler in list(self._event_handlers.get(event, ())):
             try:
                 handler(data, req_id)
@@ -177,6 +189,49 @@ class WorkerClient:
         if not resp.get("ok"):
             raise WorkerError(str(resp.get("error") or f"{method!r} failed"))
         return resp.get("result")
+
+    def call_with_events(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float = 30.0,
+        on_event: Callable[[str, Any, Any], None],
+    ) -> Any:
+        """Call a worker method and route events tagged with its request id.
+
+        Streaming brain methods emit generic names like ``reply.chunk``. Scoped
+        routing lets the supervisor decide whether those chunks belong to the
+        overlay, chat, auth, or an agent run without changing the wire format.
+        """
+        self._ensure_started()
+        rid = next(self._ids)
+        req = protocol.make_request(rid, method, params or {})
+        ev = threading.Event()
+        slot: dict[str, Any] = {"event": ev, "resp": None}
+        with self._pending_lock:
+            self._pending[rid] = slot
+        with self._scoped_event_lock:
+            self._scoped_event_handlers[rid] = on_event
+        try:
+            try:
+                self._write(req)
+            except WorkerError:
+                with self._pending_lock:
+                    self._pending.pop(rid, None)
+                raise
+
+            if not ev.wait(timeout):
+                with self._pending_lock:
+                    self._pending.pop(rid, None)
+                raise WorkerError(f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s")
+            resp = slot["resp"] or {"ok": False, "error": "missing response"}
+            if not resp.get("ok"):
+                raise WorkerError(str(resp.get("error") or f"{method!r} failed"))
+            return resp.get("result")
+        finally:
+            with self._scoped_event_lock:
+                self._scoped_event_handlers.pop(rid, None)
 
     def restart(self) -> None:
         with self._spawn_lock:
@@ -239,4 +294,3 @@ class WispSupervisor:
     def shutdown(self) -> None:
         for worker in self.workers.values():
             worker.shutdown()
-

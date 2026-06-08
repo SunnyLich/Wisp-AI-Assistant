@@ -3,7 +3,7 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
-ROOT = Path(SPECPATH).resolve().parent
+ROOT = Path(SPECPATH).resolve().parent.parent
 
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 
@@ -99,4 +99,3 @@ app = BUNDLE(
         "NSAppleEventsUsageDescription": "Wisp reads the active document and window to provide context.",
     },
 )
-

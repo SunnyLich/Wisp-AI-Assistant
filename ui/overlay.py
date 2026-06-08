@@ -46,6 +46,9 @@ class OverlaySignals(QObject):
     show_last_chat         = Signal()        # tray "Last chat" clicked
     chat_new_conversation  = Signal()        # a voice query created a new conversation
     show_memory_viewer     = Signal()        # tray "Memory-¦" clicked
+    show_plugin_manager    = Signal()        # tray "Plugin Manager" clicked
+    show_agent_task        = Signal()        # tray "Start agent task" clicked
+    show_agent_history     = Signal()        # tray "Agent task history" clicked
     context_items_dropped  = Signal(object)  # list[(name, content, type)] from drag-drop
     show_context_summary   = Signal(object)  # list[(name, type)] of context sent with a prompt
     drop_context_cleared   = Signal()        # context panel should be cleared
@@ -179,15 +182,23 @@ class IconOverlay(QMainWindow):
     def _build_tray_menu(self) -> QMenu:
         menu = QMenu()
 
-        from ui.agent.task_window import make_agent_history_action, make_agent_task_action
-
         ask_action = QAction("Ask Wisp", self)
         ask_action.triggered.connect(lambda: self.signals.summon_caller.emit(0))
         menu.addAction(ask_action)
         menu.addSeparator()
 
-        menu.addAction(make_agent_task_action(self, parent=self))
-        menu.addAction(make_agent_history_action(self, parent=self))
+        if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
+            agent_task_action = QAction("Start agent task...", self)
+            agent_task_action.triggered.connect(self.signals.show_agent_task.emit)
+            agent_history_action = QAction("Agent task history...", self)
+            agent_history_action.triggered.connect(self.signals.show_agent_history.emit)
+            menu.addAction(agent_task_action)
+            menu.addAction(agent_history_action)
+        else:
+            from ui.agent.task_window import make_agent_history_action, make_agent_task_action
+
+            menu.addAction(make_agent_task_action(self, parent=self))
+            menu.addAction(make_agent_history_action(self, parent=self))
         menu.addSeparator()
 
         new_chat_action = QAction("New chat", self)
@@ -208,7 +219,10 @@ class IconOverlay(QMainWindow):
         menu.addSeparator()
         menu.addAction(memory_action)
         plugin_manager_action = QAction("Plugin Manager", self)
-        plugin_manager_action.triggered.connect(self._open_plugin_manager)
+        if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
+            plugin_manager_action.triggered.connect(self.signals.show_plugin_manager.emit)
+        else:
+            plugin_manager_action.triggered.connect(self._open_plugin_manager)
         menu.addAction(plugin_manager_action)
         menu.addSeparator()
 

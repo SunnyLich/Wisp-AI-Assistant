@@ -1,0 +1,795 @@
+"""Product flow controller for the pure-Python macOS target."""
+
+from __future__ import annotations
+
+import base64
+import itertools
+import logging
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Protocol
+
+log = logging.getLogger("wisp.macos_py.flows")
+
+
+class WorkerLike(Protocol):
+    def call(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float = 30.0,
+        wait: bool = True,
+    ) -> Any:
+        ...
+
+    def on_event(self, event: str, handler) -> None:
+        ...
+
+    def call_with_events(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float = 30.0,
+        on_event: Callable[[str, Any, Any], None],
+    ) -> Any:
+        ...
+
+
+@dataclass
+class PendingInvocation:
+    caller_idx: int = 0
+    caller: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
+    screenshot_b64: str | None = None
+    intent_target_pid: int = 0
+    paste_target_pid: int = 0
+    is_snip: bool = False
+
+
+class FlowController:
+    """Wire native/UI events into brain/audio/native product workflows."""
+
+    def __init__(
+        self,
+        *,
+        native: WorkerLike,
+        ui: WorkerLike,
+        brain: WorkerLike,
+        audio: WorkerLike,
+        run_async: bool = True,
+    ) -> None:
+        self.native = native
+        self.ui = ui
+        self.brain = brain
+        self.audio = audio
+        self.run_async = run_async
+        self._lock = threading.RLock()
+        self._pending: PendingInvocation | None = None
+        self._voice_context: dict[str, Any] = {}
+        self._voice_active = False
+        self._generation = itertools.count(1)
+        self._current_generation = 0
+        self._context_buffer: list[str] = []
+        self._drop_context_items: list[dict[str, Any]] = []
+        self._last_reply = ""
+
+    # -- lifecycle -----------------------------------------------------
+
+    def start(self) -> None:
+        self.native.on_event("native.hotkey", self._on_native_hotkey)
+        self.ui.on_event("ui.summon_caller", self._on_summon_caller)
+        self.ui.on_event("ui.request_snip", self._on_request_snip)
+        self.ui.on_event("ui.intent.chosen", self._on_intent_chosen)
+        self.ui.on_event("ui.intent.cancelled", self._on_intent_cancelled)
+        self.ui.on_event("ui.snip.region", self._on_snip_region)
+        self.ui.on_event("ui.snip.cancelled", self._on_snip_cancelled)
+        self.ui.on_event("ui.context.dropped", self._on_context_dropped)
+        self.ui.on_event("ui.context.remove", self._on_context_remove)
+        self.ui.on_event("ui.chat.request", self._on_chat_request)
+        self.ui.on_event("ui.memory.open_requested", self._on_memory_open_requested)
+        self.ui.on_event("ui.memory.add", self._on_memory_add)
+        self.ui.on_event("ui.memory.update", self._on_memory_update)
+        self.ui.on_event("ui.memory.delete", self._on_memory_delete)
+        self.ui.on_event("ui.plugins.open_requested", self._on_plugins_open_requested)
+        self.ui.on_event("ui.plugins.run_action", self._on_plugins_run_action)
+        self.ui.on_event("ui.agent.task_requested", self._on_agent_task_requested)
+        self.ui.on_event("ui.agent.history_requested", self._on_agent_history_requested)
+        self.ui.on_event("ui.settings.applied", self._on_settings_applied)
+        self.ui.on_event("ui.bubble.speed", self._on_bubble_speed)
+        self.brain.on_event("reply.chunk", self._on_reply_chunk)
+        self.brain.on_event("reply.done", self._on_reply_done)
+        self.brain.on_event("agent.log", self._forward_agent_event("ui.agent.log"))
+        self.brain.on_event("agent.trace", self._forward_agent_event("ui.agent.trace"))
+        self.brain.on_event("agent.done", self._forward_agent_event("ui.agent.done"))
+        self.brain.on_event("agent.approval.request", self._on_agent_approval_request)
+        self.audio.on_event("audio.playback.started", self._on_audio_playback_started)
+        self.audio.on_event("audio.playback.done", self._on_audio_playback_done)
+        self.ui.call("ui.show_overlay", timeout=30.0)
+        try:
+            self.audio.call("audio.prewarm", timeout=30.0, wait=False)
+        except Exception:
+            log.exception("audio prewarm did not start")
+
+    def start_hotkeys(self) -> None:
+        self.native.call("native.hotkeys.start", timeout=10.0)
+
+    # -- event handlers ------------------------------------------------
+
+    def _on_native_hotkey(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        kind = (data or {}).get("kind")
+        if kind == "caller":
+            self._schedule(self.begin_caller, int((data or {}).get("index") or 0))
+        elif kind == "snip":
+            self._schedule(self.begin_snip)
+        elif kind == "add_context":
+            self._schedule(self.add_context)
+        elif kind == "clear_context":
+            self._schedule(self.clear_context)
+        elif kind == "voice_start":
+            self._schedule(self.voice_start)
+        elif kind == "voice_stop":
+            self._schedule(self.voice_stop)
+
+    def _on_summon_caller(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.begin_caller, int((data or {}).get("caller_idx") or 0))
+
+    def _on_request_snip(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.begin_snip)
+
+    def _on_intent_chosen(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        prompt = str((data or {}).get("custom") or (data or {}).get("prompt") or "").strip()
+        self._schedule(self.intent_chosen, prompt)
+
+    def _on_intent_cancelled(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._pending = None
+        self._set_idle()
+
+    def _on_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.snip_region_selected, data or {})
+
+    def _on_snip_cancelled(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._pending = None
+        self._set_idle()
+
+    def _on_context_dropped(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.context_items_dropped, list((data or {}).get("items") or []))
+
+    def _on_context_remove(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.remove_context_item, int((data or {}).get("index") or 0))
+
+    def _on_chat_request(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.chat_request, data or {})
+
+    def _on_memory_open_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.open_memory)
+
+    def _on_memory_add(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.memory_add, data or {})
+
+    def _on_memory_update(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.memory_update, data or {})
+
+    def _on_memory_delete(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.memory_delete, data or {})
+
+    def _on_plugins_open_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.open_plugins)
+
+    def _on_plugins_run_action(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.plugin_run_action, data or {})
+
+    def _on_agent_task_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.open_agent_task)
+
+    def _on_agent_history_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.open_agent_history)
+
+    def _on_settings_applied(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.reload_settings)
+
+    def _on_bubble_speed(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        # Placeholder for future audio playback-rate control. Keeping this event
+        # out of UI prevents the old core.audio import leak.
+        log.debug("bubble speed event: %s", data)
+
+    def _on_audio_playback_started(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.start_reveal", timeout=30.0)
+
+    def _on_audio_playback_done(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+        self._set_idle()
+
+    def _on_reply_chunk(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        text = str((data or {}).get("text") or "")
+        if text:
+            self._safe_call(self.ui, "ui.reply.chunk", {"text": text}, timeout=30.0)
+
+    def _on_reply_done(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        text = str((data or {}).get("text") or "")
+        if text:
+            self._last_reply = text
+        self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "idle"}, timeout=30.0)
+
+    def _forward_agent_event(self, event_name: str):
+        def forward(data: Any, _req_id: Any = None) -> None:
+            log.debug("%s: %s", event_name, data)
+            self._safe_call(self.ui, event_name, {"data": data}, timeout=30.0)
+
+        return forward
+
+    def _on_agent_approval_request(self, data: Any, _req_id: Any = None) -> None:
+        action = ""
+        detail = ""
+        if isinstance(data, dict):
+            action = str(data.get("action") or "approval")
+            detail = str(data.get("detail") or data.get("reason") or "")
+        text = f"Agent needs permission: {action}"
+        if detail:
+            text += f"\n{detail}"
+        self._safe_call(
+            self.ui,
+            "ui.agent.notify_approval",
+            {"text": text, "resolved": False, "data": data},
+            timeout=30.0,
+        )
+
+    # -- public product actions ---------------------------------------
+
+    def begin_caller(self, caller_idx: int = 0) -> None:
+        caller = self._caller(caller_idx)
+        self._new_generation()
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
+        context = self._context_snapshot(caller)
+        screenshot_b64 = None
+        selected = str(context.get("selected_text") or "")
+        if caller.get("context_screenshot") == "auto" and not selected:
+            screenshot_b64 = self._capture_fullscreen_b64()
+        active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
+        pid = int(active_app.get("pid") or 0)
+        pending = PendingInvocation(
+            caller_idx=caller_idx,
+            caller=caller,
+            context=context,
+            screenshot_b64=screenshot_b64,
+            intent_target_pid=pid,
+            paste_target_pid=pid if caller.get("paste_back") else 0,
+        )
+        with self._lock:
+            self._pending = pending
+        self.ui.call("ui.show_intent", {"caller_idx": caller_idx}, timeout=30.0)
+
+    def begin_snip(self) -> None:
+        self._new_generation()
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
+        self.ui.call("ui.show_snip", timeout=30.0)
+
+    def snip_region_selected(self, region: dict[str, Any]) -> None:
+        result = self.native.call("native.capture.region", {"region": region}, timeout=30.0)
+        path = result.get("path") if isinstance(result, dict) else ""
+        screenshot_b64 = self._file_b64(path) if path else None
+        caller = self._caller(0)
+        caller.update(
+            {
+                "context_ambient": self._config_value("SNIP_CONTEXT_AMBIENT", True),
+                "context_documents": self._config_value("SNIP_CONTEXT_DOCUMENTS", False),
+                "context_tools": self._config_value("SNIP_CONTEXT_TOOLS", False),
+                "context_screenshot": "off",
+                "paste_back": False,
+            }
+        )
+        with self._lock:
+            self._pending = PendingInvocation(
+                caller_idx=0,
+                caller=caller,
+                context=self._context_snapshot(caller),
+                screenshot_b64=screenshot_b64,
+                is_snip=True,
+            )
+        self.ui.call("ui.show_intent", {"caller_idx": 0}, timeout=30.0)
+
+    def intent_chosen(self, prompt: str) -> None:
+        with self._lock:
+            pending = self._pending
+            self._pending = None
+        if pending is None:
+            pending = PendingInvocation(caller_idx=0, caller=self._caller(0), context=self._context_snapshot({}))
+        if not prompt:
+            prompt = "What is this?"
+        if pending.caller.get("paste_back"):
+            self._rewrite_and_paste(prompt, pending)
+        else:
+            self._query(prompt, pending)
+
+    def add_context(self) -> None:
+        context = self._context_snapshot({"context_clipboard": True})
+        text = str(context.get("selected_text") or context.get("clipboard_text") or "").strip()
+        if text:
+            self._context_buffer.append(text)
+            self._notice(f"Added context ({len(text)} chars).")
+        else:
+            self._notice("No selected text or clipboard text to add.")
+
+    def clear_context(self) -> None:
+        self._context_buffer.clear()
+        self._drop_context_items.clear()
+        self._safe_call(self.ui, "ui.context.clear", timeout=30.0)
+        self._notice("Context cleared.")
+
+    def context_items_dropped(self, items: list[dict[str, Any]]) -> None:
+        cleaned = [self._normalize_context_item(item) for item in items]
+        self._drop_context_items.extend(cleaned)
+
+    def remove_context_item(self, index: int) -> None:
+        if 0 <= index < len(self._drop_context_items):
+            self._drop_context_items.pop(index)
+
+    def voice_start(self) -> None:
+        if self._voice_active:
+            return
+        self._voice_active = True
+        self._new_generation()
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._voice_context = self._context_snapshot(self._caller(0))
+        self.audio.call("audio.record.start", timeout=20.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.listening", timeout=30.0)
+
+    def voice_stop(self) -> None:
+        if not self._voice_active:
+            return
+        self._voice_active = False
+        result = self.audio.call("audio.record.stop_transcribe", timeout=180.0)
+        text = str((result or {}).get("text") or "").strip()
+        if not text:
+            self._set_idle()
+            return
+        pending = PendingInvocation(caller_idx=0, caller=self._caller(0), context=self._voice_context)
+        self._query(text, pending)
+
+    def reload_settings(self) -> None:
+        self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
+        self._safe_call(self.audio, "audio.prewarm", timeout=30.0)
+        self._safe_call(self.native, "native.hotkeys.stop", timeout=10.0)
+        self._safe_call(self.native, "native.hotkeys.start", timeout=10.0)
+
+    def chat_request(self, data: dict[str, Any]) -> None:
+        request_id = str(data.get("request_id") or "")
+        messages = data.get("messages") or []
+        if not request_id:
+            return
+
+        done_seen = False
+
+        def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
+            nonlocal done_seen
+            if event == "reply.chunk":
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.chunk",
+                    {"request_id": request_id, "text": str((payload or {}).get("text") or "")},
+                    timeout=30.0,
+                )
+            elif event == "reply.done":
+                done_seen = True
+                self._safe_call(self.ui, "ui.chat.done", {"request_id": request_id}, timeout=30.0)
+
+        try:
+            result = self._brain_call_with_events(
+                "brain.chat",
+                {"messages": messages},
+                timeout=300.0,
+                on_event=on_event,
+            )
+            if not done_seen:
+                text = str((result or {}).get("text") or "")
+                if text:
+                    self._safe_call(
+                        self.ui,
+                        "ui.chat.chunk",
+                        {"request_id": request_id, "text": text},
+                        timeout=30.0,
+                    )
+                self._safe_call(self.ui, "ui.chat.done", {"request_id": request_id}, timeout=30.0)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("chat request failed")
+            self._safe_call(
+                self.ui,
+                "ui.chat.error",
+                {"request_id": request_id, "error": f"{type(exc).__name__}: {exc}"},
+                timeout=30.0,
+            )
+
+    def open_memory(self) -> None:
+        result = self._safe_call(self.brain, "brain.memory.list", timeout=30.0) or {}
+        facts = result.get("facts") if isinstance(result, dict) else []
+        self._safe_call(self.ui, "ui.show_memory", {"facts": facts or []}, timeout=30.0)
+
+    def memory_add(self, data: dict[str, Any]) -> None:
+        self._safe_call(
+            self.brain,
+            "brain.memory.add",
+            {"text": str(data.get("text") or ""), "category": data.get("category")},
+            timeout=30.0,
+        )
+
+    def memory_update(self, data: dict[str, Any]) -> None:
+        self._safe_call(
+            self.brain,
+            "brain.memory.update",
+            {
+                "fact_id": str(data.get("id") or data.get("fact_id") or ""),
+                "text": str(data.get("text") or ""),
+                "category": data.get("category"),
+            },
+            timeout=30.0,
+        )
+
+    def memory_delete(self, data: dict[str, Any]) -> None:
+        self._safe_call(
+            self.brain,
+            "brain.memory.delete",
+            {"fact_id": str(data.get("id") or data.get("fact_id") or "")},
+            timeout=30.0,
+        )
+
+    def open_plugins(self) -> None:
+        result = self._safe_call(self.brain, "brain.plugins.list", timeout=30.0) or {}
+        if not isinstance(result, dict):
+            result = {}
+        self._safe_call(
+            self.ui,
+            "ui.show_plugins",
+            {
+                "plugins": result.get("plugins") or [],
+                "plugins_dir": str(result.get("plugins_dir") or ""),
+            },
+            timeout=30.0,
+        )
+
+    def plugin_run_action(self, data: dict[str, Any]) -> None:
+        result = self._safe_call(
+            self.brain,
+            "brain.plugins.run_action",
+            {
+                "plugin_name": str(data.get("plugin_name") or ""),
+                "label": str(data.get("label") or ""),
+            },
+            timeout=60.0,
+        )
+        message = "Plugin action finished."
+        if isinstance(result, dict) and result.get("message"):
+            message = str(result["message"])
+        self._notice(message)
+
+    def open_agent_task(self) -> None:
+        self._safe_call(self.ui, "ui.show_agent_task", timeout=30.0)
+
+    def open_agent_history(self) -> None:
+        self._safe_call(self.ui, "ui.show_agent_history", timeout=30.0)
+
+    # -- core flows -----------------------------------------------------
+
+    def _query(self, prompt: str, pending: PendingInvocation) -> None:
+        gen = self._new_generation()
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "thinking"}, timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.thinking", timeout=30.0)
+        params = self._brain_query_params(prompt, pending)
+        summary = params.pop("_ui_context_summary", [])
+        chat_context = str(params.get("ambient_text") or "")
+        if summary:
+            self._safe_call(self.ui, "ui.context.summary", {"items": summary}, timeout=30.0)
+
+        done_seen = False
+
+        def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
+            nonlocal done_seen
+            if event == "reply.chunk":
+                self._on_reply_chunk(payload)
+            elif event == "reply.done":
+                done_seen = True
+                text_done = str((payload or {}).get("text") or "")
+                if text_done:
+                    self._last_reply = text_done
+                if not (self._tts_enabled() and text_done):
+                    self._on_reply_done(payload)
+
+        result = self._brain_call_with_events("brain.query", params, timeout=300.0, on_event=on_event)
+        text = str((result or {}).get("text") or "")
+        self._last_reply = text
+        if text:
+            self._safe_call(
+                self.ui,
+                "ui.chat.add_conversation",
+                {
+                    "user": prompt,
+                    "assistant": text,
+                    "context": chat_context,
+                    "image_base64": pending.screenshot_b64,
+                },
+                timeout=30.0,
+            )
+        if self._is_current(gen) and text and self._tts_enabled():
+            self._speak_text(text)
+        elif not done_seen:
+            self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+            self._set_idle()
+
+    def _rewrite_and_paste(self, prompt: str, pending: PendingInvocation) -> None:
+        gen = self._new_generation()
+        selected = str(pending.context.get("selected_text") or "").strip()
+        if not selected:
+            self._notice("No selected text to rewrite.")
+            self._set_idle()
+            return
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "thinking"}, timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.thinking", timeout=30.0)
+        def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
+            if event == "reply.chunk":
+                self._on_reply_chunk(payload)
+
+        result = self._brain_call_with_events(
+            "brain.rewrite",
+            {"selected_text": selected, "intent_prompt": prompt},
+            timeout=300.0,
+            on_event=on_event,
+        )
+        text = str((result or {}).get("text") or "").strip()
+        if text and self._is_current(gen):
+            self.native.call(
+                "native.paste_text",
+                {"text": text, "target_pid": pending.paste_target_pid},
+                timeout=30.0,
+            )
+            self._notice("Rewrite pasted.")
+        self._set_idle()
+
+    # -- helpers --------------------------------------------------------
+
+    def _schedule(self, fn, *args) -> None:
+        if not self.run_async:
+            fn(*args)
+            return
+        threading.Thread(target=self._guarded, args=(fn, args), daemon=True).start()
+
+    def _guarded(self, fn, args) -> None:
+        try:
+            fn(*args)
+        except Exception:
+            log.exception("flow %s failed", getattr(fn, "__name__", fn))
+            self._set_idle()
+
+    def _safe_call(self, worker: WorkerLike, method: str, params: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:
+        try:
+            return worker.call(method, params or {}, timeout=timeout)
+        except Exception:
+            log.exception("worker call failed: %s", method)
+            return None
+
+    def _brain_call_with_events(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout: float,
+        on_event: Callable[[str, Any, Any], None],
+    ) -> Any:
+        call_with_events = getattr(self.brain, "call_with_events", None)
+        if callable(call_with_events):
+            return call_with_events(method, params, timeout=timeout, on_event=on_event)
+        return self.brain.call(method, params, timeout=timeout)
+
+    def _new_generation(self) -> int:
+        with self._lock:
+            self._current_generation = next(self._generation)
+            return self._current_generation
+
+    def _is_current(self, generation: int) -> bool:
+        with self._lock:
+            return generation == self._current_generation
+
+    def _set_idle(self) -> None:
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "idle"}, timeout=30.0)
+
+    def _notice(self, text: str) -> None:
+        self._safe_call(self.ui, "ui.reply.notice", {"text": text}, timeout=30.0)
+
+    def _caller(self, caller_idx: int) -> dict[str, Any]:
+        import config
+
+        rows = getattr(config, "CALLER_ROWS", [])
+        if 0 <= caller_idx < len(rows):
+            return dict(rows[caller_idx])
+        return {}
+
+    def _config_value(self, name: str, default: Any) -> Any:
+        import config
+
+        return getattr(config, name, default)
+
+    def _context_snapshot(self, caller: dict[str, Any]) -> dict[str, Any]:
+        return self.native.call(
+            "native.context.snapshot",
+            {
+                "include_clipboard": bool(caller.get("context_clipboard", False)),
+                "include_selection": True,
+            },
+            timeout=30.0,
+        ) or {}
+
+    def _brain_query_params(self, prompt: str, pending: PendingInvocation) -> dict[str, Any]:
+        caller = pending.caller
+        context = pending.context or {}
+        ambient_parts: list[str] = []
+        buffered_items, drop_items = self._consume_context_extras()
+        screenshot_b64 = pending.screenshot_b64
+        if caller.get("context_ambient", True):
+            active_app = context.get("active_app")
+            if isinstance(active_app, dict) and active_app.get("name"):
+                ambient_parts.append(f"Active app: {active_app.get('name')}")
+        if caller.get("context_clipboard") and context.get("clipboard_text"):
+            ambient_parts.append(f"Clipboard:\n{context.get('clipboard_text')}")
+        if buffered_items:
+            ambient_parts.append("Buffered context:\n" + "\n\n".join(buffered_items))
+        if drop_items:
+            drop_text_parts = []
+            for item in drop_items:
+                item_type = str(item.get("type") or "text")
+                content = item.get("content")
+                if item_type == "image" and not screenshot_b64:
+                    screenshot_b64 = self._image_content_b64(content)
+                    continue
+                drop_text_parts.append(
+                    f"{item.get('name') or 'Context'} ({item_type}):\n{self._content_to_text(content)}"
+                )
+            if drop_text_parts:
+                ambient_parts.append("Dropped context:\n" + "\n\n".join(drop_text_parts))
+        summary = self._context_summary_badges(
+            selected=str(context.get("selected_text") or ""),
+            screenshot_b64=screenshot_b64,
+            buffered_items=buffered_items,
+            drop_items=drop_items,
+            clipboard_text=str(context.get("clipboard_text") or "") if caller.get("context_clipboard") else "",
+            ambient_text="\n\n".join(ambient_parts),
+        )
+        return {
+            "intent_prompt": prompt,
+            "selected": context.get("selected_text") or "",
+            "screenshot_b64": screenshot_b64,
+            "ambient_text": "\n\n".join(ambient_parts),
+            "use_tools": bool(caller.get("context_tools", False)),
+            "allow_screenshot_tool": caller.get("context_screenshot") == "model",
+            "include_active_document": bool(caller.get("context_documents", True)),
+            "_ui_context_summary": summary,
+        }
+
+    def _consume_context_extras(self) -> tuple[list[str], list[dict[str, Any]]]:
+        buffered = list(self._context_buffer)
+        dropped = list(self._drop_context_items)
+        self._context_buffer.clear()
+        self._drop_context_items.clear()
+        if dropped:
+            self._safe_call(self.ui, "ui.context.clear", timeout=30.0)
+        return buffered, dropped
+
+    @staticmethod
+    def _normalize_context_item(item: Any) -> dict[str, Any]:
+        if isinstance(item, dict):
+            return {
+                "name": str(item.get("name") or item.get("label") or "Context"),
+                "content": item.get("content", ""),
+                "type": str(item.get("type") or item.get("item_type") or "text"),
+            }
+        return {"name": "Context", "content": str(item), "type": "text"}
+
+    @staticmethod
+    def _content_to_text(content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, bytes):
+            return content.decode("utf-8", errors="replace")
+        if isinstance(content, (dict, list, tuple)):
+            return json_safe_dumps(content)
+        return str(content)
+
+    def _image_content_b64(self, content: Any) -> str | None:
+        if isinstance(content, str):
+            try:
+                p = Path(content).expanduser()
+                if p.exists():
+                    return self._file_b64(p)
+            except (OSError, ValueError):
+                pass
+            cleaned = content.strip()
+            if cleaned:
+                return cleaned
+        return None
+
+    @staticmethod
+    def _short(text: str, n: int = 24) -> str:
+        flat = " ".join((text or "").split())
+        return (flat[: n - 1] + "...") if len(flat) > n else flat
+
+    def _context_summary_badges(
+        self,
+        *,
+        selected: str,
+        screenshot_b64: str | None,
+        buffered_items: list[str],
+        drop_items: list[dict[str, Any]],
+        clipboard_text: str,
+        ambient_text: str,
+    ) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        if screenshot_b64:
+            items.append({"label": "Screenshot", "type": "image"})
+        if selected:
+            items.append({"label": f"Selection - {self._short(selected, 14)}", "type": "text"})
+        for item in drop_items:
+            items.append(
+                {
+                    "label": self._short(str(item.get("name") or "Context"), 24),
+                    "type": "image" if item.get("type") == "image" else "file",
+                }
+            )
+        for buffered in buffered_items:
+            items.append({"label": self._short(buffered, 24), "type": "text"})
+        if clipboard_text:
+            items.append({"label": f"Clipboard - {self._short(clipboard_text, 14)}", "type": "text"})
+        if ambient_text:
+            items.append({"label": "Window context", "type": "file"})
+        return items[:8]
+
+    def _capture_fullscreen_b64(self) -> str | None:
+        result = self.native.call("native.capture.fullscreen", timeout=30.0)
+        path = result.get("path") if isinstance(result, dict) else ""
+        return self._file_b64(path) if path else None
+
+    @staticmethod
+    def _file_b64(path: str | Path | None) -> str | None:
+        if not path:
+            return None
+        p = Path(path)
+        if not p.exists():
+            return None
+        return base64.b64encode(p.read_bytes()).decode("ascii")
+
+    def _tts_enabled(self) -> bool:
+        import config
+
+        return str(getattr(config, "TTS_PROVIDER", "none")).strip().lower() != "none"
+
+    def _speak_text(self, text: str) -> None:
+        try:
+            result = self.audio.call("audio.tts.synthesize", {"text": text}, timeout=180.0)
+            path = result.get("path") if isinstance(result, dict) else ""
+            if path:
+                self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
+                self._safe_call(self.ui, "ui.reply.start_reveal", timeout=30.0)
+                self.audio.call("audio.play_file", {"path": path}, wait=False)
+            else:
+                self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+                self._set_idle()
+        except Exception:
+            log.exception("audio playback failed")
+            self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+            self._set_idle()
+
+
+def json_safe_dumps(value: Any) -> str:
+    import json
+
+    try:
+        return json.dumps(value, ensure_ascii=True)
+    except TypeError:
+        return str(value)

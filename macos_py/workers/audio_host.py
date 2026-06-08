@@ -168,9 +168,8 @@ HANDLERS = {
 
 
 def main() -> int:
-    return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink)
+    return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink, threaded=True)
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

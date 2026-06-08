@@ -201,12 +201,33 @@ def capture_region(path: str = "", region: dict[str, Any] | None = None) -> dict
     return {"ok": ok, "path": path, "region": region}
 
 
-def paste_text(text: str = "", paste_combo: str = "cmd+v") -> dict[str, Any]:
+def _activate_pid(pid: int) -> bool:
+    if not IS_MAC or not pid:
+        return False
+    try:
+        import AppKit  # type: ignore
+
+        app = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(int(pid))
+        if app is None:
+            return False
+        opts = (
+            AppKit.NSApplicationActivateIgnoringOtherApps
+            | AppKit.NSApplicationActivateAllWindows
+        )
+        return bool(app.activateWithOptions_(opts))
+    except Exception:
+        return False
+
+
+def paste_text(text: str = "", paste_combo: str = "cmd+v", target_pid: int = 0) -> dict[str, Any]:
     if not IS_MAC:
         return {"ok": False, "error": "pasteback is only available on macOS"}
+    activated = _activate_pid(target_pid)
+    if activated:
+        time.sleep(0.15)
     from core.platform import macos_native
 
-    return {"ok": macos_native.paste_text(text, paste_combo)}
+    return {"ok": macos_native.paste_text(text, paste_combo), "activated": activated}
 
 
 def open_privacy_settings(pane: str = "Privacy") -> dict[str, Any]:
@@ -285,4 +306,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

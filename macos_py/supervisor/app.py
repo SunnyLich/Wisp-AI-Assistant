@@ -7,6 +7,7 @@ import signal
 import sys
 import threading
 
+from macos_py.supervisor.flows import FlowController
 from macos_py.supervisor.ipc import WispSupervisor
 
 
@@ -28,10 +29,15 @@ def main() -> int:
 
     try:
         supervisor.start_all()
-        # Start passive native listeners after all workers are healthy. UI/brain
-        # product routing will be layered on this supervisor seam.
+        flows = FlowController(
+            native=supervisor.workers["native"],
+            ui=supervisor.workers["ui"],
+            brain=supervisor.workers["brain"],
+            audio=supervisor.workers["audio"],
+        )
+        flows.start()
         try:
-            supervisor.call("native", "native.hotkeys.start", timeout=10.0)
+            flows.start_hotkeys()
         except Exception:
             logging.exception("native hotkeys did not start")
         stop.wait()
@@ -42,4 +48,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
