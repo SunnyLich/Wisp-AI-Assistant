@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +49,7 @@ class WorkerClient:
         self._event_handlers: dict[str, list[Callable[[Any, Any], None]]] = {}
         self._scoped_event_lock = threading.Lock()
         self._scoped_event_handlers: dict[int, Callable[[str, Any, Any], None]] = {}
+        self._stderr_tail: deque[str] = deque(maxlen=80)
         self._restart_count = 0
         self._shutting_down = False
         atexit.register(self.shutdown)
@@ -116,7 +118,12 @@ class WorkerClient:
         for raw in iter(stderr.readline, b""):
             line = raw.decode("utf-8", errors="replace").rstrip()
             if line:
+                self._stderr_tail.append(line)
                 log.debug("[%s] %s", self.spec.name, line)
+
+    def stderr_tail(self, max_lines: int = 20) -> str:
+        lines = list(self._stderr_tail)[-max_lines:]
+        return "\n".join(lines)
 
     def _fail_pending(self, error: str) -> None:
         with self._pending_lock:
@@ -184,7 +191,11 @@ class WorkerClient:
         if not ev.wait(timeout):
             with self._pending_lock:
                 self._pending.pop(rid, None)
-            raise WorkerError(f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s")
+            tail = self.stderr_tail()
+            detail = f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s"
+            if tail:
+                detail += f"\nRecent {self.spec.name} stderr:\n{tail}"
+            raise WorkerError(detail)
         resp = slot["resp"] or {"ok": False, "error": "missing response"}
         if not resp.get("ok"):
             raise WorkerError(str(resp.get("error") or f"{method!r} failed"))
@@ -224,7 +235,11 @@ class WorkerClient:
             if not ev.wait(timeout):
                 with self._pending_lock:
                     self._pending.pop(rid, None)
-                raise WorkerError(f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s")
+                tail = self.stderr_tail()
+                detail = f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s"
+                if tail:
+                    detail += f"\nRecent {self.spec.name} stderr:\n{tail}"
+                raise WorkerError(detail)
             resp = slot["resp"] or {"ok": False, "error": "missing response"}
             if not resp.get("ok"):
                 raise WorkerError(str(resp.get("error") or f"{method!r} failed"))
@@ -283,9 +298,15 @@ class WispSupervisor:
         }
 
     def start_all(self) -> dict[str, Any]:
+        startup_timeouts = {
+            "native": 20.0,
+            "ui": 90.0,
+            "brain": 90.0,
+            "audio": 45.0,
+        }
         results: dict[str, Any] = {}
         for name, worker in self.workers.items():
-            results[name] = worker.call("ping", {"value": name}, timeout=20.0)
+            results[name] = worker.call("ping", {"value": name}, timeout=startup_timeouts.get(name, 30.0))
         return results
 
     def call(self, worker: str, method: str, params: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:
