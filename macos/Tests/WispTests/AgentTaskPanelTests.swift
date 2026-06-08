@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import Wisp
 
 final class AgentTaskPanelTests: XCTestCase {
@@ -15,8 +16,11 @@ final class AgentTaskPanelTests: XCTestCase {
         draft.scopeFolder = "/tmp"
         draft.maxRuntimeMinutes = "45"
         draft.maxTurns = "12"
-        draft.allowNetwork = true
-        draft.allowFileDelete = true
+        draft.networkPermissionMode = "auto"
+        draft.fileDeletePermissionMode = "ask permission"
+        draft.allowedFileGlobs = "*.swift, macos/*"
+        draft.parallelExecution = true
+        draft.maxParallelAgents = "6"
 
         let payload = draft.payload
 
@@ -30,12 +34,84 @@ final class AgentTaskPanelTests: XCTestCase {
         XCTAssertEqual(payload["max_turns"] as? Int, 12)
         XCTAssertEqual(payload["allow_network"] as? Bool, true)
         XCTAssertEqual(payload["allow_file_delete"] as? Bool, true)
+        XCTAssertEqual(payload["network_permission_mode"] as? String, "auto")
+        XCTAssertEqual(payload["file_delete_permission_mode"] as? String, "ask permission")
+        XCTAssertEqual(payload["allowed_file_globs"] as? [String], ["*.swift", "macos/*"])
+        XCTAssertEqual(payload["blocked_file_globs"] as? [String], [".env", "private/*", ".git/*"])
+        XCTAssertEqual(payload["parallel_execution"] as? Bool, true)
+        XCTAssertEqual(payload["max_parallel_agents"] as? Int, 6)
 
         let agents = try XCTUnwrap(payload["agents"] as? [[String: String]])
-        XCTAssertEqual(agents.first?["name"], "Builder")
-        XCTAssertEqual(agents.first?["role"], "Implementer")
+        XCTAssertEqual(agents.count, 3)
+        XCTAssertEqual(agents.first?["name"], "Coordinator")
+        XCTAssertEqual(agents.first?["role"], "Coordinator")
         XCTAssertEqual(agents.first?["provider"], "same as task")
         XCTAssertEqual(agents.first?["model"], "same as task")
+
+        let communications = try XCTUnwrap(payload["communications"] as? [[String: String]])
+        XCTAssertEqual(communications.count, 3)
+        XCTAssertEqual(communications.first?["from_agent"], "Coordinator")
+        XCTAssertEqual(communications.first?["to_agent"], "Builder")
+    }
+
+    func testDefaultAutoAgentTeamMatchesWindowsDialog() throws {
+        let draft = AgentTaskDraft.load(environment: ["WISP_REPO_ROOT": "/tmp/wisp"], readDotEnv: false)
+
+        XCTAssertEqual(draft.agents.map(\.name), ["Coordinator", "Builder", "Reviewer"])
+        XCTAssertEqual(draft.agents.map(\.role), ["Coordinator", "Implementer", "Reviewer"])
+        XCTAssertEqual(draft.communications.map(\.fromAgent), ["Coordinator", "Builder", "Reviewer"])
+        XCTAssertEqual(draft.communications.map(\.toAgent), ["Builder", "Reviewer", "Coordinator"])
+        XCTAssertEqual(draft.shellPermissionMode, "auto")
+        XCTAssertEqual(draft.networkPermissionMode, "never permit")
+        XCTAssertEqual(draft.blockedFileGlobs, ".env, private/*, .git/*")
+    }
+
+    func testAgentTaskPanelKeepsWindowsCopyAndPreviewActions() throws {
+        let root = sourceRoot()
+        let panelSource = try String(
+            contentsOf: root.appendingPathComponent("Sources/Wisp/AgentsUI/AgentTaskPanel.swift"),
+            encoding: .utf8
+        )
+        let appSource = try String(
+            contentsOf: root.appendingPathComponent("Sources/Wisp/App/AppDelegate.swift"),
+            encoding: .utf8
+        )
+
+        for expected in [
+            "Copy from Last Task",
+            "Preview Spec",
+            "onCopyLast",
+            "copyFromLastTask()",
+            "previewSpec()",
+        ] {
+            XCTAssertTrue(panelSource.contains(expected), "AgentTaskPanel is missing \(expected).")
+        }
+        XCTAssertTrue(appSource.contains("brain.agent.last_spec.read"))
+        XCTAssertTrue(appSource.contains("copyLastNativeAgentTask()"))
+        XCTAssertTrue(appSource.contains("agent.approval.request"))
+        XCTAssertTrue(appSource.contains("brain.agent.approval.respond"))
+        XCTAssertTrue(appSource.contains("presentAgentApproval"))
+    }
+
+    func testAgentTaskInputsUseReadableAdaptiveSystemColors() throws {
+        let panelSource = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/AgentsUI/AgentTaskPanel.swift"),
+            encoding: .utf8
+        )
+
+        for expected in [
+            "private enum AgentTaskPalette",
+            "NSColor.textColor",
+            "NSColor.textBackgroundColor",
+            ".foregroundStyle(AgentTaskPalette.inputText)",
+            ".tint(AgentTaskPalette.inputText)",
+            ".background(AgentTaskPalette.inputBackground)",
+            "textView.textColor = .textColor",
+            "textView.backgroundColor = .textBackgroundColor",
+        ] {
+            XCTAssertTrue(panelSource.contains(expected), "AgentTaskPanel input contrast is missing \(expected).")
+        }
+        XCTAssertFalse(panelSource.contains("textView.textColor = .labelColor"))
     }
 
     func testDraftParsesHistorySpecPayload() throws {
@@ -209,5 +285,14 @@ final class AgentTaskPanelTests: XCTestCase {
         XCTAssertEqual(draft.communications[0].toAgent, "Reviewer")
         XCTAssertEqual(draft.communications[0].phase, "review")
         XCTAssertEqual(draft.communications[0].trigger, "ready_for_review")
+    }
+
+    private func sourceRoot() -> URL {
+        let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let direct = currentDirectory.appendingPathComponent("Sources/Wisp")
+        if FileManager.default.fileExists(atPath: direct.path) {
+            return currentDirectory
+        }
+        return currentDirectory.appendingPathComponent("macos")
     }
 }

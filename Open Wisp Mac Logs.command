@@ -52,7 +52,7 @@ echo
 
 if [ -z "${log_dir:-}" ] || [ ! -d "$log_dir" ]; then
   echo "No native macOS log folder found yet."
-  echo "Run Test Wisp (Mac Native).command first."
+  echo "Run Test Wisp (Mac Native).command or Start Wisp (Mac Native).command first."
   echo
   read -r -p "Press Return to close..." _ || true
   exit 1

@@ -135,11 +135,14 @@ private struct PromptView: View {
 
             TextField("Ask Wisp", text: $model.prompt)
                 .textFieldStyle(.roundedBorder)
+                .foregroundStyle(PromptPanelPalette.inputText)
+                .tint(PromptPanelPalette.inputText)
                 .focused($promptFocused)
                 .onSubmit { model.submit() }
 
             ScrollView {
                 Text(model.response.isEmpty ? " " : model.response)
+                    .foregroundStyle(PromptPanelPalette.inputText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
                     .padding(10)
@@ -180,4 +183,8 @@ private struct PromptView: View {
             return "brain.query with screenshot"
         }
     }
+}
+
+private enum PromptPanelPalette {
+    static let inputText = Color(nsColor: NSColor.textColor)
 }

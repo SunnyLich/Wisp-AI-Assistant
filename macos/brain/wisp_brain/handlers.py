@@ -18,8 +18,10 @@ from __future__ import annotations
 import json
 import os
 import ast
+import importlib
 import threading
 import time
+import uuid
 import wave
 from dataclasses import asdict
 from pathlib import Path
@@ -32,6 +34,8 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 HANDLERS: dict[str, Callable[..., Any]] = {}
 STREAMING: set[str] = set()
 _STT_MODEL = None
+_AGENT_APPROVALS: dict[str, dict[str, Any]] = {}
+_AGENT_APPROVALS_LOCK = threading.Lock()
 
 
 class StreamContext:
@@ -518,9 +522,9 @@ def brain_plugins_run_action(plugin_name: str = "", label: str = "") -> dict[str
     if not label:
         raise ValueError("label is required")
 
-    from core.plugin_manager import get_manager
+    from core.system.paths import PLUGINS_DIR
 
-    manager = get_manager()
+    manager = _loaded_plugin_manager(Path(PLUGINS_DIR))
     for mod in getattr(manager, "_mods", []):
         if str(getattr(mod, "name", "")) != plugin_name:
             continue
@@ -542,13 +546,20 @@ def brain_plugins_run_action(plugin_name: str = "", label: str = "") -> dict[str
 
 def _plugin_summaries(plugins_dir: Path) -> list[dict[str, Any]]:
     try:
-        from core.plugin_manager import get_manager
-
-        manager = get_manager()
+        manager = _loaded_plugin_manager(plugins_dir)
         mods = getattr(manager, "_mods", [])
         return [_loaded_plugin_payload(mod) for mod in mods]
     except Exception:
         return _discover_plugin_payloads(plugins_dir)
+
+
+def _loaded_plugin_manager(plugins_dir: Path) -> Any:
+    plugin_manager = importlib.import_module("core.plugin_manager")
+
+    try:
+        return plugin_manager.get_manager()
+    except Exception:
+        return plugin_manager.init(plugins_dir)
 
 
 def _loaded_plugin_payload(mod: Any) -> dict[str, Any]:
@@ -810,41 +821,127 @@ def brain_tts_test(provider: str = "", cartesia_voice_id: str = "") -> dict[str,
 def brain_llm_test(
     provider: str = "",
     model: str = "",
+    fallbacks: str = "",
     route_name: str = "LLM",
     image: bool = False,
     custom_base_url: str = "",
 ) -> dict[str, Any]:
-    """Validate one configured LLM route for the native Settings panel."""
+    """Validate a configured LLM route and its fallback chain for Settings."""
     selected_provider = provider.strip().lower()
     selected_model = model.strip()
     label = route_name.strip() or "LLM"
-    if not selected_provider or not selected_model:
+    from core.llm_clients.routes import route_candidates
+
+    routes = route_candidates(selected_provider, selected_model, fallbacks)
+    if not routes:
         return {
             "ok": False,
             "message": f"{label} test failed: No model configured.",
             "provider": selected_provider,
             "model": selected_model,
+            "routes": [],
         }
 
     if _offline_brain():
         suffix = " vision route" if image else " route"
+        if len(routes) > 1:
+            lines = [
+                f"{_route_test_label(index)} OK: {route_provider} / {route_model}"
+                for index, (route_provider, route_model) in enumerate(routes)
+            ]
+            return {
+                "ok": True,
+                "message": f"{label}{suffix} OK:\n" + "\n".join(lines),
+                "provider": selected_provider,
+                "model": selected_model,
+                "routes": _route_payloads(routes),
+            }
         return {
             "ok": True,
             "message": f"{label}{suffix} OK: {selected_provider} / {selected_model}",
             "provider": selected_provider,
             "model": selected_model,
+            "routes": _route_payloads(routes),
         }
 
     from core.llm_clients import client as llm
 
-    ok, message = llm.test_route_connection(
-        selected_provider,
-        selected_model,
-        label,
-        image=image,
-        custom_base_url=custom_base_url.strip() or None,
-    )
-    return {"ok": ok, "message": message, "provider": selected_provider, "model": selected_model}
+    results: list[dict[str, Any]] = []
+    for index, (route_provider, route_model) in enumerate(routes):
+        ok, message = llm.test_route_connection(
+            route_provider,
+            route_model,
+            label,
+            image=image,
+            custom_base_url=_custom_base_url_for_route(route_provider, custom_base_url),
+        )
+        results.append({
+            "label": _route_test_label(index),
+            "ok": ok,
+            "provider": route_provider,
+            "model": route_model,
+            "message": message,
+        })
+
+    if len(results) == 1:
+        only = results[0]
+        return {
+            "ok": bool(only["ok"]),
+            "message": str(only["message"]),
+            "provider": selected_provider,
+            "model": selected_model,
+            "routes": results,
+        }
+
+    ok = all(bool(result["ok"]) for result in results)
+    lines = [
+        f"{result['label']} - {result['provider']} / {result['model']}: {_short_route_test_message(str(result['message']), label)}"
+        for result in results
+    ]
+    status = "OK" if ok else "failed"
+    return {
+        "ok": ok,
+        "message": f"{label} route chain {status}:\n" + "\n".join(lines),
+        "provider": selected_provider,
+        "model": selected_model,
+        "routes": results,
+    }
+
+
+def _route_payloads(routes: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "label": _route_test_label(index),
+            "ok": True,
+            "provider": provider,
+            "model": model,
+            "message": "OK",
+        }
+        for index, (provider, model) in enumerate(routes)
+    ]
+
+
+def _route_test_label(index: int) -> str:
+    return "Primary" if index == 0 else f"Fallback {index}"
+
+
+def _short_route_test_message(message: str, route_name: str) -> str:
+    prefix = f"{route_name} test failed: "
+    if message.startswith(prefix):
+        return message[len(prefix):]
+    prefix = f"{route_name} route OK: "
+    if message.startswith(prefix):
+        return "OK"
+    prefix = f"{route_name} vision route OK: "
+    if message.startswith(prefix):
+        return "OK"
+    return message
+
+
+def _custom_base_url_for_route(provider: str, custom_base_url: str) -> str | None:
+    if provider.strip().lower() != "custom":
+        return None
+    return custom_base_url.strip() or None
 
 
 # ---------------------------------------------------------------------------
@@ -862,6 +959,8 @@ def brain_query(
     memory_context: str = "",
     use_tools: bool = False,
     allow_screenshot_tool: bool = False,
+    include_active_document: bool = False,
+    active_document_text: str = "",
 ) -> dict[str, Any]:
     """Assemble context and stream an LLM reply, mirroring App._query_and_speak.
 
@@ -879,14 +978,20 @@ def brain_query(
         except Exception as exc:  # memory should not block answering
             _log(f"memory retrieval skipped: {type(exc).__name__}: {exc}")
 
+    active_document = active_document_text
+    if include_active_document and not active_document and not screenshot_b64:
+        active_document = brain_context_active_document().get("text", "")
+
     built = build_context(
         ContextInputs(
             intent_prompt=intent_prompt,
             selected=selected,
             screenshot_b64=screenshot_b64,
             ambient_text=ambient_text,
+            active_document_text=active_document,
         )
     )
+    built = _apply_plugin_before_query(built)
 
     parts: list[str] = []
     for chunk in _stream_query_reply(built, memory_context, use_tools, allow_screenshot_tool):
@@ -897,7 +1002,52 @@ def brain_query(
 
     full = "".join(parts)
     ctx.emit("reply.done", {"text": full})
+    _notify_plugin_after_response(full)
     return {"text": full}
+
+
+def _apply_plugin_before_query(built: Any) -> Any:
+    try:
+        from core.system.paths import PLUGINS_DIR
+
+        user_message, ambient_ctx = _loaded_plugin_manager(Path(PLUGINS_DIR)).before_query(
+            getattr(built, "user_message", ""),
+            getattr(built, "ambient_ctx", ""),
+        )
+        return type(built)(
+            user_message=user_message,
+            ambient_ctx=ambient_ctx,
+            screenshot_b64=getattr(built, "screenshot_b64", None),
+        )
+    except Exception as exc:  # noqa: BLE001 - plugin hooks should not block answering
+        _log(f"plugin before_query skipped: {type(exc).__name__}: {exc}")
+        return built
+
+
+def _notify_plugin_after_response(text: str) -> None:
+    if not text:
+        return
+    try:
+        from core.system.paths import PLUGINS_DIR
+
+        _loaded_plugin_manager(Path(PLUGINS_DIR)).after_response(text)
+    except Exception as exc:  # noqa: BLE001 - plugin hooks should not block answering
+        _log(f"plugin after_response skipped: {type(exc).__name__}: {exc}")
+
+
+@handler("brain.context.active_document")
+def brain_context_active_document() -> dict[str, Any]:
+    """Return active/open document text through the shared context reader."""
+    try:
+        from core.llm_clients.client import read_active_document_for_context
+
+        text = read_active_document_for_context()
+        if text.startswith(("Could not", "File type", "Failed to")):
+            text = ""
+        return {"text": text}
+    except Exception as exc:  # noqa: BLE001 - context should not block answering
+        _log(f"active document read failed: {type(exc).__name__}: {exc}")
+        return {"text": "", "error": str(exc)}
 
 
 def _stream_query_reply(
@@ -1121,6 +1271,108 @@ def _agent_runs_root(log_root: str | None = None) -> Path:
     return root
 
 
+def _agent_last_task_path(log_root: str | None = None) -> Path:
+    return _agent_runs_root(log_root) / "last_task.json"
+
+
+def _save_agent_last_task_spec(spec: dict[str, Any], log_root: str | None = None) -> bool:
+    path = _agent_last_task_path(log_root)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def _load_agent_last_task_spec(log_root: str | None = None) -> dict[str, Any] | None:
+    from core.agent.task_spec import agent_task_spec_from_dict
+
+    root = _agent_runs_root(log_root)
+    candidates = [_agent_last_task_path(log_root)]
+    run_task_files = sorted(
+        (path / "task.json" for path in root.iterdir() if path.is_dir() and (path / "task.json").exists()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    candidates.extend(run_task_files)
+
+    for path in candidates:
+        data = _read_json(path)
+        if not data:
+            continue
+        try:
+            return asdict(agent_task_spec_from_dict(data))
+        except Exception:
+            continue
+    return None
+
+
+@handler("brain.agent.last_spec.read")
+def brain_agent_last_spec_read(log_root: str | None = None) -> dict[str, Any]:
+    """Return the last started task spec, matching the Windows copy-last flow."""
+    return {"spec": _load_agent_last_task_spec(log_root)}
+
+
+@handler("brain.agent.last_spec.write")
+def brain_agent_last_spec_write(spec: Any = None, log_root: str | None = None) -> dict[str, Any]:
+    """Persist a validated task spec as the next copy-last source."""
+    if not isinstance(spec, dict):
+        raise ValueError("spec (a serialized agent task dict) is required")
+
+    from core.agent.task_spec import agent_task_spec_from_dict
+
+    validated = asdict(agent_task_spec_from_dict(spec))
+    return {
+        "ok": _save_agent_last_task_spec(validated, log_root),
+        "path": str(_agent_last_task_path(log_root)),
+        "spec": validated,
+    }
+
+
+def _agent_approval_callback(ctx: StreamContext) -> Callable[[dict], bool]:
+    def request_approval(request: dict) -> bool:
+        approval_id = uuid.uuid4().hex
+        event = threading.Event()
+        state: dict[str, Any] = {"event": event, "approved": False}
+        with _AGENT_APPROVALS_LOCK:
+            _AGENT_APPROVALS[approval_id] = state
+
+        payload = dict(request)
+        payload["approval_id"] = approval_id
+        ctx.emit("agent.approval.request", payload)
+
+        try:
+            while not event.wait(0.1):
+                if ctx.cancelled:
+                    return False
+            return bool(state["approved"])
+        finally:
+            with _AGENT_APPROVALS_LOCK:
+                _AGENT_APPROVALS.pop(approval_id, None)
+
+    return request_approval
+
+
+@handler("brain.agent.approval.respond")
+def brain_agent_approval_respond(approval_id: str = "", approved: bool = False) -> dict[str, Any]:
+    """Resolve one pending agent approval prompt emitted by ``brain.agent.run``."""
+    cleaned = approval_id.strip()
+    if not cleaned:
+        raise ValueError("approval_id is required")
+
+    with _AGENT_APPROVALS_LOCK:
+        state = _AGENT_APPROVALS.get(cleaned)
+    if state is None:
+        return {"ok": False, "message": "approval request is no longer pending"}
+
+    state["approved"] = bool(approved)
+    event = state.get("event")
+    if isinstance(event, threading.Event):
+        event.set()
+    return {"ok": True, "approved": bool(approved)}
+
+
 @handler("brain.agent.history.list")
 def brain_agent_history_list(log_root: str | None = None, limit: int = 100) -> dict[str, Any]:
     """Return recent agent run folders and lightweight metadata for native UI."""
@@ -1262,6 +1514,7 @@ def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None =
     from core.agent.runtime import AgentRunControl
 
     task_spec = agent_task_spec_from_dict(spec)
+    _save_agent_last_task_spec(asdict(task_spec), log_root)
     control = AgentRunControl()
 
     # Bridge cooperative cancel: the host cancels the stream (brain.cancel) ->
@@ -1282,6 +1535,7 @@ def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None =
     runner = AgentTaskRunner(
         log_root=runs_dir,
         model_callback=_agent_test_model_callback(),
+        approval_callback=_agent_approval_callback(ctx),
         control=control,
     )
 

@@ -37,6 +37,21 @@ Swift host talks to a Python brain sidecar for OS-agnostic backend work.
 - `macos/Sources/Wisp/` contains the Swift/AppKit macOS host, while
   `macos/brain/` contains its Python sidecar.
 
+## Plugin Contract
+
+Plugin authors should not write Swift to support macOS. Third-party plugins
+belong in the shared Python plugin/runtime layer: Python packages under
+`plugins/<name>/__init__.py` and local script tools under `tools/installed/`.
+Both Windows and macOS must discover the same plugin metadata, hooks, tray
+actions, and model-callable tools from that shared layer.
+
+The native macOS app is only a generic host for this contract. Swift may render
+plugin names, paths, hook names, tool names, status, and declared tray actions
+from `brain.plugins.list`, then invoke those declared actions through
+`brain.plugins.run_action`. Plugin-specific business logic, provider calls,
+hooks, tools, and future custom plugin behavior must stay in Python/shared
+contracts so a plugin does not need separate Windows and macOS implementations.
+
 ## Runtime Flow
 
 1. On Windows, `main.App` starts Qt, registers hotkeys, initializes the overlay,

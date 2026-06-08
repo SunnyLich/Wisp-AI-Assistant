@@ -204,6 +204,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onCancel: { [weak self] in
                 self?.cancelNativeAgentTask()
+            },
+            onCopyLast: { [weak self] in
+                Task { await self?.copyLastNativeAgentTask() }
             }
         )
 
@@ -355,15 +358,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         addItem("Ask Wisp", #selector(overlayMenuAskWisp))
-        addItem("New Chat", #selector(overlayMenuNewChat))
-        addItem("Snip Screen Region", #selector(overlayMenuSnip))
+        menu.addItem(.separator())
+        addItem("Start agent task...", #selector(overlayMenuAgentTask))
+        addItem("Agent task history...", #selector(overlayMenuAgentHistory))
+        menu.addItem(.separator())
+        addItem("New chat", #selector(overlayMenuNewChat))
+        addItem("Last chat", #selector(overlayMenuLastChat))
+        addItem("Hide icon", #selector(overlayMenuHide))
+        menu.addItem(.separator())
+        addItem("Memory", #selector(overlayMenuMemory))
+        addItem("Plugin Manager", #selector(overlayMenuPluginManager))
         menu.addItem(.separator())
         addItem("Settings", #selector(overlayMenuSettings))
+        addItem("Snip Screen Region", #selector(overlayMenuSnip))
         addItem("Open Run Logs", #selector(overlayMenuOpenLogs))
         addItem("Open Config Folder", #selector(overlayMenuOpenConfigFolder))
         menu.addItem(.separator())
-        addItem("Hide Overlay", #selector(overlayMenuHide))
-        let quitItem = NSMenuItem(title: "Quit Wisp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         quitItem.target = NSApp
         menu.addItem(quitItem)
 
@@ -379,12 +390,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showNativeChat(new: true)
     }
 
-    @objc private func overlayMenuSnip() {
-        startSnip()
+    @objc private func overlayMenuLastChat() {
+        showNativeChat(new: false)
+    }
+
+    @objc private func overlayMenuAgentTask() {
+        showNativeAgentTask()
+    }
+
+    @objc private func overlayMenuAgentHistory() {
+        showNativeAgentHistory()
+    }
+
+    @objc private func overlayMenuMemory() {
+        showNativeMemory()
+    }
+
+    @objc private func overlayMenuPluginManager() {
+        showNativePluginManager()
     }
 
     @objc private func overlayMenuSettings() {
         showNativeSettings()
+    }
+
+    @objc private func overlayMenuSnip() {
+        startSnip()
     }
 
     @objc private func overlayMenuOpenLogs() {
@@ -651,6 +682,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("agent task opened")
     }
 
+    private func copyLastNativeAgentTask() async {
+        guard let client = brain else {
+            agentTaskPanel?.fail("brain client is not available")
+            statusController?.setBrainStatus("agent error")
+            return
+        }
+
+        do {
+            let result = try await client.call("brain.agent.last_spec.read", timeout: .seconds(30))
+            guard let spec = result?["spec"] as? [String: Any],
+                  let draft = AgentTaskDraft(payload: spec) else {
+                agentTaskPanel?.setStatus("No previous agent task found")
+                statusController?.setBrainStatus("agent last task missing")
+                return
+            }
+            agentTaskPanel?.setDraft(draft)
+            agentTaskPanel?.setStatus("Copied last task")
+            agentTaskPanel?.showTask()
+            statusController?.setBrainStatus("agent last task copied")
+        } catch {
+            let message = String(describing: error)
+            agentTaskPanel?.fail(message)
+            statusController?.setBrainStatus("agent error")
+            NSLog("[wisp] copy last agent task failed: %@", message)
+        }
+    }
+
     private func startNativeAgentTask(_ draft: AgentTaskDraft) {
         cancelSpeechPlayback()
         guard agentRunTask == nil else {
@@ -698,6 +756,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if let entry = data?["entry"] as? String {
                         agentTaskPanel?.appendTrace(entry)
                     }
+                case .event(let name, let data) where name == "agent.approval.request":
+                    await handleAgentApproval(data ?? [:])
                 case .event(let name, let data) where name == "agent.done":
                     resultPayload = data
                 case .result(let result):
@@ -721,6 +781,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusController?.setBrainStatus("agent error")
             NSLog("[wisp] agent run failed: %@", message)
         }
+    }
+
+    private func handleAgentApproval(_ data: [String: Any]) async {
+        guard let client = brain else { return }
+        let approvalID = data["approval_id"] as? String ?? ""
+        let action = data["action"] as? String ?? "agent action"
+        guard !approvalID.isEmpty else {
+            agentTaskPanel?.appendLog("approval request missing id")
+            return
+        }
+
+        let details = data["details"] as? [String: Any] ?? [:]
+        agentTaskPanel?.appendLog("approval requested: \(action)")
+        let approved = presentAgentApproval(action: action, details: details)
+
+        do {
+            let result = try await client.call(
+                "brain.agent.approval.respond",
+                ["approval_id": approvalID, "approved": approved],
+                timeout: .seconds(30)
+            )
+            let ok = result?["ok"] as? Bool ?? false
+            if ok {
+                agentTaskPanel?.appendLog(approved ? "approval granted: \(action)" : "approval declined: \(action)")
+            } else {
+                let message = result?["message"] as? String ?? "approval request was no longer pending"
+                agentTaskPanel?.appendLog(message)
+            }
+        } catch {
+            agentTaskPanel?.appendLog("approval response failed: \(String(describing: error))")
+        }
+    }
+
+    private func presentAgentApproval(action: String, details: [String: Any]) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Permission needed: \(action)"
+        alert.informativeText = formattedApprovalDetails(details)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Approve")
+        alert.addButton(withTitle: "Decline")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func formattedApprovalDetails(_ details: [String: Any]) -> String {
+        guard !details.isEmpty else {
+            return "The agent is asking to continue an action that requires approval."
+        }
+        if JSONSerialization.isValidJSONObject(details),
+           let data = try? JSONSerialization.data(withJSONObject: details, options: [.prettyPrinted, .sortedKeys]),
+           let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+        return details.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
     }
 
     private func agentRunResult(from payload: [String: Any]?) -> AgentRunResult {
@@ -1566,6 +1679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 [
                     "provider": route.provider(in: draft),
                     "model": route.model(in: draft),
+                    "fallbacks": route.fallbacks(in: draft),
                     "route_name": route.routeName,
                     "image": route.usesImage,
                     "custom_base_url": draft.customBaseURL,
@@ -1782,7 +1896,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController?.setBrainStatus("\(mode.rawValue.lowercased()) running")
 
         do {
-            let params = try paramsForPrompt(text, mode: mode, caller: caller, contextSnapshot: contextSnapshot)
+            let params = try await paramsForPrompt(text, mode: mode, caller: caller, contextSnapshot: contextSnapshot)
             var assembled = ""
 
             for try await item in client.stream(mode.method, params) {
@@ -1832,7 +1946,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mode: PromptMode,
         caller: CallerConfig? = nil,
         contextSnapshot: NativeContextSnapshot? = nil
-    ) throws -> [String: Any] {
+    ) async throws -> [String: Any] {
         switch mode {
         case .echo:
             return ["text": text, "chunk_size": 1, "delay": 0.02]
@@ -1862,16 +1976,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !bufferedContext.isEmpty {
                 ambientText += "\(ambientText.isEmpty ? "" : "\n\n")[Buffered context]\n\(bufferedContext)"
             }
+            let willAttachScreenshot = mode == .queryScreen || policy.contextScreenshot == .auto
             var params: [String: Any] = [
                 "intent_prompt": text,
                 "ambient_text": ambientText,
                 "use_tools": policy.contextTools,
                 "allow_screenshot_tool": policy.contextScreenshot == .model,
+                "include_active_document": policy.contextDocuments && !willAttachScreenshot,
             ]
             if let selected = snapshot.selectedText, !selected.isEmpty {
                 params["selected"] = selected
             }
-            if mode == .queryScreen || policy.contextScreenshot == .auto {
+            if willAttachScreenshot {
                 let capture = try screenCapture.captureMainDisplay(promptForPermission: true)
                 let data = try Data(contentsOf: capture.url)
                 params["screenshot_b64"] = data.base64EncodedString()

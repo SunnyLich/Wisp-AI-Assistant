@@ -90,8 +90,7 @@ final class StatusItemController: NSObject {
 
         super.init()
 
-        statusItem.button?.title = "✦"
-        statusItem.button?.toolTip = "Wisp"
+        configureStatusButton()
 
         let menu = NSMenu()
         statusMenuItem.isEnabled = false
@@ -100,109 +99,71 @@ final class StatusItemController: NSObject {
         menu.addItem(hotkeyMenuItem)
         menu.addItem(.separator())
 
-        let promptItem = NSMenuItem(title: "Ask Wisp", action: #selector(showPrompt), keyEquivalent: " ")
-        promptItem.keyEquivalentModifierMask = [.control, .option]
-        promptItem.target = self
-        menu.addItem(promptItem)
+        func addItem(
+            _ title: String,
+            action: Selector,
+            keyEquivalent: String = "",
+            modifiers: NSEvent.ModifierFlags = []
+        ) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = self
+            menu.addItem(item)
+        }
 
-        let echoItem = NSMenuItem(title: "Run Echo Smoke", action: #selector(runEchoSmoke), keyEquivalent: "e")
-        echoItem.target = self
-        menu.addItem(echoItem)
-
-        let contextItem = NSMenuItem(title: "Context Snapshot", action: #selector(showContext), keyEquivalent: "c")
-        contextItem.target = self
-        menu.addItem(contextItem)
-
-        let permissionsItem = NSMenuItem(title: "Permissions", action: #selector(showPermissions), keyEquivalent: "p")
-        permissionsItem.target = self
-        menu.addItem(permissionsItem)
-
-        let captureItem = NSMenuItem(title: "Capture Screen Smoke", action: #selector(captureScreen), keyEquivalent: "s")
-        captureItem.target = self
-        menu.addItem(captureItem)
-
-        let snipItem = NSMenuItem(title: "Snip Screen Region", action: #selector(startSnip), keyEquivalent: "")
-        snipItem.target = self
-        menu.addItem(snipItem)
+        addItem("Ask Wisp", action: #selector(showPrompt), keyEquivalent: " ", modifiers: [.control, .option])
+        addItem("Run Echo Smoke", action: #selector(runEchoSmoke), keyEquivalent: "e")
+        addItem("Context Snapshot", action: #selector(showContext), keyEquivalent: "c")
+        addItem("Capture Screen Smoke", action: #selector(captureScreen), keyEquivalent: "s")
+        menu.addItem(.separator())
+        addItem("Start agent task...", action: #selector(showAgentTask))
+        addItem("Agent task history...", action: #selector(showAgentHistory))
+        menu.addItem(.separator())
+        addItem("New chat", action: #selector(showNewChat), keyEquivalent: "n")
+        addItem("Last chat", action: #selector(showChat), keyEquivalent: "g")
+        addItem("Hide icon", action: #selector(toggleOverlay), keyEquivalent: "o")
+        menu.addItem(.separator())
+        addItem("Memory", action: #selector(showMemory))
+        addItem("Plugin Manager", action: #selector(showPluginManager))
+        menu.addItem(.separator())
+        addItem("Settings", action: #selector(showSettings), keyEquivalent: ",")
 
         menu.addItem(.separator())
 
-        let newChatItem = NSMenuItem(title: "New Chat", action: #selector(showNewChat), keyEquivalent: "n")
-        newChatItem.target = self
-        menu.addItem(newChatItem)
-
-        let chatItem = NSMenuItem(title: "Last Chat", action: #selector(showChat), keyEquivalent: "g")
-        chatItem.target = self
-        menu.addItem(chatItem)
-
-        let memoryWindowItem = NSMenuItem(title: "Memory", action: #selector(showMemory), keyEquivalent: "")
-        memoryWindowItem.target = self
-        menu.addItem(memoryWindowItem)
-
-        let pluginManagerItem = NSMenuItem(title: "Plugin Manager", action: #selector(showPluginManager), keyEquivalent: "")
-        pluginManagerItem.target = self
-        menu.addItem(pluginManagerItem)
-
-        let agentTaskItem = NSMenuItem(title: "Start Agent Task", action: #selector(showAgentTask), keyEquivalent: "")
-        agentTaskItem.target = self
-        menu.addItem(agentTaskItem)
-
-        let agentHistoryItem = NSMenuItem(title: "Agent Task History", action: #selector(showAgentHistory), keyEquivalent: "")
-        agentHistoryItem.target = self
-        menu.addItem(agentHistoryItem)
-
-        let settingsItem = NSMenuItem(title: "Settings", action: #selector(showSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
+        addItem("Snip Screen Region", action: #selector(startSnip))
+        addItem("Start Voice Query", action: #selector(startVoiceQuery), keyEquivalent: "r")
+        addItem("Stop Voice Query", action: #selector(stopVoiceQuery), keyEquivalent: "t")
+        addItem("Speak Last Response", action: #selector(speakResponse), keyEquivalent: "v")
 
         menu.addItem(.separator())
 
-        let startVoiceItem = NSMenuItem(title: "Start Voice Query", action: #selector(startVoiceQuery), keyEquivalent: "r")
-        startVoiceItem.target = self
-        menu.addItem(startVoiceItem)
-
-        let stopVoiceItem = NSMenuItem(title: "Stop Voice Query", action: #selector(stopVoiceQuery), keyEquivalent: "t")
-        stopVoiceItem.target = self
-        menu.addItem(stopVoiceItem)
-
-        let speakItem = NSMenuItem(title: "Speak Last Response", action: #selector(speakResponse), keyEquivalent: "v")
-        speakItem.target = self
-        menu.addItem(speakItem)
+        addItem("Remember Prompt", action: #selector(rememberPrompt), keyEquivalent: "m")
+        addItem("Search Memory", action: #selector(searchMemory), keyEquivalent: "f")
 
         menu.addItem(.separator())
 
-        let rememberItem = NSMenuItem(title: "Remember Prompt", action: #selector(rememberPrompt), keyEquivalent: "m")
-        rememberItem.target = self
-        menu.addItem(rememberItem)
-
-        let searchMemoryItem = NSMenuItem(title: "Search Memory", action: #selector(searchMemory), keyEquivalent: "f")
-        searchMemoryItem.target = self
-        menu.addItem(searchMemoryItem)
-
-        menu.addItem(.separator())
-
-        let overlayItem = NSMenuItem(title: "Toggle Overlay", action: #selector(toggleOverlay), keyEquivalent: "o")
-        overlayItem.target = self
-        menu.addItem(overlayItem)
-
+        addItem("Permissions", action: #selector(showPermissions), keyEquivalent: "p")
         loginItemMenuItem.target = self
         menu.addItem(loginItemMenuItem)
-
-        let retryHotkeyItem = NSMenuItem(title: "Retry Hotkey Permission", action: #selector(retryHotkey), keyEquivalent: "h")
-        retryHotkeyItem.target = self
-        menu.addItem(retryHotkeyItem)
-
-        let logsItem = NSMenuItem(title: "Open Run Logs", action: #selector(openRunLogs), keyEquivalent: "l")
-        logsItem.target = self
-        menu.addItem(logsItem)
-
-        let configItem = NSMenuItem(title: "Open Config Folder", action: #selector(openConfigFolder), keyEquivalent: "")
-        configItem.target = self
-        menu.addItem(configItem)
+        addItem("Retry Hotkey Permission", action: #selector(retryHotkey), keyEquivalent: "h")
+        addItem("Open Run Logs", action: #selector(openRunLogs), keyEquivalent: "l")
+        addItem("Open Config Folder", action: #selector(openConfigFolder))
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Wisp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    private func configureStatusButton() {
+        guard let button = statusItem.button else { return }
+        if let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Wisp") {
+            image.isTemplate = true
+            button.image = image
+            button.title = ""
+        } else {
+            button.title = "W"
+        }
+        button.toolTip = "Wisp"
     }
 
     /// Reflect the result of the brain handshake in the menu.

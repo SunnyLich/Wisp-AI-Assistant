@@ -82,20 +82,6 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
-PY="$REPO_ROOT/.venv/bin/python"
-if [ ! -x "$PY" ]; then
-  PY="$(command -v python3 || true)"
-fi
-
-if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
-  echo "ERROR: no Python found." >&2
-  echo "       Run scripts/macos_phase1_validate.sh once to create the .venv." >&2
-  echo "Live parity checklist: $LIVE_CHECKLIST"
-  echo "Latest log pointer: $LATEST_LOG_POINTER"
-  echo "Logs written to: $LOG_DIR"
-  exit 1
-fi
-
 run_logged() {
   local name="$1"
   shift
@@ -115,6 +101,171 @@ run_logged() {
   fi
   echo "PASS: $name"
 }
+
+WANT="$(tr -d '[:space:]' < .python-version 2>/dev/null || true)"
+WANT="${WANT:-3.12.13}"
+WANT_MM="$(printf '%s' "$WANT" | cut -d. -f1,2)"
+REQ_FILE="$REPO_ROOT/requirements-macos.lock"
+STAMP_FILE="$REPO_ROOT/.venv/.wisp-macos-deps.stamp"
+
+if [ ! -f "$REQ_FILE" ]; then
+  echo "ERROR: requirements-macos.lock is required for native macOS setup." >&2
+  echo "Live parity checklist: $LIVE_CHECKLIST"
+  echo "Latest log pointer: $LATEST_LOG_POINTER"
+  echo "Logs written to: $LOG_DIR"
+  exit 1
+fi
+
+python_mm() {
+  "$1" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true
+}
+
+python_matches_want() {
+  [ -n "${1:-}" ] && [ "$(python_mm "$1")" = "$WANT_MM" ]
+}
+
+try_python() {
+  local c="$1" p
+  if [ -z "$c" ]; then
+    return 1
+  fi
+  if command -v "$c" >/dev/null 2>&1; then
+    p="$(command -v "$c")"
+  elif [ -x "$c" ]; then
+    p="$c"
+  else
+    return 1
+  fi
+  if python_matches_want "$p"; then
+    echo "$p"
+    return 0
+  fi
+  return 1
+}
+
+find_local_python() {
+  local root d c
+  root="${PYENV_ROOT:-$HOME/.pyenv}"
+  if [ -d "$root/versions" ]; then
+    while IFS= read -r d; do
+      for c in "$d/bin/python" "$d/bin/python3"; do
+        try_python "$c" && return
+      done
+    done < <(find "$root/versions" -maxdepth 1 -type d -name "$WANT_MM.*" 2>/dev/null | sort -r)
+  fi
+
+  for c in "python$WANT_MM" \
+           "/Library/Frameworks/Python.framework/Versions/$WANT_MM/bin/python3" \
+           "/opt/homebrew/bin/python$WANT_MM" \
+           "/usr/local/bin/python$WANT_MM" \
+           python3 python; do
+    try_python "$c" && return
+  done
+}
+
+lock_hash() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$REQ_FILE" | awk '{print $1}'
+  else
+    cksum "$REQ_FILE" | awk '{print $1}'
+  fi
+}
+
+brain_deps_ok() {
+  local py="$1"
+  "$py" - <<'PY' >/dev/null 2>&1
+import dotenv
+import numpy
+import soundfile
+import faster_whisper
+import openai
+import anthropic
+PY
+}
+
+venv_ready() {
+  [ -x "$REPO_ROOT/.venv/bin/python" ] || return 1
+  python_matches_want "$REPO_ROOT/.venv/bin/python" || return 1
+  brain_deps_ok "$REPO_ROOT/.venv/bin/python" || return 1
+  [ -f "$STAMP_FILE" ] || return 1
+  [ "$(cat "$STAMP_FILE" 2>/dev/null || true)" = "$(lock_hash)" ] || return 1
+}
+
+ensure_uv() {
+  if command -v uv >/dev/null 2>&1; then
+    command -v uv
+    return 0
+  fi
+  for c in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+    if [ -x "$c" ]; then
+      echo "$c"
+      return 0
+    fi
+  done
+
+  curl -LsSf https://astral.sh/uv/install.sh | sh > "$LOG_DIR/uv-install.log" 2>&1
+  for c in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+    if [ -x "$c" ]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+setup_venv() {
+  if venv_ready; then
+    PY="$REPO_ROOT/.venv/bin/python"
+    echo "Using existing macOS .venv: $PY"
+    return 0
+  fi
+
+  if [ "${WISP_SKIP_PIP_INSTALL:-0}" = "1" ] && [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+    PY="$REPO_ROOT/.venv/bin/python"
+    echo "Using existing .venv because WISP_SKIP_PIP_INSTALL=1: $PY"
+    return 0
+  fi
+
+  local py uv
+  py="$(find_local_python || true)"
+  rm -rf "$REPO_ROOT/.venv"
+
+  if [ -n "$py" ]; then
+    echo "Creating .venv with local Python: $py"
+    run_logged "python-venv-create" "$py" -m venv "$REPO_ROOT/.venv"
+    PY="$REPO_ROOT/.venv/bin/python"
+    run_logged "python-pip-upgrade" "$PY" -m pip install --upgrade pip
+    run_logged "python-deps-install" "$PY" -m pip install -r "$REQ_FILE"
+  else
+    echo "Installing/locating uv because Python $WANT was not found locally..."
+    uv="$(ensure_uv)"
+    if [ -z "$uv" ]; then
+      echo "ERROR: could not find/install uv to provision Python $WANT." >&2
+      exit 1
+    fi
+    echo "Creating .venv with uv Python $WANT"
+    run_logged "uv-venv-create" "$uv" venv --python "$WANT" "$REPO_ROOT/.venv"
+    PY="$REPO_ROOT/.venv/bin/python"
+    run_logged "uv-deps-install" "$uv" pip install --python "$PY" -r "$REQ_FILE"
+  fi
+
+  if ! brain_deps_ok "$PY"; then
+    echo "ERROR: installed .venv is still missing native brain dependencies." >&2
+    exit 1
+  fi
+  lock_hash > "$STAMP_FILE"
+  echo "macOS .venv ready: $PY"
+}
+
+setup_venv
+
+if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
+  echo "ERROR: no Python interpreter found for the brain sidecar." >&2
+  echo "Live parity checklist: $LIVE_CHECKLIST"
+  echo "Latest log pointer: $LATEST_LOG_POINTER"
+  echo "Logs written to: $LOG_DIR"
+  exit 1
+fi
 
 export WISP_BRAIN_PYTHON="$PY"
 export WISP_BRAIN_DIR="$REPO_ROOT/macos/brain"

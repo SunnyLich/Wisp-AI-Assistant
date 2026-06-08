@@ -25,6 +25,10 @@ ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-$RUN_ID.zip"
 NOTARY_ZIP_PATH="$REPO_ROOT/build/WispNative/Wisp-notary-submit-$RUN_ID.zip"
 LOG_ARCHIVE_PATH="$REPO_ROOT/build_logs/wisp-macos-package-logs_$RUN_ID.zip"
 CODESIGN_ENTITLEMENTS="${WISP_CODESIGN_ENTITLEMENTS:-$REPO_ROOT/macos/Wisp.entitlements}"
+PACKAGE_BUNDLE_IDENTIFIER="${WISP_BUNDLE_IDENTIFIER:-com.wisp.native}"
+PACKAGE_APP_NAME="${WISP_APP_NAME:-Wisp}"
+PACKAGE_APP_VERSION="${WISP_APP_VERSION:-0.1.0}"
+PACKAGE_APP_BUILD="${WISP_APP_BUILD:-1}"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/build/WispNative"
 
 write_live_checklist() {
@@ -51,6 +55,10 @@ write_live_checklist
   echo "live_parity_checklist=$LIVE_CHECKLIST"
   echo "log_archive=$LOG_ARCHIVE_PATH"
   echo "zip_path=$ZIP_PATH"
+  echo "bundle_id=$PACKAGE_BUNDLE_IDENTIFIER"
+  echo "bundle_name=$PACKAGE_APP_NAME"
+  echo "bundle_version=$PACKAGE_APP_VERSION"
+  echo "bundle_build=$PACKAGE_APP_BUILD"
 } > "$LATEST_LOG_POINTER"
 
 finish() {
@@ -163,6 +171,10 @@ require_inputs() {
 
 build_release_shaped_bundle() {
   log_info "Building release-shaped Wisp.app with embedded runtime..."
+  WISP_APP_BUNDLE_ID="$PACKAGE_BUNDLE_IDENTIFIER" \
+  WISP_APP_NAME="$PACKAGE_APP_NAME" \
+  WISP_APP_VERSION="$PACKAGE_APP_VERSION" \
+  WISP_APP_BUILD="$PACKAGE_APP_BUILD" \
   WISP_PYTHON_RUNTIME_DIR="$WISP_PYTHON_RUNTIME_DIR" \
     /bin/bash scripts/macos_phase1_validate.sh | tee "$LOG_DIR/phase1.log"
 
@@ -174,6 +186,28 @@ build_release_shaped_bundle() {
     echo "ERROR: app bundle is missing embedded python-runtime/bin/python3." >&2
     exit 1
   fi
+  rm -f "$APP_BUNDLE/Contents/Resources/dev-launch.env"
+  log_info "Removed dev launch environment from release bundle."
+}
+
+validate_bundle_metadata() {
+  local plist="$APP_BUNDLE/Contents/Info.plist"
+  if [ ! -f "$plist" ]; then
+    echo "ERROR: app bundle is missing Info.plist: $plist" >&2
+    exit 1
+  fi
+  if ! grep -A1 "<key>CFBundleIdentifier</key>" "$plist" | grep -Fx "  <string>$PACKAGE_BUNDLE_IDENTIFIER</string>" >/dev/null; then
+    echo "ERROR: packaged app has unexpected CFBundleIdentifier." >&2
+    echo "Expected: $PACKAGE_BUNDLE_IDENTIFIER" >&2
+    exit 1
+  fi
+  if [ "$PACKAGE_BUNDLE_IDENTIFIER" = "dev.wisp.native" ]; then
+    echo "ERROR: release package must not use the dev bundle identifier dev.wisp.native." >&2
+    echo "Set WISP_BUNDLE_IDENTIFIER to your release reverse-DNS app id." >&2
+    exit 1
+  fi
+  log_info "Bundle identifier: $PACKAGE_BUNDLE_IDENTIFIER"
+  log_info "Bundle version: $PACKAGE_APP_VERSION ($PACKAGE_APP_BUILD)"
 }
 
 validate_embedded_python() {
@@ -257,23 +291,100 @@ notarize_if_requested() {
   zip_app "zip-stapled-app" "$ZIP_PATH"
 }
 
+open_signed_app_without_wisp_env() {
+  local bundle="${1:-$APP_BUNDLE}"
+  (
+    unset WISP_BRAIN_PYTHON
+    unset WISP_BRAIN_DIR
+    unset WISP_REPO_ROOT
+    unset WISP_RUN_LOG_DIR
+    unset WISP_PYTHON_RUNTIME_DIR
+    unset WISP_VALIDATE_APP_LAUNCH
+    /usr/bin/open -n "$bundle"
+  )
+}
+
+quit_existing_wisp_app() {
+  local bundle_id
+  for bundle_id in "$PACKAGE_BUNDLE_IDENTIFIER" "dev.wisp.native" "com.wisp.native"; do
+    /usr/bin/osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1 || true
+  done
+  /usr/bin/pkill -x Wisp >/dev/null 2>&1 || true
+  sleep 1
+}
+
 validate_signed_app_launch_if_requested() {
   if [ "${WISP_VALIDATE_APP_LAUNCH:-0}" != "1" ]; then
     return 0
   fi
 
+  local app_marker="$HOME/Library/Logs/Wisp/native-app-launch.log"
   local marker="$LOG_DIR/native-app-launch.log"
-  rm -f "$marker"
+  local launch_root="${TMPDIR:-/tmp}/wisp-signed-launch-$RUN_ID"
+  local launch_app="$launch_root/Wisp.app"
+  local expected_python="$launch_app/Contents/Resources/python-runtime/bin/python3"
+  rm -f "$app_marker" "$marker"
+  rm -rf "$launch_root"
+  mkdir -p "$launch_root"
+  run_logged "copy-signed-app-for-launch" ditto "$APP_BUNDLE" "$launch_app"
+  run_logged "codesign-verify-launch-copy" codesign --verify --deep --strict --verbose=2 "$launch_app"
+  if [ ! -x "$expected_python" ]; then
+    log_info "FAILED: launch-validation app copy is missing embedded Python."
+    log_info "Expected python: $expected_python"
+    return 1
+  fi
+  if [ -f "$launch_app/Contents/Resources/dev-launch.env" ]; then
+    log_info "FAILED: launch-validation app copy still contains dev-launch.env."
+    return 1
+  fi
+
+  quit_existing_wisp_app
 
   log_info "Launching signed Wisp.app for native startup validation..."
-  run_logged "signed-app-open" /usr/bin/open -n "$APP_BUNDLE"
+  log_info "Launch validation app copy: $launch_app"
+  log_info "This launch clears WISP_* dev/test variables before calling open."
+  run_logged "signed-app-open" open_signed_app_without_wisp_env "$launch_app"
 
   local i=0
   while [ "$i" -lt 20 ]; do
-    if [ -s "$marker" ]; then
-      log_info "Signed app launch marker detected: $marker"
+    if [ -s "$app_marker" ]; then
+      if ! cp "$app_marker" "$marker" 2>/dev/null; then
+        log_info "FAILED: could not copy signed app launch marker into package log folder."
+        log_info "Source marker: $app_marker"
+        log_info "Destination marker: $marker"
+        quit_existing_wisp_app
+        return 1
+      fi
+      log_info "Signed app launch marker detected: $app_marker"
+      log_info "Copied launch marker to package log evidence: $marker"
       sed 's/^/  /' "$marker" | tee -a "$SUMMARY_LOG"
-      /usr/bin/osascript -e 'tell application id "dev.wisp.native" to quit' >/dev/null 2>&1 || true
+      if ! grep -Fx "brain_python=$expected_python" "$marker" >/dev/null; then
+        log_info "FAILED: signed app resolved unexpected Python."
+        log_info "Expected brain_python=$expected_python"
+        quit_existing_wisp_app
+        return 1
+      fi
+      if ! grep -Fx "brain_python_exists=true" "$marker" >/dev/null; then
+        log_info "FAILED: signed app resolved Python path does not exist."
+        quit_existing_wisp_app
+        return 1
+      fi
+      if ! grep -Fx "brain_python_is_executable=true" "$marker" >/dev/null; then
+        log_info "FAILED: signed app resolved Python path is not executable."
+        quit_existing_wisp_app
+        return 1
+      fi
+      if ! grep -Fx "brain_dir_exists=true" "$marker" >/dev/null; then
+        log_info "FAILED: signed app brain directory does not exist."
+        quit_existing_wisp_app
+        return 1
+      fi
+      if grep -Fx "brain_python=python" "$marker" >/dev/null || grep -Fx "brain_python_configured=python" "$marker" >/dev/null; then
+        log_info "FAILED: signed app still resolved or configured bare python."
+        quit_existing_wisp_app
+        return 1
+      fi
+      quit_existing_wisp_app
       return 0
     fi
     i=$((i + 1))
@@ -281,7 +392,7 @@ validate_signed_app_launch_if_requested() {
   done
 
   log_info "FAILED: signed app launch marker was not written within 20 seconds"
-  log_info "Expected marker: $marker"
+  log_info "Expected marker: $app_marker"
   log_info "If Wisp is still running, quit it from the tray menu before rerunning packaging."
   return 1
 }
@@ -291,6 +402,7 @@ require_inputs
 log_info "Live parity checklist: $LIVE_CHECKLIST"
 log_info "Latest log pointer: $LATEST_LOG_POINTER"
 build_release_shaped_bundle
+validate_bundle_metadata
 validate_embedded_python
 sign_bundle
 notarize_if_requested

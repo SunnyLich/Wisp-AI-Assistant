@@ -8,6 +8,9 @@ caller's inputs reached the model, and cooperative cancel -- with no API key.
 """
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 from wisp_brain import handlers
@@ -74,6 +77,84 @@ def test_query_forwards_screenshot_tool_policy(record_ctx, monkeypatch):
     assert result["text"] == "ok"
     assert "".join(_chunks(events)) == "ok"
     assert captured == {"use_tools": True, "allow_screenshot_tool": True}
+
+
+def test_query_includes_active_document_when_requested(record_ctx, monkeypatch):
+    from core.llm_clients import client as llm_client
+
+    monkeypatch.setattr(llm_client, "read_active_document_for_context", lambda: "ACTIVE DOC TEXT")
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="use open docs",
+        memory_context="(none)",
+        include_active_document=True,
+    )
+
+    assert "[Active document]\nACTIVE DOC TEXT" in result["text"]
+    assert "".join(_chunks(events)) == result["text"]
+
+
+def test_query_runs_shared_plugin_before_and_after_hooks(record_ctx, monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakeManager:
+        def before_query(self, prompt, context):
+            calls["before"] = (prompt, context)
+            return f"{prompt} + plugin prompt", f"{context}\nplugin context".strip()
+
+        def after_response(self, text):
+            calls["after"] = text
+
+    fake_plugin_manager = types.ModuleType("core.plugin_manager")
+    fake_plugin_manager.get_manager = lambda: FakeManager()
+    monkeypatch.setitem(sys.modules, "core.plugin_manager", fake_plugin_manager)
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="original prompt",
+        ambient_text="original context",
+        memory_context="(none)",
+    )
+
+    assert calls["before"] == ("original prompt", "original context")
+    assert "original prompt + plugin prompt" in result["text"]
+    assert "plugin context" in result["text"]
+    assert calls["after"] == result["text"]
+    assert "".join(_chunks(events)) == result["text"]
+
+
+def test_query_skips_active_document_when_screenshot_attached(record_ctx, monkeypatch):
+    from core.llm_clients import client as llm_client
+
+    def fail_read():
+        raise AssertionError("active document should not be read for screenshot query")
+
+    monkeypatch.setattr(llm_client, "read_active_document_for_context", fail_read)
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="look at this",
+        screenshot_b64="image-data",
+        memory_context="(none)",
+        include_active_document=True,
+    )
+
+    assert "ACTIVE DOC" not in result["text"]
+    assert "".join(_chunks(events)) == result["text"]
+
+
+def test_active_document_context_handler_filters_error_strings(monkeypatch):
+    from core.llm_clients import client as llm_client
+
+    monkeypatch.setattr(llm_client, "read_active_document_for_context", lambda: "Failed to read document")
+
+    result = handlers.HANDLERS["brain.context.active_document"]()
+
+    assert result == {"text": ""}
 
 
 def test_query_precancelled_yields_empty(record_ctx):

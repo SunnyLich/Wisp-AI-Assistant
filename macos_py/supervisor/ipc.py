@@ -1,0 +1,242 @@
+"""Parent-side worker supervisor and JSON transport."""
+
+from __future__ import annotations
+
+import atexit
+import itertools
+import logging
+import os
+import subprocess
+import sys
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from macos_py import protocol
+from macos_py.bootstrap import repo_root
+
+log = logging.getLogger("wisp.macos_py.supervisor")
+
+
+class WorkerError(RuntimeError):
+    """A worker call failed, timed out, or the worker is unavailable."""
+
+
+@dataclass
+class WorkerSpec:
+    name: str
+    module: str
+    role: str
+    cwd: Path = field(default_factory=repo_root)
+    env: dict[str, str] = field(default_factory=dict)
+    restart_limit: int = 3
+
+
+class WorkerClient:
+    """Spawn, monitor, and talk to one worker process."""
+
+    def __init__(self, spec: WorkerSpec) -> None:
+        self.spec = spec
+        self._proc: subprocess.Popen | None = None
+        self._ids = itertools.count(1)
+        self._spawn_lock = threading.Lock()
+        self._write_lock = threading.Lock()
+        self._pending_lock = threading.Lock()
+        self._pending: dict[int, dict[str, Any]] = {}
+        self._event_handlers: dict[str, list[Callable[[Any, Any], None]]] = {}
+        self._restart_count = 0
+        self._shutting_down = False
+        atexit.register(self.shutdown)
+
+    def alive(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    @property
+    def pid(self) -> int | None:
+        return self._proc.pid if self._proc is not None else None
+
+    def start(self) -> None:
+        self._ensure_started()
+
+    def _ensure_started(self) -> None:
+        if self.alive():
+            return
+        with self._spawn_lock:
+            if self.alive():
+                return
+            if self._shutting_down:
+                raise WorkerError(f"{self.spec.name} is shutting down")
+            self._spawn()
+
+    def _spawn(self) -> None:
+        env = os.environ.copy()
+        env.update(self.spec.env)
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        env.setdefault("WISP_REPO_ROOT", str(repo_root()))
+        log.info("starting %s: %s", self.spec.name, self.spec.module)
+        self._proc = subprocess.Popen(
+            [sys.executable, "-m", self.spec.module],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(self.spec.cwd),
+            env=env,
+            bufsize=0,
+        )
+        threading.Thread(target=self._read_loop, args=(self._proc,), daemon=True).start()
+        threading.Thread(target=self._stderr_loop, args=(self._proc,), daemon=True).start()
+
+    def _read_loop(self, proc: subprocess.Popen) -> None:
+        stdout = proc.stdout
+        assert stdout is not None
+        while True:
+            msg = protocol.read_message(stdout)
+            if msg is None:
+                break
+            if msg.get("event") is not None:
+                self._dispatch_event(msg["event"], msg.get("data"), msg.get("id"))
+                continue
+            rid = msg.get("id")
+            if rid is None:
+                continue
+            with self._pending_lock:
+                slot = self._pending.pop(rid, None)
+            if slot is not None:
+                slot["resp"] = msg
+                slot["event"].set()
+        self._fail_pending("worker exited")
+
+    def _stderr_loop(self, proc: subprocess.Popen) -> None:
+        stderr = proc.stderr
+        assert stderr is not None
+        for raw in iter(stderr.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip()
+            if line:
+                log.debug("[%s] %s", self.spec.name, line)
+
+    def _fail_pending(self, error: str) -> None:
+        with self._pending_lock:
+            for slot in self._pending.values():
+                slot["resp"] = {"ok": False, "error": error}
+                slot["event"].set()
+            self._pending.clear()
+
+    def _dispatch_event(self, event: str, data: Any, req_id: Any) -> None:
+        for handler in list(self._event_handlers.get(event, ())):
+            try:
+                handler(data, req_id)
+            except Exception:  # noqa: BLE001
+                log.exception("%s event handler failed for %s", self.spec.name, event)
+
+    def on_event(self, event: str, handler: Callable[[Any, Any], None]) -> None:
+        self._event_handlers.setdefault(event, []).append(handler)
+
+    def _write(self, req: dict[str, Any]) -> None:
+        proc = self._proc
+        if proc is None or proc.stdin is None:
+            raise WorkerError(f"{self.spec.name} is not running")
+        with self._write_lock:
+            try:
+                protocol.write_message(proc.stdin, req)
+            except (BrokenPipeError, OSError, ValueError) as exc:
+                raise WorkerError(f"{self.spec.name} write failed: {exc}") from exc
+
+    def call(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float = 30.0,
+        wait: bool = True,
+    ) -> Any:
+        self._ensure_started()
+        rid = next(self._ids)
+        req = protocol.make_request(rid, method, params or {})
+        if not wait:
+            self._write(req)
+            return None
+
+        ev = threading.Event()
+        slot: dict[str, Any] = {"event": ev, "resp": None}
+        with self._pending_lock:
+            self._pending[rid] = slot
+        try:
+            self._write(req)
+        except WorkerError:
+            with self._pending_lock:
+                self._pending.pop(rid, None)
+            raise
+
+        if not ev.wait(timeout):
+            with self._pending_lock:
+                self._pending.pop(rid, None)
+            raise WorkerError(f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s")
+        resp = slot["resp"] or {"ok": False, "error": "missing response"}
+        if not resp.get("ok"):
+            raise WorkerError(str(resp.get("error") or f"{method!r} failed"))
+        return resp.get("result")
+
+    def restart(self) -> None:
+        with self._spawn_lock:
+            if self._restart_count >= self.spec.restart_limit:
+                raise WorkerError(f"{self.spec.name} restart limit exceeded")
+            self._restart_count += 1
+            self._terminate_locked()
+            self._spawn()
+
+    def shutdown(self) -> None:
+        with self._spawn_lock:
+            self._shutting_down = True
+            self._terminate_locked()
+
+    def _terminate_locked(self) -> None:
+        proc = self._proc
+        self._proc = None
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            with self._write_lock:
+                if proc.stdin and not proc.stdin.closed:
+                    protocol.write_message(proc.stdin, protocol.make_request(0, "__shutdown__"))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            proc.wait(timeout=2.0)
+        except Exception:  # noqa: BLE001
+            proc.kill()
+            proc.wait(timeout=5.0)
+
+
+def default_specs() -> dict[str, WorkerSpec]:
+    return {
+        "native": WorkerSpec("wisp-native", "macos_py.workers.native_host", "native"),
+        "ui": WorkerSpec("wisp-ui", "macos_py.workers.ui_host", "ui"),
+        "brain": WorkerSpec("wisp-brain", "macos_py.workers.brain_host", "brain"),
+        "audio": WorkerSpec("wisp-audio", "macos_py.workers.audio_host", "audio"),
+    }
+
+
+class WispSupervisor:
+    """Owns all pure-Python macOS workers."""
+
+    def __init__(self, specs: dict[str, WorkerSpec] | None = None) -> None:
+        self.workers = {
+            name: WorkerClient(spec)
+            for name, spec in (specs or default_specs()).items()
+        }
+
+    def start_all(self) -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        for name, worker in self.workers.items():
+            results[name] = worker.call("ping", {"value": name}, timeout=20.0)
+        return results
+
+    def call(self, worker: str, method: str, params: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:
+        return self.workers[worker].call(method, params, timeout=timeout)
+
+    def shutdown(self) -> None:
+        for worker in self.workers.values():
+            worker.shutdown()
+

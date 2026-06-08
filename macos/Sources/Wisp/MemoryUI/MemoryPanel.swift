@@ -280,6 +280,8 @@ private struct MemoryPanelView: View {
                     .foregroundStyle(.secondary)
                 TextField("Search memory", text: $model.searchText)
                     .textFieldStyle(.plain)
+                    .foregroundStyle(MemoryInputPalette.inputText)
+                    .tint(MemoryInputPalette.inputText)
                     .onSubmit { model.search() }
                 Button {
                     model.search()
@@ -357,6 +359,8 @@ private struct MemoryPanelView: View {
             TextField("Add fact", text: $model.newText, axis: .vertical)
                 .lineLimit(1...3)
                 .textFieldStyle(.roundedBorder)
+                .foregroundStyle(MemoryInputPalette.inputText)
+                .tint(MemoryInputPalette.inputText)
                 .focused($addFocused)
                 .onSubmit { model.addFact() }
 
@@ -411,6 +415,8 @@ private struct MemoryFactRow: View {
                 TextField("Fact", text: $draftText, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(MemoryInputPalette.inputText)
+                    .tint(MemoryInputPalette.inputText)
                     .disabled(isLoading)
 
                 Picker("", selection: $draftCategory) {
@@ -482,4 +488,9 @@ private struct MemoryFactRow: View {
             lastSeen: fact.lastSeen
         )
     }
+}
+
+private enum MemoryInputPalette {
+    static let inputText = Color(nsColor: NSColor.textColor)
+    static let inputBackground = Color(nsColor: NSColor.textBackgroundColor)
 }

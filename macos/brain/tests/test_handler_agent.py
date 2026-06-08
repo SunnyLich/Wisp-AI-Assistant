@@ -9,6 +9,9 @@ are covered -- the single-turn ``WISP_BRAIN_FAKE_LLM`` fast path and an explicit
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -43,6 +46,9 @@ def test_agent_is_registered_as_streaming():
     assert "brain.agent.history.read" in handlers.HANDLERS
     assert "brain.agent.history.retry_spec" in handlers.HANDLERS
     assert "brain.agent.history.continue_spec" in handlers.HANDLERS
+    assert "brain.agent.last_spec.read" in handlers.HANDLERS
+    assert "brain.agent.last_spec.write" in handlers.HANDLERS
+    assert "brain.agent.approval.respond" in handlers.HANDLERS
 
 
 def test_agent_requires_spec_dict():
@@ -73,6 +79,8 @@ def test_agent_fake_llm_completes_in_one_turn(record_ctx, tmp_path, monkeypatch)
     # Progress streamed as agent.log, and a terminal agent.done with the result.
     assert _events_of(events, "agent.log"), "expected streamed agent.log lines"
     assert _events_of(events, "agent.done") == [result]
+    last_task = tmp_path / "runs" / "last_task.json"
+    assert json.loads(last_task.read_text(encoding="utf-8"))["title"] == "smoke"
 
 
 def test_agent_runs_a_scripted_model(record_ctx, tmp_path, monkeypatch):
@@ -157,3 +165,124 @@ def test_agent_history_retry_and_continue_specs(tmp_path):
     assert continued["title"] == "Continue: Demo"
     assert "Continuing from previous agent run" in continued["required_context"]
     assert "Previous final report" in continued["required_context"]
+
+
+def test_agent_last_spec_write_and_read_round_trips(tmp_path):
+    spec = _noop_spec(tmp_path, title="Last Task", objective="Copy this task")
+
+    written = handlers.HANDLERS["brain.agent.last_spec.write"](spec=spec, log_root=str(tmp_path / "runs"))
+    read = handlers.HANDLERS["brain.agent.last_spec.read"](log_root=str(tmp_path / "runs"))
+
+    assert written["ok"] is True
+    assert Path(written["path"]).name == "last_task.json"
+    assert written["spec"]["title"] == "Last Task"
+    assert read["spec"]["title"] == "Last Task"
+    assert read["spec"]["objective"] == "Copy this task"
+
+
+def test_agent_last_spec_read_falls_back_to_newest_run_task(tmp_path):
+    root = tmp_path / "runs"
+    old = root / "20260101-010101-old"
+    new = root / "20260102-010101-new"
+    old.mkdir(parents=True)
+    new.mkdir(parents=True)
+    (old / "task.json").write_text(json.dumps(_noop_spec(tmp_path, title="Old", objective="Earlier")), encoding="utf-8")
+    (new / "task.json").write_text(json.dumps(_noop_spec(tmp_path, title="New", objective="Later")), encoding="utf-8")
+    os.utime(old / "task.json", (1, 1))
+    os.utime(new / "task.json", (2, 2))
+
+    result = handlers.HANDLERS["brain.agent.last_spec.read"](log_root=str(root))
+
+    assert result["spec"]["title"] == "New"
+    assert result["spec"]["objective"] == "Later"
+
+
+def test_agent_approval_callback_emits_request_and_accepts_response(record_ctx):
+    events, ctx = record_ctx()
+    approved: dict[str, bool] = {}
+
+    def wait_for_approval():
+        approved["value"] = handlers._agent_approval_callback(ctx)({
+            "action": "write_file",
+            "details": {"path": "note.txt", "chars": 5},
+        })
+
+    thread = threading.Thread(target=wait_for_approval)
+    thread.start()
+    for _ in range(50):
+        if _events_of(events, "agent.approval.request"):
+            break
+        time.sleep(0.02)
+
+    requests = _events_of(events, "agent.approval.request")
+    assert requests
+    assert requests[0]["action"] == "write_file"
+    assert requests[0]["details"]["path"] == "note.txt"
+
+    response = handlers.HANDLERS["brain.agent.approval.respond"](
+        approval_id=requests[0]["approval_id"],
+        approved=True,
+    )
+    thread.join(timeout=2)
+
+    assert response == {"ok": True, "approved": True}
+    assert not thread.is_alive()
+    assert approved["value"] is True
+
+
+def test_agent_run_approval_request_can_be_approved(record_ctx, tmp_path, monkeypatch):
+    script = tmp_path / "script.json"
+    script.write_text(
+        json.dumps(
+            [
+                {
+                    "thought": "Create note.",
+                    "status": "continue",
+                    "tool_calls": [
+                        {
+                            "tool": "create_file",
+                            "args": {"path": "note.txt", "content": "hello"},
+                        }
+                    ],
+                    "final": None,
+                },
+                {"thought": "Done.", "tool_calls": [], "final": "Created note."},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WISP_BRAIN_AGENT_TEST_SCRIPT", str(script))
+
+    events = []
+
+    def emit(event, data, _req_id):
+        events.append((event, data))
+        if event == "agent.approval.request":
+            handlers.HANDLERS["brain.agent.approval.respond"](
+                approval_id=data["approval_id"],
+                approved=True,
+            )
+
+    from wisp_brain.handlers import StreamContext
+
+    ctx = StreamContext(emit, 1)
+    spec = _noop_spec(tmp_path, title="approval run", objective="create a note")
+    spec.update(
+        {
+            "parallel_read_only_briefing": False,
+            "allow_file_create": True,
+            "file_create_permission_mode": "ask permission",
+            "agents": [{"name": "Builder", "role": "Implementer"}],
+        }
+    )
+
+    result = handlers.HANDLERS["brain.agent.run"](
+        ctx, spec=spec, log_root=str(tmp_path / "runs")
+    )
+
+    assert result["error"] == ""
+    assert result["final"] == "Created note."
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "hello"
+    approvals = _events_of(events, "agent.approval.request")
+    assert approvals
+    assert approvals[0]["action"] == "create_file"

@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import Wisp
 
 final class AgentHistoryPanelTests: XCTestCase {
@@ -45,5 +46,65 @@ final class AgentHistoryPanelTests: XCTestCase {
         XCTAssertEqual(detail.runLog, "agent run failed")
         XCTAssertEqual(detail.diffPatch, "diff --git a/a b/a")
         XCTAssertTrue(detail.hasDisplayableDiff)
+    }
+
+    func testAgentHistoryAndDiffPanelsKeepNativeRunActions() throws {
+        let history = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/AgentsUI/AgentHistoryPanel.swift"),
+            encoding: .utf8
+        )
+        let diff = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/AgentsUI/AgentDiffPanel.swift"),
+            encoding: .utf8
+        )
+        let appDelegate = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/App/AppDelegate.swift"),
+            encoding: .utf8
+        )
+
+        for expected in [
+            "onRetryRun",
+            "onContinueRun",
+            "onOpenDiff",
+            "retrySelectedRun()",
+            "continueSelectedRun()",
+            "openDiff()",
+            "Text(\"Final\").tag(\"final\")",
+            "Text(\"Log\").tag(\"log\")",
+            "Text(\"Task\").tag(\"task\")",
+            "Text(\"Diff\").tag(\"diff\")",
+            "detail.hasDisplayableDiff",
+        ] {
+            XCTAssertTrue(history.contains(expected), "AgentHistoryPanel is missing \(expected).")
+        }
+
+        for expected in [
+            "final class AgentDiffPanel",
+            "func showDiff(title: String, runDir: String, diffPatch: String)",
+            "DiffTextScrollView",
+            "model.openFolder()",
+        ] {
+            XCTAssertTrue(diff.contains(expected), "AgentDiffPanel is missing \(expected).")
+        }
+
+        for expected in [
+            "brain.agent.history.list",
+            "brain.agent.history.read",
+            "brain.agent.history.retry_spec",
+            "brain.agent.history.continue_spec",
+            "showAgentDiff(detail)",
+            "agentTaskPanel?.showTask",
+        ] {
+            XCTAssertTrue(appDelegate.contains(expected), "AppDelegate agent history wiring is missing \(expected).")
+        }
+    }
+
+    private func sourceRoot() -> URL {
+        let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let direct = currentDirectory.appendingPathComponent("Sources/Wisp")
+        if FileManager.default.fileExists(atPath: direct.path) {
+            return currentDirectory
+        }
+        return currentDirectory.appendingPathComponent("macos")
     }
 }

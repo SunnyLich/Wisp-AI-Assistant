@@ -45,7 +45,7 @@ final class PermissionsAndLoginSourceTests: XCTestCase {
         XCTAssertTrue(appDelegate.contains("permissionsPanel = PermissionsPanel"))
         XCTAssertTrue(appDelegate.contains("showPermissionSnapshot()"))
         XCTAssertTrue(appDelegate.contains("nativeContext.requestPermission(kind)"))
-        XCTAssertTrue(statusItem.contains("NSMenuItem(title: \"Permissions\""))
+        XCTAssertTrue(statusItem.contains("addItem(\"Permissions\""))
         XCTAssertTrue(statusItem.contains("onShowPermissions()"))
     }
 

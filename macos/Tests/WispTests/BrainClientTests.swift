@@ -3,6 +3,39 @@ import XCTest
 
 final class BrainClientTests: XCTestCase {
 
+    func testNonExecutablePythonFailsBeforeSpawnWithSetupGuidance() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-brain-client-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let python = root.appendingPathComponent("bin/python")
+        let brainDir = root.appendingPathComponent("brain")
+        try FileManager.default.createDirectory(at: python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: brainDir, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: python.path, contents: Data()))
+
+        let client = BrainClient(
+            config: BrainClient.Config(
+                pythonExecutable: python,
+                brainDirectory: brainDir,
+                extraPythonPath: []
+            )
+        )
+
+        do {
+            _ = try await client.call("ping", timeout: .seconds(1))
+            XCTFail("Expected non-executable Python to fail before spawning.")
+        } catch BrainError.spawnFailed(let message) {
+            XCTAssertTrue(message.contains("Python runtime is not executable or was not found"))
+            XCTAssertTrue(message.contains("Start Wisp (Mac Native).command"))
+            XCTAssertTrue(message.contains("WISP_PYTHON_RUNTIME_DIR"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        await client.shutdown()
+    }
+
     func testPingAndEchoAgainstConfiguredSidecar() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let python = env["WISP_BRAIN_PYTHON"], !python.isEmpty,

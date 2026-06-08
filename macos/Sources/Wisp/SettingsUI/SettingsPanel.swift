@@ -366,6 +366,17 @@ enum SettingsLLMTestRoute: String, Hashable {
             return draft.memoryModel
         }
     }
+
+    func fallbacks(in draft: SettingsDraft) -> String {
+        switch self {
+        case .main:
+            return draft.llmFallbacks
+        case .vision:
+            return draft.visionFallbacks
+        case .memory:
+            return draft.memoryFallbacks
+        }
+    }
 }
 
 extension SettingsCallerDraft {
@@ -900,6 +911,8 @@ private struct SecretKeyRow: View {
 
             SecureField("New API key", text: $secret.value)
                 .textFieldStyle(.roundedBorder)
+                .foregroundStyle(SettingsInputPalette.inputText)
+                .tint(SettingsInputPalette.inputText)
 
             Button {
                 onSave()
@@ -981,20 +994,20 @@ private struct SettingsPanelView: View {
             header
             Divider()
             TabView {
-                modelsTab
-                    .tabItem { Text("Models") }
-                keysTab
-                    .tabItem { Text("Keys") }
-                authTab
-                    .tabItem { Text("Auth") }
-                callersTab
-                    .tabItem { Text("Callers") }
+                llmTab
+                    .tabItem { Text("LLM") }
                 voiceTab
-                    .tabItem { Text("Voice") }
+                    .tabItem { Text("TTS / Voice") }
+                promptsTab
+                    .tabItem { Text("Prompts") }
+                keybindsTab
+                    .tabItem { Text("Keybinds") }
+                appTab
+                    .tabItem { Text("App") }
                 memoryTab
                     .tabItem { Text("Memory") }
-                uiTab
-                    .tabItem { Text("UI") }
+                toolsTab
+                    .tabItem { Text("Tools") }
             }
             .padding(12)
             Divider()
@@ -1021,104 +1034,10 @@ private struct SettingsPanelView: View {
         .frame(height: 42)
     }
 
-    private var modelsTab: some View {
+    private var llmTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                SettingsSection("Main") {
-                    ProviderPicker("Provider", selection: $model.draft.llmProvider)
-                    SettingsTextField("Model", text: $model.draft.llmModel)
-                    SettingsTextField("Fallbacks", text: $model.draft.llmFallbacks)
-                    SettingsTextField("Tool model", text: $model.draft.toolModel)
-                    SettingsTextField("Tool plugin folder", text: $model.draft.toolPluginDir)
-                    SettingsTextField("Tool git root", text: $model.draft.toolGitRoot)
-                    SettingsTextField("Custom base URL", text: $model.draft.customBaseURL)
-                    llmTestRow(.main)
-                }
-
-                SettingsSection("Vision") {
-                    ProviderPicker("Provider", selection: $model.draft.visionProvider, includeEmpty: true)
-                    SettingsTextField("Model", text: $model.draft.visionModel)
-                    SettingsTextField("Fallbacks", text: $model.draft.visionFallbacks)
-                    llmTestRow(.vision)
-                }
-
-                SettingsSection("GitHub") {
-                    SettingsTextField("Client ID", text: $model.draft.githubClientID)
-                    SettingsTextField("OAuth scopes", text: $model.draft.githubOAuthScopes)
-                }
-
-                SettingsSection("Memory Model") {
-                    ProviderPicker("Provider", selection: $model.draft.memoryProvider)
-                    SettingsTextField("Model", text: $model.draft.memoryModel)
-                    SettingsTextField("Fallbacks", text: $model.draft.memoryFallbacks)
-                    llmTestRow(.memory)
-                }
-
-                SettingsSection("System Prompt") {
-                    SettingsTextEditor("Utility prompt", text: $model.draft.systemPromptUtility, minHeight: 150)
-                }
-            }
-            .padding(4)
-        }
-    }
-
-    private func llmTestRow(_ route: SettingsLLMTestRoute) -> some View {
-        HStack(spacing: 10) {
-            Spacer()
-                .frame(width: 135)
-            Button {
-                model.testLLM(route)
-            } label: {
-                Image(systemName: "checkmark.seal")
-            }
-            .buttonStyle(.borderless)
-            .help("Test \(route.routeName) route")
-            .disabled(model.hasBlockingOperation)
-            Text(model.llmTestText[route] ?? "")
-                .font(.caption)
-                .foregroundStyle(model.llmTestOK[route] == false ? Color.red : Color.secondary)
-                .lineLimit(2)
-                .textSelection(.enabled)
-        }
-    }
-
-    private var keysTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                SettingsSection("API Keys") {
-                    HStack(spacing: 10) {
-                        Spacer()
-                            .frame(width: 135)
-                        Button {
-                            model.refreshSecrets()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Refresh keychain status")
-                        .disabled(model.hasBlockingOperation)
-                        Spacer()
-                    }
-
-                    ForEach($model.secrets) { $secret in
-                        SecretKeyRow(
-                            secret: $secret,
-                            isBusy: model.isSecretBusy(secret),
-                            actionsDisabled: model.hasBlockingOperation && !model.isSecretBusy(secret),
-                            onSave: { model.saveSecret(secret) },
-                            onClear: { model.clearSecret(secret) }
-                        )
-                    }
-                }
-            }
-            .padding(4)
-        }
-    }
-
-    private var authTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                SettingsSection("Provider Auth") {
+                SettingsSection("Authentication") {
                     HStack(spacing: 10) {
                         Spacer()
                             .frame(width: 135)
@@ -1150,9 +1069,7 @@ private struct SettingsPanelView: View {
                         onPrimary: { model.startGitHubLogin() },
                         onClear: { model.clearAuthProvider("github") }
                     )
-                }
 
-                SettingsSection("GitHub Copilot") {
                     ProviderAuthRow(
                         status: authStatus("copilot"),
                         actionsDisabled: model.hasBlockingOperation,
@@ -1162,11 +1079,13 @@ private struct SettingsPanelView: View {
                     )
 
                     HStack(spacing: 10) {
-                        Text("Token")
+                        Text("Copilot token")
                             .frame(width: 135, alignment: .trailing)
                             .foregroundStyle(.secondary)
                         SecureField("GitHub Copilot token", text: $model.copilotToken)
                             .textFieldStyle(.roundedBorder)
+                            .foregroundStyle(SettingsInputPalette.inputText)
+                            .tint(SettingsInputPalette.inputText)
                         Button {
                             model.saveCopilotToken()
                         } label: {
@@ -1185,8 +1104,84 @@ private struct SettingsPanelView: View {
                         .disabled(model.hasBlockingOperation)
                     }
                 }
+
+                SettingsSection("API Keys") {
+                    HStack(spacing: 10) {
+                        Spacer()
+                            .frame(width: 135)
+                        Button {
+                            model.refreshSecrets()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Refresh keychain status")
+                        .disabled(model.hasBlockingOperation)
+                        Spacer()
+                    }
+
+                    ForEach($model.secrets) { $secret in
+                        SecretKeyRow(
+                            secret: $secret,
+                            isBusy: model.isSecretBusy(secret),
+                            actionsDisabled: model.hasBlockingOperation && !model.isSecretBusy(secret),
+                            onSave: { model.saveSecret(secret) },
+                            onClear: { model.clearSecret(secret) }
+                        )
+                    }
+                }
+
+                SettingsSection("Main") {
+                    ProviderPicker("Provider", selection: $model.draft.llmProvider)
+                    SettingsTextField("Model", text: $model.draft.llmModel)
+                    SettingsTextField("Fallbacks", text: $model.draft.llmFallbacks)
+                    llmTestRow(.main)
+                }
+
+                SettingsSection("Vision") {
+                    ProviderPicker("Provider", selection: $model.draft.visionProvider, includeEmpty: true)
+                    SettingsTextField("Model", text: $model.draft.visionModel)
+                    SettingsTextField("Fallbacks", text: $model.draft.visionFallbacks)
+                    llmTestRow(.vision)
+                }
+
+                SettingsSection("GitHub") {
+                    SettingsTextField("Client ID", text: $model.draft.githubClientID)
+                    SettingsTextField("OAuth scopes", text: $model.draft.githubOAuthScopes)
+                }
+
+                SettingsSection("Custom provider") {
+                    SettingsTextField("Base URL", text: $model.draft.customBaseURL)
+                }
+
+                SettingsSection("Memory Model") {
+                    ProviderPicker("Provider", selection: $model.draft.memoryProvider)
+                    SettingsTextField("Model", text: $model.draft.memoryModel)
+                    SettingsTextField("Fallbacks", text: $model.draft.memoryFallbacks)
+                    llmTestRow(.memory)
+                }
             }
             .padding(4)
+        }
+    }
+
+    private func llmTestRow(_ route: SettingsLLMTestRoute) -> some View {
+        HStack(spacing: 10) {
+            Spacer()
+                .frame(width: 135)
+            Button {
+                model.testLLM(route)
+            } label: {
+                Image(systemName: "checkmark.seal")
+            }
+            .buttonStyle(.borderless)
+            .help("Test \(route.routeName) route")
+            .disabled(model.hasBlockingOperation)
+            Text(model.llmTestText[route] ?? "")
+                .font(.caption)
+                .foregroundStyle(model.llmTestOK[route] == false ? Color.red : Color.secondary)
+                .lineLimit(2)
+                .textSelection(.enabled)
         }
     }
 
@@ -1196,18 +1191,34 @@ private struct SettingsPanelView: View {
             ?? SettingsProviderAuthStatus(name: name, label: name, message: "Not configured")
     }
 
-    private var callersTab: some View {
+    private var promptsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsSection("System Prompt") {
+                    SettingsTextEditor("Utility prompt", text: $model.draft.systemPromptUtility, minHeight: 260)
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    private var keybindsTab: some View {
         VStack(spacing: 10) {
             SettingsSection("Context Limits") {
                 SettingsTextField("Browser chars", text: $model.draft.contextBrowserMaxChars)
                 SettingsTextField("Auto doc chars", text: $model.draft.contextAmbientDocumentMaxChars)
                 SettingsTextField("Tool doc chars", text: $model.draft.contextToolDocumentMaxChars)
+                SettingsTextField("Tool plugin folder", text: $model.draft.toolPluginDir)
             }
             .padding(4)
 
             SettingsSection("Context Hotkeys") {
                 SettingsTextField("Add context", text: $model.draft.addContextHotkey)
                 SettingsTextField("Clear context", text: $model.draft.clearContextHotkey)
+                SettingsTextField("Snip screen region", text: $model.draft.snipHotkey)
+                Toggle("Snip ambient context", isOn: $model.draft.snipContextAmbient)
+                Toggle("Snip open documents", isOn: $model.draft.snipContextDocuments)
+                Toggle("Snip tools", isOn: $model.draft.snipContextTools)
             }
             .padding(4)
 
@@ -1291,18 +1302,12 @@ private struct SettingsPanelView: View {
                     SettingsTextField("STM token budget", text: $model.draft.memorySTMTokenBudget)
                 }
 
-                SettingsSection("Snip") {
-                    SettingsTextField("Hotkey", text: $model.draft.snipHotkey)
-                    Toggle("Ambient context", isOn: $model.draft.snipContextAmbient)
-                    Toggle("Open documents", isOn: $model.draft.snipContextDocuments)
-                    Toggle("Tools", isOn: $model.draft.snipContextTools)
-                }
             }
             .padding(4)
         }
     }
 
-    private var uiTab: some View {
+    private var appTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 SettingsSection("Appearance") {
@@ -1335,27 +1340,44 @@ private struct SettingsPanelView: View {
         }
     }
 
+    private var toolsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsSection("Tool Calling") {
+                    SettingsTextField("Tool model", text: $model.draft.toolModel)
+                    SettingsTextField("Tool git root", text: $model.draft.toolGitRoot)
+                    SettingsTextField("Tool plugin folder", text: $model.draft.toolPluginDir)
+                }
+            }
+            .padding(4)
+        }
+    }
+
     private var footer: some View {
         HStack(spacing: 10) {
-            if !model.errorText.isEmpty {
-                Text(model.errorText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-            }
-            Spacer()
             Button {
                 model.resetAll()
             } label: {
-                Image(systemName: "trash")
+                Text("Reset All...")
             }
             .help("Reset all settings")
+            .disabled(model.hasBlockingOperation)
+            Text(model.errorText.isEmpty ? model.status : model.errorText)
+                .font(.system(size: 12))
+                .foregroundStyle(model.errorText.isEmpty ? Color.secondary : Color.red)
+                .lineLimit(2)
+                .textSelection(.enabled)
+            Spacer()
+            Button {
+                NSApp.keyWindow?.close()
+            } label: {
+                Text("Cancel")
+            }
             .disabled(model.hasBlockingOperation)
             Button {
                 model.save()
             } label: {
-                Image(systemName: "checkmark")
+                Text("Apply")
             }
             .help("Save")
             .disabled(model.hasBlockingOperation)
@@ -1401,6 +1423,8 @@ private struct SettingsTextField: View {
                 .foregroundStyle(.secondary)
             TextField(label, text: $text)
                 .textFieldStyle(.roundedBorder)
+                .foregroundStyle(SettingsInputPalette.inputText)
+                .tint(SettingsInputPalette.inputText)
         }
     }
 }
@@ -1423,6 +1447,9 @@ private struct SettingsTextEditor: View {
                 .foregroundStyle(.secondary)
             TextEditor(text: $text)
                 .font(.system(size: 12))
+                .foregroundStyle(SettingsInputPalette.inputText)
+                .scrollContentBackground(.hidden)
+                .background(SettingsInputPalette.inputBackground)
                 .frame(minHeight: minHeight)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -1492,8 +1519,12 @@ private struct CallerSettingsEditor: View {
             HStack(spacing: 8) {
                 TextField("Label", text: $caller.label)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(SettingsInputPalette.inputText)
+                    .tint(SettingsInputPalette.inputText)
                 TextField("Hotkey", text: $caller.hotkey)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(SettingsInputPalette.inputText)
+                    .tint(SettingsInputPalette.inputText)
                     .frame(width: 150)
                 Button {
                     onDelete()
@@ -1525,6 +1556,8 @@ private struct CallerSettingsEditor: View {
                     .foregroundStyle(.secondary)
                 TextField("Key", text: $caller.customKey)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(SettingsInputPalette.inputText)
+                    .tint(SettingsInputPalette.inputText)
                     .frame(width: 60)
                 Spacer()
                 Button {
@@ -1560,11 +1593,17 @@ private struct IntentSettingsEditor: View {
             HStack(spacing: 8) {
                 TextField("Key", text: $intent.key)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(SettingsInputPalette.inputText)
+                    .tint(SettingsInputPalette.inputText)
                     .frame(width: 54)
                 TextField("Label", text: $intent.label)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(SettingsInputPalette.inputText)
+                    .tint(SettingsInputPalette.inputText)
                 TextField("Hint", text: $intent.hint)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(SettingsInputPalette.inputText)
+                    .tint(SettingsInputPalette.inputText)
                 Button {
                     onDelete()
                 } label: {
@@ -1575,6 +1614,9 @@ private struct IntentSettingsEditor: View {
             }
             TextEditor(text: $intent.prompt)
                 .font(.system(size: 12))
+                .foregroundStyle(SettingsInputPalette.inputText)
+                .scrollContentBackground(.hidden)
+                .background(SettingsInputPalette.inputBackground)
                 .frame(minHeight: 54)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -1583,4 +1625,9 @@ private struct IntentSettingsEditor: View {
         }
         .padding(.leading, 12)
     }
+}
+
+private enum SettingsInputPalette {
+    static let inputText = Color(nsColor: NSColor.textColor)
+    static let inputBackground = Color(nsColor: NSColor.textBackgroundColor)
 }

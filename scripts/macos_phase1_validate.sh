@@ -21,6 +21,10 @@ SUMMARY_LOG="$LOG_DIR/summary.log"
 LIVE_CHECKLIST="$LOG_DIR/live-parity-checklist.md"
 CHECKLIST_TEMPLATE="$REPO_ROOT/docs/MACOS_LIVE_PARITY_CHECKLIST.md"
 LATEST_LOG_POINTER="$REPO_ROOT/build_logs/latest_macos_phase1.txt"
+WISP_APP_BUNDLE_ID="${WISP_APP_BUNDLE_ID:-dev.wisp.native}"
+WISP_APP_NAME="${WISP_APP_NAME:-Wisp}"
+WISP_APP_VERSION="${WISP_APP_VERSION:-0.1.0}"
+WISP_APP_BUILD="${WISP_APP_BUILD:-1}"
 mkdir -p "$LOG_DIR"
 
 RUN_MODE="${1:-}"
@@ -131,8 +135,19 @@ archive_logs() {
   fi
 }
 
+plist_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "$value"
+}
+
 build_dev_app_bundle() {
   local bin_dir app_dir contents_dir macos_dir resources_dir plist executable doll_src doll_dst brain_dst core_dst runtime_dst
+  local plist_bundle_id plist_name plist_version plist_build
   bin_dir="$(swift build --show-bin-path 2>"$LOG_DIR/swift-bin-path.err")"
   executable="$bin_dir/Wisp"
   if [ ! -x "$executable" ]; then
@@ -173,7 +188,11 @@ EOF
   fi
 
   plist="$contents_dir/Info.plist"
-  cat > "$plist" <<'PLIST'
+  plist_bundle_id="$(plist_escape "$WISP_APP_BUNDLE_ID")"
+  plist_name="$(plist_escape "$WISP_APP_NAME")"
+  plist_version="$(plist_escape "$WISP_APP_VERSION")"
+  plist_build="$(plist_escape "$WISP_APP_BUILD")"
+  cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -184,17 +203,17 @@ EOF
   <key>CFBundleExecutable</key>
   <string>Wisp</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.wisp.native</string>
+  <string>$plist_bundle_id</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Wisp</string>
+  <string>$plist_name</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$plist_version</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$plist_build</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
@@ -211,6 +230,10 @@ PLIST
 
   {
     echo "app_dir=$app_dir"
+    echo "bundle_id=$WISP_APP_BUNDLE_ID"
+    echo "bundle_name=$WISP_APP_NAME"
+    echo "bundle_version=$WISP_APP_VERSION"
+    echo "bundle_build=$WISP_APP_BUILD"
     echo "executable=$macos_dir/Wisp"
     echo "plist=$plist"
     echo "brain_bundle=$brain_dst"
@@ -262,13 +285,92 @@ open_dev_app_without_wisp_env() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
+quit_existing_wisp_app() {
+  local bundle_id
+  for bundle_id in "$WISP_APP_BUNDLE_ID" "dev.wisp.native" "com.wisp.native"; do
+    /usr/bin/osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1 || true
+  done
+  /usr/bin/pkill -x Wisp >/dev/null 2>&1 || true
+  sleep 1
+}
+
+validate_dev_launch_env() {
+  local resources_dir="$APP_BUNDLE/Contents/Resources"
+  local env_file="$resources_dir/dev-launch.env"
+  local expected_runtime="$resources_dir/python-runtime/bin/python3"
+
+  if [ ! -f "$env_file" ]; then
+    log_info "FAILED: dev launch environment is missing: $env_file"
+    return 1
+  fi
+  if ! grep -Fx "WISP_REPO_ROOT=$REPO_ROOT" "$env_file" >/dev/null; then
+    log_info "FAILED: dev launch env has wrong WISP_REPO_ROOT"
+    sed 's/^/  /' "$env_file" | tee -a "$SUMMARY_LOG"
+    return 1
+  fi
+  if ! grep -Fx "WISP_BRAIN_PYTHON=$BRAIN_PY" "$env_file" >/dev/null; then
+    log_info "FAILED: dev launch env has wrong WISP_BRAIN_PYTHON"
+    sed 's/^/  /' "$env_file" | tee -a "$SUMMARY_LOG"
+    return 1
+  fi
+  if ! grep -Fx "WISP_BRAIN_DIR=$REPO_ROOT/macos/brain" "$env_file" >/dev/null; then
+    log_info "FAILED: dev launch env has wrong WISP_BRAIN_DIR"
+    sed 's/^/  /' "$env_file" | tee -a "$SUMMARY_LOG"
+    return 1
+  fi
+  if ! grep -Fx "WISP_RUN_LOG_DIR=$LOG_DIR" "$env_file" >/dev/null; then
+    log_info "FAILED: dev launch env has wrong WISP_RUN_LOG_DIR"
+    sed 's/^/  /' "$env_file" | tee -a "$SUMMARY_LOG"
+    return 1
+  fi
+  if [ ! -x "$BRAIN_PY" ]; then
+    log_info "FAILED: dev launch Python is not executable: $BRAIN_PY"
+    return 1
+  fi
+
+  log_info "Dev launch env validated: $env_file"
+  sed 's/^/  /' "$env_file" | tee -a "$SUMMARY_LOG"
+  if [ -x "$expected_runtime" ]; then
+    log_info "Embedded runtime present; marker may resolve brain_python to: $expected_runtime"
+  else
+    log_info "No embedded runtime present; marker must resolve brain_python to: $BRAIN_PY"
+  fi
+}
+
 wait_for_open_launch_marker() {
   local marker="$LOG_DIR/native-app-launch.log"
+  local resources_dir="$APP_BUNDLE/Contents/Resources"
+  local expected_runtime="$resources_dir/python-runtime/bin/python3"
+  local expected_python="$BRAIN_PY"
+  if [ -x "$expected_runtime" ]; then
+    expected_python="$expected_runtime"
+  fi
   local i=0
   while [ "$i" -lt 15 ]; do
     if [ -s "$marker" ]; then
       log_info "Native app launch marker detected: $marker"
       sed 's/^/  /' "$marker" | tee -a "$SUMMARY_LOG"
+      if ! grep -Fx "brain_python=$expected_python" "$marker" >/dev/null; then
+        log_info "FAILED: native app resolved unexpected Python."
+        log_info "Expected brain_python=$expected_python"
+        return 1
+      fi
+      if ! grep -Fx "brain_python_exists=true" "$marker" >/dev/null; then
+        log_info "FAILED: native app resolved Python path does not exist."
+        return 1
+      fi
+      if ! grep -Fx "brain_python_is_executable=true" "$marker" >/dev/null; then
+        log_info "FAILED: native app resolved Python path is not executable."
+        return 1
+      fi
+      if ! grep -Fx "brain_dir_exists=true" "$marker" >/dev/null; then
+        log_info "FAILED: native app brain directory does not exist."
+        return 1
+      fi
+      if grep -Fx "brain_python=python" "$marker" >/dev/null || grep -Fx "brain_python_configured=python" "$marker" >/dev/null; then
+        log_info "FAILED: native app still resolved or configured bare python."
+        return 1
+      fi
       return 0
     fi
     i=$((i + 1))
@@ -508,6 +610,8 @@ fi
 
 if [ "$RUN_MODE" = "--open" ]; then
   collect_recent_crash_reports
+  validate_dev_launch_env
+  quit_existing_wisp_app
   log_info "Launching dev app bundle through macOS open: $APP_BUNDLE"
   log_info "This exercises Finder-style brain/log/resource inference without WISP_BRAIN_* env vars."
   run_logged "wisp-app-open" open_dev_app_without_wisp_env

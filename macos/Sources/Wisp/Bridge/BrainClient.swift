@@ -19,6 +19,35 @@ actor BrainClient {
         var brainDirectory: URL
         /// Extra entries prepended to PYTHONPATH (e.g. the repo root for `core`).
         var extraPythonPath: [URL] = []
+
+        func resolvedPythonExecutable(fileManager: FileManager = .default) -> URL {
+            let configuredPath = pythonExecutable.path
+            if configuredPath.hasPrefix("/"), fileManager.fileExists(atPath: configuredPath) {
+                return pythonExecutable
+            }
+
+            for repoRoot in extraPythonPath {
+                for relativePath in [".venv/bin/python", ".venv/bin/python3"] {
+                    let candidate = repoRoot.appendingPathComponent(relativePath)
+                    if fileManager.fileExists(atPath: candidate.path) {
+                        return candidate
+                    }
+                }
+            }
+
+            let systemPython = URL(fileURLWithPath: "/usr/bin/python3")
+            if fileManager.fileExists(atPath: systemPython.path) {
+                return systemPython
+            }
+
+            return systemPython
+        }
+
+        func normalized(fileManager: FileManager = .default) -> Config {
+            var copy = self
+            copy.pythonExecutable = resolvedPythonExecutable(fileManager: fileManager)
+            return copy
+        }
     }
 
     private let config: Config
@@ -31,7 +60,7 @@ actor BrainClient {
     private var streamPending: [Int: AsyncThrowingStream<BrainStreamItem, Error>.Continuation] = [:]
 
     init(config: Config) {
-        self.config = config
+        self.config = config.normalized()
     }
 
     // MARK: - Lifecycle
@@ -43,7 +72,18 @@ actor BrainClient {
         if isAlive { return }
 
         let proc = Process()
-        proc.executableURL = config.pythonExecutable
+        let pythonExecutable = config.resolvedPythonExecutable()
+        guard FileManager.default.isExecutableFile(atPath: pythonExecutable.path) else {
+            throw BrainError.spawnFailed(
+                "Python runtime is not executable or was not found. "
+                    + "Attempted python: \(pythonExecutable.path). "
+                    + "Configured python: \(config.pythonExecutable.path). "
+                    + "Brain dir: \(config.brainDirectory.path). "
+                    + "For dev launch, run Start Wisp (Mac Native).command so the app uses the repo .venv. "
+                    + "For release launch, package with WISP_PYTHON_RUNTIME_DIR so Python is embedded."
+            )
+        }
+        proc.executableURL = pythonExecutable
         proc.arguments = ["-m", "wisp_brain.host"]
         proc.currentDirectoryURL = config.brainDirectory
 
@@ -85,7 +125,12 @@ actor BrainClient {
         do {
             try proc.run()
         } catch {
-            throw BrainError.spawnFailed(error.localizedDescription)
+            throw BrainError.spawnFailed(
+                "\(error.localizedDescription) "
+                    + "Attempted python: \(pythonExecutable.path). "
+                    + "Configured python: \(config.pythonExecutable.path). "
+                    + "Brain dir: \(config.brainDirectory.path)."
+            )
         }
         self.process = proc
         self.stdinHandle = stdinPipe.fileHandleForWriting

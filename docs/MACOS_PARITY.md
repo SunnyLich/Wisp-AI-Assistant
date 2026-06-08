@@ -13,6 +13,9 @@ work until each visible surface is ported.
    semantics, LLM routing, memory behavior, tools, and agent contracts.
 4. The macOS Swift app should not depend on the Python/Qt UI bridge for visible
    product windows.
+5. Plugins are shared Python/runtime extensions, not Swift extensions. Plugin
+   authors should implement hooks, tray actions, and tools once in Python or the
+   shared tool contract; Swift must stay a generic metadata/action host.
 
 ## Source Of Truth
 

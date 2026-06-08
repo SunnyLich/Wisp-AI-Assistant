@@ -75,6 +75,15 @@ final class WispConfigTests: XCTestCase {
 
     func testSettingsDraftLoadsToolPluginDirectoryKey() {
         let draft = SettingsDraft.load(environment: [
+            "LLM_PROVIDER": "openai",
+            "LLM_MODEL": "gpt-4.1",
+            "LLM_FALLBACKS": "anthropic:claude-sonnet-4-5\ngroq:llama-3.3-70b-versatile",
+            "VISION_LLM_PROVIDER": "google",
+            "VISION_LLM_MODEL": "gemini-2.5-pro",
+            "VISION_LLM_FALLBACKS": "openai:gpt-4.1",
+            "MEMORY_LLM_PROVIDER": "anthropic",
+            "MEMORY_LLM_MODEL": "claude-haiku-4-5",
+            "MEMORY_LLM_FALLBACKS": "openai:gpt-4.1-mini",
             "TOOL_PLUGIN_DIR": "/Users/example/wisp/model_tools",
             "TOOL_GIT_ROOT": "/Users/example/work",
             "CONTEXT_BROWSER_MAX_CHARS": "6000",
@@ -89,6 +98,15 @@ final class WispConfigTests: XCTestCase {
             "SYSTEM_PROMPT_UTILITY": "Answer carefully.",
         ], readDotEnv: false)
 
+        XCTAssertEqual(draft.llmProvider, "openai")
+        XCTAssertEqual(draft.llmModel, "gpt-4.1")
+        XCTAssertEqual(draft.llmFallbacks, "anthropic:claude-sonnet-4-5\ngroq:llama-3.3-70b-versatile")
+        XCTAssertEqual(draft.visionProvider, "google")
+        XCTAssertEqual(draft.visionModel, "gemini-2.5-pro")
+        XCTAssertEqual(draft.visionFallbacks, "openai:gpt-4.1")
+        XCTAssertEqual(draft.memoryProvider, "anthropic")
+        XCTAssertEqual(draft.memoryModel, "claude-haiku-4-5")
+        XCTAssertEqual(draft.memoryFallbacks, "openai:gpt-4.1-mini")
         XCTAssertEqual(draft.toolPluginDir, "/Users/example/wisp/model_tools")
         XCTAssertEqual(draft.toolGitRoot, "/Users/example/work")
         XCTAssertEqual(draft.contextBrowserMaxChars, "6000")
@@ -450,6 +468,13 @@ final class WispConfigTests: XCTestCase {
         var draft = SettingsDraft.empty
         draft.llmProvider = "anthropic"
         draft.llmModel = "claude-sonnet-4-5"
+        draft.llmFallbacks = "openai:gpt-4.1\ngroq:llama-3.3-70b-versatile"
+        draft.visionProvider = "google"
+        draft.visionModel = "gemini-2.5-pro"
+        draft.visionFallbacks = "openai:gpt-4.1"
+        draft.memoryProvider = "openai"
+        draft.memoryModel = "gpt-4.1-mini"
+        draft.memoryFallbacks = "anthropic:claude-haiku-4-5"
         draft.toolPluginDir = "/Users/example/wisp/model_tools"
         draft.toolGitRoot = "/Users/example/work"
         draft.contextBrowserMaxChars = "6100"
@@ -488,6 +513,13 @@ final class WispConfigTests: XCTestCase {
 
         XCTAssertEqual(values["LLM_PROVIDER"], "anthropic")
         XCTAssertEqual(values["LLM_MODEL"], "claude-sonnet-4-5")
+        XCTAssertEqual(values["LLM_FALLBACKS"], "openai:gpt-4.1\ngroq:llama-3.3-70b-versatile")
+        XCTAssertEqual(values["VISION_LLM_PROVIDER"], "google")
+        XCTAssertEqual(values["VISION_LLM_MODEL"], "gemini-2.5-pro")
+        XCTAssertEqual(values["VISION_LLM_FALLBACKS"], "openai:gpt-4.1")
+        XCTAssertEqual(values["MEMORY_LLM_PROVIDER"], "openai")
+        XCTAssertEqual(values["MEMORY_LLM_MODEL"], "gpt-4.1-mini")
+        XCTAssertEqual(values["MEMORY_LLM_FALLBACKS"], "anthropic:claude-haiku-4-5")
         XCTAssertEqual(values["TOOL_PLUGIN_DIR"], "/Users/example/wisp/model_tools")
         XCTAssertEqual(values["TOOL_GIT_ROOT"], "/Users/example/work")
         XCTAssertEqual(values["CONTEXT_BROWSER_MAX_CHARS"], "6100")

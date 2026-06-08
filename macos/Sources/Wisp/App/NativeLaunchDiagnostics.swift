@@ -32,14 +32,26 @@ enum NativeLaunchDiagnostics {
     ) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
+        let resolvedPython = brainConfig.resolvedPythonExecutable()
+        let configuredPython = brainConfig.pythonExecutable
+        let fileManager = FileManager.default
 
         return [
             "started_at=\(formatter.string(from: now))",
+            "process_id=\(ProcessInfo.processInfo.processIdentifier)",
+            "bundle_identifier=\(Bundle.main.bundleIdentifier ?? "")",
+            "bundle_path=\(Bundle.main.bundleURL.path)",
+            "executable_path=\(Bundle.main.executableURL?.path ?? "")",
             "repo_root=\(environment["WISP_REPO_ROOT"] ?? "")",
             "run_log_dir=\(environment["WISP_RUN_LOG_DIR"] ?? "")",
             "resource_url=\(resourceURL?.path ?? "")",
-            "brain_python=\(brainConfig.pythonExecutable.path)",
+            "brain_python=\(resolvedPython.path)",
+            "brain_python_exists=\(fileManager.fileExists(atPath: resolvedPython.path))",
+            "brain_python_is_executable=\(fileManager.isExecutableFile(atPath: resolvedPython.path))",
+            "brain_python_configured=\(configuredPython.path)",
+            "brain_python_configured_exists=\(fileManager.fileExists(atPath: configuredPython.path))",
             "brain_dir=\(brainConfig.brainDirectory.path)",
+            "brain_dir_exists=\(fileManager.fileExists(atPath: brainConfig.brainDirectory.path))",
             "brain_pythonpath=\(brainConfig.extraPythonPath.map(\.path).joined(separator: ":"))",
             "caller_count=\(config.callers.count)",
             "snip_hotkey=\(config.snip.hotkey)",

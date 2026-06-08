@@ -21,19 +21,19 @@ browser auth, audio devices, or LaunchServices.
 - [ ] Plugin Manager refreshes and can run a configured action.
 - [ ] Agent Task and Agent History flows open and can start/read a run.
 - [ ] Settings saves model, caller, voice, memory, and UI changes.
-- [ ] Settings > Keys can refresh, save, and clear API-key status.
-- [ ] Settings > Auth can refresh provider status.
+- [ ] Settings > LLM > API Keys can refresh, save, and clear API-key status.
+- [ ] Settings > LLM > Authentication can refresh provider status.
 - [ ] ChatGPT browser sign-in completes or reports a clear actionable error.
 - [ ] GitHub device sign-in opens the verification URL and records completion.
 - [ ] Copilot token save/test/clear works when a token is available.
 - [ ] Reset All clears credentials/.env only after confirmation and reloads UI.
 - [ ] Permissions panel reflects Accessibility, Screen Recording, and Microphone.
 - [ ] Launch at Login toggle updates System Settings state.
-- [ ] `--open` launch writes `native-app-launch.log`.
+- [ ] `--open` launch writes `native-app-launch.log` with expected app identity and executable `brain_python`.
 
 ## Package/Release Gate
 
 - [ ] Embedded runtime package passes import probe.
-- [ ] Signed app launches with `WISP_VALIDATE_APP_LAUNCH=1`.
+- [ ] Signed app launches with `WISP_VALIDATE_APP_LAUNCH=1` and executable embedded-runtime `brain_python`.
 - [ ] Developer ID notarization and stapling complete.
 - [ ] Signed/notarized app repeats the permission, auth, voice, snip, and settings checks.

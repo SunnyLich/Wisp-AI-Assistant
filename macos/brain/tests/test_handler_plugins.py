@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 
 from wisp_brain import handlers
 
@@ -24,8 +25,10 @@ def test_plugins_list_returns_discovered_plugin_folder(tmp_path, monkeypatch):
     )
 
     import core.system.paths as paths
+    import core.plugin_manager as plugin_manager
 
     monkeypatch.setattr(paths, "PLUGINS_DIR", plugin_dir)
+    monkeypatch.setattr(plugin_manager, "_manager", None)
 
     result = handlers.HANDLERS["brain.plugins.list"]()
 
@@ -34,13 +37,59 @@ def test_plugins_list_returns_discovered_plugin_folder(tmp_path, monkeypatch):
         {
             "name": "example",
             "path": str(example),
-            "status": "discovered",
+            "status": "loaded",
             "hooks": ["before_query", "get_tools"],
             "tray_actions": [],
             "tools": [],
             "error": "",
         }
     ]
+
+
+def test_plugins_list_initializes_shared_manager_and_action_can_run(tmp_path, monkeypatch):
+    plugin_dir = tmp_path / "plugins"
+    example = plugin_dir / "native_action"
+    marker = tmp_path / "ran.txt"
+    example.mkdir(parents=True)
+    (example / "__init__.py").write_text(
+        "from pathlib import Path\n\n"
+        "def _run():\n"
+        f"    Path({str(marker)!r}).write_text('ran', encoding='utf-8')\n\n"
+        "def get_tray_actions():\n"
+        "    return [{'label': 'Do Native Thing', 'callback': _run}]\n",
+        encoding="utf-8",
+    )
+
+    import core.system.paths as paths
+    import core.plugin_manager as plugin_manager
+
+    monkeypatch.setattr(paths, "PLUGINS_DIR", plugin_dir)
+    monkeypatch.setattr(plugin_manager, "_manager", None)
+
+    result = handlers.HANDLERS["brain.plugins.list"]()
+
+    assert result["plugins"] == [
+        {
+            "name": "native_action",
+            "path": str(example),
+            "status": "loaded",
+            "hooks": ["get_tray_actions"],
+            "tray_actions": ["Do Native Thing"],
+            "tools": [],
+            "error": "",
+        }
+    ]
+
+    action_result = handlers.HANDLERS["brain.plugins.run_action"](
+        plugin_name="native_action",
+        label="Do Native Thing",
+    )
+
+    assert action_result == {
+        "ok": True,
+        "message": "Ran plugin action: native_action / Do Native Thing",
+    }
+    assert marker.read_text(encoding="utf-8") == "ran"
 
 
 def test_plugins_list_prefers_loaded_manager(monkeypatch, tmp_path):

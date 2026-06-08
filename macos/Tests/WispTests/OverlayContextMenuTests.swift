@@ -27,7 +27,7 @@ final class OverlayContextMenuTests: XCTestCase {
         XCTAssertTrue(source.contains("required dynamic init?(coder: NSCoder)"))
     }
 
-    func testAppDelegateOverlayMenuContainsCoreNativeActions() throws {
+    func testAppDelegateOverlayMenuMatchesPythonTrayOrder() throws {
         let source = try String(
             contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/App/AppDelegate.swift"),
             encoding: .utf8
@@ -36,18 +36,67 @@ final class OverlayContextMenuTests: XCTestCase {
         XCTAssertTrue(source.contains("private func showOverlayMenu(_ event: NSEvent)"))
         XCTAssertTrue(source.contains("menu.popUp(positioning: nil, at: point, in: view)"))
 
-        for title in [
-            "Ask Wisp",
-            "New Chat",
-            "Snip Screen Region",
-            "Settings",
-            "Open Run Logs",
-            "Open Config Folder",
-            "Hide Overlay",
-            "Quit Wisp",
-        ] {
-            XCTAssertTrue(source.contains(title), "Overlay menu is missing \(title).")
-        }
+        assertContainsInOrder(
+            [
+                "addItem(\"Ask Wisp\"",
+                "addItem(\"Start agent task...\"",
+                "addItem(\"Agent task history...\"",
+                "addItem(\"New chat\"",
+                "addItem(\"Last chat\"",
+                "addItem(\"Hide icon\"",
+                "addItem(\"Memory\"",
+                "addItem(\"Plugin Manager\"",
+                "addItem(\"Settings\"",
+                "addItem(\"Snip Screen Region\"",
+                "addItem(\"Open Run Logs\"",
+                "addItem(\"Open Config Folder\"",
+                "NSMenuItem(title: \"Quit\"",
+            ],
+            in: source
+        )
+    }
+
+    func testStatusMenuKeepsPythonCoreOrderBeforeMacUtilities() throws {
+        let source = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/Tray/StatusItem.swift"),
+            encoding: .utf8
+        )
+
+        assertContainsInOrder(
+            [
+                "addItem(\"Ask Wisp\"",
+                "addItem(\"Run Echo Smoke\"",
+                "addItem(\"Context Snapshot\"",
+                "addItem(\"Capture Screen Smoke\"",
+                "addItem(\"Start agent task...\"",
+                "addItem(\"Agent task history...\"",
+                "addItem(\"New chat\"",
+                "addItem(\"Last chat\"",
+                "addItem(\"Hide icon\"",
+                "addItem(\"Memory\"",
+                "addItem(\"Plugin Manager\"",
+                "addItem(\"Settings\"",
+                "addItem(\"Snip Screen Region\"",
+                "addItem(\"Permissions\"",
+                "NSMenuItem(title: \"Quit\"",
+            ],
+            in: source
+        )
+    }
+
+    func testStatusItemUsesNativeTemplateIconWithAsciiFallback() throws {
+        let source = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/Wisp/Tray/StatusItem.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("private func configureStatusButton()"))
+        XCTAssertTrue(source.contains("NSImage(systemSymbolName: \"sparkles\", accessibilityDescription: \"Wisp\")"))
+        XCTAssertTrue(source.contains("image.isTemplate = true"))
+        XCTAssertTrue(source.contains("button.image = image"))
+        XCTAssertTrue(source.contains("button.title = \"\""))
+        XCTAssertTrue(source.contains("button.title = \"W\""))
+        XCTAssertFalse(source.contains("statusItem.button?.title = \"✦\""))
     }
 
     private func sourceRoot() -> URL {
@@ -57,5 +106,21 @@ final class OverlayContextMenuTests: XCTestCase {
             return currentDirectory
         }
         return currentDirectory.appendingPathComponent("macos")
+    }
+
+    private func assertContainsInOrder(
+        _ needles: [String],
+        in source: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        var searchStart = source.startIndex
+        for needle in needles {
+            guard let range = source.range(of: needle, range: searchStart..<source.endIndex) else {
+                XCTFail("Missing or out-of-order menu marker: \(needle)", file: file, line: line)
+                return
+            }
+            searchStart = range.upperBound
+        }
     }
 }

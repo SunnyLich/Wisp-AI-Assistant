@@ -81,7 +81,58 @@ def test_llm_test_offline_seam(monkeypatch):
         "message": "LLM route OK: openai / gpt-5.4",
         "provider": "openai",
         "model": "gpt-5.4",
+        "routes": [
+            {
+                "label": "Primary",
+                "ok": True,
+                "provider": "openai",
+                "model": "gpt-5.4",
+                "message": "OK",
+            }
+        ],
     }
+
+
+def test_llm_test_offline_reports_fallback_chain(monkeypatch):
+    monkeypatch.setenv("WISP_BRAIN_FAKE_LLM", "1")
+
+    result = handlers.HANDLERS["brain.llm.test"](
+        provider="openai",
+        model="gpt-5.4",
+        fallbacks="anthropic:claude-sonnet-4-5\ngroq:llama-3.3-70b-versatile",
+        route_name="LLM",
+    )
+
+    assert result["ok"] is True
+    assert result["message"] == (
+        "LLM route OK:\n"
+        "Primary OK: openai / gpt-5.4\n"
+        "Fallback 1 OK: anthropic / claude-sonnet-4-5\n"
+        "Fallback 2 OK: groq / llama-3.3-70b-versatile"
+    )
+    assert result["routes"] == [
+        {
+            "label": "Primary",
+            "ok": True,
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "message": "OK",
+        },
+        {
+            "label": "Fallback 1",
+            "ok": True,
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-5",
+            "message": "OK",
+        },
+        {
+            "label": "Fallback 2",
+            "ok": True,
+            "provider": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "message": "OK",
+        },
+    ]
 
 
 def test_llm_test_offline_vision_message(monkeypatch):
@@ -110,6 +161,7 @@ def test_llm_test_requires_provider_and_model():
         "message": "MEMORY_LLM test failed: No model configured.",
         "provider": "",
         "model": "",
+        "routes": [],
     }
 
 
@@ -141,6 +193,15 @@ def test_llm_test_forwards_route_to_client(monkeypatch):
         "message": "ok",
         "provider": "custom",
         "model": "my-model",
+        "routes": [
+            {
+                "label": "Primary",
+                "ok": True,
+                "provider": "custom",
+                "model": "my-model",
+                "message": "ok",
+            }
+        ],
     }
     assert captured == {
         "provider": "custom",
@@ -149,6 +210,68 @@ def test_llm_test_forwards_route_to_client(monkeypatch):
         "image": True,
         "custom_base_url": "https://api.example.test/v1",
     }
+
+
+def test_llm_test_forwards_fallback_chain_to_client(monkeypatch):
+    calls = []
+    fake_client = types.ModuleType("core.llm_clients.client")
+
+    def fake_test_route_connection(provider, model, route_name, *, image=False, custom_base_url=None):
+        calls.append((provider, model, route_name, image, custom_base_url))
+        if provider == "groq":
+            return False, f"{route_name} test failed: no key"
+        return True, f"{route_name} route OK: {provider} / {model}"
+
+    fake_client.test_route_connection = fake_test_route_connection
+    monkeypatch.setitem(sys.modules, "core.llm_clients.client", fake_client)
+
+    result = handlers.HANDLERS["brain.llm.test"](
+        provider="openai",
+        model="gpt-5.4",
+        fallbacks="anthropic:claude-sonnet-4-5\ngroq:llama-3.3-70b-versatile",
+        route_name="LLM",
+        custom_base_url="https://api.example.test/v1",
+    )
+
+    assert result["ok"] is False
+    assert result["message"] == (
+        "LLM route chain failed:\n"
+        "Primary - openai / gpt-5.4: OK\n"
+        "Fallback 1 - anthropic / claude-sonnet-4-5: OK\n"
+        "Fallback 2 - groq / llama-3.3-70b-versatile: no key"
+    )
+    assert calls == [
+        ("openai", "gpt-5.4", "LLM", False, None),
+        ("anthropic", "claude-sonnet-4-5", "LLM", False, None),
+        ("groq", "llama-3.3-70b-versatile", "LLM", False, None),
+    ]
+
+
+def test_llm_test_scopes_custom_base_url_to_custom_provider(monkeypatch):
+    calls = []
+    fake_client = types.ModuleType("core.llm_clients.client")
+
+    def fake_test_route_connection(provider, model, route_name, *, image=False, custom_base_url=None):
+        calls.append((provider, model, route_name, image, custom_base_url))
+        return True, f"{route_name} route OK: {provider} / {model}"
+
+    fake_client.test_route_connection = fake_test_route_connection
+    monkeypatch.setitem(sys.modules, "core.llm_clients.client", fake_client)
+
+    result = handlers.HANDLERS["brain.llm.test"](
+        provider="custom",
+        model="custom-model",
+        fallbacks="openai:gpt-4.1\nanthropic:claude-sonnet-4-5",
+        route_name="LLM",
+        custom_base_url="https://api.example.test/v1",
+    )
+
+    assert result["ok"] is True
+    assert calls == [
+        ("custom", "custom-model", "LLM", False, "https://api.example.test/v1"),
+        ("openai", "gpt-4.1", "LLM", False, None),
+        ("anthropic", "claude-sonnet-4-5", "LLM", False, None),
+    ]
 
 
 def test_secret_status_does_not_expose_values(monkeypatch):

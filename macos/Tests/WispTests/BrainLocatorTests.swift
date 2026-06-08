@@ -264,4 +264,54 @@ final class BrainLocatorTests: XCTestCase {
         XCTAssertEqual(config.brainDirectory.standardizedFileURL.path, brain.standardizedFileURL.path)
         XCTAssertEqual(config.extraPythonPath.map { $0.standardizedFileURL.path }, [root.standardizedFileURL.path])
     }
+
+    func testBrainConfigResolvesMissingConfiguredPythonToRepoVirtualenv() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-brain-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let python = root.appendingPathComponent(".venv/bin/python")
+        try FileManager.default.createDirectory(at: python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: python.path, contents: Data()))
+
+        let config = BrainClient.Config(
+            pythonExecutable: URL(fileURLWithPath: "/missing/python"),
+            brainDirectory: root.appendingPathComponent("macos/brain"),
+            extraPythonPath: [root]
+        )
+
+        XCTAssertEqual(
+            config.resolvedPythonExecutable().standardizedFileURL.path,
+            python.standardizedFileURL.path
+        )
+    }
+
+    func testBrainConfigNeverFallsBackToBarePythonName() {
+        let config = BrainClient.Config(
+            pythonExecutable: URL(fileURLWithPath: "python"),
+            brainDirectory: URL(fileURLWithPath: "/tmp/wisp-missing-brain"),
+            extraPythonPath: []
+        )
+
+        let resolved = config.resolvedPythonExecutable()
+
+        XCTAssertNotEqual(resolved.path, "python")
+        XCTAssertEqual(resolved.path, "/usr/bin/python3")
+    }
+
+    func testBrainConfigNormalizesMissingConfiguredPythonToRepoVirtualenv() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wisp-brain-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let python = root.appendingPathComponent(".venv/bin/python")
+        try FileManager.default.createDirectory(at: python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: python.path, contents: Data()))
+
+        let config = BrainClient.Config(
+            pythonExecutable: URL(fileURLWithPath: "/missing/python"),
+            brainDirectory: root.appendingPathComponent("macos/brain"),
+            extraPythonPath: [root]
+        ).normalized()
+
+        XCTAssertEqual(config.pythonExecutable.standardizedFileURL.path, python.standardizedFileURL.path)
+    }
 }
