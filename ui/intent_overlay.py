@@ -68,6 +68,25 @@ _HINT_ESC   = QColor(100, 96, 118, 140)
 _SEP        = QColor(255, 255, 255, 14)
 
 
+class _PromptLineEdit(QLineEdit):
+    """Line edit that keeps text input normal inside transient overlay windows."""
+
+    def keyPressEvent(self, event):  # noqa: N802
+        if event.key() == Qt.Key.Key_Space and not event.text():
+            normalized = QKeyEvent(
+                event.type(),
+                event.key(),
+                event.modifiers(),
+                " ",
+                event.isAutoRepeat(),
+                event.count(),
+            )
+            super().keyPressEvent(normalized)
+            event.setAccepted(normalized.isAccepted())
+            return
+        super().keyPressEvent(event)
+
+
 class IntentOverlay(QWidget):
     intent_chosen = Signal(str, str)
     cancelled     = Signal()
@@ -110,7 +129,7 @@ class IntentOverlay(QWidget):
         self._drop_next_keypress = False
         self._raw_key.connect(self._on_raw_key)
 
-        self._input_line = QLineEdit(self)
+        self._input_line = _PromptLineEdit(self)
         self._input_line.installEventFilter(self)
         self._input_line.setPlaceholderText("Type your prompt, press Enter…")
         self._input_line.setStyleSheet(
@@ -320,8 +339,8 @@ class IntentOverlay(QWidget):
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
-        if obj is self._input_line and self._drop_next_keypress:
-            if event.type() == QEvent.Type.KeyPress:
+        if obj is self._input_line and event.type() == QEvent.Type.KeyPress:
+            if self._drop_next_keypress:
                 custom_key = next((r["glyph"].lower() for r in self._rows if r["is_custom"]), "")
                 if event.text().lower() == custom_key:
                     self._drop_next_keypress = False
