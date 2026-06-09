@@ -36,6 +36,14 @@ def _run_carbon_loop(stop: threading.Event) -> None:
         run_current(0.25)
 
 
+def _stop_on_parent_pipe_close(stop: threading.Event) -> None:
+    try:
+        sys.stdin.buffer.read()
+    except Exception:
+        pass
+    stop.set()
+
+
 def main() -> int:
     configure_paths()
     out = _protect_stdout()
@@ -57,6 +65,13 @@ def main() -> int:
         sig = getattr(signal, sig_name, None)
         if sig is not None:
             signal.signal(sig, request_stop)
+
+    threading.Thread(
+        target=_stop_on_parent_pipe_close,
+        args=(stop,),
+        daemon=True,
+        name="hotkey-helper-parent-watch",
+    ).start()
 
     try:
         import config

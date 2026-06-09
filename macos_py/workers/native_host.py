@@ -32,12 +32,13 @@ class _HotkeyHelper:
         }
 
     def start(self) -> dict[str, Any]:
+        self._stop_stale_helpers()
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("WISP_REPO_ROOT", str(repo_root()))
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "macos_py.workers.hotkey_helper"],
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(repo_root()),
@@ -54,6 +55,20 @@ class _HotkeyHelper:
             }
             self.stop()
         return dict(self._status)
+
+    def _stop_stale_helpers(self) -> None:
+        if not IS_MAC:
+            return
+        try:
+            subprocess.run(
+                ["/usr/bin/pkill", "-f", "macos_py.workers.hotkey_helper"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+        except Exception:
+            pass
 
     def stop(self) -> None:
         proc = self.proc
