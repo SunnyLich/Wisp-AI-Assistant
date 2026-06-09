@@ -1,9 +1,4 @@
-"""wisp-brain worker wrapper.
-
-The existing ``macos/brain/wisp_brain`` host already has the right process
-shape: lazy imports, request-id events, streaming replies, and stdout
-protection. This module makes it launchable as part of the pure-Python target.
-"""
+"""wisp-brain worker wrapper for the pure-Python target."""
 
 from __future__ import annotations
 

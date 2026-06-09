@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Wisp macOS/Linux launcher.
 #
-# Double-click this on macOS/Linux to start the shared Python/Qt Wisp UI.
-# On macOS this is now the fallback/bridge path while the Swift/AppKit product
-# host reaches full Windows feature parity.
+# Double-click this on macOS/Linux to start the Python Wisp app.
+# This launches the shared pure-Python multi-process host.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -20,7 +19,7 @@ STAMP_FILE="$REPO_ROOT/.venv/.wisp-deps.stamp"
 
 if [ "$OS_NAME" = "Darwin" ] && [ -f "$REPO_ROOT/requirements-macos.lock" ]; then
   REQ_FILE="$REPO_ROOT/requirements-macos.lock"
-  STAMP_FILE="$REPO_ROOT/.venv/.wisp-macos-shared-ui-deps.stamp"
+  STAMP_FILE="$REPO_ROOT/.venv/.wisp-macos-python-deps.stamp"
 fi
 
 python_mm() {
@@ -171,4 +170,6 @@ setup_venv() {
 setup_venv
 
 export WISP_REPO_ROOT="$REPO_ROOT"
-exec "$VPY" main.py
+export PYTHONUNBUFFERED=1
+
+exec "$VPY" -m macos_py.supervisor.app

@@ -74,4 +74,6 @@ if errorlevel 1 ( echo Failed to create environment & pause & exit /b 1 )
 if errorlevel 1 ( echo Dependency install failed. & pause & exit /b 1 )
 
 :run
-"%VPY%" main.py
+set "WISP_REPO_ROOT=%CD%"
+set "PYTHONUNBUFFERED=1"
+"%VPY%" -m macos_py.supervisor.app

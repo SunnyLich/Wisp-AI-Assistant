@@ -5,7 +5,7 @@ for the lifetime of the process and released automatically by the OS on exit or
 crash, so there are no stale lock files to clean up.
 
 The lock lives in the user-data dir (see paths.SINGLE_INSTANCE_LOCK), so a dev
-run (`python main.py`) and an installed build contend for the same lock.
+run (`python -m macos_py.supervisor.app`) and an installed build contend for the same lock.
 """
 from __future__ import annotations
 

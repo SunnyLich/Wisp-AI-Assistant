@@ -250,6 +250,12 @@ class HotkeyListener:
             self._start_voice_listener()
         return True
 
+    def status(self) -> dict[str, object]:
+        status_fn = getattr(self._impl, "status", None)
+        if callable(status_fn):
+            return dict(status_fn())
+        return {"started": True, "registered": len(self._hotkey_defs), "requested": len(self._hotkey_defs)}
+
     def stop(self) -> None:
         self._impl.stop()
         if self._voice_listener:
@@ -311,6 +317,8 @@ class _Win32Impl:
         self._pump_tid   = 0
         self._pump_ready = threading.Event()
         self._pump_thread: threading.Thread | None = None
+        self._started = False
+        self._status_reason = "not started"
 
     def start(self) -> bool:
         self._pump_thread = threading.Thread(
@@ -320,7 +328,15 @@ class _Win32Impl:
         )
         self._pump_thread.start()
         self._pump_ready.wait(timeout=2.0)
-        return True
+        return self._started
+
+    def status(self) -> dict[str, object]:
+        return {
+            "started": self._started,
+            "registered": len(self._callbacks),
+            "requested": len(self._hotkey_defs),
+            "reason": self._status_reason,
+        }
 
     def stop(self) -> None:
         if self._pump_tid:
@@ -330,7 +346,6 @@ class _Win32Impl:
     def _message_pump(self) -> None:
         import ctypes
         self._pump_tid = _kernel32.GetCurrentThreadId()
-        self._pump_ready.set()
 
         registered: list[int] = []
         for i, (hotkey_str, cb) in enumerate(self._hotkey_defs):
@@ -346,6 +361,18 @@ class _Win32Impl:
             except ValueError as exc:
                 print(f"[hotkeys] Cannot parse {hotkey_str!r}: {exc}")
 
+        self._started = bool(registered)
+        if registered:
+            self._status_reason = f"registered {len(registered)} of {len(self._hotkey_defs)} hotkey(s)"
+        elif self._hotkey_defs:
+            self._status_reason = "all RegisterHotKey calls failed; hotkeys may be reserved by another app"
+        else:
+            self._status_reason = "no hotkeys configured"
+        print(f"[hotkeys] Win32 {self._status_reason}")
+        self._pump_ready.set()
+        if not registered:
+            return
+
         msg = _wintypes.MSG()
         while True:
             ret = _user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
@@ -358,6 +385,9 @@ class _Win32Impl:
 
         for hk_id in registered:
             _user32.UnregisterHotKey(None, hk_id)
+        self._callbacks.clear()
+        self._started = False
+        self._status_reason = "stopped"
 
 
 # ---------------------------------------------------------------------------

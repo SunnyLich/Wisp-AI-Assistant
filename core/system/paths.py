@@ -68,7 +68,7 @@ FILLER_AUDIO_DIR = ASSETS_DIR / "filler"
 USER_FILLER_AUDIO_DIR = _user_data_dir() / "filler"
 
 # Single-instance lock. Lives in the user-data dir (not the repo / bundle) so a
-# dev run (`python main.py`) and an installed build contend for the *same* lock —
+# dev run (`python -m macos_py.supervisor.app`) and an installed build contend for the *same* lock —
 # only one Wisp can be active at a time, regardless of how it was launched.
 SINGLE_INSTANCE_LOCK = _user_data_dir() / "wisp.lock"
 

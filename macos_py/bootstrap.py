@@ -1,4 +1,4 @@
-"""Path bootstrap helpers for the pure-Python macOS worker processes."""
+"""Path bootstrap helpers for the pure-Python worker processes."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ def repo_root() -> Path:
 
 
 def brain_dir() -> Path:
-    """Return the existing macOS brain package directory."""
-    return repo_root() / "macos" / "brain"
+    """Return the pure-Python brain package directory."""
+    return repo_root() / "macos_py" / "brain"
 
 
 def configure_paths(*, include_brain: bool = False) -> Path:
@@ -31,4 +31,3 @@ def configure_paths(*, include_brain: bool = False) -> Path:
         if text not in sys.path:
             sys.path.insert(0, text)
     return root
-

@@ -25,6 +25,39 @@ class BuiltinModelToolsTests(unittest.TestCase):
         }
         self.assertTrue(self._GIT_TOOLS <= relevant)
 
+    def test_allowed_tool_filter_limits_general_schemas(self):
+        prompt = "show me the git status and github issue, then search the web"
+
+        names = {
+            schema["name"]
+            for schema in llm._get_tool_schemas(
+                prompt,
+                allowed_tools=["web_search", "get_context.browser"],
+            )
+        }
+
+        self.assertIn("web_search", names)
+        self.assertIn("get_context", names)
+        self.assertTrue(self._GIT_TOOLS.isdisjoint(names))
+
+    def test_get_context_execution_respects_source_allowlist(self):
+        self.assertIn(
+            "disabled",
+            llm._execute_model_tool(
+                "get_context",
+                {},
+                allowed_tools=["get_context.browser"],
+            ),
+        )
+        self.assertIn(
+            "disabled",
+            llm._execute_model_tool(
+                "get_context",
+                {"url": "https://example.com"},
+                allowed_tools=["get_context.documents"],
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,11 +96,11 @@ Wisp: "That's a CAPTCHA verification step — click the checkbox
 **Requirements:** Python 3.12+, Windows 10/11, macOS, or Linux (X11)
 
 ```bash
-git clone https://github.com/your-org/wisp.git
-cd wisp
+git clone https://github.com/SunnyLich/Python-AI-assistant-overlay.git
+cd Python-AI-assistant-overlay
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # Linux
+# source .venv/bin/activate   # macOS / Linux
 
 pip install -r requirements.txt
 ```
@@ -108,7 +108,20 @@ pip install -r requirements.txt
 Copy `.env.example` to `.env` and fill in at least one LLM API key.
 
 ```bash
-python main.py
+python -m macos_py.supervisor.app
+```
+
+Or use the platform launcher, which provisions dependencies and starts the same
+pure-Python worker supervisor:
+
+```bash
+bash "Start Wisp.command"
+```
+
+Run the macOS Python test gate with:
+
+```bash
+bash scripts/run_macos_tests.command
 ```
 
 ---

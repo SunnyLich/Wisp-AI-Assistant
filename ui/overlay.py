@@ -53,6 +53,7 @@ class OverlaySignals(QObject):
     show_context_summary   = Signal(object)  # list[(name, type)] of context sent with a prompt
     drop_context_cleared   = Signal()        # context panel should be cleared
     remove_dropped_item    = Signal(int)     # user clicked X on badge at this index
+    bubble_speed           = Signal(bool)     # hold-to-speed state changed
 
 
 class IconOverlay(QMainWindow):
@@ -509,6 +510,5 @@ class IconOverlay(QMainWindow):
         self._icon_label.move(icon_pos)
 
     def _on_bubble_speed_boost(self, enabled: bool):
-        from core import audio
-        audio.set_tts_speed_boost(enabled)
+        self.signals.bubble_speed.emit(bool(enabled))
 

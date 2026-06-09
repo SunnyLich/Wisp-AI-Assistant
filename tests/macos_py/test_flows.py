@@ -146,6 +146,50 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
 
 
+def test_begin_caller_reloads_supervisor_config_when_env_changed(monkeypatch):
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "intents": [{"key": "w", "label": "Ask", "prompt": "Ask"}],
+        }
+    ]
+    updated_rows = [{**rows[0], "context_tools": True, "context_screenshot": "model"}]
+    mtimes = iter([1.0, 2.0])
+    reload_calls: list[str] = []
+    monkeypatch.setattr(FlowController, "_current_config_mtime", staticmethod(lambda: next(mtimes)))
+
+    def reload_config() -> None:
+        reload_calls.append("reload")
+        config.CALLER_ROWS[:] = updated_rows
+
+    monkeypatch.setattr(config, "reload", reload_config)
+
+    with caller_config(rows):
+        flow, _native, ui, _brain, _audio = make_flow(
+            native=FakeWorker({"native.context.snapshot": context_handler(selected="")})
+        )
+        flow.begin_caller(0)
+
+    assert reload_calls == ["reload"]
+    assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
+    assert flow._pending is not None
+    assert flow._pending.caller["context_tools"] is True
+    assert flow._pending.caller["context_screenshot"] == "model"
+
+
+def test_bubble_speed_event_forwards_to_audio_worker():
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    ui.emit("ui.bubble.speed", {"enabled": True})
+
+    assert audio.last_call("audio.speed_boost")["params"] == {"enabled": True}
+
+
 def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     rows = [
         {
@@ -170,6 +214,8 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert query["intent_prompt"] == "Explain this"
     assert query["selected"] == "selected"
     assert query["use_tools"] is True
+    assert "web_search" in query["allowed_tools"]
+    assert "github_repo" in query["allowed_tools"]
     assert "Active app: Notes" in query["ambient_text"]
     assert "Clipboard:" in query["ambient_text"]
     assert "Buffered context:" in query["ambient_text"]
@@ -179,6 +225,176 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == "hello"
     assert ui.calls_for("ui.context.summary")
     assert ui.calls_for("ui.context.clear")
+
+
+def test_context_modes_map_to_auto_documents_and_allowed_tools():
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "model",
+            "context_browser_mode": "off",
+            "context_github_mode": "model",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler()})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("ok")})
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        ui.emit("ui.intent.chosen", {"custom": "Use context"})
+
+    query = brain.last_call("brain.query")["params"]
+    assert query["include_active_document"] is False
+    assert query["use_tools"] is True
+    assert query["allowed_tools"] == ["get_context.documents", "git_status", "git_diff", "github_repo", "github_issue"]
+
+
+def test_model_screenshot_mode_precaptures_through_native_worker():
+    image_bytes = b"fake screenshot"
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(image_bytes)
+        image_path = Path(tmp.name)
+
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "model",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected=""),
+            "native.capture.fullscreen": lambda _params: {"ok": True, "path": str(image_path)},
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("vision reply")})
+    try:
+        with caller_config(rows):
+            _flow, native, _ui, brain, _audio = make_flow(native=native, brain=brain)
+            native.emit("native.hotkey", {"kind": "caller", "index": 0})
+            _ui.emit("ui.intent.chosen", {"custom": "what can you see?"})
+    finally:
+        image_path.unlink(missing_ok=True)
+
+    query = brain.last_call("brain.query")["params"]
+    assert native.last_call("native.capture.fullscreen")["timeout"] == 8.0
+    assert query["allow_screenshot_tool"] is True
+    assert query["screenshot_tool_b64"] == base64.b64encode(image_bytes).decode("ascii")
+
+
+def test_auto_screenshot_mode_captures_even_with_selected_text():
+    image_bytes = b"selected plus screenshot"
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(image_bytes)
+        image_path = Path(tmp.name)
+
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "auto",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected="some selected text"),
+            "native.capture.fullscreen": lambda _params: {"ok": True, "path": str(image_path)},
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("vision reply")})
+    try:
+        with caller_config(rows):
+            _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+            native.emit("native.hotkey", {"kind": "caller", "index": 0})
+            ui.emit("ui.intent.chosen", {"custom": "what can you see?"})
+    finally:
+        image_path.unlink(missing_ok=True)
+
+    query = brain.last_call("brain.query")["params"]
+    assert native.last_call("native.capture.fullscreen")["timeout"] == 30.0
+    assert query["selected"] == "some selected text"
+    assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
+
+
+def test_caller_context_and_model_screenshot_are_captured_before_overlay_listening():
+    image_bytes = b"target screen"
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(image_bytes)
+        image_path = Path(tmp.name)
+
+    order: list[str] = []
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": True,
+            "context_tools": True,
+            "context_screenshot": "model",
+            "context_clipboard": False,
+        }
+    ]
+
+    def context(_params: dict[str, Any]) -> dict[str, Any]:
+        order.append("context")
+        return context_handler(selected="")(_params)
+
+    def capture(_params: dict[str, Any]) -> dict[str, Any]:
+        order.append("capture")
+        return {"ok": True, "path": str(image_path)}
+
+    def overlay(_params: dict[str, Any]) -> dict[str, Any]:
+        order.append("overlay")
+        return {}
+
+    native = FakeWorker({"native.context.snapshot": context, "native.capture.fullscreen": capture})
+    ui = FakeWorker({"ui.overlay.state": overlay})
+    try:
+        with caller_config(rows):
+            flow, _native, _ui, _brain, _audio = make_flow(native=native, ui=ui)
+            flow.begin_caller(0)
+    finally:
+        image_path.unlink(missing_ok=True)
+
+    assert order == ["context", "capture", "overlay"]
+    assert flow._pending is not None
+    assert flow._pending.screenshot_tool_b64 == base64.b64encode(image_bytes).decode("ascii")
+
+
+def test_query_failure_reports_notice_and_returns_idle():
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": True,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+
+    def fail_query(_params: dict[str, Any], _on_event) -> dict[str, Any]:
+        raise RuntimeError("ValueError: LLM route uses 'google', but its API key is not configured.")
+
+    native = FakeWorker({"native.context.snapshot": context_handler()})
+    brain = FakeWorker(stream_handlers={"brain.query": fail_query})
+    with caller_config(rows):
+        _flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        ui.emit("ui.intent.chosen", {"custom": "Explain this"})
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "LLM request failed: LLM route uses 'google', but its API key is not configured."
+    )
+    assert ui.calls_for("ui.reply.done")
+    assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
 
 
 def test_rewrite_flow_pastes_back_to_original_pid():
@@ -218,6 +434,34 @@ def test_rewrite_flow_pastes_back_to_original_pid():
     assert paste["text"] == "good grammar"
     assert paste["target_pid"] == 777
     assert ui.last_call("ui.reply.notice")["params"]["text"] == "Rewrite pasted."
+
+
+def test_rewrite_failure_reports_notice_and_returns_idle():
+    rows = [
+        {
+            "paste_back": True,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        },
+    ]
+
+    def fail_rewrite(_params: dict[str, Any], _on_event) -> dict[str, Any]:
+        raise RuntimeError("ValueError: LLM route uses 'google', but its API key is not configured.")
+
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="bad grammar")})
+    brain = FakeWorker(stream_handlers={"brain.rewrite": fail_rewrite})
+    with caller_config(rows):
+        _flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        ui.emit("ui.intent.chosen", {"custom": "Fix grammar"})
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "Rewrite failed: LLM route uses 'google', but its API key is not configured."
+    )
+    assert ui.calls_for("ui.reply.done")
+    assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
 
 
 def test_snip_region_captures_file_and_queries_with_image():
@@ -423,11 +667,14 @@ def test_agent_history_routes_read_retry_and_continue_specs():
     assert task_calls[-1]["params"]["spec"]["title"] == "continue"
 
 
-def test_settings_reload_refreshes_brain_audio_and_hotkeys():
+def test_settings_reload_refreshes_supervisor_brain_audio_and_hotkeys(monkeypatch):
+    reload_calls: list[str] = []
+    monkeypatch.setattr(config, "reload", lambda: reload_calls.append("supervisor"))
     _flow, native, ui, brain, audio = make_flow()
 
     ui.emit("ui.settings.applied", {})
 
+    assert reload_calls == ["supervisor"]
     assert brain.calls_for("brain.config.reload")
     assert audio.calls_for("audio.prewarm")
     assert native.calls_for("native.hotkeys.stop")

@@ -50,6 +50,7 @@ class WorkerClient:
         self._scoped_event_lock = threading.Lock()
         self._scoped_event_handlers: dict[int, Callable[[str, Any, Any], None]] = {}
         self._stderr_tail: deque[str] = deque(maxlen=80)
+        self._stderr_log_path: Path | None = None
         self._restart_count = 0
         self._shutting_down = False
         atexit.register(self.shutdown)
@@ -79,7 +80,10 @@ class WorkerClient:
         env.update(self.spec.env)
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("WISP_REPO_ROOT", str(repo_root()))
+        self._stderr_log_path = self._worker_log_path(env)
         log.info("starting %s: %s", self.spec.name, self.spec.module)
+        if self._stderr_log_path is not None:
+            log.info("%s stderr log: %s", self.spec.name, self._stderr_log_path)
         self._proc = subprocess.Popen(
             [sys.executable, "-m", self.spec.module],
             stdin=subprocess.PIPE,
@@ -110,16 +114,40 @@ class WorkerClient:
             if slot is not None:
                 slot["resp"] = msg
                 slot["event"].set()
-        self._fail_pending("worker exited")
+        with self._spawn_lock:
+            if self._proc is proc:
+                self._fail_pending("worker exited")
 
     def _stderr_loop(self, proc: subprocess.Popen) -> None:
         stderr = proc.stderr
         assert stderr is not None
+        log_file = None
+        if self._stderr_log_path is not None:
+            try:
+                self._stderr_log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_file = self._stderr_log_path.open("a", encoding="utf-8")
+            except Exception:  # noqa: BLE001
+                log.exception("could not open %s stderr log", self.spec.name)
         for raw in iter(stderr.readline, b""):
             line = raw.decode("utf-8", errors="replace").rstrip()
             if line:
                 self._stderr_tail.append(line)
+                if log_file is not None:
+                    try:
+                        log_file.write(line + "\n")
+                        log_file.flush()
+                    except Exception:
+                        pass
                 log.debug("[%s] %s", self.spec.name, line)
+        if log_file is not None:
+            log_file.close()
+
+    def _worker_log_path(self, env: dict[str, str]) -> Path | None:
+        root = env.get("WISP_RUN_LOG_DIR")
+        if not root:
+            return None
+        safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in self.spec.name)
+        return Path(root) / f"{safe_name}.stderr.log"
 
     def stderr_tail(self, max_lines: int = 20) -> str:
         lines = list(self._stderr_tail)[-max_lines:]
@@ -295,7 +323,7 @@ def default_specs() -> dict[str, WorkerSpec]:
 
 
 class WispSupervisor:
-    """Owns all pure-Python macOS workers."""
+    """Owns all pure-Python workers."""
 
     def __init__(self, specs: dict[str, WorkerSpec] | None = None) -> None:
         self.workers = {

@@ -231,6 +231,19 @@ def get_window_title(wid: int) -> str:
     if IS_MAC:
         info = _mac_window_info(wid)
         return info.get("title", "") if info else ""
+    if IS_WIN:
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            length = user32.GetWindowTextLengthW(wid)
+            if length <= 0:
+                return ""
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(wid, buf, length + 1)
+            return str(buf.value or "")
+        except Exception:
+            return ""
     try:
         ew = _get_ewmh()
         win = ew.display.create_resource_object("window", wid)
@@ -246,6 +259,15 @@ def get_window_pid(wid: int) -> int:
     if IS_MAC:
         info = _mac_window_info(wid)
         return info.get("pid", 0) if info else 0
+    if IS_WIN:
+        try:
+            import ctypes
+
+            pid = ctypes.c_ulong()
+            ctypes.windll.user32.GetWindowThreadProcessId(wid, ctypes.byref(pid))
+            return int(pid.value or 0)
+        except Exception:
+            return 0
     try:
         ew = _get_ewmh()
         win = ew.display.create_resource_object("window", wid)

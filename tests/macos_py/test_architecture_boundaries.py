@@ -37,6 +37,14 @@ def test_ui_host_does_not_import_native_audio_or_ml_at_module_top():
         assert needle not in imports
 
 
+def test_overlay_does_not_import_core_audio():
+    source = (ROOT / "ui/overlay.py").read_text(encoding="utf-8")
+
+    assert "from core import audio" not in source
+    assert "import core.audio" not in source
+    assert "set_tts_speed_boost" not in source
+
+
 def test_native_host_does_not_import_qt_audio_or_ml_at_module_top():
     imports = _top_level_imports("macos_py/workers/native_host.py")
     forbidden = [

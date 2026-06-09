@@ -67,6 +67,24 @@ class SecretStoreTests(unittest.TestCase):
             self.assertEqual(blob["OPENAI_API_KEY"], "legacy-openai")
             self.assertEqual(blob["CARTESIA_API_KEY"], "legacy-cartesia")
 
+    def test_legacy_key_is_recovered_when_consolidated_blob_already_exists(self):
+        fake = FakeKeyring()
+        fake.set_password(
+            "python-ai-overlay",
+            "__wisp_secrets__",
+            json.dumps({"OPENAI_API_KEY": "stored-openai"}),
+        )
+        fake.set_password("python-ai-overlay", "google_api_key", "legacy-google")
+
+        with patch.dict(sys.modules, {"keyring": fake}):
+            secret_store.set_configured_marker(secret_store._MIGRATED_FLAG, True)
+            self.assertEqual(secret_store.get_secret("GOOGLE_API_KEY"), "legacy-google")
+            self.assertEqual(secret_store.secret_source("GOOGLE_API_KEY"), "keychain")
+
+        blob = json.loads(fake.get_password("python-ai-overlay", "__wisp_secrets__"))
+        self.assertEqual(blob["OPENAI_API_KEY"], "stored-openai")
+        self.assertEqual(blob["GOOGLE_API_KEY"], "legacy-google")
+
     def test_set_secret_writes_single_consolidated_item(self):
         fake = FakeKeyring()
         with patch.dict(sys.modules, {"keyring": fake}):

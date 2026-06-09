@@ -433,6 +433,34 @@ def _with_screenshot_note(system: str, allow_screenshot_tool: bool) -> str:
     return system
 
 
+def _looks_like_screenshot_tool_request(text: str) -> bool:
+    """Detect providers that ask for the screenshot tool as text, not tool_calls."""
+    normalized = " ".join((text or "").lower().split())
+    if not normalized:
+        return False
+    if "capture_screen" in normalized or "screenshot tool" in normalized:
+        return True
+    visual_word = any(
+        word in normalized
+        for word in ("screenshot", "screen", "visual", "image", "see what")
+    )
+    request_word = any(
+        word in normalized
+        for word in (
+            "need",
+            "needs",
+            "use",
+            "take",
+            "capture",
+            "access",
+            "can't see",
+            "cannot see",
+            "only see",
+        )
+    )
+    return visual_word and request_word
+
+
 # Substrings of model names known to accept image input. Best-effort only, used
 # for a settings-time heads-up; unknown models are treated as text-only so we err
 # toward warning. This never gates runtime behavior.
@@ -530,9 +558,10 @@ def tool_capability_warnings(tools_enabled: bool, *, llm_provider: str) -> list[
         return []
     if (llm_provider or "").strip().lower() == "chatgpt":
         return [
-            "On the ChatGPT provider, model tools (web search, GitHub, open "
-            "documents) aren't run as live tool calls — available context is "
-            "injected up front instead."
+            "On the ChatGPT provider, 'Let model decide' context tools are not "
+            "run as live Wisp tool calls. Open documents can be injected up "
+            "front when enabled, but browser/web and GitHub tool calls will not "
+            "run live on that route."
         ]
     return []
 
@@ -542,6 +571,7 @@ def _get_tool_schemas(
     *,
     include_general: bool = True,
     include_screenshot: bool = False,
+    allowed_tools: list[str] | None = None,
 ) -> list[dict]:
     """Anthropic tool schemas for a query.
 
@@ -551,7 +581,11 @@ def _get_tool_schemas(
     """
     schemas: list[dict] = []
     if include_general:
-        schemas = _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
+        schemas = [
+            schema
+            for schema in _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
+            if _tool_schema_allowed(schema.get("name", ""), allowed_tools)
+        ]
     if include_screenshot:
         spec = _TOOL_REGISTRY.get_tool("capture_screen")
         if spec is not None:
@@ -564,6 +598,7 @@ def _get_openai_tool_schemas(
     *,
     include_general: bool = True,
     include_screenshot: bool = False,
+    allowed_tools: list[str] | None = None,
 ) -> list[dict]:
     """OpenAI/Groq function schemas for a query (mirror of _get_tool_schemas).
 
@@ -572,7 +607,14 @@ def _get_openai_tool_schemas(
     """
     schemas: list[dict] = []
     if include_general:
-        schemas = _TOOL_REGISTRY.filtered_openai_schemas(prompt)
+        schemas = [
+            schema
+            for schema in _TOOL_REGISTRY.filtered_openai_schemas(prompt)
+            if _tool_schema_allowed(
+                ((schema.get("function") or {}).get("name") or ""),
+                allowed_tools,
+            )
+        ]
     if include_screenshot:
         spec = _TOOL_REGISTRY.get_tool("capture_screen")
         if spec is not None:
@@ -580,18 +622,33 @@ def _get_openai_tool_schemas(
     return schemas
 
 
-def _execute_model_tool(name: str, inputs: dict) -> str:
+def _tool_schema_allowed(name: str, allowed_tools: list[str] | None) -> bool:
+    if allowed_tools is None:
+        return True
+    allowed = set(allowed_tools)
+    if name == "get_context":
+        return bool({"get_context", "get_context.browser", "get_context.documents"} & allowed)
+    return name in allowed
+
+
+def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None = None) -> str:
+    if allowed_tools is not None:
+        allowed = set(allowed_tools)
+        if name == "get_context":
+            url = str((inputs or {}).get("url") or "").strip()
+            needed = "get_context.browser" if url else "get_context.documents"
+            if "get_context" not in allowed and needed not in allowed:
+                return f"Tool {name!r} is disabled for this context source."
+        elif name not in allowed:
+            return f"Tool {name!r} is disabled for this caller."
     return _TOOL_REGISTRY.execute(name, inputs)
 
 
-def _capture_screen_b64() -> str | None:
+def _capture_screen_b64(provided_b64: str | None = None) -> str | None:
     """Grab the primary monitor and return it as a base64 PNG, or None on failure."""
-    try:
-        from core import capture
-        return capture.image_to_base64(capture.get_screen_snippet())
-    except Exception as exc:
-        print(f"[llm] capture_screen failed: {exc}")
-        return None
+    from core.llm_clients.screenshot_tool import resolve_capture_screen_b64
+
+    return resolve_capture_screen_b64(provided_b64)
 
 
 def _anthropic_vision_model(current_model: str) -> str:
@@ -613,7 +670,15 @@ def _openai_vision_model(provider: str, current_model: str) -> str:
     model and hope it is vision-capable (e.g. gpt-4o).
     """
     if config.VISION_LLM_PROVIDER.strip() == provider and config.VISION_LLM_MODEL.strip():
-        return config.VISION_LLM_MODEL.strip()
+        vision_model = config.VISION_LLM_MODEL.strip()
+        if _is_route_cooling(provider, vision_model):
+            print(
+                f"[llm] screenshot follow-up skipping cooling vision route "
+                f"{provider}/{vision_model}; using {current_model}",
+                flush=True,
+            )
+            return current_model
+        return vision_model
     return current_model
 
 
@@ -670,11 +735,11 @@ _TEST_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
 # How many times the OpenAI SDK may retry the *same* model inside one call.
 _OPENAI_MAX_RETRIES = 1
 
-# Quota circuit breaker: when a route returns 429, it is parked for this many
+# Route circuit breaker: when a route returns 429/5xx/no-content, it is parked for this many
 # seconds so subsequent turns skip straight to the fallback instead of
 # re-probing an exhausted model on every reply. After it expires the route is
 # tried again (some retries, not an infinite skip).
-_ROUTE_COOLDOWN_SECONDS = 60.0
+_ROUTE_COOLDOWN_SECONDS = 300.0
 import threading as _threading
 import time as _time
 _route_cooldowns: dict[tuple[str, str], float] = {}
@@ -713,6 +778,43 @@ def _is_quota_error(exc: Exception) -> bool:
         return True
     text = str(exc).lower()
     return "429" in text or "quota" in text or "rate limit" in text or "rate_limit" in text
+
+
+def _is_transient_route_error(exc: Exception) -> bool:
+    """True for provider-side temporary failures worth trying/skipping fallback."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status in {429, 500, 502, 503, 504}:
+        return True
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "quota",
+            "rate limit",
+            "rate_limit",
+            "unavailable",
+            "high demand",
+            "temporarily",
+            "try again later",
+        )
+    )
+
+
+def _route_failure_summary(
+    kind: str,
+    attempts: list[tuple[str, str, Exception | str]],
+    last_exc: Exception,
+) -> RuntimeError:
+    details = []
+    for provider, model, err in attempts:
+        details.append(f"{provider}/{model}: {err}")
+    joined = "; ".join(details)
+    return RuntimeError(f"All {kind} model routes failed. Tried {joined}")
 
 
 def reset_clients() -> None:
@@ -900,6 +1002,110 @@ def _openai_compat_message_text(response) -> str:
                 parts.append(str(getattr(item, "text", "") or ""))
         return "".join(parts).strip()
     return str(content or "").strip()
+
+
+def _openai_compat_message_tool_calls(response) -> dict[int, dict]:
+    choice = response.choices[0] if getattr(response, "choices", None) else None
+    message = getattr(choice, "message", None) if choice is not None else None
+    tool_calls = getattr(message, "tool_calls", None) or []
+    acc: dict[int, dict] = {}
+    for i, tc in enumerate(tool_calls):
+        fn = getattr(tc, "function", None)
+        acc[i] = {
+            "id": getattr(tc, "id", "") or f"tool_call_{i}",
+            "name": getattr(fn, "name", "") if fn is not None else "",
+            "arguments": getattr(fn, "arguments", "") if fn is not None else "",
+        }
+    return acc
+
+
+def _response_output_text(response) -> str:
+    text = getattr(response, "output_text", "")
+    if isinstance(text, str) and text:
+        return text
+    parts: list[str] = []
+    for item in getattr(response, "output", []) or []:
+        for content in getattr(item, "content", []) or []:
+            value = getattr(content, "text", "")
+            if value:
+                parts.append(str(value))
+    return "".join(parts).strip()
+
+
+def _stream_mode_error(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    text = str(exc).lower()
+    if "stream" not in text and "streaming" not in text:
+        return False
+    return status in {400, 404, 409, 422, None} or any(
+        marker in text
+        for marker in (
+            "unsupported",
+            "not supported",
+            "must be",
+            "required",
+            "invalid",
+            "unrecognized",
+        )
+    )
+
+
+def _unsupported_parameter_name(exc: Exception) -> str:
+    text = str(exc)
+    lowered = text.lower()
+    if "unsupported parameter" not in lowered and "unknown parameter" not in lowered:
+        return ""
+    for marker in ("parameter:", "parameter", "param:"):
+        idx = lowered.find(marker)
+        if idx >= 0:
+            raw = text[idx + len(marker):].strip()
+            if raw.startswith(("'", '"')):
+                quote = raw[0]
+                end = raw.find(quote, 1)
+                if end > 1:
+                    return raw[1:end]
+            return raw.split()[0].strip(" .,:;'\"{}[]")
+    return ""
+
+
+def _without_unsupported_parameter(kwargs: dict, exc: Exception) -> dict | None:
+    name = _unsupported_parameter_name(exc)
+    if not name or name not in kwargs:
+        return None
+    retry_kwargs = dict(kwargs)
+    retry_kwargs.pop(name, None)
+    return retry_kwargs
+
+
+def _response_stream_text(client, kwargs: dict) -> Generator[str, None, None]:
+    kwargs = dict(kwargs)
+    try:
+        with client.responses.stream(**kwargs) as stream:
+            for event in stream:
+                if getattr(event, "type", "") == "response.output_text.delta":
+                    delta = getattr(event, "delta", "")
+                    if delta:
+                        yield delta
+    except Exception as exc:
+        retry_kwargs = _without_unsupported_parameter(kwargs, exc)
+        if retry_kwargs is not None:
+            print("[llm] Responses stream rejected unsupported parameter; retrying without it", flush=True)
+            yield from _response_stream_text(client, retry_kwargs)
+            return
+        if not _stream_mode_error(exc):
+            raise
+        print("[llm] Responses stream rejected; retrying non-streaming", flush=True)
+        try:
+            response = client.responses.create(**kwargs)
+        except Exception as create_exc:
+            retry_kwargs = _without_unsupported_parameter(kwargs, create_exc)
+            if retry_kwargs is None:
+                raise
+            print("[llm] Responses create rejected unsupported parameter; retrying without it", flush=True)
+            response = client.responses.create(**retry_kwargs)
+        text = _response_output_text(response)
+        if text:
+            yield text
 
 
 def _openai_compat_stdlib_completion_text(provider: str, kwargs: dict) -> str:
@@ -1347,9 +1553,17 @@ def _run_openai_compat_probe(client, *, provider: str, model: str, messages: lis
     if not kwargs["stream"]:
         client.chat.completions.create(**kwargs)
         return
-    with client.chat.completions.create(**kwargs) as stream:
-        for _chunk in stream:
-            break
+    try:
+        with client.chat.completions.create(**kwargs) as stream:
+            for _chunk in stream:
+                break
+    except Exception as exc:
+        if not _stream_mode_error(exc):
+            raise
+        retry_kwargs = dict(kwargs)
+        retry_kwargs["stream"] = False
+        print("[llm] route probe stream rejected; retrying non-streaming", flush=True)
+        client.chat.completions.create(**retry_kwargs)
 
 
 def _probe_openai_compat_route(provider: str, model: str, image_base64: str | None = None) -> None:
@@ -1443,13 +1657,36 @@ def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
         ]
     else:
         content = [{"type": "input_text", "text": "Reply with OK."}]
-    client.responses.create(
-        model=model,
-        input=[{"type": "message", "role": "user", "content": content}],
-        instructions="Return exactly OK.",
-        store=False,
-        max_output_tokens=8,
-    )
+    kwargs = {
+        "model": model,
+        "input": [{"type": "message", "role": "user", "content": content}],
+        "instructions": "Return exactly OK.",
+        "store": False,
+        "max_output_tokens": 8,
+    }
+    try:
+        client.responses.create(**kwargs)
+    except Exception as exc:
+        retry_kwargs = _without_unsupported_parameter(kwargs, exc)
+        if retry_kwargs is not None:
+            print("[llm] ChatGPT route probe create rejected unsupported parameter; retrying without it", flush=True)
+            client.responses.create(**retry_kwargs)
+            return
+        if not _stream_mode_error(exc):
+            raise
+        print("[llm] ChatGPT route probe create rejected; retrying streaming", flush=True)
+        try:
+            with client.responses.stream(**kwargs) as stream:
+                for _event in stream:
+                    break
+        except Exception as stream_exc:
+            retry_kwargs = _without_unsupported_parameter(kwargs, stream_exc)
+            if retry_kwargs is None:
+                raise
+            print("[llm] ChatGPT route probe stream rejected unsupported parameter; retrying without it", flush=True)
+            with client.responses.stream(**retry_kwargs) as stream:
+                for _event in stream:
+                    break
 
 
 def _probe_copilot_route(model: str) -> None:
@@ -1546,7 +1783,9 @@ def stream_response(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
     allow_screenshot_tool: bool = False,
+    screenshot_tool_b64: str | None = None,
     route_provider: str | None = None,
     route_model: str | None = None,
     route_fallbacks: str | None = None,
@@ -1639,7 +1878,9 @@ def stream_response(
                 ambient_context,
                 memory_context,
                 use_tools=use_tools,
+                allowed_tools=allowed_tools,
                 allow_screenshot_tool=allow_screenshot_tool,
+                screenshot_tool_b64=screenshot_tool_b64,
                 route_name="LLM",
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -1658,40 +1899,54 @@ def _stream_with_fallbacks(
     # a fully-throttled chain still attempts something rather than failing cold.
     ready = [c for c in candidates if not _is_route_cooling(*c)]
     cooling = [c for c in candidates if _is_route_cooling(*c)]
+    if cooling and not ready:
+        tried = "; ".join(f"{provider}/{model}" for provider, model in cooling)
+        raise RuntimeError(
+            f"All {kind} model routes are temporarily cooling down after recent "
+            f"provider failures. Routes: {tried}"
+        )
     ordered = ready + cooling
     if not ordered:
         ordered = candidates
     last_exc: Exception | None = None
+    attempts: list[tuple[str, str, Exception | str]] = []
     for idx, (provider, model) in enumerate(ordered):
         emitted = False
+        route_started = time.monotonic()
         try:
             for chunk in factory(provider, model):
                 emitted = True
                 yield chunk
             if emitted:
+                ts = time.strftime("%H:%M:%S")
+                print(f"[llm {ts}] Route ({kind}) {provider}/{model} completed in {time.monotonic() - route_started:.1f}s")
                 return
             # Model returned HTTP 200 but zero content chunks — treat as failure.
             ts = time.strftime("%H:%M:%S")
             last_exc = ValueError(f"Route ({kind}) {provider}/{model} returned no content")
+            attempts.append((provider, model, "returned no content"))
+            if not _is_route_cooling(provider, model):
+                _mark_route_cooling(provider, model)
             if idx < len(ordered) - 1:
-                print(f"[llm {ts}] Route ({kind}) returned no content; trying fallback")
+                print(f"[llm {ts}] Route ({kind}) {provider}/{model} returned no content after {time.monotonic() - route_started:.1f}s; cooling down {_ROUTE_COOLDOWN_SECONDS:.0f}s and trying fallback")
                 continue
-            print(f"[llm {ts}] Route ({kind}) returned no content; no fallback left")
+            print(f"[llm {ts}] Route ({kind}) {provider}/{model} returned no content after {time.monotonic() - route_started:.1f}s; cooling down {_ROUTE_COOLDOWN_SECONDS:.0f}s; no fallback left")
         except Exception as exc:
             last_exc = exc
+            attempts.append((provider, model, exc))
             ts = time.strftime("%H:%M:%S")
             if emitted:
-                print(f"[llm {ts}] Route ({kind}) failed after streaming; not falling back: {exc}")
+                print(f"[llm {ts}] Route ({kind}) {provider}/{model} failed after streaming for {time.monotonic() - route_started:.1f}s; not falling back: {exc}")
                 raise
-            if not _is_route_cooling(provider, model) and _is_quota_error(exc):
+            if not _is_route_cooling(provider, model) and _is_transient_route_error(exc):
                 _mark_route_cooling(provider, model)
-                print(f"[llm {ts}] Route ({kind}) {provider}/{model} hit quota; cooling down {_ROUTE_COOLDOWN_SECONDS:.0f}s and using fallback")
+                print(f"[llm {ts}] Route ({kind}) {provider}/{model} hit transient provider error after {time.monotonic() - route_started:.1f}s; cooling down {_ROUTE_COOLDOWN_SECONDS:.0f}s and using fallback")
             if idx < len(ordered) - 1:
-                print(f"[llm {ts}] Route ({kind}) failed before output; trying fallback: {exc}")
+                print(f"[llm {ts}] Route ({kind}) {provider}/{model} failed before output after {time.monotonic() - route_started:.1f}s; trying fallback: {exc}")
                 continue
-            print(f"[llm {ts}] Route ({kind}) failed; no fallback left: {exc}")
+            print(f"[llm {ts}] Route ({kind}) {provider}/{model} failed after {time.monotonic() - route_started:.1f}s; no fallback left: {exc}")
     if last_exc:
-        raise last_exc
+        raise _route_failure_summary(kind, attempts, last_exc) from last_exc
     raise ValueError(f"No {kind} model routes configured.")
 
 
@@ -1704,7 +1959,9 @@ def _stream_single_response_route(
     memory_context: str,
     use_tools: bool,
     route_name: str,
+    allowed_tools: list[str] | None = None,
     allow_screenshot_tool: bool = False,
+    screenshot_tool_b64: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
     json_mode: bool = False,
@@ -1761,7 +2018,9 @@ def _stream_single_response_route(
             ambient_context,
             memory_context,
             use_tools=use_tools,
+            allowed_tools=allowed_tools,
             allow_screenshot_tool=allow_screenshot_tool,
+            screenshot_tool_b64=screenshot_tool_b64,
             provider=provider,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -1776,12 +2035,22 @@ def _stream_single_response_route(
             ambient_context,
             memory_context,
             use_tools,
+            allowed_tools=allowed_tools,
             allow_screenshot_tool=allow_screenshot_tool,
+            screenshot_tool_b64=screenshot_tool_b64,
             max_tokens=max_tokens,
             temperature=temperature,
         )
     elif provider == "chatgpt":
-        yield from _stream_codex(user_message, model, _get_codex_client(), ambient_context, memory_context, use_tools)
+        yield from _stream_codex(
+            user_message,
+            model,
+            _get_codex_client(),
+            ambient_context,
+            memory_context,
+            use_tools,
+            allowed_tools=allowed_tools,
+        )
     elif provider == "copilot":
         yield from _stream_copilot(user_message, model, ambient_context, memory_context, use_tools)
     else:
@@ -1794,6 +2063,7 @@ def _stream_copilot(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
     from core.auth import copilot_client
 
@@ -1823,7 +2093,9 @@ def _stream_openai_compat(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
     allow_screenshot_tool: bool = False,
+    screenshot_tool_b64: str | None = None,
     provider: str = "",
     max_tokens: int | None = None,
     temperature: float | None = None,
@@ -1848,6 +2120,7 @@ def _stream_openai_compat(
             user_message,
             include_general=use_tools,
             include_screenshot=allow_screenshot_tool,
+            allowed_tools=allowed_tools,
         )
         if tools_requested and tools_allowed
         else None
@@ -1883,28 +2156,62 @@ def _stream_openai_compat(
     # Stream first round — yield text, accumulate any tool-call deltas.
     tool_calls_acc: dict[int, dict] = {}  # index → {id, name, arguments}
     finish_reason = None
+    first_round_text: list[str] = []
 
-    with client.chat.completions.create(**kwargs) as stream:
-        for chunk in stream:
-            if not chunk.choices:
-                continue
-            choice = chunk.choices[0]
-            finish_reason = choice.finish_reason or finish_reason
-            delta = choice.delta
-            if delta.content:
-                yield delta.content
-            for tc in (delta.tool_calls or []):
-                entry = tool_calls_acc.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
-                if tc.id:
-                    entry["id"] = tc.id
-                if tc.function:
-                    if tc.function.name:
-                        entry["name"] += tc.function.name
-                    if tc.function.arguments:
-                        entry["arguments"] += tc.function.arguments
+    try:
+        with client.chat.completions.create(**kwargs) as stream:
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                finish_reason = choice.finish_reason or finish_reason
+                delta = choice.delta
+                if delta.content:
+                    if tools:
+                        first_round_text.append(delta.content)
+                    else:
+                        yield delta.content
+                for tc in (delta.tool_calls or []):
+                    entry = tool_calls_acc.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                    if tc.id:
+                        entry["id"] = tc.id
+                    if tc.function:
+                        if tc.function.name:
+                            entry["name"] += tc.function.name
+                        if tc.function.arguments:
+                            entry["arguments"] += tc.function.arguments
+    except Exception as exc:
+        if not kwargs.get("stream") or not _stream_mode_error(exc):
+            raise
+        retry_kwargs = dict(kwargs)
+        retry_kwargs["stream"] = False
+        print("[llm] OpenAI-compatible stream rejected; retrying non-streaming", flush=True)
+        response = client.chat.completions.create(**retry_kwargs)
+        choice = response.choices[0] if getattr(response, "choices", None) else None
+        finish_reason = getattr(choice, "finish_reason", None) or finish_reason
+        text = _openai_compat_message_text(response)
+        if text:
+            if tools:
+                first_round_text.append(text)
+            else:
+                yield text
+        tool_calls_acc = _openai_compat_message_tool_calls(response)
 
     if finish_reason != "tool_calls" or not tool_calls_acc:
-        return
+        first_round_joined = "".join(first_round_text)
+        if tools and allow_screenshot_tool and _looks_like_screenshot_tool_request(first_round_joined):
+            print("[llm] text requested capture_screen; continuing with implicit tool call", flush=True)
+            tool_calls_acc = {
+                0: {
+                    "id": "implicit_capture_screen_1",
+                    "name": "capture_screen",
+                    "arguments": "{}",
+                }
+            }
+        else:
+            for text in first_round_text:
+                yield text
+            return
 
     # Build the assistant tool-call turn and append it to messages.
     assistant_tool_calls = [
@@ -1928,7 +2235,8 @@ def _stream_openai_compat(
                 # OpenAI tool messages can't carry an image, so acknowledge the
                 # call with text and deliver the screenshot as a user message
                 # below, then answer on a vision-capable model.
-                pending_image_b64 = _capture_screen_b64()
+                print("[llm] tool_call capture_screen: resolving screenshot", flush=True)
+                pending_image_b64 = _capture_screen_b64(screenshot_tool_b64)
                 ack = (
                     "Screenshot captured; it is attached in the next message."
                     if pending_image_b64
@@ -1937,12 +2245,13 @@ def _stream_openai_compat(
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ack})
                 _log_context("tool: capture_screen", "<screenshot>" if pending_image_b64 else "<failed>")
             else:
-                result = _execute_model_tool(tc["name"], inputs)
+                result = _execute_model_tool(tc["name"], inputs, allowed_tools=allowed_tools)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
         if pending_image_b64:
             current_model = _openai_vision_model(provider, current_model)
             vision_mode = True  # answer with the image; drop tools for follow-ups
+            print(f"[llm] tool_call capture_screen: follow-up vision model={current_model}", flush=True)
             messages.append({
                 "role": "user",
                 "content": [
@@ -2015,23 +2324,25 @@ def _stream_codex(
     # The Responses API tool-call loop (previous_response_id chaining) is not
     # implemented here.  When tools are requested we eagerly inject context that
     # Claude would otherwise fetch on demand: open supported documents and clipboard.
-    if use_tools:
+    if use_tools and (
+        allowed_tools is None
+        or "get_context" in allowed_tools
+        or "get_context.documents" in allowed_tools
+    ):
         doc_text = read_active_document_for_context()
         if doc_text:
             doc_block = f"[Open documents]\n{doc_text}"
             ambient_context = f"{ambient_context}\n\n---\n{doc_block}".strip() if ambient_context else doc_block
     text = _build_codex_text(user_message, ambient_context, memory_context)
-    with client.responses.stream(
-        model=model,
-        input=[{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
-        instructions=config.get_system_prompt(),
-        store=False,
-    ) as stream:
-        for event in stream:
-            if getattr(event, 'type', '') == 'response.output_text.delta':
-                delta = getattr(event, 'delta', '')
-                if delta:
-                    yield delta
+    yield from _response_stream_text(
+        client,
+        {
+            "model": model,
+            "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
+            "instructions": config.get_system_prompt(),
+            "store": False,
+        },
+    )
 
 
 def _stream_codex_vision(
@@ -2045,17 +2356,15 @@ def _stream_codex_vision(
         {"type": "input_text",  "text": user_message},
         {"type": "input_image", "image_url": f"data:image/png;base64,{image_base64}"},
     ]
-    with client.responses.stream(
-        model=model,
-        input=[{"type": "message", "role": "user", "content": input_content}],
-        instructions=config.get_system_prompt(),
-        store=False,
-    ) as stream:
-        for event in stream:
-            if getattr(event, 'type', '') == 'response.output_text.delta':
-                delta = getattr(event, 'delta', '')
-                if delta:
-                    yield delta
+    yield from _response_stream_text(
+        client,
+        {
+            "model": model,
+            "input": [{"type": "message", "role": "user", "content": input_content}],
+            "instructions": config.get_system_prompt(),
+            "store": False,
+        },
+    )
 
 
 def _build_openai_messages(
@@ -2100,6 +2409,8 @@ def _run_anthropic_tool_loop(
     prompt: str = "",
     include_general: bool = True,
     include_screenshot: bool = False,
+    screenshot_tool_b64: str | None = None,
+    allowed_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """
     Execute Anthropic tool calls and yield text from subsequent rounds.
@@ -2116,7 +2427,8 @@ def _run_anthropic_tool_loop(
             if block.name == "capture_screen":
                 # Return the screenshot as an image block; upgrade the loop to a
                 # vision-capable model for the rounds that follow.
-                b64 = _capture_screen_b64()
+                print("[llm] tool_call capture_screen: resolving screenshot", flush=True)
+                b64 = _capture_screen_b64(screenshot_tool_b64)
                 if b64:
                     current_model = _anthropic_vision_model(current_model)
                     content = [{
@@ -2131,7 +2443,7 @@ def _run_anthropic_tool_loop(
                     content = "Screen capture failed; no image is available."
                 _log_context("tool: capture_screen", "<screenshot>" if b64 else "<failed>")
             else:
-                content = _execute_model_tool(block.name, block.input or {})
+                content = _execute_model_tool(block.name, block.input or {}, allowed_tools=allowed_tools)
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
@@ -2140,6 +2452,7 @@ def _run_anthropic_tool_loop(
         if not tool_results:
             return
         messages.append({"role": "user", "content": tool_results})
+        print(f"[llm] tool_call follow-up: model={current_model}", flush=True)
         response = client.messages.create(
             model=current_model,
             max_tokens=max_tokens,
@@ -2149,6 +2462,7 @@ def _run_anthropic_tool_loop(
                 prompt,
                 include_general=include_general,
                 include_screenshot=include_screenshot,
+                allowed_tools=allowed_tools,
             ),
         )
         for block in response.content:
@@ -2170,7 +2484,9 @@ def _stream_anthropic(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
     allow_screenshot_tool: bool = False,
+    screenshot_tool_b64: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> Generator[str, None, None]:
@@ -2231,16 +2547,20 @@ def _stream_anthropic(
             user_message,
             include_general=use_tools,
             include_screenshot=allow_screenshot_tool,
+            allowed_tools=allowed_tools,
         ),
     }
     if temperature is not None:
         request["temperature"] = temperature
+    first_round_text: list[str] = []
     with client.messages.stream(**request) as stream:
         for text in stream.text_stream:
-            yield text
+            first_round_text.append(text)
         final = stream.get_final_message()
 
     if final.stop_reason != "tool_use":
+        for text in first_round_text:
+            yield text
         return
 
     # A tool was called -” execute it and do followup round(s) non-streaming.
@@ -2254,6 +2574,8 @@ def _stream_anthropic(
         prompt=user_message,
         include_general=use_tools,
         include_screenshot=allow_screenshot_tool,
+        screenshot_tool_b64=screenshot_tool_b64,
+        allowed_tools=allowed_tools,
     )
 
 
@@ -2315,11 +2637,21 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
                 yield text
             return
         client = _dynamic_openai_client(provider)
-        with client.chat.completions.create(**kwargs) as stream:
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
+        try:
+            with client.chat.completions.create(**kwargs) as stream:
+                for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        except Exception as exc:
+            if not kwargs.get("stream") or not _stream_mode_error(exc):
+                raise
+            retry_kwargs = dict(kwargs)
+            retry_kwargs["stream"] = False
+            print("[llm] OpenAI-compatible rewrite stream rejected; retrying non-streaming", flush=True)
+            text = _openai_compat_message_text(client.chat.completions.create(**retry_kwargs))
+            if text:
+                yield text
     elif provider == "anthropic":
         client = _dynamic_anthropic_client()
         with client.messages.stream(
@@ -2339,17 +2671,15 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
             system=_REWRITE_SYSTEM_PROMPT,
         )
     elif provider == "chatgpt":
-        with _get_codex_client().responses.stream(
-            model=model,
-            input=[{"type": "message", "role": "user", "content": [{"type": "input_text", "text": user_message}]}],
-            instructions=_REWRITE_SYSTEM_PROMPT,
-            store=False,
-        ) as stream:
-            for event in stream:
-                if getattr(event, 'type', '') == 'response.output_text.delta':
-                    delta = getattr(event, 'delta', '')
-                    if delta:
-                        yield delta
+        yield from _response_stream_text(
+            _get_codex_client(),
+            {
+                "model": model,
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": user_message}]}],
+                "instructions": _REWRITE_SYSTEM_PROMPT,
+                "store": False,
+            },
+        )
     else:
         raise ValueError(f"Unknown rewrite provider: {provider}")
 
@@ -2414,11 +2744,21 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
                 yield text
             return
         client = _dynamic_openai_client(provider)
-        with client.chat.completions.create(**kwargs) as stream:
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
+        try:
+            with client.chat.completions.create(**kwargs) as stream:
+                for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        except Exception as exc:
+            if not kwargs.get("stream") or not _stream_mode_error(exc):
+                raise
+            retry_kwargs = dict(kwargs)
+            retry_kwargs["stream"] = False
+            print("[llm] OpenAI-compatible chat stream rejected; retrying non-streaming", flush=True)
+            text = _openai_compat_message_text(client.chat.completions.create(**retry_kwargs))
+            if text:
+                yield text
     elif provider == "anthropic":
         client = _dynamic_anthropic_client()
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
@@ -2458,17 +2798,15 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
             label = "User" if m["role"] == "user" else "Assistant"
             history_prefix += f"{label}: {m['content']}\n"
         full_input = (history_prefix + last_user) if history_prefix else last_user
-        with _get_chat_codex_client().responses.stream(
-            model=model,
-            input=[{"type": "message", "role": "user", "content": [{"type": "input_text", "text": full_input}]}],
-            instructions=system_msg,
-            store=False,
-        ) as stream:
-            for event in stream:
-                if getattr(event, 'type', '') == 'response.output_text.delta':
-                    delta = getattr(event, 'delta', '')
-                    if delta:
-                        yield delta
+        yield from _response_stream_text(
+            _get_chat_codex_client(),
+            {
+                "model": model,
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": full_input}]}],
+                "instructions": system_msg,
+                "store": False,
+            },
+        )
     elif provider == "copilot":
         from core.auth import copilot_client
 

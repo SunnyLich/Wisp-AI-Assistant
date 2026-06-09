@@ -1,4 +1,4 @@
-"""Product flow controller for the pure-Python macOS target."""
+"""Product flow controller for the pure-Python worker target."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ import base64
 import itertools
 import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 log = logging.getLogger("wisp.macos_py.flows")
+_INTERACTIVE_LLM_TIMEOUT_SECONDS = 120.0
 
 
 class WorkerLike(Protocol):
@@ -45,6 +47,7 @@ class PendingInvocation:
     caller: dict[str, Any] = field(default_factory=dict)
     context: dict[str, Any] = field(default_factory=dict)
     screenshot_b64: str | None = None
+    screenshot_tool_b64: str | None = None
     intent_target_pid: int = 0
     paste_target_pid: int = 0
     is_snip: bool = False
@@ -77,6 +80,7 @@ class FlowController:
         self._drop_context_items: list[dict[str, Any]] = []
         self._last_reply = ""
         self._active_agent_stream_id: Any = None
+        self._config_mtime = self._current_config_mtime()
 
     # -- lifecycle -----------------------------------------------------
 
@@ -228,9 +232,12 @@ class FlowController:
         self._schedule(self.reload_settings)
 
     def _on_bubble_speed(self, data: dict[str, Any], _req_id: Any = None) -> None:
-        # Placeholder for future audio playback-rate control. Keeping this event
-        # out of UI prevents the old core.audio import leak.
-        log.debug("bubble speed event: %s", data)
+        self._safe_call(
+            self.audio,
+            "audio.speed_boost",
+            {"enabled": bool((data or {}).get("enabled"))},
+            timeout=5.0,
+        )
 
     def _on_audio_playback_started(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
@@ -278,24 +285,32 @@ class FlowController:
     # -- public product actions ---------------------------------------
 
     def begin_caller(self, caller_idx: int = 0) -> None:
+        self._reload_supervisor_config_if_changed()
         caller = self._caller(caller_idx)
         self._new_generation()
         self._safe_call(self.audio, "audio.stop", timeout=5.0)
-        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
         context = self._context_snapshot(caller)
         screenshot_b64 = None
-        selected = str(context.get("selected_text") or "")
-        if caller.get("context_screenshot") == "auto" and not selected:
+        screenshot_tool_b64 = None
+        screenshot_mode = caller.get("context_screenshot")
+        if screenshot_mode == "auto":
             screenshot_b64 = self._capture_fullscreen_b64()
+        elif screenshot_mode == "model":
+            screenshot_tool_b64 = self._capture_model_tool_b64()
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
-        pid = int(active_app.get("pid") or 0)
+        if str(context.get("platform") or "") == "darwin":
+            target_id = int(active_app.get("pid") or 0)
+        else:
+            target_id = int(active_app.get("window_id") or active_app.get("pid") or 0)
         pending = PendingInvocation(
             caller_idx=caller_idx,
             caller=caller,
             context=context,
             screenshot_b64=screenshot_b64,
-            intent_target_pid=pid,
-            paste_target_pid=pid if caller.get("paste_back") else 0,
+            screenshot_tool_b64=screenshot_tool_b64,
+            intent_target_pid=target_id,
+            paste_target_pid=target_id if caller.get("paste_back") else 0,
         )
         with self._lock:
             self._pending = pending
@@ -368,6 +383,7 @@ class FlowController:
             self._drop_context_items.pop(index)
 
     def voice_start(self) -> None:
+        self._reload_supervisor_config_if_changed()
         if self._voice_active:
             return
         self._voice_active = True
@@ -391,6 +407,11 @@ class FlowController:
         self._query(text, pending)
 
     def reload_settings(self) -> None:
+        import config
+
+        config.reload()
+        self._config_mtime = self._current_config_mtime()
+        log.info("supervisor config reloaded")
         self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
         self._safe_call(self.audio, "audio.prewarm", timeout=30.0)
         self._safe_call(self.native, "native.hotkeys.stop", timeout=10.0)
@@ -423,7 +444,7 @@ class FlowController:
             result = self._brain_call_with_events(
                 "brain.chat",
                 {"messages": messages},
-                timeout=300.0,
+                timeout=_INTERACTIVE_LLM_TIMEOUT_SECONDS,
                 on_event=on_event,
             )
             if not done_seen:
@@ -649,22 +670,38 @@ class FlowController:
     # -- core flows -----------------------------------------------------
 
     def _query(self, prompt: str, pending: PendingInvocation) -> None:
+        query_started = time.monotonic()
         gen = self._new_generation()
         self._safe_call(self.audio, "audio.stop", timeout=5.0)
         self._safe_call(self.ui, "ui.overlay.state", {"state": "thinking"}, timeout=30.0)
         self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
         self._safe_call(self.ui, "ui.reply.thinking", timeout=30.0)
         params = self._brain_query_params(prompt, pending)
+        log.info(
+            "query context ready in %.2fs prompt_chars=%d ambient_chars=%d "
+            "selected_chars=%d screenshot=%s screenshot_tool=%s tools=%s",
+            time.monotonic() - query_started,
+            len(prompt or ""),
+            len(str(params.get("ambient_text") or "")),
+            len(str(params.get("selected") or "")),
+            bool(params.get("screenshot_b64")),
+            params.get("screenshot_tool_b64") is not None,
+            bool(params.get("use_tools")),
+        )
         summary = params.pop("_ui_context_summary", [])
         chat_context = str(params.get("ambient_text") or "")
         if summary:
             self._safe_call(self.ui, "ui.context.summary", {"items": summary}, timeout=30.0)
 
         done_seen = False
+        first_chunk_seen = False
 
         def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
-            nonlocal done_seen
+            nonlocal done_seen, first_chunk_seen
             if event == "reply.chunk":
+                if not first_chunk_seen:
+                    first_chunk_seen = True
+                    log.info("query first reply chunk after %.2fs", time.monotonic() - query_started)
                 self._on_reply_chunk(payload)
             elif event == "reply.done":
                 done_seen = True
@@ -674,7 +711,21 @@ class FlowController:
                 if not (self._tts_enabled() and text_done):
                     self._on_reply_done(payload)
 
-        result = self._brain_call_with_events("brain.query", params, timeout=300.0, on_event=on_event)
+        try:
+            log.info("query brain call started")
+            result = self._brain_call_with_events(
+                "brain.query",
+                params,
+                timeout=_INTERACTIVE_LLM_TIMEOUT_SECONDS,
+                on_event=on_event,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
+            log.exception("brain query failed after %.2fs", time.monotonic() - query_started)
+            self._notice(f"LLM request failed: {self._friendly_error(exc)}")
+            self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+            self._set_idle()
+            return
+        log.info("query brain call finished after %.2fs", time.monotonic() - query_started)
         text = str((result or {}).get("text") or "")
         self._last_reply = text
         if text:
@@ -710,12 +761,19 @@ class FlowController:
             if event == "reply.chunk":
                 self._on_reply_chunk(payload)
 
-        result = self._brain_call_with_events(
-            "brain.rewrite",
-            {"selected_text": selected, "intent_prompt": prompt},
-            timeout=300.0,
-            on_event=on_event,
-        )
+        try:
+            result = self._brain_call_with_events(
+                "brain.rewrite",
+                {"selected_text": selected, "intent_prompt": prompt},
+                timeout=_INTERACTIVE_LLM_TIMEOUT_SECONDS,
+                on_event=on_event,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
+            log.exception("brain rewrite failed")
+            self._notice(f"Rewrite failed: {self._friendly_error(exc)}")
+            self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+            self._set_idle()
+            return
         text = str((result or {}).get("text") or "").strip()
         if text and self._is_current(gen):
             self.native.call(
@@ -783,6 +841,14 @@ class FlowController:
     def _notice(self, text: str) -> None:
         self._safe_call(self.ui, "ui.reply.notice", {"text": text}, timeout=30.0)
 
+    @staticmethod
+    def _friendly_error(exc: Exception) -> str:
+        text = str(exc).strip() or type(exc).__name__
+        for prefix in ("ValueError: ", "RuntimeError: "):
+            if text.startswith(prefix):
+                return text[len(prefix):].strip()
+        return text
+
     def _caller(self, caller_idx: int) -> dict[str, Any]:
         import config
 
@@ -790,6 +856,26 @@ class FlowController:
         if 0 <= caller_idx < len(rows):
             return dict(rows[caller_idx])
         return {}
+
+    @staticmethod
+    def _current_config_mtime() -> float | None:
+        try:
+            import config
+
+            env_file = Path(getattr(config, "_ENV_FILE", ""))
+            return env_file.stat().st_mtime
+        except (OSError, TypeError, ValueError):
+            return None
+
+    def _reload_supervisor_config_if_changed(self) -> None:
+        current_mtime = self._current_config_mtime()
+        if current_mtime is None or current_mtime == self._config_mtime:
+            return
+        import config
+
+        config.reload()
+        self._config_mtime = current_mtime
+        log.info("supervisor config reloaded after .env change")
 
     def _config_value(self, name: str, default: Any) -> Any:
         import config
@@ -812,6 +898,11 @@ class FlowController:
         ambient_parts: list[str] = []
         buffered_items, drop_items = self._consume_context_extras()
         screenshot_b64 = pending.screenshot_b64
+        screenshot_tool_b64: str | None = pending.screenshot_tool_b64
+        allow_screenshot_tool = caller.get("context_screenshot") == "model"
+        if allow_screenshot_tool and screenshot_tool_b64 is None:
+            screenshot_tool_b64 = self._capture_model_tool_b64()
+        allowed_tools = self._allowed_model_tools(caller)
         if caller.get("context_ambient", True):
             active_app = context.get("active_app")
             if isinstance(active_app, dict) and active_app.get("name"):
@@ -846,11 +937,38 @@ class FlowController:
             "selected": context.get("selected_text") or "",
             "screenshot_b64": screenshot_b64,
             "ambient_text": "\n\n".join(ambient_parts),
-            "use_tools": bool(caller.get("context_tools", False)),
-            "allow_screenshot_tool": caller.get("context_screenshot") == "model",
-            "include_active_document": bool(caller.get("context_documents", True)),
+            "use_tools": bool(allowed_tools),
+            "allowed_tools": allowed_tools,
+            "allow_screenshot_tool": allow_screenshot_tool,
+            "screenshot_tool_b64": screenshot_tool_b64,
+            "include_active_document": self._context_mode(caller, "documents") == "auto",
             "_ui_context_summary": summary,
         }
+
+    @staticmethod
+    def _context_mode(caller: dict[str, Any], name: str) -> str:
+        key = f"context_{name}_mode"
+        mode = str(caller.get(key) or "").strip().lower()
+        if mode in {"off", "auto", "model"}:
+            return mode
+        if name == "documents":
+            if caller.get("context_documents", False):
+                return "auto"
+            if caller.get("context_tools", False):
+                return "model"
+        if name in {"browser", "github"} and caller.get("context_tools", False):
+            return "model"
+        return "off"
+
+    def _allowed_model_tools(self, caller: dict[str, Any]) -> list[str]:
+        allowed: list[str] = []
+        if self._context_mode(caller, "documents") == "model":
+            allowed.append("get_context.documents")
+        if self._context_mode(caller, "browser") == "model":
+            allowed.extend(["web_search", "get_context.browser"])
+        if self._context_mode(caller, "github") == "model":
+            allowed.extend(["git_status", "git_diff", "github_repo", "github_issue"])
+        return allowed
 
     def _consume_context_extras(self) -> tuple[list[str], list[dict[str, Any]]]:
         buffered = list(self._context_buffer)
@@ -933,6 +1051,22 @@ class FlowController:
         result = self.native.call("native.capture.fullscreen", timeout=30.0)
         path = result.get("path") if isinstance(result, dict) else ""
         return self._file_b64(path) if path else None
+
+    def _capture_model_tool_b64(self) -> str:
+        started = time.monotonic()
+        try:
+            result = self.native.call("native.capture.fullscreen", timeout=8.0)
+        except Exception:
+            log.exception("model screenshot pre-capture failed after %.2fs", time.monotonic() - started)
+            return ""
+        path = result.get("path") if isinstance(result, dict) else ""
+        image_b64 = self._file_b64(path) or ""
+        log.info(
+            "model screenshot pre-capture %s after %.2fs",
+            "succeeded" if image_b64 else "returned empty",
+            time.monotonic() - started,
+        )
+        return image_b64
 
     @staticmethod
     def _file_b64(path: str | Path | None) -> str | None:

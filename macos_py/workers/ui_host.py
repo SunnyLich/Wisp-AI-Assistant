@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import itertools
+import logging
 import os
 import queue
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,92 @@ from typing import Any
 from macos_py.bootstrap import configure_paths
 from macos_py.boundaries import boundary_status
 from macos_py import VERSION, protocol
+
+log = logging.getLogger("wisp.ui_host")
+
+
+def _ui_log_dir() -> Path:
+    configured = os.environ.get("WISP_RUN_LOG_DIR")
+    if configured:
+        root = Path(configured)
+    else:
+        root = configure_paths() / "build_logs" / "ui_runtime"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _format_thread_stacks() -> str:
+    frames = sys._current_frames()
+    parts: list[str] = []
+    for thread in threading.enumerate():
+        parts.append(f"\n--- thread={thread.name} ident={thread.ident} daemon={thread.daemon} ---\n")
+        frame = frames.get(thread.ident or -1)
+        if frame is None:
+            parts.append("(no frame)\n")
+            continue
+        parts.extend(traceback.format_stack(frame))
+    return "".join(parts)
+
+
+class QtFreezeWatchdog:
+    """Background detector for a blocked Qt event loop.
+
+    A QTimer updates the heartbeat on the main thread. If the heartbeat stops,
+    the watchdog thread writes thread stacks to disk, which gives freeze reports
+    something more useful than "it hung."
+    """
+
+    def __init__(self, app, status_fn) -> None:
+        from PySide6.QtCore import QTimer
+
+        self._status_fn = status_fn
+        self._threshold = float(os.environ.get("WISP_UI_FREEZE_THRESHOLD_SECONDS", "2.5"))
+        self._interval = float(os.environ.get("WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS", "0.5"))
+        self._cooldown = max(self._threshold, float(os.environ.get("WISP_UI_FREEZE_LOG_COOLDOWN_SECONDS", "10.0")))
+        self._last_beat = time.monotonic()
+        self._last_log = 0.0
+        self._stop = threading.Event()
+        self._timer = QTimer()
+        self._timer.setInterval(max(50, int(self._interval * 1000)))
+        self._timer.timeout.connect(self.beat)
+        self._timer.start()
+        app.aboutToQuit.connect(self.stop)
+        self._thread = threading.Thread(target=self._run, name="wisp-ui-freeze-watchdog", daemon=True)
+        self._thread.start()
+
+    def beat(self) -> None:
+        self._last_beat = time.monotonic()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._timer.stop()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            now = time.monotonic()
+            stalled_for = now - self._last_beat
+            if stalled_for < self._threshold or now - self._last_log < self._cooldown:
+                continue
+            self._last_log = now
+            self._write_freeze_log(stalled_for)
+
+    def _write_freeze_log(self, stalled_for: float) -> None:
+        try:
+            status = self._status_fn() or {}
+            path = _ui_log_dir() / f"ui_freeze_{time.strftime('%Y%m%d-%H%M%S')}.log"
+            body = [
+                f"time={time.strftime('%Y-%m-%d %H:%M:%S')}\n",
+                f"pid={os.getpid()}\n",
+                f"stalled_for_seconds={stalled_for:.3f}\n",
+                f"active_method={status.get('method') or ''}\n",
+                f"active_for_seconds={status.get('active_for_seconds') or 0:.3f}\n",
+                "\nThread stacks:\n",
+                _format_thread_stacks(),
+            ]
+            path.write_text("".join(body), encoding="utf-8")
+            print(f"[wisp-ui] freeze watchdog wrote {path}", file=sys.stderr, flush=True)
+        except Exception:
+            log.exception("failed writing UI freeze log")
 
 
 class MemoryProxy:
@@ -56,7 +144,7 @@ class MemoryProxy:
 
 
 class MacAgentRunDialog:
-    """Protocol-backed agent run window for the pure-Python macOS target."""
+    """Protocol-backed agent run window for the pure-Python target."""
 
     def __init__(self, host: "QtProtocolHost", spec: dict[str, Any]) -> None:
         from PySide6.QtCore import Qt, QUrl
@@ -283,7 +371,7 @@ class MacAgentRunDialog:
 
 
 class MacAgentHistoryDialog:
-    """Protocol-backed agent history browser for the pure-Python macOS target."""
+    """Protocol-backed agent history browser for the pure-Python target."""
 
     def __init__(self, host: "QtProtocolHost") -> None:
         from PySide6.QtCore import Qt, QUrl
@@ -474,6 +562,9 @@ class QtProtocolHost:
         self._chat_request_ids = itertools.count(1)
         self._chat_streams: dict[str, "queue.Queue[tuple[str, Any]]"] = {}
         self._chat_streams_lock = threading.Lock()
+        self._active_dispatch_method = ""
+        self._active_dispatch_started = 0.0
+        self._watchdog = QtFreezeWatchdog(app, self._watchdog_status)
 
         self._pump = QTimer()
         self._pump.setInterval(20)
@@ -531,11 +622,49 @@ class QtProtocolHost:
                 return
             if not isinstance(params, dict):
                 raise ValueError("params must be an object")
-            result = self._dispatch(str(method), params)
+            method_name = str(method)
+            self._active_dispatch_method = method_name
+            self._active_dispatch_started = time.monotonic()
+            try:
+                result = self._dispatch(method_name, params)
+            finally:
+                elapsed = time.monotonic() - self._active_dispatch_started
+                slow_threshold = float(os.environ.get("WISP_UI_SLOW_DISPATCH_SECONDS", "1.0"))
+                if elapsed >= slow_threshold:
+                    self._write_slow_dispatch_log(method_name, elapsed)
+                self._active_dispatch_method = ""
+                self._active_dispatch_started = 0.0
             self._respond(req_id, True, result=result)
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
             self._respond(req_id, False, error=f"{type(exc).__name__}: {exc}")
+
+    def _watchdog_status(self) -> dict[str, Any]:
+        started = self._active_dispatch_started
+        return {
+            "method": self._active_dispatch_method,
+            "active_for_seconds": max(0.0, time.monotonic() - started) if started else 0.0,
+        }
+
+    def _write_slow_dispatch_log(self, method: str, elapsed: float) -> None:
+        try:
+            path = _ui_log_dir() / f"ui_slow_dispatch_{time.strftime('%Y%m%d-%H%M%S')}.log"
+            path.write_text(
+                "".join(
+                    [
+                        f"time={time.strftime('%Y-%m-%d %H:%M:%S')}\n",
+                        f"pid={os.getpid()}\n",
+                        f"method={method}\n",
+                        f"elapsed_seconds={elapsed:.3f}\n",
+                        "\nThread stacks:\n",
+                        _format_thread_stacks(),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            print(f"[wisp-ui] slow dispatch wrote {path}", file=sys.stderr, flush=True)
+        except Exception:
+            log.exception("failed writing UI slow-dispatch log")
 
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
         if method in {"ping", "ui.ping"}:
@@ -549,6 +678,10 @@ class QtProtocolHost:
             }
         if method == "boundary.status":
             return boundary_status("ui")
+        if method == "ui.debug.block_event_loop" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            seconds = max(0.0, min(10.0, float(params.get("seconds") or 0.0)))
+            time.sleep(seconds)
+            return {"blocked_seconds": seconds}
         if method == "ui.reload_config":
             return self._reload_config()
         if method == "ui.show_overlay":
@@ -636,15 +769,17 @@ class QtProtocolHost:
 
             self._overlay_signals = OverlaySignals()
             self._overlay = IconOverlay(self._overlay_signals)
-            # Keep audio ownership out of the UI process. IconOverlay's default
-            # speed callback reaches into core.audio; replace it with a protocol
-            # event so the supervisor/audio worker can decide what to do.
+            # Keep audio ownership out of the UI process. Bubble hold gestures
+            # and hide/reset callbacks are routed over protocol to the supervisor.
             try:
                 self._overlay._bubble.set_speed_callback(
                     lambda enabled: self.emit("ui.bubble.speed", {"enabled": bool(enabled)})
                 )
             except Exception:
                 traceback.print_exc()
+            self._overlay_signals.bubble_speed.connect(
+                lambda enabled: self.emit("ui.bubble.speed", {"enabled": bool(enabled)})
+            )
             self._overlay_signals.summon_caller.connect(
                 lambda idx: self.emit("ui.summon_caller", {"caller_idx": int(idx)})
             )
@@ -906,10 +1041,17 @@ class QtProtocolHost:
         return {"shown": True, "reused": False}
 
     def _show_settings(self) -> dict[str, Any]:
+        from PySide6.QtCore import QTimer
         from ui.settings import open_settings
 
-        open_settings(parent=None, on_apply=self._settings_applied)
-        return {"shown": True}
+        def _open() -> None:
+            try:
+                open_settings(parent=None, on_apply=self._settings_applied)
+            except Exception:
+                traceback.print_exc()
+
+        QTimer.singleShot(0, _open)
+        return {"queued": True}
 
     def _show_memory(self, facts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from ui.memory_viewer import MemoryViewer

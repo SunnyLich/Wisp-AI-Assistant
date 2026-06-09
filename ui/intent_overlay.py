@@ -106,6 +106,7 @@ class IntentOverlay(QWidget):
         self._custom_mode = False
         self._was_activated = False   # macOS: dismiss on focus-out once activated
         self._kb_hook = None
+        self._input_grabbed_keyboard = False
         self._drop_next_keypress = False
         self._raw_key.connect(self._on_raw_key)
 
@@ -274,9 +275,24 @@ class IntentOverlay(QWidget):
             _PAD_H, self._normal_h - 20, _W - _PAD_H * 2, 34
         )
         self._input_line.show()
-        self._input_line.setFocus()
+        self._focus_custom_input()
         self.update()
         self._drop_next_keypress = True
+        for delay_ms in (25, 75, 150):
+            QTimer.singleShot(delay_ms, self._focus_custom_input)
+
+    def _focus_custom_input(self) -> None:
+        if not self._custom_mode or self._input_line.isHidden():
+            return
+        self.raise_()
+        self.activateWindow()
+        self._input_line.setFocus(Qt.FocusReason.OtherFocusReason)
+        if _IS_WIN and not self._input_grabbed_keyboard:
+            try:
+                self._input_line.grabKeyboard()
+                self._input_grabbed_keyboard = True
+            except Exception:
+                pass
 
     def changeEvent(self, event):
         from PySide6.QtCore import QEvent
@@ -392,6 +408,11 @@ class IntentOverlay(QWidget):
             self.releaseKeyboard()
         except Exception:
             pass
+        try:
+            self._input_line.releaseKeyboard()
+        except Exception:
+            pass
+        self._input_grabbed_keyboard = False
 
     def closeEvent(self, event):
         self._unhook()

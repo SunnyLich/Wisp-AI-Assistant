@@ -34,7 +34,10 @@ _CALLER_DEFAULTS: list[dict] = [
         "custom_key": "s",
         "context_ambient": True,
         "context_documents": True,
-        "context_tools": True,
+        "context_tools": False,
+        "context_documents_mode": "auto",
+        "context_browser_mode": "off",
+        "context_github_mode": "off",
         "context_screenshot": "off",   # "off" | "auto" | "model"
         "context_clipboard": False,
         "intents": [
@@ -51,6 +54,9 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_ambient": True,
         "context_documents": False,
         "context_tools": False,
+        "context_documents_mode": "off",
+        "context_browser_mode": "off",
+        "context_github_mode": "off",
         "context_screenshot": "off",   # "off" | "auto" | "model"
         "context_clipboard": False,
         "intents": [
@@ -60,6 +66,11 @@ _CALLER_DEFAULTS: list[dict] = [
         ],
     },
 ]
+
+
+def _context_mode(value: str | None, default: str = "off") -> str:
+    mode = (value or default or "off").strip().lower()
+    return mode if mode in {"off", "auto", "model"} else default
 
 
 def _load_caller_rows() -> list[dict]:
@@ -81,14 +92,34 @@ def _load_caller_rows() -> list[dict]:
                 "hint":   os.getenv(f"CALLER_{n}_INTENT_{m}_HINT",   d_intent.get("hint", "")),
                 "prompt": os.getenv(f"CALLER_{n}_INTENT_{m}_PROMPT", d_intent.get("prompt", "")),
             })
+        legacy_documents = env_bool(
+            f"CALLER_{n}_CONTEXT_DOCUMENTS",
+            bool(default.get("context_documents", True)),
+        )
+        legacy_tools = env_bool(
+            f"CALLER_{n}_CONTEXT_TOOLS",
+            bool(default.get("context_tools", False)),
+        )
+        default_documents_mode = "auto" if legacy_documents else ("model" if legacy_tools else "off")
+        documents_mode = _context_mode(
+            os.getenv(f"CALLER_{n}_CONTEXT_DOCUMENTS_MODE"),
+            str(default_documents_mode),
+        )
+        browser_default = "model" if legacy_tools else str(default.get("context_browser_mode") or "off")
+        github_default = "model" if legacy_tools else str(default.get("context_github_mode") or "off")
+        browser_mode = _context_mode(os.getenv(f"CALLER_{n}_CONTEXT_BROWSER_MODE"), browser_default)
+        github_mode = _context_mode(os.getenv(f"CALLER_{n}_CONTEXT_GITHUB_MODE"), github_default)
         rows.append({
             "hotkey":     os.getenv(f"CALLER_{n}_HOTKEY",     default.get("hotkey", "")),
             "label":      os.getenv(f"CALLER_{n}_LABEL",      default.get("label", "")),
             "paste_back": env_bool(f"CALLER_{n}_PASTE_BACK", bool(default.get("paste_back", False))),
             "custom_key": os.getenv(f"CALLER_{n}_CUSTOM_KEY", default.get("custom_key", "s")),
             "context_ambient": env_bool(f"CALLER_{n}_CONTEXT_AMBIENT", bool(default.get("context_ambient", True))),
-            "context_documents": env_bool(f"CALLER_{n}_CONTEXT_DOCUMENTS", bool(default.get("context_documents", True))),
-            "context_tools": env_bool(f"CALLER_{n}_CONTEXT_TOOLS", bool(default.get("context_tools", True))),
+            "context_documents": documents_mode == "auto",
+            "context_tools": any(m == "model" for m in (documents_mode, browser_mode, github_mode)),
+            "context_documents_mode": documents_mode,
+            "context_browser_mode": browser_mode,
+            "context_github_mode": github_mode,
             "context_screenshot": env_screenshot_mode(f"CALLER_{n}_CONTEXT_SCREENSHOT", default.get("context_screenshot", "off")),
             "context_clipboard": env_bool(f"CALLER_{n}_CONTEXT_CLIPBOARD", bool(default.get("context_clipboard", False))),
             "intents":    intents,
@@ -264,5 +295,6 @@ def reload() -> None:
     Note: UI size constants (BUBBLE_WIDTH, ICON_SIZE, …) require widget recreation
     and only fully apply after a restart; everything else is live.
     """
+    secret_store.refresh_cache()
     load_dotenv(_ENV_FILE, override=True)
     _load_config()

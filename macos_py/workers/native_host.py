@@ -1,4 +1,4 @@
-"""wisp-native worker: macOS permissions, hotkeys, context, capture, clipboard."""
+"""wisp-native worker: platform permissions, hotkeys, context, capture, clipboard."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from macos_py.bootstrap import repo_root
 from macos_py.service_host import run_host
 
 IS_MAC = sys.platform == "darwin"
+IS_WIN = sys.platform == "win32"
 _emit: Callable[[str, Any, Any], None] | None = None
 _hotkeys = None
 
@@ -103,6 +104,67 @@ class _HotkeyHelper:
                 print(f"[hotkeys] helper: {line}", file=sys.stderr)
 
 
+class _DirectHotkeys:
+    """Windows/Linux hotkeys using the shared core listener in this worker."""
+
+    def __init__(self) -> None:
+        self.listener = None
+        self._status: dict[str, Any] = {
+            "started": False,
+            "backend": "core-hotkeys",
+            "reason": "not started",
+        }
+
+    def start(self) -> dict[str, Any]:
+        try:
+            import config
+            from core.hotkeys import HotkeyListener
+
+            def emit_hotkey(kind: str, **extra: Any) -> None:
+                _event("native.hotkey", {"kind": kind, **extra})
+
+            caller_count = len(getattr(config, "CALLER_ROWS", []))
+            callers = [
+                (lambda idx=idx: emit_hotkey("caller", index=idx))
+                for idx in range(caller_count)
+            ]
+            self.listener = HotkeyListener(
+                on_callers=callers,
+                on_add_context=lambda: emit_hotkey("add_context"),
+                on_clear_context=lambda: emit_hotkey("clear_context"),
+                on_snip=lambda: emit_hotkey("snip"),
+                on_voice_start=lambda: emit_hotkey("voice_start"),
+                on_voice_stop=lambda: emit_hotkey("voice_stop"),
+            )
+            started = bool(self.listener.start())
+            status = self.listener.status() if hasattr(self.listener, "status") else {}
+            self._status = {
+                "started": started,
+                "backend": "core-hotkeys",
+                **status,
+            }
+            if not started:
+                self.stop()
+                self._status.setdefault("reason", "no hotkeys registered")
+        except Exception as exc:  # noqa: BLE001 - report hotkey backend failures
+            self.stop()
+            self._status = {
+                "started": False,
+                "backend": "core-hotkeys",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        return dict(self._status)
+
+    def stop(self) -> None:
+        listener = self.listener
+        self.listener = None
+        if listener is not None:
+            try:
+                listener.stop()
+            except Exception:
+                pass
+
+
 def set_event_sink(fn: Callable[[str, Any, Any], None]) -> None:
     global _emit
     _emit = fn
@@ -174,7 +236,22 @@ def permissions_snapshot() -> dict[str, Any]:
 
 def _active_app() -> dict[str, Any]:
     if not IS_MAC:
-        return {}
+        try:
+            from core.platform_utils import (
+                get_foreground_window,
+                get_window_pid,
+                get_window_title,
+            )
+
+            wid = int(get_foreground_window() or 0)
+            return {
+                "name": get_window_title(wid),
+                "bundle_id": "",
+                "pid": int(get_window_pid(wid) or 0),
+                "window_id": wid,
+            }
+        except Exception:
+            return {}
     try:
         import AppKit  # type: ignore
 
@@ -191,39 +268,47 @@ def _active_app() -> dict[str, Any]:
 
 
 def _clipboard_text_primary() -> str | None:
-    if not IS_MAC:
-        return None
-    try:
-        import AppKit  # type: ignore
+    if IS_MAC:
+        try:
+            import AppKit  # type: ignore
 
-        pb = AppKit.NSPasteboard.generalPasteboard()
-        value = pb.stringForType_(AppKit.NSPasteboardTypeString)
-        return str(value) if value is not None else None
+            pb = AppKit.NSPasteboard.generalPasteboard()
+            value = pb.stringForType_(AppKit.NSPasteboardTypeString)
+            return str(value) if value is not None else None
+        except Exception:
+            return None
+    try:
+        from core.capture import get_clipboard_text
+
+        return get_clipboard_text()
     except Exception:
         return None
 
 
 def clipboard_get() -> dict[str, Any]:
-    if IS_MAC:
-        text = _clipboard_text_primary()
-        if text is None:
-            from core.platform import macos_native
+    text = _clipboard_text_primary()
+    if text is None and IS_MAC:
+        from core.platform import macos_native
 
-            text = macos_native.get_clipboard_text()
-    else:
-        text = None
+        text = macos_native.get_clipboard_text()
     return {"text": text or ""}
 
 
 def _clipboard_set_primary(text: str) -> bool:
-    if not IS_MAC:
-        return False
-    try:
-        import AppKit  # type: ignore
+    if IS_MAC:
+        try:
+            import AppKit  # type: ignore
 
-        pb = AppKit.NSPasteboard.generalPasteboard()
-        pb.clearContents()
-        return bool(pb.setString_forType_(text or "", AppKit.NSPasteboardTypeString))
+            pb = AppKit.NSPasteboard.generalPasteboard()
+            pb.clearContents()
+            return bool(pb.setString_forType_(text or "", AppKit.NSPasteboardTypeString))
+        except Exception:
+            return False
+    try:
+        import pyperclip
+
+        pyperclip.copy(text or "")
+        return True
     except Exception:
         return False
 
@@ -238,13 +323,18 @@ def clipboard_set(text: str = "") -> dict[str, Any]:
 
 
 def selected_text() -> str:
-    if not IS_MAC:
-        return ""
-    # Primary AX selected-text support lands here. Until then, keep the old
-    # clipboard-preserving fallback isolated in this native process.
-    from core.platform import macos_native
+    if IS_MAC:
+        # Primary AX selected-text support lands here. Until then, keep the old
+        # clipboard-preserving fallback isolated in this native process.
+        from core.platform import macos_native
 
-    return macos_native.get_selected_text() or ""
+        return macos_native.get_selected_text() or ""
+    try:
+        from core.capture import get_selected_text
+
+        return get_selected_text() or ""
+    except Exception:
+        return ""
 
 
 def context_snapshot(include_clipboard: bool = True, include_selection: bool = True) -> dict[str, Any]:
@@ -268,11 +358,33 @@ def capture_fullscreen(path: str = "") -> dict[str, Any]:
 
         path = str(Path(tempfile.gettempdir()) / f"wisp-capture-{int(time.time() * 1000)}.png")
     if not IS_MAC:
-        return {"ok": False, "path": path, "error": "screen capture is only available on macOS"}
+        try:
+            from core.capture import get_screen_snippet
+
+            img = get_screen_snippet()
+            img.save(path, format="PNG")
+            return {"ok": True, "path": path}
+        except Exception as exc:  # noqa: BLE001 - surface capture failure to caller
+            return {"ok": False, "path": path, "error": f"{type(exc).__name__}: {exc}"}
     from core.platform import macos_native
 
     ok = macos_native.capture_screen_to_file(path)
     return {"ok": ok, "path": path}
+
+
+def _normalize_region(region: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not region:
+        return None
+    try:
+        left = int(region.get("left", region.get("x", 0)))
+        top = int(region.get("top", region.get("y", 0)))
+        width = int(region["width"])
+        height = int(region["height"])
+    except Exception:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return {"left": left, "top": top, "width": width, "height": height}
 
 
 def capture_region(path: str = "", region: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -281,11 +393,25 @@ def capture_region(path: str = "", region: dict[str, Any] | None = None) -> dict
 
         path = str(Path(tempfile.gettempdir()) / f"wisp-region-{int(time.time() * 1000)}.png")
     if not IS_MAC:
-        return {"ok": False, "path": path, "error": "screen capture is only available on macOS"}
+        try:
+            from core.capture import get_screen_snippet
+
+            normalized = _normalize_region(region)
+            img = get_screen_snippet(normalized)
+            img.save(path, format="PNG")
+            return {"ok": True, "path": path, "region": normalized or region}
+        except Exception as exc:  # noqa: BLE001 - surface capture failure to caller
+            return {
+                "ok": False,
+                "path": path,
+                "region": region,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
     from core.platform import macos_native
 
-    ok = macos_native.capture_screen_to_file(path, region=region)
-    return {"ok": ok, "path": path, "region": region}
+    normalized = _normalize_region(region)
+    ok = macos_native.capture_screen_to_file(path, region=normalized)
+    return {"ok": ok, "path": path, "region": normalized or region}
 
 
 def _activate_pid(pid: int) -> bool:
@@ -306,15 +432,28 @@ def _activate_pid(pid: int) -> bool:
         return False
 
 
-def paste_text(text: str = "", paste_combo: str = "cmd+v", target_pid: int = 0) -> dict[str, Any]:
-    if not IS_MAC:
-        return {"ok": False, "error": "pasteback is only available on macOS"}
-    activated = _activate_pid(target_pid)
-    if activated:
-        time.sleep(0.15)
-    from core.platform import macos_native
+def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0) -> dict[str, Any]:
+    if IS_MAC:
+        activated = _activate_pid(target_pid)
+        if activated:
+            time.sleep(0.15)
+        from core.platform import macos_native
 
-    return {"ok": macos_native.paste_text(text, paste_combo), "activated": activated}
+        return {"ok": macos_native.paste_text(text, paste_combo or "cmd+v"), "activated": activated}
+    try:
+        from core.platform_utils import PASTE_COMBO, send_keys, set_foreground_window
+
+        activated = False
+        if target_pid:
+            set_foreground_window(int(target_pid))
+            activated = True
+            time.sleep(0.15)
+        if not clipboard_set(text).get("ok"):
+            return {"ok": False, "activated": activated, "error": "clipboard write failed"}
+        send_keys(paste_combo or PASTE_COMBO)
+        return {"ok": True, "activated": activated}
+    except Exception as exc:  # noqa: BLE001 - report pasteback failure to caller
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def open_privacy_settings(pane: str = "Privacy") -> dict[str, Any]:
@@ -339,11 +478,9 @@ def hotkeys_start() -> dict[str, Any]:
     back here.
     """
     global _hotkeys
-    if not IS_MAC:
-        return {"started": False, "backend": "unavailable", "reason": "not macOS"}
     if _hotkeys is not None:
         return {"started": True, "backend": "existing"}
-    helper = _HotkeyHelper()
+    helper = _HotkeyHelper() if IS_MAC else _DirectHotkeys()
     result = helper.start()
     if result.get("started"):
         _hotkeys = helper

@@ -157,6 +157,13 @@ def audio_stop() -> dict[str, Any]:
     return {"stopped": True}
 
 
+def audio_speed_boost(enabled: bool = False) -> dict[str, Any]:
+    from core import audio
+
+    audio.set_tts_speed_boost(bool(enabled))
+    return {"enabled": bool(enabled)}
+
+
 HANDLERS = {
     "audio.prewarm": audio_prewarm,
     "audio.record.start": record_start,
@@ -164,6 +171,7 @@ HANDLERS = {
     "audio.tts.synthesize": tts_synthesize,
     "audio.play_file": play_file,
     "audio.stop": audio_stop,
+    "audio.speed_boost": audio_speed_boost,
 }
 
 

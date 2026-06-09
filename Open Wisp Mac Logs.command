@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Double-click on macOS to open the newest native Wisp validation log folder.
+# Double-click on macOS to open the newest Wisp test log folder.
 set -u
 
 cd "$(dirname "$0")"
 
 latest_pointer=""
-if [ -d build_logs ]; then
-  latest_pointer="$(ls -t build_logs/latest_macos_*.txt 2>/dev/null | head -n 1 || true)"
+if [ -f build_logs/latest_macos_tests.txt ]; then
+  latest_pointer="build_logs/latest_macos_tests.txt"
 fi
 
 value_from_pointer() {
@@ -16,7 +16,7 @@ value_from_pointer() {
 
 newest_log_dir_from_folders() {
   local newest="" newest_mtime=0 dir mtime
-  for dir in build_logs/macos_native_tests_* build_logs/macos_phase1_* build_logs/macos_package_*; do
+  for dir in build_logs/macos_tests_*; do
     [ -d "$dir" ] || continue
     mtime="$(stat -f %m "$dir" 2>/dev/null || echo 0)"
     if [ "$mtime" -gt "$newest_mtime" ]; then
@@ -47,12 +47,12 @@ fi
 echo "Latest pointer: ${latest_pointer:-none}"
 echo "Log folder: ${log_dir:-none}"
 echo "Summary: ${summary_log:-none}"
-echo "Checklist: ${checklist:-none}"
+[ -n "${checklist:-}" ] && echo "Checklist: $checklist"
 echo
 
 if [ -z "${log_dir:-}" ] || [ ! -d "$log_dir" ]; then
-  echo "No native macOS log folder found yet."
-  echo "Run Test Wisp (Mac Native).command or Start Wisp (Mac Native).command first."
+  echo "No macOS test log folder found yet."
+  echo "Run bash scripts/run_macos_tests.command first."
   echo
   read -r -p "Press Return to close..." _ || true
   exit 1
@@ -61,11 +61,11 @@ fi
 if command -v open >/dev/null 2>&1; then
   open "$log_dir"
   [ -f "$summary_log" ] && open "$summary_log"
-  [ -f "$checklist" ] && open "$checklist"
+  [ -n "${checklist:-}" ] && [ -f "$checklist" ] && open "$checklist"
 else
   echo "The macOS open command was not found."
 fi
 
-echo "Opened latest native macOS logs."
+echo "Opened latest macOS logs."
 echo
 read -r -p "Press Return to close..." _ || true

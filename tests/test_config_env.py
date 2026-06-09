@@ -79,6 +79,65 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_reload_refreshes_secret_cache(self):
+        with patch("config.load_dotenv"), patch.object(config.secret_store, "refresh_cache") as refresh:
+            config.reload()
+
+        refresh.assert_called_once_with()
+
+    def test_caller_context_modes_load_from_new_env_keys(self):
+        previous_rows = list(config.CALLER_ROWS)
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "CALLER_COUNT": "1",
+                    "CALLER_1_CONTEXT_DOCUMENTS_MODE": "model",
+                    "CALLER_1_CONTEXT_BROWSER_MODE": "model",
+                    "CALLER_1_CONTEXT_GITHUB_MODE": "off",
+                    "CALLER_1_CONTEXT_SCREENSHOT": "auto",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            row = config.CALLER_ROWS[0]
+            self.assertEqual(row["context_documents_mode"], "model")
+            self.assertEqual(row["context_browser_mode"], "model")
+            self.assertEqual(row["context_github_mode"], "off")
+            self.assertFalse(row["context_documents"])
+            self.assertTrue(row["context_tools"])
+        finally:
+            config.CALLER_ROWS[:] = previous_rows
+
+    def test_caller_context_modes_migrate_legacy_tool_keys(self):
+        previous_rows = list(config.CALLER_ROWS)
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "CALLER_COUNT": "1",
+                    "CALLER_1_CONTEXT_DOCUMENTS": "false",
+                    "CALLER_1_CONTEXT_TOOLS": "true",
+                },
+                clear=False,
+            ):
+                for key in (
+                    "CALLER_1_CONTEXT_DOCUMENTS_MODE",
+                    "CALLER_1_CONTEXT_BROWSER_MODE",
+                    "CALLER_1_CONTEXT_GITHUB_MODE",
+                ):
+                    os.environ.pop(key, None)
+                config.reload()
+
+            row = config.CALLER_ROWS[0]
+            self.assertEqual(row["context_documents_mode"], "model")
+            self.assertEqual(row["context_browser_mode"], "model")
+            self.assertEqual(row["context_github_mode"], "model")
+            self.assertTrue(row["context_tools"])
+        finally:
+            config.CALLER_ROWS[:] = previous_rows
+
 
 if __name__ == "__main__":
     unittest.main()

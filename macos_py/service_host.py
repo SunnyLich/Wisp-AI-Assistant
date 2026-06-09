@@ -1,4 +1,4 @@
-"""Generic stdin/stdout JSON worker host for the pure-Python macOS target."""
+"""Generic stdin/stdout JSON worker host for the pure-Python worker target."""
 
 from __future__ import annotations
 
@@ -118,4 +118,3 @@ def run_host(
         else:
             dispatch(req)
     return 0
-

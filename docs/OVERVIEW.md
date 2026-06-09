@@ -1,14 +1,16 @@
 # Wisp Code Overview
 
-Wisp is a desktop assistant with a Python/Qt product UI on Windows and a
-Swift/AppKit product UI in progress on macOS. Both surfaces share the same
-configuration, model routing, local memory, tool, and agent contracts; the macOS
-Swift host talks to a Python brain sidecar for OS-agnostic backend work.
+Wisp is a desktop assistant with one Python application architecture across
+Windows, macOS, and Linux. The shared pure-Python supervisor splits UI, native
+OS work, audio, and brain/model work into isolated worker processes.
 
 ## Top-Level Layout
 
-- `main.py` wires the application together: Qt lifecycle, hotkeys, context
-  buffering, memory, intent flow, chat windows, and voice/snip interactions.
+- `macos_py/supervisor/` wires the application together: worker lifecycle,
+  hotkeys, context buffering, memory, intent flow, chat windows, and voice/snip
+  interactions.
+- `main.py` is the legacy single-process Qt entrypoint kept temporarily while
+  the supervisor path becomes the only app runtime.
 - `config.py` loads runtime configuration from `.env` and keychain-backed
   secrets.
 - `core/` contains service and integration code: LLM routing, audio, TTS/STT,
@@ -32,31 +34,24 @@ Swift host talks to a Python brain sidecar for OS-agnostic backend work.
 - `tools/installed/` is the local script-tool plugin directory discovered by
   `core.tool_registry`.
 - `tests/` covers parser helpers, config/settings behavior, model route
-  fallback logic, tool discovery, secret storage, TTS config, and the agent
-  runner.
-- `macos/Sources/Wisp/` contains the Swift/AppKit macOS host, while
-  `macos/brain/` contains its Python sidecar.
+  fallback logic, tool discovery, secret storage, TTS config, macOS worker
+  boundaries, and the agent runner.
+- `macos_py/` contains the pure-Python supervisor, worker processes, and the
+  headless brain package used by the app.
 
 ## Plugin Contract
 
-Plugin authors should not write Swift to support macOS. Third-party plugins
-belong in the shared Python plugin/runtime layer: Python packages under
+Plugins belong in the shared Python plugin/runtime layer: Python packages under
 `plugins/<name>/__init__.py` and local script tools under `tools/installed/`.
-Both Windows and macOS must discover the same plugin metadata, hooks, tray
-actions, and model-callable tools from that shared layer.
-
-The native macOS app is only a generic host for this contract. Swift may render
-plugin names, paths, hook names, tool names, status, and declared tray actions
-from `brain.plugins.list`, then invoke those declared actions through
-`brain.plugins.run_action`. Plugin-specific business logic, provider calls,
-hooks, tools, and future custom plugin behavior must stay in Python/shared
-contracts so a plugin does not need separate Windows and macOS implementations.
+Both Windows and macOS discover the same plugin metadata, hooks, tray actions,
+and model-callable tools from that shared layer. Plugin-specific business logic,
+provider calls, hooks, tools, and future custom plugin behavior stay in Python
+so a plugin does not need separate Windows and macOS implementations.
 
 ## Runtime Flow
 
-1. On Windows, `main.App` starts Qt, registers hotkeys, initializes the overlay,
-   and warms TTS/STT connections. On macOS, the Swift host starts AppKit
-   surfaces and a Python brain sidecar.
+1. `macos_py.supervisor` starts the UI, native, audio, and brain workers, then
+   registers platform hotkeys through the native worker.
 2. A caller hotkey captures selected text or a screen snippet, then opens the
    intent picker.
 3. The selected intent builds a prompt with optional ambient context, documents,

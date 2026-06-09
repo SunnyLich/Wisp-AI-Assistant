@@ -32,12 +32,28 @@ _settings_dialog: "SettingsDialog | None" = None
 
 
 class _NoScrollCombo(QComboBox):
-    """QComboBox that ignores wheel events unless it already has focus."""
+    """QComboBox that keeps passive wheel scrolling on the settings page.
+
+    A focused but closed combo should not hijack mouse-wheel scrolling from the
+    surrounding QScrollArea. Wheel selection is still available while the popup
+    list is open.
+    """
     def wheelEvent(self, event):
-        if self.hasFocus():
+        if self.view().isVisible():
             super().wheelEvent(event)
         else:
             event.ignore()
+
+
+def _context_mode_combo(value: str, *, allow_auto: bool = True) -> _NoScrollCombo:
+    combo = _NoScrollCombo()
+    combo.addItem("Off", "off")
+    if allow_auto:
+        combo.addItem("On", "auto")
+    combo.addItem("Let model decide", "model")
+    idx = combo.findData((value or "off").strip().lower())
+    combo.setCurrentIndex(idx if idx >= 0 else 0)
+    return combo
 
 
 # Sentinel data value for the "Custom / enter manually…" model combo entry.
@@ -51,6 +67,12 @@ class _ModelFetchSignals(QObject):
     done(models: list, error: str) — error is "" on success.
     """
     done = Signal(object, str)
+
+
+class _MemoryLoadSignals(QObject):
+    """Marshals the lazy memory-store load back to the Qt main thread."""
+
+    done = Signal(object, object, str)
 
 
 def _read_env() -> dict[str, str]:
@@ -93,14 +115,27 @@ class SettingsDialog(QDialog):
         self._fallback_rows: dict = {}
         self._pending_test_results: list[tuple[str, int, bool, str]] = []
         self._pending_test_results_lock = threading.Lock()
+        self._pending_status_results: list[tuple[int, str, object, str]] = []
+        self._pending_status_results_lock = threading.Lock()
         self._running_test_tokens: set[tuple[str, int]] = set()
         self._latest_test_token: dict[str, int] = {}
+        self._status_refresh_token = 0
+        self._status_refresh_running = False
         self._memory_panel = None
+        self._memory_tab_index = -1
+        self._memory_browser_cv = None
+        self._memory_loading = False
+        self._memory_load_signals = _MemoryLoadSignals(self)
+        self._memory_load_signals.done.connect(self._on_memory_panel_loaded)
         self._test_result_timer = QTimer(self)
         self._test_result_timer.setInterval(100)
         self._test_result_timer.timeout.connect(self._drain_test_results)
+        self._status_result_timer = QTimer(self)
+        self._status_result_timer.setInterval(100)
+        self._status_result_timer.timeout.connect(self._drain_status_results)
         self._build_ui()
         self._load_values()
+        self._schedule_open_status_refresh()
         fit_window_to_screen(self, preferred_width=620, preferred_height=620)
 
     def _save_api_keys_to_keychain(self) -> bool:
@@ -306,8 +341,9 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._tab_prompt(),    "Prompts")
         tabs.addTab(self._tab_keybinds(),  "Keybinds")
         tabs.addTab(self._tab_app(),       "App")
-        tabs.addTab(self._tab_memory(),    "Memory")
+        self._memory_tab_index = tabs.addTab(self._tab_memory(), "Memory")
         tabs.addTab(self._tab_tools(),     "Tools")
+        tabs.currentChanged.connect(self._maybe_load_memory_tab)
         root.addWidget(tabs)
 
         # Buttons
@@ -353,7 +389,7 @@ class SettingsDialog(QDialog):
         auth_cv.addWidget(chatgpt_hdr)
         self._chatgpt_status_lbl = QLabel()
         self._chatgpt_status_lbl.setWordWrap(True)
-        self._refresh_chatgpt_status()
+        self._set_status_label(self._chatgpt_status_lbl, None, "Checking status...")
         auth_cv.addWidget(self._chatgpt_status_lbl)
         cgpt_row = self._button_row(
             ("Sign in",  self._chatgpt_login_browser),
@@ -374,7 +410,7 @@ class SettingsDialog(QDialog):
         self._fields["GITHUB_OAUTH_SCOPES"].setPlaceholderText("e.g. repo read:user user:email")
         self._github_status_lbl = QLabel()
         self._github_status_lbl.setWordWrap(True)
-        self._refresh_github_status()
+        self._set_status_label(self._github_status_lbl, None, "Checking status...")
         auth_cv.addWidget(self._github_status_lbl)
         github_row = self._button_row(
             ("Sign in with GitHub", self._github_login_device),
@@ -399,7 +435,7 @@ class SettingsDialog(QDialog):
         auth_cv.addWidget(copilot_f_w)
         self._copilot_status_lbl = QLabel()
         self._copilot_status_lbl.setWordWrap(True)
-        self._refresh_copilot_status()
+        self._set_status_label(self._copilot_status_lbl, None, "Checking status...")
         auth_cv.addWidget(self._copilot_status_lbl)
         copilot_row = self._button_row(
             ("Save token",       self._copilot_save_token),
@@ -1327,7 +1363,10 @@ class SettingsDialog(QDialog):
         custom_key: str = "s",
         context_ambient: bool = True,
         context_documents: bool = True,
-        context_tools: bool = True,
+        context_tools: bool = False,
+        context_documents_mode: str | None = None,
+        context_browser_mode: str = "off",
+        context_github_mode: str = "off",
         context_screenshot: str = "off",
         intents: "list[dict] | None" = None,
     ) -> None:
@@ -1375,42 +1414,50 @@ class SettingsDialog(QDialog):
         outer.addWidget(hdr)
 
         context_row = QWidget()
-        context_h = QHBoxLayout(context_row)
+        context_h = QGridLayout(context_row)
         context_h.setContentsMargins(0, 0, 0, 0)
-        context_h.setSpacing(10)
+        context_h.setHorizontalSpacing(8)
+        context_h.setVerticalSpacing(4)
         ambient_cb = QCheckBox("Ambient")
         ambient_cb.setChecked(context_ambient)
-        docs_cb = QCheckBox("Open docs")
-        docs_cb.setChecked(context_documents)
-        tools_cb = QCheckBox("Tools")
-        tools_cb.setChecked(context_tools)
-        tools_cb.setToolTip(
-            "Let the model fetch more context on demand: web search and open "
-            "documents, when it decides the other context isn't enough."
+        docs_mode = context_documents_mode or ("auto" if context_documents else ("model" if context_tools else "off"))
+        docs_combo = _context_mode_combo(docs_mode, allow_auto=True)
+        docs_combo.setToolTip(
+            "Open documents:\n"
+            "Off — do not include document text.\n"
+            "On — read supported open documents before sending the prompt.\n"
+            "Let model decide — expose an open-document tool during the answer."
         )
-        screenshot_combo = _NoScrollCombo()
+        browser_combo = _context_mode_combo(context_browser_mode, allow_auto=False)
+        browser_combo.setToolTip(
+            "Browser/Web:\n"
+            "Off — no web/browser tools.\n"
+            "Let model decide — expose web search and browser page fetch tools."
+        )
+        github_combo = _context_mode_combo(context_github_mode, allow_auto=False)
+        github_combo.setToolTip(
+            "Git/GitHub:\n"
+            "Off — no git or GitHub tools.\n"
+            "Let model decide — expose git status/diff and GitHub repo/issue tools."
+        )
+        screenshot_combo = _context_mode_combo(context_screenshot, allow_auto=True)
         screenshot_combo.setToolTip(
             "Screenshot of your screen:\n"
             "• Off — never capture.\n"
-            "• Let model decide — the model takes a screenshot itself only "
-            "when it needs to see the screen.\n"
-            "• On — always capture at hotkey time and send it with the query."
+            "• On — capture at hotkey time and send it with the query.\n"
+            "• Let model decide — expose a screenshot tool during the answer."
         )
-        for _label, _value in (
-            ("Off", "off"),
-            ("Let model decide", "model"),
-            ("On", "auto"),
-        ):
-            screenshot_combo.addItem(_label, _value)
-        _ss_idx = screenshot_combo.findData(context_screenshot)
-        screenshot_combo.setCurrentIndex(_ss_idx if _ss_idx >= 0 else 0)
-        context_h.addWidget(QLabel("Context:"))
-        context_h.addWidget(ambient_cb)
-        context_h.addWidget(docs_cb)
-        context_h.addWidget(tools_cb)
-        context_h.addWidget(QLabel("Screenshot:"))
-        context_h.addWidget(screenshot_combo)
-        context_h.addStretch()
+        context_h.addWidget(QLabel("Context:"), 0, 0)
+        context_h.addWidget(ambient_cb, 0, 1)
+        context_h.addWidget(QLabel("Screenshot:"), 0, 2)
+        context_h.addWidget(screenshot_combo, 0, 3)
+        context_h.addWidget(QLabel("Open docs:"), 0, 4)
+        context_h.addWidget(docs_combo, 0, 5)
+        context_h.addWidget(QLabel("Browser/Web:"), 1, 2)
+        context_h.addWidget(browser_combo, 1, 3)
+        context_h.addWidget(QLabel("Git/GitHub:"), 1, 4)
+        context_h.addWidget(github_combo, 1, 5)
+        context_h.setColumnStretch(6, 1)
         outer.addWidget(context_row)
 
         # Intent rows column header
@@ -1443,8 +1490,10 @@ class SettingsDialog(QDialog):
             "paste_back":     paste_cb,
             "custom_key":     custom_key_edit,
             "context_ambient": ambient_cb,
-            "context_documents": docs_cb,
-            "context_tools": tools_cb,
+            "context_documents": docs_combo,
+            "context_documents_mode": docs_combo,
+            "context_browser_mode": browser_combo,
+            "context_github_mode": github_combo,
             "context_screenshot": screenshot_combo,
             "intents_layout": intents_vlayout,
             "intent_rows":    [],
@@ -1572,23 +1621,83 @@ class SettingsDialog(QDialog):
 
         # --- Fact browser card ---
         browser_card, browser_cv = self._card("Stored Facts")
-
-        try:
-            from core.memory_store.store import get_manager
-            from ui.memory_viewer import MemoryPanel
-            panel = MemoryPanel(get_manager(), browser_card)
-            self._memory_panel = panel
-            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            browser_cv.addWidget(panel)
-        except Exception as exc:
-            err = QLabel(f"Memory store unavailable:\n{exc}")
-            err.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            err.setStyleSheet("color: #c00;")
-            browser_cv.addWidget(err)
+        self._memory_browser_cv = browser_cv
+        placeholder = QLabel("Stored facts load when this tab is opened.")
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setStyleSheet("color: palette(placeholder-text);")
+        browser_cv.addWidget(placeholder)
 
         root.addWidget(browser_card, stretch=1)
         scroll.setWidget(w)
         return scroll
+
+    def _maybe_load_memory_tab(self, index: int) -> None:
+        if index != self._memory_tab_index or self._memory_panel is not None or self._memory_loading:
+            return
+        self._memory_loading = True
+        if self._memory_browser_cv is not None:
+            self._replace_memory_browser_message("Loading stored facts...")
+        QTimer.singleShot(0, self._load_memory_panel)
+
+    def _replace_memory_browser_message(self, text: str, *, error: bool = False) -> None:
+        layout = self._memory_browser_cv
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        label = QLabel(text)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #c00;" if error else "color: palette(placeholder-text);")
+        layout.addWidget(label)
+
+    def _load_memory_panel(self) -> None:
+        layout = self._memory_browser_cv
+        if layout is None:
+            self._memory_loading = False
+            return
+
+        def worker() -> None:
+            try:
+                from core.memory_store.store import get_manager
+
+                manager = get_manager()
+                facts = manager.get_all_facts()
+                self._memory_load_signals.done.emit(manager, facts, "")
+            except Exception as exc:
+                self._memory_load_signals.done.emit(None, [], str(exc))
+
+        threading.Thread(
+            target=worker,
+            name="wisp-memory-settings-load",
+            daemon=True,
+        ).start()
+
+    def _on_memory_panel_loaded(self, manager, facts, error: str) -> None:
+        layout = self._memory_browser_cv
+        self._memory_loading = False
+        if layout is None:
+            return
+        if error:
+            self._replace_memory_browser_message(f"Memory store unavailable:\n{error}", error=True)
+            return
+        try:
+            from ui.memory_viewer import MemoryPanel
+
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+            panel = MemoryPanel(manager, self, initial_facts=list(facts or []))
+            self._memory_panel = panel
+            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            layout.addWidget(panel)
+        except Exception as exc:
+            self._replace_memory_browser_message(f"Memory store unavailable:\n{exc}", error=True)
 
     def _tab_tools(self) -> QWidget:
         from core.llm_clients.client import get_tool_registry
@@ -2027,6 +2136,9 @@ class SettingsDialog(QDialog):
     # Load / Save
     # ------------------------------------------------------------------
 
+    def _secret_configured_fast(self, name: str) -> bool:
+        return bool((self._env.get(name) or "").strip()) or secret_store.configured_marker(name)
+
     def _load_values(self):
         import config as cfg
 
@@ -2047,7 +2159,7 @@ class SettingsDialog(QDialog):
             ("cerebras",   "CEREBRAS_API_KEY"),
         ]
         for provider, key_name in _LLM_KEY_MAP:
-            if secret_store.get_keychain_secret(key_name):
+            if self._secret_configured_fast(key_name):
                 self._add_api_key_row(provider=provider, stored=True)
         # No default placeholder row — the list stays empty until the user adds
         # a key via "+ Add API Key". Avoids a spurious "Groq" row on every open.
@@ -2077,7 +2189,7 @@ class SettingsDialog(QDialog):
             if name not in self._fields:
                 continue
             self._fields[name].clear()  # type: ignore[attr-defined]
-            status = "stored in OS keychain" if secret_store.get_keychain_secret(name) else "not configured"
+            status = "stored in OS keychain" if self._secret_configured_fast(name) else "not configured"
             self._fields[name].setPlaceholderText(status)  # type: ignore[attr-defined]
 
         _set(self._fields["TTS_PROVIDER"], self._env.get("TTS_PROVIDER", cfg.TTS_PROVIDER))
@@ -2123,14 +2235,38 @@ class SettingsDialog(QDialog):
                     "label":  self._env.get(f"CALLER_{n}_INTENT_{m}_LABEL",  di.get("label", "")),
                     "prompt": self._env.get(f"CALLER_{n}_INTENT_{m}_PROMPT", di.get("prompt", "")),
                 })
+            legacy_documents = self._env.get(
+                f"CALLER_{n}_CONTEXT_DOCUMENTS",
+                str(cr.get("context_documents", True)),
+            ).lower() == "true"
+            legacy_tools = self._env.get(
+                f"CALLER_{n}_CONTEXT_TOOLS",
+                str(cr.get("context_tools", False)),
+            ).lower() == "true"
+            documents_mode = self._env.get(
+                f"CALLER_{n}_CONTEXT_DOCUMENTS_MODE",
+                cr.get("context_documents_mode")
+                or ("auto" if legacy_documents else ("model" if legacy_tools else "off")),
+            )
+            browser_mode = self._env.get(
+                f"CALLER_{n}_CONTEXT_BROWSER_MODE",
+                "model" if legacy_tools else (cr.get("context_browser_mode") or "off"),
+            )
+            github_mode = self._env.get(
+                f"CALLER_{n}_CONTEXT_GITHUB_MODE",
+                "model" if legacy_tools else (cr.get("context_github_mode") or "off"),
+            )
             self._add_caller_block(
                 hotkey     = self._env.get(f"CALLER_{n}_HOTKEY",     cr.get("hotkey", "")),
                 label      = self._env.get(f"CALLER_{n}_LABEL",      cr.get("label", "")),
                 paste_back = self._env.get(f"CALLER_{n}_PASTE_BACK", str(cr.get("paste_back", False))).lower() == "true",
                 custom_key = self._env.get(f"CALLER_{n}_CUSTOM_KEY", cr.get("custom_key", "s")),
                 context_ambient = self._env.get(f"CALLER_{n}_CONTEXT_AMBIENT", str(cr.get("context_ambient", True))).lower() == "true",
-                context_documents = self._env.get(f"CALLER_{n}_CONTEXT_DOCUMENTS", str(cr.get("context_documents", True))).lower() == "true",
-                context_tools = self._env.get(f"CALLER_{n}_CONTEXT_TOOLS", str(cr.get("context_tools", True))).lower() == "true",
+                context_documents = documents_mode == "auto",
+                context_tools = any(mode == "model" for mode in (documents_mode, browser_mode, github_mode)),
+                context_documents_mode = documents_mode,
+                context_browser_mode = browser_mode,
+                context_github_mode = github_mode,
                 context_screenshot = normalize_screenshot_mode(self._env.get(f"CALLER_{n}_CONTEXT_SCREENSHOT", cr.get("context_screenshot", "off"))),
                 intents    = intents,
             )
@@ -2188,6 +2324,90 @@ class SettingsDialog(QDialog):
     def _set_test_pending(self, label: QLabel, message: str = "Testing...") -> None:
         label.setText(message)
         label.setStyleSheet("color: #c0c040;")
+
+    def _set_status_label(self, label: QLabel, ok, message: str) -> None:
+        if ok is None:
+            color = "palette(placeholder-text)"
+        elif ok:
+            color = "#80c080"
+        else:
+            color = "#c04040"
+        label.setText(message)
+        label.setStyleSheet(f"color: {color};")
+
+    def _queue_status_result(self, token: int, attr: str, ok, message: str) -> None:
+        with self._pending_status_results_lock:
+            self._pending_status_results.append((token, attr, ok, message))
+
+    def _schedule_open_status_refresh(self) -> None:
+        self._status_refresh_token += 1
+        token = self._status_refresh_token
+        self._status_refresh_running = True
+        for attr in ("_chatgpt_status_lbl", "_github_status_lbl", "_copilot_status_lbl"):
+            label = getattr(self, attr, None)
+            if isinstance(label, QLabel):
+                self._set_status_label(label, None, "Checking status...")
+        if not self._status_result_timer.isActive():
+            self._status_result_timer.start()
+
+        def _worker() -> None:
+            try:
+                try:
+                    from core.auth import chatgpt as chatgpt_auth
+
+                    tokens = chatgpt_auth.get_tokens()
+                    if tokens:
+                        aid = tokens.get("account_id") or ""
+                        label = "Logged in" + (f" - account {aid[:8]}..." if aid else "")
+                        self._queue_status_result(token, "_chatgpt_status_lbl", True, label)
+                    else:
+                        self._queue_status_result(token, "_chatgpt_status_lbl", None, "Not logged in")
+                except Exception as exc:
+                    self._queue_status_result(token, "_chatgpt_status_lbl", False, f"Error reading status: {exc}")
+
+                try:
+                    from core.auth import github as github_auth
+
+                    tokens = github_auth.get_tokens()
+                    if tokens:
+                        login = (tokens.get("user") or {}).get("login") or ""
+                        scopes = tokens.get("scope") or ""
+                        label = "Logged in" + (f" as {login}" if login else "")
+                        if scopes:
+                            label += f"\nScopes: {scopes}"
+                        self._queue_status_result(token, "_github_status_lbl", True, label)
+                    else:
+                        self._queue_status_result(token, "_github_status_lbl", None, "Not logged in")
+                except Exception as exc:
+                    self._queue_status_result(token, "_github_status_lbl", False, f"Error reading status: {exc}")
+
+                try:
+                    from core.auth import copilot_auth
+
+                    stored, message = copilot_auth.token_status()
+                    self._queue_status_result(token, "_copilot_status_lbl", bool(stored), message)
+                except Exception as exc:
+                    self._queue_status_result(token, "_copilot_status_lbl", False, f"Keychain error: {exc}")
+            finally:
+                self._queue_status_result(token, "__done__", None, "")
+
+        threading.Thread(target=_worker, daemon=True, name="settings-status-refresh").start()
+
+    def _drain_status_results(self) -> None:
+        with self._pending_status_results_lock:
+            pending = list(self._pending_status_results)
+            self._pending_status_results.clear()
+        for token, attr, ok, message in pending:
+            if token != self._status_refresh_token:
+                continue
+            if attr == "__done__":
+                self._status_refresh_running = False
+                continue
+            label = getattr(self, attr, None)
+            if isinstance(label, QLabel):
+                self._set_status_label(label, ok, message)
+        if not self._status_refresh_running and not pending:
+            self._status_result_timer.stop()
 
     def _start_async_test(self, test_key: str, status_label: QLabel, runner) -> None:
         token = self._latest_test_token.get(test_key, 0) + 1
@@ -2566,8 +2786,17 @@ class SettingsDialog(QDialog):
             vals[f"CALLER_{n}_PASTE_BACK"]    = str(blk["paste_back"].isChecked())  # type: ignore
             vals[f"CALLER_{n}_CUSTOM_KEY"]    = _get(blk["custom_key"])
             vals[f"CALLER_{n}_CONTEXT_AMBIENT"] = str(blk["context_ambient"].isChecked())  # type: ignore
-            vals[f"CALLER_{n}_CONTEXT_DOCUMENTS"] = str(blk["context_documents"].isChecked())  # type: ignore
-            vals[f"CALLER_{n}_CONTEXT_TOOLS"] = str(blk["context_tools"].isChecked())  # type: ignore
+            documents_mode = str(blk["context_documents_mode"].currentData())  # type: ignore[attr-defined]
+            browser_mode = str(blk["context_browser_mode"].currentData())  # type: ignore[attr-defined]
+            github_mode = str(blk["context_github_mode"].currentData())  # type: ignore[attr-defined]
+            vals[f"CALLER_{n}_CONTEXT_DOCUMENTS_MODE"] = documents_mode
+            vals[f"CALLER_{n}_CONTEXT_BROWSER_MODE"] = browser_mode
+            vals[f"CALLER_{n}_CONTEXT_GITHUB_MODE"] = github_mode
+            # Compatibility values for older branches/scripts.
+            vals[f"CALLER_{n}_CONTEXT_DOCUMENTS"] = str(documents_mode == "auto")
+            vals[f"CALLER_{n}_CONTEXT_TOOLS"] = str(
+                any(mode == "model" for mode in (documents_mode, browser_mode, github_mode))
+            )
             vals[f"CALLER_{n}_CONTEXT_SCREENSHOT"] = str(blk["context_screenshot"].currentData())  # type: ignore
             vals[f"CALLER_{n}_INTENT_COUNT"]  = str(len(blk["intent_rows"]))
             for j, row in enumerate(blk["intent_rows"]):
@@ -2598,8 +2827,19 @@ class SettingsDialog(QDialog):
                 vision_provider=vals.get("VISION_LLM_PROVIDER", ""),
                 vision_model=vals.get("VISION_LLM_MODEL", ""),
             )
-            tools_on = any(blk["context_tools"].isChecked() for blk in self._caller_blocks)  # type: ignore
-            warnings += tool_capability_warnings(tools_on, llm_provider=vals.get("LLM_PROVIDER", ""))
+            live_tool_modes = []
+            for blk in self._caller_blocks:
+                live_tool_modes.extend(
+                    [
+                        str(blk["context_documents_mode"].currentData()),  # type: ignore[attr-defined]
+                        str(blk["context_browser_mode"].currentData()),  # type: ignore[attr-defined]
+                        str(blk["context_github_mode"].currentData()),  # type: ignore[attr-defined]
+                    ]
+                )
+            warnings += tool_capability_warnings(
+                any(mode == "model" for mode in live_tool_modes),
+                llm_provider=vals.get("LLM_PROVIDER", ""),
+            )
         except Exception:
             warnings = []
         if warnings:
@@ -2854,6 +3094,7 @@ def open_settings(parent=None, on_apply=None):
         _settings_dialog._on_apply = on_apply
         _settings_dialog._env = _read_env()
         _settings_dialog._load_values()
+        _settings_dialog._schedule_open_status_refresh()
 
     if _settings_dialog.isMinimized():
         _settings_dialog.showNormal()

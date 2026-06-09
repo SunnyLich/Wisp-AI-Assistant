@@ -34,6 +34,45 @@ _HINT       = "#888888"
 _ACCENT     = "#a0a0ff"
 _SEL_BG     = "rgba(160,160,255,18)"
 _REVERT_DELAY_MS = 3000   # how long bold words stay highlighted after TTS finishes
+_CHAT_RENDER_CHAR_LIMIT = 24_000
+_CONTEXT_TOOLTIP_CHAR_LIMIT = 4_000
+
+
+def _truncate_for_display(text: str, limit: int, label: str = "display") -> str:
+    text = str(text or "")
+    if len(text) <= limit:
+        return text
+    hidden = len(text) - limit
+    return text[:limit].rstrip() + f"\n\n[{label} truncated; {hidden} chars hidden]"
+
+
+def _truncate_segments_for_display(
+    segments: list[tuple[str, bool]],
+    limit: int = _CHAT_RENDER_CHAR_LIMIT,
+) -> list[tuple[str, bool]]:
+    total = sum(len(text) for text, _is_thought in segments)
+    if total <= limit:
+        return segments
+
+    remaining = limit
+    visible: list[tuple[str, bool]] = []
+    for text, is_thought in segments:
+        if remaining <= 0:
+            break
+        if len(text) <= remaining:
+            visible.append((text, is_thought))
+            remaining -= len(text)
+            continue
+        visible.append((text[:remaining].rstrip(), is_thought))
+        remaining = 0
+
+    hidden = total - limit
+    _merge_display_segments(
+        visible,
+        f"\n\n[chat display truncated; {hidden} chars hidden]",
+        False,
+    )
+    return visible
 
 
 class _StreamSignals(QObject):
@@ -200,6 +239,7 @@ class ChatWindow(QWidget):
         self._current_ai_segments: list[tuple[str, bool]] = []
         self._current_ai_parser: ThoughtStreamParser | None = None
         self._active_idx = max(0, len(conversations) - 1)
+        self._built_pages: set[int] = set()
 
         self._signals = _StreamSignals()
         self._signals.chunk.connect(self._on_chunk)
@@ -353,6 +393,7 @@ class ChatWindow(QWidget):
     def _switch(self, idx: int):
         self._active_idx = idx
         if idx < self._stack.count():
+            self._ensure_page_built(idx)
             self._stack.setCurrentIndex(idx)
         self._past_notice.setVisible(False)
         self._input_frame.setEnabled(bool(self._conversations))
@@ -376,7 +417,10 @@ class ChatWindow(QWidget):
         self._has_placeholder = not self._conversations
         if self._conversations:
             for i, conv in enumerate(self._conversations):
-                self._stack.addWidget(self._make_page(i, conv))
+                if i == self._active_idx:
+                    self._stack.addWidget(self._make_page(i, conv))
+                else:
+                    self._stack.addWidget(self._make_page_placeholder())
         else:
             ph = QLabel("No conversations yet.\n\nPress Ctrl+Q to ask something.")
             ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -440,7 +484,10 @@ class ChatWindow(QWidget):
         # With no placeholder, stack index aligns 1:1 with _conversations.
         added = False
         for idx in range(self._stack.count(), len(self._conversations)):
-            self._stack.addWidget(self._make_page(idx, self._conversations[idx]))
+            if idx == self._active_idx or from_placeholder:
+                self._stack.addWidget(self._make_page(idx, self._conversations[idx]))
+            else:
+                self._stack.addWidget(self._make_page_placeholder())
             added = True
         if not added:
             return
@@ -449,7 +496,25 @@ class ChatWindow(QWidget):
         if from_placeholder:
             self._switch(len(self._conversations) - 1)
 
+    def _make_page_placeholder(self) -> QLabel:
+        ph = QLabel("Loading conversation...")
+        ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ph.setStyleSheet(f"color: {_HINT}; background: {_BG};")
+        return ph
+
+    def _ensure_page_built(self, idx: int) -> None:
+        if idx in self._built_pages or idx < 0 or idx >= len(self._conversations):
+            return
+        if idx >= self._stack.count():
+            return
+        old = self._stack.widget(idx)
+        page = self._make_page(idx, self._conversations[idx])
+        self._stack.removeWidget(old)
+        old.deleteLater()
+        self._stack.insertWidget(idx, page)
+
     def _make_page(self, idx: int, conv: dict) -> QScrollArea:
+        self._built_pages.add(idx)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -501,8 +566,9 @@ class ChatWindow(QWidget):
         lbl = QLabel(body)
         lbl.setTextFormat(Qt.TextFormat.RichText)
         lbl.setWordWrap(True)
+        tooltip = _truncate_for_display(text, _CONTEXT_TOOLTIP_CHAR_LIMIT, "context tooltip")
         lbl.setToolTip(
-            text + "\n\n[context was truncated to fit the limit]" if truncated else text
+            tooltip + "\n\n[context was truncated to fit the limit]" if truncated else tooltip
         )
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lbl.setStyleSheet(
@@ -545,16 +611,17 @@ class ChatWindow(QWidget):
 
     def _bubble(self, layout, text: str, role: str, image_b64: str | None = None) -> _MessageTextView:
         bg = '#3a3a5c' if role == 'user' else '#26263a'
+        display_text = _truncate_for_display(text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
         lbl = _MessageTextView(
             f"QTextBrowser {{ background: {bg}; color: {_TEXT}; border-radius: 8px;"
             f" padding: 8px 11px; font-size: 10pt; border: none; }}"
             f"QTextBrowser::selection {{ background: rgba(160,160,255,60); color: {_TEXT}; }}"
         )
         if role == "assistant":
-            lbl._assistant_source = text  # type: ignore[attr-defined]  used by live highlight
-            lbl.setHtml(_assistant_text_to_html(text))
+            lbl._assistant_source = display_text  # type: ignore[attr-defined]  used by live highlight
+            lbl.setHtml(_assistant_text_to_html(display_text))
         else:
-            lbl.setPlainText(text)
+            lbl.setPlainText(display_text)
 
         role_lbl = QLabel("You" if role == "user" else "Assistant")
         role_lbl.setStyleSheet(f"color: {_HINT}; background: transparent; font-size: 8pt;")
@@ -668,7 +735,9 @@ class ChatWindow(QWidget):
             if not is_thought:
                 self._current_ai_reply_text += text
         if self._current_ai_label:
-            self._current_ai_label.setHtml(_assistant_segments_to_html(self._current_ai_segments))
+            self._current_ai_label.setHtml(
+                _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
+            )
         self._scroll_bottom()
 
     def _on_finished(self):
@@ -679,7 +748,9 @@ class ChatWindow(QWidget):
                 if not is_thought:
                     self._current_ai_reply_text += text
             if self._current_ai_label:
-                self._current_ai_label.setHtml(_assistant_segments_to_html(self._current_ai_segments))
+                self._current_ai_label.setHtml(
+                    _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
+                )
         if self._current_ai_reply_text and self._conversations and 0 <= self._active_idx < len(self._conversations):
             message = {"role": "assistant", "content": self._current_ai_reply_text}
             if self._current_ai_text != self._current_ai_reply_text:
@@ -713,16 +784,17 @@ class ChatWindow(QWidget):
         view = getattr(page, "_last_assistant_view", None)
         if view is None:
             return
-        view._assistant_source = reply_text  # type: ignore[attr-defined]
+        display_text = _truncate_for_display(reply_text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
+        view._assistant_source = display_text  # type: ignore[attr-defined]
         if finished:
             # Flash all bold words highlighted, then revert to the normal colour.
-            view.setHtml(_assistant_text_to_html(reply_text, None))
+            view.setHtml(_assistant_text_to_html(display_text, None))
             QTimer.singleShot(
                 _REVERT_DELAY_MS,
-                lambda v=view, s=reply_text: self._revert_highlight(v, s),
+                lambda v=view, s=display_text: self._revert_highlight(v, s),
             )
         else:
-            view.setHtml(_assistant_text_to_html(reply_text, max(0, revealed_count)))
+            view.setHtml(_assistant_text_to_html(display_text, max(0, revealed_count)))
         if last_idx == self._active_idx:
             self._scroll_bottom()
 

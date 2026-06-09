@@ -89,6 +89,21 @@ def _migrate_legacy_items() -> dict:
     return blob
 
 
+def _read_legacy_item(name: str) -> str:
+    """Read one old per-key secret item.
+
+    The bulk migration only runs on an empty consolidated blob. If a user saved
+    some keys before consolidation and later saved another key into the blob, a
+    remaining legacy item can still be the only copy of that key.
+    """
+    try:
+        with keychain_lock():
+            import keyring  # type: ignore
+            return keyring.get_password(_KEYRING_SERVICE, _account(name)) or ""
+    except Exception:
+        return ""
+
+
 def _load_blob() -> dict:
     """Return the consolidated secrets dict, reading the keychain once and caching."""
     global _blob_cache
@@ -136,6 +151,11 @@ def _invalidate_cache() -> None:
         _blob_cache = None
 
 
+def refresh_cache() -> None:
+    """Force the next secret read to hit the backing keychain/env store."""
+    _invalidate_cache()
+
+
 def get_secret(name: str) -> str:
     """Return a secret from the OS keychain, falling back to env during migration."""
     value = get_keychain_secret(name)
@@ -146,7 +166,22 @@ def get_secret(name: str) -> str:
 
 def get_keychain_secret(name: str) -> str:
     """Return a secret only from the OS keychain (cached after first read)."""
-    return _load_blob().get(name, "")
+    value = _load_blob().get(name, "")
+    if value or name not in API_KEY_NAMES:
+        return value
+
+    legacy_value = _read_legacy_item(name)
+    if not legacy_value:
+        return ""
+
+    try:
+        blob = dict(_load_blob())
+        blob[name] = legacy_value
+        _save_blob(blob)
+        set_configured_marker(name, True)
+    except Exception:
+        pass
+    return legacy_value
 
 
 def has_secret(name: str) -> bool:

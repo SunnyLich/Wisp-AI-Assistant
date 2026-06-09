@@ -123,11 +123,11 @@ class MemoryPanel(QWidget):
     Settings â†’ Memory tab.
     """
 
-    def __init__(self, manager: "MemoryManager", parent=None):
+    def __init__(self, manager: "MemoryManager", parent=None, initial_facts: list[dict] | None = None):
         super().__init__(parent)
         self._manager = manager
         self._build_ui()
-        self._load_facts()
+        self._load_facts(initial_facts)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -186,8 +186,9 @@ class MemoryPanel(QWidget):
     # Data loading
     # ------------------------------------------------------------------
 
-    def _load_facts(self) -> None:
-        facts = self._manager.get_all_facts()
+    def _load_facts(self, facts: list[dict] | None = None) -> None:
+        if facts is None:
+            facts = self._manager.get_all_facts()
 
         grouped: dict[str, list[dict]] = {cat: [] for cat in _CATEGORIES}
         for fact in facts:
