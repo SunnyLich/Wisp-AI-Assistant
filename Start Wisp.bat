@@ -22,6 +22,9 @@ echo Setting up Wisp...
 REM --- 2) venv exists but deps missing -> install into it ---
 if exist "%VPY%" (
   echo Installing dependencies into the existing environment...
+  "%VPY%" -m pip --version >nul 2>nul
+  if errorlevel 1 "%VPY%" -m ensurepip --upgrade
+  "%VPY%" -m pip install --upgrade pip >nul 2>nul
   "%VPY%" -m pip install -r requirements.txt
   "%VPY%" -c "import PySide6" >nul 2>nul && goto run
 )
@@ -35,6 +38,8 @@ if defined PYCMD (
   if exist ".venv" rmdir /s /q .venv
   !PYCMD! -m venv .venv
   if not errorlevel 1 (
+    "%VPY%" -m pip --version >nul 2>nul
+    if errorlevel 1 "%VPY%" -m ensurepip --upgrade
     "%VPY%" -m pip install --upgrade pip >nul 2>nul
     "%VPY%" -m pip install -r requirements.txt
     "%VPY%" -c "import PySide6" >nul 2>nul && goto run

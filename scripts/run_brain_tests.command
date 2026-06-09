@@ -31,6 +31,14 @@ fi
 echo "Python: $PY"
 "$PY" --version
 
+if ! "$PY" -m pip --version >/dev/null 2>&1; then
+  echo "Bootstrapping pip into the environment..."
+  "$PY" -m ensurepip --upgrade || {
+    echo "ERROR: could not bootstrap pip." >&2
+    exit 1
+  }
+fi
+
 # The brain tests import core/config and use numpy/soundfile; pytest is the only
 # extra. Install it into the environment if it isn't there yet.
 if ! "$PY" -c "import pytest" >/dev/null 2>&1; then

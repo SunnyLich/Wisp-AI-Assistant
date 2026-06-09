@@ -125,6 +125,9 @@ ensure_uv() {
 
 install_requirements() {
   local py="$1"
+  if ! "$py" -m pip --version >/dev/null 2>&1; then
+    "$py" -m ensurepip --upgrade
+  fi
   "$py" -m pip install --upgrade pip
   "$py" -m pip install -r "$REQ_FILE"
   req_hash > "$STAMP_FILE"

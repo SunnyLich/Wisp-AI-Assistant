@@ -64,11 +64,19 @@ find_uv() {
   done
 }
 
+ensure_pip() {
+  local py="$1"
+  if ! "$py" -m pip --version >/dev/null 2>&1; then
+    "$py" -m ensurepip --upgrade
+  fi
+}
+
 if ! venv_ready; then
   py="$(find_python || true)"
   rm -rf "$REPO_ROOT/.venv"
   if [ -n "${py:-}" ]; then
     "$py" -m venv "$REPO_ROOT/.venv"
+    ensure_pip "$VPY"
     "$VPY" -m pip install --upgrade pip
     "$VPY" -m pip install -r "$REQ_FILE"
   else
@@ -89,6 +97,7 @@ EOF
     "$uv_bin" python install "$WANT_MM"
     "$uv_bin" venv --python "$WANT_MM" "$REPO_ROOT/.venv"
     "$uv_bin" pip install --python "$VPY" -r "$REQ_FILE"
+    ensure_pip "$VPY"
   fi
   req_hash > "$STAMP_FILE"
 fi

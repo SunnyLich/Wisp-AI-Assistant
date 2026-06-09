@@ -472,6 +472,16 @@ import anthropic
 PY
 }
 
+pip_ok() {
+  "$1" -m pip --version >/dev/null 2>&1
+}
+
+ensure_pip() {
+  local py="$1"
+  pip_ok "$py" && return 0
+  run_logged "python-pip-bootstrap" "$py" -m ensurepip --upgrade
+}
+
 venv_ready() {
   [ -x "$REPO_ROOT/.venv/bin/python" ] || return 1
   python_matches_want "$REPO_ROOT/.venv/bin/python" || return 1
@@ -523,6 +533,7 @@ setup_venv() {
     log_info "Creating .venv with local Python: $py"
     run_logged "python-venv-create" "$py" -m venv "$REPO_ROOT/.venv"
     BRAIN_PY="$REPO_ROOT/.venv/bin/python"
+    ensure_pip "$BRAIN_PY"
     run_logged "python-pip-upgrade" "$BRAIN_PY" -m pip install --upgrade pip
     run_logged "python-deps-install" "$BRAIN_PY" -m pip install -r "$REQ_FILE"
   else
@@ -536,6 +547,7 @@ setup_venv() {
     run_logged "uv-venv-create" "$uv" venv --python "$WANT" "$REPO_ROOT/.venv"
     BRAIN_PY="$REPO_ROOT/.venv/bin/python"
     run_logged "uv-deps-install" "$uv" pip install --python "$BRAIN_PY" -r "$REQ_FILE"
+    ensure_pip "$BRAIN_PY"
   fi
 
   if ! brain_deps_ok "$BRAIN_PY"; then
@@ -552,6 +564,8 @@ if [ -z "${BRAIN_PY:-}" ]; then
   echo "ERROR: no Python interpreter found for the brain sidecar." >&2
   exit 1
 fi
+
+ensure_pip "$BRAIN_PY"
 
 export WISP_BRAIN_PYTHON="$BRAIN_PY"
 export WISP_BRAIN_DIR="$REPO_ROOT/macos/brain"

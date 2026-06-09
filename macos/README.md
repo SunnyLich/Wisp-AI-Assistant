@@ -28,6 +28,10 @@ Swift plugin manager reads generic metadata from `brain.plugins.list` and runs
 declared tray actions through `brain.plugins.run_action`; it must not contain
 plugin-specific implementation logic.
 
+Plugin authors should not write Swift for macOS support.
+The native Swift plugin manager reads generic metadata from `brain.plugins.list`.
+It runs declared tray actions through `brain.plugins.run_action`.
+
 For the remaining migration gates, use
 `docs/MACOS_MIGRATION_FINISH_PLAN.md`. It defines the quick-test, dev-launch,
 live-parity, package, signed-launch, and final regression evidence required

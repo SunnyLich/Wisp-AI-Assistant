@@ -17,6 +17,8 @@ work until each visible surface is ported.
    authors should implement hooks, tray actions, and tools once in Python or the
    shared tool contract; Swift must stay a generic metadata/action host.
 
+Plugin authors should implement hooks, tray actions, and tools once. Swift must stay a generic metadata/action host.
+
 ## Source Of Truth
 
 | Layer | Shared contract | Windows implementation | macOS implementation |

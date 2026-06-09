@@ -183,6 +183,16 @@ import anthropic
 PY
 }
 
+pip_ok() {
+  "$1" -m pip --version >/dev/null 2>&1
+}
+
+ensure_pip() {
+  local py="$1"
+  pip_ok "$py" && return 0
+  run_logged "python-pip-bootstrap" "$py" -m ensurepip --upgrade
+}
+
 venv_ready() {
   [ -x "$REPO_ROOT/.venv/bin/python" ] || return 1
   python_matches_want "$REPO_ROOT/.venv/bin/python" || return 1
@@ -234,6 +244,7 @@ setup_venv() {
     echo "Creating .venv with local Python: $py"
     run_logged "python-venv-create" "$py" -m venv "$REPO_ROOT/.venv"
     PY="$REPO_ROOT/.venv/bin/python"
+    ensure_pip "$PY"
     run_logged "python-pip-upgrade" "$PY" -m pip install --upgrade pip
     run_logged "python-deps-install" "$PY" -m pip install -r "$REQ_FILE"
   else
@@ -247,6 +258,7 @@ setup_venv() {
     run_logged "uv-venv-create" "$uv" venv --python "$WANT" "$REPO_ROOT/.venv"
     PY="$REPO_ROOT/.venv/bin/python"
     run_logged "uv-deps-install" "$uv" pip install --python "$PY" -r "$REQ_FILE"
+    ensure_pip "$PY"
   fi
 
   if ! brain_deps_ok "$PY"; then
@@ -266,6 +278,8 @@ if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
   echo "Logs written to: $LOG_DIR"
   exit 1
 fi
+
+ensure_pip "$PY"
 
 export WISP_BRAIN_PYTHON="$PY"
 export WISP_BRAIN_DIR="$REPO_ROOT/macos/brain"
