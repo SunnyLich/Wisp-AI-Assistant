@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from PySide6.QtWidgets import QWidget, QApplication, QLineEdit
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QRect
-from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath
+from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath, QKeyEvent
 import config
 
 _IS_WIN = sys.platform == "win32"
@@ -294,6 +294,18 @@ class IntentOverlay(QWidget):
             except Exception:
                 pass
 
+    def _forward_key_to_custom_input(self, event) -> None:
+        self._focus_custom_input()
+        forwarded = QKeyEvent(
+            event.type(),
+            event.key(),
+            event.modifiers(),
+            event.text(),
+            event.isAutoRepeat(),
+            event.count(),
+        )
+        QApplication.sendEvent(self._input_line, forwarded)
+
     def changeEvent(self, event):
         from PySide6.QtCore import QEvent
         # macOS lacks the Popup flag (it blocks key-window status), so emulate
@@ -341,6 +353,18 @@ class IntentOverlay(QWidget):
                 return
 
     def keyPressEvent(self, event):
+        if self._custom_mode:
+            if event.key() == Qt.Key.Key_Escape:
+                self._cancel()
+                event.accept()
+                return
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._fire_custom()
+                event.accept()
+                return
+            self._forward_key_to_custom_input(event)
+            event.accept()
+            return
         key_map: dict[Qt.Key, int] = {}
         for i, row in enumerate(self._rows):
             qt_key = getattr(Qt.Key, f"Key_{row['glyph']}", None)
