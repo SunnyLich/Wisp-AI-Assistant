@@ -47,6 +47,7 @@ class WorkerClient:
         self._pending_lock = threading.Lock()
         self._pending: dict[int, dict[str, Any]] = {}
         self._event_handlers: dict[str, list[Callable[[Any, Any], None]]] = {}
+        self._exit_handlers: list[Callable[[int | None], None]] = []
         self._scoped_event_lock = threading.Lock()
         self._scoped_event_handlers: dict[int, Callable[[str, Any, Any], None]] = {}
         self._stderr_tail: deque[str] = deque(maxlen=80)
@@ -117,6 +118,7 @@ class WorkerClient:
         with self._spawn_lock:
             if self._proc is proc:
                 self._fail_pending("worker exited")
+        self._notify_exit(proc.poll())
 
     def _stderr_loop(self, proc: subprocess.Popen) -> None:
         stderr = proc.stderr
@@ -179,6 +181,16 @@ class WorkerClient:
 
     def on_event(self, event: str, handler: Callable[[Any, Any], None]) -> None:
         self._event_handlers.setdefault(event, []).append(handler)
+
+    def on_exit(self, handler: Callable[[int | None], None]) -> None:
+        self._exit_handlers.append(handler)
+
+    def _notify_exit(self, returncode: int | None) -> None:
+        for handler in list(self._exit_handlers):
+            try:
+                handler(returncode)
+            except Exception:  # noqa: BLE001
+                log.exception("%s exit handler failed", self.spec.name)
 
     def _write(self, req: dict[str, Any]) -> None:
         proc = self._proc

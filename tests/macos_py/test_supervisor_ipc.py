@@ -92,6 +92,25 @@ def test_worker_respawns_after_process_death():
         worker.shutdown()
 
 
+def test_worker_exit_handler_fires_when_process_exits():
+    seen = []
+    worker = _worker("macos_py.workers.native_host", "native")
+    worker.on_exit(lambda returncode: seen.append(returncode))
+    try:
+        worker.call("ping", timeout=10)
+        assert worker._proc is not None
+        worker._proc.kill()
+        worker._proc.wait(timeout=5)
+
+        deadline = time.time() + 5
+        while not seen and time.time() < deadline:
+            time.sleep(0.05)
+        assert seen
+        assert seen[-1] is not None
+    finally:
+        worker.shutdown()
+
+
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_ui_worker_emits_ready_event_and_passes_boundary():
     seen = []

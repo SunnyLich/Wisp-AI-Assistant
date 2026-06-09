@@ -36,3 +36,57 @@ def test_main_exits_when_single_instance_lock_is_held(tmp_path, monkeypatch):
     monkeypatch.setattr(supervisor_app, "WispSupervisor", ShouldNotStart)
 
     assert supervisor_app.main() == 2
+
+
+def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
+    monkeypatch.setenv("WISP_RUN_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: True)
+    instances = []
+
+    class FakeWorker:
+        def __init__(self):
+            self.exit_handlers = []
+
+        def on_exit(self, handler):
+            self.exit_handlers.append(handler)
+
+        def on_event(self, _event, _handler):
+            pass
+
+        def call(self, _method, _params=None, *, timeout=30.0, wait=True):
+            return {"started": True}
+
+    class FakeSupervisor:
+        def __init__(self):
+            self.workers = {
+                "native": FakeWorker(),
+                "ui": FakeWorker(),
+                "brain": FakeWorker(),
+                "audio": FakeWorker(),
+            }
+            self.shutdown_called = False
+            instances.append(self)
+
+        def start_all(self):
+            return {}
+
+        def shutdown(self):
+            self.shutdown_called = True
+
+    class FakeFlowController:
+        def __init__(self, *, native, ui, brain, audio):
+            self.ui = ui
+
+        def start(self):
+            for handler in list(self.ui.exit_handlers):
+                handler(0)
+
+        def start_hotkeys(self):
+            return {"started": True}
+
+    monkeypatch.setattr(supervisor_app, "WispSupervisor", FakeSupervisor)
+    monkeypatch.setattr(supervisor_app, "FlowController", FakeFlowController)
+
+    assert supervisor_app.main() == 0
+    assert instances
+    assert instances[0].shutdown_called is True

@@ -7,14 +7,38 @@ Custom Prompt row (config.HOTKEY_CUSTOM_PROMPT_KEY).
 Press the matching key to pick, Escape to cancel.
 """
 from __future__ import annotations
+import os
 import sys
 from PySide6.QtWidgets import QWidget, QApplication, QLineEdit
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QRect
-from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath, QKeyEvent
+from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath
 import config
 
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
+_DEBUG_KEYS = os.environ.get("WISP_INTENT_KEY_DEBUG", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+
+
+def _key_name(key: int) -> str:
+    try:
+        return Qt.Key(key).name
+    except Exception:
+        return str(key)
+
+
+def _safe_text_desc(text: str) -> str:
+    if text == "":
+        return "empty"
+    if text == " ":
+        return "space"
+    if text.isspace():
+        return "whitespace:" + ",".join(str(ord(ch)) for ch in text)
+    return f"printable-len:{len(text)}"
 
 
 def _build_rows(caller_idx: int = 0) -> list[dict]:
@@ -68,25 +92,6 @@ _HINT_ESC   = QColor(100, 96, 118, 140)
 _SEP        = QColor(255, 255, 255, 14)
 
 
-class _PromptLineEdit(QLineEdit):
-    """Line edit that keeps text input normal inside transient overlay windows."""
-
-    def keyPressEvent(self, event):  # noqa: N802
-        if event.key() == Qt.Key.Key_Space and not event.text():
-            normalized = QKeyEvent(
-                event.type(),
-                event.key(),
-                event.modifiers(),
-                " ",
-                event.isAutoRepeat(),
-                event.count(),
-            )
-            super().keyPressEvent(normalized)
-            event.setAccepted(normalized.isAccepted())
-            return
-        super().keyPressEvent(event)
-
-
 class IntentOverlay(QWidget):
     intent_chosen = Signal(str, str)
     cancelled     = Signal()
@@ -127,10 +132,9 @@ class IntentOverlay(QWidget):
         self._kb_hook = None
         self._input_grabbed_keyboard = False
         self._drop_next_keypress = False
-        self._custom_input_started = False
         self._raw_key.connect(self._on_raw_key)
 
-        self._input_line = _PromptLineEdit(self)
+        self._input_line = QLineEdit(self)
         self._input_line.installEventFilter(self)
         self._input_line.setPlaceholderText("Type your prompt, press Enter…")
         self._input_line.setStyleSheet(
@@ -150,6 +154,41 @@ class IntentOverlay(QWidget):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._cancel)
         self._timer.start(_AUTO_CLOSE_MS)
+
+    def _debug(self, message: str) -> None:
+        if not _DEBUG_KEYS:
+            return
+        focus = QApplication.focusWidget()
+        focus_name = type(focus).__name__ if focus is not None else "None"
+        try:
+            selection_len = len(self._input_line.selectedText())
+            cursor = self._input_line.cursorPosition()
+            input_focus = self._input_line.hasFocus()
+            input_visible = not self._input_line.isHidden()
+        except Exception:
+            selection_len = -1
+            cursor = -1
+            input_focus = False
+            input_visible = False
+        print(
+            "[wisp-intent] "
+            f"{message} "
+            f"custom={self._custom_mode} drop_next={self._drop_next_keypress} "
+            f"input_focus={input_focus} input_visible={input_visible} "
+            f"cursor={cursor} selection_len={selection_len} "
+            f"focus={focus_name}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    def _debug_key(self, source: str, event) -> None:
+        if not _DEBUG_KEYS:
+            return
+        self._debug(
+            f"{source} key={_key_name(int(event.key()))} "
+            f"text={_safe_text_desc(event.text())} "
+            f"mods={int(event.modifiers().value)} accepted={event.isAccepted()}"
+        )
 
     def _resolve_screen_geometry(self) -> QRect:
         app = QApplication.instance()
@@ -277,6 +316,7 @@ class IntentOverlay(QWidget):
             return
         if self._rows[idx]["is_custom"]:
             self._hovered = idx
+            self._debug(f"select-custom idx={idx}")
             self._unhook()
             QTimer.singleShot(0, self._enter_custom_mode)
             return
@@ -287,7 +327,7 @@ class IntentOverlay(QWidget):
 
     def _enter_custom_mode(self):
         self._custom_mode = True
-        self._custom_input_started = False
+        self._debug("enter-custom-before")
         self._timer.stop()
         new_h = self._normal_h + _INPUT_EXTRA
         self.setFixedSize(_W, new_h)
@@ -299,39 +339,24 @@ class IntentOverlay(QWidget):
         self._focus_custom_input()
         self.update()
         self._drop_next_keypress = True
+        self._debug("enter-custom-after")
         for delay_ms in (25, 75, 150):
-            QTimer.singleShot(delay_ms, self._retry_focus_custom_input)
+            QTimer.singleShot(delay_ms, self._focus_custom_input)
 
     def _focus_custom_input(self) -> None:
         if not self._custom_mode or self._input_line.isHidden():
             return
+        self._debug("focus-custom-before")
         self.raise_()
         self.activateWindow()
-        if not self._input_line.hasFocus():
-            self._input_line.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._input_line.setFocus(Qt.FocusReason.OtherFocusReason)
         if _IS_WIN and not self._input_grabbed_keyboard:
             try:
                 self._input_line.grabKeyboard()
                 self._input_grabbed_keyboard = True
             except Exception:
                 pass
-
-    def _retry_focus_custom_input(self) -> None:
-        if self._custom_input_started:
-            return
-        self._focus_custom_input()
-
-    def _forward_key_to_custom_input(self, event) -> None:
-        self._focus_custom_input()
-        forwarded = QKeyEvent(
-            event.type(),
-            event.key(),
-            event.modifiers(),
-            event.text(),
-            event.isAutoRepeat(),
-            event.count(),
-        )
-        QApplication.sendEvent(self._input_line, forwarded)
+        self._debug("focus-custom-after")
 
     def changeEvent(self, event):
         from PySide6.QtCore import QEvent
@@ -347,16 +372,17 @@ class IntentOverlay(QWidget):
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
-        if obj is self._input_line and event.type() == QEvent.Type.KeyPress:
-            if self._drop_next_keypress:
+        if obj is self._input_line and self._drop_next_keypress:
+            if event.type() == QEvent.Type.KeyPress:
+                self._debug_key("input-filter-before-drop", event)
                 custom_key = next((r["glyph"].lower() for r in self._rows if r["is_custom"]), "")
                 if event.text().lower() == custom_key:
                     self._drop_next_keypress = False
+                    self._debug_key("input-filter-drop-trigger", event)
                     return True  # consume the triggering key so it never reaches the field
                 else:
                     self._drop_next_keypress = False  # not the trigger key — let it through
-            if event.key() not in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self._custom_input_started = True
+                    self._debug_key("input-filter-pass-first-key", event)
         return super().eventFilter(obj, event)
 
     def _fire_custom(self):
@@ -382,19 +408,7 @@ class IntentOverlay(QWidget):
                 return
 
     def keyPressEvent(self, event):
-        if self._custom_mode:
-            if event.key() == Qt.Key.Key_Escape:
-                self._cancel()
-                event.accept()
-                return
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self._fire_custom()
-                event.accept()
-                return
-            self._custom_input_started = True
-            self._forward_key_to_custom_input(event)
-            event.accept()
-            return
+        self._debug_key("overlay-keypress", event)
         key_map: dict[Qt.Key, int] = {}
         for i, row in enumerate(self._rows):
             qt_key = getattr(Qt.Key, f"Key_{row['glyph']}", None)
@@ -411,6 +425,7 @@ class IntentOverlay(QWidget):
         self.raise_()
         self.activateWindow()
         self._closed = False
+        self._debug("show")
         if _IS_WIN:
             import keyboard  # type: ignore
             self._kb_hook = keyboard.on_press(

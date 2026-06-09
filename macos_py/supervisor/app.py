@@ -51,10 +51,18 @@ def main() -> int:
     def _stop(_signum=None, _frame=None) -> None:
         stop.set()
 
+    def _stop_when_ui_exits(returncode=None) -> None:
+        logging.info("UI worker exited with code %s; shutting down Wisp", returncode)
+        stop.set()
+
     for sig_name in ("SIGINT", "SIGTERM"):
         sig = getattr(signal, sig_name, None)
         if sig is not None:
             signal.signal(sig, _stop)
+
+    ui_worker = supervisor.workers.get("ui")
+    if ui_worker is not None and hasattr(ui_worker, "on_exit"):
+        ui_worker.on_exit(_stop_when_ui_exits)
 
     try:
         supervisor.start_all()
