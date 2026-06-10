@@ -11,10 +11,67 @@ import os
 import signal
 import sys
 import threading
+import time
 from typing import Any
 
 from macos_py.bootstrap import configure_paths
 from macos_py import protocol
+
+
+# A dedicated, easy-to-read log so hotkey behaviour can be inspected on a remote
+# Mac without digging through worker stderr. Tail it with:
+#   tail -f ~/wisp-hotkey-debug.log
+_DEBUG_LOG = os.path.expanduser("~/wisp-hotkey-debug.log")
+
+
+def _dbg(msg: str) -> None:
+    """Log a hotkey diagnostic line to stderr and the debug log file."""
+    line = f"[hotkeys] {time.strftime('%H:%M:%S')} {msg}"
+    print(line, file=sys.stderr, flush=True)
+    try:
+        with open(_DEBUG_LOG, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except Exception:
+        pass
+
+
+def _session_diagnostics() -> dict[str, Any]:
+    """Probe whether this process can actually receive global hotkeys.
+
+    The most common reason hotkeys silently never fire is that the app is not
+    running in an active, on-console window-server session (SSH/headless, or a
+    remote/fast-user-switched login). RegisterEventHotKey cannot work there at
+    all. These probes make that visible instead of looking like a code bug.
+    """
+    info: dict[str, Any] = {}
+    try:
+        import ctypes
+        import ctypes.util
+
+        app_services = ctypes.cdll.LoadLibrary(
+            ctypes.util.find_library("ApplicationServices") or "ApplicationServices"
+        )
+        app_services.AXIsProcessTrusted.restype = ctypes.c_bool
+        info["accessibility"] = bool(app_services.AXIsProcessTrusted())
+    except Exception as exc:  # noqa: BLE001
+        info["accessibility"] = f"unknown ({exc})"
+
+    try:
+        import Quartz  # type: ignore
+
+        session = Quartz.CGSessionCopyCurrentDictionary()
+        if session is None:
+            # No window-server session at all -> almost certainly headless/SSH.
+            info["window_server_session"] = False
+            info["on_console"] = None
+        else:
+            info["window_server_session"] = True
+            info["on_console"] = bool(session.get("kCGSessionOnConsoleKey", False))
+            info["session_user"] = str(session.get("kCGSSessionUserNameKey", "") or "")
+    except Exception as exc:  # noqa: BLE001
+        info["window_server_session"] = f"unknown ({exc})"
+
+    return info
 
 
 def _protect_stdout():
@@ -62,11 +119,70 @@ def _become_ui_element() -> bool:
             ctypes.byref(psn), _kProcessTransformToUIElementApplication
         )
         if status != 0:
-            print(f"[hotkeys] TransformProcessType failed (status {status}).")
+            _dbg(f"TransformProcessType failed (status {status}) -- no window-server connection.")
             return False
+        _dbg("Became UI element app (window-server connection established).")
         return True
     except Exception as exc:  # noqa: BLE001 - never block startup on this
-        print(f"[hotkeys] Could not become UI element: {exc}")
+        _dbg(f"Could not become UI element: {exc}")
+        return False
+
+
+# Keep the debug event-tap callback + sources alive for the process lifetime.
+_DEBUG_KEY_TAP: Any = None
+
+
+def _install_debug_key_monitor() -> bool:
+    """Log the keycode of EVERY key press the process can see (opt-in).
+
+    Enable with WISP_HOTKEY_DEBUG=1. This is a listen-only Quartz event tap that
+    only reads the raw keycode + modifier flags on the main run loop -- it does
+    NOT decode characters off-thread, so it avoids the SIGTRAP that sinks pynput
+    on macOS. Use it to answer "is the app hearing my keystrokes at all?":
+
+      * lines appear when you type  -> keys reach the process; a non-firing
+        hotkey is a registration/parse problem, not delivery.
+      * CGEventTapCreate returns NULL -> Input Monitoring permission missing.
+      * nothing at all, no NULL      -> wrong/remote session; keys never arrive.
+    """
+    global _DEBUG_KEY_TAP
+    try:
+        import Quartz  # type: ignore
+
+        def _on_key(_proxy, _type, event, _refcon):
+            try:
+                keycode = Quartz.CGEventGetIntegerValueField(
+                    event, Quartz.kCGKeyboardEventKeycode
+                )
+                flags = int(Quartz.CGEventGetFlags(event))
+                _dbg(f"heard keyDown keycode={keycode} flags={hex(flags)}")
+            except Exception as exc:  # noqa: BLE001
+                _dbg(f"key monitor callback error: {exc}")
+            return event
+
+        mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            mask,
+            _on_key,
+            None,
+        )
+        if not tap:
+            _dbg("debug key monitor: CGEventTapCreate returned NULL "
+                 "(grant Input Monitoring, or wrong session).")
+            return False
+        source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+        Quartz.CFRunLoopAddSource(
+            Quartz.CFRunLoopGetCurrent(), source, Quartz.kCFRunLoopCommonModes
+        )
+        Quartz.CGEventTapEnable(tap, True)
+        _DEBUG_KEY_TAP = (tap, source, _on_key)
+        _dbg("debug key monitor installed (listen-only); press keys to see keycodes.")
+        return True
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never crash the helper
+        _dbg(f"debug key monitor unavailable: {exc}")
         return False
 
 
@@ -93,9 +209,20 @@ def _stop_on_parent_pipe_close(stop: threading.Event) -> None:
 def main() -> int:
     configure_paths()
     out = _protect_stdout()
+    _dbg(f"helper starting (pid={os.getpid()}); debug log at {_DEBUG_LOG}")
     # Must happen on the main thread, before any hotkey is registered, or
     # Carbon delivers no events to this background process (see the function).
-    _become_ui_element()
+    ui_element = _become_ui_element()
+    diagnostics = _session_diagnostics()
+    _dbg(f"session diagnostics: {diagnostics}")
+    if not diagnostics.get("window_server_session"):
+        _dbg("NO window-server session -- global hotkeys cannot work here "
+             "(running headless/SSH, or not in an active login session).")
+    elif diagnostics.get("on_console") is False:
+        _dbg("session is NOT on-console (remote / fast-user-switched) -- "
+             "hotkeys may not receive keystrokes.")
+    if os.environ.get("WISP_HOTKEY_DEBUG") == "1":
+        _install_debug_key_monitor()
     write_lock = threading.Lock()
     stop = threading.Event()
 
@@ -140,11 +267,15 @@ def main() -> int:
             on_voice_stop=lambda: emit_hotkey("voice_stop"),
         )
         started = bool(listener.start())
+        _dbg(f"hotkey registration {'started' if started else 'FAILED'} "
+             f"(ui_element={ui_element})")
         send(
             {
                 "status": "started" if started else "failed",
                 "started": started,
                 "backend": "carbon-helper",
+                "ui_element": ui_element,
+                "diagnostics": diagnostics,
             }
         )
         if not started:
