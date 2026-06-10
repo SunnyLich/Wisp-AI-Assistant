@@ -7,9 +7,9 @@ region_selected with an mss-compatible region dict on release,
 or cancelled on Escape / zero-size drag.
 """
 from __future__ import annotations
-from PySide6.QtWidgets import QWidget, QApplication, QRubberBand
-from PySide6.QtCore import Qt, Signal, QRect, QPoint, QSize, QTimer
-from PySide6.QtGui import QPainter, QColor, QFont, QCursor
+from PySide6.QtWidgets import QWidget, QApplication
+from PySide6.QtCore import Qt, Signal, QRect, QPoint, QTimer
+from PySide6.QtGui import QPainter, QColor, QFont, QCursor, QPen
 
 _DIM_ALPHA = 110   # overlay darkness 0–255
 
@@ -37,7 +37,11 @@ class SnipOverlay(QWidget):
         self._virtual_origin = vg.topLeft()
 
         self._origin: QPoint | None = None
-        self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self)
+        # Current drag rectangle, drawn directly in paintEvent. We deliberately
+        # avoid QRubberBand here: on macOS it is backed by its own native window,
+        # and a child window on a translucent Qt.Tool overlay aborts Cocoa
+        # (SIGABRT) the moment the selector is shown.
+        self._sel_rect: QRect | None = None
 
     # ------------------------------------------------------------------
     # Paint — dim the whole screen; rubber band provides the selection box
@@ -46,6 +50,16 @@ class SnipOverlay(QWidget):
     def paintEvent(self, _event):
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(0, 0, 0, _DIM_ALPHA))
+
+        # Selection box: punch a brighter, outlined hole where the user is
+        # dragging (replaces the old QRubberBand child widget).
+        if self._sel_rect is not None and not self._sel_rect.isNull():
+            p.fillRect(self._sel_rect, QColor(0, 0, 0, 0))
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.fillRect(self._sel_rect, QColor(255, 255, 255, 20))
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            p.setPen(QPen(QColor(77, 163, 255, 230), 1))
+            p.drawRect(self._sel_rect.adjusted(0, 0, -1, -1))
 
         font = QFont("Segoe UI", 11)
         p.setFont(font)
@@ -64,19 +78,18 @@ class SnipOverlay(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._origin = event.pos()
-            self._rubber.setGeometry(QRect(self._origin, QSize()))
-            self._rubber.show()
+            self._sel_rect = QRect(self._origin, self._origin)
+            self.update()
 
     def mouseMoveEvent(self, event):
         if self._origin is not None:
-            self._rubber.setGeometry(
-                QRect(self._origin, event.pos()).normalized()
-            )
+            self._sel_rect = QRect(self._origin, event.pos()).normalized()
+            self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._origin is not None:
             rect = QRect(self._origin, event.pos()).normalized()
-            self._rubber.hide()
+            self._sel_rect = None
             self._unhook()
             if rect.width() > 4 and rect.height() > 4:
                 # Translate widget-local coords to absolute screen coords
