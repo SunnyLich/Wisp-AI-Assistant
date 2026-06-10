@@ -333,9 +333,14 @@ class FlowController:
 
     def begin_snip(self) -> None:
         self._new_generation()
-        self._safe_call(self.audio, "audio.stop", timeout=5.0)
-        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
+        # Show the selector FIRST; it must never wait on audio teardown or
+        # cosmetic UI state. Stopping audio and the "listening" animation are
+        # fired afterwards without blocking (mirrors begin_caller). Previously the
+        # blocking audio.stop call delayed the overlay once the audio worker was
+        # busy — fast on the first snip, slow on later ones.
         self.ui.call("ui.show_snip", timeout=30.0)
+        self._fire(self.audio, "audio.stop")
+        self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
 
     def snip_region_selected(self, region: dict[str, Any]) -> None:
         result = self.native.call("native.capture.region", {"region": region}, timeout=30.0)
