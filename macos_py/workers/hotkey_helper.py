@@ -128,6 +128,77 @@ def _become_ui_element() -> bool:
         return False
 
 
+# Keep the debug event-tap + callback alive for the process lifetime.
+_DEBUG_KEY_TAP: Any = None
+
+
+def _install_debug_key_monitor() -> bool:
+    """Log the keycode of EVERY key press the process can see (opt-in).
+
+    Enable with WISP_HOTKEY_DEBUG=1. Answers "is the app hearing my keystrokes
+    at all?" -- independent of whether any hotkey matches. Listen-only Quartz
+    tap reading only the raw keycode + flags on the main run loop, so it cannot
+    swallow or modify events (it can't cause a stuck modifier).
+    """
+    global _DEBUG_KEY_TAP
+    try:
+        import Quartz  # type: ignore
+
+        def _on_key(_proxy, _type, event, _refcon):
+            try:
+                keycode = Quartz.CGEventGetIntegerValueField(
+                    event, Quartz.kCGKeyboardEventKeycode
+                )
+                flags = int(Quartz.CGEventGetFlags(event))
+                _dbg(f"heard keyDown keycode={keycode} flags={hex(flags)}")
+            except Exception as exc:  # noqa: BLE001
+                _dbg(f"key monitor callback error: {exc}")
+            return event
+
+        mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            mask,
+            _on_key,
+            None,
+        )
+        if not tap:
+            _dbg("debug key monitor: CGEventTapCreate returned NULL "
+                 "(grant Input Monitoring, or wrong session).")
+            return False
+        source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+        Quartz.CFRunLoopAddSource(
+            Quartz.CFRunLoopGetCurrent(), source, Quartz.kCFRunLoopCommonModes
+        )
+        Quartz.CGEventTapEnable(tap, True)
+        _DEBUG_KEY_TAP = (tap, source, _on_key)
+        _dbg("debug key monitor installed (listen-only); press keys to see keycodes.")
+        return True
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never crash the helper
+        _dbg(f"debug key monitor unavailable: {exc}")
+        return False
+
+
+def _teardown_debug_key_monitor() -> None:
+    """Disable the debug tap on graceful shutdown so nothing lingers."""
+    global _DEBUG_KEY_TAP
+    tap = _DEBUG_KEY_TAP
+    _DEBUG_KEY_TAP = None
+    if not tap:
+        return
+    try:
+        import Quartz  # type: ignore
+
+        Quartz.CGEventTapEnable(tap[0], False)
+        Quartz.CFRunLoopRemoveSource(
+            Quartz.CFRunLoopGetCurrent(), tap[1], Quartz.kCFRunLoopCommonModes
+        )
+    except Exception:
+        pass
+
+
 def _run_carbon_loop(stop: threading.Event) -> None:
     import ctypes
     import ctypes.util
@@ -163,6 +234,8 @@ def main() -> int:
     elif diagnostics.get("on_console") is False:
         _dbg("session is NOT on-console (remote / fast-user-switched) -- "
              "hotkeys may not receive keystrokes.")
+    if os.environ.get("WISP_HOTKEY_DEBUG") == "1":
+        _install_debug_key_monitor()
     write_lock = threading.Lock()
     stop = threading.Event()
 
@@ -222,6 +295,7 @@ def main() -> int:
         if not started:
             return 1
         _run_carbon_loop(stop)
+        _teardown_debug_key_monitor()
         listener.stop()
         return 0
     except Exception as exc:  # noqa: BLE001 - report startup failure to parent
