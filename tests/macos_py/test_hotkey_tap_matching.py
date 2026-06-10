@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from macos_py.workers import hotkey_helper
 
 # Minimal keycode map (subset of core.hotkeys.MACOS_VIRTUAL_KEYCODES).
-VK = {"q": 12, "a": 0, "1": 18, "f1": 122}
+VK = {"q": 12, "a": 0, "1": 18, "f1": 122, "f9": 101}
 
 SHIFT = 0x00020000
 CTRL = 0x00040000
@@ -48,6 +48,17 @@ def test_match_ignores_fn_and_capslock_bits():
     table = hotkey_helper._build_tap_table([("shift+f1", "snip", {})], VK)
     # Real F-key events carry the Fn bit; matching must ignore it.
     assert hotkey_helper._match_tap_event(122, SHIFT | FN, table) == ("snip", {})
+
+
+def test_voice_key_parses_and_matches_as_start():
+    # Push-to-talk default is a bare F-key (allowed; not a typing key).
+    parsed = hotkey_helper._parse_combo_to_tap("f9", VK)
+    assert parsed == (101, 0)
+    # main() appends the voice key to the table as a "voice_start" entry.
+    keycode, modmask = parsed
+    table = [(keycode, modmask, "voice_start", {})]
+    # Key-down of f9 (Fn bit rides along, must be ignored) -> voice_start.
+    assert hotkey_helper._match_tap_event(101, FN, table) == ("voice_start", {})
 
 
 def test_build_table_skips_unparseable():

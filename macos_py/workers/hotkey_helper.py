@@ -228,15 +228,23 @@ def _hotkey_specs_from_config(config: Any) -> list[tuple[str, str, dict]]:
     return specs
 
 
-def _install_hotkey_tap(table: list[tuple[int, int, str, dict]], emit) -> bool:
+def _install_hotkey_tap(
+    table: list[tuple[int, int, str, dict]], emit, voice_keycode: int | None = None
+) -> bool:
     """Install a listen-only tap that fires `emit(kind, **extra)` on a match.
+
+    Discrete hotkeys (caller/context/snip and voice *start*) fire on key-down via
+    `table`. Push-to-talk also needs a *release*: when `voice_keycode` is set, a
+    key-up of that key emits ``voice_stop`` (matched on keycode alone so releasing
+    always stops, even if a modifier came up first). Auto-repeat key-downs are
+    ignored so holding a key doesn't spam events (mirrors RegisterEventHotKey).
 
     Listen-only: the matched key still reaches the foreground app (so e.g. ctrl+q
     may also do whatever ctrl+q does there). That is the safe trade-off -- a
     listen-only tap cannot swallow a key or strand a modifier.
     """
     global _HOTKEY_TAP
-    if not table:
+    if not table and voice_keycode is None:
         _dbg("hotkey tap: no parseable hotkeys; not installing.")
         return False
     try:
@@ -249,11 +257,20 @@ def _install_hotkey_tap(table: list[tuple[int, int, str, dict]], emit) -> bool:
                 ):
                     Quartz.CGEventTapEnable(_HOTKEY_TAP[0], True)
                     return event
-                keycode = Quartz.CGEventGetIntegerValueField(
+                keycode = int(Quartz.CGEventGetIntegerValueField(
                     event, Quartz.kCGKeyboardEventKeycode
-                )
+                ))
+                if type_ == Quartz.kCGEventKeyUp:
+                    if voice_keycode is not None and keycode == voice_keycode:
+                        emit("voice_stop")
+                    return event
+                # key-down: skip OS auto-repeat so holding doesn't spam.
+                if Quartz.CGEventGetIntegerValueField(
+                    event, Quartz.kCGKeyboardEventAutorepeat
+                ):
+                    return event
                 flags = int(Quartz.CGEventGetFlags(event))
-                match = _match_tap_event(int(keycode), flags, table)
+                match = _match_tap_event(keycode, flags, table)
                 if match is not None:
                     kind, extra = match
                     emit(kind, **extra)
@@ -261,7 +278,9 @@ def _install_hotkey_tap(table: list[tuple[int, int, str, dict]], emit) -> bool:
                 _dbg(f"hotkey tap callback error: {exc}")
             return event
 
-        mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
+        mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown) | Quartz.CGEventMaskBit(
+            Quartz.kCGEventKeyUp
+        )
         tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
             Quartz.kCGHeadInsertEventTap,
@@ -280,7 +299,9 @@ def _install_hotkey_tap(table: list[tuple[int, int, str, dict]], emit) -> bool:
         )
         Quartz.CGEventTapEnable(tap, True)
         _HOTKEY_TAP = (tap, source, _on_key)
-        _dbg(f"hotkey tap installed for {len(table)} hotkey(s) (off-console backend).")
+        _dbg(f"hotkey tap installed for {len(table)} hotkey(s)"
+             f"{' + voice push-to-talk' if voice_keycode is not None else ''} "
+             f"(off-console backend).")
         return True
     except Exception as exc:  # noqa: BLE001 - never crash the helper on the fallback
         _dbg(f"hotkey tap unavailable: {exc}")
@@ -471,7 +492,21 @@ def main() -> int:
 
             specs = _hotkey_specs_from_config(config)
             table = _build_tap_table(specs, MACOS_VIRTUAL_KEYCODES)
-            tap_active = _install_hotkey_tap(table, emit_hotkey)
+            # Voice push-to-talk: key-down starts (added to the table as
+            # "voice_start"), key-up stops (handled via voice_keycode).
+            voice_keycode = None
+            voice_combo = getattr(config, "HOTKEY_VOICE", "")
+            if voice_combo:
+                parsed = _parse_combo_to_tap(voice_combo, MACOS_VIRTUAL_KEYCODES)
+                if parsed is not None:
+                    voice_keycode, voice_mod = parsed
+                    table.append((voice_keycode, voice_mod, "voice_start", {}))
+                else:
+                    _dbg(f"hotkey tap: voice key {voice_combo!r} not parseable; "
+                         "push-to-talk disabled in tap backend.")
+            tap_active = _install_hotkey_tap(
+                table, emit_hotkey, voice_keycode=voice_keycode
+            )
 
         # Off-console, Carbon "starts" but never fires; the tap is what makes
         # hotkeys actually work there, so count either backend as success.
