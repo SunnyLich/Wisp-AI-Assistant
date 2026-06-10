@@ -32,8 +32,13 @@ log = logging.getLogger("wisp.plugins")
 
 @dataclass
 class AppContext:
-    """Passed to on_startup(). Store it if other hooks need app access."""
-    signals: Any             # OverlaySignals — emit Qt signals thread-safely
+    """Passed to on_startup(). Store it if other hooks need app access.
+
+    On the current worker runtime, mods run inside the headless brain process,
+    so ``signals`` is ``None`` (there is no Qt there). ``model_tool_registry`` and
+    ``config`` are always available.
+    """
+    signals: Any             # Qt signals when run in-process; None in the brain worker
     model_tool_registry: Any # ToolRegistry   — register model-callable tools
     config: Any              # config module  — read live config values
 

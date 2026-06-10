@@ -41,10 +41,9 @@ def get_tray_actions() -> list[dict]:
 
 
 def _on_tray_click() -> None:
+    # Runs in the headless brain worker — fine for side effects / automation,
+    # but there's no Qt here (app_context.signals is None), so it can't open UI.
     log.info("example_logger tray action clicked.")
-    # Emit a Qt signal if needed (runs on Qt main thread):
-    # if _ctx:
-    #     _ctx.signals.show_new_chat.emit()
 
 
 def get_tools() -> list[dict]:

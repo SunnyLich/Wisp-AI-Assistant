@@ -65,6 +65,7 @@ class WindowInfo:
     pid: int = 0
     exe_path: str = ""
     url: str = ""          # browser address-bar URL if detectable
+    hwnd: int = 0          # native window handle (Windows) — lets us read the page text locally
 
 
 @dataclass
@@ -407,6 +408,7 @@ def _fetch_active_window_win() -> WindowInfo:
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return info
+        info.hwnd = int(hwnd)
 
         length = user32.GetWindowTextLengthW(hwnd) + 1
         buf = ctypes.create_unicode_buffer(length)
@@ -501,6 +503,79 @@ def _get_browser_url_uia(hwnd: int) -> str | None:
 
     except Exception:
         return None
+
+
+def _get_browser_text_uia(hwnd: int, max_chars: int) -> str | None:
+    """Read the rendered page text from a browser window via UIA (Windows only).
+
+    Reads what the browser actually shows — including JavaScript-rendered content
+    the HTTP fetch misses — straight from the open window, with no network round
+    trip. ``GetText(max_chars)`` caps how much is materialized so huge pages stay
+    fast."""
+    if not _IS_WIN:
+        return None
+    try:
+        import comtypes.gen.UIAutomationClient as uiac  # type: ignore
+
+        uia = _get_uia()
+        if uia is None:
+            return None
+        root = uia.ElementFromHandle(hwnd)
+        if root is None:
+            return None
+        # The page content is exposed as a Document control under the window.
+        condition = uia.CreatePropertyCondition(
+            30003,  # UIA_ControlTypePropertyId
+            50030,  # UIA_DocumentControlTypeId
+        )
+        el = root.FindFirst(uiac.TreeScope_Descendants, condition)
+        if el is None:
+            return None
+        raw = el.GetCurrentPattern(10014)  # UIA_TextPatternId
+        if raw is None:
+            return None
+        tp = raw.QueryInterface(uiac.IUIAutomationTextPattern)
+        text = tp.DocumentRange.GetText(max_chars if max_chars and max_chars > 0 else -1)
+        return (text or "").strip() or None
+    except Exception:
+        return None
+
+
+# Per-URL page-text cache so repeated questions about the same page are instant
+# instead of re-reading/re-fetching it each time.
+_browser_cache: dict[str, tuple[float, str]] = {}
+_BROWSER_CACHE_TTL = 60.0  # seconds
+
+
+def _browser_content(active_win: WindowInfo, max_chars: int | None = None) -> str:
+    """Active tab's page text: read the live window first (fast, JS-aware), fall
+    back to an HTTP fetch of the URL, and cache the result per-URL briefly."""
+    if max_chars is None:
+        max_chars = config.CONTEXT_BROWSER_MAX_CHARS
+    url = active_win.url or ""
+
+    now = time.time()
+    cached = _browser_cache.get(url)
+    if cached and now - cached[0] < _BROWSER_CACHE_TTL:
+        return cached[1]
+
+    content = ""
+    # 1. Local read of the rendered window — no network.
+    if active_win.hwnd:
+        raw = _get_browser_text_uia(active_win.hwnd, max_chars)
+        if raw:
+            text = re.sub(r"[ \t]+", " ", raw)
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()[:max_chars]
+            content = _redact(text)
+    # 2. Fall back to re-fetching the URL if the window read was empty/too short.
+    if len(content) < 200:
+        http = _fetch_browser_content(url, max_chars)
+        if len(http) > len(content):
+            content = http
+
+    if url and content:
+        _browser_cache[url] = (now, content)
+    return content
 
 
 # ---------------------------------------------------------------------------
@@ -844,7 +919,7 @@ def fetch_and_save(
 
     browser_content = ""
     if fetch_browser_content and active_win.url:
-        browser_content = _fetch_browser_content(active_win.url)
+        browser_content = _browser_content(active_win)
 
     snapshot = ContextSnapshot(
         timestamp=time.time(),

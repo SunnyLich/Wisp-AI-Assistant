@@ -21,6 +21,23 @@ All hook functions are **optional**. Define only the ones you need.
 
 ---
 
+## Where mods run
+
+Mods load and run inside the **headless brain worker** — a separate process with
+no Qt/UI. That shapes what each hook can do:
+
+- `before_query`, `after_response`, `get_tools`, `on_startup`, `on_shutdown` all
+  run normally there.
+- `app_context.signals` is **`None`** (there is no Qt in the brain). `config` and
+  `model_tool_registry` are always available.
+- `get_tray_actions` callbacks also run in the brain, so they're for side effects
+  and automation — they can't directly open windows or draw UI.
+
+For UI-driving mods, prefer contributing a model tool (`get_tools`) or shaping the
+query (`before_query` / `after_response`).
+
+---
+
 ## Available hooks
 
 ```python
@@ -28,25 +45,22 @@ All hook functions are **optional**. Define only the ones you need.
 
 def on_startup(app_context):
     """
-    Called once after the app is fully initialised.
+    Called once before the first query (registers your get_tools).
 
     app_context attributes:
-      .signals             — OverlaySignals  (emit Qt signals from your mod)
+      .signals             — None on the worker runtime (no Qt in the brain)
       .model_tool_registry — ToolRegistry    (register model-callable tools)
       .config              — config module   (read live config values)
     """
 
 def on_shutdown():
-    """Called before the app exits. Do cleanup here."""
+    """Called before the brain worker exits. Do cleanup here."""
 
 def before_query(prompt: str, context: str) -> tuple[str, str]:
     """
     Called before every LLM query on a worker thread.
     You can inspect or modify the prompt and context.
     Must return (prompt, context) — even if unchanged.
-
-    NOTE: Do NOT touch Qt widgets here. Use app_context.signals to emit
-    Qt signals thread-safely if needed.
     """
     return prompt, context
 
@@ -58,9 +72,9 @@ def after_response(text: str):
 
 def get_tray_actions() -> list[dict]:
     """
-    Return a list of tray menu items to add.
+    Return actions surfaced in the Plugin Manager.
     Each dict: {"label": str, "callback": callable}
-    Callbacks run on the Qt main thread.
+    Callbacks run in the brain worker (headless) — use for side effects.
     """
     return [
         {"label": "My action", "callback": my_function},

@@ -112,6 +112,28 @@ def test_query_includes_active_document_when_requested(record_ctx, monkeypatch):
     assert "".join(_chunks(events)) == result["text"]
 
 
+def test_query_injects_frontloaded_tool_context(record_ctx, monkeypatch):
+    from core.llm_clients import client as llm_client
+
+    def fake_inject(ambient_context, allowed_tools):
+        assert allowed_tools == ["git_status"]
+        return f"{ambient_context}\n\n---\n[Git status]\nM file.py".strip()
+
+    monkeypatch.setattr(llm_client, "_inject_frontloaded_tool_context", fake_inject)
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="what changed",
+        ambient_text="Active app: Editor",
+        memory_context="(none)",
+        frontload_tools=["git_status"],
+    )
+
+    assert "[Git status]\nM file.py" in result["text"]
+    assert "".join(_chunks(events)) == result["text"]
+
+
 def test_query_runs_shared_plugin_before_and_after_hooks(record_ctx, monkeypatch):
     calls: dict[str, object] = {}
 

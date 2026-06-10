@@ -352,18 +352,50 @@ def selected_text() -> str:
         return ""
 
 
-def context_snapshot(include_clipboard: bool = True, include_selection: bool = True) -> dict[str, Any]:
+def context_snapshot(
+    include_clipboard: bool = True,
+    include_selection: bool = True,
+    include_browser_content: bool = False,
+) -> dict[str, Any]:
+    t0 = time.monotonic()
+    active = _active_app()
+    t_app = time.monotonic()
     snapshot = {
         "platform": sys.platform,
-        "active_app": _active_app(),
+        "active_app": active,
         "selected_text": "",
         "clipboard_text": "",
+        "browser_url": "",
+        "browser_content": "",
         "captured_at": time.time(),
     }
+    sel_dt = clip_dt = br_dt = 0.0
     if include_selection:
+        _s = time.monotonic()
         snapshot["selected_text"] = selected_text()
+        sel_dt = time.monotonic() - _s
     if include_clipboard:
+        _s = time.monotonic()
         snapshot["clipboard_text"] = clipboard_get()["text"]
+        clip_dt = time.monotonic() - _s
+    if include_browser_content:
+        _s = time.monotonic()
+        try:
+            from core.context_fetcher import fetch_and_save
+
+            browser_snapshot = fetch_and_save(fetch_browser_content=True)
+            active_window = getattr(browser_snapshot, "active_window", None)
+            snapshot["browser_url"] = getattr(active_window, "url", "") if active_window else ""
+            snapshot["browser_content"] = getattr(browser_snapshot, "browser_content", "") or ""
+        except Exception as exc:  # noqa: BLE001 - browser context should not block answering
+            snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
+        br_dt = time.monotonic() - _s
+    print(
+        f"[context.snapshot] active_app={t_app - t0:.2f}s selected={sel_dt:.2f}s "
+        f"clipboard={clip_dt:.2f}s browser={br_dt:.2f}s total={time.monotonic() - t0:.2f}s "
+        f"(sel_len={len(snapshot['selected_text'])})",
+        flush=True,
+    )
     return snapshot
 
 

@@ -140,6 +140,7 @@ class FlowController:
 
     def _on_native_hotkey(self, data: dict[str, Any], _req_id: Any = None) -> None:
         kind = (data or {}).get("kind")
+        log.info("hotkey received: kind=%s", kind)
         if kind == "caller":
             self._schedule(self.begin_caller, int((data or {}).get("index") or 0))
         elif kind == "snip":
@@ -285,11 +286,17 @@ class FlowController:
     # -- public product actions ---------------------------------------
 
     def begin_caller(self, caller_idx: int = 0) -> None:
+        import time
+
+        t0 = time.monotonic()
         self._reload_supervisor_config_if_changed()
         caller = self._caller(caller_idx)
         self._new_generation()
-        self._safe_call(self.audio, "audio.stop", timeout=5.0)
-        context = self._context_snapshot(caller)
+        # Silence any in-progress speech, but don't block the picker waiting for
+        # it — audio.stop just flips a flag in the audio worker.
+        self._fire(self.audio, "audio.stop")
+        context = self._context_snapshot(caller, include_browser=False)
+        t_ctx = time.monotonic()
         screenshot_b64 = None
         screenshot_tool_b64 = None
         screenshot_mode = caller.get("context_screenshot")
@@ -297,7 +304,7 @@ class FlowController:
             screenshot_b64 = self._capture_fullscreen_b64()
         elif screenshot_mode == "model":
             screenshot_tool_b64 = self._capture_model_tool_b64()
-        self._safe_call(self.ui, "ui.overlay.state", {"state": "listening"}, timeout=30.0)
+        t_shot = time.monotonic()
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
         if str(context.get("platform") or "") == "darwin":
             target_id = int(active_app.get("pid") or 0)
@@ -314,7 +321,15 @@ class FlowController:
         )
         with self._lock:
             self._pending = pending
+        # Show the picker FIRST. It must never wait on cosmetic UI state, so the
+        # doll "listening" animation is fired afterwards without blocking.
         self.ui.call("ui.show_intent", {"caller_idx": caller_idx}, timeout=30.0)
+        t_show = time.monotonic()
+        self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
+        log.info(
+            "caller %d shown: context=%.2fs screenshot=%.2fs show_intent=%.2fs total=%.2fs",
+            caller_idx, t_ctx - t0, t_shot - t_ctx, t_show - t_shot, t_show - t0,
+        )
 
     def begin_snip(self) -> None:
         self._new_generation()
@@ -806,6 +821,17 @@ class FlowController:
             log.exception("worker call failed: %s", method)
             return None
 
+    def _fire(self, worker: WorkerLike, method: str, params: dict[str, Any] | None = None) -> None:
+        """Send a fire-and-forget request — the response is not awaited.
+
+        For cosmetic / side-effect calls (e.g. doll animation state, stopping
+        speech) that must never sit on the critical path. A slow or wedged worker
+        then can't delay the thing the user is actually waiting for."""
+        try:
+            worker.call(method, params or {}, wait=False)
+        except Exception:
+            log.exception("worker fire failed: %s", method)
+
     def _brain_call_with_events(
         self,
         method: str,
@@ -882,12 +908,30 @@ class FlowController:
 
         return getattr(config, name, default)
 
-    def _context_snapshot(self, caller: dict[str, Any]) -> dict[str, Any]:
+    def _context_snapshot(self, caller: dict[str, Any], *, include_browser: bool = True) -> dict[str, Any]:
+        # The browser-page fetch is a ~2-3s network read (requests.get). Keep it
+        # OFF the hotkey -> picker path (include_browser=False) and fetch it lazily
+        # at query time instead, where it overlaps the LLM round-trip. The page
+        # fetch is by URL (HTTP), so it doesn't need the browser to stay foreground.
         return self.native.call(
             "native.context.snapshot",
             {
                 "include_clipboard": bool(caller.get("context_clipboard", False)),
                 "include_selection": True,
+                "include_browser_content": include_browser and self._context_mode(caller, "browser") == "auto",
+            },
+            timeout=30.0,
+        ) or {}
+
+    def _fetch_browser_snapshot(self) -> dict[str, Any]:
+        """Fetch just the active browser tab's URL + page content — the deferred,
+        slow part of the snapshot. Active-app only; no selection/clipboard."""
+        return self.native.call(
+            "native.context.snapshot",
+            {
+                "include_clipboard": False,
+                "include_selection": False,
+                "include_browser_content": True,
             },
             timeout=30.0,
         ) or {}
@@ -903,12 +947,30 @@ class FlowController:
         if allow_screenshot_tool and screenshot_tool_b64 is None:
             screenshot_tool_b64 = self._capture_model_tool_b64()
         allowed_tools = self._allowed_model_tools(caller)
+        frontload_tools = self._frontloaded_model_tools(caller)
         if caller.get("context_ambient", True):
             active_app = context.get("active_app")
             if isinstance(active_app, dict) and active_app.get("name"):
                 ambient_parts.append(f"Active app: {active_app.get('name')}")
         if caller.get("context_clipboard") and context.get("clipboard_text"):
             ambient_parts.append(f"Clipboard:\n{context.get('clipboard_text')}")
+        if self._context_mode(caller, "browser") == "auto":
+            browser_bits: list[str] = []
+            browser_url = str(context.get("browser_url") or "").strip()
+            browser_content = str(context.get("browser_content") or "").strip()
+            if not browser_url and not browser_content:
+                # Deferred from begin_caller to keep it off the picker path. The
+                # overlay is closed by now, so the browser is foreground again and
+                # the page fetch (HTTP by URL) runs here, under the LLM latency.
+                fetched = self._fetch_browser_snapshot()
+                browser_url = str(fetched.get("browser_url") or "").strip()
+                browser_content = str(fetched.get("browser_content") or "").strip()
+            if browser_url:
+                browser_bits.append(f"URL: {browser_url}")
+            if browser_content:
+                browser_bits.append(browser_content)
+            if browser_bits:
+                ambient_parts.append("[Browser/Web]\n" + "\n\n".join(browser_bits))
         if buffered_items:
             ambient_parts.append("Buffered context:\n" + "\n\n".join(buffered_items))
         if drop_items:
@@ -939,6 +1001,7 @@ class FlowController:
             "ambient_text": "\n\n".join(ambient_parts),
             "use_tools": bool(allowed_tools),
             "allowed_tools": allowed_tools,
+            "frontload_tools": frontload_tools,
             "allow_screenshot_tool": allow_screenshot_tool,
             "screenshot_tool_b64": screenshot_tool_b64,
             "include_active_document": self._context_mode(caller, "documents") == "auto",
@@ -969,6 +1032,12 @@ class FlowController:
         if self._context_mode(caller, "github") == "model":
             allowed.extend(["git_status", "git_diff", "github_repo", "github_issue"])
         return allowed
+
+    def _frontloaded_model_tools(self, caller: dict[str, Any]) -> list[str]:
+        frontload: list[str] = []
+        if self._context_mode(caller, "github") == "auto":
+            frontload.extend(["git_status", "git_diff"])
+        return frontload
 
     def _consume_context_extras(self) -> tuple[list[str], list[dict[str, Any]]]:
         buffered = list(self._context_buffer)

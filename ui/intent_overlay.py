@@ -41,6 +41,13 @@ def _safe_text_desc(text: str) -> str:
     return f"printable-len:{len(text)}"
 
 
+def _event_type_name(event) -> str:
+    try:
+        return event.type().name
+    except Exception:
+        return str(event.type())
+
+
 def _build_rows(caller_idx: int = 0) -> list[dict]:
     """Build the full list of overlay rows from the specified caller's config."""
     caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
@@ -186,6 +193,7 @@ class IntentOverlay(QWidget):
             return
         self._debug(
             f"{source} key={_key_name(int(event.key()))} "
+            f"type={_event_type_name(event)} "
             f"text={_safe_text_desc(event.text())} "
             f"mods={int(event.modifiers().value)} accepted={event.isAccepted()}"
         )
@@ -372,8 +380,12 @@ class IntentOverlay(QWidget):
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
-        if obj is self._input_line and self._drop_next_keypress:
-            if event.type() == QEvent.Type.KeyPress:
+        if obj is self._input_line and event.type() in {
+            QEvent.Type.KeyPress,
+            QEvent.Type.ShortcutOverride,
+        }:
+            self._debug_key("input-filter-key", event)
+            if self._drop_next_keypress and event.type() == QEvent.Type.KeyPress:
                 self._debug_key("input-filter-before-drop", event)
                 custom_key = next((r["glyph"].lower() for r in self._rows if r["is_custom"]), "")
                 if event.text().lower() == custom_key:
@@ -420,10 +432,57 @@ class IntentOverlay(QWidget):
         elif event.key() == Qt.Key.Key_Escape:
             self._cancel()
 
+    def _win_force_foreground(self) -> None:
+        """Force the overlay to the foreground on Windows, past the foreground lock.
+
+        The hotkey is received by the native worker, but THIS (UI) process shows
+        the window — so Windows denies plain SetForegroundWindow/activateWindow and
+        the overlay never gets keyboard focus (you'd have to click it before WASD
+        works). Briefly attaching to the current foreground thread's input queue
+        lifts that restriction for the duration of the call. Best-effort; never
+        raises.
+        """
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            hwnd = int(self.winId())
+            fg = user32.GetForegroundWindow()
+            if not hwnd or fg == hwnd:
+                return
+            target_tid = user32.GetWindowThreadProcessId(fg, None)
+            our_tid = kernel32.GetCurrentThreadId()
+            attached = bool(user32.AttachThreadInput(target_tid, our_tid, True))
+            try:
+                user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetActiveWindow(hwnd)
+                user32.SetFocus(hwnd)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(target_tid, our_tid, False)
+        except Exception:
+            pass
+
     def showEvent(self, event):
+        import sys as _sys
+        import time as _t
+
+        _t_show = _t.time()
         super().showEvent(event)
         self.raise_()
         self.activateWindow()
+        if _IS_WIN:
+            _s = _t.monotonic()
+            self._win_force_foreground()
+            print(
+                f"[wisp-intent] showEvent ts={_t_show:.3f} "
+                f"force_fg={_t.monotonic() - _s:.3f}s",
+                file=_sys.stderr,
+                flush=True,
+            )
         self._closed = False
         self._debug("show")
         if _IS_WIN:

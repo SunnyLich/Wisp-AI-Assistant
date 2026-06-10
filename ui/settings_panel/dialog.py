@@ -1428,16 +1428,18 @@ class SettingsDialog(QDialog):
             "On — read supported open documents before sending the prompt.\n"
             "Let model decide — expose an open-document tool during the answer."
         )
-        browser_combo = _context_mode_combo(context_browser_mode, allow_auto=False)
+        browser_combo = _context_mode_combo(context_browser_mode, allow_auto=True)
         browser_combo.setToolTip(
             "Browser/Web:\n"
             "Off — no web/browser tools.\n"
+            "On — read the current browser page before sending the prompt.\n"
             "Let model decide — expose web search and browser page fetch tools."
         )
-        github_combo = _context_mode_combo(context_github_mode, allow_auto=False)
+        github_combo = _context_mode_combo(context_github_mode, allow_auto=True)
         github_combo.setToolTip(
             "Git/GitHub:\n"
             "Off — no git or GitHub tools.\n"
+            "On — read local git status and diff before sending the prompt.\n"
             "Let model decide — expose git status/diff and GitHub repo/issue tools."
         )
         screenshot_combo = _context_mode_combo(context_screenshot, allow_auto=True)
@@ -2819,6 +2821,7 @@ class SettingsDialog(QDialog):
             from core.llm_clients.client import (
                 screenshot_capability_warnings,
                 tool_capability_warnings,
+                subscription_auth_warnings,
             )
             warnings += screenshot_capability_warnings(
                 [blk["context_screenshot"].currentData() for blk in self._caller_blocks],  # type: ignore
@@ -2826,6 +2829,10 @@ class SettingsDialog(QDialog):
                 llm_model=vals.get("LLM_MODEL", ""),
                 vision_provider=vals.get("VISION_LLM_PROVIDER", ""),
                 vision_model=vals.get("VISION_LLM_MODEL", ""),
+            )
+            warnings += subscription_auth_warnings(
+                llm_provider=vals.get("LLM_PROVIDER", ""),
+                vision_provider=vals.get("VISION_LLM_PROVIDER", ""),
             )
             live_tool_modes = []
             for blk in self._caller_blocks:

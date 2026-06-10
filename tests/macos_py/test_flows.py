@@ -114,6 +114,23 @@ def context_handler(selected: str = "selected", clipboard: str = "", pid: int = 
     return handler
 
 
+def browser_context_handler(selected: str = "selected"):
+    def handler(params: dict[str, Any]) -> dict[str, Any]:
+        result = {
+            "selected_text": selected,
+            "clipboard_text": "",
+            "active_app": {"name": "Browser", "pid": 42, "bundle_id": "com.browser"},
+        }
+        # The page fetch is deferred off the picker path: begin_caller's snapshot
+        # asks without it, and the query-time fetch asks with it.
+        if params.get("include_browser_content"):
+            result["browser_url"] = "https://example.test/page"
+            result["browser_content"] = "Example page text"
+        return result
+
+    return handler
+
+
 def query_stream(reply: str = "reply"):
     def handler(_params: dict[str, Any], on_event) -> dict[str, Any]:
         on_event("reply.chunk", {"text": reply[:2]}, 1)
@@ -249,6 +266,35 @@ def test_context_modes_map_to_auto_documents_and_allowed_tools():
     assert query["include_active_document"] is False
     assert query["use_tools"] is True
     assert query["allowed_tools"] == ["get_context.documents", "git_status", "git_diff", "github_repo", "github_issue"]
+    assert query["frontload_tools"] == []
+
+
+def test_context_modes_map_on_browser_and_git_to_frontloaded_context():
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "off",
+            "context_browser_mode": "auto",
+            "context_github_mode": "auto",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": browser_context_handler()})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("ok")})
+    with caller_config(rows):
+        _flow, _native, _ui, brain, _audio = make_flow(native=native, brain=brain)
+        _flow.begin_caller(0)
+        _ui.emit("ui.intent.chosen", {"custom": "Use context"})
+
+    query = brain.last_call("brain.query")["params"]
+    assert query["use_tools"] is False
+    assert query["allowed_tools"] == []
+    assert query["frontload_tools"] == ["git_status", "git_diff"]
+    assert "[Browser/Web]" in query["ambient_text"]
+    assert "https://example.test/page" in query["ambient_text"]
+    assert "Example page text" in query["ambient_text"]
 
 
 def test_model_screenshot_mode_precaptures_through_native_worker():

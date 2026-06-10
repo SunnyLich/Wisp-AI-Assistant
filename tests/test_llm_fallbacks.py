@@ -6,6 +6,9 @@ from core.llm_clients import client as llm
 
 
 class LlmFallbackTests(unittest.TestCase):
+    def setUp(self):
+        llm._route_capabilities.clear()
+
     def test_route_candidates_dedupes_primary_and_fallbacks(self):
         routes = llm._route_candidates(
             "chatgpt",
@@ -433,6 +436,154 @@ class LlmFallbackTests(unittest.TestCase):
 
         self.assertEqual(chunks, ["non-stream reply"])
         self.assertEqual([call["stream"] for call in calls], [True, False])
+        self.assertFalse(llm._get_route_capabilities("google", "model").supports_stream)
+
+    def test_openai_compat_defaults_to_single_tool_call_without_parallel_param(self):
+        calls = []
+
+        class FakeStream:
+            def __enter__(self):
+                return iter([
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="stop",
+                                delta=SimpleNamespace(content="ok", tool_calls=[]),
+                            )
+                        ]
+                    )
+                ])
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                return FakeStream()
+
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+        with patch.object(llm.macos_safety, "openai_compat_tools_enabled", return_value=True):
+            chunks = list(
+                llm._stream_openai_compat(
+                    "git status",
+                    None,
+                    "model",
+                    fake_client,
+                    use_tools=True,
+                    allowed_tools=["git_status"],
+                    provider="google",
+                )
+            )
+
+        self.assertEqual(chunks, ["ok"])
+        self.assertIn("tools", calls[0])
+        self.assertNotIn("parallel_tool_calls", calls[0])
+
+    def test_openai_compat_parallel_tool_param_is_removed_without_disabling_tools(self):
+        calls = []
+
+        class UnsupportedParameterError(RuntimeError):
+            status_code = 400
+
+        class FakeStream:
+            def __enter__(self):
+                return iter([
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="stop",
+                                delta=SimpleNamespace(content="ok", tool_calls=[]),
+                            )
+                        ]
+                    )
+                ])
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                if "parallel_tool_calls" in kwargs:
+                    raise UnsupportedParameterError("Unsupported parameter: 'parallel_tool_calls'")
+                return FakeStream()
+
+        llm._update_route_capabilities("google", "model", supports_parallel_tools=True)
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+        with patch.object(llm.macos_safety, "openai_compat_tools_enabled", return_value=True):
+            chunks = list(
+                llm._stream_openai_compat(
+                    "git status",
+                    None,
+                    "model",
+                    fake_client,
+                    use_tools=True,
+                    allowed_tools=["git_status"],
+                    provider="google",
+                )
+            )
+
+        self.assertEqual(chunks, ["ok"])
+        self.assertIn("tools", calls[0])
+        self.assertIn("parallel_tool_calls", calls[0])
+        self.assertIn("tools", calls[1])
+        self.assertNotIn("parallel_tool_calls", calls[1])
+        self.assertFalse(llm._get_route_capabilities("google", "model").supports_parallel_tools)
+
+    def test_openai_compat_tools_unsupported_downgrades_to_frontloaded_context(self):
+        calls = []
+
+        class ToolUnsupportedError(RuntimeError):
+            status_code = 400
+
+        class FakeStream:
+            def __enter__(self):
+                return iter([
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="stop",
+                                delta=SimpleNamespace(content="ok", tool_calls=[]),
+                            )
+                        ]
+                    )
+                ])
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                if "tools" in kwargs:
+                    raise ToolUnsupportedError("tools are not supported for this model")
+                return FakeStream()
+
+        llm._route_capabilities.clear()
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+        with patch.object(llm.macos_safety, "openai_compat_tools_enabled", return_value=True), \
+             patch.object(llm, "read_active_document_for_context", return_value="Document text"):
+            chunks = list(
+                llm._stream_openai_compat(
+                    "summarize this",
+                    None,
+                    "model",
+                    fake_client,
+                    use_tools=True,
+                    allowed_tools=["get_context.documents"],
+                    provider="google",
+                )
+            )
+
+        self.assertEqual(chunks, ["ok"])
+        self.assertIn("tools", calls[0])
+        self.assertNotIn("tools", calls[1])
+        self.assertIn("Document text", calls[1]["messages"][0]["content"])
+        self.assertFalse(llm._get_route_capabilities("google", "model").supports_tools)
 
     def test_chatgpt_route_probe_retries_streaming_when_create_rejected(self):
         calls = []
@@ -538,6 +689,35 @@ class LlmFallbackTests(unittest.TestCase):
 
         self.assertEqual(chunks, ["created reply"])
         self.assertEqual([kind for kind, _kwargs in calls], ["stream", "create"])
+        self.assertFalse(llm._get_route_capabilities("chatgpt", "gpt-5.5").supports_stream)
+
+    def test_chatgpt_runtime_accepts_allowed_tools_allowlist(self):
+        calls = []
+
+        class FakeResponseStream:
+            def __enter__(self):
+                return iter([SimpleNamespace(type="response.output_text.delta", delta="OK")])
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeResponses:
+            def stream(self, **kwargs):
+                calls.append(kwargs)
+                return FakeResponseStream()
+
+        chunks = list(
+            llm._stream_codex(
+                "hi",
+                "gpt-5.5",
+                SimpleNamespace(responses=FakeResponses()),
+                use_tools=True,
+                allowed_tools=[],
+            )
+        )
+
+        self.assertEqual(chunks, ["OK"])
+        self.assertEqual(len(calls), 1)
 
     def test_macos_openai_compat_query_uses_non_streaming_safe_mode(self):
         calls = []

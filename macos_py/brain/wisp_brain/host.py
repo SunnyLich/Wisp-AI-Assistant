@@ -137,6 +137,11 @@ def _main() -> int:
         # requests (or their cancels). Responses are serialized by write_lock.
         threading.Thread(target=dispatch, args=(req,), daemon=True).start()
 
+    try:
+        from wisp_brain.handlers import run_plugin_shutdown
+        run_plugin_shutdown()
+    except Exception:
+        pass
     return 0
 
 

@@ -564,6 +564,58 @@ def _loaded_plugin_manager(plugins_dir: Path) -> Any:
         return plugin_manager.init(plugins_dir)
 
 
+_plugin_startup_done = False
+
+
+def run_plugin_startup() -> None:
+    """Fire plugin ``on_startup`` once and register their ``get_tools``.
+
+    The legacy ``main.py`` ran this at app init; the headless brain must do it
+    too, or plugin model-tools never reach the LLM and ``on_startup`` never runs.
+    Called lazily from the query path (not at boot) to keep the brain's ping-only
+    startup free of the LLM stack. ``signals`` is ``None`` here — there is no Qt in
+    the brain worker; plugins drive the UI via tray actions / protocol, not Qt
+    signals. Idempotent and best-effort.
+    """
+    global _plugin_startup_done
+    if _plugin_startup_done:
+        return
+    _plugin_startup_done = True
+    try:
+        import config
+        from core.system.paths import PLUGINS_DIR
+        from core.llm_clients.client import get_tool_registry
+
+        plugin_manager = importlib.import_module("core.plugin_manager")
+        try:
+            manager = plugin_manager.get_manager()
+        except Exception:
+            manager = plugin_manager.init(Path(PLUGINS_DIR))
+        manager.on_startup(
+            plugin_manager.AppContext(
+                signals=None,
+                model_tool_registry=get_tool_registry(),
+                config=config,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - plugin startup must not block the brain
+        _log(f"plugin startup skipped: {type(exc).__name__}: {exc}")
+
+
+def run_plugin_shutdown() -> None:
+    """Fire plugin ``on_shutdown`` if plugins were started. Called by the host on
+    exit. Best-effort; no-op when no plugins were ever loaded."""
+    try:
+        plugin_manager = importlib.import_module("core.plugin_manager")
+        manager = plugin_manager.get_manager()  # raises if never initialised
+    except Exception:
+        return
+    try:
+        manager.on_shutdown()
+    except Exception as exc:  # noqa: BLE001
+        _log(f"plugin shutdown skipped: {type(exc).__name__}: {exc}")
+
+
 def _loaded_plugin_payload(mod: Any) -> dict[str, Any]:
     module = getattr(mod, "module", None)
     path = getattr(module, "__file__", "") or ""
@@ -963,6 +1015,7 @@ def brain_query(
     memory_context: str = "",
     use_tools: bool = False,
     allowed_tools: list[str] | None = None,
+    frontload_tools: list[str] | None = None,
     allow_screenshot_tool: bool = False,
     screenshot_tool_b64: str | None = None,
     include_active_document: bool = False,
@@ -997,6 +1050,7 @@ def brain_query(
             active_document_text=active_document,
         )
     )
+    built = _apply_frontloaded_tools(built, frontload_tools)
     built = _apply_plugin_before_query(built)
 
     parts: list[str] = []
@@ -1019,10 +1073,33 @@ def brain_query(
     return {"text": full}
 
 
+def _apply_frontloaded_tools(built: Any, frontload_tools: list[str] | None) -> Any:
+    if not frontload_tools:
+        return built
+    try:
+        from core.llm_clients.client import _inject_frontloaded_tool_context
+
+        ambient_ctx = _inject_frontloaded_tool_context(
+            getattr(built, "ambient_ctx", ""),
+            frontload_tools,
+        )
+        return type(built)(
+            user_message=getattr(built, "user_message", ""),
+            ambient_ctx=ambient_ctx,
+            screenshot_b64=getattr(built, "screenshot_b64", None),
+        )
+    except Exception as exc:  # noqa: BLE001 - injected context should not block answering
+        _log(f"frontloaded tools skipped: {type(exc).__name__}: {exc}")
+        return built
+
+
 def _apply_plugin_before_query(built: Any) -> Any:
     try:
         from core.system.paths import PLUGINS_DIR
 
+        # Ensure on_startup ran and plugin get_tools are registered before the
+        # LLM gathers tools for this query.
+        run_plugin_startup()
         user_message, ambient_ctx = _loaded_plugin_manager(Path(PLUGINS_DIR)).before_query(
             getattr(built, "user_message", ""),
             getattr(built, "ambient_ctx", ""),
@@ -1181,8 +1258,14 @@ def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, s
         if role not in allowed_roles or content is None:
             continue
         text = str(content).strip()
-        if text:
-            turns.append({"role": role, "content": text})
+        turn: dict[str, str] = {"role": role, "content": text}
+        # Carry attached screenshots forward so the model sees them on every
+        # follow-up turn, the way ChatGPT/Claude replay the full transcript.
+        image = raw.get("image_base64")
+        if role == "user" and image:
+            turn["image_base64"] = str(image)
+        if text or turn.get("image_base64"):
+            turns.append(turn)
     return turns
 
 

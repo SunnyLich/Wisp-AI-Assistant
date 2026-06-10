@@ -224,6 +224,19 @@ def _tokens_from_raw(raw: dict, existing: dict | None = None) -> dict:
 # Public token accessors
 # ---------------------------------------------------------------------------
 
+def _needs_refresh(tokens: dict) -> bool:
+    """True if the access token expires within 60 seconds."""
+    return tokens.get("expires", 0) < (time.time() + 60) * 1000
+
+
+# Serializes token refresh. ChatGPT OAuth uses rotating, single-use refresh
+# tokens with reuse detection: if two callers refresh with the same refresh
+# token at once, OpenAI treats the second as a reuse and invalidates the whole
+# credential — forcing a fresh sign-in. The lock ensures only one refresh runs;
+# others wait and reuse the freshly-rotated token instead of spending it twice.
+_refresh_lock = threading.Lock()
+
+
 def get_valid_access_token() -> str | None:
     """
     Return a valid access token, transparently refreshing if it is near expiry.
@@ -232,9 +245,16 @@ def get_valid_access_token() -> str | None:
     tokens = get_tokens()
     if not tokens:
         return None
+    if not _needs_refresh(tokens):
+        return tokens.get("access")
 
-    # Refresh if the token expires within 60 seconds
-    if tokens.get("expires", 0) < (time.time() + 60) * 1000:
+    with _refresh_lock:
+        # Re-read under the lock: another caller may have refreshed while we
+        # waited, in which case we use their rotated token rather than spending
+        # our now-stale refresh token a second time.
+        tokens = get_tokens() or tokens
+        if not _needs_refresh(tokens):
+            return tokens.get("access")
         try:
             raw = _do_refresh(tokens["refresh"])
             tokens = _tokens_from_raw(raw, existing=tokens)

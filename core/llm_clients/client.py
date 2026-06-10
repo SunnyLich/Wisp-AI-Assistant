@@ -13,6 +13,7 @@ from __future__ import annotations
 import gzip
 import json as _stdlib_json
 import ssl as _ssl
+import threading as _threading
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
 import config
@@ -36,6 +37,7 @@ from core.llm_clients.routes import (
     route_candidates as _route_candidates,
     normalize_model_for_provider as _normalize_model_for_provider,
 )
+from dataclasses import dataclass, field
 from typing import Generator
 
 _TOOL_REGISTRY = ToolRegistry()
@@ -483,6 +485,59 @@ def _model_accepts_images(model: str) -> bool:
     return any(hint in m for hint in _VISION_MODEL_HINTS)
 
 
+# Model substrings whose providers reject any non-default sampling value
+# (temperature / top_p): GPT-5 family + OpenAI o-series reasoning models, and the
+# newest Claude models (Opus 4.7+, Fable), which removed those parameters. For
+# these we omit temperature and let the model use its default.
+_NO_CUSTOM_SAMPLING_HINTS = (
+    "gpt-5", "o1", "o3", "o4",
+    "opus-4-7", "opus-4-8", "fable",
+)
+
+
+def _model_rejects_custom_sampling(model: str) -> bool:
+    m = (model or "").strip().lower()
+    return any(hint in m for hint in _NO_CUSTOM_SAMPLING_HINTS)
+
+
+def _apply_sampling(kwargs: dict, model: str, temperature: float | None) -> dict:
+    """Add ``temperature`` only when the model accepts a custom one.
+
+    Comply with each model's rules up front: GPT-5/o-series and the newest Claude
+    models only accept their default sampling value and 400 on anything else, so
+    we omit it for them. Models that do accept it keep the requested value. The
+    reactive drop-and-retry on the OpenAI-compatible route remains the backstop
+    for any model not covered by the hint list above.
+    """
+    if temperature is not None and not _model_rejects_custom_sampling(model):
+        kwargs["temperature"] = temperature
+    return kwargs
+
+
+# OpenAI's GPT-5 family and o-series reasoning models reject ``max_tokens`` and
+# require ``max_completion_tokens``. Only OpenAI serves these model names, so the
+# substring match is effectively provider-scoped.
+_MAX_COMPLETION_TOKENS_HINTS = ("gpt-5", "o1", "o3", "o4")
+
+
+def _model_uses_max_completion_tokens(model: str) -> bool:
+    m = (model or "").strip().lower()
+    return any(hint in m for hint in _MAX_COMPLETION_TOKENS_HINTS)
+
+
+def _apply_max_output(kwargs: dict, model: str, value) -> dict:
+    """Set the output-token cap under the field name the model accepts.
+
+    GPT-5 / o-series want ``max_completion_tokens``; everything else takes
+    ``max_tokens``. Complying up front avoids a 400 + retry round-trip.
+    """
+    if value is None:
+        return kwargs
+    key = "max_completion_tokens" if _model_uses_max_completion_tokens(model) else "max_tokens"
+    kwargs[key] = value
+    return kwargs
+
+
 def screenshot_capability_warnings(
     screenshot_modes,
     *,
@@ -566,24 +621,65 @@ def tool_capability_warnings(tools_enabled: bool, *, llm_provider: str) -> list[
     return []
 
 
+# Providers that authenticate with a personal subscription login (OAuth) instead
+# of a static API key. Their tokens can be invalidated server-side and need
+# periodic re-sign-in; API keys persist indefinitely.
+_SUBSCRIPTION_AUTH_PROVIDERS = frozenset({"chatgpt", "copilot"})
+
+
+def subscription_auth_warnings(
+    *, llm_provider: str = "", vision_provider: str = ""
+) -> list[str]:
+    """Warn when a route signs in with a subscription account (ChatGPT/Copilot).
+
+    Those logins can expire or be invalidated by the provider and force a fresh
+    sign-in — most visibly after a restart — whereas API-key providers do not.
+    Advisory only; the user's choice is still honored. Returns one message per
+    affected role (Vision LLM, Main LLM)."""
+    roles: list[tuple[str, str]] = []
+    if (vision_provider or "").strip().lower() in _SUBSCRIPTION_AUTH_PROVIDERS:
+        roles.append(("Vision LLM", vision_provider.strip()))
+    if (llm_provider or "").strip().lower() in _SUBSCRIPTION_AUTH_PROVIDERS:
+        roles.append(("Main LLM", llm_provider.strip()))
+    return [
+        f"Your {role} uses '{provider}', which signs in with a personal "
+        "subscription account. That login can be invalidated and need re-signing "
+        "in (often after a restart). For an always-on route, use an API-key "
+        "provider such as Anthropic, OpenAI, or Google."
+        for role, provider in roles
+    ]
+
+
 def _get_tool_schemas(
     prompt: str = "",
     *,
     include_general: bool = True,
     include_screenshot: bool = False,
     allowed_tools: list[str] | None = None,
+    unfiltered: bool = False,
 ) -> list[dict]:
     """Anthropic tool schemas for a query.
 
     capture_screen is opt-in (include_screenshot) and is never part of the
     general set, so it only appears when the caller explicitly allows the model
     to take screenshots. include_general gates every other built-in tool.
+
+    ``unfiltered`` skips the per-prompt keyword filter and returns the full,
+    stable built-in set. Multi-turn chat uses this so the tool list (which renders
+    at the front of the prompt) stays byte-identical across turns and does not
+    invalidate prompt caching — the single-shot query path keeps filtering for
+    latency.
     """
+    base = (
+        _TOOL_REGISTRY.schemas(include_server_tools=True)
+        if unfiltered
+        else _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
+    )
     schemas: list[dict] = []
     if include_general:
         schemas = [
             schema
-            for schema in _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
+            for schema in base
             if _tool_schema_allowed(schema.get("name", ""), allowed_tools)
         ]
     if include_screenshot:
@@ -642,6 +738,56 @@ def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None
         elif name not in allowed:
             return f"Tool {name!r} is disabled for this caller."
     return _TOOL_REGISTRY.execute(name, inputs)
+
+
+def _tools_allow(allowed_tools: list[str] | None, *names: str) -> bool:
+    if allowed_tools is None:
+        return True
+    allowed = set(allowed_tools)
+    return any(name in allowed for name in names)
+
+
+def _frontload_context_for_disabled_tools(allowed_tools: list[str] | None) -> str:
+    parts: list[str] = []
+    if _tools_allow(allowed_tools, "get_context", "get_context.documents"):
+        try:
+            doc_text = read_active_document_for_context()
+        except Exception as exc:
+            print(f"[llm] failed to front-load open document context: {exc}", flush=True)
+            doc_text = ""
+        if doc_text:
+            parts.append("[Open documents]\n" + doc_text)
+    if _tools_allow(allowed_tools, "git_status"):
+        try:
+            status = _execute_git_status({})
+        except Exception as exc:
+            print(f"[llm] failed to front-load git status context: {exc}", flush=True)
+            status = ""
+        if status:
+            parts.append("[Git status]\n" + status)
+    if _tools_allow(allowed_tools, "git_diff"):
+        try:
+            diff = _execute_git_diff({})
+        except Exception as exc:
+            print(f"[llm] failed to front-load git diff context: {exc}", flush=True)
+            diff = ""
+        if diff:
+            parts.append("[Git diff]\n" + diff)
+    return "\n\n".join(parts)
+
+
+def _append_ambient_context(ambient_context: str, extra: str) -> str:
+    extra = (extra or "").strip()
+    if not extra:
+        return ambient_context
+    return f"{ambient_context}\n\n---\n{extra}".strip() if ambient_context else extra
+
+
+def _inject_frontloaded_tool_context(ambient_context: str, allowed_tools: list[str] | None) -> str:
+    return _append_ambient_context(
+        ambient_context,
+        _frontload_context_for_disabled_tools(allowed_tools),
+    )
 
 
 def _capture_screen_b64(provided_b64: str | None = None) -> str | None:
@@ -740,7 +886,6 @@ _OPENAI_MAX_RETRIES = 1
 # re-probing an exhausted model on every reply. After it expires the route is
 # tried again (some retries, not an infinite skip).
 _ROUTE_COOLDOWN_SECONDS = 300.0
-import threading as _threading
 import time as _time
 _route_cooldowns: dict[tuple[str, str], float] = {}
 _route_cooldowns_lock = _threading.Lock()
@@ -829,6 +974,8 @@ def reset_clients() -> None:
     with _dynamic_client_lock:
         _dynamic_openai_clients.clear()
         _dynamic_anthropic_client_cache = None
+    with _route_capabilities_lock:
+        _route_capabilities.clear()
     _TOOL_REGISTRY.plugin_dir = Path(config.TOOL_PLUGIN_DIR)
     _TOOL_REGISTRY.refresh()
 
@@ -940,6 +1087,22 @@ _OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
 }
 
 
+@dataclass
+class RouteCapabilities:
+    supports_stream: bool | None = None
+    requires_stream: bool | None = None
+    supports_tools: bool | None = None
+    supports_parallel_tools: bool | None = None
+    supports_images: bool | None = None
+    supports_json_mode: bool | None = None
+    supports_max_output_tokens: bool | None = None
+    unsupported_parameters: set[str] = field(default_factory=set)
+
+
+_route_capabilities: dict[tuple[str, str, str], RouteCapabilities] = {}
+_route_capabilities_lock = _threading.Lock()
+
+
 def _openai_compat_base_url(provider: str) -> str:
     provider = (provider or "").strip().lower()
     if provider == "openai":
@@ -948,6 +1111,155 @@ def _openai_compat_base_url(provider: str) -> str:
         return config.CUSTOM_BASE_URL
     item = _OPENAI_COMPAT_PROVIDERS.get(provider)
     return item[1] if item else ""
+
+
+def _route_endpoint(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    if provider in _OPENAI_COMPAT_PROVIDER_SET:
+        return _openai_compat_base_url(provider).rstrip("/")
+    if provider == "chatgpt":
+        return "https://chatgpt.com/backend-api/codex"
+    if provider == "anthropic":
+        return "https://api.anthropic.com"
+    if provider == "copilot":
+        return "copilot"
+    return provider
+
+
+def _route_capability_key(provider: str, model: str) -> tuple[str, str, str]:
+    return (
+        (provider or "").strip().lower(),
+        model or "",
+        _route_endpoint(provider),
+    )
+
+
+def _get_route_capabilities(provider: str, model: str) -> RouteCapabilities:
+    key = _route_capability_key(provider, model)
+    with _route_capabilities_lock:
+        cap = _route_capabilities.get(key)
+        if cap is None:
+            cap = RouteCapabilities()
+            _route_capabilities[key] = cap
+        return cap
+
+
+def _update_route_capabilities(provider: str, model: str, **facts) -> None:
+    cap = _get_route_capabilities(provider, model)
+    for name, value in facts.items():
+        if hasattr(cap, name):
+            setattr(cap, name, value)
+
+
+def _mark_unsupported_parameter(provider: str, model: str, name: str) -> None:
+    if not name:
+        return
+    cap = _get_route_capabilities(provider, model)
+    cap.unsupported_parameters.add(name)
+    if name in {"max_output_tokens", "max_tokens"}:
+        cap.supports_max_output_tokens = False
+    elif name == "tools":
+        cap.supports_tools = False
+    elif name == "parallel_tool_calls":
+        cap.supports_parallel_tools = False
+    elif name == "response_format":
+        cap.supports_json_mode = False
+
+
+def _recover_openai_compat_kwargs(
+    provider: str, model: str, kwargs: dict, exc: Exception
+) -> dict | None:
+    """Return kwargs adjusted to satisfy a 400 about a specific field, or None.
+
+    The general "comply with whatever the endpoint rejects" path: rename
+    ``max_tokens`` to ``max_completion_tokens`` when the model demands it, or drop
+    any unsupported parameter/value we can name (temperature, top_p, etc.). The
+    fix is recorded on the route so later calls skip the retry. Returns None when
+    the error is not a recoverable field problem (caller re-raises)."""
+    _record_route_error_capabilities(provider, model, exc)
+    lowered = str(exc).lower()
+    if "max_tokens" in kwargs and "max_completion_tokens" in lowered:
+        new = dict(kwargs)
+        new["max_completion_tokens"] = new.pop("max_tokens")
+        _mark_unsupported_parameter(provider, model, "max_tokens")
+        print(f"[llm] {provider}/{model}: max_tokens -> max_completion_tokens", flush=True)
+        return new
+    name = _unsupported_parameter_name(exc)
+    if name and name in kwargs:
+        _mark_unsupported_parameter(provider, model, name)
+        new = dict(kwargs)
+        new.pop(name, None)
+        print(f"[llm] {provider}/{model}: dropping unsupported field {name!r}", flush=True)
+        return new
+    return None
+
+
+def _stream_openai_compat_plain(
+    provider: str, model: str, kwargs: dict
+) -> Generator[str, None, None]:
+    """Stream a no-tool OpenAI-compatible completion, self-healing the request.
+
+    On a 400 about a specific field it drops or renames that field and retries,
+    so one code path works across models with different format rules. Honors the
+    learned per-route capabilities, the macOS non-streaming safe mode, and the
+    streaming -> non-streaming fallback. Used by the chat and rewrite routes."""
+    kwargs = dict(kwargs)
+    for unsupported in list(_get_route_capabilities(provider, model).unsupported_parameters):
+        kwargs.pop(unsupported, None)
+
+    if not kwargs.get("stream", True):
+        while True:
+            try:
+                text = _openai_compat_stdlib_completion_text(provider, kwargs)
+                break
+            except Exception as exc:
+                adjusted = _recover_openai_compat_kwargs(provider, model, kwargs, exc)
+                if adjusted is None:
+                    raise
+                kwargs = adjusted
+        if text:
+            yield text
+        return
+
+    client = _dynamic_openai_client(provider)
+    while True:
+        produced = False
+        try:
+            with client.chat.completions.create(**kwargs) as stream:
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        produced = True
+                        yield delta
+            return
+        except Exception as exc:
+            if produced:
+                raise  # already streamed output; don't retry and double-emit
+            adjusted = _recover_openai_compat_kwargs(provider, model, kwargs, exc)
+            if adjusted is not None:
+                kwargs = adjusted
+                continue
+            if kwargs.get("stream") and _stream_mode_error(exc):
+                _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
+                kwargs = dict(kwargs)
+                kwargs["stream"] = False
+                print("[llm] OpenAI-compatible stream rejected; retrying non-streaming", flush=True)
+                while True:
+                    try:
+                        response = client.chat.completions.create(**kwargs)
+                        break
+                    except Exception as create_exc:
+                        adjusted = _recover_openai_compat_kwargs(provider, model, kwargs, create_exc)
+                        if adjusted is None:
+                            raise
+                        kwargs = adjusted
+                text = _openai_compat_message_text(response)
+                if text:
+                    yield text
+                return
+            raise
 
 
 def _openai_compat_api_key(provider: str) -> str:
@@ -1050,9 +1362,102 @@ def _stream_mode_error(exc: Exception) -> bool:
     )
 
 
+def _requires_stream_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "stream must be true",
+            "stream=true",
+            "requires stream",
+            "requires streaming",
+            "must be streamed",
+        )
+    )
+
+
+def _streaming_not_supported_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    if _requires_stream_error(exc):
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "streaming is not supported",
+            "stream is not supported",
+            "streaming not supported",
+            "stream not supported",
+            "streaming unsupported",
+            "unsupported stream",
+        )
+    )
+
+
+def _tools_not_supported_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    if "tool" not in text and "function" not in text:
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "unsupported",
+            "not supported",
+            "unknown parameter",
+            "unrecognized",
+            "invalid parameter",
+            "not allowed",
+        )
+    )
+
+
+def _json_mode_not_supported_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "response_format" in text
+        or "json mode" in text
+        or ("json" in text and any(marker in text for marker in ("unsupported", "not supported")))
+    )
+
+
+def _image_not_supported_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        any(marker in text for marker in ("image", "vision", "input_image", "image_url"))
+        and any(marker in text for marker in ("unsupported", "not supported", "invalid", "not accept"))
+    )
+
+
+def _record_route_error_capabilities(provider: str, model: str, exc: Exception) -> None:
+    name = _unsupported_parameter_name(exc)
+    if name:
+        _mark_unsupported_parameter(provider, model, name)
+    if _requires_stream_error(exc):
+        _update_route_capabilities(provider, model, supports_stream=True, requires_stream=True)
+    elif _streaming_not_supported_error(exc):
+        _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
+    if (not name or name == "tools") and _tools_not_supported_error(exc):
+        _update_route_capabilities(provider, model, supports_tools=False)
+    if _json_mode_not_supported_error(exc):
+        _update_route_capabilities(provider, model, supports_json_mode=False)
+    if _image_not_supported_error(exc):
+        _update_route_capabilities(provider, model, supports_images=False)
+
+
 def _unsupported_parameter_name(exc: Exception) -> str:
     text = str(exc)
     lowered = text.lower()
+    # "Unsupported value: 'temperature' does not support 0.5 with this model. Only
+    # the default (1) value is supported." — GPT-5-family / reasoning models reject
+    # any non-default sampling value. Treat the named field as unsupported so the
+    # route drops it and falls back to the model's default, instead of failing.
+    if "unsupported value" in lowered and (
+        "only the default" in lowered or "does not support" in lowered
+    ):
+        rest = text[lowered.find("unsupported value"):]
+        import re as _re
+        m = _re.search(r"['\"]([a-zA-Z0-9_]+)['\"]", rest)
+        if m:
+            return m.group(1)
     if "unsupported parameter" not in lowered and "unknown parameter" not in lowered:
         return ""
     for marker in ("parameter:", "parameter", "param:"):
@@ -1077,30 +1482,76 @@ def _without_unsupported_parameter(kwargs: dict, exc: Exception) -> dict | None:
     return retry_kwargs
 
 
-def _response_stream_text(client, kwargs: dict) -> Generator[str, None, None]:
+def _response_stream_text(
+    client,
+    kwargs: dict,
+    *,
+    provider: str = "",
+    model: str = "",
+) -> Generator[str, None, None]:
     kwargs = dict(kwargs)
+    cap = _get_route_capabilities(provider, model) if provider or model else None
+    if cap is not None:
+        for name in list(cap.unsupported_parameters):
+            kwargs.pop(name, None)
+        if cap.requires_stream is False or cap.supports_stream is False:
+            try:
+                response = client.responses.create(**kwargs)
+            except Exception as create_exc:
+                _record_route_error_capabilities(provider, model, create_exc)
+                if _requires_stream_error(create_exc):
+                    _update_route_capabilities(provider, model, supports_stream=True, requires_stream=True)
+                    yield from _response_stream_text(client, kwargs, provider=provider, model=model)
+                    return
+                retry_kwargs = _without_unsupported_parameter(kwargs, create_exc)
+                if retry_kwargs is None:
+                    raise
+                _mark_unsupported_parameter(provider, model, _unsupported_parameter_name(create_exc))
+                print("[llm] Responses create rejected unsupported parameter; retrying without it", flush=True)
+                response = client.responses.create(**retry_kwargs)
+            text = _response_output_text(response)
+            if text:
+                yield text
+            return
     try:
         with client.responses.stream(**kwargs) as stream:
+            if cap is not None:
+                cap.supports_stream = True
             for event in stream:
                 if getattr(event, "type", "") == "response.output_text.delta":
                     delta = getattr(event, "delta", "")
                     if delta:
                         yield delta
     except Exception as exc:
+        if provider or model:
+            _record_route_error_capabilities(provider, model, exc)
         retry_kwargs = _without_unsupported_parameter(kwargs, exc)
         if retry_kwargs is not None:
+            if provider or model:
+                _mark_unsupported_parameter(provider, model, _unsupported_parameter_name(exc))
             print("[llm] Responses stream rejected unsupported parameter; retrying without it", flush=True)
-            yield from _response_stream_text(client, retry_kwargs)
+            yield from _response_stream_text(client, retry_kwargs, provider=provider, model=model)
             return
         if not _stream_mode_error(exc):
             raise
+        if provider or model:
+            _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
         print("[llm] Responses stream rejected; retrying non-streaming", flush=True)
         try:
             response = client.responses.create(**kwargs)
         except Exception as create_exc:
+            if provider or model:
+                _record_route_error_capabilities(provider, model, create_exc)
+            if _requires_stream_error(create_exc):
+                if provider or model:
+                    _update_route_capabilities(provider, model, supports_stream=True, requires_stream=True)
+                yield from _response_stream_text(client, kwargs, provider=provider, model=model)
+                return
             retry_kwargs = _without_unsupported_parameter(kwargs, create_exc)
             if retry_kwargs is None:
                 raise
+            if provider or model:
+                _mark_unsupported_parameter(provider, model, _unsupported_parameter_name(create_exc))
             print("[llm] Responses create rejected unsupported parameter; retrying without it", flush=True)
             response = client.responses.create(**retry_kwargs)
         text = _response_output_text(response)
@@ -1544,24 +1995,38 @@ def _get_vision_anthropic_client():
 
 
 def _run_openai_compat_probe(client, *, provider: str, model: str, messages: list) -> None:
+    cap = _get_route_capabilities(provider, model)
     kwargs = {
         "model": model,
         "messages": messages,
-        "stream": not _use_macos_openai_compat_non_streaming(provider),
+        "stream": cap.supports_stream is not False and not _use_macos_openai_compat_non_streaming(provider),
         "max_tokens": 8,
     }
+    for unsupported in list(cap.unsupported_parameters):
+        kwargs.pop(unsupported, None)
     if not kwargs["stream"]:
         client.chat.completions.create(**kwargs)
         return
     try:
         with client.chat.completions.create(**kwargs) as stream:
+            _update_route_capabilities(provider, model, supports_stream=True)
             for _chunk in stream:
                 break
     except Exception as exc:
+        _record_route_error_capabilities(provider, model, exc)
+        retry_kwargs = _without_unsupported_parameter(kwargs, exc)
+        if retry_kwargs is not None:
+            _mark_unsupported_parameter(provider, model, _unsupported_parameter_name(exc))
+            print("[llm] route probe rejected unsupported parameter; retrying without it", flush=True)
+            with client.chat.completions.create(**retry_kwargs) as stream:
+                for _chunk in stream:
+                    break
+            return
         if not _stream_mode_error(exc):
             raise
         retry_kwargs = dict(kwargs)
         retry_kwargs["stream"] = False
+        _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
         print("[llm] route probe stream rejected; retrying non-streaming", flush=True)
         client.chat.completions.create(**retry_kwargs)
 
@@ -1666,23 +2131,29 @@ def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
     }
     try:
         client.responses.create(**kwargs)
+        _update_route_capabilities("chatgpt", model, requires_stream=False, supports_max_output_tokens=True)
     except Exception as exc:
+        _record_route_error_capabilities("chatgpt", model, exc)
         retry_kwargs = _without_unsupported_parameter(kwargs, exc)
         if retry_kwargs is not None:
+            _mark_unsupported_parameter("chatgpt", model, _unsupported_parameter_name(exc))
             print("[llm] ChatGPT route probe create rejected unsupported parameter; retrying without it", flush=True)
             client.responses.create(**retry_kwargs)
             return
         if not _stream_mode_error(exc):
             raise
+        _update_route_capabilities("chatgpt", model, supports_stream=True, requires_stream=True)
         print("[llm] ChatGPT route probe create rejected; retrying streaming", flush=True)
         try:
             with client.responses.stream(**kwargs) as stream:
                 for _event in stream:
                     break
         except Exception as stream_exc:
+            _record_route_error_capabilities("chatgpt", model, stream_exc)
             retry_kwargs = _without_unsupported_parameter(kwargs, stream_exc)
             if retry_kwargs is None:
                 raise
+            _mark_unsupported_parameter("chatgpt", model, _unsupported_parameter_name(stream_exc))
             print("[llm] ChatGPT route probe stream rejected unsupported parameter; retrying without it", flush=True)
             with client.responses.stream(**retry_kwargs) as stream:
                 for _event in stream:
@@ -1932,6 +2403,7 @@ def _stream_with_fallbacks(
                 continue
             print(f"[llm {ts}] Route ({kind}) {provider}/{model} returned no content after {time.monotonic() - route_started:.1f}s; cooling down {_ROUTE_COOLDOWN_SECONDS:.0f}s; no fallback left")
         except Exception as exc:
+            _record_route_error_capabilities(provider, model, exc)
             last_exc = exc
             attempts.append((provider, model, exc))
             ts = time.strftime("%H:%M:%S")
@@ -2067,6 +2539,9 @@ def _stream_copilot(
 ) -> Generator[str, None, None]:
     from core.auth import copilot_client
 
+    if use_tools:
+        _update_route_capabilities("copilot", model, supports_tools=False)
+        ambient_context = _inject_frontloaded_tool_context(ambient_context, allowed_tools)
     parts = []
     if memory_context:
         parts.append(memory_context)
@@ -2077,7 +2552,7 @@ def _stream_copilot(
         user_message,
         model,
         system=system,
-        allow_tools=use_tools,
+        allow_tools=False,
     )
 
 
@@ -2103,11 +2578,17 @@ def _stream_openai_compat(
 ) -> Generator[str, None, None]:
     import json as _json
 
-    messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
+    provider = (provider or "").strip().lower()
+    cap = _get_route_capabilities(provider, model)
+    if image_base64 and cap.supports_images is False:
+        raise RuntimeError(f"{provider}/{model} does not support image input.")
     tools_requested = (use_tools or allow_screenshot_tool) and not image_base64 and not json_mode
-    tools_allowed = macos_safety.openai_compat_tools_enabled()
+    tools_allowed = macos_safety.openai_compat_tools_enabled() and cap.supports_tools is not False
     if tools_requested and not tools_allowed:
-        print("[llm] macOS safe mode: OpenAI-compatible live tools disabled", flush=True)
+        reason = "macOS safe mode" if not macos_safety.openai_compat_tools_enabled() else "route capability cache"
+        print(f"[llm] OpenAI-compatible live tools disabled by {reason}", flush=True)
+        ambient_context = _inject_frontloaded_tool_context(ambient_context, allowed_tools)
+    messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context)
     expose_screenshot = tools_allowed and allow_screenshot_tool and not image_base64 and not json_mode
     if expose_screenshot and messages and messages[0].get("role") == "system":
         messages[0]["content"] = _with_screenshot_note(messages[0]["content"], True)
@@ -2130,16 +2611,20 @@ def _stream_openai_compat(
         "model": model,
         "messages": messages,
         "stream": True,
-        "temperature": 0.5 if temperature is None else temperature,
     }
+    _apply_sampling(kwargs, model, 0.5 if temperature is None else temperature)
     # max_tokens == 0 means "no app-imposed cap": omit the field so the provider
     # uses its own per-model maximum. None means "unspecified" -> a safe default.
     if max_tokens != 0:
-        kwargs["max_tokens"] = max_tokens or 2048
+        _apply_max_output(kwargs, model, max_tokens or 2048)
     if tools:
         kwargs["tools"] = tools
+        if cap.supports_parallel_tools is True:
+            kwargs["parallel_tool_calls"] = True
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    for unsupported in list(cap.unsupported_parameters):
+        kwargs.pop(unsupported, None)
 
     if _use_macos_openai_compat_non_streaming(provider):
         # OpenAI-compatible streaming was the crash source in macOS logs for a
@@ -2147,11 +2632,34 @@ def _stream_openai_compat(
         # one chunk, and keep live tool loops opt-in while this path is validated.
         kwargs["stream"] = False
         kwargs.pop("tools", None)
+        kwargs.pop("parallel_tool_calls", None)
         print("[llm] macOS OpenAI-compatible route using non-streaming safe mode", flush=True)
         text = _openai_compat_stdlib_completion_text(provider, kwargs)
         if text:
+            if image_base64:
+                _update_route_capabilities(provider, model, supports_images=True)
             yield text
         return
+
+    def _retry_without_live_tools(reason: str) -> Generator[str, None, None]:
+        print(f"[llm] OpenAI-compatible live tools disabled for this route: {reason}", flush=True)
+        _update_route_capabilities(provider, model, supports_tools=False)
+        yield from _stream_openai_compat(
+            user_message,
+            image_base64,
+            model,
+            client,
+            _inject_frontloaded_tool_context(ambient_context, allowed_tools),
+            memory_context,
+            use_tools=False,
+            allowed_tools=allowed_tools,
+            allow_screenshot_tool=False,
+            screenshot_tool_b64=screenshot_tool_b64,
+            provider=provider,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            json_mode=json_mode,
+        )
 
     # Stream first round — yield text, accumulate any tool-call deltas.
     tool_calls_acc: dict[int, dict] = {}  # index → {id, name, arguments}
@@ -2160,6 +2668,11 @@ def _stream_openai_compat(
 
     try:
         with client.chat.completions.create(**kwargs) as stream:
+            _update_route_capabilities(provider, model, supports_stream=True)
+            if image_base64:
+                _update_route_capabilities(provider, model, supports_images=True)
+            if tools:
+                _update_route_capabilities(provider, model, supports_tools=True)
             for chunk in stream:
                 if not chunk.choices:
                     continue
@@ -2181,16 +2694,62 @@ def _stream_openai_compat(
                         if tc.function.arguments:
                             entry["arguments"] += tc.function.arguments
     except Exception as exc:
+        _record_route_error_capabilities(provider, model, exc)
+        retry_kwargs = _without_unsupported_parameter(kwargs, exc)
+        if retry_kwargs is not None:
+            name = _unsupported_parameter_name(exc)
+            _mark_unsupported_parameter(provider, model, name)
+            if name == "tools":
+                yield from _retry_without_live_tools(str(exc))
+                return
+            print(f"[llm] OpenAI-compatible rejected unsupported parameter {name!r}; retrying without it", flush=True)
+            yield from _stream_openai_compat(
+                user_message,
+                image_base64,
+                model,
+                client,
+                ambient_context,
+                memory_context,
+                use_tools=use_tools,
+                allowed_tools=allowed_tools,
+                allow_screenshot_tool=allow_screenshot_tool,
+                screenshot_tool_b64=screenshot_tool_b64,
+                provider=provider,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                json_mode=json_mode,
+            )
+            return
+        if tools and _tools_not_supported_error(exc):
+            yield from _retry_without_live_tools(str(exc))
+            return
         if not kwargs.get("stream") or not _stream_mode_error(exc):
             raise
+        _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
         retry_kwargs = dict(kwargs)
         retry_kwargs["stream"] = False
         print("[llm] OpenAI-compatible stream rejected; retrying non-streaming", flush=True)
-        response = client.chat.completions.create(**retry_kwargs)
+        while True:
+            try:
+                response = client.chat.completions.create(**retry_kwargs)
+                break
+            except Exception as create_exc:
+                _record_route_error_capabilities(provider, model, create_exc)
+                next_kwargs = _without_unsupported_parameter(retry_kwargs, create_exc)
+                if next_kwargs is not None:
+                    _mark_unsupported_parameter(provider, model, _unsupported_parameter_name(create_exc))
+                    retry_kwargs = next_kwargs
+                    continue
+                if tools and _tools_not_supported_error(create_exc):
+                    yield from _retry_without_live_tools(str(create_exc))
+                    return
+                raise
         choice = response.choices[0] if getattr(response, "choices", None) else None
         finish_reason = getattr(choice, "finish_reason", None) or finish_reason
         text = _openai_compat_message_text(response)
         if text:
+            if image_base64:
+                _update_route_capabilities(provider, model, supports_images=True)
             if tools:
                 first_round_text.append(text)
             else:
@@ -2264,11 +2823,11 @@ def _stream_openai_compat(
         follow_up_kwargs = {
             "model": current_model,
             "messages": messages,
-            "temperature": 0.5 if temperature is None else temperature,
             "stream": False,
         }
+        _apply_sampling(follow_up_kwargs, current_model, 0.5 if temperature is None else temperature)
         if max_tokens != 0:
-            follow_up_kwargs["max_tokens"] = max_tokens or 2048
+            _apply_max_output(follow_up_kwargs, current_model, max_tokens or 2048)
         if tools and not vision_mode:
             follow_up_kwargs["tools"] = tools
         follow_up = client.chat.completions.create(**follow_up_kwargs)
@@ -2319,20 +2878,15 @@ def _stream_codex(
     ambient_context: str = "",
     memory_context: str = "",
     use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Stream a response via the Codex endpoint using the Responses API."""
     # The Responses API tool-call loop (previous_response_id chaining) is not
     # implemented here.  When tools are requested we eagerly inject context that
     # Claude would otherwise fetch on demand: open supported documents and clipboard.
-    if use_tools and (
-        allowed_tools is None
-        or "get_context" in allowed_tools
-        or "get_context.documents" in allowed_tools
-    ):
-        doc_text = read_active_document_for_context()
-        if doc_text:
-            doc_block = f"[Open documents]\n{doc_text}"
-            ambient_context = f"{ambient_context}\n\n---\n{doc_block}".strip() if ambient_context else doc_block
+    if use_tools:
+        _update_route_capabilities("chatgpt", model, supports_tools=False)
+        ambient_context = _inject_frontloaded_tool_context(ambient_context, allowed_tools)
     text = _build_codex_text(user_message, ambient_context, memory_context)
     yield from _response_stream_text(
         client,
@@ -2342,6 +2896,8 @@ def _stream_codex(
             "instructions": config.get_system_prompt(),
             "store": False,
         },
+        provider="chatgpt",
+        model=model,
     )
 
 
@@ -2356,7 +2912,7 @@ def _stream_codex_vision(
         {"type": "input_text",  "text": user_message},
         {"type": "input_image", "image_url": f"data:image/png;base64,{image_base64}"},
     ]
-    yield from _response_stream_text(
+    for chunk in _response_stream_text(
         client,
         {
             "model": model,
@@ -2364,7 +2920,11 @@ def _stream_codex_vision(
             "instructions": config.get_system_prompt(),
             "store": False,
         },
-    )
+        provider="chatgpt",
+        model=model,
+    ):
+        _update_route_capabilities("chatgpt", model, supports_images=True)
+        yield chunk
 
 
 def _build_openai_messages(
@@ -2490,13 +3050,19 @@ def _stream_anthropic(
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> Generator[str, None, None]:
+    tools_active = use_tools or allow_screenshot_tool
+    cap = _get_route_capabilities("anthropic", model)
+    if tools_active and cap.supports_tools is False:
+        ambient_context = _inject_frontloaded_tool_context(ambient_context, allowed_tools)
+        tools_active = False
+        use_tools = False
+        allow_screenshot_tool = False
+
     system = _with_screenshot_note(config.get_system_prompt(), allow_screenshot_tool)
     if memory_context:
         system += f"\n\n{memory_context}"
     if ambient_context:
         system += f"\n\n---\n{ambient_context}"
-
-    tools_active = use_tools or allow_screenshot_tool
 
     # Anthropic requires an explicit max_tokens, so "no app cap" (0) maps to a
     # generous per-request ceiling rather than being truly unlimited.
@@ -2529,6 +3095,9 @@ def _stream_anthropic(
         if temperature is not None:
             request["temperature"] = temperature
         with client.messages.stream(**request) as stream:
+            _update_route_capabilities("anthropic", model, supports_stream=True)
+            if image_base64:
+                _update_route_capabilities("anthropic", model, supports_images=True)
             for text in stream.text_stream:
                 yield text
         return
@@ -2553,10 +3122,37 @@ def _stream_anthropic(
     if temperature is not None:
         request["temperature"] = temperature
     first_round_text: list[str] = []
-    with client.messages.stream(**request) as stream:
-        for text in stream.text_stream:
-            first_round_text.append(text)
-        final = stream.get_final_message()
+    try:
+        with client.messages.stream(**request) as stream:
+            _update_route_capabilities("anthropic", model, supports_stream=True, supports_tools=True)
+            if image_base64:
+                _update_route_capabilities("anthropic", model, supports_images=True)
+            for text in stream.text_stream:
+                first_round_text.append(text)
+            final = stream.get_final_message()
+    except Exception as exc:
+        _record_route_error_capabilities("anthropic", model, exc)
+        if _tools_not_supported_error(exc):
+            print("[llm] Anthropic live tools rejected; retrying with front-loaded context", flush=True)
+            _update_route_capabilities("anthropic", model, supports_tools=False)
+            yield from _stream_anthropic(
+                user_message,
+                image_base64,
+                model,
+                client,
+                _inject_frontloaded_tool_context(ambient_context, allowed_tools),
+                memory_context,
+                use_tools=False,
+                allowed_tools=allowed_tools,
+                allow_screenshot_tool=False,
+                screenshot_tool_b64=screenshot_tool_b64,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            return
+        if _streaming_not_supported_error(exc):
+            _update_route_capabilities("anthropic", model, supports_stream=False, requires_stream=False)
+        raise
 
     if final.stop_reason != "tool_use":
         for text in first_round_text:
@@ -2627,40 +3223,21 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
                 {"role": "user",   "content": user_message},
             ],
             "stream": not _use_macos_openai_compat_non_streaming(provider),
-            "max_tokens": 1024,
-            "temperature": 0.3,
         }
-        if not kwargs["stream"]:
-            print("[llm] macOS OpenAI-compatible rewrite using non-streaming safe mode", flush=True)
-            text = _openai_compat_stdlib_completion_text(provider, kwargs)
-            if text:
-                yield text
-            return
-        client = _dynamic_openai_client(provider)
-        try:
-            with client.chat.completions.create(**kwargs) as stream:
-                for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        yield delta
-        except Exception as exc:
-            if not kwargs.get("stream") or not _stream_mode_error(exc):
-                raise
-            retry_kwargs = dict(kwargs)
-            retry_kwargs["stream"] = False
-            print("[llm] OpenAI-compatible rewrite stream rejected; retrying non-streaming", flush=True)
-            text = _openai_compat_message_text(client.chat.completions.create(**retry_kwargs))
-            if text:
-                yield text
+        _apply_sampling(kwargs, model, 0.3)
+        _apply_max_output(kwargs, model, 1024)
+        yield from _stream_openai_compat_plain(provider, model, kwargs)
+        return
     elif provider == "anthropic":
         client = _dynamic_anthropic_client()
-        with client.messages.stream(
-            model=model,
-            max_tokens=1024,
-            system=_REWRITE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-            temperature=0.3,
-        ) as stream:
+        request = {
+            "model": model,
+            "max_tokens": 1024,
+            "system": _REWRITE_SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": user_message}],
+        }
+        _apply_sampling(request, model, 0.3)
+        with client.messages.stream(**request) as stream:
             for text in stream.text_stream:
                 yield text
     elif provider == "copilot":
@@ -2679,6 +3256,8 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
                 "instructions": _REWRITE_SYSTEM_PROMPT,
                 "store": False,
             },
+            provider="chatgpt",
+            model=model,
         )
     else:
         raise ValueError(f"Unknown rewrite provider: {provider}")
@@ -2688,6 +3267,106 @@ def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -
 # Multi-turn (chat window)
 # ------------------------------------------------------------------
 
+def _history_user_has_image(messages: list) -> bool:
+    """True if any user turn carries an attached screenshot."""
+    return any(
+        m.get("role") == "user" and m.get("image_base64")
+        for m in messages
+    )
+
+
+def _openai_history_payload(messages: list) -> list:
+    """Render history for the OpenAI-compatible chat completions API.
+
+    User turns that carry a screenshot become a multimodal content array so the
+    image is replayed on every turn; everything else stays a plain string."""
+    out: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        text = str(m.get("content") or "")
+        image = m.get("image_base64") if role == "user" else None
+        if image:
+            content: object = [
+                {"type": "text", "text": text},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image}"},
+                },
+            ]
+        else:
+            content = text
+        out.append({"role": role, "content": content})
+    return out
+
+
+def _anthropic_history_payload(messages: list) -> tuple[str, list]:
+    """Render history as (system, turns) for the Anthropic messages API.
+
+    User turns with a screenshot become image+text content blocks."""
+    system = next((m["content"] for m in messages if m.get("role") == "system"), "")
+    turns: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            continue
+        text = str(m.get("content") or "")
+        image = m.get("image_base64") if role == "user" else None
+        if image:
+            content: object = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": image,
+                    },
+                },
+                {"type": "text", "text": text},
+            ]
+        else:
+            content = text
+        turns.append({"role": role, "content": content})
+    return system, turns
+
+
+_CACHE_CONTROL = {"type": "ephemeral"}
+
+
+def _anthropic_cached_system(system: str):
+    """Render the system prompt as a cacheable block.
+
+    Anthropic does not cache anything unless you opt in with a ``cache_control``
+    breakpoint. The system prompt is byte-identical every turn, so caching it
+    (together with the tool list, which renders just before it) is a safe win.
+    """
+    text = system or ""
+    if not text:
+        return text
+    return [{"type": "text", "text": text, "cache_control": dict(_CACHE_CONTROL)}]
+
+
+def _mark_anthropic_history_cache(turns: list) -> None:
+    """Put a cache breakpoint at the end of the stable history, in place.
+
+    ``turns[-1]`` is the volatile latest user turn (new question + per-turn
+    memory); everything before it is frozen conversation history. Marking the
+    block just before the latest turn lets the next request reuse the whole prior
+    prefix — including any replayed screenshot — at cache-read pricing.
+    """
+    if len(turns) < 2:
+        return  # only the latest turn exists; nothing stable to cache yet
+    target = turns[-2]
+    content = target.get("content")
+    if isinstance(content, str):
+        target["content"] = [
+            {"type": "text", "text": content, "cache_control": dict(_CACHE_CONTROL)}
+        ]
+    elif isinstance(content, list) and content:
+        last = dict(content[-1])
+        last["cache_control"] = dict(_CACHE_CONTROL)
+        content[-1] = last
+
+
 def stream_response_with_history(
     messages: list,
     memory_context: str = "",
@@ -2696,87 +3375,93 @@ def stream_response_with_history(
     Stream a response given a pre-built messages list including history.
     Uses CHAT_LLM_PROVIDER / CHAT_LLM_MODEL (defaults to LLM_PROVIDER / LLM_MODEL).
 
+    When any user turn carries an ``image_base64`` screenshot, the whole
+    conversation is routed through VISION_LLM_PROVIDER / MODEL (like the one-shot
+    vision path) and the image is replayed on every turn, so the model keeps
+    seeing it on follow-up questions.
+
     Args:
-        messages:        [{{"role": "system"|"user"|"assistant", "content": str}}, ...]
-        memory_context:  Pre-formatted LTM facts from core.memory -” appended to
-                         the system message so the model is aware of user facts.
+        messages:        [{{"role": "system"|"user"|"assistant", "content": str,
+                         "image_base64": str?}}, ...]
+        memory_context:  Pre-formatted LTM facts from core.memory -” attached to
+                         the latest user turn so the model is aware of user facts.
     """
-    # Inject memory context into the system message (or prepend one)
+    # Attach memory to the latest user turn, NOT the system prompt. Memory is
+    # re-retrieved every turn, so folding it into the frozen system prompt would
+    # change the very front of the prompt each time and invalidate prompt caching
+    # for the whole conversation (system + history render before it). Keeping it
+    # on the volatile last user turn lets the stable prefix stay byte-identical so
+    # providers can cache the replayed history (including any screenshot).
     if memory_context:
-        sys_idx = next(
-            (i for i, m in enumerate(messages) if m["role"] == "system"), None
-        )
-        if sys_idx is not None:
-            messages = list(messages)   # shallow copy -” don't mutate the caller's list
-            messages[sys_idx] = {
-                **messages[sys_idx],
-                "content": messages[sys_idx]["content"] + f"\n\n{memory_context}",
-            }
+        messages = [dict(m) for m in messages]  # copy -” don't mutate the caller's turns
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                base = messages[i].get("content")
+                if isinstance(base, str):
+                    messages[i]["content"] = f"{base}\n\n{memory_context}".strip()
+                break
         else:
-            messages = [{"role": "system", "content": memory_context}] + list(messages)
-    candidates = _route_candidates(
-        config.CHAT_LLM_PROVIDER,
-        config.CHAT_LLM_MODEL,
-        config.CHAT_LLM_FALLBACKS,
-    )
+            # No user turn — fall back to a leading system message.
+            messages = [{"role": "system", "content": memory_context}] + messages
+    has_image = _history_user_has_image(messages)
+    if has_image:
+        kind, route_name = "chat-vision", "VISION_LLM"
+        candidates = _route_candidates(
+            config.VISION_LLM_PROVIDER,
+            config.VISION_LLM_MODEL,
+            config.VISION_LLM_FALLBACKS,
+        )
+    else:
+        kind, route_name = "chat", "CHAT_LLM"
+        candidates = _route_candidates(
+            config.CHAT_LLM_PROVIDER,
+            config.CHAT_LLM_MODEL,
+            config.CHAT_LLM_FALLBACKS,
+        )
     yield from _stream_with_fallbacks(
-        "chat",
+        kind,
         candidates,
-        lambda provider, model: _stream_single_history_route(provider, model, messages),
+        lambda provider, model: _stream_single_history_route(
+            provider, model, messages, route_name=route_name
+        ),
     )
 
 
-def _stream_single_history_route(provider: str, model: str, messages: list) -> Generator[str, None, None]:
-    _check_route_config(provider, model, "CHAT_LLM")
+def _stream_single_history_route(
+    provider: str, model: str, messages: list, route_name: str = "CHAT_LLM"
+) -> Generator[str, None, None]:
+    _check_route_config(provider, model, route_name)
     _log_model_route("chat", provider, model, use_tools=(provider == "anthropic"))
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
         kwargs = {
             "model": model,
-            "messages": messages,
+            "messages": _openai_history_payload(messages),
             "stream": not _use_macos_openai_compat_non_streaming(provider),
-            "max_tokens": 1024,
-            "temperature": 0.7,
         }
-        if not kwargs["stream"]:
-            print("[llm] macOS OpenAI-compatible chat using non-streaming safe mode", flush=True)
-            text = _openai_compat_stdlib_completion_text(provider, kwargs)
-            if text:
-                yield text
-            return
-        client = _dynamic_openai_client(provider)
-        try:
-            with client.chat.completions.create(**kwargs) as stream:
-                for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        yield delta
-        except Exception as exc:
-            if not kwargs.get("stream") or not _stream_mode_error(exc):
-                raise
-            retry_kwargs = dict(kwargs)
-            retry_kwargs["stream"] = False
-            print("[llm] OpenAI-compatible chat stream rejected; retrying non-streaming", flush=True)
-            text = _openai_compat_message_text(client.chat.completions.create(**retry_kwargs))
-            if text:
-                yield text
+        _apply_sampling(kwargs, model, 0.7)
+        _apply_max_output(kwargs, model, 1024)
+        yield from _stream_openai_compat_plain(provider, model, kwargs)
+        return
     elif provider == "anthropic":
         client = _dynamic_anthropic_client()
-        system = next((m["content"] for m in messages if m["role"] == "system"), "")
-        _VALID_KEYS = {"role", "content"}
-        turns = [
-            {k: v for k, v in m.items() if k in _VALID_KEYS}
-            for m in messages if m["role"] != "system"
-        ]
-        # Tool-enabled loop -” stream first round, block only if a tool is actually called.
-        _last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        if isinstance(_last_user, list):
-            _last_user = " ".join(p.get("text", "") for p in _last_user if isinstance(p, dict))
+        # Build turns with screenshots replayed as image blocks; drops any keys
+        # the API would reject (e.g. image_base64) by reconstructing each turn.
+        system, turns = _anthropic_history_payload(messages)
+        # Send the full, stable tool set (not the per-turn keyword-filtered one):
+        # tools render at the front of the prompt, so a set that changes between
+        # turns would invalidate the whole prompt cache. The fixed set keeps the
+        # prefix byte-identical and stays cached with the system prompt.
+        chat_tools = _get_tool_schemas(unfiltered=True)
+        # Prompt caching: cache the frozen system prompt and the stable history
+        # prefix so replayed turns (incl. screenshots) bill at ~0.1x on follow-ups.
+        system = _anthropic_cached_system(system)
+        _mark_anthropic_history_cache(turns)
         with client.messages.stream(
             model=model,
             max_tokens=1024,
             system=system,
             messages=turns,
-            tools=_get_tool_schemas(_last_user),
+            tools=chat_tools,
         ) as stream:
             for text in stream.text_stream:
                 yield text
@@ -2798,14 +3483,25 @@ def _stream_single_history_route(provider: str, model: str, messages: list) -> G
             label = "User" if m["role"] == "user" else "Assistant"
             history_prefix += f"{label}: {m['content']}\n"
         full_input = (history_prefix + last_user) if history_prefix else last_user
+        # Replay any screenshots in the conversation as input_image blocks so the
+        # Responses model can still see them on follow-up turns.
+        content: list[dict] = [{"type": "input_text", "text": full_input}]
+        for m in turns:
+            if m.get("role") == "user" and m.get("image_base64"):
+                content.append({
+                    "type": "input_image",
+                    "image_url": f"data:image/png;base64,{m['image_base64']}",
+                })
         yield from _response_stream_text(
             _get_chat_codex_client(),
             {
                 "model": model,
-                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": full_input}]}],
+                "input": [{"type": "message", "role": "user", "content": content}],
                 "instructions": system_msg,
                 "store": False,
             },
+            provider="chatgpt",
+            model=model,
         )
     elif provider == "copilot":
         from core.auth import copilot_client

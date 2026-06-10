@@ -183,11 +183,6 @@ class IconOverlay(QMainWindow):
     def _build_tray_menu(self) -> QMenu:
         menu = QMenu()
 
-        ask_action = QAction("Ask Wisp", self)
-        ask_action.triggered.connect(lambda: self.signals.summon_caller.emit(0))
-        menu.addAction(ask_action)
-        menu.addSeparator()
-
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
             agent_task_action = QAction("Start agent task...", self)
             agent_task_action.triggered.connect(self.signals.show_agent_task.emit)
@@ -202,8 +197,6 @@ class IconOverlay(QMainWindow):
             menu.addAction(make_agent_history_action(self, parent=self))
         menu.addSeparator()
 
-        new_chat_action = QAction("New chat", self)
-        new_chat_action.triggered.connect(self.signals.show_new_chat.emit)
         last_chat_action = QAction("Last chat", self)
         last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
         hide_icon_action = QAction("Hide icon", self)
@@ -214,7 +207,6 @@ class IconOverlay(QMainWindow):
         settings_action.triggered.connect(self._open_settings)
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(QApplication.quit)
-        menu.addAction(new_chat_action)
         menu.addAction(last_chat_action)
         menu.addAction(hide_icon_action)
         menu.addSeparator()

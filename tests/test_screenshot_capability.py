@@ -2,6 +2,7 @@ import unittest
 
 from core.llm_clients.client import (
     screenshot_capability_warnings,
+    subscription_auth_warnings,
     tool_capability_warnings,
 )
 
@@ -82,6 +83,28 @@ class ToolCapabilityWarnings(unittest.TestCase):
 
     def test_tools_on_groq_is_silent(self):
         self.assertEqual(tool_capability_warnings(True, llm_provider="groq"), [])
+
+
+class SubscriptionAuthWarnings(unittest.TestCase):
+    def test_api_key_providers_are_silent(self):
+        self.assertEqual(
+            subscription_auth_warnings(llm_provider="anthropic", vision_provider="openai"),
+            [],
+        )
+
+    def test_chatgpt_vision_warns(self):
+        w = subscription_auth_warnings(vision_provider="chatgpt")
+        self.assertEqual(len(w), 1)
+        self.assertIn("Vision LLM", w[0])
+
+    def test_copilot_main_warns(self):
+        w = subscription_auth_warnings(llm_provider="copilot")
+        self.assertEqual(len(w), 1)
+        self.assertIn("Main LLM", w[0])
+
+    def test_both_roles_warn_separately(self):
+        w = subscription_auth_warnings(llm_provider="chatgpt", vision_provider="copilot")
+        self.assertEqual(len(w), 2)
 
 
 if __name__ == "__main__":

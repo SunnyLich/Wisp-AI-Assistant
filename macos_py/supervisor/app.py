@@ -12,7 +12,11 @@ from pathlib import Path
 
 from macos_py.supervisor.flows import FlowController
 from macos_py.supervisor.ipc import WispSupervisor
-from macos_py.bootstrap import repo_root
+from macos_py.bootstrap import (
+    repo_root,
+    suppress_console_ctrl_c,
+    install_crash_diagnostics,
+)
 from core.system import single_instance
 
 
@@ -32,6 +36,11 @@ def _prepare_run_log_dir() -> Path:
 
 
 def main() -> int:
+    # Synthetic copy-Ctrl+C (selected-text capture) reaches the whole console
+    # process group; without this the supervisor's SIGINT handler would treat it
+    # as a quit and tear the app down. Workers are guarded via configure_paths().
+    suppress_console_ctrl_c()
+    install_crash_diagnostics()
     log_dir = _prepare_run_log_dir()
     logging.basicConfig(
         level=logging.INFO,

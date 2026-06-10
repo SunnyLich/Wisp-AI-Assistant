@@ -61,6 +61,9 @@ class QtFreezeWatchdog:
         self._cooldown = max(self._threshold, float(os.environ.get("WISP_UI_FREEZE_LOG_COOLDOWN_SECONDS", "10.0")))
         self._last_beat = time.monotonic()
         self._last_log = 0.0
+        self._last_drain_ticks = -1
+        self._drain_progress = time.monotonic()
+        self._last_ipc_log = 0.0
         self._stop = threading.Event()
         self._timer = QTimer()
         self._timer.setInterval(max(50, int(self._interval * 1000)))
@@ -81,28 +84,52 @@ class QtFreezeWatchdog:
         while not self._stop.wait(self._interval):
             now = time.monotonic()
             stalled_for = now - self._last_beat
-            if stalled_for < self._threshold or now - self._last_log < self._cooldown:
-                continue
-            self._last_log = now
-            self._write_freeze_log(stalled_for)
-
-    def _write_freeze_log(self, stalled_for: float) -> None:
-        try:
             status = self._status_fn() or {}
-            path = _ui_log_dir() / f"ui_freeze_{time.strftime('%Y%m%d-%H%M%S')}.log"
+
+            # Track whether the IPC pump (_drain) is still advancing.
+            ticks = int(status.get("drain_ticks", 0) or 0)
+            if ticks != self._last_drain_ticks:
+                self._last_drain_ticks = ticks
+                self._drain_progress = now
+
+            # Case 1: the Qt event loop itself is frozen (heartbeat stopped).
+            if stalled_for >= self._threshold:
+                if now - self._last_log >= self._cooldown:
+                    self._last_log = now
+                    self._write_report("ui_freeze", "event_loop_frozen", stalled_for, status)
+                continue
+
+            # Case 2 (the blind spot): the event loop is alive but the IPC pump
+            # has stopped draining while requests are queued — exactly the state
+            # a 'ui.* timed out' with no freeze log points to.
+            drain_stalled = now - self._drain_progress
+            if (
+                int(status.get("queue_depth", 0) or 0) > 0
+                and drain_stalled >= self._threshold
+                and now - self._last_ipc_log >= self._cooldown
+            ):
+                self._last_ipc_log = now
+                self._write_report("ui_ipc_stall", "ipc_pump_stalled", drain_stalled, status)
+
+    def _write_report(self, prefix: str, kind: str, stalled_for: float, status: dict) -> None:
+        try:
+            path = _ui_log_dir() / f"{prefix}_{time.strftime('%Y%m%d-%H%M%S')}.log"
             body = [
                 f"time={time.strftime('%Y-%m-%d %H:%M:%S')}\n",
+                f"kind={kind}\n",
                 f"pid={os.getpid()}\n",
                 f"stalled_for_seconds={stalled_for:.3f}\n",
                 f"active_method={status.get('method') or ''}\n",
                 f"active_for_seconds={status.get('active_for_seconds') or 0:.3f}\n",
+                f"queue_depth={status.get('queue_depth') or 0}\n",
+                f"drain_ticks={status.get('drain_ticks') or 0}\n",
                 "\nThread stacks:\n",
                 _format_thread_stacks(),
             ]
             path.write_text("".join(body), encoding="utf-8")
-            print(f"[wisp-ui] freeze watchdog wrote {path}", file=sys.stderr, flush=True)
+            print(f"[wisp-ui] watchdog wrote {path}", file=sys.stderr, flush=True)
         except Exception:
-            log.exception("failed writing UI freeze log")
+            log.exception("failed writing UI watchdog log")
 
 
 class MemoryProxy:
@@ -564,6 +591,7 @@ class QtProtocolHost:
         self._chat_streams_lock = threading.Lock()
         self._active_dispatch_method = ""
         self._active_dispatch_started = 0.0
+        self._drain_ticks = 0  # bumped each pump tick so the watchdog can tell the IPC drain apart from an event-loop freeze
         self._watchdog = QtFreezeWatchdog(app, self._watchdog_status)
 
         self._pump = QTimer()
@@ -594,6 +622,7 @@ class QtProtocolHost:
             self._lines.put(line)
 
     def _drain(self) -> None:
+        self._drain_ticks += 1  # proof the IPC pump fired this tick
         while True:
             try:
                 line = self._lines.get_nowait()
@@ -644,6 +673,8 @@ class QtProtocolHost:
         return {
             "method": self._active_dispatch_method,
             "active_for_seconds": max(0.0, time.monotonic() - started) if started else 0.0,
+            "drain_ticks": self._drain_ticks,
+            "queue_depth": self._lines.qsize(),
         }
 
     def _write_slow_dispatch_log(self, method: str, elapsed: float) -> None:

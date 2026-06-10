@@ -156,6 +156,46 @@ def test_plugins_run_action_invokes_loaded_tray_action(monkeypatch, tmp_path):
     assert calls == ["ran"]
 
 
+def test_run_plugin_startup_runs_once_with_app_context(monkeypatch):
+    import core.llm_clients.client as client
+
+    sentinel_registry = object()
+    monkeypatch.setattr(client, "get_tool_registry", lambda: sentinel_registry)
+
+    class AppContext:
+        def __init__(self, *, signals, model_tool_registry, config):
+            self.signals = signals
+            self.model_tool_registry = model_tool_registry
+            self.config = config
+
+    class FakeManager:
+        def __init__(self):
+            self.startups = []
+
+        def on_startup(self, ctx):
+            self.startups.append(ctx)
+
+    manager = FakeManager()
+    fake_pm = types.ModuleType("core.plugin_manager")
+    fake_pm.AppContext = AppContext
+    fake_pm.get_manager = lambda: manager
+    fake_pm.init = lambda _dir: manager
+    monkeypatch.setitem(sys.modules, "core.plugin_manager", fake_pm)
+    monkeypatch.setattr(handlers, "_plugin_startup_done", False)
+
+    handlers.run_plugin_startup()
+    handlers.run_plugin_startup()  # idempotent — must not fire on_startup again
+
+    assert len(manager.startups) == 1
+    ctx = manager.startups[0]
+    assert ctx.signals is None
+    assert ctx.model_tool_registry is sentinel_registry
+
+    import config as cfg
+
+    assert ctx.config is cfg
+
+
 def test_plugins_run_action_validates_inputs():
     import pytest
 
