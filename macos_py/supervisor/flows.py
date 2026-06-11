@@ -809,8 +809,13 @@ class FlowController:
                 "rewrite paste-back: target_pid=%s result=%s",
                 pending.paste_target_pid, paste,
             )
+            # Rewrite status must NOT land in the reply bubble (it would clobber the
+            # streamed rewrite text). Success is silent — the pasted text in the
+            # user's app is the confirmation. Only problems raise a system
+            # notification, which needs user action / awareness.
+            self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             if paste.get("ok"):
-                self._notice("Rewrite pasted.")
+                pass  # silent success
             elif paste.get("clipboard_ok"):
                 # Focus didn't land on the target app (common on remote/headless
                 # macOS where activateWithOptions_ is ignored). The rewrite is on
@@ -821,10 +826,13 @@ class FlowController:
                     "rewrite paste-back could not confirm focus%s (frontmost=%s); "
                     "left rewrite on clipboard", where, paste.get("frontmost_pid"),
                 )
-                self._notice(f"Couldn't focus the app — rewrite copied to clipboard, press {self._paste_shortcut()} to paste.")
+                self._native_notify(
+                    "Wisp — rewrite on clipboard",
+                    f"Couldn't focus the app. Press {self._paste_shortcut()} to paste the rewrite.",
+                )
             else:
                 log.error("rewrite paste-back failed: %s", paste.get("error") or paste)
-                self._notice("Rewrite failed to paste. See native.stderr.log.")
+                self._native_notify("Wisp — rewrite failed", "Couldn't paste the rewrite. See native.stderr.log.")
         self._set_idle()
 
     # -- helpers --------------------------------------------------------
@@ -832,6 +840,13 @@ class FlowController:
     @staticmethod
     def _paste_shortcut() -> str:
         return "Cmd+V" if sys.platform == "darwin" else "Ctrl+V"
+
+    def _native_notify(self, title: str, message: str) -> None:
+        """Best-effort system notification (keeps status out of the reply bubble)."""
+        try:
+            self.native.call("native.notify", {"title": title, "message": message}, timeout=10.0)
+        except Exception:
+            log.exception("native.notify failed")
 
     def _schedule(self, fn, *args) -> None:
         if not self.run_async:

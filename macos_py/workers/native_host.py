@@ -590,6 +590,32 @@ def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0) -> di
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def notify(title: str = "Wisp", message: str = "") -> dict[str, Any]:
+    """Post a system notification (Notification Center) so the supervisor can
+    surface paste-back status without writing into the reply bubble."""
+    if IS_MAC:
+        try:
+            import json as _json
+
+            script = (
+                f"display notification {_json.dumps(message or '')} "
+                f"with title {_json.dumps(title or 'Wisp')}"
+            )
+            result = subprocess.run(
+                ["/usr/bin/osascript", "-e", script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5.0,
+                check=False,
+            )
+            return {"ok": result.returncode == 0}
+        except Exception as exc:  # noqa: BLE001 - notification is best-effort
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    # No system-toast path wired for Windows/Linux yet; callers fall back to logs.
+    return {"ok": False, "error": "unsupported platform"}
+
+
 def open_privacy_settings(pane: str = "Privacy") -> dict[str, Any]:
     if not IS_MAC:
         return {"ok": False, "error": "System Settings is only available on macOS"}
@@ -645,6 +671,7 @@ HANDLERS = {
     "native.clipboard.get": clipboard_get,
     "native.clipboard.set": clipboard_set,
     "native.paste_text": paste_text,
+    "native.notify": notify,
     "native.open_privacy_settings": open_privacy_settings,
 }
 

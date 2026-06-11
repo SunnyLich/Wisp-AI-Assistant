@@ -479,7 +479,10 @@ def test_rewrite_flow_pastes_back_to_original_pid():
     paste = native.last_call("native.paste_text")["params"]
     assert paste["text"] == "good grammar"
     assert paste["target_pid"] == 777
-    assert ui.last_call("ui.reply.notice")["params"]["text"] == "Rewrite pasted."
+    # Success is silent: the bubble finishes, no status banner is written into it.
+    assert ui.calls_for("ui.reply.done"), "bubble should be finished after paste"
+    assert not ui.calls_for("ui.reply.notice"), "rewrite status must not go in the bubble"
+    assert not native.calls_for("native.notify"), "successful paste should not notify"
 
 
 def test_rewrite_falls_back_to_clipboard_when_focus_not_confirmed():
@@ -508,12 +511,13 @@ def test_rewrite_falls_back_to_clipboard_when_focus_not_confirmed():
     )
     brain = FakeWorker(stream_handlers={"brain.rewrite": query_stream("good grammar")})
     with caller_config(rows):
-        _flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        _flow, native, ui, _brain, _audio = make_flow(native=native, brain=brain)
         ui.emit("ui.intent.chosen", {"custom": "Fix grammar"})
 
-    notice = ui.last_call("ui.reply.notice")["params"]["text"]
-    assert "clipboard" in notice
-    assert notice.endswith("to paste.")
+    # The recovery hint goes to a system notification, never the reply bubble.
+    assert not ui.calls_for("ui.reply.notice"), "fallback status must not go in the bubble"
+    notify = native.last_call("native.notify")["params"]
+    assert "paste" in notify["message"].lower()
 
 
 def test_rewrite_failure_reports_notice_and_returns_idle():
