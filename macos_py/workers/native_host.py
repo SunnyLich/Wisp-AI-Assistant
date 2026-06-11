@@ -461,32 +461,116 @@ def capture_region(path: str = "", region: dict[str, Any] | None = None) -> dict
     return {"ok": ok, "path": path, "region": normalized or region}
 
 
-def _activate_pid(pid: int) -> bool:
+def _plog(event: str) -> None:
+    """Paste-back diagnostics → native.stderr.log (captured by the supervisor)."""
+    line = f"{time.strftime('%H:%M:%S')} [native.paste] {event}"
+    print(line, file=sys.stderr, flush=True)
+
+
+def _frontmost_pid() -> int:
+    """pid of the app macOS currently considers frontmost (0 if unknown)."""
+    if not IS_MAC:
+        return 0
+    try:
+        import AppKit  # type: ignore
+
+        app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        return int(app.processIdentifier()) if app is not None else 0
+    except Exception:
+        return 0
+
+
+def _activate_pid(pid: int) -> dict[str, Any]:
+    """Bring the app with `pid` to the front and confirm it actually came forward.
+
+    `activateWithOptions_(NSApplicationActivateIgnoringOtherApps)` is deprecated on
+    macOS 14+ and is frequently ignored, especially on remote/headless sessions, so
+    we (1) prefer the modern no-arg `activate()` when available, (2) fall back to the
+    legacy options, and (3) poll `frontmostApplication()` to verify focus landed on
+    the target before the caller synthesises Cmd+V. Returns a diagnostics dict.
+    """
+    result: dict[str, Any] = {
+        "requested_pid": int(pid or 0),
+        "called": False,
+        "confirmed": False,
+        "app_name": "",
+        "frontmost_pid": 0,
+        "error": "",
+    }
     if not IS_MAC or not pid:
-        return False
+        result["error"] = "no pid" if IS_MAC else "not macos"
+        return result
     try:
         import AppKit  # type: ignore
 
         app = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(int(pid))
         if app is None:
-            return False
-        opts = (
-            AppKit.NSApplicationActivateIgnoringOtherApps
-            | AppKit.NSApplicationActivateAllWindows
+            result["error"] = "pid not running"
+            _plog(f"activate pid={pid} -> app not running")
+            return result
+        result["app_name"] = str(app.localizedName() or "")
+        # Prefer the non-deprecated activate() (10.15+); fall back to the legacy
+        # options API if the modern selector is unavailable.
+        if app.respondsToSelector_("activate"):
+            app.activate()
+            result["called"] = True
+        else:
+            opts = (
+                AppKit.NSApplicationActivateIgnoringOtherApps
+                | AppKit.NSApplicationActivateAllWindows
+            )
+            app.activateWithOptions_(opts)
+            result["called"] = True
+        # Activation is asynchronous; poll until the target is actually frontmost.
+        deadline = time.monotonic() + 0.8
+        while time.monotonic() < deadline:
+            front = _frontmost_pid()
+            result["frontmost_pid"] = front
+            if front == int(pid):
+                result["confirmed"] = True
+                break
+            time.sleep(0.05)
+        _plog(
+            f"activate pid={pid} name={result['app_name']!r} "
+            f"confirmed={result['confirmed']} frontmost={result['frontmost_pid']}"
         )
-        return bool(app.activateWithOptions_(opts))
-    except Exception:
-        return False
+        return result
+    except Exception as exc:  # noqa: BLE001 - report activation failure to caller
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        _plog(f"activate pid={pid} raised {result['error']}")
+        return result
 
 
 def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0) -> dict[str, Any]:
     if IS_MAC:
-        activated = _activate_pid(target_pid)
-        if activated:
-            time.sleep(0.15)
         from core.platform import macos_native
 
-        return {"ok": macos_native.paste_text(text, paste_combo or "cmd+v"), "activated": activated}
+        act = _activate_pid(target_pid)
+        confirmed = bool(act.get("confirmed"))
+        # Settle longer when we couldn't confirm focus — the activation may still
+        # be in flight. The clipboard is always populated below, so even a missed
+        # Cmd+V leaves the rewrite recoverable via a manual paste.
+        time.sleep(0.15 if confirmed else 0.3)
+        # Ensure the rewrite is on the clipboard regardless of paste success, so
+        # the caller can offer a manual-paste fallback when focus didn't land.
+        clip_ok = macos_native.set_clipboard_text(text)
+        time.sleep(0.05)  # let pbcopy propagate before Cmd+V
+        sent = macos_native.send_key_combo(paste_combo or "cmd+v")
+        _plog(
+            f"paste target_pid={target_pid} confirmed={confirmed} "
+            f"clipboard={clip_ok} keystroke={sent} app={act.get('app_name')!r}"
+        )
+        return {
+            "ok": bool(sent and confirmed),
+            "activated": confirmed,
+            "confirmed": confirmed,
+            "keystroke_sent": bool(sent),
+            "clipboard_ok": bool(clip_ok),
+            "target_pid": int(target_pid or 0),
+            "frontmost_pid": int(act.get("frontmost_pid") or 0),
+            "app_name": act.get("app_name") or "",
+            "error": act.get("error") or "",
+        }
     try:
         from core.platform_utils import PASTE_COMBO, send_keys, set_foreground_window
 
@@ -496,10 +580,13 @@ def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0) -> di
             activated = True
             time.sleep(0.15)
         if not clipboard_set(text).get("ok"):
-            return {"ok": False, "activated": activated, "error": "clipboard write failed"}
+            _plog(f"paste target_pid={target_pid} clipboard write FAILED")
+            return {"ok": False, "activated": activated, "clipboard_ok": False, "error": "clipboard write failed"}
         send_keys(paste_combo or PASTE_COMBO)
-        return {"ok": True, "activated": activated}
+        _plog(f"paste target_pid={target_pid} activated={activated} keystroke sent")
+        return {"ok": True, "activated": activated, "confirmed": activated, "keystroke_sent": True, "clipboard_ok": True}
     except Exception as exc:  # noqa: BLE001 - report pasteback failure to caller
+        _plog(f"paste target_pid={target_pid} raised {type(exc).__name__}: {exc}")
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import itertools
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -798,15 +799,39 @@ class FlowController:
             return
         text = str((result or {}).get("text") or "").strip()
         if text and self._is_current(gen):
-            self.native.call(
+            paste = self.native.call(
                 "native.paste_text",
                 {"text": text, "target_pid": pending.paste_target_pid},
                 timeout=30.0,
             )
-            self._notice("Rewrite pasted.")
+            paste = paste if isinstance(paste, dict) else {}
+            log.info(
+                "rewrite paste-back: target_pid=%s result=%s",
+                pending.paste_target_pid, paste,
+            )
+            if paste.get("ok"):
+                self._notice("Rewrite pasted.")
+            elif paste.get("clipboard_ok"):
+                # Focus didn't land on the target app (common on remote/headless
+                # macOS where activateWithOptions_ is ignored). The rewrite is on
+                # the clipboard, so tell the user how to recover it.
+                app = str(paste.get("app_name") or "").strip()
+                where = f" into {app}" if app else ""
+                log.warning(
+                    "rewrite paste-back could not confirm focus%s (frontmost=%s); "
+                    "left rewrite on clipboard", where, paste.get("frontmost_pid"),
+                )
+                self._notice(f"Couldn't focus the app — rewrite copied to clipboard, press {self._paste_shortcut()} to paste.")
+            else:
+                log.error("rewrite paste-back failed: %s", paste.get("error") or paste)
+                self._notice("Rewrite failed to paste. See native.stderr.log.")
         self._set_idle()
 
     # -- helpers --------------------------------------------------------
+
+    @staticmethod
+    def _paste_shortcut() -> str:
+        return "Cmd+V" if sys.platform == "darwin" else "Ctrl+V"
 
     def _schedule(self, fn, *args) -> None:
         if not self.run_async:

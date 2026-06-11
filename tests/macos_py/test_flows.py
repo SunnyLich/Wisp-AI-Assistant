@@ -482,6 +482,40 @@ def test_rewrite_flow_pastes_back_to_original_pid():
     assert ui.last_call("ui.reply.notice")["params"]["text"] == "Rewrite pasted."
 
 
+def test_rewrite_falls_back_to_clipboard_when_focus_not_confirmed():
+    rows = [
+        {
+            "paste_back": True,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        },
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected="bad grammar", pid=777),
+            # Focus didn't land on the target app, but the rewrite is on the clipboard.
+            "native.paste_text": lambda _params: {
+                "ok": False,
+                "clipboard_ok": True,
+                "confirmed": False,
+                "app_name": "TextEdit",
+                "frontmost_pid": 999,
+            },
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.rewrite": query_stream("good grammar")})
+    with caller_config(rows):
+        _flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        ui.emit("ui.intent.chosen", {"custom": "Fix grammar"})
+
+    notice = ui.last_call("ui.reply.notice")["params"]["text"]
+    assert "clipboard" in notice
+    assert notice.endswith("to paste.")
+
+
 def test_rewrite_failure_reports_notice_and_returns_idle():
     rows = [
         {
