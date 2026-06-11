@@ -888,13 +888,16 @@ class QtProtocolHost:
         # closed, the stale handle made the next press a silent no-op until the
         # old object was finally collected. That was the "overlay appears much
         # later" on repeat snips. Close any existing overlay and rebuild.
+        t0 = time.monotonic()
         if self._snip is not None:
             try:
                 self._snip.close()
             except Exception:
                 pass
             self._snip = None
+        t_closed = time.monotonic()
         snip = SnipOverlay()
+        t_built = time.monotonic()
         self._snip = snip
         snip.region_selected.connect(lambda region: self.emit("ui.snip.region", region))
         snip.cancelled.connect(lambda: self.emit("ui.snip.cancelled", {}))
@@ -906,6 +909,13 @@ class QtProtocolHost:
         snip.show()
         snip.raise_()
         snip.activateWindow()
+        t_shown = time.monotonic()
+        print(
+            f"[snip.timing] close_old={t_closed - t0:.2f}s build={t_built - t_closed:.2f}s "
+            f"show={t_shown - t_built:.2f}s total={t_shown - t0:.2f}s",
+            file=sys.stderr,
+            flush=True,
+        )
         return {"shown": True}
 
     def _overlay_state(self, state: str = "idle") -> dict[str, Any]:
