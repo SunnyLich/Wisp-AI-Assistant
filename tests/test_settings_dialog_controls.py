@@ -34,130 +34,106 @@ def test_settings_combo_ignores_wheel_when_popup_closed():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_memory_panel_loads_on_background_thread(monkeypatch):
+def test_settings_memory_tab_does_not_show_stored_facts():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QApplication, QLabel
 
-    import ui.settings_panel.dialog as dialog_module
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
-    host = QWidget()
-    layout = QVBoxLayout(host)
-    started: list[dict] = []
-
-    class FakeThread:
-        def __init__(self, *, target, name: str, daemon: bool) -> None:
-            started.append({"target": target, "name": name, "daemon": daemon, "started": False})
-
-        def start(self) -> None:
-            started[-1]["started"] = True
-
-    monkeypatch.setattr(dialog_module.threading, "Thread", FakeThread)
     dialog = SettingsDialog.__new__(SettingsDialog)
-    dialog._memory_browser_cv = layout
-    dialog._memory_loading = True
+    dialog._fields = {}
+    dialog._env = {}
+    tab = SettingsDialog._tab_memory(dialog)
 
     try:
-        SettingsDialog._load_memory_panel(dialog)
-
-        assert started
-        assert started[0]["name"] == "wisp-memory-settings-load"
-        assert started[0]["daemon"] is True
-        assert started[0]["started"] is True
+        labels = {label.text() for label in tab.findChildren(QLabel)}
+        combined = "\n".join(labels)
+        assert "Stored Facts" not in combined
+        assert "Stored facts" not in combined
     finally:
-        host.deleteLater()
+        tab.deleteLater()
+        app.processEvents()
+
+
+def test_reset_page_key_mapping_is_scoped():
+    from ui.settings_panel.dialog import SettingsDialog
+
+    env = {
+        "LLM_PROVIDER": "anthropic",
+        "GROQ_API_KEY": "secret",
+        "CALLER_COUNT": "3",
+        "CALLER_1_HOTKEY": "ctrl+q",
+        "CALLER_2_CONTEXT_MEMORY_MODE": "model",
+        "BUBBLE_WIDTH": "420",
+        "MEMORY_TOP_K": "7",
+    }
+
+    assert SettingsDialog._reset_env_keys_for_page("LLM", env) >= {"LLM_PROVIDER"}
+    assert "GROQ_API_KEY" not in SettingsDialog._reset_env_keys_for_page("LLM", env)
+    assert SettingsDialog._reset_env_keys_for_page("Keybinds", env) >= {
+        "CALLER_COUNT",
+        "CALLER_1_HOTKEY",
+        "CALLER_2_CONTEXT_MEMORY_MODE",
+        "HOTKEY_SNIP",
+    }
+    assert "BUBBLE_WIDTH" in SettingsDialog._reset_env_keys_for_page("App", env)
+    assert "MEMORY_TOP_K" in SettingsDialog._reset_env_keys_for_page("Memory", env)
+    assert SettingsDialog._reset_env_keys_for_page("Tools", env) == set()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_has_reset_page_button():
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        button_texts = {button.text() for button in dialog.findChildren(QPushButton)}
+        assert "Reset Page…" in button_texts
+        assert "Reset All…" in button_texts
+    finally:
+        dialog.deleteLater()
         app.processEvents()
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_memory_panel_timeout_replaces_loading_message():
+def test_caller_memory_combo_uses_third_column_second_row():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QVBoxLayout, QWidget
 
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
     host = QWidget()
-    layout = QVBoxLayout(host)
     dialog = SettingsDialog.__new__(SettingsDialog)
-    dialog._memory_browser_cv = layout
-    dialog._memory_loading = True
-    dialog._memory_panel = None
-    dialog._memory_load_token = 7
-    layout.addWidget(QLabel("Loading stored facts..."))
+    dialog._caller_blocks = []
+    dialog._callers_vlayout = QVBoxLayout(host)
+    dialog._fields = {}
 
     try:
-        SettingsDialog._on_memory_panel_load_timeout(dialog, 7)
+        SettingsDialog._add_caller_block(dialog, intents=[])
+        frame = dialog._caller_blocks[0]["widget"]
+        memory_pos = None
+        for child in frame.findChildren(QWidget):
+            layout = child.layout()
+            if not isinstance(layout, QGridLayout):
+                continue
+            for idx in range(layout.count()):
+                item = layout.itemAt(idx)
+                widget = item.widget()
+                if isinstance(widget, QLabel) and widget.text() == "Memory:":
+                    memory_pos = layout.getItemPosition(idx)
+                    break
+            if memory_pos is not None:
+                break
 
-        assert dialog._memory_loading is False
-        assert layout.count() == 1
-        widget = layout.itemAt(0).widget()
-        assert isinstance(widget, QLabel)
-        assert "still starting up" in widget.text()
-    finally:
-        host.deleteLater()
-        app.processEvents()
-
-
-@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_memory_panel_ignores_stale_load_result():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
-
-    from ui.settings_panel.dialog import SettingsDialog
-
-    app = QApplication.instance() or QApplication(sys.argv)
-    host = QWidget()
-    layout = QVBoxLayout(host)
-    loading_label = QLabel("Loading stored facts...")
-    layout.addWidget(loading_label)
-    dialog = SettingsDialog.__new__(SettingsDialog)
-    dialog._memory_browser_cv = layout
-    dialog._memory_loading = True
-    dialog._memory_load_token = 2
-
-    try:
-        SettingsDialog._on_memory_panel_loaded(dialog, 1, object(), [], "")
-
-        assert dialog._memory_loading is True
-        assert layout.itemAt(0).widget() is loading_label
-    finally:
-        host.deleteLater()
-        app.processEvents()
-
-
-@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_memory_panel_cancel_prevents_worker_start(monkeypatch):
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
-
-    import ui.settings_panel.dialog as dialog_module
-    from ui.settings_panel.dialog import SettingsDialog
-
-    app = QApplication.instance() or QApplication(sys.argv)
-    host = QWidget()
-    layout = QVBoxLayout(host)
-    started: list[bool] = []
-
-    class FakeThread:
-        def __init__(self, **_kwargs) -> None:
-            started.append(False)
-
-        def start(self) -> None:
-            started[-1] = True
-
-    monkeypatch.setattr(dialog_module.threading, "Thread", FakeThread)
-    dialog = SettingsDialog.__new__(SettingsDialog)
-    dialog._memory_browser_cv = layout
-    dialog._memory_loading = False
-    dialog._memory_load_token = 1
-
-    try:
-        SettingsDialog._load_memory_panel(dialog, 0)
-
-        assert started == []
-        assert dialog._memory_loading is False
+        assert memory_pos is not None
+        assert memory_pos[:2] == (1, 4)
     finally:
         host.deleteLater()
         app.processEvents()

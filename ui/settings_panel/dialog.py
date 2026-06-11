@@ -69,21 +69,6 @@ class _ModelFetchSignals(QObject):
     done = Signal(object, str)
 
 
-class _MemoryLoadSignals(QObject):
-    """Marshals the lazy memory-store load back to the Qt main thread."""
-
-    done = Signal(int, object, object, str)
-
-
-class _SettingsMemoryManagerProxy:
-    """Read-only bridge for the Settings memory tab."""
-
-    def get_all_facts(self) -> list[dict]:
-        from core.memory_store.store import get_all_facts_lightweight
-
-        return get_all_facts_lightweight()
-
-
 def _read_env() -> dict[str, str]:
     old_path = settings_env.ENV_PATH
     settings_env.ENV_PATH = ENV_PATH
@@ -131,15 +116,6 @@ class SettingsDialog(QDialog):
         self._status_refresh_token = 0
         self._status_refresh_running = False
         self._tabs = None
-        self._memory_panel = None
-        self._memory_tab_index = -1
-        self._memory_browser_cv = None
-        self._memory_loading = False
-        self._memory_load_token = 0
-        self._memory_load_timeout_ms = 12000
-        self._memory_load_start_delay_ms = 250
-        self._memory_load_signals = _MemoryLoadSignals(self)
-        self._memory_load_signals.done.connect(self._on_memory_panel_loaded)
         self._test_result_timer = QTimer(self)
         self._test_result_timer.setInterval(100)
         self._test_result_timer.timeout.connect(self._drain_test_results)
@@ -235,16 +211,6 @@ class SettingsDialog(QDialog):
     def showEvent(self, event):                 # noqa: N802
         super().showEvent(event)
         fit_window_to_screen(self, preferred_width=620, preferred_height=620)
-        if self._tabs is not None:
-            self._maybe_load_memory_tab(self._tabs.currentIndex())
-
-    def reject(self) -> None:
-        self._cancel_memory_panel_load()
-        super().reject()
-
-    def closeEvent(self, event):                # noqa: N802
-        self._cancel_memory_panel_load()
-        super().closeEvent(event)
 
     _LIGHT_STYLE = """
         QDialog { background: #f2f2f7; }
@@ -364,9 +330,8 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._tab_prompt(),    "Prompts")
         tabs.addTab(self._tab_keybinds(),  "Keybinds")
         tabs.addTab(self._tab_app(),       "App")
-        self._memory_tab_index = tabs.addTab(self._tab_memory(), "Memory")
+        tabs.addTab(self._tab_memory(), "Memory")
         tabs.addTab(self._tab_tools(),     "Tools")
-        tabs.currentChanged.connect(self._maybe_load_memory_tab)
         self._tabs = tabs
         root.addWidget(tabs)
 
@@ -374,6 +339,10 @@ class SettingsDialog(QDialog):
         self._status_lbl = QLabel()
         self._status_lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
         btn_row = QHBoxLayout()
+        reset_page_btn = QPushButton("Reset Page…")
+        reset_page_btn.setToolTip("Reset only the currently selected settings tab to defaults")
+        reset_page_btn.clicked.connect(self._reset_current_page)
+        btn_row.addWidget(reset_page_btn)
         reset_btn = QPushButton("Reset All…")
         reset_btn.setToolTip(
             "Delete all API keys from the OS keychain and reset every setting to defaults"
@@ -1487,12 +1456,12 @@ class SettingsDialog(QDialog):
         context_h.addWidget(screenshot_combo, 0, 3)
         context_h.addWidget(QLabel("Open docs:"), 0, 4)
         context_h.addWidget(docs_combo, 0, 5)
+        context_h.addWidget(QLabel("Git/GitHub:"), 1, 0)
+        context_h.addWidget(github_combo, 1, 1)
         context_h.addWidget(QLabel("Browser/Web:"), 1, 2)
         context_h.addWidget(browser_combo, 1, 3)
-        context_h.addWidget(QLabel("Git/GitHub:"), 1, 4)
-        context_h.addWidget(github_combo, 1, 5)
-        context_h.addWidget(QLabel("Memory:"), 2, 2)
-        context_h.addWidget(memory_combo, 2, 3)
+        context_h.addWidget(QLabel("Memory:"), 1, 4)
+        context_h.addWidget(memory_combo, 1, 5)
         context_h.setColumnStretch(6, 1)
         outer.addWidget(context_row)
 
@@ -1604,8 +1573,8 @@ class SettingsDialog(QDialog):
         blk["widget"].deleteLater()
 
     def _tab_memory(self) -> QWidget:
-        """Memory tab: LTM config knobs + embedded fact browser."""
-        from PySide6.QtWidgets import QScrollArea, QSizePolicy
+        """Memory tab: LTM configuration only."""
+        from PySide6.QtWidgets import QScrollArea
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1654,123 +1623,9 @@ class SettingsDialog(QDialog):
 
         cfg_cv.addWidget(fw)
         root.addWidget(cfg_card)
-
-        # --- Fact browser card ---
-        browser_card, browser_cv = self._card("Stored Facts")
-        self._memory_browser_cv = browser_cv
-        placeholder = QLabel("Stored facts load when this tab is opened.")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet("color: palette(placeholder-text);")
-        browser_cv.addWidget(placeholder)
-
-        root.addWidget(browser_card, stretch=1)
+        root.addStretch()
         scroll.setWidget(w)
         return scroll
-
-    def _maybe_load_memory_tab(self, index: int) -> None:
-        if index != self._memory_tab_index or self._memory_panel is not None or self._memory_loading:
-            return
-        self._memory_loading = True
-        self._memory_load_token = getattr(self, "_memory_load_token", 0) + 1
-        token = self._memory_load_token
-        if self._memory_browser_cv is not None:
-            self._replace_memory_browser_message("Loading stored facts...")
-        QTimer.singleShot(
-            self._memory_load_timeout_ms,
-            lambda: self._on_memory_panel_load_timeout(token),
-        )
-        QTimer.singleShot(
-            self._memory_load_start_delay_ms,
-            lambda: self._load_memory_panel(token),
-        )
-
-    def _cancel_memory_panel_load(self) -> None:
-        if not getattr(self, "_memory_loading", False):
-            return
-        self._memory_load_token = getattr(self, "_memory_load_token", 0) + 1
-        self._memory_loading = False
-
-    def _replace_memory_browser_message(self, text: str, *, error: bool = False) -> None:
-        layout = self._memory_browser_cv
-        if layout is None:
-            return
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setWordWrap(True)
-        label.setStyleSheet("color: #c00;" if error else "color: palette(placeholder-text);")
-        layout.addWidget(label)
-
-    def _load_memory_panel(self, token: int | None = None) -> None:
-        layout = self._memory_browser_cv
-        if layout is None:
-            self._memory_loading = False
-            return
-        if token is None:
-            token = getattr(self, "_memory_load_token", 0)
-        if token != getattr(self, "_memory_load_token", 0) or not self._memory_loading:
-            return
-        try:
-            visible = self.isVisible()
-        except RuntimeError:
-            visible = True
-        if not visible:
-            self._cancel_memory_panel_load()
-            return
-
-        def worker() -> None:
-            try:
-                from core.memory_store.store import get_all_facts_lightweight
-
-                manager = _SettingsMemoryManagerProxy()
-                facts = get_all_facts_lightweight()
-                self._memory_load_signals.done.emit(token, manager, facts, "")
-            except Exception as exc:
-                self._memory_load_signals.done.emit(token, None, [], str(exc))
-
-        threading.Thread(
-            target=worker,
-            name="wisp-memory-settings-load",
-            daemon=True,
-        ).start()
-
-    def _on_memory_panel_load_timeout(self, token: int) -> None:
-        if token != self._memory_load_token or not self._memory_loading or self._memory_panel is not None:
-            return
-        self._memory_loading = False
-        self._replace_memory_browser_message(
-            "Memory store is still starting up. Close and reopen Settings to try again.",
-            error=True,
-        )
-
-    def _on_memory_panel_loaded(self, token: int, manager, facts, error: str) -> None:
-        if token != self._memory_load_token:
-            return
-        layout = self._memory_browser_cv
-        self._memory_loading = False
-        if layout is None:
-            return
-        if error:
-            self._replace_memory_browser_message(f"Memory store unavailable:\n{error}", error=True)
-            return
-        try:
-            from ui.memory_viewer import MemoryPanel
-
-            while layout.count():
-                item = layout.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
-            panel = MemoryPanel(manager, self, initial_facts=list(facts or []), read_only=True)
-            self._memory_panel = panel
-            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            layout.addWidget(panel)
-        except Exception as exc:
-            self._replace_memory_browser_message(f"Memory store unavailable:\n{exc}", error=True)
 
     def _tab_tools(self) -> QWidget:
         from core.llm_clients.client import get_tool_registry
@@ -2638,6 +2493,118 @@ class SettingsDialog(QDialog):
             if self._on_apply:
                 self._on_apply()
             self.accept()
+
+    @staticmethod
+    def _reset_env_keys_for_page(page_name: str, env: dict[str, str]) -> set[str]:
+        page = (page_name or "").strip()
+        exact: dict[str, set[str]] = {
+            "LLM": {
+                "LLM_PROVIDER", "LLM_MODEL", "LLM_FALLBACKS",
+                "VISION_LLM_PROVIDER", "VISION_LLM_MODEL", "VISION_LLM_FALLBACKS",
+                "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "MEMORY_LLM_FALLBACKS",
+                "TOOL_LLM_MODEL", "CUSTOM_BASE_URL",
+                "GITHUB_CLIENT_ID", "GITHUB_OAUTH_SCOPES",
+                "COPILOT_CLI_URL", "COPILOT_CLI_PATH",
+            },
+            "TTS / Voice": {
+                "TTS_PROVIDER", "CARTESIA_VOICE_ID",
+            },
+            "Prompts": {
+                "SYSTEM_PROMPT_UTILITY",
+            },
+            "Keybinds": {
+                "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
+                "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
+                "CONTEXT_BROWSER_MAX_CHARS", "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS",
+                "CONTEXT_TOOL_DOCUMENT_MAX_CHARS", "TOOL_PLUGIN_DIR", "TOOL_GIT_ROOT",
+                "CALLER_COUNT",
+            },
+            "App": {
+                "THEME_MODE", "DARK_MODE", "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE",
+                "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT",
+                "ICON_SIZE", "DOLL_SIZE", "ICON_BACKSTOP_MS", "DOLL_ICON_BACKSTOP_MS",
+                "BUBBLE_WIDTH", "BUBBLE_LINES", "BUBBLE_COLOR", "BUBBLE_TEXT_COLOR",
+                "BUBBLE_READ_WORD_COLOR", "BUBBLE_HIDE_DELAY_MS",
+                "BUBBLE_REVEAL_WPM", "BUBBLE_HOLD_REVEAL_WPM",
+                "TTS_PLAYBACK_RATE", "TTS_HOLD_PLAYBACK_RATE",
+            },
+            "Memory": {
+                "MEMORY_AUTO_CONSOLIDATE", "MEMORY_CONSOLIDATION_INTERVAL",
+                "MEMORY_TOP_K", "MEMORY_RELEVANCE_MAX_DISTANCE", "MEMORY_STM_TOKEN_BUDGET",
+            },
+        }
+        keys = set(exact.get(page, set()))
+        if page == "Keybinds":
+            keys.update(key for key in env if key.startswith("CALLER_"))
+        return keys
+
+    def _reload_after_page_reset(self) -> None:
+        try:
+            import config
+            from core.llm_clients import client as _llm
+            from core import tts as _tts
+            from ui.shared.theme import apply_app_theme
+
+            config.reload()
+            _llm.reset_clients()
+            _tts.reset_connections()
+            apply_app_theme()
+            self._apply_dialog_theme()
+        except Exception as exc:  # noqa: BLE001 - reset already happened on disk
+            _settings_log.error("Live reload after page reset failed: %s", exc)
+        self._env = _read_env()
+        self._load_values()
+        if self._on_apply:
+            self._on_apply()
+
+    def _reset_tools_page(self) -> None:
+        from core.llm_clients.client import get_tool_registry
+        from core.system.paths import TOOL_KEYWORDS_FILE
+
+        registry = get_tool_registry()
+        if TOOL_KEYWORDS_FILE.exists():
+            TOOL_KEYWORDS_FILE.unlink()
+        registry.load_keyword_filters(TOOL_KEYWORDS_FILE)
+        registry.save_keyword_filters(TOOL_KEYWORDS_FILE)
+        for name, edit in getattr(self, "_tool_keyword_fields", []):
+            edit.setText(", ".join(registry._keyword_map.get(name, [])))
+
+    def _reset_current_page(self) -> None:
+        tabs = getattr(self, "_tabs", None)
+        if tabs is None:
+            return
+        page = tabs.tabText(tabs.currentIndex()).strip()
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setWindowTitle("Reset page?")
+        confirm.setText(f"Reset the {page} page to defaults?")
+        confirm.setInformativeText(
+            "Only settings on this page will be reset. API keys, OAuth sign-ins, "
+            "stored memory, conversations, plugins, and settings on other pages "
+            "will be left alone."
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            if page == "Tools":
+                self._reset_tools_page()
+            else:
+                current_env = _read_env()
+                remove_keys = self._reset_env_keys_for_page(page, current_env)
+                for key in remove_keys:
+                    os.environ.pop(key, None)
+                _write_env({}, remove_keys=remove_keys)
+            self._reload_after_page_reset()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Reset page failed", str(exc))
+            return
+
+        QMessageBox.information(self, "Page reset", f"{page} settings were reset to defaults.")
 
     def _reset_all(self) -> None:
         """Factory reset: erase every setting and delete all API keys.
