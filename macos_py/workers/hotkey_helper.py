@@ -239,14 +239,24 @@ def _install_hotkey_tap(
     always stops, even if a modifier came up first). Auto-repeat key-downs are
     ignored so holding a key doesn't spam events (mirrors RegisterEventHotKey).
 
-    Listen-only: the matched key still reaches the foreground app (so e.g. ctrl+q
-    may also do whatever ctrl+q does there). That is the safe trade-off -- a
-    listen-only tap cannot swallow a key or strand a modifier.
+    Active (swallowing) tap: a matched hotkey key-down is consumed (returns NULL)
+    so it never reaches the foreground app -- otherwise the hotkey letter leaks as
+    a keystroke and, with text selected, replaces it (e.g. ctrl+shift+q typing a
+    "q" over the selection). Only the matched key-down/up is swallowed; modifier
+    changes are kCGEventFlagsChanged events we never tap, so no modifier is ever
+    stranded. If an active tap can't be created (Accessibility not granted -- only
+    Input Monitoring), we fall back to a listen-only tap so hotkeys still FIRE,
+    accepting that the key then leaks (the previous behaviour).
     """
     global _HOTKEY_TAP
     if not table and voice_keycode is None:
         _dbg("hotkey tap: no parseable hotkeys; not installing.")
         return False
+    # Keycodes we own: every discrete hotkey key plus the push-to-talk key. Their
+    # key-up is swallowed too, so the app never sees a dangling key-up.
+    hotkey_keycodes = {kc for kc, _m, _k, _e in table}
+    if voice_keycode is not None:
+        hotkey_keycodes.add(voice_keycode)
     try:
         import Quartz  # type: ignore
 
@@ -255,7 +265,8 @@ def _install_hotkey_tap(
                 if type_ == Quartz.kCGEventTapDisabledByTimeout or type_ == getattr(
                     Quartz, "kCGEventTapDisabledByUserInput", -2
                 ):
-                    Quartz.CGEventTapEnable(_HOTKEY_TAP[0], True)
+                    if _HOTKEY_TAP is not None:
+                        Quartz.CGEventTapEnable(_HOTKEY_TAP[0], True)
                     return event
                 keycode = int(Quartz.CGEventGetIntegerValueField(
                     event, Quartz.kCGKeyboardEventKeycode
@@ -263,17 +274,23 @@ def _install_hotkey_tap(
                 if type_ == Quartz.kCGEventKeyUp:
                     if voice_keycode is not None and keycode == voice_keycode:
                         emit("voice_stop")
-                    return event
-                # key-down: skip OS auto-repeat so holding doesn't spam.
-                if Quartz.CGEventGetIntegerValueField(
+                    # Swallow the key-up of any key we own so the app never sees a
+                    # dangling key-up; pass everything else through.
+                    return None if keycode in hotkey_keycodes else event
+                # key-down: skip OS auto-repeat so holding doesn't spam emit, but
+                # still swallow repeats of a hotkey key so they don't leak.
+                autorepeat = bool(Quartz.CGEventGetIntegerValueField(
                     event, Quartz.kCGKeyboardEventAutorepeat
-                ):
-                    return event
+                ))
                 flags = int(Quartz.CGEventGetFlags(event))
                 match = _match_tap_event(keycode, flags, table)
                 if match is not None:
-                    kind, extra = match
-                    emit(kind, **extra)
+                    if not autorepeat:
+                        kind, extra = match
+                        emit(kind, **extra)
+                    return None  # consume so the hotkey key never reaches the app
+                if autorepeat:
+                    return event
             except Exception as exc:  # noqa: BLE001
                 _dbg(f"hotkey tap callback error: {exc}")
             return event
@@ -281,18 +298,33 @@ def _install_hotkey_tap(
         mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown) | Quartz.CGEventMaskBit(
             Quartz.kCGEventKeyUp
         )
-        tap = Quartz.CGEventTapCreate(
-            Quartz.kCGSessionEventTap,
-            Quartz.kCGHeadInsertEventTap,
-            Quartz.kCGEventTapOptionListenOnly,
-            mask,
-            _on_key,
-            None,
-        )
+
+        def _create_tap(option: int):
+            return Quartz.CGEventTapCreate(
+                Quartz.kCGSessionEventTap,
+                Quartz.kCGHeadInsertEventTap,
+                option,
+                mask,
+                _on_key,
+                None,
+            )
+
+        # Prefer an active tap that can swallow the hotkey key; fall back to
+        # listen-only (key leaks, but hotkeys still fire) if it can't be created.
+        active_option = getattr(Quartz, "kCGEventTapOptionDefault", 0)
+        swallowing = True
+        tap = _create_tap(active_option)
+        if not tap:
+            swallowing = False
+            tap = _create_tap(Quartz.kCGEventTapOptionListenOnly)
         if not tap:
             _dbg("hotkey tap: CGEventTapCreate returned NULL "
-                 "(grant Input Monitoring to the Python/Wisp process).")
+                 "(grant Input Monitoring + Accessibility to the Python/Wisp process).")
             return False
+        if not swallowing:
+            _dbg("hotkey tap: active tap unavailable (grant Accessibility to swallow "
+                 "the hotkey key); using listen-only -- the hotkey key will leak to "
+                 "the foreground app.")
         source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
         Quartz.CFRunLoopAddSource(
             Quartz.CFRunLoopGetCurrent(), source, Quartz.kCFRunLoopCommonModes
@@ -301,7 +333,7 @@ def _install_hotkey_tap(
         _HOTKEY_TAP = (tap, source, _on_key)
         _dbg(f"hotkey tap installed for {len(table)} hotkey(s)"
              f"{' + voice push-to-talk' if voice_keycode is not None else ''} "
-             f"(off-console backend).")
+             f"(off-console backend, {'swallowing' if swallowing else 'listen-only'}).")
         return True
     except Exception as exc:  # noqa: BLE001 - never crash the helper on the fallback
         _dbg(f"hotkey tap unavailable: {exc}")
