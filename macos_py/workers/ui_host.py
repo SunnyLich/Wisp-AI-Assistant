@@ -882,14 +882,31 @@ class QtProtocolHost:
     def _show_snip(self) -> dict[str, Any]:
         from ui.snip_overlay import SnipOverlay
 
+        # Always present a FRESH selector (mirrors _show_intent). The old reuse
+        # guard returned early when self._snip was non-None, but WA_DeleteOnClose
+        # defers the destroyed callback that clears it -- so after the first snip
+        # closed, the stale handle made the next press a silent no-op until the
+        # old object was finally collected. That was the "overlay appears much
+        # later" on repeat snips. Close any existing overlay and rebuild.
         if self._snip is not None:
-            return {"shown": True, "reused": True}
-        self._snip = SnipOverlay()
-        self._snip.region_selected.connect(lambda region: self.emit("ui.snip.region", region))
-        self._snip.cancelled.connect(lambda: self.emit("ui.snip.cancelled", {}))
-        self._snip.destroyed.connect(lambda: setattr(self, "_snip", None))
-        self._snip.show()
-        return {"shown": True, "reused": False}
+            try:
+                self._snip.close()
+            except Exception:
+                pass
+            self._snip = None
+        snip = SnipOverlay()
+        self._snip = snip
+        snip.region_selected.connect(lambda region: self.emit("ui.snip.region", region))
+        snip.cancelled.connect(lambda: self.emit("ui.snip.cancelled", {}))
+        # Identity-guard the clear so a previous overlay's deferred destroyed
+        # signal can't null out a newer one's reference.
+        snip.destroyed.connect(
+            lambda *_: setattr(self, "_snip", None) if self._snip is snip else None
+        )
+        snip.show()
+        snip.raise_()
+        snip.activateWindow()
+        return {"shown": True}
 
     def _overlay_state(self, state: str = "idle") -> dict[str, Any]:
         overlay = self._ensure_overlay()
