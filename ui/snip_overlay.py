@@ -7,6 +7,8 @@ region_selected with an mss-compatible region dict on release,
 or cancelled on Escape / zero-size drag.
 """
 from __future__ import annotations
+import sys
+import time
 from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtCore import Qt, Signal, QRect, QPoint, QTimer
 from PySide6.QtGui import QPainter, QColor, QFont, QCursor, QPen
@@ -36,6 +38,8 @@ class SnipOverlay(QWidget):
         self.setGeometry(vg)
         self._virtual_origin = vg.topLeft()
 
+        self._t_created = time.monotonic()
+        self._first_paint_logged = False
         self._origin: QPoint | None = None
         # Current drag rectangle, drawn directly in paintEvent. We deliberately
         # avoid QRubberBand here: on macOS it is backed by its own native window,
@@ -48,6 +52,14 @@ class SnipOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def paintEvent(self, _event):
+        if not self._first_paint_logged:
+            self._first_paint_logged = True
+            print(
+                f"[snip.timing] first paint {time.monotonic() - self._t_created:.2f}s "
+                "after build (macOS compositing the overlay)",
+                file=sys.stderr,
+                flush=True,
+            )
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(0, 0, 0, _DIM_ALPHA))
 

@@ -338,7 +338,9 @@ class FlowController:
         # fired afterwards without blocking (mirrors begin_caller). Previously the
         # blocking audio.stop call delayed the overlay once the audio worker was
         # busy — fast on the first snip, slow on later ones.
+        t0 = time.monotonic()
         self.ui.call("ui.show_snip", timeout=30.0)
+        log.info("snip: ui.show_snip round-trip %.2fs", time.monotonic() - t0)
         self._fire(self.audio, "audio.stop")
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
 
