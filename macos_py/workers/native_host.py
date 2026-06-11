@@ -339,8 +339,17 @@ def clipboard_set(text: str = "") -> dict[str, Any]:
 
 def selected_text() -> str:
     if IS_MAC:
-        # Primary AX selected-text support lands here. Until then, keep the old
-        # clipboard-preserving fallback isolated in this native process.
+        # Prefer Accessibility: reading AXSelectedText injects no keystrokes. The
+        # old clipboard path synthesises Cmd+C, and System Events clearing the
+        # command flag around that copy desyncs a physically-held hotkey modifier
+        # (option/ctrl) -- so the next hotkey key arrives with no modifier, isn't
+        # swallowed, and leaks into the app (e.g. holding the modifier, pressing
+        # the add- then clear-context keys, and watching the selection get
+        # replaced). Fall back to the copy only when AX can't answer (apps that
+        # don't expose selection, e.g. some web/Electron views).
+        ax = _ax_selected_text()
+        if ax is not None:
+            return ax.strip()
         from core.platform import macos_native
 
         return macos_native.get_selected_text() or ""
@@ -588,6 +597,38 @@ def _ax_capture_focus() -> int:
     except Exception as exc:  # noqa: BLE001 - AX is best-effort
         _plog(f"ax capture raised {type(exc).__name__}: {exc}")
         return 0
+
+
+def _ax_selected_text() -> str | None:
+    """Read the focused element's selected text via Accessibility (no keystrokes).
+
+    Returns the selection (``""`` when a text element is focused but nothing is
+    selected), or ``None`` when AX can't answer -- no focused element, or the
+    element doesn't expose ``AXSelectedText`` (some web/Electron views) -- so the
+    caller can fall back to the clipboard copy. Reading AX avoids synthesising
+    Cmd+C, whose flag changes desync a physically-held hotkey modifier and make
+    the next hotkey key leak into the foreground app.
+    """
+    if not IS_MAC:
+        return None
+    try:
+        import HIServices  # type: ignore  # pyobjc-framework-ApplicationServices
+
+        system = HIServices.AXUIElementCreateSystemWide()
+        err, focused = HIServices.AXUIElementCopyAttributeValue(
+            system, _AX_FOCUSED_ATTR, None
+        )
+        if err != _AX_ERROR_SUCCESS or focused is None:
+            return None
+        err, value = HIServices.AXUIElementCopyAttributeValue(
+            focused, _AX_SELECTED_TEXT_ATTR, None
+        )
+        if err != _AX_ERROR_SUCCESS or value is None:
+            return None
+        return str(value)
+    except Exception as exc:  # noqa: BLE001 - AX is best-effort
+        _plog(f"ax selected-text raised {type(exc).__name__}: {exc}")
+        return None
 
 
 def _ax_apply_selected_text(token: int, text: str) -> dict[str, Any]:
