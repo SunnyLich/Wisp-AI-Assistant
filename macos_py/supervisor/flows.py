@@ -441,7 +441,10 @@ class FlowController:
         self._config_mtime = self._current_config_mtime()
         log.info("supervisor config reloaded")
         self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
-        self._safe_call(self.audio, "audio.prewarm", timeout=30.0)
+        # The audio worker owns the live TTS path and is long-lived, so it must
+        # reload config + drop cached TTS connections here — prewarm alone leaves
+        # the old provider/voice in effect until restart.
+        self._safe_call(self.audio, "audio.config.reload", timeout=30.0)
         self._safe_call(self.native, "native.hotkeys.stop", timeout=10.0)
         result = self._safe_call(self.native, "native.hotkeys.start", timeout=10.0) or {}
         if isinstance(result, dict) and not result.get("started"):
@@ -1222,7 +1225,21 @@ class FlowController:
             path = result.get("path") if isinstance(result, dict) else ""
             if path:
                 self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
-                self._safe_call(self.ui, "ui.reply.start_reveal", timeout=30.0)
+                # Buffer Cartesia word timestamps in the bubble *before* playback
+                # starts. start_word_reveal — fired by the audio.playback.started
+                # event below — drains them anchored to the real audio clock, so
+                # the word highlight tracks the spoken voice instead of a fixed
+                # 170-WPM guess. Do NOT call ui.reply.start_reveal here: it would
+                # anchor the reveal to synth-completion (before audio is audible)
+                # and the playback-started reveal would then cancel it.
+                wts = result.get("word_timestamps") if isinstance(result, dict) else None
+                if isinstance(wts, dict) and wts.get("words"):
+                    self._safe_call(
+                        self.ui,
+                        "ui.reply.schedule_words",
+                        {"words": wts.get("words"), "start_ms": wts.get("start_ms")},
+                        timeout=30.0,
+                    )
                 self.audio.call("audio.play_file", {"path": path}, wait=False)
             else:
                 self._safe_call(self.ui, "ui.reply.done", timeout=30.0)

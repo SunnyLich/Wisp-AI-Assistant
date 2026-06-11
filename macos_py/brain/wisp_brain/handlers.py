@@ -168,6 +168,12 @@ def brain_config_reload() -> dict[str, Any]:
     import config
 
     config.reload()
+    # Drop cached TTS connections so brain.tts.test reconnects under the new
+    # provider/voice/key instead of reusing a socket from the old settings.
+    try:
+        importlib.import_module("core.tts").reset_connections()
+    except Exception:  # noqa: BLE001 — best effort; never block a config reload
+        pass
     return {
         "ok": True,
         "llm_provider": getattr(config, "LLM_PROVIDER", ""),

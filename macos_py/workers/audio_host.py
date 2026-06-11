@@ -37,6 +37,31 @@ def _output_dir() -> Path:
     return out
 
 
+def audio_config_reload() -> dict[str, Any]:
+    """Reload .env-backed config in the audio process after Settings → Apply.
+
+    The audio worker is long-lived and owns the live TTS path (audio.tts.synthesize
+    -> core.tts.stream_audio), so without this its config.TTS_PROVIDER and cached
+    Cartesia WebSocket stay frozen at app-start values — the new provider/voice/key
+    never takes effect until restart. Mirrors the desktop dialog's apply: reload
+    config, drop cached TTS connections, then re-prewarm under the new settings.
+    """
+    import config
+    from core import tts
+
+    config.reload()
+    tts.reset_connections()
+    provider = config.TTS_PROVIDER.lower()
+    prewarm = "skipped"
+    try:
+        tts.prewarm()
+        prewarm = "ok"
+    except Exception as exc:  # noqa: BLE001 — a bad key must not break Apply
+        prewarm = f"error: {type(exc).__name__}: {exc}"
+    print(f"[audio] config reloaded: tts_provider={provider!r} prewarm={prewarm}", flush=True)
+    return {"ok": True, "tts_provider": provider, "prewarm": prewarm}
+
+
 def audio_prewarm() -> dict[str, Any]:
     """Warm audio/STT/TTS dependencies in the audio process only."""
     result: dict[str, Any] = {"stt": "skipped", "tts": "skipped"}
@@ -99,9 +124,20 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
     import config
     from core import tts
 
-    chunks = list(tts.stream_audio(text))
-    path = _output_dir() / f"tts-{int(time.time() * 1000)}.wav"
     provider = config.TTS_PROVIDER.lower()
+    print(f"[audio] tts.synthesize provider={provider!r} text={text[:40]!r}", flush=True)
+    # Capture Cartesia word timestamps alongside the PCM so the UI can lock the
+    # word highlight to the spoken voice instead of a fixed-WPM estimate. Only
+    # Cartesia emits these; other providers leave the lists empty.
+    words: list[str] = []
+    start_ms: list[int] = []
+
+    def _collect_ts(ws: list, sms: list) -> None:
+        words.extend(ws)
+        start_ms.extend(int(x) for x in sms)
+
+    chunks = list(tts.stream_audio_from_chunks([text], on_word_timestamps=_collect_ts))
+    path = _output_dir() / f"tts-{int(time.time() * 1000)}.wav"
     if provider == "none" or not chunks:
         return _write_empty_wav(path)
 
@@ -120,7 +156,13 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
         wf.writeframes(pcm_i16)
-    return {"path": str(path), "sample_rate": sample_rate, "bytes": len(pcm_i16), "provider": provider}
+    return {
+        "path": str(path),
+        "sample_rate": sample_rate,
+        "bytes": len(pcm_i16),
+        "provider": provider,
+        "word_timestamps": {"words": words, "start_ms": start_ms},
+    }
 
 
 def play_file(path: str = "") -> dict[str, Any]:
@@ -165,6 +207,7 @@ def audio_speed_boost(enabled: bool = False) -> dict[str, Any]:
 
 
 HANDLERS = {
+    "audio.config.reload": audio_config_reload,
     "audio.prewarm": audio_prewarm,
     "audio.record.start": record_start,
     "audio.record.stop_transcribe": record_stop_transcribe,

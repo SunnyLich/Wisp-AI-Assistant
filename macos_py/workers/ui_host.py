@@ -731,6 +731,8 @@ class QtProtocolHost:
             return self._reply_listening()
         if method == "ui.reply.start_reveal":
             return self._reply_start_reveal()
+        if method == "ui.reply.schedule_words":
+            return self._reply_schedule_words(**params)
         if method == "ui.reply.notice":
             return self._reply_notice(**params)
         if method == "ui.reply.chunk":
@@ -945,6 +947,20 @@ class QtProtocolHost:
     def _reply_start_reveal(self) -> dict[str, Any]:
         self._ensure_bubble().start_word_reveal()
         return {"started": True}
+
+    def _reply_schedule_words(
+        self, words: list | None = None, start_ms: list | None = None
+    ) -> dict[str, Any]:
+        """Buffer Cartesia word timestamps so the reveal tracks the spoken voice.
+
+        Delivered before playback starts; the bubble holds them in
+        ``_pre_audio_timestamps`` until ``start_word_reveal`` (fired by the
+        audio.playback.started event) drains them anchored to the audio clock.
+        """
+        words = list(words or [])
+        start_ms = [int(x) for x in (start_ms or [])]
+        self._ensure_bubble().schedule_words(words, start_ms)
+        return {"scheduled": len(words)}
 
     def _reply_notice(self, text: str = "", timeout_ms: int = 12000) -> dict[str, Any]:
         self._ensure_bubble().show_notice(text, timeout_ms=timeout_ms)
