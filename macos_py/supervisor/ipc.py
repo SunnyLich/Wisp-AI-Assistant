@@ -330,7 +330,18 @@ def default_specs() -> dict[str, WorkerSpec]:
         "native": WorkerSpec("wisp-native", "macos_py.workers.native_host", "native"),
         "ui": WorkerSpec("wisp-ui", "macos_py.workers.ui_host", "ui"),
         "brain": WorkerSpec("wisp-brain", "macos_py.workers.brain_host", "brain"),
-        "audio": WorkerSpec("wisp-audio", "macos_py.workers.audio_host", "audio"),
+        # The audio worker is the isolated subprocess whose whole purpose is to run
+        # native CoreAudio/PortAudio off the Qt UI process, so audio must be enabled
+        # here regardless of the global macOS safe-mode default — otherwise
+        # core.tts.stream_audio drops every chunk and TTS plays silence even though
+        # the brain's "Test TTS" (no device gate) reports OK. A crash in this worker
+        # only restarts the worker, which is the point of the isolation.
+        "audio": WorkerSpec(
+            "wisp-audio",
+            "macos_py.workers.audio_host",
+            "audio",
+            env={"WISP_MACOS_ENABLE_AUDIO": "1"},
+        ),
     }
 
 
