@@ -262,11 +262,20 @@ def _install_hotkey_tap(
 
         def _on_key(_proxy, type_, event, _refcon):
             try:
-                if type_ == Quartz.kCGEventTapDisabledByTimeout or type_ == getattr(
-                    Quartz, "kCGEventTapDisabledByUserInput", -2
-                ):
+                # The tap mask is KeyDown|KeyUp, so the ONLY other event types it
+                # ever receives are the disable notifications
+                # (kCGEventTapDisabledByTimeout / ...ByUserInput) macOS sends when
+                # it switches off an active tap whose callback ran long. Detect
+                # them by exclusion and re-arm: comparing type_ against those
+                # constants is unreliable because pyobjc can deliver the type as a
+                # signed int (-2/-1) while the constants are unsigned (0xFFFFFFFE/
+                # 0xFFFFFFFF), so the equality silently misses -- and the tap then
+                # stays dead, which is exactly "the hotkey works once, then every
+                # press (ctrl+q, ctrl+w, ...) leaks into the app."
+                if type_ != Quartz.kCGEventKeyDown and type_ != Quartz.kCGEventKeyUp:
                     if _HOTKEY_TAP is not None:
                         Quartz.CGEventTapEnable(_HOTKEY_TAP[0], True)
+                        _dbg(f"hotkey tap re-armed after disable (type={type_}).")
                     return event
                 keycode = int(Quartz.CGEventGetIntegerValueField(
                     event, Quartz.kCGKeyboardEventKeycode
@@ -428,6 +437,28 @@ def _teardown_debug_key_monitor() -> None:
         pass
 
 
+def _rearm_hotkey_tap_if_disabled() -> None:
+    """Self-heal the swallowing hotkey tap if macOS has disabled it.
+
+    The in-callback re-arm (on the disable notification) is the primary path;
+    this is the backstop for the case where that notification is ever missed.
+    Without it a single disable leaves the tap deaf for good and every hotkey
+    key leaks to the foreground app. ``CGEventTapEnable(tap, True)`` on an
+    already-enabled tap is a no-op, so polling this each loop tick is cheap.
+    """
+    tap = _HOTKEY_TAP
+    if tap is None:
+        return
+    try:
+        import Quartz  # type: ignore
+
+        if not Quartz.CGEventTapIsEnabled(tap[0]):
+            Quartz.CGEventTapEnable(tap[0], True)
+            _dbg("hotkey tap was disabled; re-armed from run-loop backstop.")
+    except Exception:
+        pass
+
+
 def _run_carbon_loop(stop: threading.Event) -> None:
     import ctypes
     import ctypes.util
@@ -438,6 +469,7 @@ def _run_carbon_loop(stop: threading.Event) -> None:
     run_current.restype = ctypes.c_int32
     while not stop.is_set():
         run_current(0.25)
+        _rearm_hotkey_tap_if_disabled()
 
 
 def _stop_on_parent_pipe_close(stop: threading.Event) -> None:
