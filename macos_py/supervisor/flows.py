@@ -869,7 +869,13 @@ class FlowController:
             return generation == self._current_generation
 
     def _set_idle(self) -> None:
-        self._safe_call(self.ui, "ui.overlay.state", {"state": "idle"}, timeout=30.0)
+        # Fire-and-forget. This runs inline on the worker event-reader thread
+        # (from _on_intent_cancelled / _on_snip_cancelled). A BLOCKING ui.call
+        # here waits for a response that only that same reader thread can read ->
+        # 30s self-deadlock that also stalls every other UI call queued behind it
+        # (e.g. the next snip). The idle animation is cosmetic, so never wait --
+        # mirrors the non-blocking "listening" state fired in begin_caller/snip.
+        self._fire(self.ui, "ui.overlay.state", {"state": "idle"})
 
     def _notice(self, text: str) -> None:
         self._safe_call(self.ui, "ui.reply.notice", {"text": text}, timeout=30.0)
