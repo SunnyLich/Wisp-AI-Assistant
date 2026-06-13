@@ -141,11 +141,12 @@ class _TitleBar(QWidget):
             import sys
             from ui.shared.theme import is_dark_mode, theme_colors
             c = theme_colors(is_dark_mode())
-            # TEMP probe: WISP_DEBUG_TITLEBAR paints the *custom* bar bright green.
-            # If the top bar turns green it's ours (a stylesheet issue); if it
-            # stays dark, it's the native window-manager decoration.
-            if os.environ.get("WISP_DEBUG_TITLEBAR"):
-                c = {**c, "bg": "#00ff00", "border": "#ff00ff", "text": "#000000"}
+            # TEMP probe: FORCE the custom bar bright green (env propagation through
+            # the launcher/supervisor was unreliable). If the top bar turns green
+            # it's ours (a stylesheet issue); if a dark bar remains it's the native
+            # window-manager decoration. Revert immediately after diagnosing.
+            _ = os.environ  # (env probe removed; forcing unconditionally)
+            c = {**c, "bg": "#00ff00", "border": "#ff00ff", "text": "#000000"}
             self.setStyleSheet(_title_bar_qss(c))
             frameless = bool(
                 self._window.windowFlags() & Qt.WindowType.FramelessWindowHint
