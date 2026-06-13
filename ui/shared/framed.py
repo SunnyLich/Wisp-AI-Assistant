@@ -16,7 +16,7 @@ top-level window gets the new chrome for free.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QObject, QEvent
+from PySide6.QtCore import Qt, QObject, QEvent, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy,
@@ -266,6 +266,26 @@ class _WindowChrome(QObject):
 
         self._make_grips()
         self._reposition_grips()
+        QTimer.singleShot(700, self._diag_post_show)  # TEMP
+
+    def _diag_post_show(self) -> None:  # TEMP
+        import sys
+        w = self._window
+        fg = w.frameGeometry()
+        g = w.geometry()
+        deco_h = g.y() - fg.y()  # >0 means the WM added a title bar above us
+        deco_w = (fg.width() - g.width())
+        tb = self._title_bar
+        print(
+            f"[diag] post_show: title={w.windowTitle()!r} "
+            f"frameGeo={fg.width()}x{fg.height()}@{fg.x()},{fg.y()} "
+            f"clientGeo={g.width()}x{g.height()}@{g.x()},{g.y()} "
+            f"wm_deco_top={deco_h} wm_deco_width={deco_w} "
+            f"titlebar_visible={tb.isVisible() if tb else None} "
+            f"titlebar_geo={tb.geometry().x()},{tb.geometry().y()},{tb.width()}x{tb.height()} "
+            f"win_layout_count={w.layout().count() if w.layout() else None}",
+            file=sys.stderr, flush=True,
+        )
 
     def _make_grips(self) -> None:
         w = self._window
