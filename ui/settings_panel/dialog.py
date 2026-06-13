@@ -232,9 +232,13 @@ class SettingsDialog(QDialog):
         QTabBar {{ background: transparent; border: none; }}
         QTabBar::tab {{
             color: {c["text_dim"]}; padding: 7px 20px; border-radius: 8px;
+            border: 1px solid {c["border"]};
             font-size: 9pt; margin: 2px 2px; background: transparent;
         }}
-        QTabBar::tab:selected {{ background: {c["tab_selected"]}; color: {c["accent"]}; font-weight: 600; }}
+        QTabBar::tab:selected {{
+            background: {c["tab_selected"]}; color: {c["accent"]};
+            border: 1px solid {c["accent"]}; font-weight: 600;
+        }}
         QTabBar::tab:hover:!selected {{ background: {c["accent_hint"]}; }}
         QFrame#card {{
             background: {c["card"]}; border: 1px solid {c["border"]}; border-radius: 12px;
