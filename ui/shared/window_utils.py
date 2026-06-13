@@ -3,19 +3,19 @@ ui/window_utils.py - Small helpers for keeping app windows reachable.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QWidget
 
 
 def enable_standard_window_controls(window: QWidget) -> None:
-    """Give a top-level app window the usual minimize, maximize, and close buttons."""
-    window.setWindowFlag(Qt.WindowType.Window, True)
-    window.setWindowFlag(Qt.WindowType.WindowSystemMenuHint, True)
-    window.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, True)
-    window.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
-    window.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, True)
-    window.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+    """Give a top-level app window minimize/maximize/close controls.
+
+    Instead of native OS chrome (which can't render the app palette and looks
+    different per-OS), this installs a frameless, palette-themed title bar so the
+    whole window follows the light/dark template consistently everywhere.
+    """
+    from ui.shared.framed import install_window_chrome
+    install_window_chrome(window)
 
 
 def fit_window_to_screen(

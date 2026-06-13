@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.system.env_utils import TOOL_OVERRIDE_MODES
+from ui.shared.window_utils import enable_standard_window_controls
 
 # Tool name → the context dropdown label(s) that govern it ("a / b" when two).
 # Their selectors default to the dropdown-derived state instead of Off.
@@ -90,6 +91,7 @@ class ToolAccessDialog(QDialog):
         self.setWindowTitle(f"Allowed tools — {method_label}")
         self.setModal(True)
         self.setMinimumWidth(480)
+        enable_standard_window_controls(self)
         # ~25% larger text than the rest of the settings dialog (10pt inputs,
         # ~9pt labels there). <small> notes scale down relative to this base.
         self.setStyleSheet(
