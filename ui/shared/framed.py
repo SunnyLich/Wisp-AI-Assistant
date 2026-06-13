@@ -137,10 +137,25 @@ class _TitleBar(QWidget):
             return
         self._theming = True
         try:
-            from ui.shared.theme import diag, is_dark_mode, theme_colors
-            diag(f"titlebar({self._window.windowTitle()!r})")  # TEMP
+            import os
+            import sys
+            from ui.shared.theme import is_dark_mode, theme_colors
             c = theme_colors(is_dark_mode())
+            # TEMP probe: WISP_DEBUG_TITLEBAR paints the *custom* bar bright green.
+            # If the top bar turns green it's ours (a stylesheet issue); if it
+            # stays dark, it's the native window-manager decoration.
+            if os.environ.get("WISP_DEBUG_TITLEBAR"):
+                c = {**c, "bg": "#00ff00", "border": "#ff00ff", "text": "#000000"}
             self.setStyleSheet(_title_bar_qss(c))
+            frameless = bool(
+                self._window.windowFlags() & Qt.WindowType.FramelessWindowHint
+            )
+            print(  # TEMP
+                f"[diag] titlebar render: title={self._window.windowTitle()!r} "
+                f"bg={c['bg']} frameless={frameless} visible={self.isVisible()} "
+                f"height={self.height()} flags={hex(int(self._window.windowFlags()))}",
+                file=sys.stderr, flush=True,
+            )
             glyph = QColor(c["text"])
             for b in (self._min_btn, self._max_btn, self._close_btn):
                 b.set_glyph_color(glyph)
