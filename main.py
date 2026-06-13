@@ -949,7 +949,7 @@ class App(QObject):
             for chunk in llm.stream_rewrite(selected_text, intent_prompt):
                 full_reply += chunk
                 if self._generations.is_current(gen_id):
-                    self._signals.bubble_chunk.emit(chunk)
+                    self._signals.bubble_chunk.emit(chunk, False)
         except Exception as exc:
             print(f"[main] Rewrite error: {exc}")
             self._finish_idle(gen_id)

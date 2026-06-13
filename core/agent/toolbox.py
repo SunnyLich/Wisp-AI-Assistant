@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Sequence
 import subprocess
+from pathlib import Path
 
 from core.agent.runtime import (
     AgentPermissions,
@@ -115,14 +116,27 @@ class AgentToolbox:
             self._approve("run_command", {"args": clean_args})
         else:
             self._approve("git", {"args": clean_args})
-        completed = subprocess.run(
-            clean_args,
-            cwd=str(self.workspace.root),
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            shell=False,
-        )
+            no_repo = self._not_git_repo_result(clean_args)
+            if no_repo is not None:
+                return no_repo
+        try:
+            completed = subprocess.run(
+                clean_args,
+                cwd=str(self.workspace.root),
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            command = " ".join(clean_args)
+            data = {
+                "returncode": None,
+                "stdout": (exc.stdout or "")[-20_000:] if isinstance(exc.stdout, str) else "",
+                "stderr": (exc.stderr or "")[-20_000:] if isinstance(exc.stderr, str) else "",
+                "timeout_seconds": timeout_seconds,
+            }
+            return self._result("run_command", False, f"timed out after {timeout_seconds}s: {command}", data)
         data = {
             "returncode": completed.returncode,
             "stdout": completed.stdout[-20_000:],
@@ -171,12 +185,33 @@ class AgentToolbox:
     def git_status(self) -> ToolResult:
         if not self.permissions.allow_git:
             raise PermissionDenied("Git is disabled for this task.")
-        return self.run_command(["git", "status", "--short"])
+        return self.run_command(["git", "status", "--short"], timeout_seconds=5)
 
     def git_diff(self) -> ToolResult:
         if not self.permissions.allow_git:
             raise PermissionDenied("Git is disabled for this task.")
-        return self.run_command(["git", "diff", "--", "."])
+        return self.run_command(["git", "diff", "--", "."], timeout_seconds=5)
+
+    def _not_git_repo_result(self, args: list[str]) -> ToolResult | None:
+        if not self._is_read_only_git_command(args):
+            return None
+        if self._find_git_root() is not None:
+            return None
+        command = " ".join(args)
+        return self._result(
+            "run_command",
+            False,
+            f"exit 128: {command}",
+            {"returncode": 128, "stdout": "", "stderr": "fatal: not a git repository"},
+        )
+
+    def _find_git_root(self) -> Path | None:
+        root = self.workspace.root
+        for folder in (root, *root.parents):
+            marker = folder / ".git"
+            if marker.exists():
+                return folder
+        return None
 
     @staticmethod
     def _is_read_only_git_command(args: list[str]) -> bool:

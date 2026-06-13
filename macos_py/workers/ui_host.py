@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import html
 import json
 import itertools
 import logging
+import math
 import os
 import queue
 import sys
@@ -170,22 +172,234 @@ class MemoryProxy:
         self._emit("ui.memory.delete", {"id": fact_id})
 
 
+def _make_fit_graphics_view(QGraphicsView, Qt):
+    class _MacFitGraphicsView(QGraphicsView):
+        def __init__(self, scene):
+            super().__init__(scene)
+            self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        def fit_scene(self) -> None:
+            rect = self.scene().sceneRect() if self.scene() else None
+            if rect is not None and not rect.isEmpty():
+                self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+
+        def resizeEvent(self, event):  # noqa: N802
+            super().resizeEvent(event)
+            self.fit_scene()
+
+        def showEvent(self, event):  # noqa: N802
+            super().showEvent(event)
+            self.fit_scene()
+
+    return _MacFitGraphicsView
+
+
+def _make_live_agent_item(
+    QGraphicsEllipseItem,
+    QGraphicsItemGroup,
+    QGraphicsRectItem,
+    QGraphicsTextItem,
+    QBrush,
+    QColor,
+    QFont,
+    QPen,
+    QPointF,
+    Qt,
+):
+    class _MacLiveAgentItem(QGraphicsItemGroup):
+        WIDTH = 220
+        HEIGHT = 150
+        TEXT_WIDTH = 196
+        GRIP = 16
+        MIN_SCALE = 0.6
+        MAX_SCALE = 2.2
+        _CLICK_SLOP = 5
+
+        def __init__(
+            self,
+            index: int,
+            click_callback,
+            x: float,
+            y: float,
+            name: str,
+            role: str,
+            status: str,
+            objective: str,
+            health: str,
+            active: bool,
+            selected: bool,
+            scale: float = 1.0,
+            on_geometry_change=None,
+        ):
+            super().__init__()
+            self._index = index
+            self._click_callback = click_callback
+            self._on_geometry_change = on_geometry_change
+            self._scale_factor = scale
+            self._resizing = False
+            self._press_scene = QPointF()
+            self.setAcceptHoverEvents(True)
+            self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable, True)
+            self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+            self.setZValue(5 if active or selected else 3)
+
+            border = "#2f80ed" if active else "#7aa7df"
+            fill = "#eaf4ff" if active else "#ffffff"
+            if selected:
+                border = "#1f6fd1"
+                fill = "#dceeff"
+
+            if active:
+                for offset, alpha in ((-10, 62), (-5, 42), (0, 24)):
+                    glow = QGraphicsEllipseItem(
+                        offset,
+                        offset + 1,
+                        self.WIDTH - offset * 2,
+                        self.HEIGHT - offset * 2,
+                    )
+                    glow.setBrush(QBrush(QColor(47, 128, 237, alpha)))
+                    glow.setPen(QPen(Qt.PenStyle.NoPen))
+                    self.addToGroup(glow)
+
+            shadow = QGraphicsEllipseItem(4, 6, self.WIDTH, self.HEIGHT)
+            shadow.setBrush(QBrush(QColor(86, 105, 135, 34)))
+            shadow.setPen(QPen(Qt.PenStyle.NoPen))
+            self.addToGroup(shadow)
+
+            node = QGraphicsRectItem(0, 0, self.WIDTH, self.HEIGHT)
+            node.setBrush(QBrush(QColor(fill)))
+            node.setPen(QPen(QColor(border), 2.2 if active or selected else 1.3))
+            self.addToGroup(node)
+
+            name_item = QGraphicsTextItem(name)
+            name_item.setDefaultTextColor(QColor("#172033"))
+            name_item.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
+            name_item.setTextWidth(self.TEXT_WIDTH)
+            name_item.setPos(12, 10)
+            name_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.addToGroup(name_item)
+
+            role_item = QGraphicsTextItem(role)
+            role_item.setDefaultTextColor(QColor("#5f7088"))
+            role_item.setFont(QFont("Segoe UI", 8))
+            role_item.setTextWidth(self.TEXT_WIDTH)
+            role_item.setPos(12, 32)
+            role_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.addToGroup(role_item)
+
+            status_item = QGraphicsTextItem(status or "Waiting")
+            status_item.setDefaultTextColor(QColor("#24405f" if active else "#667085"))
+            status_item.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold if active else QFont.Weight.Normal))
+            status_item.setTextWidth(self.TEXT_WIDTH)
+            status_item.setPos(12, 54)
+            status_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.addToGroup(status_item)
+
+            objective_item = QGraphicsTextItem(objective or "No current objective")
+            objective_item.setDefaultTextColor(QColor("#344054"))
+            objective_item.setFont(QFont("Segoe UI", 7))
+            objective_item.setTextWidth(self.TEXT_WIDTH)
+            objective_item.setPos(12, 78)
+            objective_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.addToGroup(objective_item)
+
+            health_item = QGraphicsTextItem(health)
+            health_item.setDefaultTextColor(QColor("#697586"))
+            health_item.setFont(QFont("Segoe UI", 7))
+            health_item.setTextWidth(self.TEXT_WIDTH)
+            health_item.setPos(12, 122)
+            health_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.addToGroup(health_item)
+
+            grip = QGraphicsRectItem(self.WIDTH - self.GRIP, self.HEIGHT - self.GRIP, self.GRIP, self.GRIP)
+            grip.setBrush(QBrush(QColor(border)))
+            grip.setPen(QPen(QColor("#ffffff"), 1))
+            grip.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.addToGroup(grip)
+
+            self.setScale(scale)
+            self.setPos(x, y)
+
+        def hoverEnterEvent(self, event):  # noqa: N802
+            self.setOpacity(0.88)
+            super().hoverEnterEvent(event)
+
+        def hoverLeaveEvent(self, event):  # noqa: N802
+            self.setOpacity(1.0)
+            super().hoverLeaveEvent(event)
+
+        def _in_grip(self, event) -> bool:
+            pos = event.pos()
+            return pos.x() >= self.WIDTH - self.GRIP and pos.y() >= self.HEIGHT - self.GRIP
+
+        def _emit_geometry(self) -> None:
+            if self._on_geometry_change is not None:
+                pos = self.pos()
+                self._on_geometry_change(self._index, pos.x(), pos.y(), self._scale_factor)
+
+        def mousePressEvent(self, event):  # noqa: N802
+            self._press_scene = event.scenePos()
+            if self._in_grip(event):
+                self._resizing = True
+                event.accept()
+                return
+            self._resizing = False
+            super().mousePressEvent(event)
+
+        def mouseMoveEvent(self, event):  # noqa: N802
+            if self._resizing:
+                origin = self.scenePos()
+                dx = event.scenePos().x() - origin.x()
+                dy = event.scenePos().y() - origin.y()
+                raw = max(dx / self.WIDTH, dy / self.HEIGHT)
+                self._scale_factor = max(self.MIN_SCALE, min(self.MAX_SCALE, raw))
+                self.setScale(self._scale_factor)
+                event.accept()
+                return
+            super().mouseMoveEvent(event)
+
+        def mouseReleaseEvent(self, event):  # noqa: N802
+            if self._resizing:
+                self._resizing = False
+                event.accept()
+                self._emit_geometry()
+                return
+            super().mouseReleaseEvent(event)
+            moved = (event.scenePos() - self._press_scene).manhattanLength() >= self._CLICK_SLOP
+            event.accept()
+            if moved:
+                self._emit_geometry()
+            else:
+                self._click_callback(self._index)
+
+    return _MacLiveAgentItem
+
+
 class MacAgentRunDialog:
     """Protocol-backed agent run window for the pure-Python target."""
 
     def __init__(self, host: "QtProtocolHost", spec: dict[str, Any]) -> None:
-        from PySide6.QtCore import Qt, QUrl
-        from PySide6.QtGui import QDesktopServices, QTextCursor
+        from PySide6.QtCore import QPointF, Qt, QTimer, QUrl
+        from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QPainterPath, QPen, QTextCursor
         from PySide6.QtWidgets import (
             QApplication,
             QDialog,
             QFrame,
+            QGraphicsEllipseItem,
+            QGraphicsItemGroup,
+            QGraphicsRectItem,
+            QGraphicsScene,
+            QGraphicsTextItem,
+            QGraphicsView,
             QHBoxLayout,
             QLabel,
             QPushButton,
+            QSplitter,
             QTabWidget,
             QTextEdit,
             QVBoxLayout,
+            QWidget,
         )
 
         self._host = host
@@ -195,13 +409,51 @@ class MacAgentRunDialog:
         self._QApplication = QApplication
         self._QDesktopServices = QDesktopServices
         self._QTextCursor = QTextCursor
+        self._QTimer = QTimer
         self._QUrl = QUrl
+        self._QBrush = QBrush
+        self._QColor = QColor
+        self._QFont = QFont
+        self._QPainterPath = QPainterPath
+        self._QPen = QPen
+        self._Qt = Qt
+        self._LiveAgentItem = _make_live_agent_item(
+            QGraphicsEllipseItem,
+            QGraphicsItemGroup,
+            QGraphicsRectItem,
+            QGraphicsTextItem,
+            QBrush,
+            QColor,
+            QFont,
+            QPen,
+            QPointF,
+            Qt,
+        )
+        fit_graphics_view = _make_fit_graphics_view(QGraphicsView, Qt)
+        self._agent_roles = self._agent_roles_from_spec(self._spec)
+        self._agent_names = list(self._agent_roles) or ["Solo"]
+        self._active_agent = self._agent_names[0]
+        self._selected_agent = self._active_agent
+        self._meeting_messages: list[dict[str, str]] = []
+        self._agent_layout: dict[str, dict[str, float]] = {}
+        self._agent_states = {
+            name: {
+                "role": self._agent_roles.get(name, "Agent"),
+                "status": "Waiting",
+                "thought": "",
+                "objective": "",
+                "tool": "",
+                "health": {"calls": 0, "total_latency": 0.0, "invalid_json": 0, "repairs": 0, "fallbacks": 0},
+                "history": [],
+            }
+            for name in self._agent_names
+        }
 
         title = str(self._spec.get("title") or "Agent Task")
         self.dialog = QDialog()
         self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.dialog.setWindowTitle(f"Agent Task - {title}")
-        self.dialog.setMinimumSize(820, 560)
+        self.dialog.setMinimumSize(980, 620)
 
         root = QVBoxLayout(self.dialog)
         root.setContentsMargins(12, 12, 12, 12)
@@ -231,18 +483,84 @@ class MacAgentRunDialog:
         root.addWidget(self.approval_panel)
 
         self.tabs = QTabWidget()
+        self.meeting_scene = QGraphicsScene(self.dialog)
+        self.meeting_view = fit_graphics_view(self.meeting_scene)
+        self.meeting_view.setMinimumSize(280, 220)
+        self.meeting_view.setStyleSheet("QGraphicsView { background: #edf3fa; border: 1px solid #c2ccda; }")
+        meeting_splitter = QSplitter(Qt.Orientation.Horizontal)
+        meeting_splitter.setChildrenCollapsible(False)
+
+        meeting_panel = QWidget()
+        meeting_layout = QVBoxLayout(meeting_panel)
+        meeting_layout.setContentsMargins(0, 0, 0, 0)
+        meeting_layout.setSpacing(6)
+        meeting_header = QHBoxLayout()
+        meeting_header.addWidget(QLabel("Meeting"))
+        meeting_header.addStretch()
+        self.reset_layout_btn = QPushButton("Reset Layout")
+        self.reset_layout_btn.setToolTip("Restore every agent card to its default position and size")
+        self.reset_layout_btn.clicked.connect(self._reset_agent_layout)
+        meeting_header.addWidget(self.reset_layout_btn)
+        meeting_layout.addLayout(meeting_header)
+        meeting_layout.addWidget(self.meeting_view, 1)
+
+        detail_panel = QWidget()
+        detail_layout = QVBoxLayout(detail_panel)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.setSpacing(6)
+        detail_layout.addWidget(QLabel("Agent Detail"))
+        self.agent_summary_view = QTextEdit()
+        self.agent_summary_view.setReadOnly(True)
+        self.agent_summary_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.agent_summary_view.setMaximumHeight(250)
+        self.agent_summary_view.setMinimumWidth(240)
+        self.agent_detail_view = self.agent_summary_view
+        detail_layout.addWidget(self.agent_summary_view, 1)
+        detail_layout.addWidget(QLabel("Recent Activity"))
+        self.agent_activity_view = QTextEdit()
+        self.agent_activity_view.setReadOnly(True)
+        self.agent_activity_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        detail_layout.addWidget(self.agent_activity_view, 1)
+
+        board_panel = QWidget()
+        board_layout = QVBoxLayout(board_panel)
+        board_layout.setContentsMargins(0, 0, 0, 0)
+        board_layout.setSpacing(6)
+        board_layout.addWidget(QLabel("Shared Board"))
+        self.shared_board_view = QTextEdit()
+        self.shared_board_view.setReadOnly(True)
+        self.shared_board_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        board_layout.addWidget(self.shared_board_view, 1)
+
+        meeting_splitter.addWidget(meeting_panel)
+        meeting_splitter.addWidget(board_panel)
+        meeting_splitter.addWidget(detail_panel)
+        meeting_splitter.setStretchFactor(0, 4)
+        meeting_splitter.setStretchFactor(1, 2)
+        meeting_splitter.setStretchFactor(2, 4)
+        meeting_splitter.setSizes([460, 240, 460])
+
         self.log_view = QTextEdit()
         self.trace_view = QTextEdit()
         self.final_view = QTextEdit()
-        for view in (self.log_view, self.trace_view, self.final_view):
+        for view in (
+            self.agent_detail_view,
+            self.agent_activity_view,
+            self.shared_board_view,
+            self.log_view,
+            self.trace_view,
+            self.final_view,
+        ):
             view.setReadOnly(True)
         self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.trace_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.final_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.tabs.addTab(meeting_splitter, "Meeting Room")
         self.tabs.addTab(self.log_view, "Live Log")
         self.tabs.addTab(self.trace_view, "Model Trace")
         self.tabs.addTab(self.final_view, "Final Report")
         root.addWidget(self.tabs, 1)
+        self._refresh_meeting_room()
 
         row = QHBoxLayout()
         self.status_label = QLabel("Running...")
@@ -283,8 +601,10 @@ class MacAgentRunDialog:
         payload = self._payload(data)
         line = str(payload.get("line") or payload.get("text") or payload.get("data") or "")
         if line:
+            self._update_live_meeting(line)
             self._append_text(self.log_view, line)
             self.status_label.setText("Running...")
+            self._refresh_meeting_room()
 
     def append_trace(self, data: dict[str, Any]) -> None:
         payload = self._payload(data)
@@ -308,15 +628,22 @@ class MacAgentRunDialog:
 
         if error_text:
             self.status_label.setText("Failed")
+            self._set_agent_status(self._active_agent, "Failed", error_text)
         elif payload.get("cancelled"):
             self.status_label.setText("Cancelled")
+            self._set_agent_status(self._active_agent, "Cancelled", "Agent task cancelled.")
         else:
             self.status_label.setText("Finished")
+            for name in self._agent_names:
+                status = str(self._agent_states.get(name, {}).get("status") or "")
+                if status not in {"Done", "Failed", "Cancelled"}:
+                    self._set_agent_status(name, "Finished", "Agent run finished.")
         self.approval_panel.hide()
         self.cancel_btn.setEnabled(False)
         self.open_result_btn.setEnabled(bool(self._run_dir))
         self.retry_btn.setEnabled(True)
         self.continue_btn.setEnabled(bool(self._run_dir))
+        self._refresh_meeting_room()
 
     def request_approval(self, data: dict[str, Any]) -> None:
         payload = self._payload(data)
@@ -334,6 +661,8 @@ class MacAgentRunDialog:
         self.approval_label.setText(text)
         self.approval_panel.show()
         self.status_label.setText("Permission needed")
+        self._set_agent_status(self._active_agent, "Needs approval", text)
+        self._refresh_meeting_room()
         self._host._agent_notify_approval(
             text + "\nApprove or decline in the Agent Task window.",
             resolved=False,
@@ -358,6 +687,428 @@ class MacAgentRunDialog:
         cursor.insertText(text.rstrip("\n"))
         bar = view.verticalScrollBar()
         bar.setValue(bar.maximum())
+
+    @staticmethod
+    def _agent_roles_from_spec(spec: dict[str, Any]) -> dict[str, str]:
+        roles: dict[str, str] = {}
+        agents = spec.get("agents") if isinstance(spec, dict) else None
+        if isinstance(agents, list):
+            for idx, agent in enumerate(agents):
+                if isinstance(agent, dict):
+                    name = str(agent.get("name") or f"Agent {idx + 1}").strip()
+                    role = str(agent.get("role") or "Agent").strip()
+                else:
+                    name = str(getattr(agent, "name", "") or f"Agent {idx + 1}").strip()
+                    role = str(getattr(agent, "role", "") or "Agent").strip()
+                if name:
+                    roles[name] = role or "Agent"
+        return roles
+
+    def _update_live_meeting(self, line: str) -> None:
+        from ui.agent.log_parser import parse_live_log_event
+
+        event = parse_live_log_event(line)
+        body = event.body
+        if event.kind in {"agent_turn", "agent_read_only_turn"}:
+            name = event.agent
+            self._ensure_agent_state(name)
+            self._active_agent = name
+            if self._selected_agent not in self._agent_states:
+                self._selected_agent = name
+            status = "Read-only briefing" if event.kind == "agent_read_only_turn" else "Thinking"
+            self._set_agent_status(name, status, body)
+            return
+        if body.startswith("parallel read-only briefing started"):
+            for name in self._agent_names:
+                self._set_agent_status(name, "Joining briefing", body)
+            return
+        if body.startswith("parallel read-only briefing finished"):
+            for name in self._agent_names:
+                current = str(self._agent_states[name].get("status") or "")
+                if current in {"Joining briefing", "Read-only briefing", "Calling model"}:
+                    self._set_agent_status(name, "Briefed", body)
+            return
+        if body.startswith("requesting LLM tool response"):
+            self._set_agent_status(self._active_agent, "Calling model", body)
+            return
+        if body.startswith("model call still waiting after "):
+            elapsed = body.split(" after ", 1)[1].split(" via ", 1)[0]
+            self._set_agent_status(self._active_agent, f"Waiting {elapsed}", body)
+            return
+        if body.startswith("model first token after "):
+            elapsed = body.split(" after ", 1)[1].split(" via ", 1)[0]
+            self._set_agent_status(self._active_agent, f"Receiving response ({elapsed})", body)
+            return
+        if body.startswith("model streaming response: "):
+            self._set_agent_status(self._active_agent, "Receiving response", body)
+            return
+        if body.startswith("model response still streaming after "):
+            self._set_agent_status(self._active_agent, "Still receiving response", body)
+            return
+        if body.startswith("LLM call failed: "):
+            self._agent_health(self._active_agent)["fallbacks"] += 1
+            self._set_agent_status(self._active_agent, "Model error; retrying", body)
+            return
+        if body.startswith("routing by latest directed message: "):
+            route = body[len("routing by latest directed message: "):].strip()
+            target = route.split(" -> ", 1)[1] if " -> " in route else route
+            self._set_agent_status(self._active_agent, f"Handing off to {target}", body)
+            return
+        if body.startswith("routing by explicit next_agent: "):
+            route = body[len("routing by explicit next_agent: "):].split(" (", 1)[0].strip()
+            target = route.split(" -> ", 1)[1] if " -> " in route else route
+            self._set_agent_status(self._active_agent, f"Explicit handoff to {target}", body)
+            return
+        if body.startswith("prompt prepared for "):
+            summary = body.split(": ", 1)[1] if ": " in body else body
+            self._set_agent_status(self._active_agent, f"Prompt {summary}", body)
+            return
+        if body.startswith("model response received") or body.startswith("model callback response received"):
+            self._record_model_latency(self._active_agent, body)
+            self._set_agent_status(self._active_agent, "Parsing response", body)
+            return
+        if body.startswith("file payload in JSON response"):
+            self._append_agent_history(self._active_agent, body)
+            return
+        if body.startswith("agent response parse failed"):
+            self._agent_health(self._active_agent)["invalid_json"] += 1
+            self._set_agent_status(self._active_agent, "Repairing response", body)
+            return
+        if body.startswith("requesting JSON repair"):
+            self._set_agent_status(self._active_agent, "Repairing JSON", body)
+            return
+        if body.startswith("repaired invalid JSON locally") or body.startswith("JSON repair response received"):
+            self._agent_health(self._active_agent)["repairs"] += 1
+            self._set_agent_status(self._active_agent, "Parsing repaired JSON", body)
+            return
+        if body.startswith("using local fallback"):
+            self._agent_health(self._active_agent)["fallbacks"] += 1
+            self._set_agent_status(self._active_agent, "Retrying", body)
+            return
+        if body.startswith("agent run paused"):
+            self.status_label.setText("Paused after current turn")
+            return
+        if body.startswith("agent run resumed"):
+            self.status_label.setText("Running...")
+            return
+        if body.startswith("agent reached turn limit"):
+            self._set_agent_status(self._active_agent, "Turn limit reached", body)
+            return
+        if body.startswith("message: ") and " -> " in body and ": " in body[9:]:
+            self._record_meeting_message(body)
+            return
+        for name in list(self._agent_states):
+            thought_prefix = f"{name} thought: "
+            tool_prefix = f"{name} tool call: "
+            final_prefix = f"{name} returned final response"
+            if body.startswith(thought_prefix):
+                thought = body[len(thought_prefix):].strip()
+                self._agent_states[name]["thought"] = thought
+                self._agent_states[name]["objective"] = self._objective_from_thought(thought)
+                self._set_agent_status(name, "Thinking", "Thought: " + thought)
+                return
+            if body.startswith(tool_prefix):
+                tool = body[len(tool_prefix):].strip()
+                self._agent_states[name]["tool"] = tool
+                self._set_agent_status(name, f"Using {tool}", body)
+                return
+            if body.startswith(final_prefix):
+                self._set_agent_status(name, "Done", body)
+                return
+        if body.startswith("tool "):
+            self._append_agent_history(self._active_agent, body)
+
+    def _record_meeting_message(self, body: str) -> None:
+        try:
+            payload = body[len("message: "):]
+            route, message = payload.split(": ", 1)
+            source, target = route.split(" -> ", 1)
+        except ValueError:
+            return
+        item = {
+            "from": source.strip(),
+            "to": target.strip(),
+            "message": message.strip(),
+        }
+        if any(
+            existing.get("from") == item["from"]
+            and existing.get("to") == item["to"]
+            and existing.get("message") == item["message"]
+            for existing in self._meeting_messages[-6:]
+        ):
+            return
+        self._meeting_messages.append(item)
+        del self._meeting_messages[:-12]
+        if item["from"] in self._agent_states:
+            self._append_agent_history(item["from"], f"Told {item['to']}: {item['message']}")
+        if item["to"] in self._agent_states:
+            self._append_agent_history(item["to"], f"Heard from {item['from']}: {item['message']}")
+
+    def _ensure_agent_state(self, name: str) -> None:
+        name = (name or "Agent").strip() or "Agent"
+        if name in self._agent_states:
+            return
+        self._agent_names.append(name)
+        self._agent_roles.setdefault(name, "Agent")
+        self._agent_states[name] = {
+            "role": self._agent_roles.get(name, "Agent"),
+            "status": "Waiting",
+            "thought": "",
+            "objective": "",
+            "tool": "",
+            "health": {"calls": 0, "total_latency": 0.0, "invalid_json": 0, "repairs": 0, "fallbacks": 0},
+            "history": [],
+        }
+
+    def _set_agent_status(self, name: str, status: str, event: str) -> None:
+        self._ensure_agent_state(name)
+        self._agent_states[name]["status"] = status
+        self._append_agent_history(name, event)
+
+    def _agent_health(self, name: str) -> dict:
+        self._ensure_agent_state(name)
+        return self._agent_states[name].setdefault(
+            "health",
+            {"calls": 0, "total_latency": 0.0, "invalid_json": 0, "repairs": 0, "fallbacks": 0},
+        )
+
+    def _record_model_latency(self, name: str, body: str) -> None:
+        marker = " received in "
+        if marker not in body:
+            return
+        try:
+            seconds = float(body.split(marker, 1)[1].split("s", 1)[0])
+        except ValueError:
+            return
+        health = self._agent_health(name)
+        health["calls"] = int(health.get("calls", 0)) + 1
+        health["total_latency"] = float(health.get("total_latency", 0.0)) + seconds
+
+    @staticmethod
+    def _objective_from_thought(thought: str) -> str:
+        clean = " ".join(thought.split())
+        return MacAgentRunDialog._shorten(clean, 120)
+
+    def _append_agent_history(self, name: str, event: str) -> None:
+        self._ensure_agent_state(name)
+        history = self._agent_states[name]["history"]
+        history.append(event)
+        del history[:-40]
+
+    def _refresh_meeting_room(self) -> None:
+        self._refresh_shared_board()
+        self._draw_live_meeting()
+
+    def _draw_live_meeting(self) -> None:
+        self.meeting_scene.clear()
+        self.meeting_scene.setSceneRect(0, 0, 1080, 560)
+
+        bg = self._QPainterPath()
+        bg.addRoundedRect(10, 10, 1060, 540, 16, 16)
+        self.meeting_scene.addPath(bg, self._QPen(self._QColor("#cfd9e6"), 1), self._QBrush(self._QColor("#edf3fa")))
+
+        table = self._QPainterPath()
+        table.addRoundedRect(445, 230, 190, 100, 24, 24)
+        self.meeting_scene.addPath(
+            table,
+            self._QPen(self._QColor("#9fb2c8"), 1.5),
+            self._QBrush(self._QColor("#dbe6f2")),
+        )
+
+        title = self.meeting_scene.addText("Agent Meeting", self._QFont("Segoe UI", 11, self._QFont.Weight.DemiBold))
+        title.setDefaultTextColor(self._QColor("#26384f"))
+        title.setTextWidth(150)
+        title.setPos(465, 267)
+        title.setAcceptedMouseButtons(self._Qt.MouseButton.NoButton)
+
+        positions = self._live_agent_positions(len(self._agent_names))
+        centers: dict[str, tuple[float, float]] = {}
+        live_item = self._LiveAgentItem
+        for idx, name in enumerate(self._agent_names):
+            state = self._agent_states.get(name, {})
+            x, y = positions[idx]
+            override = self._agent_layout.get(name) or {}
+            x = float(override.get("x", x))
+            y = float(override.get("y", y))
+            scale = float(override.get("scale", 1.0))
+            centers[name] = (
+                x + live_item.WIDTH * scale / 2,
+                y + live_item.HEIGHT * scale / 2,
+            )
+            item = live_item(
+                idx,
+                self._select_live_agent,
+                x,
+                y,
+                name,
+                str(state.get("role") or "Agent"),
+                str(state.get("status") or "Waiting"),
+                self._shorten(str(state.get("objective") or ""), 96),
+                self._health_badge(name),
+                name == self._active_agent,
+                name == self._selected_agent,
+                scale=scale,
+                on_geometry_change=self._on_agent_geometry_change,
+            )
+            self.meeting_scene.addItem(item)
+
+        self._draw_last_message_arrow(centers)
+        self.meeting_view.fit_scene()
+        self._refresh_agent_detail()
+
+    def _draw_last_message_arrow(self, centers: dict[str, tuple[float, float]]) -> None:
+        if not self._meeting_messages:
+            return
+        item = self._meeting_messages[-1]
+        source = item.get("from", "")
+        target = item.get("to", "")
+        if source not in centers:
+            return
+        if target.upper() == "ALL":
+            for name in self._agent_names:
+                if name != source and name in centers:
+                    self._draw_live_arrow(centers[source], centers[name])
+            return
+        if target not in centers:
+            return
+        self._draw_live_arrow(centers[source], centers[target])
+
+    def _draw_live_arrow(self, source: tuple[float, float], target: tuple[float, float]) -> None:
+        sx, sy = source
+        tx, ty = target
+        sx_edge, sy_edge, tx_edge, ty_edge = self._live_edge_points(sx, sy, tx, ty)
+        pen = self._QPen(self._QColor("#2f80ed"), 2.3)
+        self.meeting_scene.addLine(sx_edge, sy_edge, tx_edge, ty_edge, pen)
+        dx, dy = tx_edge - sx_edge, ty_edge - sy_edge
+        length = max(1.0, math.hypot(dx, dy))
+        ux, uy = dx / length, dy / length
+        px, py = -uy, ux
+        size = 11
+        bx = tx_edge - ux * size
+        by = ty_edge - uy * size
+        path = self._QPainterPath()
+        path.moveTo(tx_edge, ty_edge)
+        path.lineTo(bx + px * size * 0.55, by + py * size * 0.55)
+        path.lineTo(bx - px * size * 0.55, by - py * size * 0.55)
+        path.closeSubpath()
+        self.meeting_scene.addPath(path, self._QPen(self._QColor("#2f80ed")), self._QBrush(self._QColor("#2f80ed")))
+
+    def _live_edge_points(self, sx: float, sy: float, tx: float, ty: float) -> tuple[float, float, float, float]:
+        dx, dy = tx - sx, ty - sy
+        length = max(1.0, math.hypot(dx, dy))
+        ux, uy = dx / length, dy / length
+        live_item = self._LiveAgentItem
+        half_w, half_h = live_item.WIDTH / 2, live_item.HEIGHT / 2
+        border_offset = min(
+            half_w / max(abs(ux), 0.001),
+            half_h / max(abs(uy), 0.001),
+        )
+        gap = 10.0
+        return (
+            sx + ux * (border_offset + gap),
+            sy + uy * (border_offset + gap),
+            tx - ux * (border_offset + gap),
+            ty - uy * (border_offset + gap),
+        )
+
+    def _live_agent_positions(self, count: int) -> list[tuple[float, float]]:
+        if count <= 0:
+            return []
+        live_item = self._LiveAgentItem
+        cx, cy = 540, 280
+        rx, ry = 390, 200
+        return [
+            (
+                cx + math.cos(-math.pi / 2 + 2 * math.pi * idx / count) * rx - live_item.WIDTH / 2,
+                cy + math.sin(-math.pi / 2 + 2 * math.pi * idx / count) * ry - live_item.HEIGHT / 2,
+            )
+            for idx in range(count)
+        ]
+
+    def _select_live_agent(self, index: int) -> None:
+        if 0 <= index < len(self._agent_names):
+            self._selected_agent = self._agent_names[index]
+            self._draw_live_meeting()
+
+    def _on_agent_geometry_change(self, index: int, x: float, y: float, scale: float) -> None:
+        if not (0 <= index < len(self._agent_names)):
+            return
+        rect = self.meeting_scene.sceneRect()
+        live_item = self._LiveAgentItem
+        width = live_item.WIDTH * scale
+        height = live_item.HEIGHT * scale
+        x = max(rect.left(), min(x, rect.right() - width))
+        y = max(rect.top(), min(y, rect.bottom() - height))
+        self._agent_layout[self._agent_names[index]] = {"x": x, "y": y, "scale": scale}
+        self._QTimer.singleShot(0, self._draw_live_meeting)
+
+    def _reset_agent_layout(self) -> None:
+        if not self._agent_layout:
+            return
+        self._agent_layout.clear()
+        self._draw_live_meeting()
+
+    def _refresh_agent_detail(self) -> None:
+        state = self._agent_states.get(self._selected_agent)
+        if not state:
+            self.agent_detail_view.clear()
+            self.agent_activity_view.clear()
+            return
+        health = self._health_detail(self._selected_agent)
+        detail = (
+            f"<h3>{html.escape(self._selected_agent)}</h3>"
+            f"<p><b>Role:</b> {html.escape(str(state.get('role') or 'Agent'))}<br>"
+            f"<b>Status:</b> {html.escape(str(state.get('status') or 'Waiting'))}<br>"
+            f"<b>Last tool:</b> {html.escape(str(state.get('tool') or 'None'))}</p>"
+            f"<p><b>Current objective</b><br>"
+            f"{html.escape(str(state.get('objective') or 'No current objective.'))}</p>"
+            f"<p><b>Model health</b><br>{html.escape(health)}</p>"
+            f"<p><b>Latest thought</b><br>"
+            f"{html.escape(str(state.get('thought') or 'No thought yet.'))}</p>"
+        )
+        self.agent_detail_view.setHtml(detail)
+        history = state.get("history") or []
+        self.agent_activity_view.setPlainText(
+            "\n".join(f"- {item}" for item in history[-18:]) or "- No activity yet."
+        )
+
+    def _refresh_shared_board(self) -> None:
+        if not self._meeting_messages:
+            self.shared_board_view.setPlainText("No messages yet.")
+            return
+        lines: list[str] = []
+        for item in self._meeting_messages:
+            lines.append(f"{item['from']} -> {item['to']}")
+            lines.append(item["message"])
+            lines.append("")
+        self.shared_board_view.setPlainText("\n".join(lines).strip())
+
+    def _health_badge(self, name: str) -> str:
+        health = self._agent_health(name)
+        calls = int(health.get("calls", 0))
+        avg = "-" if not calls else f"{float(health.get('total_latency', 0.0)) / calls:.1f}s"
+        return (
+            f"avg {avg} | invalid {int(health.get('invalid_json', 0))} | "
+            f"repair {int(health.get('repairs', 0))} | fallback {int(health.get('fallbacks', 0))}"
+        )
+
+    def _health_detail(self, name: str) -> str:
+        health = self._agent_health(name)
+        calls = int(health.get("calls", 0))
+        avg = 0.0 if not calls else float(health.get("total_latency", 0.0)) / calls
+        return (
+            f"calls {calls}, average latency {avg:.1f}s, "
+            f"invalid JSON {int(health.get('invalid_json', 0))}, "
+            f"repairs {int(health.get('repairs', 0))}, "
+            f"fallbacks {int(health.get('fallbacks', 0))}"
+        )
+
+    @staticmethod
+    def _shorten(text: str, max_chars: int) -> str:
+        clean = " ".join(text.split())
+        if len(clean) <= max_chars:
+            return clean
+        return clean[: max(0, max_chars - 1)].rstrip() + "..."
 
     def _resolve_approval(self, approved: bool) -> None:
         if not self._pending_approval_id:

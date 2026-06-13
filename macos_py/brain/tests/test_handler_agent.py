@@ -123,6 +123,30 @@ def test_agent_history_lists_recent_runs(tmp_path):
     assert result["runs"][1]["status"] == "complete"
 
 
+def test_agent_history_lists_previous_runtime_runs_after_restart(tmp_path, monkeypatch):
+    current_runtime = tmp_path / "build_logs" / "wisp_runtime_20260102-010101"
+    old_root = tmp_path / "build_logs" / "wisp_runtime_20260101-010101" / "agent-runs"
+    cancelled = old_root / "20260101-020202-cancelled"
+    cancelled.mkdir(parents=True)
+    (cancelled / "task.json").write_text(
+        json.dumps({"title": "Cancelled", "objective": "Stopped before restart"}),
+        encoding="utf-8",
+    )
+    (cancelled / "run.log").write_text("[00:00:00] agent run cancelled", encoding="utf-8")
+
+    import core.system.paths as system_paths
+
+    monkeypatch.setattr(handlers, "_runtime_output_dir", lambda: current_runtime)
+    monkeypatch.setattr(system_paths, "AGENT_RUNS_DIR", tmp_path / "persistent" / "agent_runs")
+
+    result = handlers.HANDLERS["brain.agent.history.list"]()
+
+    by_title = {run["title"]: run for run in result["runs"]}
+    assert "Cancelled" in by_title
+    assert by_title["Cancelled"]["status"] == "cancelled"
+    assert str(old_root) in result["runs_roots"]
+
+
 def test_agent_history_reads_run_artifacts(tmp_path):
     run = tmp_path / "runs" / "20260101-010101-demo"
     run.mkdir(parents=True)
@@ -195,6 +219,27 @@ def test_agent_last_spec_read_falls_back_to_newest_run_task(tmp_path):
 
     assert result["spec"]["title"] == "New"
     assert result["spec"]["objective"] == "Later"
+
+
+def test_agent_last_spec_read_scans_previous_runtime_roots(tmp_path, monkeypatch):
+    current_runtime = tmp_path / "build_logs" / "wisp_runtime_20260102-010101"
+    old_root = tmp_path / "build_logs" / "wisp_runtime_20260101-010101" / "agent-runs"
+    previous = old_root / "20260101-020202-previous"
+    previous.mkdir(parents=True)
+    (previous / "task.json").write_text(
+        json.dumps(_noop_spec(tmp_path, title="Previous", objective="Restore me")),
+        encoding="utf-8",
+    )
+
+    import core.system.paths as system_paths
+
+    monkeypatch.setattr(handlers, "_runtime_output_dir", lambda: current_runtime)
+    monkeypatch.setattr(system_paths, "AGENT_RUNS_DIR", tmp_path / "persistent" / "agent_runs")
+
+    result = handlers.HANDLERS["brain.agent.last_spec.read"]()
+
+    assert result["spec"]["title"] == "Previous"
+    assert result["spec"]["objective"] == "Restore me"
 
 
 def test_agent_approval_callback_emits_request_and_accepts_response(record_ctx):

@@ -1418,6 +1418,59 @@ def _agent_runs_root(log_root: str | None = None) -> Path:
     return root
 
 
+def _agent_history_roots(log_root: str | None = None) -> list[Path]:
+    """Return run roots that should be visible in the native history UI.
+
+    Agent runs are written under the per-launch runtime log dir. After Wisp is
+    restarted, the current runtime dir changes, so cancelled or stopped runs
+    from the previous launch can look like they disappeared unless history
+    scans sibling runtime folders too.
+    """
+    if log_root:
+        return [_agent_runs_root(log_root)]
+
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add_root(path: Path, *, create: bool = False) -> None:
+        try:
+            if create:
+                path.mkdir(parents=True, exist_ok=True)
+            if not path.is_dir():
+                return
+            key = path.resolve()
+        except OSError:
+            return
+        if key in seen:
+            return
+        seen.add(key)
+        roots.append(path)
+
+    current = _agent_runs_root(None)
+    add_root(current)
+
+    runtimes_parent = current.parent.parent
+    try:
+        runtime_roots = sorted(
+            runtimes_parent.glob("wisp_runtime_*/agent-runs"),
+            key=lambda path: (_safe_mtime(path), path.name),
+            reverse=True,
+        )
+    except OSError:
+        runtime_roots = []
+    for root in runtime_roots:
+        add_root(root)
+
+    try:
+        from core.system.paths import AGENT_RUNS_DIR
+    except Exception:
+        pass
+    else:
+        add_root(AGENT_RUNS_DIR)
+
+    return roots
+
+
 def _agent_last_task_path(log_root: str | None = None) -> Path:
     return _agent_runs_root(log_root) / "last_task.json"
 
@@ -1435,13 +1488,23 @@ def _save_agent_last_task_spec(spec: dict[str, Any], log_root: str | None = None
 def _load_agent_last_task_spec(log_root: str | None = None) -> dict[str, Any] | None:
     from core.agent.task_spec import agent_task_spec_from_dict
 
-    root = _agent_runs_root(log_root)
-    candidates = [_agent_last_task_path(log_root)]
-    run_task_files = sorted(
-        (path / "task.json" for path in root.iterdir() if path.is_dir() and (path / "task.json").exists()),
-        key=lambda path: path.stat().st_mtime,
+    roots = _agent_history_roots(log_root)
+    candidates = sorted(
+        (root / "last_task.json" for root in roots if (root / "last_task.json").exists()),
+        key=_safe_mtime,
         reverse=True,
     )
+    run_task_files: list[Path] = []
+    for root in roots:
+        try:
+            run_task_files.extend(
+                path / "task.json"
+                for path in root.iterdir()
+                if path.is_dir() and (path / "task.json").exists()
+            )
+        except OSError:
+            continue
+    run_task_files.sort(key=_safe_mtime, reverse=True)
     candidates.extend(run_task_files)
 
     for path in candidates:
@@ -1523,18 +1586,36 @@ def brain_agent_approval_respond(approval_id: str = "", approved: bool = False) 
 @handler("brain.agent.history.list")
 def brain_agent_history_list(log_root: str | None = None, limit: int = 100) -> dict[str, Any]:
     """Return recent agent run folders and lightweight metadata for native UI."""
-    root = _agent_runs_root(log_root)
+    roots = _agent_history_roots(log_root)
+    root = roots[0] if roots else _agent_runs_root(log_root)
+    run_dirs_by_key: dict[Path, Path] = {}
+    for candidate_root in roots:
+        try:
+            children = (p for p in candidate_root.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        for path in children:
+            if not _is_agent_run_dir(path):
+                continue
+            try:
+                key = path.resolve()
+            except OSError:
+                continue
+            run_dirs_by_key.setdefault(key, path)
     run_dirs = sorted(
-        (p for p in root.iterdir() if p.is_dir()),
-        key=lambda p: (p.stat().st_mtime, p.name),
+        run_dirs_by_key.values(),
+        key=lambda p: (_safe_mtime(p), p.name),
         reverse=True,
     )
     runs = [
         _agent_run_summary(path)
         for path in run_dirs
-        if (path / "task.json").exists() or (path / "final.md").exists() or (path / "run.log").exists()
     ]
-    return {"runs_root": str(root), "runs": runs[:max(1, int(limit or 100))]}
+    return {
+        "runs_root": str(root),
+        "runs_roots": [str(path) for path in roots],
+        "runs": runs[:max(1, int(limit or 100))],
+    }
 
 
 @handler("brain.agent.history.read")
@@ -1603,6 +1684,22 @@ def _agent_run_summary(run_dir: Path) -> dict[str, Any]:
         "has_error": bool(error.strip()),
         "has_diff": (run_dir / "diff.patch").exists(),
     }
+
+
+def _is_agent_run_dir(path: Path) -> bool:
+    return (
+        (path / "task.json").exists()
+        or (path / "final.md").exists()
+        or (path / "run.log").exists()
+        or (path / "error.txt").exists()
+    )
+
+
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _agent_run_status(final: str, error: str, run_log: str) -> str:

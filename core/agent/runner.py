@@ -518,7 +518,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             return
         messages.append(item)
         turn.setdefault("messages", []).append(item)
-        log(f"message: {source} -> {target}: {message[:500]}")
+        log(f"message: {source} -> {target}: {AgentTaskRunner._log_message_excerpt(message)}")
 
     @staticmethod
     def _repeated_failure_guard(
@@ -580,7 +580,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             if self._message_already_present(messages, nudge):
                 continue
             messages.append(dict(nudge))
-            text = str(nudge.get("message") or "").replace("\n", " ")[:500]
+            text = self._log_message_excerpt(str(nudge.get("message") or ""))
             source = str(nudge.get("from") or "User")
             target = str(nudge.get("to") or "ALL")
             log(f"message: {source} -> {target}: {text}")
@@ -597,6 +597,14 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             and str(existing.get("message") or "") == message
             for existing in messages[-12:]
         )
+
+    @staticmethod
+    def _log_message_excerpt(message: str, max_chars: int = 500) -> str:
+        clean = " ".join(str(message or "").split())
+        if len(clean) <= max_chars:
+            return clean
+        marker = " ... [truncated]"
+        return clean[: max(0, max_chars - len(marker))].rstrip() + marker
 
     @staticmethod
     def _initial_agent_states(agents: list[dict]) -> dict[str, dict]:
@@ -1879,7 +1887,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             }
             messages.append(item)
             turn["messages"].append(item)
-            log_message = message.replace("\n", " ")[:500]
+            log_message = self._log_message_excerpt(message)
             if log:
                 if target.upper() == "ALL":
                     log(f"message: {agent_name} -> ALL: {log_message}")

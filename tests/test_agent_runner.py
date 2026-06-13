@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 import base64
@@ -190,6 +191,43 @@ class AgentToolboxTests(unittest.TestCase):
             ).run_command(["git", "status", "--short"])
 
             self.assertIn(subprocess_result.tool, {"run_command"})
+
+    def test_git_tools_short_circuit_outside_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs: list[str] = []
+            tools = AgentToolbox(
+                ScopedWorkspace(tmp),
+                AgentPermissions(allow_git=True, allow_shell=False),
+                log=logs.append,
+            )
+
+            with patch("core.agent.toolbox.subprocess.run", side_effect=AssertionError("git should not spawn")):
+                status = tools.git_status()
+                diff = tools.git_diff()
+
+            self.assertFalse(status.ok)
+            self.assertFalse(diff.ok)
+            self.assertEqual(status.data["returncode"], 128)
+            self.assertIn("not a git repository", status.data["stderr"])
+            self.assertTrue(any("git status --short" in line for line in logs))
+            self.assertTrue(any("git diff -- ." in line for line in logs))
+
+    def test_run_command_timeout_returns_tool_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = AgentToolbox(
+                ScopedWorkspace(tmp),
+                AgentPermissions(allow_shell=True),
+            )
+
+            with patch(
+                "core.agent.toolbox.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["python", "-m", "unittest"], 2),
+            ):
+                result = tools.run_command(["python", "-m", "unittest"], timeout_seconds=2)
+
+            self.assertFalse(result.ok)
+            self.assertIn("timed out after 2s", result.message)
+            self.assertEqual(result.data["timeout_seconds"], 2)
 
 
 class AgentBoundaryAttackTests(unittest.TestCase):
@@ -760,6 +798,25 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.data["error_type"], "impossible_assignment")
         self.assertIn("available verification", result.data["correction"])
+
+    def test_send_message_log_marks_truncated_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs: list[str] = []
+            long_message = "Build the app. " * 80
+            result = AgentTaskRunner()._execute_agent_tool_call(
+                AgentToolbox(ScopedWorkspace(tmp), AgentPermissions()),
+                {"tool": "send_message", "args": {"to": "Builder", "message": long_message}},
+                "Coordinator",
+                [],
+                {"messages": []},
+                log=logs.append,
+                active_agent={"name": "Coordinator", "role": "Coordinator"},
+                spec=DummySpec(),
+                task_state=AgentTaskRunner._initial_task_state([]),
+            )
+
+        self.assertTrue(result.ok)
+        self.assertIn("... [truncated]", logs[0])
 
     def test_duplicate_successful_verification_is_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
