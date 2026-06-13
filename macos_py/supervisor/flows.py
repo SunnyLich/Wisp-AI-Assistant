@@ -1236,6 +1236,21 @@ class FlowController:
                 browser_bits.append(f"URL: {browser_url}")
             if browser_content:
                 browser_bits.append(browser_content)
+            elif browser_app:
+                # macOS only (browser_app is set only there). The page text came
+                # back empty — almost always a permission the user hasn't granted
+                # yet. Tell the model so it can relay the fix instead of just
+                # claiming it cannot read the page.
+                if browser_url:
+                    browser_bits.append(
+                        f"(Could not read the {browser_app} page text. In {browser_app}, enable "
+                        f"View → Developer → Allow JavaScript from Apple Events.)"
+                    )
+                else:
+                    browser_bits.append(
+                        f"(Could not read {browser_app}. Allow this app to control {browser_app} in "
+                        f"System Settings → Privacy & Security → Automation, then try again.)"
+                    )
             if browser_bits:
                 ambient_parts.append("[Browser/Web]\n" + "\n\n".join(browser_bits))
         if buffered_items:

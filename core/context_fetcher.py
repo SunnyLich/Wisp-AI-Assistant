@@ -419,21 +419,28 @@ else:
 
 
 def _osascript_run(script: str, timeout: float = 4.0) -> str:
-    """Run a one-liner AppleScript and return trimmed stdout ("" on any error)."""
+    """Run a one-liner AppleScript and return trimmed stdout ("" on any error).
+
+    On failure the osascript stderr is printed (flushed) so the worker log shows
+    *why* — the common case is macOS Automation not being granted yet, which
+    reports "Not authorized to send Apple events" (error -1743).
+    """
     import subprocess
     try:
         proc = subprocess.run(
             ["/usr/bin/osascript", "-e", script],
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             timeout=timeout,
             check=False,
         )
         if proc.returncode == 0:
             return (proc.stdout or "").strip()
-    except Exception:
-        pass
+        err = (proc.stderr or "").strip()
+        print(f"[context.browser] osascript failed ({proc.returncode}): {err}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - browser context must never raise
+        print(f"[context.browser] osascript error: {type(exc).__name__}: {exc}", flush=True)
     return ""
 
 
@@ -442,11 +449,11 @@ def _mac_browser_url(app_name: str) -> str:
     fam = (app_name or "").strip().lower()
     if fam in _MAC_SAFARI_FAMILY:
         return _osascript_run(
-            f'tell application "{app_name}" to return URL of current tab of front window'
+            f'tell application "{app_name}" to get URL of current tab of front window'
         )
     if fam in _MAC_CHROME_FAMILY:
         return _osascript_run(
-            f'tell application "{app_name}" to return URL of active tab of front window'
+            f'tell application "{app_name}" to get URL of active tab of front window'
         )
     return ""
 
@@ -463,12 +470,12 @@ def _mac_browser_text(app_name: str, max_chars: int) -> str:
     raw = ""
     if fam in _MAC_SAFARI_FAMILY:
         raw = _osascript_run(
-            f'tell application "{app_name}" to return text of current tab of front window',
+            f'tell application "{app_name}" to get text of current tab of front window',
             timeout=8.0,
         )
     elif fam in _MAC_CHROME_FAMILY:
         raw = _osascript_run(
-            f'tell application "{app_name}" to return execute active tab of front window '
+            f'tell application "{app_name}" to execute active tab of front window '
             f'javascript "document.body.innerText"',
             timeout=8.0,
         )
