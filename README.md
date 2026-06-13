@@ -20,7 +20,8 @@ Press `Ctrl+Q`. Wisp reads what's on your screen, thinks out loud, and answers i
 
 Download the repo and **double-click one file**:
 
-- **macOS / Linux** — `Start Wisp.command`
+- **macOS** — `Start Wisp.command`
+- **Linux** — `Start Wisp.sh`
 - **Windows** — `Start Wisp.bat`
 
 The first time, it installs everything Wisp needs and then starts the app. On
@@ -116,7 +117,8 @@ Or use the platform launcher, which provisions dependencies and starts the same
 pure-Python worker supervisor:
 
 ```bash
-bash "Start Wisp.command"
+bash "Start Wisp.command"   # macOS
+bash "Start Wisp.sh"        # Linux
 ```
 
 Run the macOS Python test gate with:
