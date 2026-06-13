@@ -618,54 +618,50 @@ def context_snapshot(
         except Exception as exc:  # noqa: BLE001 - browser context should not block answering
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s
-    elif include_browser_url and IS_MAC:
-        # macOS: the browser is the frontmost app at hotkey time. Grab its active
-        # tab URL now (cheap AppleScript) and remember which browser it was; the
-        # page TEXT is read later via native.context.browser_content using
-        # browser_app, since osascript reads the named app's front window without
-        # needing focus (there is no read-by-handle on macOS).
+    elif include_browser_url:
+        # Cheap URL grab while the browser is still foreground (hotkey time). Each
+        # OS captures what it can defer cheaply; the page text is read later.
         _s = time.monotonic()
         try:
-            from core.context_fetcher import _BROWSER_PROCS_MAC, _mac_browser_url
+            if IS_WIN:
+                # Windows: grab the URL + window handle now; the page text is
+                # fetched later by handle (UIA needs no focus, so the picker
+                # stealing focus does not matter).
+                from core.context_fetcher import get_browser_window_for_context
 
-            app_name = str(active.get("name") or "")
-            if app_name.lower() in _BROWSER_PROCS_MAC:
-                url = _mac_browser_url(app_name)
-                snapshot["browser_app"] = app_name
-                if url:
-                    snapshot["browser_url"] = url
+                active_hwnd = int(active.get("window_id") or 0)
+                win = get_browser_window_for_context(active_hwnd)
                 snapshot["debug"]["browser_window"] = {
-                    "title": "",
-                    "process_name": app_name,
-                    "pid": int(active.get("pid") or 0),
-                    "hwnd": 0,
-                    "url": url,
+                    "title": getattr(win, "title", ""),
+                    "process_name": getattr(win, "process_name", ""),
+                    "pid": getattr(win, "pid", 0),
+                    "hwnd": getattr(win, "hwnd", 0),
+                    "url": getattr(win, "url", ""),
                 }
-        except Exception as exc:  # noqa: BLE001 - browser context should not block the picker
-            snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
-        br_dt = time.monotonic() - _s
-    elif include_browser_url and not IS_MAC:
-        # Cheap URL + window-handle grab while the browser is still foreground
-        # (hotkey time). The page text itself is fetched later via
-        # native.context.browser_content, which reads the window by handle and
-        # therefore does not care that focus has moved to the picker by then.
-        _s = time.monotonic()
-        try:
-            from core.context_fetcher import get_browser_window_for_context
+                if win.url:
+                    snapshot["browser_url"] = win.url
+                if win.hwnd:
+                    snapshot["browser_hwnd"] = int(win.hwnd or 0)
+            elif IS_MAC:
+                # macOS: the browser is the frontmost app at hotkey time. Grab its
+                # active tab URL now and remember which browser it was; the page
+                # text is read later via browser_app, since osascript reads the
+                # named app's front window without needing focus (no read-by-handle).
+                from core.context_fetcher import _BROWSER_PROCS_MAC, _mac_browser_url
 
-            active_hwnd = int(active.get("window_id") or 0)
-            win = get_browser_window_for_context(active_hwnd)
-            snapshot["debug"]["browser_window"] = {
-                "title": getattr(win, "title", ""),
-                "process_name": getattr(win, "process_name", ""),
-                "pid": getattr(win, "pid", 0),
-                "hwnd": getattr(win, "hwnd", 0),
-                "url": getattr(win, "url", ""),
-            }
-            if win.url:
-                snapshot["browser_url"] = win.url
-            if win.hwnd:
-                snapshot["browser_hwnd"] = int(win.hwnd or 0)
+                app_name = str(active.get("name") or "")
+                if app_name.lower() in _BROWSER_PROCS_MAC:
+                    url = _mac_browser_url(app_name)
+                    snapshot["browser_app"] = app_name
+                    if url:
+                        snapshot["browser_url"] = url
+                    snapshot["debug"]["browser_window"] = {
+                        "title": "",
+                        "process_name": app_name,
+                        "pid": int(active.get("pid") or 0),
+                        "hwnd": 0,
+                        "url": url,
+                    }
         except Exception as exc:  # noqa: BLE001 - browser context should not block the picker
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s

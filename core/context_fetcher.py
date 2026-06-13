@@ -561,10 +561,17 @@ def get_browser_window_for_context(preferred_hwnd: int = 0) -> WindowInfo:
                 return preferred
         return _find_visible_browser_window_win()
 
+    if _IS_MAC:
+        active = _fetch_active_window()
+        if (active.process_name or "").lower() in _BROWSER_PROCS:
+            if not active.url:
+                active.url = _mac_browser_url(active.process_name)
+            return active
+        return WindowInfo()
+
+    # Linux
     active = _fetch_active_window()
     if (active.process_name or "").lower() in _BROWSER_PROCS:
-        if _IS_MAC and not active.url:
-            active.url = _mac_browser_url(active.process_name)
         return active
     return WindowInfo()
 
@@ -823,20 +830,19 @@ _BROWSER_CACHE_TTL = 60.0  # seconds
 
 
 def _browser_content(active_win: WindowInfo, max_chars: int | None = None) -> str:
-    """Active tab's page text: read the live window first (fast, JS-aware), fall
-    back to an HTTP fetch of the URL, and cache the result per-URL briefly."""
+    """Active tab's page text. Each OS reads it its own way."""
     if max_chars is None:
         max_chars = config.CONTEXT_BROWSER_MAX_CHARS
-
+    if _IS_WIN:
+        return _browser_content_win(active_win, max_chars)
     if _IS_MAC:
-        # No read-by-handle on macOS — ask the named browser app for its active
-        # tab text directly (works even when the overlay holds focus, since
-        # AppleScript targets the app's own front window).
-        app = (active_win.process_name or "").strip()
-        if app.lower() in _BROWSER_PROCS_MAC:
-            return _mac_browser_text(app, max_chars)
-        return ""
+        return _browser_content_macos(active_win, max_chars)
+    return _browser_content_linux(active_win, max_chars)
 
+
+def _browser_content_win(active_win: WindowInfo, max_chars: int) -> str:
+    """Windows: read the rendered window by handle (UIA, no focus needed), fall
+    back to an HTTP fetch of the URL, and cache the result per-URL briefly."""
     url = active_win.url or ""
 
     now = time.time()
@@ -861,6 +867,21 @@ def _browser_content(active_win: WindowInfo, max_chars: int | None = None) -> st
     if url and content:
         _browser_cache[url] = (now, content)
     return content
+
+
+def _browser_content_macos(active_win: WindowInfo, max_chars: int) -> str:
+    """macOS: there is no read-by-handle, so ask the named browser app for its
+    active tab text via AppleScript (works even when the overlay holds focus,
+    since AppleScript targets the app's own front window)."""
+    app = (active_win.process_name or "").strip()
+    if app.lower() in _BROWSER_PROCS_MAC:
+        return _mac_browser_text(app, max_chars)
+    return ""
+
+
+def _browser_content_linux(active_win: WindowInfo, max_chars: int) -> str:
+    """Linux: no native window read wired up — HTTP fetch of the URL only."""
+    return _fetch_browser_content(active_win.url or "", max_chars)
 
 
 # ---------------------------------------------------------------------------
