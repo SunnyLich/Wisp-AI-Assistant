@@ -90,11 +90,36 @@ def test_settings_tab_strip_uses_theme_background():
     style = SettingsDialog._dialog_style(True)
 
     assert "QTabWidget#settingsTabs" in style
-    assert "QTabWidget#settingsTabs QTabBar" in style
+    assert "QTabWidget#settingsTabs::tab-bar" in style
+    assert "QTabBar#settingsTabBar" in style
     assert "QWidget#wispWindowContent" in style
     assert f"background: {colors['bg']};" in style
     assert "QTabBar { background: transparent" not in style
     assert "QWidget { background-color: transparent" not in style
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_tab_bar_has_explicit_painted_backing():
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        bar = dialog._tabs.tabBar()
+        assert dialog._tabs.objectName() == "settingsTabs"
+        assert dialog._tabs.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        assert bar.objectName() == "settingsTabBar"
+        assert bar.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        assert bar.drawBase() is False
+        assert bar.expanding() is True
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")

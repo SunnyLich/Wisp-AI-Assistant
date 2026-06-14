@@ -237,23 +237,36 @@ class SettingsDialog(QDialog):
             border: none;
             background: {c["bg"]};
         }}
+        QTabWidget#settingsTabs::tab-bar {{
+            background: {c["bg"]};
+            alignment: left;
+        }}
         QTabWidget#settingsTabs > QWidget {{
             background: {c["bg"]};
         }}
-        QTabWidget#settingsTabs QTabBar {{
+        QTabBar#settingsTabBar {{
             background: {c["bg"]};
+            background-color: {c["bg"]};
             border: none;
         }}
-        QTabWidget#settingsTabs QTabBar::tab {{
+        QTabBar#settingsTabBar::tab {{
             color: {c["text_dim"]}; padding: 7px 20px; border-radius: 8px;
             border: 1px solid {c["border"]};
             font-size: 9pt; margin: 2px 2px; background: transparent;
         }}
-        QTabWidget#settingsTabs QTabBar::tab:selected {{
+        QTabBar#settingsTabBar::tab:selected {{
             background: {c["tab_selected"]}; color: {c["accent"]};
             border: 1px solid {c["accent"]}; font-weight: 600;
         }}
-        QTabWidget#settingsTabs QTabBar::tab:hover:!selected {{ background: {c["accent_hint"]}; }}
+        QTabBar#settingsTabBar::tab:hover:!selected {{ background: {c["accent_hint"]}; }}
+        QTabBar#settingsTabBar::scroller {{
+            background: {c["bg"]};
+            width: 0px;
+        }}
+        QTabBar#settingsTabBar QToolButton {{
+            background: {c["bg"]};
+            border: none;
+        }}
         QFrame#card {{
             background: {c["card"]}; border: 1px solid {c["border"]}; border-radius: 12px;
         }}
@@ -322,6 +335,11 @@ class SettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.setObjectName("settingsTabs")
+        tabs.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        tabs.tabBar().setObjectName("settingsTabBar")
+        tabs.tabBar().setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        tabs.tabBar().setDrawBase(False)
+        tabs.tabBar().setExpanding(True)
         # Never elide tab labels to "…"; macOS sizes the bold selected tab
         # tighter than Windows, so let each tab grow to fit its full text.
         tabs.setElideMode(Qt.TextElideMode.ElideNone)
