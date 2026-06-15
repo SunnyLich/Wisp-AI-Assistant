@@ -125,7 +125,7 @@ def test_query_includes_active_document_when_requested(record_ctx, monkeypatch):
     monkeypatch.setattr(
         llm_client,
         "read_active_document_for_context_with_debug",
-        lambda: ("ACTIVE DOC TEXT", {"paths": ["active.docx"]}),
+        lambda **_kwargs: ("ACTIVE DOC TEXT", {"paths": ["active.docx"]}),
     )
 
     events, ctx = record_ctx()
@@ -200,7 +200,7 @@ def test_query_reads_active_document_alongside_screenshot(record_ctx, monkeypatc
     monkeypatch.setattr(
         llm_client,
         "read_active_document_for_context_with_debug",
-        lambda: ("ACTIVE DOC TEXT", {"paths": ["active.docx"]}),
+        lambda **_kwargs: ("ACTIVE DOC TEXT", {"paths": ["active.docx"]}),
     )
 
     events, ctx = record_ctx()
@@ -222,7 +222,7 @@ def test_active_document_context_handler_filters_error_strings(monkeypatch):
     monkeypatch.setattr(
         llm_client,
         "read_active_document_for_context_with_debug",
-        lambda: ("Failed to read document", {"paths": ["bad.docx"]}),
+        lambda **_kwargs: ("Failed to read document", {"paths": ["bad.docx"]}),
     )
 
     result = handlers.HANDLERS["brain.context.active_document"]()

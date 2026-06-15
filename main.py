@@ -10,13 +10,15 @@ import sys
 import os
 import threading
 import logging
+import signal
 import traceback
 from typing import Callable
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import QObject, Signal, Qt
+from PySide6.QtCore import QObject, Signal, Qt, QTimer
 
 _IS_WIN = sys.platform == "win32"
+_win_console_handler = None
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen=false")
 
 # --- File logging setup -----------------------------------------------------------
@@ -181,6 +183,8 @@ class _MainThreadInvoker(QObject):
 
 
 class App(QObject):
+    _shutdown_requested = Signal(str)
+
     # App is a QObject so that signal connections to its own slots (below) carry a
     # receiver thread affinity. Without it, PySide6 connects a signal to a method of
     # a non-QObject receiver as a DirectConnection (there is no receiver QThread to
@@ -224,6 +228,8 @@ class App(QObject):
         self._all_conversations: list[dict] = []  # each item = {"messages": [...], "context": str}
         self._overlay_hwnd: int = 0          # cached after first show
         self._hotkey_warning_shown = False
+        self._shutdown_started = False
+        self._shutdown_lock = threading.Lock()
         self._pending_capture: tuple | None = None  # (selected_text, screenshot_b64)
         self._pending_caller_idx: int = 0    # which CALLER_ROWS entry triggered the current picker
         self._pending_context_policy: dict | None = None
@@ -246,6 +252,7 @@ class App(QObject):
         self._signals.context_items_dropped.connect(self._on_context_items_dropped)
         self._signals.remove_dropped_item.connect(self._on_remove_dropped_item)
         self._signals.summon_caller.connect(self._on_summon_caller)
+        self._shutdown_requested.connect(self.request_shutdown, Qt.ConnectionType.QueuedConnection)
         self._overlay.set_click_handler(self._on_icon_click)
 
         # On macOS, register a runner that hops main-thread-only native work onto
@@ -277,7 +284,46 @@ class App(QObject):
             model_tool_registry=get_tool_registry(),
             config=config,
         ))
-        self._qt.aboutToQuit.connect(self._plugin_manager.on_shutdown)
+        self._qt.aboutToQuit.connect(lambda: self.shutdown("qt quit"))
+        self._signal_timer = QTimer(self)
+        self._signal_timer.setInterval(250)
+        self._signal_timer.timeout.connect(lambda: None)
+        self._signal_timer.start()
+
+    def request_shutdown(self, reason: str = "") -> None:
+        """Ask the Qt event loop to exit from any thread or signal handler."""
+        reason = reason or "shutdown requested"
+        log.info("Shutdown requested: %s", reason)
+        self.shutdown(reason)
+        self._qt.quit()
+
+    def shutdown(self, reason: str = "") -> None:
+        """Stop background hooks/processes so the launcher terminal can exit."""
+        with self._shutdown_lock:
+            if self._shutdown_started:
+                return
+            self._shutdown_started = True
+        log.info("Shutting down Wisp%s", f": {reason}" if reason else "")
+        try:
+            self._generations.next()
+        except Exception:
+            log.exception("generation shutdown marker failed")
+        try:
+            self._hotkeys.stop()
+        except Exception:
+            log.exception("hotkey shutdown failed")
+        try:
+            self._plugin_manager.on_shutdown()
+        except Exception:
+            log.exception("addon shutdown failed")
+        try:
+            self._memory.shutdown()
+        except Exception:
+            log.exception("memory shutdown failed")
+        try:
+            context_fetcher.stop_fs_watcher()
+        except Exception:
+            log.exception("context watcher shutdown failed")
 
     def _build_hotkey_listener(self) -> HotkeyListener:
         """Construct the HotkeyListener with all callbacks wired. Used at startup
@@ -578,7 +624,7 @@ class App(QObject):
         if not self._hotkeys.start():
             self._warn_hotkeys_unavailable()
         print(f"[main] Wisp running. Callers: {[c['hotkey'] for c in config.CALLER_ROWS]}")
-        sys.exit(self._qt.exec())
+        return int(self._qt.exec())
 
     def _warn_hotkeys_unavailable(self) -> None:
         if self._hotkey_warning_shown:
@@ -1423,16 +1469,49 @@ class App(QObject):
         self._memory_viewer.activateWindow()
 
 
-def main():
-    # On Windows, synthesising Ctrl+C via keyboard.send() also delivers
-    # CTRL_C_EVENT to our own process, becoming a KeyboardInterrupt in Qt.
-    # Block it at the Win32 level; the tray "Quit" action is the exit path.
+def _install_signal_handlers(app: App) -> None:
     if _IS_WIN:
-        try:
-            import ctypes
-            ctypes.windll.kernel32.SetConsoleCtrlHandler(None, True)
-        except Exception:
-            pass
+        _install_windows_console_handler(app)
+        return
+
+    def _request(signum, _frame) -> None:
+        name = signal.Signals(signum).name
+        app._shutdown_requested.emit(name)
+
+    for sig_name in ("SIGINT", "SIGTERM"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            signal.signal(sig, _request)
+
+
+def _install_windows_console_handler(app: App) -> None:
+    global _win_console_handler
+    try:
+        import ctypes
+        from core import platform_utils
+
+        ctrl_c_event = 0
+        ctrl_break_event = 1
+        handled_events = {ctrl_c_event, ctrl_break_event}
+        handler_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)
+
+        @handler_type
+        def _handler(ctrl_type: int) -> bool:
+            if ctrl_type not in handled_events:
+                return False
+            if ctrl_type == ctrl_c_event and platform_utils.is_recent_synthetic_ctrl_c():
+                return True
+            app._shutdown_requested.emit("console ctrl+c" if ctrl_type == ctrl_c_event else "console ctrl+break")
+            return True
+
+        if not ctypes.windll.kernel32.SetConsoleCtrlHandler(_handler, True):
+            raise ctypes.WinError()
+        _win_console_handler = _handler
+    except Exception:
+        log.exception("Failed to install Windows console control handler")
+
+
+def main():
 
     # Enforce a single running Wisp. The lock is shared across dev runs and
     # installed builds, so a second launch exits before doing any work.
@@ -1443,10 +1522,15 @@ def main():
         sys.exit(0)
 
     app = App()
+    _install_signal_handlers(app)
     try:
-        app.run()
+        code = app.run()
     except KeyboardInterrupt:
-        sys.exit(0)
+        app.shutdown("keyboard interrupt")
+        code = 130
+    finally:
+        app.shutdown("main exit")
+    sys.exit(code)
 
 
 if __name__ == "__main__":

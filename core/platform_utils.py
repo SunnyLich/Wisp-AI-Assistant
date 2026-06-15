@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 from core.system.main_thread import run_on_main
 
@@ -25,6 +26,20 @@ IS_MAC = sys.platform == "darwin"
 # Used by text capture (synthesised copy) and paste-back.
 COPY_COMBO  = "cmd+c" if IS_MAC else "ctrl+c"
 PASTE_COMBO = "cmd+v" if IS_MAC else "ctrl+v"
+_SYNTHETIC_CTRL_C_UNTIL = 0.0
+
+
+def _normalise_combo(combo: str) -> str:
+    return "+".join(part.strip().lower() for part in combo.split("+") if part.strip())
+
+
+def is_recent_synthetic_ctrl_c() -> bool:
+    return time.monotonic() <= _SYNTHETIC_CTRL_C_UNTIL
+
+
+def _mark_synthetic_ctrl_c(seconds: float = 0.75) -> None:
+    global _SYNTHETIC_CTRL_C_UNTIL
+    _SYNTHETIC_CTRL_C_UNTIL = max(_SYNTHETIC_CTRL_C_UNTIL, time.monotonic() + seconds)
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +58,8 @@ def send_keys(combo: str) -> None:
     """
     if IS_WIN:
         import keyboard  # type: ignore
+        if _normalise_combo(combo) in {"ctrl+c", "control+c"}:
+            _mark_synthetic_ctrl_c()
         keyboard.send(combo)
     elif IS_MAC:
         from core.platform import macos_native

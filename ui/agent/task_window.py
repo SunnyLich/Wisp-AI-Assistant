@@ -187,6 +187,12 @@ def _approval_notice_callback_for(owner: object) -> ApprovalNoticeCallback | Non
     return notify
 
 
+def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
+    form = QFormLayout(parent)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    return form
+
+
 class AgentTaskDialog(QDialog):
     _last_task_spec: AgentTaskSpec | None = None  # Class variable to store last submitted task
     """Mock GUI for collecting a complete, sandboxed agent task request."""
@@ -349,7 +355,7 @@ class AgentTaskDialog(QDialog):
 
     def _task_group(self) -> QGroupBox:
         box = QGroupBox("Task")
-        form = QFormLayout(box)
+        form = _expanding_form_layout(box)
         form.setSpacing(10)
 
         self.title_edit = QLineEdit()
@@ -575,7 +581,7 @@ class AgentTaskDialog(QDialog):
         box = QGroupBox("Scope Filters")
         layout = QVBoxLayout(box)
         layout.setSpacing(10)
-        form = QFormLayout()
+        form = _expanding_form_layout()
         self.sandbox_combo = QComboBox()
         self.sandbox_combo.addItems(
             [
@@ -611,7 +617,7 @@ class AgentTaskDialog(QDialog):
 
     def _permissions_group(self) -> QGroupBox:
         box = QGroupBox("Permission Modes")
-        form = QFormLayout(box)
+        form = _expanding_form_layout(box)
         form.setSpacing(8)
 
         self.allow_shell = self._permission_combo("auto")
@@ -646,7 +652,7 @@ class AgentTaskDialog(QDialog):
 
     def _runtime_group(self) -> QGroupBox:
         box = QGroupBox("Runtime")
-        form = QFormLayout(box)
+        form = _expanding_form_layout(box)
         form.setSpacing(10)
 
         self.reasoning_combo = QComboBox()
@@ -693,7 +699,7 @@ class AgentTaskDialog(QDialog):
 
     def _prompt_limits_group(self) -> QGroupBox:
         box = QGroupBox("Prompt & Token Limits")
-        form = QFormLayout(box)
+        form = _expanding_form_layout(box)
         form.setSpacing(10)
 
         self.full_turn_tokens = self._number_spin(0, 16000, 8192, "No limit (model max)")
@@ -729,7 +735,7 @@ class AgentTaskDialog(QDialog):
 
     def _output_group(self) -> QGroupBox:
         box = QGroupBox("Completion")
-        form = QFormLayout(box)
+        form = _expanding_form_layout(box)
 
         self.completion_edit = QTextEdit()
         self.completion_edit.setMinimumHeight(76)
@@ -1603,7 +1609,7 @@ class AgentCommunicationMapWindow(QDialog):
         self.window_agent_list.currentRowChanged.connect(self._load_agent_row)
         _fit_list_to_rows(self.window_agent_list, 5)
         agent_layout.addWidget(self.window_agent_list)
-        agent_form = QFormLayout()
+        agent_form = _expanding_form_layout()
         agent_form.setSpacing(8)
         self.map_agent_name = QLineEdit()
         self.map_agent_role = QComboBox()
@@ -1647,7 +1653,7 @@ class AgentCommunicationMapWindow(QDialog):
         self.exchange_list.currentRowChanged.connect(self._load_exchange_row)
         _fit_list_to_rows(self.exchange_list, 5)
         comm_layout.addWidget(self.exchange_list)
-        comm_form = QFormLayout()
+        comm_form = _expanding_form_layout()
         comm_form.setSpacing(8)
         self.map_comm_from = QComboBox()
         self.map_comm_to = QComboBox()
@@ -2037,7 +2043,7 @@ class AgentCommunicationDialog(QDialog):
         data = communication or {}
 
         root = QVBoxLayout(self)
-        form = QFormLayout()
+        form = _expanding_form_layout()
         form.setSpacing(10)
 
         self.from_combo = QComboBox()
@@ -2115,7 +2121,7 @@ class AgentNudgeDialog(QDialog):
         enable_standard_window_controls(self)
 
         root = QVBoxLayout(self)
-        form = QFormLayout()
+        form = _expanding_form_layout()
         form.setSpacing(10)
 
         self.target_combo = QComboBox()

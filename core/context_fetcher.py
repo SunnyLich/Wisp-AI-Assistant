@@ -231,6 +231,20 @@ def start_fs_watcher(paths: list[str] | None = None) -> None:
         _fs_observer = False
 
 
+def stop_fs_watcher() -> None:
+    """Stop the background file-system watcher. Safe to call more than once."""
+    global _fs_observer
+    observer = _fs_observer
+    _fs_observer = None
+    if not observer:
+        return
+    try:
+        observer.stop()
+        observer.join(timeout=1.0)
+    except Exception:
+        _log.exception("Failed to stop file-system watcher.")
+
+
 def _get_fs_events() -> list[str]:
     with _fs_events_lock:
         return list(_fs_events_buf)

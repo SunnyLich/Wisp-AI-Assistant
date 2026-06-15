@@ -31,6 +31,12 @@ def _runtime_summary(runtime: dict) -> str:
     return "Dependency env: ready" if runtime.get("ready") else "Dependency env: needs install"
 
 
+def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
+    form = QFormLayout(parent)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    return form
+
+
 class PluginManagerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -424,7 +430,7 @@ class AddonSettingsDialog(QDialog):
         if not settings:
             return None
         box = QFrame()
-        form = QFormLayout(box)
+        form = _expanding_form_layout(box)
         form.setContentsMargins(0, 4, 0, 0)
         form.setSpacing(6)
         for s in settings:

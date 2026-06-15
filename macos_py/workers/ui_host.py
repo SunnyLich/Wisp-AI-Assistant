@@ -2314,6 +2314,7 @@ class QtProtocolHost:
             return None
         box = QFrame()
         form = QFormLayout(box)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.setContentsMargins(0, 4, 0, 0)
         form.setSpacing(6)
         truthy = {"1", "true", "yes", "on"}

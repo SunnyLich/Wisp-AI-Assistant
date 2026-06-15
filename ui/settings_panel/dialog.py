@@ -58,6 +58,12 @@ def _context_mode_combo(value: str, *, allow_auto: bool = True) -> _NoScrollComb
     return combo
 
 
+def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
+    form = QFormLayout(parent)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    return form
+
+
 # Sentinel data value for the "Custom / enter manually…" model combo entry.
 _CUSTOM_MODEL_SENTINEL = "__custom__"
 _CUSTOM_MODEL_LABEL = "Custom / enter manually…"
@@ -439,7 +445,7 @@ class SettingsDialog(QDialog):
         self._copilot_token_edit = self._password()
         self._copilot_token_edit.setPlaceholderText("github_pat_… (not saved to .env)")
         copilot_f_w = QWidget()
-        copilot_f = QFormLayout(copilot_f_w)
+        copilot_f = _expanding_form_layout(copilot_f_w)
         copilot_f.setContentsMargins(0, 0, 0, 0)
         copilot_f.setSpacing(8)
         copilot_f.addRow("Token", self._copilot_token_edit)
@@ -592,7 +598,7 @@ class SettingsDialog(QDialog):
         bur_h.addWidget(presets_btn)
 
         custom_f_w = QWidget()
-        custom_f = QFormLayout(custom_f_w)
+        custom_f = _expanding_form_layout(custom_f_w)
         custom_f.setContentsMargins(0, 0, 0, 0)
         custom_f.setSpacing(8)
         custom_f.addRow("Base URL", base_url_row)
@@ -1204,7 +1210,7 @@ class SettingsDialog(QDialog):
         provider_card, provider_cv = self._card("Provider")
         self._fields["TTS_PROVIDER"] = self._combo(["cartesia", "elevenlabs", "none"])
         pf_w = QWidget()
-        pf = QFormLayout(pf_w)
+        pf = _expanding_form_layout(pf_w)
         pf.setContentsMargins(0, 0, 0, 0)
         pf.setSpacing(8)
         pf.addRow("TTS Provider", self._fields["TTS_PROVIDER"])
@@ -1225,7 +1231,7 @@ class SettingsDialog(QDialog):
         self._fields["ELEVENLABS_API_KEY"].setPlaceholderText("Stored in OS keychain")
 
         kf_w = QWidget()
-        kf = QFormLayout(kf_w)
+        kf = _expanding_form_layout(kf_w)
         kf.setContentsMargins(0, 0, 0, 0)
         kf.setSpacing(8)
         kf.addRow(_link_label("Cartesia API key", "https://play.cartesia.ai/keys"), self._fields["CARTESIA_API_KEY"])
@@ -1285,7 +1291,7 @@ class SettingsDialog(QDialog):
         caller_card, caller_cv = self._card("Caller Hotkeys")
 
         limits_fw = QWidget()
-        limits_layout = QFormLayout(limits_fw)
+        limits_layout = _expanding_form_layout(limits_fw)
         limits_layout.setContentsMargins(0, 0, 0, 0)
         limits_layout.setSpacing(6)
         self._fields["CONTEXT_BROWSER_MAX_CHARS"] = QLineEdit()
@@ -1707,7 +1713,7 @@ class SettingsDialog(QDialog):
         # --- Config card ---
         cfg_card, cfg_cv = self._card("Memory Settings")
         fw = QWidget()
-        f = QFormLayout(fw)
+        f = _expanding_form_layout(fw)
         f.setSpacing(8)
         f.setContentsMargins(0, 0, 0, 0)
 
@@ -1850,7 +1856,7 @@ class SettingsDialog(QDialog):
 
         card, cv = self._card("App Settings")
         fw = QWidget()
-        f = QFormLayout(fw)
+        f = _expanding_form_layout(fw)
         f.setSpacing(10)
         f.setContentsMargins(0, 0, 0, 0)
 
@@ -2133,7 +2139,7 @@ class SettingsDialog(QDialog):
         trh.addWidget(test_label, 1)
         v.addWidget(tr)
 
-        fb_w = QWidget(); fb_f = QFormLayout(fb_w)
+        fb_w = QWidget(); fb_f = _expanding_form_layout(fb_w)
         fb_f.setContentsMargins(0, 4, 0, 0); fb_f.setSpacing(8)
         self._add_fallback_section(fb_f, fallback_key, fallback_prefix, providers=fallback_providers)
         v.addWidget(fb_w)
