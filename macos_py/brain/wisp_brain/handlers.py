@@ -566,6 +566,106 @@ def brain_plugins_set_setting(plugin_name: str = "", key: str = "", value: Any =
     return {"ok": True, "name": plugin_name, "key": key}
 
 
+@handler("brain.plugins.repair_environment")
+def brain_plugins_repair_environment(plugin_name: str = "") -> dict[str, Any]:
+    """Install or rebuild a loaded addon's dependency environment."""
+    plugin_name = plugin_name.strip()
+    if not plugin_name:
+        raise ValueError("plugin_name is required")
+    from core.system.paths import ADDONS_DIR
+
+    manager = _loaded_plugin_manager(Path(ADDONS_DIR))
+    result = manager.repair_environment(plugin_name)
+    return result if isinstance(result, dict) else {"ready": False, "error": "environment repair failed"}
+
+
+@handler("brain.plugins.install_archive")
+def brain_plugins_install_archive(path: str = "") -> dict[str, Any]:
+    """Install a .zip/.wisp addon archive and reload the shared manager."""
+    path = str(path or "").strip()
+    if not path:
+        raise ValueError("path is required")
+    from core.addon_distribution import install_addon_archive
+    from core.system.paths import ADDONS_DIR
+
+    result = install_addon_archive(Path(path), Path(ADDONS_DIR), replace=False)
+    manager = _loaded_plugin_manager(Path(ADDONS_DIR))
+    if hasattr(manager, "load_all"):
+        manager.load_all()
+    return result
+
+
+@handler("brain.plugins.install_folder")
+def brain_plugins_install_folder(path: str = "") -> dict[str, Any]:
+    """Install an unpacked addon folder and reload the shared manager."""
+    path = str(path or "").strip()
+    if not path:
+        raise ValueError("path is required")
+    from core.addon_distribution import install_addon_folder
+    from core.system.paths import ADDONS_DIR
+
+    result = install_addon_folder(Path(path), Path(ADDONS_DIR), replace=False)
+    manager = _loaded_plugin_manager(Path(ADDONS_DIR))
+    if hasattr(manager, "load_all"):
+        manager.load_all()
+    return result
+
+
+@handler("brain.plugins.run_hotkey")
+def brain_plugins_run_hotkey(plugin_name: str = "", hotkey_id: str = "") -> dict[str, Any]:
+    """Run a loaded addon hotkey callback or return its prompt action."""
+    plugin_name = plugin_name.strip()
+    hotkey_id = hotkey_id.strip()
+    if not plugin_name:
+        raise ValueError("plugin_name is required")
+    if not hotkey_id:
+        raise ValueError("hotkey_id is required")
+    from core.system.paths import ADDONS_DIR
+
+    manager = _loaded_plugin_manager(Path(ADDONS_DIR))
+    result = manager.run_hotkey(plugin_name, hotkey_id)
+    return result if isinstance(result, dict) else {}
+
+
+@handler("brain.plugins.llm_call")
+def brain_plugins_llm_call(
+    plugin_name: str = "",
+    prompt: str = "",
+    max_tokens: int = 512,
+    temperature: float | None = None,
+) -> dict[str, Any]:
+    """Run a capped LLM call for an addon without exposing provider secrets."""
+    plugin_name = plugin_name.strip()
+    prompt = str(prompt or "").strip()
+    if not plugin_name:
+        raise ValueError("plugin_name is required")
+    if not prompt:
+        raise ValueError("prompt is required")
+    from core.system.paths import ADDONS_DIR
+    from core import addon_store
+
+    manager = _loaded_plugin_manager(Path(ADDONS_DIR))
+    addon = getattr(manager, "_find")(plugin_name) if hasattr(manager, "_find") else None
+    if addon is None or not getattr(addon, "enabled", False):
+        raise ValueError(f"Addon not loaded: {plugin_name}")
+    if not bool(getattr(addon, "manifest").permissions.get("llm")):
+        raise PermissionError(f"Addon is missing llm permission: {plugin_name}")
+    addon_id = str(getattr(addon, "id", plugin_name) or plugin_name)
+    allowed, remaining = addon_store.record_llm_call(addon_id, limit=5, window_seconds=3600)
+    if not allowed:
+        raise PermissionError(f"Addon LLM call cap reached: {plugin_name}")
+
+    from core.llm_clients.client import stream_response
+
+    chunks = list(stream_response(
+        prompt,
+        use_tools=False,
+        max_tokens=max(1, min(int(max_tokens or 512), 2048)),
+        temperature=temperature,
+    ))
+    return {"text": "".join(chunks), "remaining": remaining}
+
+
 def _plugin_summaries(plugins_dir: Path) -> list[dict[str, Any]]:
     try:
         manager = _loaded_plugin_manager(plugins_dir)
@@ -643,13 +743,27 @@ def _loaded_plugin_payload(mod: Any, manager: Any = None) -> dict[str, Any]:
     path = getattr(module, "__file__", "") or ""
     hooks = _plugin_hook_names(module)
     name = str(getattr(mod, "name", ""))
+    plugin_id = str(getattr(mod, "id", name) or name)
     settings: list[dict[str, Any]] = []
     if manager is not None:
         try:
-            settings = manager.get_settings(name)
+            settings = manager.get_settings(plugin_id)
         except Exception:
             settings = []
+    host = getattr(mod, "host", None)
+    logs = ""
+    if host is not None and hasattr(host, "log_text"):
+        try:
+            logs = str(host.log_text())
+        except Exception:
+            logs = ""
+    manifest = getattr(mod, "manifest", None)
+    deps = getattr(manifest, "dependencies", None)
+    packages = list(getattr(deps, "packages", []) or [])
+    python_req = str(getattr(deps, "python", "") or "")
+    runtime = getattr(mod, "runtime_status", {}) if isinstance(getattr(mod, "runtime_status", {}), dict) else {}
     return {
+        "id": plugin_id,
         "name": name,
         "path": str(Path(path).parent) if path else "",
         "status": "loaded",
@@ -658,7 +772,19 @@ def _loaded_plugin_payload(mod: Any, manager: Any = None) -> dict[str, Any]:
         "tray_actions": _safe_tray_action_labels(module),
         "tools": _safe_tool_names(module),
         "settings": settings,
+        "permissions": getattr(manifest, "permissions", {}) or {},
+        "dependencies": {"python": python_req, "packages": packages},
+        "runtime": runtime or {
+            "tier": "2" if (python_req or packages) else "1",
+            "ready": True,
+            "packages": packages,
+            "python_requirement": python_req,
+            "error": "",
+        },
+        "hotkeys": list(getattr(mod, "hotkeys", []) or []),
+        "description": str(getattr(manifest, "description", "") or ""),
         "error": "",
+        "logs": logs,
     }
 
 
@@ -682,10 +808,14 @@ def _discover_plugin_payloads(plugins_dir: Path) -> list[dict[str, Any]]:
             "hooks": hooks,
             "tray_actions": [],
             "tools": [],
+            "hotkeys": [],
             "settings": [],
             "permissions": {},
+            "dependencies": {"python": "", "packages": []},
+            "runtime": {"tier": "1", "ready": True, "packages": [], "error": ""},
             "description": "",
             "error": "",
+            "logs": "",
         })
     return payloads
 

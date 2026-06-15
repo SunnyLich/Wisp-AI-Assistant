@@ -65,6 +65,18 @@ class AddonHost:
             return self._tray_labels()
         if method == "run_tray_action":
             return self._run_tray_action(str(params.get("label") or ""))
+        if method == "get_intents":
+            return self._intents()
+        if method == "run_intent":
+            return self._run_intent(str(params.get("id") or ""), params.get("payload") or {})
+        if method == "get_notifications":
+            return self._call_list_hook("get_notifications")
+        if method == "get_hotkeys":
+            return self._hotkeys()
+        if method == "run_hotkey":
+            return self._run_hotkey(str(params.get("id") or ""), params.get("payload") or {})
+        if method == "on_event":
+            return self._on_event(str(params.get("event") or ""), params.get("payload") or {})
         if method == "get_settings":
             return self._call_list_hook("get_settings")
         if method == "get_tools":
@@ -80,6 +92,10 @@ class AddonHost:
             "before_query",
             "after_response",
             "get_tray_actions",
+            "get_intents",
+            "get_notifications",
+            "get_hotkeys",
+            "on_event",
             "get_tools",
             "get_settings",
         )
@@ -136,6 +152,79 @@ class AddonHost:
             callback()
             return None
         raise ValueError(f"addon action not found: {label}")
+
+    def _intents(self) -> list[dict[str, Any]]:
+        intents = self._call_list_hook("get_intents")
+        out: list[dict[str, Any]] = []
+        for item in intents:
+            if not isinstance(item, dict):
+                continue
+            out.append({
+                "id": str(item.get("id") or item.get("label") or "intent"),
+                "key": str(item.get("key") or ""),
+                "label": str(item.get("label") or item.get("id") or "Intent"),
+                "hint": str(item.get("hint") or item.get("description") or ""),
+                "prompt": str(item.get("prompt") or item.get("template") or ""),
+                "caller": str(item.get("caller") or "all"),
+                "callback": callable(item.get("callback")),
+            })
+        return out
+
+    def _run_intent(self, intent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not intent_id:
+            raise ValueError("intent id is required")
+        for item in self._call_list_hook("get_intents"):
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("id") or item.get("label") or "")
+            if item_id != intent_id:
+                continue
+            callback = item.get("callback")
+            if not callable(callback):
+                prompt = str(item.get("prompt") or item.get("template") or "")
+                return {"prompt": prompt} if prompt else {}
+            result = callback(payload or {})
+            return result if isinstance(result, dict) else {"result": result}
+        raise ValueError(f"addon intent not found: {intent_id}")
+
+    def _on_event(self, event: str, payload: dict[str, Any]) -> Any:
+        fn = getattr(self.module, "on_event", None)
+        if callable(fn):
+            return fn(event, payload or {})
+        return None
+
+    def _hotkeys(self) -> list[dict[str, Any]]:
+        hotkeys = self._call_list_hook("get_hotkeys")
+        out: list[dict[str, Any]] = []
+        for item in hotkeys:
+            if not isinstance(item, dict):
+                continue
+            out.append({
+                "id": str(item.get("id") or item.get("label") or "hotkey"),
+                "label": str(item.get("label") or item.get("id") or "Hotkey"),
+                "hotkey": str(item.get("hotkey") or item.get("combo") or ""),
+                "prompt": str(item.get("prompt") or ""),
+                "intent_id": str(item.get("intent_id") or ""),
+                "callback": callable(item.get("callback")),
+            })
+        return out
+
+    def _run_hotkey(self, hotkey_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not hotkey_id:
+            raise ValueError("hotkey id is required")
+        for item in self._call_list_hook("get_hotkeys"):
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("id") or item.get("label") or "")
+            if item_id != hotkey_id:
+                continue
+            callback = item.get("callback")
+            if callable(callback):
+                result = callback(payload or {})
+                return result if isinstance(result, dict) else {"result": result}
+            prompt = str(item.get("prompt") or "")
+            return {"prompt": prompt} if prompt else {}
+        raise ValueError(f"addon hotkey not found: {hotkey_id}")
 
     def _tools(self) -> list[dict[str, Any]]:
         tools = self._call_list_hook("get_tools")

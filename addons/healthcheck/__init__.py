@@ -61,6 +61,11 @@ def after_response(text: str) -> None:
     _log(f"after_response fired; {len(text)} chars")
 
 
+def on_event(event: str, payload: dict) -> dict:
+    _log(f"event fired; event={event}, keys={','.join(sorted((payload or {}).keys()))}")
+    return {"ok": True, "event": event}
+
+
 def get_tray_actions() -> list[dict]:
     return [{"label": "Healthcheck: log a line", "callback": _on_tray_click}]
 
@@ -84,6 +89,22 @@ def get_tools() -> list[dict]:
             "executor": _ping_executor,
         }
     ]
+
+
+def get_hotkeys() -> list[dict]:
+    return [
+        {
+            "id": "healthcheck-dynamic-hotkey",
+            "label": "Healthcheck dynamic hotkey",
+            "hotkey": "ctrl+alt+shift+h",
+            "callback": _hotkey_callback,
+        }
+    ]
+
+
+def _hotkey_callback(_payload: dict) -> dict:
+    _log("dynamic hotkey fired")
+    return {"message": "Healthcheck hotkey fired."}
 
 
 def _ping_executor(inputs: dict) -> str:

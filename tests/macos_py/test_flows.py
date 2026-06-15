@@ -1115,7 +1115,7 @@ def test_off_tool_override_beats_context_dropdown():
 
 def test_chat_request_streams_through_brain_chat():
     brain = FakeWorker(stream_handlers={"brain.chat": query_stream("chat reply")})
-    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+    _flow, native, ui, brain, _audio = make_flow(brain=brain)
 
     ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "hi"}]})
 
@@ -1196,7 +1196,7 @@ def test_caller_memory_modes_map_to_injected_or_model_decided_access():
 
 def test_memory_events_route_to_brain_and_seed_ui_viewer():
     brain = FakeWorker({"brain.memory.list": lambda _params: {"facts": [{"id": "1", "text": "remember"}]}})
-    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+    _flow, native, ui, brain, _audio = make_flow(brain=brain)
 
     ui.emit("ui.memory.open_requested", {})
     ui.emit("ui.memory.add", {"text": "new fact", "category": "general"})
@@ -1217,22 +1217,35 @@ def test_plugin_and_agent_tray_events_route_through_supervisor():
                 "plugins": [{"name": "demo", "status": "loaded", "tray_actions": ["Run"]}],
             },
             "brain.plugins.run_action": lambda _params: {"ok": True, "message": "ran demo"},
+            "brain.plugins.repair_environment": lambda _params: {"ready": True},
+            "brain.plugins.install_archive": lambda _params: {"id": "demo2"},
+            "brain.plugins.install_folder": lambda _params: {"id": "demo3"},
+            "brain.plugins.run_hotkey": lambda _params: {"prompt": "hotkey prompt"},
+            "brain.query": lambda _params: {"text": "hotkey answer"},
             "brain.agent.history.list": lambda _params: {
                 "runs_root": "/tmp/runs",
                 "runs": [{"title": "recent", "run_dir": "/tmp/runs/1"}],
             },
         }
     )
-    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+    _flow, native, ui, brain, _audio = make_flow(brain=brain)
 
     ui.emit("ui.plugins.open_requested", {})
     ui.emit("ui.plugins.run_action", {"plugin_name": "demo", "label": "Run"})
+    ui.emit("ui.plugins.repair_environment", {"plugin_name": "demo"})
+    ui.emit("ui.plugins.install_archive", {"path": "/tmp/demo.wisp"})
+    ui.emit("ui.plugins.install_folder", {"path": "/tmp/demo-folder"})
+    native.emit("native.hotkey", {"kind": "addon", "addon_id": "demo", "hotkey_id": "hk"})
     ui.emit("ui.agent.task_requested", {})
     ui.emit("ui.agent.history_requested", {})
 
     assert ui.last_call("ui.show_plugins")["params"]["plugins"][0]["name"] == "demo"
     assert brain.last_call("brain.plugins.run_action")["params"]["plugin_name"] == "demo"
-    assert ui.last_call("ui.reply.notice")["params"]["text"] == "ran demo"
+    assert brain.last_call("brain.plugins.repair_environment")["params"]["plugin_name"] == "demo"
+    assert brain.last_call("brain.plugins.install_archive")["params"]["path"] == "/tmp/demo.wisp"
+    assert brain.last_call("brain.plugins.install_folder")["params"]["path"] == "/tmp/demo-folder"
+    assert brain.last_call("brain.plugins.run_hotkey")["params"]["hotkey_id"] == "hk"
+    assert ui.calls_for("ui.reply.notice")
     assert ui.calls_for("ui.show_agent_task")
     assert ui.last_call("ui.show_agent_history")["params"]["runs"][0]["title"] == "recent"
 

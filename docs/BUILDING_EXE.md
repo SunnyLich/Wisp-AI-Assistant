@@ -34,5 +34,8 @@ Notes:
 
 - API keys are not bundled. Users should enter them in Settings so they are saved to the OS keychain.
 - `.env.example` is bundled as a template, but your local `.env` is not included.
+- Addon dependency environments in packaged builds require `uv`. Place `uv.exe`
+  at `bin\uv.exe` or `tools\uv.exe` before building and PyInstaller will bundle
+  it into `dist\Wisp\bin\uv.exe`.
 - If packaging fails on a missing optional dependency, install it into `.venv` and rerun the script.
 - On Windows, if the repo path is long enough to trip the OS path limit during `elevenlabs` install, the build script now skips that optional package instead of failing the whole build. The packaged app will still build, but the ElevenLabs TTS provider will be unavailable unless you enable Windows long paths and reinstall dependencies.

@@ -1,6 +1,10 @@
 # Wisp Plugin System Redesign — Plan
 
-Status: **planning** (living doc — update as decisions land)
+Status: **implemented through Phase 4** (living doc; later phases can extend this)
+
+Implementation status: **implemented through Phase 4**. Later phases can extend
+this design, but the Phase 4 addon surfaces and distribution flows are now
+present in the current code.
 
 ## 0. Where we are today
 

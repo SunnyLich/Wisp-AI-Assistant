@@ -105,6 +105,9 @@ class FlowController:
         self.ui.on_event("ui.plugins.run_action", self._on_plugins_run_action)
         self.ui.on_event("ui.plugins.set_enabled", self._on_plugins_set_enabled)
         self.ui.on_event("ui.plugins.set_setting", self._on_plugins_set_setting)
+        self.ui.on_event("ui.plugins.repair_environment", self._on_plugins_repair_environment)
+        self.ui.on_event("ui.plugins.install_archive", self._on_plugins_install_archive)
+        self.ui.on_event("ui.plugins.install_folder", self._on_plugins_install_folder)
         self.ui.on_event("ui.agent.task_requested", self._on_agent_task_requested)
         self.ui.on_event("ui.agent.history_requested", self._on_agent_history_requested)
         self.ui.on_event("ui.agent.run_requested", self._on_agent_run_requested)
@@ -131,13 +134,15 @@ class FlowController:
             log.exception("audio prewarm did not start")
 
     def start_hotkeys(self) -> dict[str, Any]:
-        result = self.native.call("native.hotkeys.start", timeout=10.0) or {}
+        addon_hotkeys = self._addon_hotkeys()
+        result = self.native.call("native.hotkeys.start", {"addon_hotkeys": addon_hotkeys}, timeout=10.0) or {}
         if not isinstance(result, dict):
             result = {"started": False, "reason": "unexpected native response"}
         if not result.get("started"):
             reason = str(result.get("reason") or result.get("error") or "unknown error")
             log.warning("native hotkeys did not start: %s", reason)
             self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
+        self._show_addon_notifications()
         return result
 
     # -- event handlers ------------------------------------------------
@@ -157,6 +162,8 @@ class FlowController:
             self._schedule(self.voice_start)
         elif kind == "voice_stop":
             self._schedule(self.voice_stop)
+        elif kind == "addon":
+            self._schedule(self.plugin_run_hotkey, data or {})
 
     def _on_summon_caller(self, data: dict[str, Any], _req_id: Any = None) -> None:
         self._schedule(self.begin_caller, int((data or {}).get("caller_idx") or 0))
@@ -211,6 +218,15 @@ class FlowController:
 
     def _on_plugins_set_setting(self, data: dict[str, Any], _req_id: Any = None) -> None:
         self._schedule(self.plugin_set_setting, data or {})
+
+    def _on_plugins_repair_environment(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.plugin_repair_environment, data or {})
+
+    def _on_plugins_install_archive(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.plugin_install_archive, data or {})
+
+    def _on_plugins_install_folder(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        self._schedule(self.plugin_install_folder, data or {})
 
     def _on_agent_task_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         self._schedule(self.open_agent_task)
@@ -613,6 +629,146 @@ class FlowController:
             {"plugin_name": name, "key": key, "value": data.get("value")},
             timeout=30.0,
         )
+
+    def plugin_repair_environment(self, data: dict[str, Any]) -> None:
+        name = str(data.get("plugin_name") or "")
+        if not name:
+            return
+        result = self._safe_call(
+            self.brain,
+            "brain.plugins.repair_environment",
+            {"plugin_name": name},
+            timeout=600.0,
+        )
+        message = "Addon dependency environment repaired."
+        if isinstance(result, dict) and not result.get("ready", True):
+            message = str(result.get("error") or "Addon dependency environment is not ready.")
+        self._notice(message)
+        self.open_plugins()
+
+    def plugin_install_archive(self, data: dict[str, Any]) -> None:
+        path = str(data.get("path") or "")
+        if not path:
+            return
+        result = self._safe_call(
+            self.brain,
+            "brain.plugins.install_archive",
+            {"path": path},
+            timeout=120.0,
+        )
+        message = "Addon archive installed."
+        if isinstance(result, dict) and result.get("id"):
+            message = f"Installed addon: {result['id']}"
+        self._notice(message)
+        self.open_plugins()
+
+    def plugin_install_folder(self, data: dict[str, Any]) -> None:
+        path = str(data.get("path") or "")
+        if not path:
+            return
+        result = self._safe_call(
+            self.brain,
+            "brain.plugins.install_folder",
+            {"path": path},
+            timeout=120.0,
+        )
+        message = "Addon folder installed."
+        if isinstance(result, dict) and result.get("id"):
+            message = f"Installed addon: {result['id']}"
+        self._notice(message)
+        self.open_plugins()
+
+    def plugin_run_hotkey(self, data: dict[str, Any]) -> None:
+        addon_id = str(data.get("addon_id") or "")
+        hotkey_id = str(data.get("hotkey_id") or "")
+        if not addon_id or not hotkey_id:
+            return
+        result = self._safe_call(
+            self.brain,
+            "brain.plugins.run_hotkey",
+            {"plugin_name": addon_id, "hotkey_id": hotkey_id},
+            timeout=60.0,
+        )
+        if isinstance(result, dict):
+            prompt = str(result.get("prompt") or "").strip()
+            if prompt:
+                self.intent_chosen(prompt)
+                return
+            notify = result.get("notify")
+            if isinstance(notify, dict):
+                notify_result = self._safe_call(
+                    self.native,
+                    "native.notify",
+                    {
+                        "title": str(notify.get("title") or "Wisp"),
+                        "message": str(notify.get("message") or ""),
+                    },
+                    timeout=10.0,
+                )
+                if not (isinstance(notify_result, dict) and notify_result.get("ok")):
+                    self._notice(str(notify.get("message") or "Addon notification."))
+                return
+            llm = result.get("llm")
+            if isinstance(llm, dict):
+                llm_result = self._safe_call(
+                    self.brain,
+                    "brain.plugins.llm_call",
+                    {
+                        "plugin_name": addon_id,
+                        "prompt": str(llm.get("prompt") or ""),
+                        "max_tokens": int(llm.get("max_tokens") or 512),
+                    },
+                    timeout=120.0,
+                )
+                if isinstance(llm_result, dict) and llm_result.get("text"):
+                    self._notice(str(llm_result["text"]))
+                return
+            message = str(result.get("message") or "").strip()
+            if message:
+                self._notice(message)
+
+    def _addon_hotkeys(self) -> list[dict[str, Any]]:
+        result = self._safe_call(self.brain, "brain.plugins.list", timeout=30.0) or {}
+        if not isinstance(result, dict):
+            return []
+        out: list[dict[str, Any]] = []
+        for plugin in result.get("plugins") or []:
+            if not isinstance(plugin, dict):
+                continue
+            addon_id = str(plugin.get("id") or plugin.get("name") or "")
+            for item in plugin.get("hotkeys") or []:
+                if not isinstance(item, dict):
+                    continue
+                combo = str(item.get("hotkey") or "")
+                hotkey_id = str(item.get("id") or "")
+                if addon_id and combo and hotkey_id:
+                    out.append({"addon_id": addon_id, "id": hotkey_id, "hotkey": combo})
+        return out
+
+    def _show_addon_notifications(self) -> None:
+        result = self._safe_call(self.brain, "brain.plugins.list", timeout=30.0) or {}
+        if not isinstance(result, dict):
+            return
+        for plugin in result.get("plugins") or []:
+            if not isinstance(plugin, dict):
+                continue
+            for item in plugin.get("notifications") or []:
+                if not isinstance(item, dict):
+                    continue
+                message = str(item.get("message") or "")
+                if not message:
+                    continue
+                notify_result = self._safe_call(
+                    self.native,
+                    "native.notify",
+                    {
+                        "title": str(item.get("title") or plugin.get("name") or "Wisp"),
+                        "message": message,
+                    },
+                    timeout=10.0,
+                )
+                if not (isinstance(notify_result, dict) and notify_result.get("ok")):
+                    self._notice(message)
 
     def open_agent_task(self, spec: dict[str, Any] | None = None) -> None:
         params = {"spec": spec} if isinstance(spec, dict) and spec else {}

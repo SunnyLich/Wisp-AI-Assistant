@@ -8,6 +8,7 @@ streams hotkey events back to the native worker as newline-delimited JSON.
 from __future__ import annotations
 
 import os
+import json
 import signal
 import sys
 import threading
@@ -225,6 +226,19 @@ def _hotkey_specs_from_config(config: Any) -> list[tuple[str, str, dict]]:
         combo = getattr(config, attr, "")
         if combo:
             specs.append((combo, kind, {}))
+    try:
+        addon_hotkeys = json.loads(os.environ.get("WISP_ADDON_HOTKEYS") or "[]")
+    except Exception:
+        addon_hotkeys = []
+    if isinstance(addon_hotkeys, list):
+        for item in addon_hotkeys:
+            if not isinstance(item, dict):
+                continue
+            combo = str(item.get("hotkey") or "")
+            addon_id = str(item.get("addon_id") or "")
+            hotkey_id = str(item.get("id") or "")
+            if combo and addon_id and hotkey_id:
+                specs.append((combo, "addon", {"addon_id": addon_id, "hotkey_id": hotkey_id}))
     return specs
 
 

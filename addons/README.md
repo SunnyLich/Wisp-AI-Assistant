@@ -33,11 +33,80 @@ query = "modify"
 response = "read"
 tools = true
 ui = ["tray", "settings"]
+hotkeys = true
+llm = true
+
+[dependencies]
+python = ">=3.11"
+packages = ["requests>=2.31", "beautifulsoup4"]
+
+events = ["app.startup", "response.after"]
+
+[[intents]]
+id = "summarize-selection"
+key = "z"
+label = "Addon summary"
+hint = "Ask using this addon's prompt"
+prompt = "Summarize the current selection with project context."
+
+[[notifications]]
+title = "My Addon"
+message = "My Addon loaded."
+
+[[hotkeys]]
+id = "quick-summary"
+label = "Quick addon summary"
+hotkey = "ctrl+alt+z"
+prompt = "Summarize the current context using this addon's workflow."
 ```
 
 Missing permissions are denied. For example, an addon without `tools = true`
 will not register model-callable tools, and an addon without `ui = ["tray"]`
 will not expose tray actions.
+
+`[dependencies]` is optional. Addons without it run from Wisp's own Python
+runtime. Addons that declare dependencies get a dedicated virtual environment
+under `addon_envs/<addon-id>/`; the Addon Manager shows the required packages
+and provides an Install/Repair action. Wisp records approval for the exact
+dependency hash, so an addon update that changes packages must be approved
+again before it runs. Wisp uses `uv` when available, falling back to
+`python -m venv` in source checkouts.
+
+Packaged builds should ship the `uv` binary at `bin/uv` or `bin/uv.exe` inside
+the app bundle/folder. The PyInstaller specs collect `bin/uv*` or `tools/uv*`
+from the repo when present.
+
+## Phase 4 Surfaces
+
+Addons can subscribe to app events with `events = [...]` and implement:
+
+```python
+def on_event(event: str, payload: dict):
+    return {"ok": True}
+```
+
+Supported event names currently include:
+
+- `app.startup`
+- `app.shutdown`
+- `response.after`
+
+Prompt intents declared with `[[intents]]` appear in the normal intent picker
+when the addon has `ui = ["intents"]`. Notifications declared with
+`[[notifications]]` are exposed through the addon manager payload for UI/native
+surfaces that want to display them, with a Wisp notice fallback where native
+toasts are unavailable.
+
+Addon hotkeys declared with `[[hotkeys]]` require `hotkeys = true`. A hotkey can
+return a prompt directly from the manifest, or dynamic `get_hotkeys()` callbacks
+can return dictionaries such as `{"prompt": "..."}`, `{"message": "..."}`,
+`{"notify": {"title": "...", "message": "..."}}`, or
+`{"llm": {"prompt": "...", "max_tokens": 512}}`. LLM actions require
+`llm = true` and are capped by Wisp before provider credentials are used.
+
+Distribution is supported with `.zip` or `.wisp` archives containing exactly one
+addon folder or a manifest at the archive root. The Addon Manager can also
+install from an unpacked addon folder.
 
 ## Hooks
 

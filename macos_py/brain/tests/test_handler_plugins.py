@@ -10,6 +10,11 @@ from wisp_brain import handlers
 def test_plugins_list_handler_registered():
     assert "brain.plugins.list" in handlers.HANDLERS
     assert "brain.plugins.run_action" in handlers.HANDLERS
+    assert "brain.plugins.repair_environment" in handlers.HANDLERS
+    assert "brain.plugins.install_archive" in handlers.HANDLERS
+    assert "brain.plugins.install_folder" in handlers.HANDLERS
+    assert "brain.plugins.run_hotkey" in handlers.HANDLERS
+    assert "brain.plugins.llm_call" in handlers.HANDLERS
 
 
 def test_plugins_list_returns_discovered_addon_folder(tmp_path, monkeypatch):

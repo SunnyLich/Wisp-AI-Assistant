@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -74,3 +75,40 @@ def set_setting(addon_id: str, key: str, value: Any) -> None:
         item["settings"] = settings = {}
     settings[str(key)] = value
     _write(data)
+
+
+def approved_dependency_hash(addon_id: str) -> str:
+    item = _read().get("addons", {}).get(addon_id, {})
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("approved_dependency_hash") or "")
+
+
+def set_approved_dependency_hash(addon_id: str, dependency_hash: str) -> None:
+    data = _read()
+    _addon(data, addon_id)["approved_dependency_hash"] = str(dependency_hash)
+    _write(data)
+
+
+def record_llm_call(addon_id: str, *, limit: int = 5, window_seconds: int = 3600) -> tuple[bool, int]:
+    now = time.time()
+    data = _read()
+    item = _addon(data, addon_id)
+    calls = item.setdefault("llm_calls", [])
+    if not isinstance(calls, list):
+        item["llm_calls"] = calls = []
+    cutoff = now - max(1, int(window_seconds))
+    calls[:] = [float(ts) for ts in calls if _is_recent_timestamp(ts, cutoff)]
+    if len(calls) >= max(0, int(limit)):
+        _write(data)
+        return False, max(0, int(limit)) - len(calls)
+    calls.append(now)
+    _write(data)
+    return True, max(0, int(limit)) - len(calls)
+
+
+def _is_recent_timestamp(value: Any, cutoff: float) -> bool:
+    try:
+        return float(value) >= cutoff
+    except Exception:
+        return False

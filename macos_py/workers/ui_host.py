@@ -1334,6 +1334,8 @@ class QtProtocolHost:
         self._memory = None
         self._memory_viewer = None
         self._plugins_dialog = None
+        self._plugin_settings_dialogs: dict[str, Any] = {}
+        self._plugin_log_dialogs: dict[str, Any] = {}
         self._agent_run_dialog: MacAgentRunDialog | None = None
         self._agent_history_dialog: MacAgentHistoryDialog | None = None
         self._all_conversations: list[dict] = []
@@ -1946,6 +1948,7 @@ class QtProtocolHost:
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtWidgets import (
             QDialog,
+            QFileDialog,
             QFrame,
             QHBoxLayout,
             QLabel,
@@ -1970,9 +1973,17 @@ class QtProtocolHost:
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QLabel("Plugins")
+        title = QLabel("Addons")
         title.setStyleSheet("font-size: 15pt; font-weight: 700;")
         root.addWidget(title)
+
+        subtitle = QLabel(
+            "Addons are Python packages in the addons/ folder. "
+            "Each addon runs in its own host process."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("font-size: 9pt; opacity: 0.7;")
+        root.addWidget(subtitle)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -2001,6 +2012,12 @@ class QtProtocolHost:
             open_btn = QPushButton("Open addons folder")
             open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(plugins_dir)))
             footer.addWidget(open_btn)
+            install_btn = QPushButton("Install archive")
+            install_btn.clicked.connect(lambda: self._install_plugin_archive_dialog())
+            footer.addWidget(install_btn)
+            install_folder_btn = QPushButton("Install folder")
+            install_folder_btn.clicked.connect(lambda: self._install_plugin_folder_dialog())
+            footer.addWidget(install_folder_btn)
         footer.addStretch()
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.close)
@@ -2015,8 +2032,31 @@ class QtProtocolHost:
         dialog.activateWindow()
         return {"shown": True, "reused": reused}
 
+    def _install_plugin_archive_dialog(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        archive, _selected_filter = QFileDialog.getOpenFileName(
+            self._plugins_dialog,
+            "Install Addon Archive",
+            "",
+            "Wisp Addons (*.wisp *.zip)",
+        )
+        if archive:
+            self.emit("ui.plugins.install_archive", {"path": archive})
+
+    def _install_plugin_folder_dialog(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        folder = QFileDialog.getExistingDirectory(
+            self._plugins_dialog,
+            "Install Addon Folder",
+            "",
+        )
+        if folder:
+            self.emit("ui.plugins.install_folder", {"path": folder})
+
     def _plugin_card(self, plugin: dict[str, Any]):
-        from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
+        from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
         card = QFrame()
         card.setObjectName("pluginCard")
@@ -2029,19 +2069,57 @@ class QtProtocolHost:
         layout.setSpacing(6)
 
         name_row = QHBoxLayout()
-        name = str(plugin.get("name") or "Plugin")
+        name = str(plugin.get("name") or plugin.get("id") or "Addon")
+        addon_id = str(plugin.get("id") or name)
         name_lbl = QLabel(name)
         name_lbl.setStyleSheet("font-size: 11pt; font-weight: 600;")
         name_row.addWidget(name_lbl)
         name_row.addStretch()
 
+        settings_btn = QPushButton("Settings")
+        settings_btn.setToolTip("Open this addon's settings")
+        settings_btn.clicked.connect(
+            lambda _checked=False, p=plugin, aid=addon_id, n=name: self._show_plugin_settings_dialog(
+                aid,
+                n,
+                p.get("settings") or [],
+            )
+        )
+        name_row.addWidget(settings_btn)
+
+        logs_btn = QPushButton("Logs")
+        logs_btn.setToolTip("Open this addon's diagnostic log")
+        logs_btn.clicked.connect(
+            lambda _checked=False, p=plugin, aid=addon_id, n=name: self._show_plugin_log_dialog(
+                aid,
+                n,
+                str(p.get("logs") or ""),
+            )
+        )
+        name_row.addWidget(logs_btn)
+
+        runtime = plugin.get("runtime") if isinstance(plugin.get("runtime"), dict) else {}
+        packages = [str(p) for p in (runtime.get("packages") or [])]
+        has_dependencies = str(runtime.get("tier") or "1") == "2"
+        if has_dependencies:
+            repair_btn = QPushButton(self._plugin_runtime_action_label(runtime))
+            repair_btn.setToolTip("Install or rebuild this addon's dependency environment")
+            repair_btn.clicked.connect(
+                lambda _checked=False, plugin_name=addon_id, display_name=name, rt=runtime: self._confirm_plugin_environment(
+                    plugin_name,
+                    display_name,
+                    rt,
+                )
+            )
+            name_row.addWidget(repair_btn)
+
         enabled = bool(plugin.get("enabled", True))
         enable = QCheckBox("Enabled")
         enable.setChecked(enabled)
         # "discovered" (not yet loaded into a manager) plugins can't be toggled live.
-        enable.setEnabled(str(plugin.get("status") or "") == "loaded")
+        enable.setEnabled(str(plugin.get("status") or "") in {"loaded", "disabled", "needs_dependencies", "needs_approval"})
         enable.toggled.connect(
-            lambda checked, plugin_name=name: self.emit(
+            lambda checked, plugin_name=addon_id: self.emit(
                 "ui.plugins.set_enabled",
                 {"plugin_name": plugin_name, "enabled": bool(checked)},
             )
@@ -2068,11 +2146,17 @@ class QtProtocolHost:
             detail_lbl.setStyleSheet("font-size: 8pt; opacity: 0.65;")
             layout.addWidget(detail_lbl)
 
-        # Per-mod settings (replaces the old tray-action buttons)
-        settings_box = self._plugin_settings_box(name, plugin.get("settings") or [])
-        if settings_box is not None:
-            settings_box.setEnabled(enabled)
-            layout.addWidget(settings_box)
+        if has_dependencies:
+            dep_parts = [self._plugin_runtime_summary(runtime)]
+            if packages:
+                dep_parts.append("Packages: " + ", ".join(packages))
+            runtime_error = str(runtime.get("error") or "")
+            if runtime_error:
+                dep_parts.append(runtime_error)
+            dep_lbl = QLabel("\n".join(dep_parts))
+            dep_lbl.setWordWrap(True)
+            dep_lbl.setStyleSheet("font-size: 8pt; opacity: 0.6;")
+            layout.addWidget(dep_lbl)
 
         error = str(plugin.get("error") or "")
         if error:
@@ -2081,6 +2165,145 @@ class QtProtocolHost:
             error_lbl.setStyleSheet("font-size: 8pt; color: #b42318;")
             layout.addWidget(error_lbl)
         return card
+
+    def _confirm_plugin_environment(self, plugin_name: str, display_name: str, runtime: dict[str, Any]) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        packages = [str(p) for p in (runtime.get("packages") or [])]
+        lines = [
+            f"{display_name} declares Python/package dependencies.",
+            "",
+            f"Python: {runtime.get('python_requirement') or 'current runtime'}",
+            "Packages:",
+        ]
+        lines.extend(f"  {package}" for package in packages)
+        if not packages:
+            lines.append("  No packages declared")
+        env_path = str(runtime.get("env_path") or "")
+        if env_path:
+            lines.extend(["", f"Environment: {env_path}"])
+        lines.extend(["", "Install or rebuild this environment now?"])
+        choice = QMessageBox.question(
+            self._plugins_dialog,
+            "Approve Addon Dependencies",
+            "\n".join(lines),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice == QMessageBox.StandardButton.Yes:
+            self.emit("ui.plugins.repair_environment", {"plugin_name": plugin_name})
+
+    @staticmethod
+    def _plugin_runtime_action_label(runtime: dict[str, Any]) -> str:
+        if runtime.get("needs_approval"):
+            return "Approve env"
+        return "Repair env" if runtime.get("ready") else "Install env"
+
+    @staticmethod
+    def _plugin_runtime_summary(runtime: dict[str, Any]) -> str:
+        if runtime.get("needs_approval"):
+            return "Dependency env: needs approval"
+        return "Dependency env: ready" if runtime.get("ready") else "Dependency env: needs install"
+
+    def _show_plugin_settings_dialog(self, plugin_name: str, display_name: str, settings: list):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+
+        existing = self._plugin_settings_dialogs.get(plugin_name)
+        if existing is not None and existing.isVisible():
+            existing.close()
+
+        dialog = QDialog(self._plugins_dialog)
+        dialog.setWindowTitle(f"{display_name} Settings")
+        dialog.setModal(False)
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(12)
+
+        title = QLabel(f"{display_name} Settings")
+        title.setStyleSheet("font-size: 14pt; font-weight: 700;")
+        root.addWidget(title)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        inner = QWidget()
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(8)
+
+        settings_box = self._plugin_settings_box(plugin_name, settings)
+        if settings_box is None:
+            empty = QLabel("This addon does not expose settings.")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setStyleSheet("opacity: 0.55; font-size: 10pt;")
+            inner_layout.addWidget(empty)
+        else:
+            inner_layout.addWidget(settings_box)
+        inner_layout.addStretch()
+        scroll.setWidget(inner)
+        root.addWidget(scroll, 1)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        footer.addWidget(close_btn)
+        root.addLayout(footer)
+
+        dialog.resize(420, 360)
+        dialog.destroyed.connect(lambda _obj=None, key=plugin_name: self._plugin_settings_dialogs.pop(key, None))
+        self._plugin_settings_dialogs[plugin_name] = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _show_plugin_log_dialog(self, plugin_name: str, display_name: str, logs: str):
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout
+
+        existing = self._plugin_log_dialogs.get(plugin_name)
+        if existing is not None and existing.isVisible():
+            text = existing.findChild(QTextEdit)
+            if text is not None:
+                text.setPlainText(logs or "No log output yet.")
+                text.moveCursor(QTextCursor.MoveOperation.End)
+            existing.raise_()
+            existing.activateWindow()
+            return {"shown": True, "reused": True}
+
+        dialog = QDialog(self._plugins_dialog)
+        dialog.setWindowTitle(f"{display_name} Logs")
+        dialog.setModal(False)
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(12)
+
+        title = QLabel(f"{display_name} Logs")
+        title.setStyleSheet("font-size: 14pt; font-weight: 700;")
+        root.addWidget(title)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        text.setPlainText(logs or "No log output yet.")
+        text.moveCursor(QTextCursor.MoveOperation.End)
+        root.addWidget(text, 1)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        footer.addWidget(close_btn)
+        root.addLayout(footer)
+
+        dialog.resize(560, 360)
+        dialog.destroyed.connect(lambda _obj=None, key=plugin_name: self._plugin_log_dialogs.pop(key, None))
+        self._plugin_log_dialogs[plugin_name] = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        return {"shown": True, "reused": False}
 
     def _plugin_settings_box(self, plugin_name: str, settings: list):
         from PySide6.QtWidgets import (
@@ -2135,7 +2358,7 @@ class QtProtocolHost:
             if help_text:
                 w.setToolTip(help_text)
             form.addRow(label, w)
-        return box
+        return box if form.rowCount() else None
 
     def _show_agent_task(self, spec: dict[str, Any] | None = None) -> dict[str, Any]:
         from core.agent.task_spec import agent_task_spec_from_dict

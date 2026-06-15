@@ -11,6 +11,7 @@ import os
 import threading
 import logging
 import traceback
+from typing import Callable
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, Signal, Qt
@@ -299,7 +300,41 @@ class App(QObject):
             on_snip=self._on_snip_hotkey,
             on_voice_start=self._on_voice_start,
             on_voice_stop=self._on_voice_stop,
+            extra_hotkeys=self._addon_hotkey_callbacks(),
         )
+
+    def _addon_hotkey_callbacks(self) -> list[tuple[str, Callable[[], None]]]:
+        callbacks: list[tuple[str, Callable[[], None]]] = []
+        try:
+            hotkeys = self._plugin_manager.get_hotkeys()
+        except Exception:
+            return callbacks
+        for item in hotkeys:
+            combo = str(item.get("hotkey") or "")
+            addon_id = str(item.get("addon_id") or "")
+            hotkey_id = str(item.get("id") or "")
+            if combo and addon_id and hotkey_id:
+                callbacks.append((combo, lambda aid=addon_id, hid=hotkey_id: self._on_addon_hotkey(aid, hid)))
+        return callbacks
+
+    def _on_addon_hotkey(self, addon_id: str, hotkey_id: str) -> None:
+        try:
+            result = self._plugin_manager.run_hotkey(addon_id, hotkey_id)
+        except Exception:
+            log.exception("addon hotkey failed: %s / %s", addon_id, hotkey_id)
+            return
+        prompt = str(result.get("prompt") or "").strip() if isinstance(result, dict) else ""
+        if prompt:
+            self._pending_capture = None
+            self._pending_caller_idx = 0
+            self._pending_context_policy = config.CALLER_ROWS[0] if config.CALLER_ROWS else {}
+            self._pending_paste_target = 0
+            self._pending_intent_target = 0
+            self._on_intent_chosen("addon", prompt)
+            return
+        message = str(result.get("message") or "").strip() if isinstance(result, dict) else ""
+        if message and hasattr(self._overlay, "notify_agent_approval"):
+            self._overlay.notify_agent_approval(message, resolved=True)
 
     @staticmethod
     def _hotkey_signature() -> tuple:

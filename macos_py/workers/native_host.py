@@ -32,11 +32,13 @@ class _HotkeyHelper:
             "reason": "not started",
         }
 
-    def start(self) -> dict[str, Any]:
+    def start(self, addon_hotkeys: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         self._stop_stale_helpers()
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("WISP_REPO_ROOT", str(repo_root()))
+        if addon_hotkeys:
+            env["WISP_ADDON_HOTKEYS"] = json.dumps(addon_hotkeys)
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "macos_py.workers.hotkey_helper"],
             stdin=subprocess.PIPE,
@@ -131,7 +133,7 @@ class _DirectHotkeys:
             "reason": "not started",
         }
 
-    def start(self) -> dict[str, Any]:
+    def start(self, addon_hotkeys: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         try:
             import config
             from core.hotkeys import HotkeyListener
@@ -144,6 +146,16 @@ class _DirectHotkeys:
                 (lambda idx=idx: emit_hotkey("caller", index=idx))
                 for idx in range(caller_count)
             ]
+            extra_hotkeys = []
+            for item in addon_hotkeys or []:
+                combo = str(item.get("hotkey") or "")
+                addon_id = str(item.get("addon_id") or "")
+                hotkey_id = str(item.get("id") or "")
+                if combo and addon_id and hotkey_id:
+                    extra_hotkeys.append((
+                        combo,
+                        lambda aid=addon_id, hid=hotkey_id: emit_hotkey("addon", addon_id=aid, hotkey_id=hid),
+                    ))
             self.listener = HotkeyListener(
                 on_callers=callers,
                 on_add_context=lambda: emit_hotkey("add_context"),
@@ -151,6 +163,7 @@ class _DirectHotkeys:
                 on_snip=lambda: emit_hotkey("snip"),
                 on_voice_start=lambda: emit_hotkey("voice_start"),
                 on_voice_stop=lambda: emit_hotkey("voice_stop"),
+                extra_hotkeys=extra_hotkeys,
             )
             started = bool(self.listener.start())
             status = self.listener.status() if hasattr(self.listener, "status") else {}
@@ -1075,7 +1088,7 @@ def open_privacy_settings(pane: str = "Privacy") -> dict[str, Any]:
     return {"ok": result.returncode == 0, "url": target}
 
 
-def hotkeys_start() -> dict[str, Any]:
+def hotkeys_start(addon_hotkeys: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Start global hotkeys in the native process.
 
     Carbon hotkeys need a Carbon event loop. The native worker's main thread is
@@ -1086,7 +1099,7 @@ def hotkeys_start() -> dict[str, Any]:
     if _hotkeys is not None:
         return {"started": True, "backend": "existing"}
     helper = _HotkeyHelper() if IS_MAC else _DirectHotkeys()
-    result = helper.start()
+    result = helper.start(addon_hotkeys=addon_hotkeys or [])
     if result.get("started"):
         _hotkeys = helper
         return result

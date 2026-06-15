@@ -52,14 +52,20 @@ def _build_rows(caller_idx: int = 0) -> list[dict]:
     """Build the full list of overlay rows from the specified caller's config."""
     caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
     rows = []
+    used_keys: set[str] = set()
     for r in caller.get("intents", []):
+        key = str(r.get("key") or "").upper()
+        if key:
+            used_keys.add(key)
         rows.append({
-            "glyph":     r["key"].upper() if r["key"] else "?",
+            "glyph":     key if key else "?",
             "label":     r["label"],
             "hint":      r.get("hint", ""),
             "prompt":    r["prompt"],
             "is_custom": False,
         })
+    for r in _addon_intent_rows(caller_idx, used_keys):
+        rows.append(r)
     custom_key = caller.get("custom_key", "s")
     rows.append({
         "glyph":     custom_key.upper(),
@@ -69,6 +75,46 @@ def _build_rows(caller_idx: int = 0) -> list[dict]:
         "is_custom": True,
     })
     return rows
+
+
+def _addon_intent_rows(caller_idx: int, used_keys: set[str]) -> list[dict]:
+    try:
+        from core.plugin_manager import get_manager
+
+        manager = get_manager()
+        intents = manager.get_intents(caller_idx) if hasattr(manager, "get_intents") else []
+    except Exception:
+        return []
+    rows: list[dict] = []
+    for item in intents:
+        if not isinstance(item, dict) or item.get("callback"):
+            continue
+        prompt = str(item.get("prompt") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not prompt or not label:
+            continue
+        key = str(item.get("key") or "").strip().upper()
+        if not key or key in used_keys:
+            key = _choose_addon_intent_key(label, used_keys)
+        used_keys.add(key)
+        rows.append({
+            "glyph": key,
+            "label": label,
+            "hint": str(item.get("hint") or f"Addon: {item.get('addon_id', '')}").strip(),
+            "prompt": prompt,
+            "is_custom": False,
+        })
+    return rows
+
+
+def _choose_addon_intent_key(label: str, used_keys: set[str]) -> str:
+    for char in label.upper():
+        if char.isalnum() and char not in used_keys:
+            return char
+    for char in "ZXCVBNM123456789":
+        if char not in used_keys:
+            return char
+    return "?"
 
 
 # ── Layout constants ────────────────────────────────────────────────────────

@@ -9,6 +9,14 @@ ROOT = Path(SPECPATH).resolve().parent
 # loads at runtime; collect the package explicitly or the frozen app panics
 # on parse. (See Wisp.spec for the Windows equivalent.)
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
+UV_BINARIES = [
+    (str(path), "bin")
+    for path in (
+        ROOT / "bin" / "uv",
+        ROOT / "tools" / "uv",
+    )
+    if path.exists()
+]
 
 block_cipher = None
 
@@ -16,7 +24,7 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "main.py")],
     pathex=[str(ROOT)],
-    binaries=LITEPARSE_BINARIES,
+    binaries=LITEPARSE_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / ".env.example"), "."),

@@ -269,6 +269,7 @@ class HotkeyListener:
         on_snip: Callable[[], None] | None = None,
         on_voice_start: Callable[[], None] | None = None,
         on_voice_stop: Callable[[], None] | None = None,
+        extra_hotkeys: list[tuple[str, Callable[[], None]]] | None = None,
     ):
         self._hotkey_defs: list[tuple[str, Callable]] = []
         for i, cb in enumerate(on_callers):
@@ -282,6 +283,9 @@ class HotkeyListener:
             self._hotkey_defs.append((config.HOTKEY_CLEAR_CONTEXT, on_clear_context))
         if on_snip:
             self._hotkey_defs.append((config.HOTKEY_SNIP, on_snip))
+        for hotkey, cb in extra_hotkeys or []:
+            if hotkey and cb:
+                self._hotkey_defs.append((hotkey, cb))
         self._on_voice_start = on_voice_start
         self._on_voice_stop  = on_voice_stop
 

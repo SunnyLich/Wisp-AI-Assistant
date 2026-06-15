@@ -20,6 +20,14 @@ QT_RUNTIME_DLLS = [
     )
     for path in PYSIDE6_ROOT.glob(pattern)
 ]
+UV_BINARIES = [
+    (str(path), "bin")
+    for path in (
+        ROOT / "bin" / "uv.exe",
+        ROOT / "tools" / "uv.exe",
+    )
+    if path.exists()
+]
 
 
 block_cipher = None
@@ -28,7 +36,7 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "main.py")],
     pathex=[str(ROOT)],
-    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES,
+    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / ".env.example"), "."),

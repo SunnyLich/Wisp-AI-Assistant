@@ -14,11 +14,13 @@ import sys
 import threading
 import traceback
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core import addon_runtime
 from core import addon_store
 from core.system.paths import ADDONS_DIR, REPO_ROOT
 
@@ -42,7 +44,13 @@ class AddonManifest:
     description: str = ""
     entry: str = "__init__.py"
     api_version: str = "1"
+    priority: int = 100
     permissions: dict[str, Any] = field(default_factory=dict)
+    dependencies: addon_runtime.AddonDependencies = field(default_factory=addon_runtime.AddonDependencies)
+    events: list[str] = field(default_factory=list)
+    intents: list[dict[str, Any]] = field(default_factory=list)
+    notifications: list[dict[str, Any]] = field(default_factory=list)
+    hotkeys: list[dict[str, Any]] = field(default_factory=list)
     settings: list[dict[str, Any]] = field(default_factory=list)
     tools: list[dict[str, Any]] = field(default_factory=list)
 
@@ -60,6 +68,11 @@ class LoadedAddon:
     hooks: list[str] = field(default_factory=list)
     tools: list[dict[str, Any]] = field(default_factory=list)
     tray_actions: list[str] = field(default_factory=list)
+    intents: list[dict[str, Any]] = field(default_factory=list)
+    notifications: list[dict[str, Any]] = field(default_factory=list)
+    hotkeys: list[dict[str, Any]] = field(default_factory=list)
+    runtime_status: dict[str, Any] = field(default_factory=dict)
+    runtime_python: Path | None = None
 
 
 @dataclass
@@ -76,14 +89,17 @@ class AddonHostProcess:
         self.addon = addon
         self.timeout = timeout
         self._lock = threading.Lock()
+        self._logs_lock = threading.Lock()
+        self._logs: deque[str] = deque(maxlen=200)
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"addon-{addon.id}")
         self._proc: subprocess.Popen[str] | None = None
+        self._stderr_thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self._proc and self._proc.poll() is None:
             return
         cmd = [
-            sys.executable,
+            str(self.addon.runtime_python or sys.executable),
             "-m",
             "core.addon_host",
             "--id",
@@ -100,10 +116,18 @@ class AddonHostProcess:
             cwd=str(REPO_ROOT),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=None,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
         )
+        if self._proc.stderr is not None:
+            self._stderr_thread = threading.Thread(
+                target=self._read_stderr,
+                args=(self._proc.stderr,),
+                name=f"addon-{self.addon.id}-stderr",
+                daemon=True,
+            )
+            self._stderr_thread.start()
 
     def stop(self) -> None:
         proc = self._proc
@@ -158,9 +182,29 @@ class AddonHostProcess:
     def _kill_for_timeout(self, method: str) -> None:
         proc = self._proc
         if proc and proc.poll() is None:
-            _terminal(f"{self.addon.id} timed out in {method}; killing host")
+            message = f"{self.addon.id} timed out in {method}; killing host"
+            self._append_log(message)
+            _terminal(message)
             proc.kill()
         self._proc = None
+
+    def log_text(self) -> str:
+        with self._logs_lock:
+            return "\n".join(self._logs)
+
+    def _read_stderr(self, stream: Any) -> None:
+        try:
+            for line in stream:
+                self._append_log(str(line).rstrip("\r\n"))
+        except Exception:
+            pass
+
+    def _append_log(self, line: str) -> None:
+        line = line.strip()
+        if not line:
+            return
+        with self._logs_lock:
+            self._logs.append(line)
 
 
 class AddonManager:
@@ -190,12 +234,7 @@ class AddonManager:
                 enabled=enabled,
             )
             if enabled:
-                addon.host = AddonHostProcess(addon)
-                addon.hooks = _safe_list(addon.host.call("hooks", {}, timeout=3.0))
-                if _has_ui_permission(addon, "tray"):
-                    addon.tray_actions = _safe_list(addon.host.call("get_tray_actions"))
-                if _has_permission(addon, "tools"):
-                    addon.tools = _safe_tool_specs(addon.host.call("get_tools"))
+                self._activate_addon(addon)
             else:
                 addon.status = "disabled"
             self._mods.append(addon)
@@ -223,8 +262,10 @@ class AddonManager:
                 continue
             _call_host(addon, "on_startup", {"data_dir": str(_data_dir(addon.id))}, timeout=3.0)
             self._register_tools(addon)
+        self.dispatch_event("app.startup", {})
 
     def on_shutdown(self) -> None:
+        self.dispatch_event("app.shutdown", {})
         self.shutdown_hosts()
 
     def shutdown_hosts(self) -> None:
@@ -256,6 +297,24 @@ class AddonManager:
             response_perm = str(addon.manifest.permissions.get("response") or "none").lower()
             if addon.host is not None and response_perm in {"read", "modify"}:
                 _call_host(addon, "after_response", {"text": response_text})
+        self.dispatch_event("response.after", {"text": response_text})
+
+    def dispatch_event(self, event: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        event = str(event or "").strip()
+        if not event:
+            return results
+        for addon in self._enabled_addons():
+            if addon.host is None or event not in addon.manifest.events:
+                continue
+            result = _call_host(addon, "on_event", {"event": event, "payload": payload or {}})
+            if isinstance(result, dict):
+                results.append({"addon_id": addon.id, **result})
+            elif isinstance(result, list):
+                for item in result:
+                    if isinstance(item, dict):
+                        results.append({"addon_id": addon.id, **item})
+        return results
 
     def get_tray_actions(self) -> list[dict[str, Any]]:
         actions: list[dict[str, Any]] = []
@@ -278,6 +337,64 @@ class AddonManager:
             raise PermissionError(f"Addon is missing ui tray permission: {name}")
         _call_host(addon, "run_tray_action", {"label": label}, timeout=5.0)
 
+    def get_intents(self, caller_idx: int | None = None) -> list[dict[str, Any]]:
+        intents: list[dict[str, Any]] = []
+        for addon in self._enabled_addons():
+            if not _has_ui_permission(addon, "intents"):
+                continue
+            for intent in addon.intents:
+                if not isinstance(intent, dict):
+                    continue
+                normalized = _normalize_intent(addon.id, intent)
+                if normalized is None:
+                    continue
+                target = normalized.get("caller")
+                if caller_idx is not None and target not in {"", "all", str(caller_idx)}:
+                    continue
+                intents.append(normalized)
+        return intents
+
+    def run_intent(self, name: str, intent_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        addon = self._find(name)
+        if addon is None or addon.host is None or not addon.enabled:
+            raise ValueError(f"Addon not loaded: {name}")
+        if not _has_ui_permission(addon, "intents"):
+            raise PermissionError(f"Addon is missing ui intents permission: {name}")
+        result = _call_host(addon, "run_intent", {"id": intent_id, "payload": payload or {}}, timeout=8.0)
+        return result if isinstance(result, dict) else {}
+
+    def get_hotkeys(self) -> list[dict[str, Any]]:
+        hotkeys: list[dict[str, Any]] = []
+        for addon in self._enabled_addons():
+            if not _has_permission(addon, "hotkeys"):
+                continue
+            for item in addon.hotkeys:
+                if isinstance(item, dict):
+                    hotkeys.append({"addon_id": addon.id, **item})
+        return hotkeys
+
+    def run_hotkey(self, name: str, hotkey_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        addon = self._find(name)
+        if addon is None or addon.host is None or not addon.enabled:
+            raise ValueError(f"Addon not loaded: {name}")
+        if not _has_permission(addon, "hotkeys"):
+            raise PermissionError(f"Addon is missing hotkeys permission: {name}")
+        for item in addon.hotkeys:
+            if str(item.get("id") or "") == hotkey_id and str(item.get("prompt") or "").strip():
+                return {"prompt": str(item.get("prompt") or "").strip()}
+        result = _call_host(addon, "run_hotkey", {"id": hotkey_id, "payload": payload or {}}, timeout=8.0)
+        return result if isinstance(result, dict) else {}
+
+    def get_notifications(self) -> list[dict[str, Any]]:
+        notifications: list[dict[str, Any]] = []
+        for addon in self._enabled_addons():
+            if not _has_ui_permission(addon, "notifications"):
+                continue
+            for item in addon.notifications:
+                if isinstance(item, dict):
+                    notifications.append({"addon_id": addon.id, **item})
+        return notifications
+
     def mod_names(self) -> list[str]:
         return [m.name for m in self._mods]
 
@@ -294,29 +411,59 @@ class AddonManager:
             return enabled
         addon_store.set_enabled(addon.id, enabled)
         addon.enabled = enabled
-        addon.status = "loaded" if enabled else "disabled"
         if self._tool_registry is not None:
             self._tool_registry.unregister_source(f"addon:{addon.id}")
         if enabled:
-            addon.host = AddonHostProcess(addon)
-            addon.hooks = _safe_list(_call_host(addon, "hooks", {}, timeout=3.0))
-            addon.tray_actions = (
-                _safe_list(_call_host(addon, "get_tray_actions"))
-                if _has_ui_permission(addon, "tray")
-                else []
-            )
-            addon.tools = (
-                _safe_tool_specs(_call_host(addon, "get_tools"))
-                if _has_permission(addon, "tools")
-                else []
-            )
+            self._activate_addon(addon)
             if self._tool_registry is not None:
                 self._register_tools(addon)
-                _call_host(addon, "on_startup", {"data_dir": str(_data_dir(addon.id))}, timeout=3.0)
+                if addon.host is not None:
+                    _call_host(addon, "on_startup", {"data_dir": str(_data_dir(addon.id))}, timeout=3.0)
         elif addon.host is not None:
             addon.host.stop()
             addon.host = None
+            addon.status = "disabled"
+            addon.hooks = []
+            addon.tray_actions = []
+            addon.tools = []
+            addon.intents = []
+            addon.notifications = []
+            addon.hotkeys = []
         return enabled
+
+    def repair_environment(self, name: str) -> dict[str, Any]:
+        addon = self._find(name)
+        if addon is None:
+            raise ValueError(f"Addon not loaded: {name}")
+        if addon.host is not None:
+            addon.host.stop()
+            addon.host = None
+        try:
+            addon.runtime_status = addon_runtime.provision_environment(
+                addon.id,
+                addon.manifest.dependencies,
+                force=True,
+            )
+            addon_store.set_approved_dependency_hash(
+                addon.id,
+                addon_runtime.dependency_hash(addon.manifest.dependencies),
+            )
+            addon.runtime_status = self._runtime_status(addon)
+            addon.error = ""
+        except Exception as exc:
+            addon.runtime_status = addon_runtime.environment_status(addon.id, addon.manifest.dependencies)
+            addon.runtime_status["error"] = str(exc)
+            addon.error = f"Dependency environment failed: {exc}"
+            addon.status = "needs_dependencies"
+            return addon.runtime_status
+        if addon.enabled:
+            self._activate_addon(addon)
+            if self._tool_registry is not None:
+                self._tool_registry.unregister_source(f"addon:{addon.id}")
+                if addon.host is not None:
+                    _call_host(addon, "on_startup", {"data_dir": str(_data_dir(addon.id))}, timeout=3.0)
+                self._register_tools(addon)
+        return addon.runtime_status
 
     def get_settings(self, name: str) -> list[dict[str, Any]]:
         addon = self._find(name)
@@ -358,10 +505,19 @@ class AddonManager:
             "hooks": list(addon.hooks),
             "tray_actions": list(addon.tray_actions),
             "tools": [str(t.get("name") or "") for t in addon.tools if isinstance(t, dict)],
-            "settings": self.get_settings(addon.name),
+            "intents": list(addon.intents),
+            "notifications": list(addon.notifications),
+            "hotkeys": list(addon.hotkeys),
+            "settings": self.get_settings(addon.id),
             "permissions": addon.manifest.permissions,
+            "dependencies": {
+                "python": addon.manifest.dependencies.python,
+                "packages": list(addon.manifest.dependencies.packages),
+            },
+            "runtime": dict(addon.runtime_status or self._runtime_status(addon)),
             "description": addon.manifest.description,
             "error": addon.error,
+            "logs": addon.host.log_text() if addon.host is not None else "",
         }
 
     def _register_tools(self, addon: LoadedAddon) -> None:
@@ -383,13 +539,84 @@ class AddonManager:
             self._tool_registry.register_builtin(spec)
 
     def _enabled_addons(self) -> list[LoadedAddon]:
-        return [addon for addon in self._mods if addon.enabled and addon.status != "error"]
+        return sorted(
+            [addon for addon in self._mods if addon.enabled and addon.status != "error"],
+            key=lambda addon: (addon.manifest.priority, addon.id),
+        )
 
     def _find(self, name: str) -> LoadedAddon | None:
         for addon in self._mods:
             if addon.id == name or addon.name == name:
                 return addon
         return None
+
+    def _activate_addon(self, addon: LoadedAddon) -> bool:
+        if addon.host is not None:
+            addon.host.stop()
+            addon.host = None
+        addon.runtime_status = self._runtime_status(addon)
+        addon.runtime_python = None
+        if addon.manifest.dependencies.has_dependencies:
+            if addon.runtime_status.get("needs_approval"):
+                addon.status = "needs_approval"
+                addon.error = str(addon.runtime_status.get("error") or "Dependency package list needs approval.")
+                addon.host = None
+                addon.hooks = []
+                addon.tray_actions = []
+                addon.tools = []
+                addon.intents = []
+                addon.notifications = []
+                addon.hotkeys = []
+                return False
+            if not addon.runtime_status.get("ready"):
+                addon.status = "needs_dependencies"
+                addon.error = str(addon.runtime_status.get("error") or "Dependency environment is not ready.")
+                addon.host = None
+                addon.hooks = []
+                addon.tray_actions = []
+                addon.tools = []
+                addon.intents = []
+                addon.notifications = []
+                addon.hotkeys = []
+                return False
+            addon.runtime_python = Path(str(addon.runtime_status.get("python") or ""))
+
+        addon.host = AddonHostProcess(addon)
+        addon.hooks = _safe_list(_call_host(addon, "hooks", {}, timeout=3.0))
+        addon.tray_actions = (
+            _safe_list(_call_host(addon, "get_tray_actions"))
+            if _has_ui_permission(addon, "tray")
+            else []
+        )
+        addon.tools = (
+            _safe_tool_specs(_call_host(addon, "get_tools"))
+            if _has_permission(addon, "tools")
+            else []
+        )
+        addon.intents = _safe_intents(addon, _call_host(addon, "get_intents")) if _has_ui_permission(addon, "intents") else []
+        addon.notifications = (
+            _safe_notifications(addon, _call_host(addon, "get_notifications"))
+            if _has_ui_permission(addon, "notifications")
+            else []
+        )
+        addon.hotkeys = _safe_hotkeys(addon, _call_host(addon, "get_hotkeys")) if _has_permission(addon, "hotkeys") else []
+        addon.status = "loaded"
+        return True
+
+    def _runtime_status(self, addon: LoadedAddon) -> dict[str, Any]:
+        status = addon_runtime.environment_status(addon.id, addon.manifest.dependencies)
+        if not addon.manifest.dependencies.has_dependencies:
+            status["approved"] = True
+            status["needs_approval"] = False
+            return status
+        expected = addon_runtime.dependency_hash(addon.manifest.dependencies)
+        approved = addon_store.approved_dependency_hash(addon.id) == expected
+        status["approved"] = approved
+        status["needs_approval"] = not approved
+        if not approved:
+            status["ready"] = False
+            status["error"] = "Dependency package list needs approval."
+        return status
 
 
 def load_manifest(folder: Path) -> AddonManifest:
@@ -411,6 +638,8 @@ def load_manifest(folder: Path) -> AddonManifest:
             {"key": key, **value} if isinstance(value, dict) else {"key": key, "default": value}
             for key, value in raw_settings.items()
         ]
+    permissions = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
+    raw_events = data.get("events") or permissions.get("events")
     return AddonManifest(
         id=addon_id,
         name=str(plugin.get("name") or folder.name),
@@ -418,7 +647,13 @@ def load_manifest(folder: Path) -> AddonManifest:
         description=str(plugin.get("description") or ""),
         entry=str(plugin.get("entry") or "__init__.py"),
         api_version=str(plugin.get("api_version") or "1"),
-        permissions=data.get("permissions") if isinstance(data.get("permissions"), dict) else {},
+        priority=_safe_int(plugin.get("priority"), 100),
+        permissions=permissions,
+        dependencies=addon_runtime.dependencies_from_manifest(data.get("dependencies")),
+        events=[str(item).strip() for item in _safe_list(raw_events) if str(item).strip()],
+        intents=_safe_tool_specs(data.get("intents")),
+        notifications=_safe_tool_specs(data.get("notifications")),
+        hotkeys=_safe_tool_specs(data.get("hotkeys")),
         settings=raw_settings if isinstance(raw_settings, list) else [],
         tools=data.get("tools") if isinstance(data.get("tools"), list) else [],
     )
@@ -479,6 +714,13 @@ def _safe_tool_specs(value: Any) -> list[dict[str, Any]]:
     return [item for item in _safe_list(value) if isinstance(item, dict)]
 
 
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 def _has_permission(addon: LoadedAddon, key: str) -> bool:
     return bool(addon.manifest.permissions.get(key))
 
@@ -488,6 +730,64 @@ def _has_ui_permission(addon: LoadedAddon, feature: str) -> bool:
     if isinstance(ui, list):
         return feature in {str(item) for item in ui}
     return ui is True or str(ui).lower() == "true"
+
+
+def _normalize_intent(addon_id: str, item: dict[str, Any]) -> dict[str, Any] | None:
+    label = str(item.get("label") or item.get("name") or "").strip()
+    prompt = str(item.get("prompt") or item.get("template") or "").strip()
+    callback = bool(item.get("callback") or item.get("id"))
+    if not label or (not prompt and not callback):
+        return None
+    intent_id = str(item.get("id") or _valid_id(label))
+    return {
+        "id": intent_id,
+        "addon_id": addon_id,
+        "key": str(item.get("key") or "").strip(),
+        "label": label,
+        "hint": str(item.get("hint") or item.get("description") or "").strip(),
+        "prompt": prompt,
+        "caller": str(item.get("caller") or "all").strip() or "all",
+        "callback": callback and not prompt,
+    }
+
+
+def _safe_intents(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
+    items = [*addon.manifest.intents, *_safe_tool_specs(dynamic)]
+    out: list[dict[str, Any]] = []
+    for item in items:
+        normalized = _normalize_intent(addon.id, item)
+        if normalized is not None:
+            out.append(normalized)
+    return out
+
+
+def _safe_notifications(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in [*addon.manifest.notifications, *_safe_tool_specs(dynamic)]:
+        title = str(item.get("title") or addon.name).strip()
+        message = str(item.get("message") or item.get("body") or "").strip()
+        if message:
+            out.append({"title": title, "message": message})
+    return out
+
+
+def _safe_hotkeys(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in [*addon.manifest.hotkeys, *_safe_tool_specs(dynamic)]:
+        combo = str(item.get("hotkey") or item.get("combo") or "").strip()
+        label = str(item.get("label") or item.get("id") or combo).strip()
+        if not combo or not label:
+            continue
+        hotkey_id = str(item.get("id") or _valid_id(label))
+        out.append({
+            "id": hotkey_id,
+            "label": label,
+            "hotkey": combo,
+            "prompt": str(item.get("prompt") or "").strip(),
+            "intent_id": str(item.get("intent_id") or "").strip(),
+            "callback": bool(item.get("callback") or not item.get("prompt")),
+        })
+    return out
 
 
 def _data_dir(addon_id: str) -> Path:
