@@ -1992,5 +1992,57 @@ Dites "remember that ...", "note that ..." ou "keep in mind ..." pour enregistre
       <source> Logs</source>
       <translation> Journaux</translation>
     </message>
+    <message>
+      <source>Provider credentials</source>
+      <translation>Identifiants du fournisseur</translation>
+    </message>
+    <message>
+      <source>Sign in or save provider API keys and custom endpoint details before assigning models.</source>
+      <translation>Connectez-vous ou enregistrez les clés API du fournisseur et les détails des points de terminaison personnalisés avant d’attribuer des modèles.</translation>
+    </message>
+    <message>
+      <source>Sign in opens GitHub in your browser and links this app to your account.</source>
+      <translation>La connexion ouvre GitHub dans votre navigateur et lie cette application à votre compte.</translation>
+    </message>
+    <message>
+      <source>API Keys</source>
+      <translation>Clés API</translation>
+    </message>
+    <message>
+      <source>Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.</source>
+      <translation>Ajoutez une ligne pour chaque fournisseur à utiliser. L’alias est facultatif; il est utile si vous avez plusieurs clés pour le même fournisseur. Les points de terminaison personnalisés se configurent ci-dessous.</translation>
+    </message>
+    <message>
+      <source>Alias</source>
+      <translation>Alias</translation>
+    </message>
+    <message>
+      <source>alias (optional)</source>
+      <translation>alias (facultatif)</translation>
+    </message>
+    <message>
+      <source>Custom provider</source>
+      <translation>Fournisseur personnalisé</translation>
+    </message>
+    <message>
+      <source>Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.</source>
+      <translation>Tout point de terminaison compatible avec OpenAI, y compris Ollama et LM Studio. Sélectionnez Custom dans une ligne de modèle après avoir défini l’URL de base.</translation>
+    </message>
+    <message>
+      <source>API key</source>
+      <translation>Clé API</translation>
+    </message>
+    <message>
+      <source>Test custom</source>
+      <translation>Tester personnalisé</translation>
+    </message>
+    <message>
+      <source>Test</source>
+      <translation>Tester</translation>
+    </message>
+    <message>
+      <source>Logged in - account </source>
+      <translation>Connecté · compte </translation>
+    </message>
   </context>
 </TS>

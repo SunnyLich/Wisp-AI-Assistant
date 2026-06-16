@@ -547,6 +547,28 @@ def _with_screenshot_note(system: str, allow_screenshot_tool: bool) -> str:
     return system
 
 
+_MEMORY_SAVE_NOTE = (
+    "You have a memory_save tool. When the user shares a durable fact worth "
+    "remembering across sessions — a stable preference, a personal detail, or a "
+    "fact about their current project — call memory_save to store it. Use "
+    "scope='project' for facts specific to the active project, otherwise "
+    "scope='general'. Save proactively but only for genuinely durable facts: "
+    "never store transient requests, questions, or secrets, and don't announce "
+    "that you saved something unless asked."
+)
+
+
+def _with_memory_save_note(system: str, allowed_tools: list[str] | None) -> str:
+    """Append memory-save guidance when the memory_save tool is offered.
+
+    Injected dynamically (not baked into the static system prompt) so the model
+    is only told it can save when the tool is actually exposed for this query.
+    """
+    if allowed_tools is not None and "memory_save" in set(allowed_tools):
+        return f"{system}\n\n{_MEMORY_SAVE_NOTE}" if system else _MEMORY_SAVE_NOTE
+    return system
+
+
 def _looks_like_screenshot_tool_request(text: str) -> bool:
     """Detect providers that ask for the screenshot tool as text, not tool_calls."""
     normalized = " ".join((text or "").lower().split())
@@ -2881,6 +2903,7 @@ def _stream_openai_compat(
         )
     if tools and messages and messages[0].get("role") == "system":
         messages[0]["content"] = _with_tools_note(messages[0]["content"], True)
+        messages[0]["content"] = _with_memory_save_note(messages[0]["content"], allowed_tools)
 
     kwargs: dict = {
         "model": model,
@@ -3360,6 +3383,7 @@ def _stream_anthropic(
 
     system = _with_screenshot_note(config.get_system_prompt(), allow_screenshot_tool)
     system = _with_tools_note(system, use_tools)
+    system = _with_memory_save_note(system, allowed_tools if use_tools else None)
     if memory_context:
         system += f"\n\n{memory_context}"
     if ambient_context:

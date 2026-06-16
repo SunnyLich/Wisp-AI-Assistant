@@ -1992,5 +1992,57 @@ Di "remember that ...", "note that ..." o "keep in mind ..." para guardar un hec
       <source> Logs</source>
       <translation> Registros</translation>
     </message>
+    <message>
+      <source>Provider credentials</source>
+      <translation>Credenciales del proveedor</translation>
+    </message>
+    <message>
+      <source>Sign in or save provider API keys and custom endpoint details before assigning models.</source>
+      <translation>Inicia sesión o guarda las claves API del proveedor y los detalles de endpoints personalizados antes de asignar modelos.</translation>
+    </message>
+    <message>
+      <source>Sign in opens GitHub in your browser and links this app to your account.</source>
+      <translation>Iniciar sesión abre GitHub en tu navegador y vincula esta app con tu cuenta.</translation>
+    </message>
+    <message>
+      <source>API Keys</source>
+      <translation>Claves API</translation>
+    </message>
+    <message>
+      <source>Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.</source>
+      <translation>Añade una fila por cada proveedor que quieras usar. El alias es opcional; es útil cuando tienes varias claves para el mismo proveedor. Los endpoints personalizados se configuran abajo.</translation>
+    </message>
+    <message>
+      <source>Alias</source>
+      <translation>Alias</translation>
+    </message>
+    <message>
+      <source>alias (optional)</source>
+      <translation>alias (opcional)</translation>
+    </message>
+    <message>
+      <source>Custom provider</source>
+      <translation>Proveedor personalizado</translation>
+    </message>
+    <message>
+      <source>Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.</source>
+      <translation>Cualquier endpoint compatible con OpenAI, incluidos Ollama y LM Studio. Selecciona Custom en una fila de modelo después de configurar la URL base.</translation>
+    </message>
+    <message>
+      <source>API key</source>
+      <translation>Clave API</translation>
+    </message>
+    <message>
+      <source>Test custom</source>
+      <translation>Probar personalizado</translation>
+    </message>
+    <message>
+      <source>Test</source>
+      <translation>Probar</translation>
+    </message>
+    <message>
+      <source>Logged in - account </source>
+      <translation>Sesión iniciada · cuenta </translation>
+    </message>
   </context>
 </TS>

@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ui.agent.log_parser import parse_live_log_event
+from ui.i18n import localize_widget_tree, t
 from ui.settings_panel.helpers import parse_fallback_rows
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 from core.agent.task_spec import (
@@ -96,7 +97,7 @@ def make_agent_task_action(
     ``owner`` should normally be the overlay object so the QAction lifetime is
     tied to the app.  ``on_submit`` is where a future runner would be invoked.
     """
-    action = QAction("Start agent task...", owner)
+    action = QAction(t("Start agent task..."), owner)
     notice_callback = _approval_notice_callback_for(owner)
     # Defer to the next event-loop turn: opening a window synchronously from a
     # QMenu action segfaults on macOS while the menu's Cocoa tracking loop unwinds.
@@ -108,7 +109,7 @@ def make_agent_task_action(
 
 def make_agent_history_action(owner: QWidget, parent: QWidget | None = None) -> QAction:
     """Create the tray QAction for browsing previous agent runs."""
-    action = QAction("Agent task history...", owner)
+    action = QAction(t("Agent task history..."), owner)
     notice_callback = _approval_notice_callback_for(owner)
     # Deferred for the same reason as the agent-task action above.
     action.triggered.connect(
@@ -217,7 +218,7 @@ class AgentTaskDialog(QDialog):
         self._advanced_groups: list[QGroupBox] = []
         self._advanced_visible = False
 
-        self.setWindowTitle("Start Agent Task")
+        self.setWindowTitle(t("Start Agent Task"))
         self.setMinimumSize(560, 420)
         enable_standard_window_controls(self)
 
@@ -225,6 +226,7 @@ class AgentTaskDialog(QDialog):
         self._load_defaults()
         if initial_spec is not None:
             self._load_from_spec(initial_spec)
+        localize_widget_tree(self)
         self._fit_to_screen()
 
     # ------------------------------------------------------------------ UI
@@ -286,9 +288,9 @@ class AgentTaskDialog(QDialog):
         if spec:
             AgentTaskDialog._last_task_spec = spec
             self._load_from_spec(spec)
-            QMessageBox.information(self, "Copied", "Fields have been filled from the last task.")
+            QMessageBox.information(self, t("Copied"), t("Fields have been filled from the last task."))
         else:
-            QMessageBox.information(self, "No Previous Task", "No previous task found to copy.")
+            QMessageBox.information(self, t("No Previous Task"), t("No previous task found to copy."))
 
     def _load_from_spec(self, spec: AgentTaskSpec):
         # Fill all fields from the given AgentTaskSpec
@@ -980,7 +982,7 @@ class AgentTaskDialog(QDialog):
         self._save_current_agent()
         agents = self._agent_names()
         if len(agents) < 2:
-            QMessageBox.information(self, "Communication", "Add at least two agents first.")
+            QMessageBox.information(self, t("Communication"), t("Add at least two agents first."))
             return
         dialog = AgentCommunicationDialog(agents, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.communication:
@@ -1013,7 +1015,7 @@ class AgentTaskDialog(QDialog):
         self._save_current_agent()
         agents = self._agent_names()
         if len(agents) < 2:
-            QMessageBox.information(self, "Communication", "Add at least two agents first.")
+            QMessageBox.information(self, t("Communication"), t("Add at least two agents first."))
             return
         existing = {
             (spec.get("from_agent"), spec.get("to_agent"), spec.get("phase"))
@@ -1086,15 +1088,15 @@ class AgentTaskDialog(QDialog):
         try:
             spec = self._collect_spec()
         except ValueError as exc:
-            QMessageBox.warning(self, "Invalid Agent Task", str(exc))
+            QMessageBox.warning(self, t("Invalid Agent Task"), str(exc))
             return
-        QMessageBox.information(self, "Agent Task Spec", self._format_spec(spec))
+        QMessageBox.information(self, t("Agent Task Spec"), self._format_spec(spec))
 
     def _accept(self) -> None:
         try:
             spec = self._collect_spec()
         except ValueError as exc:
-            QMessageBox.warning(self, "Invalid Agent Task", str(exc))
+            QMessageBox.warning(self, t("Invalid Agent Task"), str(exc))
             return
 
         self.task_spec = spec
@@ -1542,7 +1544,7 @@ class AgentCommunicationMapWindow(QDialog):
         self._agent_map_positions: dict[str, tuple[float, float]] = {}
         self._relationship_nodes: list[_RelationshipAgentItem] = []
         self._dragging_map = False
-        self.setWindowTitle("Agent Communication Map")
+        self.setWindowTitle(t("Agent Communication Map"))
         self.setMinimumSize(920, 520)
         enable_standard_window_controls(self)
 
@@ -1702,18 +1704,19 @@ class AgentCommunicationMapWindow(QDialog):
         footer = QLabel("Select an agent or communication, or click an exchange in the bottom relationship map to edit it above.")
         footer.setStyleSheet("color: #777;")
         content_root.addWidget(footer)
+        localize_widget_tree(self)
         fit_window_to_screen(self, preferred_width=980, preferred_height=620)
 
     def _reset_to_default(self) -> None:
         """Confirm, then restore the default agents and communications."""
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Icon.Warning)
-        confirm.setWindowTitle("Reset to default?")
-        confirm.setText("Replace the current agents and communications with the defaults?")
+        confirm.setWindowTitle(t("Reset to default?"))
+        confirm.setText(t("Replace the current agents and communications with the defaults?"))
         confirm.setInformativeText(
-            "This discards every agent and communication you have configured here "
-            "and restores the default Coordinator / Builder / Reviewer setup. "
-            "This cannot be undone."
+            t("This discards every agent and communication you have configured here "
+              "and restores the default Coordinator / Builder / Reviewer setup. "
+              "This cannot be undone.")
         )
         confirm.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -1895,7 +1898,7 @@ class AgentCommunicationMapWindow(QDialog):
     def _add_communication(self) -> None:
         agents = self._task_dialog._agent_names()
         if len(agents) < 2:
-            QMessageBox.information(self, "Communication", "Add at least two agents first.")
+            QMessageBox.information(self, t("Communication"), t("Add at least two agents first."))
             return
         self._task_dialog._communication_specs.append({
             "from_agent": agents[0],
@@ -2037,7 +2040,7 @@ class AgentCommunicationDialog(QDialog):
     ):
         super().__init__(parent)
         self.communication: dict[str, str] | None = None
-        self.setWindowTitle("Communication Exchange")
+        self.setWindowTitle(t("Communication Exchange"))
         self.setMinimumWidth(520)
         enable_standard_window_controls(self)
         data = communication or {}
@@ -2090,15 +2093,16 @@ class AgentCommunicationDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        localize_widget_tree(self)
 
     def _accept(self) -> None:
         source = self.from_combo.currentText().strip()
         target = self.to_combo.currentText().strip()
         if not source or not target:
-            QMessageBox.warning(self, "Communication", "Choose both agents.")
+            QMessageBox.warning(self, t("Communication"), t("Choose both agents."))
             return
         if source == target:
-            QMessageBox.warning(self, "Communication", "Choose two different agents.")
+            QMessageBox.warning(self, t("Communication"), t("Choose two different agents."))
             return
         self.communication = {
             "from_agent": source,
@@ -2116,7 +2120,7 @@ class AgentNudgeDialog(QDialog):
     def __init__(self, targets: list[str], parent: QWidget | None = None):
         super().__init__(parent)
         self.nudge: dict[str, str] | None = None
-        self.setWindowTitle("Nudge Agent")
+        self.setWindowTitle(t("Nudge Agent"))
         self.setMinimumWidth(460)
         enable_standard_window_controls(self)
 
@@ -2140,15 +2144,16 @@ class AgentNudgeDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        localize_widget_tree(self)
 
     def _accept(self) -> None:
         target = self.target_combo.currentText().strip()
         message = self.message_edit.toPlainText().strip()
         if not target:
-            QMessageBox.warning(self, "Nudge Agent", "Choose a target.")
+            QMessageBox.warning(self, t("Nudge Agent"), t("Choose a target."))
             return
         if not message:
-            QMessageBox.warning(self, "Nudge Agent", "Add a message.")
+            QMessageBox.warning(self, t("Nudge Agent"), t("Add a message."))
             return
         self.nudge = {"to": target, "message": message}
         self.accept()
@@ -2219,7 +2224,7 @@ class AgentRunWindow(QDialog):
             }
             for name in self._agent_names
         }
-        self.setWindowTitle(f"Agent Task - {spec.title}")
+        self.setWindowTitle(f"{t('Agent Task')} - {spec.title}")
         self.setMinimumSize(820, 560)
         enable_standard_window_controls(self)
 
@@ -2245,8 +2250,8 @@ class AgentRunWindow(QDialog):
         approval_layout.setContentsMargins(10, 8, 10, 8)
         self.approval_label = QLabel()
         self.approval_label.setWordWrap(True)
-        approve_btn = QPushButton("Approve")
-        deny_btn = QPushButton("Decline")
+        approve_btn = QPushButton(t("Approve"))
+        deny_btn = QPushButton(t("Decline"))
         approve_btn.clicked.connect(lambda: self._finish_approval(True))
         deny_btn.clicked.connect(lambda: self._finish_approval(False))
         approval_layout.addWidget(self.approval_label, stretch=1)
@@ -2322,38 +2327,38 @@ class AgentRunWindow(QDialog):
         self.final_view = QTextEdit()
         self.final_view.setReadOnly(True)
         self.final_view.setPlaceholderText("Final report appears here when the task finishes.")
-        self.tabs.addTab(meeting_splitter, "Meeting")
-        self.tabs.addTab(self.log_view, "Live Log")
-        self.tabs.addTab(self.trace_view, "Model Trace")
-        self.tabs.addTab(self.final_view, "Final Report")
+        self.tabs.addTab(meeting_splitter, t("Meeting"))
+        self.tabs.addTab(self.log_view, t("Live Log"))
+        self.tabs.addTab(self.trace_view, t("Model Trace"))
+        self.tabs.addTab(self.final_view, t("Final Report"))
         self.tabs.currentChanged.connect(self._flush_trace_if_visible)
         root.addWidget(self.tabs, stretch=1)
         self._refresh_shared_board()
         self._draw_live_meeting()
 
         row = QHBoxLayout()
-        self.status_lbl = QLabel("Starting...")
-        self.diff_btn = QPushButton("View Diff")
+        self.status_lbl = QLabel(t("Starting..."))
+        self.diff_btn = QPushButton(t("View Diff"))
         self.diff_btn.setEnabled(False)
         self.diff_btn.clicked.connect(self._open_diff)
-        self.open_result_btn = QPushButton("Open Memory Folder")
+        self.open_result_btn = QPushButton(t("Open Memory Folder"))
         self.open_result_btn.setEnabled(False)
         self.open_result_btn.clicked.connect(self._open_result_folder)
-        self.open_scope_btn = QPushButton("Open Scope Folder")
+        self.open_scope_btn = QPushButton(t("Open Scope Folder"))
         self.open_scope_btn.clicked.connect(self._open_scope_folder)
-        self.retry_btn = QPushButton("Retry")
+        self.retry_btn = QPushButton(t("Retry"))
         self.retry_btn.setEnabled(False)
         self.retry_btn.clicked.connect(self._retry_run)
-        self.continue_btn = QPushButton("Continue")
+        self.continue_btn = QPushButton(t("Continue"))
         self.continue_btn.setEnabled(False)
         self.continue_btn.clicked.connect(self._continue_run)
-        self.nudge_btn = QPushButton("Nudge Agent")
+        self.nudge_btn = QPushButton(t("Nudge Agent"))
         self.nudge_btn.clicked.connect(self._send_manual_nudge)
-        self.pause_btn = QPushButton("Pause After Turn")
+        self.pause_btn = QPushButton(t("Pause After Turn"))
         self.pause_btn.clicked.connect(self._toggle_pause)
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(t("Cancel"))
         self.cancel_btn.clicked.connect(self._cancel_run)
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("Close"))
         close_btn.clicked.connect(self.close)
         row.addWidget(self.status_lbl)
         row.addStretch()
@@ -2372,6 +2377,7 @@ class AgentRunWindow(QDialog):
         self.trace_entry.connect(self._append_trace)
         self.finished.connect(self._on_finished)
         self.approval_requested.connect(self._show_approval)
+        localize_widget_tree(self)
         fit_window_to_screen(self, preferred_width=1180, preferred_height=720)
 
     def showEvent(self, event):  # noqa: N802
@@ -2555,10 +2561,10 @@ class AgentRunWindow(QDialog):
             self._set_agent_status(self._active_agent, "Retrying", body)
             return
         if body.startswith("agent run paused"):
-            self.status_lbl.setText("Paused after current turn")
+            self.status_lbl.setText(t("Paused after current turn"))
             return
         if body.startswith("agent run resumed"):
-            self.status_lbl.setText("Running...")
+            self.status_lbl.setText(t("Running..."))
             return
         if body.startswith("agent reached turn limit"):
             self._set_agent_status(self._active_agent, "Turn limit reached", body)
@@ -2911,7 +2917,7 @@ class AgentRunWindow(QDialog):
 
     def _on_finished(self, run_dir: str) -> None:
         self._run_dir = run_dir
-        self.status_lbl.setText(f"Finished. Log: {run_dir}")
+        self.status_lbl.setText(f"{t('Finished. Log:')} {run_dir}")
         self.cancel_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
         self.nudge_btn.setEnabled(False)
@@ -2933,10 +2939,10 @@ class AgentRunWindow(QDialog):
         details = request.get("details", {})
         detail_text = ", ".join(f"{k}={v}" for k, v in details.items())
         self._pending_approval = state
-        self.approval_label.setText(f"Permission needed: {request.get('action')}\n{detail_text}")
+        self.approval_label.setText(f"{t('Permission needed:')} {request.get('action')}\n{detail_text}")
         self.approval_panel.setStyleSheet(self._approval_style_alert)
         self.approval_panel.show()
-        self.status_lbl.setText("Permission needed")
+        self.status_lbl.setText(t("Permission needed"))
         if self._approval_notice_callback:
             notice = f"Permission needed: {request.get('action')}"
             if detail_text:
@@ -2965,12 +2971,12 @@ class AgentRunWindow(QDialog):
             return
         if self._control.is_pause_requested():
             self._control.resume()
-            self.pause_btn.setText("Pause After Turn")
-            self.status_lbl.setText("Running...")
+            self.pause_btn.setText(t("Pause After Turn"))
+            self.status_lbl.setText(t("Running..."))
         else:
             self._control.pause_after_turn()
-            self.pause_btn.setText("Resume")
-            self.status_lbl.setText("Will pause after current turn")
+            self.pause_btn.setText(t("Resume"))
+            self.status_lbl.setText(t("Will pause after current turn"))
 
     def _send_manual_nudge(self) -> None:
         if self._control is None:
@@ -2981,14 +2987,14 @@ class AgentRunWindow(QDialog):
         target = dialog.nudge["to"]
         message = dialog.nudge["message"]
         self._control.add_nudge(target, message)
-        self.status_lbl.setText(f"Nudge queued for {target}")
+        self.status_lbl.setText(f"{t('Nudge queued for')} {target}")
         self._record_meeting_message(f"message: User -> {target}: {message.replace(chr(10), ' ')}")
         self._draw_live_meeting()
 
     def _cancel_run(self) -> None:
         if self._control is not None:
             self._control.cancel()
-        self.status_lbl.setText("Cancelling...")
+        self.status_lbl.setText(t("Cancelling..."))
         self.cancel_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
         self.nudge_btn.setEnabled(False)
@@ -3013,7 +3019,7 @@ class AgentRunWindow(QDialog):
         try:
             spec = continue_spec_from_run(Path(self._run_dir))
         except Exception as exc:
-            QMessageBox.warning(self, "Continue Run", str(exc))
+            QMessageBox.warning(self, t("Continue Run"), str(exc))
             return
         launch_agent_run_window(
             spec,
@@ -3035,7 +3041,7 @@ class AgentRunWindow(QDialog):
 class DiffViewer(QDialog):
     def __init__(self, diff_path: Path, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Agent Diff")
+        self.setWindowTitle(t("Agent Diff"))
         self.setMinimumSize(760, 520)
         enable_standard_window_controls(self)
         layout = QVBoxLayout(self)
@@ -3044,6 +3050,7 @@ class DiffViewer(QDialog):
         viewer.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         viewer.setPlainText(diff_path.read_text(encoding="utf-8", errors="replace"))
         layout.addWidget(viewer)
+        localize_widget_tree(self)
         fit_window_to_screen(self, preferred_width=820, preferred_height=620)
 
 
@@ -3059,7 +3066,7 @@ class AgentRunHistoryWindow(QDialog):
         self._approval_notice_callback = approval_notice_callback
         self._runs_root = AGENT_RUNS_DIR
         self._current_run: Path | None = None
-        self.setWindowTitle("Agent Task History")
+        self.setWindowTitle(t("Agent Task History"))
         self.setMinimumSize(820, 520)
         enable_standard_window_controls(self)
 
@@ -3082,25 +3089,25 @@ class AgentRunHistoryWindow(QDialog):
         self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.trace_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.diff_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.tabs.addTab(self.summary_view, "Summary")
-        self.tabs.addTab(self.log_view, "Run Log")
-        self.tabs.addTab(self.trace_view, "Model Trace")
-        self.tabs.addTab(self.diff_view, "Diff")
+        self.tabs.addTab(self.summary_view, t("Summary"))
+        self.tabs.addTab(self.log_view, t("Run Log"))
+        self.tabs.addTab(self.trace_view, t("Model Trace"))
+        self.tabs.addTab(self.diff_view, t("Diff"))
         splitter.addWidget(self.tabs)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         root.addWidget(splitter, stretch=1)
 
         row = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton(t("Refresh"))
         refresh_btn.clicked.connect(self._load_runs)
-        open_result_btn = QPushButton("Open Memory Folder")
+        open_result_btn = QPushButton(t("Open Memory Folder"))
         open_result_btn.clicked.connect(self._open_current_run)
-        retry_btn = QPushButton("Retry")
+        retry_btn = QPushButton(t("Retry"))
         retry_btn.clicked.connect(self._retry_current_run)
-        continue_btn = QPushButton("Continue")
+        continue_btn = QPushButton(t("Continue"))
         continue_btn.clicked.connect(self._continue_current_run)
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("Close"))
         close_btn.clicked.connect(self.close)
         row.addStretch()
         row.addWidget(refresh_btn)
@@ -3111,6 +3118,7 @@ class AgentRunHistoryWindow(QDialog):
         root.addLayout(row)
 
         self._load_runs()
+        localize_widget_tree(self)
         fit_window_to_screen(self, preferred_width=900, preferred_height=620)
 
     def _load_runs(self) -> None:
@@ -3150,7 +3158,7 @@ class AgentRunHistoryWindow(QDialog):
         try:
             spec = retry_spec_from_run(self._current_run)
         except Exception as exc:
-            QMessageBox.warning(self, "Retry Run", str(exc))
+            QMessageBox.warning(self, t("Retry Run"), str(exc))
             return
         launch_agent_run_window(
             spec,
@@ -3164,7 +3172,7 @@ class AgentRunHistoryWindow(QDialog):
         try:
             spec = continue_spec_from_run(self._current_run)
         except Exception as exc:
-            QMessageBox.warning(self, "Continue Run", str(exc))
+            QMessageBox.warning(self, t("Continue Run"), str(exc))
             return
         launch_agent_run_window(
             spec,

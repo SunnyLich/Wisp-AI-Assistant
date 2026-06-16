@@ -94,7 +94,7 @@ class _FactRow(QWidget):
             del_btn.setFixedWidth(40)
             del_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
             del_btn.setToolTip(
-                f"Delete this fact (source: {fact.get('source', 'unknown')})"
+                f"{t('Delete this fact')} ({t('source')}: {fact.get('source', t('unknown'))})"
             )
             del_btn.clicked.connect(self._on_delete)
             layout.addWidget(del_btn)
@@ -122,8 +122,8 @@ class _FactRow(QWidget):
     def _on_delete(self) -> None:
         confirm = QMessageBox.question(
             self,
-            "Delete fact",
-            f"Delete: \"{self._text_edit.text()}\"?",
+            t("Delete fact"),
+            f"{t('Delete')}: \"{self._text_edit.text()}\"?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:
@@ -202,11 +202,11 @@ class MemoryPanel(QWidget):
             add_layout = QHBoxLayout(add_frame)
             add_layout.setContentsMargins(6, 6, 6, 6)
 
-            add_lbl = QLabel("Add fact:")
+            add_lbl = QLabel(t("Add fact:"))
             add_layout.addWidget(add_lbl)
 
             self._add_text = QLineEdit()
-            self._add_text.setPlaceholderText("Enter a new fact...")
+            self._add_text.setPlaceholderText(t("Enter a new fact..."))
             self._add_text.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
             )
@@ -219,7 +219,7 @@ class MemoryPanel(QWidget):
             self._add_cat.setFixedWidth(160)
             add_layout.addWidget(self._add_cat)
 
-            add_btn = QPushButton("Add")
+            add_btn = QPushButton(t("Add"))
             add_btn.setFixedWidth(60)
             add_btn.clicked.connect(self._on_add_fact)
             add_layout.addWidget(add_btn)
@@ -229,7 +229,7 @@ class MemoryPanel(QWidget):
         # Refresh button
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn = QPushButton(t("Refresh"))
         self._refresh_btn.clicked.connect(lambda: self.refresh_facts())
         btn_row.addWidget(self._refresh_btn)
         root.addLayout(btn_row)
@@ -277,7 +277,7 @@ class MemoryPanel(QWidget):
             self._refresh_btn.setText(t("Refresh"))
         if error:
             _memory_log.warning("Memory refresh failed: %s", error)
-            QMessageBox.warning(self, "Memory refresh failed", error)
+            QMessageBox.warning(self, t("Memory refresh failed"), error)
             return
         self._render_facts(list(facts or []))
 
@@ -313,8 +313,8 @@ class MemoryPanel(QWidget):
 
         if not has_any:
             empty = QLabel(
-                "No facts stored yet.\n"
-                'Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.'
+                t("No facts stored yet.\n"
+                  'Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.')
             )
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet("color: #999; font-style: italic;")
@@ -353,7 +353,7 @@ class MemoryPanel(QWidget):
 
     def _on_mutation_done(self, error: str) -> None:
         if error:
-            QMessageBox.warning(self, "Memory update failed", error)
+            QMessageBox.warning(self, t("Memory update failed"), error)
             return
         self.refresh_facts()
 
@@ -366,7 +366,7 @@ class MemoryViewer(QDialog):
 
     def __init__(self, manager: "MemoryManager", parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Long-term Memory")
+        self.setWindowTitle(t("Long-term Memory"))
         self.setMinimumSize(620, 480)
         enable_standard_window_controls(self)
         fit_window_to_screen(self, preferred_width=620, preferred_height=520)
@@ -375,7 +375,7 @@ class MemoryViewer(QDialog):
         root.setSpacing(8)
 
         # Header
-        header = QLabel("Long-term Memory")
+        header = QLabel(t("Long-term Memory"))
         font = QFont()
         font.setPointSize(13)
         font.setBold(True)
@@ -383,8 +383,8 @@ class MemoryViewer(QDialog):
         root.addWidget(header)
 
         desc = QLabel(
-            "Facts the assistant remembers about you across sessions. "
-            "Click a fact to edit it; changes save immediately."
+            t("Facts the assistant remembers about you across sessions. "
+              "Click a fact to edit it; changes save immediately.")
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #666;")
@@ -392,7 +392,7 @@ class MemoryViewer(QDialog):
 
         root.addWidget(MemoryPanel(manager, self), stretch=1)
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("Close"))
         close_btn.clicked.connect(self.close)
         btn_row = QHBoxLayout()
         btn_row.addStretch()

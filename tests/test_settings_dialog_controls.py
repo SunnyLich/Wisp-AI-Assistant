@@ -230,46 +230,67 @@ def test_localize_widget_tree_uses_app_language(monkeypatch):
         app.processEvents()
 
 
-def test_i18n_handles_whitespace_html_and_dynamic_chinese(monkeypatch):
+def test_i18n_uses_qt_catalog_without_dynamic_matching(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
     import config
     from ui import i18n
 
+    app = QApplication.instance() or QApplication(sys.argv)
     old_language = getattr(config, "APP_LANGUAGE", "")
     config.APP_LANGUAGE = "zh"
     try:
-        assert i18n.t("  History") == "  历史"
-        assert i18n.t("<small><b>Key</b></small>") == "<small><b>按键</b></small>"
-        assert i18n.t("Demo Addon Settings") == "Demo Addon 设置"
-        assert i18n.t("Hooks: startup, query") == "钩子：startup, query"
+        i18n.set_language(app=app)
+
+        assert i18n.t("Settings") == "\u8bbe\u7f6e"
+        assert i18n.t("Hooks: ") == "\u94a9\u5b50\uff1a"
+        assert i18n.t("Demo Addon Settings") == "Demo Addon Settings"
+        assert i18n.t("Hooks: startup, query") == "Hooks: startup, query"
     finally:
         config.APP_LANGUAGE = old_language
+        i18n.set_language(app=app)
 
 
 def test_i18n_supports_traditional_chinese(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
     import config
     from ui import i18n
 
+    app = QApplication.instance() or QApplication(sys.argv)
     old_language = getattr(config, "APP_LANGUAGE", "")
     config.APP_LANGUAGE = "zh-Hant"
     try:
+        i18n.set_language(app=app)
+
         assert i18n.current_language() == "zh-Hant"
         assert i18n.t("Settings") == "\u8a2d\u7f6e"
         assert i18n.t("Memory") == "\u8a18\u61b6"
         assert i18n.t("Chinese (Traditional)") == "\u7e41\u9ad4\u4e2d\u6587"
-        assert i18n.t("Browser/Web: On") == "\u700f\u89bd\u5668/\u7db2\u9801\uff1a\u958b\u555f"
+        assert i18n.t("Browser/Web: ") == "\u700f\u89bd\u5668/\u7db2\u9801\uff1a"
+        assert i18n.t("Browser/Web: On") == "Browser/Web: On"
     finally:
         config.APP_LANGUAGE = old_language
+        i18n.set_language(app=app)
 
 
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
     import config
     from core.llm_clients.client import tool_capability_warnings
     from ui import i18n
 
+    app = QApplication.instance() or QApplication(sys.argv)
     warning = tool_capability_warnings(True, llm_provider="chatgpt")[0]
     old_language = getattr(config, "APP_LANGUAGE", "")
     config.APP_LANGUAGE = "zh"
     try:
+        i18n.set_language(app=app)
+
         assert i18n.t("Heads up") == "\u63d0\u9192"
         assert i18n.t("Your settings were saved, but:") == "\u4f60\u7684\u8bbe\u7f6e\u5df2\u4fdd\u5b58\uff0c\u4f46\uff1a"
         translated = i18n.t(warning)
@@ -278,12 +299,13 @@ def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
         assert "\u5de5\u5177" in translated
     finally:
         config.APP_LANGUAGE = old_language
+        i18n.set_language(app=app)
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_llm_model_routing_surface_translates_to_traditional_chinese():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+    from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
 
     import config
     from ui.settings_panel.dialog import SettingsDialog
@@ -296,6 +318,12 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
     try:
         label_texts = {label.text() for label in dialog.findChildren(QLabel)}
         button_texts = {button.text() for button in dialog.findChildren(QPushButton)}
+        placeholder_texts = {
+            edit.placeholderText()
+            for edit in dialog.findChildren(QLineEdit)
+            if edit.placeholderText()
+        }
+        visible_texts = label_texts | button_texts | placeholder_texts
         combo_texts = {
             row["api_key_combo"].itemText(i)
             for rows in dialog._model_section_rows.values()
@@ -309,7 +337,37 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
         assert not any("CHAT MODEL" in text for text in label_texts)
         assert "Test Chat model" not in button_texts
         assert "Codex (ChatGPT subscription) [OAuth]" not in combo_texts
+        for fragment in (
+            "Provider credentials",
+            "Sign in or save provider API keys",
+            "AUTHENTICATION",
+            "Sign in opens GitHub in your browser",
+            "Add a row for each provider",
+            "<small><b>Alias</b></small>",
+            "alias (optional)",
+            "Custom provider",
+            "Any OpenAI-compatible endpoint",
+        ):
+            assert not any(fragment in text for text in visible_texts)
 
+        assert any(text.endswith("\u63d0\u4f9b\u8005\u6191\u8b49") for text in label_texts)
+        assert any(
+            "\u767b\u5165\u6216\u5132\u5b58\u63d0\u4f9b\u8005 API \u91d1\u9470" in text
+            for text in label_texts
+        )
+        assert any(
+            "\u767b\u5165\u6703\u5728\u700f\u89bd\u5668\u4e2d\u958b\u555f GitHub" in text
+            for text in label_texts
+        )
+        assert any(
+            "\u70ba\u6bcf\u500b\u8981\u4f7f\u7528\u7684\u63d0\u4f9b\u8005\u65b0\u589e\u4e00\u5217" in text
+            for text in label_texts
+        )
+        assert "<small><b>\u5225\u540d</b></small>" in label_texts
+        assert "\u5225\u540d\uff08\u9078\u586b\uff09" in placeholder_texts
+        assert "\u81ea\u8a02\u63d0\u4f9b\u8005".upper() in label_texts
+        assert any("\u4efb\u4f55\u76f8\u5bb9 OpenAI" in text for text in label_texts)
+        assert "\u6e2c\u8a66\u81ea\u8a02" in button_texts
         assert "\u6a21\u578b\u8def\u7531" in label_texts
         assert "\u9078\u64c7\u6bcf\u500b\u7528\u9014\u4f7f\u7528\u54ea\u500b\u5df2\u5132\u5b58\u6191\u8b49\u548c\u6a21\u578b\u3002" in label_texts
         assert "<small><b>\u63d0\u4f9b\u8005</b></small>" in label_texts
@@ -322,39 +380,43 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
         app.processEvents()
 
 
-def test_spanish_and_french_match_chinese_i18n_key_coverage():
-    from ui import i18n
+def test_qt_catalogs_translate_exact_spanish_and_french_sources(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
 
-    chinese_keys = set(i18n._TRANSLATIONS["zh"])
-    assert not sorted(chinese_keys - set(i18n._TRANSLATIONS["zh-Hant"]))
-    assert not sorted(chinese_keys - set(i18n._TRANSLATIONS["es"]))
-    assert not sorted(chinese_keys - set(i18n._TRANSLATIONS["fr"]))
-
-
-def test_i18n_handles_dynamic_spanish_and_french(monkeypatch):
     import config
     from ui import i18n
 
+    app = QApplication.instance() or QApplication(sys.argv)
     old_language = getattr(config, "APP_LANGUAGE", "")
     try:
         config.APP_LANGUAGE = "es"
-        assert i18n.t("Browser/Web: On") == "Navegador/Web: Activado"
-        assert i18n.t("Demo Addon Settings") == "Demo Addon Configuración"
+        i18n.set_language(app=app)
+        assert i18n.t("Browser/Web: ") == "Navegador/Web: "
+        assert i18n.t("Settings") == "Configuración"
 
         config.APP_LANGUAGE = "fr"
-        assert i18n.t("Browser/Web: On") == "Navigateur/Web : Activé"
-        assert i18n.t("Demo Addon Settings") == "Demo Addon Paramètres"
+        i18n.set_language(app=app)
+        assert i18n.t("Browser/Web: ") == "Navigateur/Web : "
+        assert i18n.t("Settings") == "Paramètres"
     finally:
         config.APP_LANGUAGE = old_language
+        i18n.set_language(app=app)
 
 
 def test_i18n_translates_auth_ui_but_keeps_technical_tokens(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
     import config
     from ui import i18n
 
+    app = QApplication.instance() or QApplication(sys.argv)
     old_language = getattr(config, "APP_LANGUAGE", "")
     config.APP_LANGUAGE = "zh"
     try:
+        i18n.set_language(app=app)
+
         assert i18n.t("Clear token") == "\u6e05\u9664\u4ee4\u724c"
         assert i18n.t("Not configured") == "\u672a\u914d\u7f6e"
         assert i18n.t("github_pat_\u2026 (not saved to .env)") == (
@@ -367,6 +429,7 @@ def test_i18n_translates_auth_ui_but_keeps_technical_tokens(monkeypatch):
         assert "SDK" in i18n.t("Test token / SDK")
     finally:
         config.APP_LANGUAGE = old_language
+        i18n.set_language(app=app)
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -748,7 +811,7 @@ def test_llm_tab_groups_credentials_and_models_under_full_height_rails():
             dialog._warning_header_base_texts.get(key)
             for key in ("Provider credentials", "Authentication")
         }
-        assert first_group_headers == {"Provider credentials", "AUTHENTICATION"}
+        assert first_group_headers == {"Provider credentials", "Authentication"}
         assert groups[0].findChildren(QFrame, "areaAccentLine")
         assert groups[1].findChildren(QFrame, "areaAccentLine")
     finally:
@@ -976,6 +1039,7 @@ def test_memory_panel_read_only_hides_mutation_controls():
     from PySide6.QtWidgets import QApplication, QPushButton
 
     from ui.memory_viewer import MemoryPanel
+    from ui.i18n import t
 
     app = QApplication.instance() or QApplication(sys.argv)
 
@@ -996,7 +1060,7 @@ def test_memory_panel_read_only_hides_mutation_controls():
         button_texts = {button.text() for button in panel.findChildren(QPushButton)}
         assert "Add" not in button_texts
         assert "X" not in button_texts
-        assert "Refresh" in button_texts
+        assert t("Refresh") in button_texts
     finally:
         panel.deleteLater()
         app.processEvents()

@@ -2000,5 +2000,57 @@ Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.
       <source> Logs</source>
       <translation> 記錄</translation>
     </message>
+    <message>
+      <source>Provider credentials</source>
+      <translation>提供者憑證</translation>
+    </message>
+    <message>
+      <source>Sign in or save provider API keys and custom endpoint details before assigning models.</source>
+      <translation>登入或儲存提供者 API 金鑰和自訂端點詳細資料，然後再指派模型。</translation>
+    </message>
+    <message>
+      <source>Sign in opens GitHub in your browser and links this app to your account.</source>
+      <translation>登入會在瀏覽器中開啟 GitHub，並將此應用程式連結到你的帳號。</translation>
+    </message>
+    <message>
+      <source>API Keys</source>
+      <translation>API 金鑰</translation>
+    </message>
+    <message>
+      <source>Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.</source>
+      <translation>為每個要使用的提供者新增一列。別名為選填，當同一提供者有多個金鑰時很有用。自訂端點在下方設定。</translation>
+    </message>
+    <message>
+      <source>Alias</source>
+      <translation>別名</translation>
+    </message>
+    <message>
+      <source>alias (optional)</source>
+      <translation>別名（選填）</translation>
+    </message>
+    <message>
+      <source>Custom provider</source>
+      <translation>自訂提供者</translation>
+    </message>
+    <message>
+      <source>Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.</source>
+      <translation>任何相容 OpenAI 的端點，包括 Ollama 和 LM Studio。設定基礎 URL 後，在下方模型列中選擇 Custom。</translation>
+    </message>
+    <message>
+      <source>API key</source>
+      <translation>API 金鑰</translation>
+    </message>
+    <message>
+      <source>Test custom</source>
+      <translation>測試自訂</translation>
+    </message>
+    <message>
+      <source>Test</source>
+      <translation>測試</translation>
+    </message>
+    <message>
+      <source>Logged in - account </source>
+      <translation>已登入 · 帳號 </translation>
+    </message>
   </context>
 </TS>

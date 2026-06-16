@@ -300,6 +300,15 @@ def test_save_memory_project_scope_falls_back_to_general_without_active_project(
     assert result["ok"] and result["scope"] == "general" and result["project"] is None
 
 
+def test_memory_save_note_only_when_tool_offered():
+    from core.llm_clients import client
+
+    base = "You are a concise desktop assistant."
+    assert "memory_save tool" in client._with_memory_save_note(base, ["memory_save"])
+    assert client._with_memory_save_note(base, ["web_search"]) == base
+    assert client._with_memory_save_note(base, None) == base
+
+
 def test_memory_save_tool_executor(monkeypatch):
     from core.llm_clients import client
 

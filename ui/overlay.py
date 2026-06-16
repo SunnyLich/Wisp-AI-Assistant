@@ -17,7 +17,7 @@ from core.system.paths import DOLL_ASSETS_DIR
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QSystemTrayIcon, QMenu
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QEvent, QPoint
 from PySide6.QtGui import QPixmap, QIcon, QAction
-from ui.i18n import localize_widget_tree, t
+from ui.i18n import t
 
 
 ASSETS_DIR = str(DOLL_ASSETS_DIR)
@@ -163,7 +163,7 @@ class IconOverlay(QMainWindow):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
-        self._icon_label.setWindowTitle("AI Assistant Icon")
+        self._icon_label.setWindowTitle(t("AI Assistant Icon"))
         self._icon_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         _app_icon = QApplication.instance().windowIcon()
         if not _app_icon.isNull():
@@ -213,9 +213,9 @@ class IconOverlay(QMainWindow):
         menu = QMenu()
 
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
-            agent_task_action = QAction("Start agent task...", self)
+            agent_task_action = QAction(t("Start agent task..."), self)
             agent_task_action.triggered.connect(self.signals.show_agent_task.emit)
-            agent_history_action = QAction("Agent task history...", self)
+            agent_history_action = QAction(t("Agent task history..."), self)
             agent_history_action.triggered.connect(self.signals.show_agent_history.emit)
             menu.addAction(agent_task_action)
             menu.addAction(agent_history_action)
@@ -226,25 +226,25 @@ class IconOverlay(QMainWindow):
             menu.addAction(make_agent_history_action(self, parent=self))
         menu.addSeparator()
 
-        last_chat_action = QAction("Last chat", self)
+        last_chat_action = QAction(t("Last chat"), self)
         last_chat_action.triggered.connect(self.signals.show_last_chat.emit)
         # Toggle: label reflects current icon visibility, refreshed on menu open
         # (aboutToShow) so it reads "Show icon" once the icon is hidden — the only
         # way back to a visible icon after Hide.
-        self._icon_toggle_action = QAction("Hide icon", self)
+        self._icon_toggle_action = QAction(t("Hide icon"), self)
         self._icon_toggle_action.triggered.connect(self._toggle_icon)
         menu.aboutToShow.connect(self._sync_icon_toggle_text)
-        memory_action = QAction("Memory", self)
+        memory_action = QAction(t("Memory"), self)
         memory_action.triggered.connect(self.signals.show_memory_viewer.emit)
-        settings_action = QAction("Settings", self)
+        settings_action = QAction(t("Settings"), self)
         settings_action.triggered.connect(self._open_settings)
-        quit_action = QAction("Quit", self)
+        quit_action = QAction(t("Quit"), self)
         quit_action.triggered.connect(QApplication.quit)
         menu.addAction(last_chat_action)
         menu.addAction(self._icon_toggle_action)
         menu.addSeparator()
         menu.addAction(memory_action)
-        plugin_manager_action = QAction("Addon Manager", self)
+        plugin_manager_action = QAction(t("Addon Manager"), self)
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
             plugin_manager_action.triggered.connect(self.signals.show_plugin_manager.emit)
         else:
@@ -255,7 +255,6 @@ class IconOverlay(QMainWindow):
         menu.addAction(settings_action)
         menu.addSeparator()
         menu.addAction(quit_action)
-        localize_widget_tree(menu)
         return menu
 
     def _set_icon_pixmap(self, state: str):
@@ -319,7 +318,7 @@ class IconOverlay(QMainWindow):
             self._bubble.show_notice(text, timeout_ms=timeout)
         if hasattr(self, "_tray"):
             self._tray.showMessage(
-                "Agent permission" if not resolved else "Agent permission resolved",
+                t("Agent permission") if not resolved else t("Agent permission resolved"),
                 text,
                 QSystemTrayIcon.MessageIcon.Warning if not resolved else QSystemTrayIcon.MessageIcon.Information,
                 10000 if not resolved else 4000,
@@ -409,7 +408,6 @@ class IconOverlay(QMainWindow):
         if hasattr(self, "_icon_toggle_action") and hasattr(self, "_icon_label"):
             visible = self._icon_label.isVisible()
             original = "Hide icon" if visible else "Show icon"
-            self._icon_toggle_action.setProperty("_wisp_i18n_text", original)
             self._icon_toggle_action.setText(t(original))
 
     @staticmethod
@@ -433,7 +431,7 @@ class IconOverlay(QMainWindow):
             return
         if hasattr(self, "_icon_label"):
             self._context_panel.reposition(self._icon_label.pos(), config.ICON_SIZE)
-        self._context_panel.add_item(name or "Context", item_type or "text")
+        self._context_panel.add_item(name or t("Context"), item_type or "text")
 
     def _on_bubble_hidden(self):
         """Called by SpeechBubble.hideEvent -- hides the icon in lockstep with the bubble."""

@@ -20,6 +20,7 @@ from PySide6.QtCore import (
     QPropertyAnimation, QEasingCurve, QMimeData,
 )
 from PySide6.QtGui import QPainter, QColor, QFont, QBrush, QPen
+from ui.i18n import t
 
 if TYPE_CHECKING:
     pass
@@ -213,7 +214,7 @@ class AddedContextToast(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
         from PySide6.QtWidgets import QLabel
-        lbl = QLabel("Added as context!", self)
+        lbl = QLabel(t("Added as context!"), self)
         lbl.setFont(QFont("Segoe UI", 9))
         lbl.setStyleSheet(
             "color: rgba(220,220,255,230);"

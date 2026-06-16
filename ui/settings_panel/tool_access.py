@@ -42,6 +42,16 @@ CONTEXT_GOVERNED_TOOLS: dict[str, str] = {
 _MODE_LABELS = [("Off", "off"), ("On", "on"), ("Let model decide", "model")]
 _MODE_DISPLAY = {"off": "Off", "auto": "On", "model": "Let model decide"}
 
+
+def _mode_tooltip() -> str:
+    return (
+        f"{t('Off')} - {t('never offered to the model for this hotkey.')}\n"
+        f"{t('On')} - {t('always offered.')}\n"
+        + t("Let model decide")
+        + " - "
+        + t("offered when the prompt matches the tool's keywords (Settings > Tools).")
+    )
+
 _MODE_TOOLTIP = (
     "Off — never offered to the model for this hotkey.\n"
     "On — always offered.\n"
@@ -120,38 +130,35 @@ class ToolAccessDialog(QDialog):
         layout.setSpacing(8)
 
         # ── Context tools (default: follow the dropdowns) ─────────────────
-        ctx_hdr = QLabel("CONTEXT TOOLS")
+        ctx_hdr = QLabel(t("CONTEXT TOOLS"))
         ctx_hdr.setObjectName("sectionHeader")
         layout.addWidget(ctx_hdr)
         ctx_note = QLabel(
-            "<small>These default to the context dropdowns on the hotkey — "
-            "changing one here overrides the dropdown for that tool only. "
-            "Automatic context (dropdowns set to On) is unaffected.</small>"
+            f"<small>{t('These default to the context dropdowns on the hotkey - changing one here overrides the dropdown for that tool only. Automatic context (dropdowns set to On) is unaffected.')}</small>"
         )
         ctx_note.setWordWrap(True)
         layout.addWidget(ctx_note)
         for name, governs in CONTEXT_GOVERNED_TOOLS.items():
             default = _governed_default(governs, governed_modes)
             states = [
-                f"{part}: {_MODE_DISPLAY.get(str(governed_modes[part]).strip().lower(), governed_modes[part])}"
+                f"{t(part)}: {t(_MODE_DISPLAY.get(str(governed_modes[part]).strip().lower(), governed_modes[part]))}"
                 for part in governs.split(" / ")
                 if part in governed_modes
             ]
-            note = " · ".join(t(state) for state in states) if states else t(governs)
+            note = " · ".join(states) if states else t(governs)
             self._add_tool_row(layout, name, note, overrides.get(name, default), default)
 
         layout.addWidget(_separator())
 
         # ── Installed + addon tools (default: off) ───────────────────────
-        extra_hdr = QLabel("INSTALLED + PLUGIN TOOLS")
+        extra_hdr = QLabel(t("INSTALLED + PLUGIN TOOLS"))
         extra_hdr.setObjectName("sectionHeader")
         layout.addWidget(extra_hdr)
 
         extra = list_extra_tools()
         if not extra:
             empty = QLabel(
-                "<small>No extra tools found. Install script tools under the "
-                "legacy tool folder, or enable addons that add tools.</small>"
+                f"<small>{t('No extra tools found. Install script tools under the legacy tool folder, or enable addons that add tools.')}</small>"
             )
             empty.setWordWrap(True)
             layout.addWidget(empty)
@@ -165,8 +172,8 @@ class ToolAccessDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        cancel_btn = QPushButton("Cancel")
-        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton(t("Cancel"))
+        ok_btn = QPushButton(t("OK"))
         ok_btn.setDefault(True)
         cancel_btn.clicked.connect(self.reject)
         ok_btn.clicked.connect(self.accept)
@@ -199,11 +206,11 @@ class ToolAccessDialog(QDialog):
             tv.addWidget(note_lbl)
         combo = QComboBox()
         for label, data in _MODE_LABELS:
-            combo.addItem(label, data)
+            combo.addItem(t(label), data)
         mode = str(mode or "off").strip().lower()
         idx = combo.findData(mode if mode in TOOL_OVERRIDE_MODES else "off")
         combo.setCurrentIndex(idx if idx >= 0 else 0)
-        combo.setToolTip(_MODE_TOOLTIP)
+        combo.setToolTip(_mode_tooltip())
         self._combos[name] = combo
         self._defaults[name] = default
         h.addWidget(text_col, 1)

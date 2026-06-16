@@ -249,7 +249,7 @@ class ChatWindow(QWidget):
         self._send_fn = send_fn
         self._projects = list(projects or [])
         if not any(p.get("id") == _GENERAL_PROJECT_ID for p in self._projects):
-            self._projects.insert(0, {"id": _GENERAL_PROJECT_ID, "name": "General"})
+            self._projects.insert(0, {"id": _GENERAL_PROJECT_ID, "name": t("General")})
         self._active_project_id = active_project_id or _GENERAL_PROJECT_ID
         self._on_project_change = on_project_change
         self._on_new_project = on_new_project
@@ -267,7 +267,7 @@ class ChatWindow(QWidget):
         self._signals.chunk.connect(self._on_chunk)
         self._signals.finished.connect(self._on_finished)
 
-        self.setWindowTitle("Chat")
+        self.setWindowTitle(t("Chat"))
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         enable_standard_window_controls(self)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -308,12 +308,12 @@ class ChatWindow(QWidget):
         bar.setStyleSheet(f"background: {_TITLE_BG}; border-bottom: 1px solid {_BORDER};")
         h = QHBoxLayout(bar)
         h.setContentsMargins(14, 0, 8, 0)
-        title = QLabel("Chat")
+        title = QLabel(t("Chat"))
         title.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT}; background: transparent;")
-        new_chat = QPushButton("New")
+        new_chat = QPushButton(t("New"))
         new_chat.setFixedSize(52, 26)
-        new_chat.setToolTip("Start a new conversation (Ctrl+N)")
+        new_chat.setToolTip(t("Start a new conversation (Ctrl+N)"))
         new_chat.setStyleSheet(
             f"QPushButton {{ background: rgba(160,160,255,18); color: {_ACCENT};"
             f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 9pt; }}"
@@ -353,7 +353,7 @@ class ChatWindow(QWidget):
         combo.blockSignals(True)
         combo.clear()
         for proj in self._projects:
-            combo.addItem(proj.get("name", "General"), proj.get("id"))
+            combo.addItem(proj.get("name", t("General")), proj.get("id"))
         combo.addItem(t("＋ New project…"), self._NEW_PROJECT_SENTINEL)
         idx = combo.findData(self._active_project_id)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -396,7 +396,7 @@ class ChatWindow(QWidget):
         vl.setContentsMargins(0, 0, 0, 0)
         vl.setSpacing(0)
 
-        hdr = QLabel("  History")
+        hdr = QLabel(t("  History"))
         hdr.setFixedHeight(32)
         hdr.setStyleSheet(
             f"background: {_SIDEBAR_BG}; color: {_HINT}; font-size: 9pt;"
@@ -429,7 +429,7 @@ class ChatWindow(QWidget):
         self._sidebar_btns.clear()
 
         if not self._conversations:
-            lbl = QLabel("  No history yet.")
+            lbl = QLabel(t("  No history yet."))
             lbl.setStyleSheet(
                 f"color: {_HINT}; font-size: 9pt; padding: 8px; background: transparent;"
             )

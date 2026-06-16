@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QWidget, QFrame, QCheckBox, QLineEdit, QComboBox, QFormLayout,
     QTextEdit, QMessageBox, QFileDialog,
 )
+from ui.i18n import t
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 
@@ -21,14 +22,14 @@ _TRUE = {"1", "true", "yes", "on"}
 
 def _runtime_action_label(runtime: dict) -> str:
     if runtime.get("needs_approval"):
-        return "Approve env"
-    return "Repair env" if runtime.get("ready") else "Install env"
+        return t("Approve env")
+    return t("Repair env") if runtime.get("ready") else t("Install env")
 
 
 def _runtime_summary(runtime: dict) -> str:
     if runtime.get("needs_approval"):
-        return "Dependency env: needs approval"
-    return "Dependency env: ready" if runtime.get("ready") else "Dependency env: needs install"
+        return t("Dependency env: needs approval")
+    return t("Dependency env: ready") if runtime.get("ready") else t("Dependency env: needs install")
 
 
 def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
@@ -40,7 +41,7 @@ def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
 class PluginManagerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Addon Manager")
+        self.setWindowTitle(t("Addon Manager"))
         self.setModal(False)
         self._settings_dialogs: dict[str, AddonSettingsDialog] = {}
         self._log_dialogs: dict[str, AddonLogDialog] = {}
@@ -55,13 +56,13 @@ class PluginManagerDialog(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QLabel("Addons")
+        title = QLabel(t("Addons"))
         title.setStyleSheet("font-size: 15pt; font-weight: 700;")
         root.addWidget(title)
 
         subtitle = QLabel(
-            "Addons are Python packages in the <code>addons/</code> folder. "
-            "Each addon runs in its own host process."
+            t("Addons are Python packages in the <code>addons/</code> folder. "
+              "Each addon runs in its own host process.")
         )
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("font-size: 9pt; opacity: 0.7;")
@@ -85,7 +86,7 @@ class PluginManagerDialog(QDialog):
             plugins = []
 
         if not plugins:
-            empty = QLabel("No addons loaded. Drop a folder with addon.toml into addons/.")
+            empty = QLabel(t("No addons loaded. Drop a folder with addon.toml into addons/."))
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet("opacity: 0.5; font-size: 10pt;")
             inner_layout.addWidget(empty)
@@ -101,18 +102,18 @@ class PluginManagerDialog(QDialog):
         footer = QHBoxLayout()
         footer.setSpacing(8)
 
-        open_btn = QPushButton("Open addons folder")
+        open_btn = QPushButton(t("Open addons folder"))
         open_btn.clicked.connect(self._open_plugins_folder)
         footer.addWidget(open_btn)
-        install_btn = QPushButton("Install archive")
+        install_btn = QPushButton(t("Install archive"))
         install_btn.clicked.connect(self._install_archive)
         footer.addWidget(install_btn)
-        install_folder_btn = QPushButton("Install folder")
+        install_folder_btn = QPushButton(t("Install folder"))
         install_folder_btn.clicked.connect(self._install_folder)
         footer.addWidget(install_folder_btn)
         footer.addStretch()
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("Close"))
         close_btn.clicked.connect(self.close)
         footer.addWidget(close_btn)
         root.addLayout(footer)
@@ -132,14 +133,14 @@ class PluginManagerDialog(QDialog):
         layout.setSpacing(6)
 
         name_row = QHBoxLayout()
-        name = str(plugin.get("name") or plugin.get("id") or "Addon")
+        name = str(plugin.get("name") or plugin.get("id") or t("Addon"))
         addon_id = str(plugin.get("id") or name)
         name_lbl = QLabel(name)
         name_lbl.setStyleSheet("font-size: 11pt; font-weight: 600;")
         name_row.addWidget(name_lbl)
         name_row.addStretch()
 
-        enable = QCheckBox("Enabled")
+        enable = QCheckBox(t("Enabled"))
         enable.setChecked(bool(plugin.get("enabled", True)))
         settings = plugin.get("settings") or []
         logs = str(plugin.get("logs") or "")
@@ -147,8 +148,8 @@ class PluginManagerDialog(QDialog):
         packages = [str(p) for p in (runtime.get("packages") or [])]
         has_dependencies = str(runtime.get("tier") or "1") == "2"
 
-        settings_btn = QPushButton("Settings")
-        settings_btn.setToolTip("Open this addon's settings")
+        settings_btn = QPushButton(t("Settings"))
+        settings_btn.setToolTip(t("Open this addon's settings"))
 
         def _open_plugin_settings(_checked=False, _id=addon_id, _name=name, _settings=settings):
             self._open_settings_window(_id, _name, _settings)
@@ -156,8 +157,8 @@ class PluginManagerDialog(QDialog):
         settings_btn.clicked.connect(_open_plugin_settings)
         name_row.addWidget(settings_btn)
 
-        logs_btn = QPushButton("Logs")
-        logs_btn.setToolTip("Open this addon's diagnostic log")
+        logs_btn = QPushButton(t("Logs"))
+        logs_btn.setToolTip(t("Open this addon's diagnostic log"))
 
         def _open_plugin_logs(_checked=False, _id=addon_id, _name=name, _logs=logs):
             self._open_log_window(_id, _name, _logs)
@@ -167,7 +168,7 @@ class PluginManagerDialog(QDialog):
 
         if has_dependencies:
             repair_btn = QPushButton(_runtime_action_label(runtime))
-            repair_btn.setToolTip("Install or rebuild this addon's dependency environment")
+            repair_btn.setToolTip(t("Install or rebuild this addon's dependency environment"))
 
             def _repair_plugin_env(_checked=False, _id=addon_id, _name=name, _runtime=runtime):
                 self._repair_environment(_id, _name, _runtime)
@@ -192,26 +193,26 @@ class PluginManagerDialog(QDialog):
 
         hook_names = [str(h) for h in (plugin.get("hooks") or [])]
         if hook_names:
-            hooks_lbl = QLabel("Hooks: " + ", ".join(hook_names))
+            hooks_lbl = QLabel(t("Hooks: ") + ", ".join(hook_names))
             hooks_lbl.setStyleSheet("font-size: 8pt; opacity: 0.55;")
             layout.addWidget(hooks_lbl)
 
         tools = [str(t) for t in (plugin.get("tools") or [])]
         if tools:
-            tools_lbl = QLabel("Model tools: " + ", ".join(tools))
+            tools_lbl = QLabel(t("Model tools: ") + ", ".join(tools))
             tools_lbl.setStyleSheet("font-size: 8pt; opacity: 0.55;")
             layout.addWidget(tools_lbl)
 
         permissions = plugin.get("permissions") or {}
         if permissions:
-            perms_lbl = QLabel("Permissions: " + ", ".join(sorted(str(k) for k in permissions.keys())))
+            perms_lbl = QLabel(t("Permissions: ") + ", ".join(sorted(str(k) for k in permissions.keys())))
             perms_lbl.setStyleSheet("font-size: 8pt; opacity: 0.55;")
             layout.addWidget(perms_lbl)
 
         if has_dependencies:
             dep_parts = [_runtime_summary(runtime)]
             if packages:
-                dep_parts.append("Packages: " + ", ".join(packages))
+                dep_parts.append(t("Packages: ") + ", ".join(packages))
             runtime_error = str(runtime.get("error") or "")
             if runtime_error:
                 dep_parts.append(runtime_error)
@@ -264,19 +265,23 @@ class PluginManagerDialog(QDialog):
         try:
             status = self._manager.repair_environment(addon_id)
         except Exception as exc:
-            QMessageBox.warning(self, "Addon Environment", str(exc))
+            QMessageBox.warning(self, t("Addon Environment"), str(exc))
             return
         if status.get("ready"):
-            QMessageBox.information(self, "Addon Environment", "Dependency environment is ready.")
+            QMessageBox.information(self, t("Addon Environment"), t("Dependency environment is ready."))
         else:
-            QMessageBox.warning(self, "Addon Environment", str(status.get("error") or "Dependency environment is not ready."))
+            QMessageBox.warning(
+                self,
+                t("Addon Environment"),
+                str(status.get("error") or t("Dependency environment is not ready.")),
+            )
 
     def _install_archive(self) -> None:
         archive, _selected_filter = QFileDialog.getOpenFileName(
             self,
-            "Install Addon Archive",
+            t("Install Addon Archive"),
             "",
-            "Wisp Addons (*.wisp *.zip)",
+            t("Wisp Addons (*.wisp *.zip)"),
         )
         if not archive:
             return
@@ -287,14 +292,14 @@ class PluginManagerDialog(QDialog):
             if self._manager is not None:
                 self._manager.load_all()
             self._refresh()
-            QMessageBox.information(self, "Addon Installed", f"Installed addon: {result.get('id')}")
+            QMessageBox.information(self, t("Addon Installed"), f"{t('Installed addon:')} {result.get('id')}")
         except Exception as exc:
-            QMessageBox.warning(self, "Addon Install Failed", str(exc))
+            QMessageBox.warning(self, t("Addon Install Failed"), str(exc))
 
     def _install_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Install Addon Folder",
+            t("Install Addon Folder"),
             "",
         )
         if not folder:
@@ -306,9 +311,9 @@ class PluginManagerDialog(QDialog):
             if self._manager is not None:
                 self._manager.load_all()
             self._refresh()
-            QMessageBox.information(self, "Addon Installed", f"Installed addon: {result.get('id')}")
+            QMessageBox.information(self, t("Addon Installed"), f"{t('Installed addon:')} {result.get('id')}")
         except Exception as exc:
-            QMessageBox.warning(self, "Addon Install Failed", str(exc))
+            QMessageBox.warning(self, t("Addon Install Failed"), str(exc))
 
     def _refresh(self) -> None:
         layout = self.layout()
@@ -318,21 +323,21 @@ class PluginManagerDialog(QDialog):
     def _confirm_environment_install(self, addon_name: str, runtime: dict) -> bool:
         packages = [str(p) for p in (runtime.get("packages") or [])]
         lines = [
-            f"{addon_name} declares Python/package dependencies.",
+            f"{addon_name} {t('declares Python/package dependencies.')}",
             "",
-            f"Python: {runtime.get('python_requirement') or 'current runtime'}",
-            "Packages:",
+            f"{t('Python: ')}{runtime.get('python_requirement') or t('current runtime')}",
+            t("Packages:"),
         ]
         lines.extend(f"  {package}" for package in packages)
         if not packages:
-            lines.append("  No packages declared")
+            lines.append(f"  {t('No packages declared')}")
         env_path = str(runtime.get("env_path") or "")
         if env_path:
-            lines.extend(["", f"Environment: {env_path}"])
-        lines.extend(["", "Install or rebuild this environment now?"])
+            lines.extend(["", f"{t('Environment: ')}{env_path}"])
+        lines.extend(["", t("Install or rebuild this environment now?")])
         return QMessageBox.question(
             self,
-            "Approve Addon Dependencies",
+            t("Approve Addon Dependencies"),
             "\n".join(lines),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -376,7 +381,7 @@ class AddonSettingsDialog(QDialog):
         self._addon_id = addon_id
         self._addon_name = addon_name
         self._settings = settings
-        self.setWindowTitle(f"{addon_name} Settings")
+        self.setWindowTitle(f"{addon_name} {t('Settings')}")
         self.setModal(False)
         enable_standard_window_controls(self)
         self._build_ui()
@@ -394,7 +399,7 @@ class AddonSettingsDialog(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QLabel(f"{self._addon_name} Settings")
+        title = QLabel(f"{self._addon_name} {t('Settings')}")
         title.setStyleSheet("font-size: 14pt; font-weight: 700;")
         root.addWidget(title)
 
@@ -408,7 +413,7 @@ class AddonSettingsDialog(QDialog):
 
         settings_box = self._settings_box(self._settings)
         if settings_box is None:
-            empty = QLabel("This addon does not expose settings.")
+            empty = QLabel(t("This addon does not expose settings."))
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet("opacity: 0.55; font-size: 10pt;")
             inner_layout.addWidget(empty)
@@ -421,7 +426,7 @@ class AddonSettingsDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch()
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("Close"))
         close_btn.clicked.connect(self.close)
         footer.addWidget(close_btn)
         root.addLayout(footer)
@@ -470,7 +475,7 @@ class AddonSettingsDialog(QDialog):
         # text / number → line edit, persisted on edit-finished
         edit = QLineEdit("" if value is None else str(value))
         if stype == "number":
-            edit.setPlaceholderText("number")
+            edit.setPlaceholderText(t("number"))
         edit.editingFinished.connect(lambda e=edit: _save(e.text()))
         return edit
 
@@ -492,7 +497,7 @@ class AddonLogDialog(QDialog):
     def __init__(self, *, addon_name: str, logs: str, parent=None):
         super().__init__(parent)
         self._addon_name = addon_name
-        self.setWindowTitle(f"{addon_name} Logs")
+        self.setWindowTitle(f"{addon_name} {t('Logs')}")
         self.setModal(False)
         enable_standard_window_controls(self)
 
@@ -500,7 +505,7 @@ class AddonLogDialog(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QLabel(f"{self._addon_name} Logs")
+        title = QLabel(f"{self._addon_name} {t('Logs')}")
         title.setStyleSheet("font-size: 14pt; font-weight: 700;")
         root.addWidget(title)
 
@@ -511,7 +516,7 @@ class AddonLogDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch()
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("Close"))
         close_btn.clicked.connect(self.close)
         footer.addWidget(close_btn)
         root.addLayout(footer)
@@ -520,7 +525,7 @@ class AddonLogDialog(QDialog):
         fit_window_to_screen(self, preferred_width=560, preferred_height=360)
 
     def reload_logs(self, logs: str) -> None:
-        self._logs.setPlainText(logs or "No log output yet.")
+        self._logs.setPlainText(logs or t("No log output yet."))
         self._logs.moveCursor(QTextCursor.MoveOperation.End)
 
 

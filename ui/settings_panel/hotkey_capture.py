@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLineEdit
 
 from core.hotkeys import is_safe_global_hotkey
+from ui.i18n import t
 
 
 _QT_KEY_NAMES: dict[int, str] = {
@@ -44,7 +45,7 @@ class HotkeyCaptureEdit(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setPlaceholderText("Click to set...")
+        self.setPlaceholderText(t("Click to set..."))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._recording = False
         self._prev_text = ""
@@ -57,7 +58,7 @@ class HotkeyCaptureEdit(QLineEdit):
     def _start_recording(self) -> None:
         self._recording = True
         self._prev_text = self.text()
-        self.setText("Press a key combo...")
+        self.setText(t("Press a key combo..."))
         self.setStyleSheet(self._RECORD_STYLE)
         self.setFocus()
 
@@ -104,7 +105,7 @@ class HotkeyCaptureEdit(QLineEdit):
             if is_safe_global_hotkey(combo):
                 self._commit(combo)
             else:
-                self.setText("Add modifier or use F-key")
+                self.setText(t("Add modifier or use F-key"))
         event.accept()
 
     def keyReleaseEvent(self, event):  # noqa: N802

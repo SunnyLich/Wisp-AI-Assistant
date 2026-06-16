@@ -229,6 +229,7 @@ class SettingsDialog(QDialog):
         self._status_result_timer = QTimer(self)
         self._status_result_timer.setInterval(100)
         self._status_result_timer.timeout.connect(self._drain_status_results)
+        self._warning_header_uppercase_keys: set[str] = set()
         self.finished.connect(self._dispose_after_finished)
         self._build_ui()
         self._load_values()
@@ -595,9 +596,7 @@ class SettingsDialog(QDialog):
         # ── API KEYS card ─────────────────────────────────────────────────
         api_keys_card, api_keys_cv = self._card("API Keys")
         note = QLabel(
-            "<small>Add a row for each provider you want to use. "
-            "Alias is optional — useful when you have multiple keys for the same provider. "
-            "Custom endpoints are configured below.</small>"
+            f"<small>{t('Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.')}</small>"
         )
         note.setWordWrap(True)
         api_keys_cv.addWidget(note)
@@ -607,7 +606,7 @@ class SettingsDialog(QDialog):
         col_hdr_h.setContentsMargins(0, 0, 0, 0)
         col_hdr_h.setSpacing(8)
         for txt, stretch in [("Provider", 2), ("Alias", 2), ("API Key", 3)]:
-            lbl = QLabel(f"<small><b>{txt}</b></small>")
+            lbl = QLabel(f"<small><b>{t(txt)}</b></small>")
             col_hdr_h.addWidget(lbl, stretch)
         col_hdr_h.addSpacing(32)
         api_keys_cv.addWidget(col_hdr_w)
@@ -618,7 +617,7 @@ class SettingsDialog(QDialog):
         self._api_key_rows_layout.setContentsMargins(0, 0, 0, 0)
         api_keys_cv.addWidget(self._api_key_rows_container)
 
-        add_key_btn = QPushButton("+ Add API Key")
+        add_key_btn = QPushButton(t("+ Add API Key"))
         akw = QHBoxLayout()
         akw.setContentsMargins(0, 0, 0, 0)
         akw.addWidget(add_key_btn)
@@ -637,13 +636,12 @@ class SettingsDialog(QDialog):
 
         custom_card, custom_cv = self._card("Custom provider")
         custom_note = QLabel(
-            "<small>Any OpenAI-compatible endpoint, including Ollama and LM Studio. "
-            "Select <b>Custom</b> in a model row below after setting the base URL.</small>"
+            f"<small>{t('Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.')}</small>"
         )
         custom_note.setWordWrap(True)
         custom_cv.addWidget(custom_note)
 
-        presets_btn = QPushButton("Presets ▾")
+        presets_btn = QPushButton(t("Presets ▾"))
         presets_btn.clicked.connect(self._show_custom_presets_menu)
         base_url_row = QWidget()
         bur_h = QHBoxLayout(base_url_row)
@@ -656,8 +654,8 @@ class SettingsDialog(QDialog):
         custom_f = _expanding_form_layout(custom_f_w)
         custom_f.setContentsMargins(0, 0, 0, 0)
         custom_f.setSpacing(8)
-        custom_f.addRow("Base URL", base_url_row)
-        custom_f.addRow("API key", self._fields["CUSTOM_API_KEY"])
+        custom_f.addRow(t("Base URL"), base_url_row)
+        custom_f.addRow(t("API key"), self._fields["CUSTOM_API_KEY"])
         custom_cv.addWidget(custom_f_w)
 
         test_custom_row = QWidget()
@@ -692,8 +690,8 @@ class SettingsDialog(QDialog):
             hdr_h.setSpacing(0)
             title_lbl = _WarningHeaderLabel(section_title.upper())
             title_lbl.setObjectName("sectionHeader")
-            self._register_warning_header(section_key, title_lbl)
-            apply_btn = QPushButton("Apply to all")
+            self._register_warning_header(section_key, title_lbl, base_text=section_title, uppercase=True)
+            apply_btn = QPushButton(t("Apply to all"))
             apply_btn.clicked.connect(
                 lambda checked, sk=section_key: self._apply_model_section_to_all(sk)
             )
@@ -707,8 +705,8 @@ class SettingsDialog(QDialog):
             mch_h = QHBoxLayout(mch_w)
             mch_h.setContentsMargins(0, 0, 0, 0)
             mch_h.setSpacing(8)
-            lk = QLabel("<small><b>Provider</b></small>")
-            lm = QLabel("<small><b>Model</b></small>")
+            lk = QLabel(f"<small><b>{t('Provider')}</b></small>")
+            lm = QLabel(f"<small><b>{t('Model')}</b></small>")
             mch_h.addWidget(lk, 2)
             mch_h.addWidget(lm, 3)
             mch_h.addSpacing(32)
@@ -730,14 +728,14 @@ class SettingsDialog(QDialog):
             tr_h = QHBoxLayout(test_row_w)
             tr_h.setContentsMargins(0, 4, 0, 0)
             tr_h.setSpacing(8)
-            test_btn = QPushButton(f"Test {section_title}")
+            test_btn = QPushButton(t(f"Test {section_title}"))
             test_btn.clicked.connect(test_fn)
             tr_h.addWidget(test_btn)
             tr_h.addWidget(test_lbl, 1)
             cv.addWidget(test_row_w)
 
             # add row button
-            add_row_btn = QPushButton("+ Add row")
+            add_row_btn = QPushButton(t("+ Add row"))
             arw = QHBoxLayout()
             arw.setContentsMargins(0, 0, 0, 0)
             arw.addWidget(add_row_btn)
@@ -776,11 +774,11 @@ class SettingsDialog(QDialog):
         provider_combo.setMinimumWidth(120)
 
         alias_edit = QLineEdit(alias)
-        alias_edit.setPlaceholderText("alias (optional)")
+        alias_edit.setPlaceholderText(t("alias (optional)"))
         alias_edit.setMinimumWidth(80)
 
         key_edit = self._password()
-        key_edit.setPlaceholderText("stored in keychain" if stored else "enter API key")
+        key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
 
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(40)
@@ -1135,13 +1133,13 @@ class SettingsDialog(QDialog):
             if tokens:
                 aid = tokens.get("account_id") or ""
                 label = "Logged in" + (f" \u2022 account {aid[:8]}\u2026" if aid else "")
-                self._chatgpt_status_lbl.setText(t(label))
+                self._chatgpt_status_lbl.setText(_translate_status_message(label))
                 self._chatgpt_status_lbl.setStyleSheet("color: #80c080;")
             else:
                 self._chatgpt_status_lbl.setText(t("Not logged in"))
                 self._chatgpt_status_lbl.setStyleSheet("color: palette(placeholder-text);")
         except Exception as exc:
-            self._chatgpt_status_lbl.setText(t(f"Error reading status: {exc}"))
+            self._chatgpt_status_lbl.setText(_translate_status_message(f"Error reading status: {exc}"))
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
 
     def _chatgpt_login_browser(self) -> None:
@@ -1173,7 +1171,7 @@ class SettingsDialog(QDialog):
             msg = self._auth_poll_error
             self._auth_poll_error = None  # clear so we don't re-trigger
             self._auth_poll_timer.stop()
-            self._chatgpt_status_lbl.setText(t(f"Error: {msg}"))
+            self._chatgpt_status_lbl.setText(_translate_status_message(f"Error: {msg}"))
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
             return
         # Check if tokens have appeared in the keychain
@@ -1210,13 +1208,13 @@ class SettingsDialog(QDialog):
                 label = "Logged in" + (f" as {login}" if login else "")
                 if scopes:
                     label += f"\nScopes: {scopes}"
-                self._github_status_lbl.setText(t(label))
+                self._github_status_lbl.setText(_translate_status_message(label))
                 self._github_status_lbl.setStyleSheet("color: #80c080;")
             else:
                 self._github_status_lbl.setText(t("Not logged in"))
                 self._github_status_lbl.setStyleSheet("color: palette(placeholder-text);")
         except Exception as exc:
-            self._github_status_lbl.setText(t(f"Error reading status: {exc}"))
+            self._github_status_lbl.setText(_translate_status_message(f"Error reading status: {exc}"))
             self._github_status_lbl.setStyleSheet("color: #c04040;")
 
     def _github_login_device(self) -> None:
@@ -1272,7 +1270,7 @@ class SettingsDialog(QDialog):
                 self._github_status_lbl.setStyleSheet("color: #80a0ff;")
                 return
             self._github_auth_poll_timer.stop()
-            self._github_status_lbl.setText(t(f"Error: {msg}"))
+            self._github_status_lbl.setText(_translate_status_message(f"Error: {msg}"))
             self._github_status_lbl.setStyleSheet("color: #c04040;")
             return
         try:
@@ -1306,7 +1304,7 @@ class SettingsDialog(QDialog):
                 "color: #80c080;" if stored else "color: palette(placeholder-text);"
             )
         except Exception as exc:
-            self._copilot_status_lbl.setText(t(f"Keychain error: {exc}"))
+            self._copilot_status_lbl.setText(_translate_status_message(f"Keychain error: {exc}"))
             self._copilot_status_lbl.setStyleSheet("color: #c04040;")
 
     def _copilot_save_token(self) -> None:
@@ -1340,7 +1338,7 @@ class SettingsDialog(QDialog):
                 "color: #80c080;" if ok else "color: #c04040;"
             )
         except Exception as exc:
-            self._copilot_status_lbl.setText(t(f"Test failed: {exc}"))
+            self._copilot_status_lbl.setText(_translate_status_message(f"Test failed: {exc}"))
             self._copilot_status_lbl.setStyleSheet("color: #c04040;")
 
     def _tab_tts(self) -> QWidget:
@@ -1854,7 +1852,7 @@ class SettingsDialog(QDialog):
         int_hdr_h.setContentsMargins(0, 2, 0, 0)
         int_hdr_h.setSpacing(6)
         for txt, w in [("Key", 40), ("Label", 130), ("Prompt", 0)]:
-            lbl = QLabel(f"<small><b>{txt}</b></small>")
+            lbl = QLabel(f"<small><b>{t(txt)}</b></small>")
             if w:
                 lbl.setFixedWidth(w)
             else:
@@ -2354,7 +2352,7 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         for text, handler in buttons:
-            btn = QPushButton(text)
+            btn = QPushButton(t(text))
             btn.clicked.connect(handler)
             layout.addWidget(btn)
         layout.addStretch()
@@ -2368,30 +2366,50 @@ class SettingsDialog(QDialog):
         cv.setContentsMargins(16, 12, 16, 16)
         cv.setSpacing(10)
         if title:
-            hdr = _WarningHeaderLabel(title.upper())
+            hdr = _WarningHeaderLabel(t(title).upper())
             hdr.setObjectName("sectionHeader")
             cv.addWidget(hdr)
-            self._register_warning_header(title, hdr)
+            self._register_warning_header(title, hdr, uppercase=True)
         return card, cv
 
-    def _register_warning_header(self, key: str, label: QLabel) -> None:
+    def _register_warning_header(
+        self,
+        key: str,
+        label: QLabel,
+        *,
+        base_text: str | None = None,
+        uppercase: bool = False,
+    ) -> None:
         if not hasattr(self, "_warning_headers"):
             self._warning_headers = {}
             self._warning_header_base_texts = {}
+        if not hasattr(self, "_warning_header_uppercase_keys"):
+            self._warning_header_uppercase_keys = set()
         self._warning_headers[key] = label
-        self._warning_header_base_texts[key] = label.text()
+        self._warning_header_base_texts[key] = base_text or key
+        if uppercase:
+            self._warning_header_uppercase_keys.add(key)
+        else:
+            self._warning_header_uppercase_keys.discard(key)
+
+    def _warning_header_text(self, key: str) -> str:
+        base = self._warning_header_base_texts.get(key, key)
+        text = t(base)
+        if key in getattr(self, "_warning_header_uppercase_keys", set()):
+            return text.upper()
+        return text
 
     def _set_warning_markers(self, warnings_by_target: dict[str, list[str]]) -> None:
         if not hasattr(self, "_warning_headers"):
             return
         for key, label in self._warning_headers.items():
-            base = self._warning_header_base_texts.get(key, label.text())
+            base = self._warning_header_text(key)
             target_warnings = warnings_by_target.get(key, [])
             if target_warnings:
-                label.setText(f"⚠ {t(base)}")
+                label.setText(f"⚠ {base}")
                 label.setToolTip("\n\n".join(t(warning) for warning in target_warnings))
             else:
-                label.setText(t(base))
+                label.setText(base)
                 label.setToolTip("")
 
     def _warning_values_from_current_ui(self) -> dict[str, str]:
@@ -2471,10 +2489,10 @@ class SettingsDialog(QDialog):
         content_v.setContentsMargins(0, 0, 0, 0)
         content_v.setSpacing(12)
 
-        title_lbl = _WarningHeaderLabel(title)
+        title_lbl = _WarningHeaderLabel(t(title))
         title_lbl.setObjectName("areaHeader")
         self._register_warning_header(title, title_lbl)
-        subtitle_lbl = QLabel(subtitle)
+        subtitle_lbl = QLabel(t(subtitle))
         subtitle_lbl.setObjectName("areaSubheader")
         subtitle_lbl.setWordWrap(True)
         content_v.addWidget(title_lbl)
@@ -2908,11 +2926,11 @@ class SettingsDialog(QDialog):
             color = "#80c080"
         else:
             color = "#c04040"
-        label.setText(t(message))
+        label.setText(_translate_status_message(message))
         label.setStyleSheet(f"color: {color};")
 
     def _set_test_pending(self, label: QLabel, message: str = "Testing...") -> None:
-        label.setText(t(message))
+        label.setText(_translate_status_message(message))
         label.setStyleSheet("color: #c0c040;")
 
     def _set_status_label(self, label: QLabel, ok, message: str) -> None:
@@ -2922,7 +2940,7 @@ class SettingsDialog(QDialog):
             color = "#80c080"
         else:
             color = "#c04040"
-        label.setText(t(message))
+        label.setText(_translate_status_message(message))
         label.setStyleSheet(f"color: {color};")
 
     def _queue_status_result(self, token: int, attr: str, ok, message: str) -> None:
@@ -3986,14 +4004,14 @@ def _seconds_str_to_ms(text, fallback_ms: int) -> str:
 
 
 def _desc_label(title: str, description: str) -> QLabel:
-    lbl = QLabel(description)
+    lbl = QLabel(t(description))
     lbl.setWordWrap(True)
     lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
     return lbl
 
 
 def _link_label(text: str, url: str) -> QLabel:
-    lbl = QLabel(f'<a href="{url}">{text}</a>')
+    lbl = QLabel(f'<a href="{url}">{t(text)}</a>')
     lbl.setOpenExternalLinks(True)
     lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
     lbl.setToolTip(url)
@@ -4010,6 +4028,26 @@ def _short_test_error(message: str, route_name: str) -> str:
     prefix = f"{route_name} test failed: "
     text = message[len(prefix):] if message.startswith(prefix) else message
     return " ".join(text.split())
+
+
+def _translate_status_message(message: str) -> str:
+    text = str(message or "")
+    if "\n" in text:
+        return "\n".join(_translate_status_message(part) for part in text.splitlines())
+    for prefix in (
+        "Error reading status: ",
+        "Keychain error: ",
+        "Test failed: ",
+        "Error: ",
+        "Logged in • account ",
+        "Logged in - account ",
+        "Logged in as ",
+        "Scopes: ",
+    ):
+        if text.startswith(prefix):
+            translated_prefix = t("Logged in • account ") if prefix == "Logged in - account " else t(prefix)
+            return translated_prefix + text[len(prefix):]
+    return t(text)
 
 
 def _dialog_is_usable(dialog: "SettingsDialog | None") -> bool:
