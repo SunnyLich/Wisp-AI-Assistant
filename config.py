@@ -5,17 +5,30 @@ import os
 from dotenv import load_dotenv
 from core import secret_store
 from core.system.env_utils import (
-    env_bool, env_float, env_int, env_screenshot_mode, parse_tool_modes,
+    env_bool, env_file_access_mode, env_float, env_int, env_screenshot_mode,
+    normalize_file_access_mode, parse_tool_modes,
 )
 from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
 from core.system.paths import USER_FILLER_AUDIO_DIR as DEFAULT_USER_FILLER_AUDIO_DIR
-from core.system.paths import REPO_ROOT, MODEL_TOOLS_DIR
+from core.system.paths import REPO_ROOT, MODEL_FILE_ACCESS_DIR, MODEL_TOOLS_DIR
 from core.settings_model import AppSettings
 
 _ENV_FILE = REPO_ROOT / ".env"
 load_dotenv(_ENV_FILE)
 
 BASE_DIR = str(REPO_ROOT)
+
+DEFAULT_TOOL_FILE_BLOCKED_GLOBS = [
+    ".git/**",
+    ".env*",
+    "**/.env*",
+    "**/*secret*",
+    "**/*token*",
+    "**/*.pem",
+    "**/*.key",
+    "**/*.p12",
+    "**/*.pfx",
+]
 
 # Static constants — not .env-configurable; do not belong in _load_config().
 FILLER_AUDIO_DIR = str(DEFAULT_FILLER_AUDIO_DIR)
@@ -45,6 +58,7 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_memory_mode": "auto",
         "context_screenshot": "off",   # "off" | "auto" | "model"
         "context_clipboard": False,
+        "file_access": "off",
         "intents": [
             {"key": "w", "label": "What is this?",      "hint": "Quick explanation, plain English",  "prompt": "What is this? Give me a clear, plain-English explanation in 2-3 sentences."},
             {"key": "a", "label": "Explain simply",     "hint": "ELI5 — no jargon",                 "prompt": "Explain this as simply as possible. Assume I have no technical background whatsoever."},
@@ -66,6 +80,7 @@ _CALLER_DEFAULTS: list[dict] = [
         "context_memory_mode": "off",
         "context_screenshot": "off",   # "off" | "auto" | "model"
         "context_clipboard": False,
+        "file_access": "off",
         "intents": [
             {"key": "w", "label": "Fix grammar",  "hint": "Correct spelling and grammar",     "prompt": "Fix the grammar and spelling of the following text. Output ONLY the corrected text."},
             {"key": "a", "label": "Simplify",     "hint": "Make it easier to read",           "prompt": "Simplify the following text for a general audience. Output ONLY the simplified text."},
@@ -76,8 +91,48 @@ _CALLER_DEFAULTS: list[dict] = [
 
 
 def _context_mode(value: str | None, default: str = "off") -> str:
+    """Handle context mode for config."""
     mode = (value or default or "off").strip().lower()
     return mode if mode in {"off", "auto", "model"} else default
+
+
+def _file_permission_mode(value: str | None, default: str = "never") -> str:
+    """Normalize live local-file mutation mode."""
+    mode = (value or default or "never").strip().lower()
+    return mode if mode in {"never", "ask", "auto"} else default
+
+
+def _env_list(name: str, *, default: list[str] | None = None) -> list[str]:
+    """Parse env lists from newlines, semicolons, or os.pathsep-delimited text."""
+    value = os.getenv(name)
+    if value is None:
+        return list(default or [])
+    parts: list[str] = []
+    for chunk in value.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        for item in chunk.split(os.pathsep):
+            item = item.strip()
+            if item:
+                parts.append(item)
+    return parts
+
+
+def _default_tool_file_roots() -> list[str]:
+    """Return the default app-local folder for model file access."""
+    try:
+        MODEL_FILE_ACCESS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return [str(MODEL_FILE_ACCESS_DIR)]
+
+
+def _file_access_default_from_tool_overrides(tools: dict[str, str]) -> str:
+    """Infer the new per-caller file mode from legacy local-file tool overrides."""
+    enabled = {name for name, mode in (tools or {}).items() if mode in {"on", "model"}}
+    if enabled & {"edit_file", "write_file"}:
+        return normalize_file_access_mode(os.getenv("TOOL_FILE_MODE"), "ask")
+    if enabled & {"list_files", "read_file"}:
+        return "read"
+    return "off"
 
 
 # The static tool sentence older builds baked into the default system prompt
@@ -103,6 +158,7 @@ _VOICE_DEFAULTS: dict = {
     "context_github_mode": "off",
     "context_memory_mode": "auto",
     "context_screenshot": "off",   # "off" | "auto" | "model"
+    "file_access": "off",
 }
 
 
@@ -128,6 +184,7 @@ def _load_voice_caller() -> dict:
         "context_github_mode": github_mode,
         "context_memory_mode": memory_mode,
         "context_screenshot": env_screenshot_mode("VOICE_CONTEXT_SCREENSHOT", str(d["context_screenshot"])),
+        "file_access": env_file_access_mode("VOICE_FILE_ACCESS", str(d.get("file_access") or "off")),
         "tools": parse_tool_modes(os.getenv("VOICE_TOOLS")),
     }
 
@@ -172,6 +229,7 @@ def _load_caller_rows() -> list[dict]:
             os.getenv(f"CALLER_{n}_CONTEXT_MEMORY_MODE"),
             str(default.get("context_memory_mode") or "auto"),
         )
+        tools = parse_tool_modes(os.getenv(f"CALLER_{n}_TOOLS"))
         rows.append({
             "hotkey":     os.getenv(f"CALLER_{n}_HOTKEY",     default.get("hotkey", "")),
             "label":      os.getenv(f"CALLER_{n}_LABEL",      default.get("label", "")),
@@ -187,10 +245,26 @@ def _load_caller_rows() -> list[dict]:
             "context_memory_mode": memory_mode,
             "context_screenshot": env_screenshot_mode(f"CALLER_{n}_CONTEXT_SCREENSHOT", default.get("context_screenshot", "off")),
             "context_clipboard": env_bool(f"CALLER_{n}_CONTEXT_CLIPBOARD", bool(default.get("context_clipboard", False))),
-            "tools":      parse_tool_modes(os.getenv(f"CALLER_{n}_TOOLS")),
+            "file_access": env_file_access_mode(
+                f"CALLER_{n}_FILE_ACCESS",
+                str(default.get("file_access") or _file_access_default_from_tool_overrides(tools)),
+            ),
+            "tools":      tools,
             "intents":    intents,
         })
     return rows
+
+
+def _intent_context_toggle_keys(raw: str | None) -> str:
+    """Normalize the overlay-local keys used to toggle context chips."""
+    keys = []
+    for ch in str(raw or "").strip():
+        if ch.isspace() or ch in keys:
+            continue
+        keys.append(ch)
+        if len(keys) >= 7:
+            break
+    return "".join(keys) or "1234567"
 
 
 def _load_config() -> None:
@@ -214,11 +288,12 @@ def _load_config() -> None:
     global GITHUB_DEFAULT_CLIENT_ID, GITHUB_CLIENT_ID, GITHUB_OAUTH_SCOPES
     global COPILOT_CLI_URL, COPILOT_CLI_PATH
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP, HOTKEY_VOICE, HOTKEY_DICTATE, DICTATE_MODE
+    global INTENT_CONTEXT_TOGGLE_KEYS, INTENT_OVERLAY_TIMEOUT_MS
     global SNIP_CONTEXT_AMBIENT, SNIP_CONTEXT_DOCUMENTS, SNIP_CONTEXT_TOOLS
     global STT_MODEL, STT_COMPUTE_TYPE, STT_LANGUAGE, STT_BEAM_SIZE, STT_DEVICE
     global CALLER_ROWS, VOICE_CALLER
     global CONTEXT_BROWSER_MAX_CHARS, CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS, CONTEXT_TOOL_DOCUMENT_MAX_CHARS
-    global TOOL_PLUGIN_DIR, TOOL_GIT_ROOT
+    global TOOL_PLUGIN_DIR, TOOL_GIT_ROOT, TOOL_FILE_ROOTS, TOOL_FILE_MODE, TOOL_FILE_BLOCKED_GLOBS
     global BUBBLE_WIDTH, BUBBLE_LINES, BUBBLE_COLOR, BUBBLE_TEXT_COLOR, BUBBLE_READ_WORD_COLOR
     global ICON_SIZE, ICON_BACKSTOP_MS, BUBBLE_HIDE_DELAY_MS
     global BUBBLE_REVEAL_WPM, BUBBLE_HOLD_REVEAL_WPM
@@ -322,6 +397,13 @@ def _load_config() -> None:
     # transcript verbatim; "llm" runs it through the LLM for punctuation/cleanup.
     HOTKEY_DICTATE       = os.getenv("HOTKEY_DICTATE",       "")
     DICTATE_MODE         = os.getenv("DICTATE_MODE",         "raw")
+    INTENT_CONTEXT_TOGGLE_KEYS = _intent_context_toggle_keys(
+        os.getenv("INTENT_CONTEXT_TOGGLE_KEYS", "1234567")
+    )
+    INTENT_OVERLAY_TIMEOUT_MS = max(
+        0,
+        env_int("INTENT_OVERLAY_TIMEOUT_MS", 60000),
+    )
 
     SNIP_CONTEXT_AMBIENT   = env_bool("SNIP_CONTEXT_AMBIENT",   True)
     SNIP_CONTEXT_DOCUMENTS = env_bool("SNIP_CONTEXT_DOCUMENTS", False)
@@ -356,11 +438,17 @@ def _load_config() -> None:
         VOICE_CALLER = new_voice
 
     # --- Context budgets ---
-    CONTEXT_BROWSER_MAX_CHARS          = env_int("CONTEXT_BROWSER_MAX_CHARS",          4000)
+    CONTEXT_BROWSER_MAX_CHARS          = env_int("CONTEXT_BROWSER_MAX_CHARS",          12000)
     CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS = env_int("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", 8000)
     CONTEXT_TOOL_DOCUMENT_MAX_CHARS    = env_int("CONTEXT_TOOL_DOCUMENT_MAX_CHARS",    50000)
     TOOL_PLUGIN_DIR = os.getenv("TOOL_PLUGIN_DIR", str(MODEL_TOOLS_DIR))
     TOOL_GIT_ROOT   = os.getenv("TOOL_GIT_ROOT", BASE_DIR)
+    TOOL_FILE_ROOTS = _env_list("TOOL_FILE_ROOTS", default=_default_tool_file_roots())
+    TOOL_FILE_MODE = _file_permission_mode(os.getenv("TOOL_FILE_MODE"), "never")
+    TOOL_FILE_BLOCKED_GLOBS = _env_list(
+        "TOOL_FILE_BLOCKED_GLOBS",
+        default=DEFAULT_TOOL_FILE_BLOCKED_GLOBS,
+    )
 
     # --- UI sizes ---
     BUBBLE_WIDTH           = env_int("BUBBLE_WIDTH",      340)
@@ -411,6 +499,7 @@ _load_config()
 
 
 def _assistant_language_instruction(language: str) -> str:
+    """Handle assistant language instruction for config."""
     language = (language or "").strip()
     if not language:
         return ""
@@ -420,6 +509,7 @@ def _assistant_language_instruction(language: str) -> str:
 
 
 def get_system_prompt() -> str:
+    """Return system prompt."""
     language_instruction = _assistant_language_instruction(ASSISTANT_LANGUAGE)
     if not language_instruction:
         return SYSTEM_PROMPT_UTILITY

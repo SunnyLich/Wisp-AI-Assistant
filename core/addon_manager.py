@@ -1,4 +1,4 @@
-"""Addon lifecycle management for Wisp.
+﻿"""Addon lifecycle management for Wisp.
 
 Addons are folders with an ``addon.toml`` manifest. Each enabled addon runs in
 its own subprocess host so hook crashes and long-running code do not execute in
@@ -30,6 +30,7 @@ _HOST_TIMEOUT_SECONDS = 2.0
 
 
 def _terminal(event: str) -> None:
+    """Handle terminal for addon manager."""
     try:
         print(f"[addon] {event}", file=sys.stderr, flush=True)
     except Exception:
@@ -38,6 +39,7 @@ def _terminal(event: str) -> None:
 
 @dataclass(frozen=True)
 class AddonManifest:
+    """Model addon manifest."""
     id: str
     name: str
     version: str = "0.0.0"
@@ -57,6 +59,7 @@ class AddonManifest:
 
 @dataclass
 class LoadedAddon:
+    """Model loaded addon."""
     id: str
     name: str
     path: Path
@@ -77,7 +80,7 @@ class LoadedAddon:
 
 @dataclass
 class AppContext:
-    """Compatibility context for callers that still use ``core.plugin_manager``."""
+    """Context object passed to addon lifecycle hooks."""
 
     signals: Any
     model_tool_registry: Any
@@ -85,7 +88,9 @@ class AppContext:
 
 
 class AddonHostProcess:
+    """Model addon host process."""
     def __init__(self, addon: LoadedAddon, *, timeout: float = _HOST_TIMEOUT_SECONDS) -> None:
+        """Initialize the addon host process instance."""
         self.addon = addon
         self.timeout = timeout
         self._lock = threading.Lock()
@@ -96,6 +101,7 @@ class AddonHostProcess:
         self._stderr_thread: threading.Thread | None = None
 
     def start(self) -> None:
+        """Spawn the out-of-process addon host (no-op if already running)."""
         if self._proc and self._proc.poll() is None:
             return
         cmd = [
@@ -130,6 +136,7 @@ class AddonHostProcess:
             self._stderr_thread.start()
 
     def stop(self) -> None:
+        """Run the addon's on_shutdown hook, then terminate (or kill) the host process."""
         proc = self._proc
         if proc is None:
             return
@@ -147,11 +154,13 @@ class AddonHostProcess:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def restart(self) -> None:
+        """Handle restart for addon host process."""
         self.stop()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"addon-{self.addon.id}")
         self.start()
 
     def call(self, method: str, params: dict[str, Any] | None = None, *, timeout: float | None = None) -> Any:
+        """Invoke an addon RPC method on the host, killing it if it exceeds the timeout."""
         self.start()
         future = self._executor.submit(self._raw_call, method, params or {})
         try:
@@ -161,6 +170,7 @@ class AddonHostProcess:
             raise TimeoutError(f"addon {self.addon.id} timed out during {method}")
 
     def _raw_call(self, method: str, params: dict[str, Any]) -> Any:
+        """Handle raw call for addon host process."""
         with self._lock:
             proc = self._proc
             if proc is None or proc.stdin is None or proc.stdout is None or proc.poll() is not None:
@@ -180,6 +190,7 @@ class AddonHostProcess:
                 return reply.get("result")
 
     def _kill_for_timeout(self, method: str) -> None:
+        """Handle kill for timeout for addon host process."""
         proc = self._proc
         if proc and proc.poll() is None:
             message = f"{self.addon.id} timed out in {method}; killing host"
@@ -189,10 +200,12 @@ class AddonHostProcess:
         self._proc = None
 
     def log_text(self) -> str:
+        """Log text."""
         with self._logs_lock:
             return "\n".join(self._logs)
 
     def _read_stderr(self, stream: Any) -> None:
+        """Read stderr."""
         try:
             for line in stream:
                 self._append_log(str(line).rstrip("\r\n"))
@@ -200,6 +213,7 @@ class AddonHostProcess:
             pass
 
     def _append_log(self, line: str) -> None:
+        """Append log."""
         line = line.strip()
         if not line:
             return
@@ -208,12 +222,15 @@ class AddonHostProcess:
 
 
 class AddonManager:
+    """Coordinate addon manager behavior."""
     def __init__(self, addons_dir: Path | None = None):
+        """Initialize the addon manager instance."""
         self._dir = addons_dir or ADDONS_DIR
         self._mods: list[LoadedAddon] = []  # compatibility name used by callers/tests
         self._tool_registry: Any = None
 
     def load_all(self) -> None:
+        """Load all."""
         self.shutdown_hosts()
         self._mods = []
         if not self._dir.exists():
@@ -223,6 +240,7 @@ class AddonManager:
             self._load_addon(child)
 
     def _load_addon(self, folder: Path) -> None:
+        """Load addon."""
         try:
             manifest = load_manifest(folder)
             enabled = addon_store.is_enabled(manifest.id, True)
@@ -256,6 +274,7 @@ class AddonManager:
             _terminal(f"failed to load {folder.name}")
 
     def on_startup(self, app_context: AppContext) -> None:
+        """Handle startup events."""
         self._tool_registry = app_context.model_tool_registry
         for addon in self._enabled_addons():
             if addon.host is None:
@@ -265,16 +284,19 @@ class AddonManager:
         self.dispatch_event("app.startup", {})
 
     def on_shutdown(self) -> None:
+        """Handle shutdown events."""
         self.dispatch_event("app.shutdown", {})
         self.shutdown_hosts()
 
     def shutdown_hosts(self) -> None:
+        """Handle shutdown hosts for addon manager."""
         for addon in getattr(self, "_mods", []):
             if addon.host is not None:
                 addon.host.stop()
                 addon.host = None
 
     def before_query(self, prompt: str, context_snapshot: str) -> tuple[str, str]:
+        """Handle before query for addon manager."""
         for addon in self._enabled_addons():
             if addon.host is None:
                 continue
@@ -293,6 +315,7 @@ class AddonManager:
         return prompt, context_snapshot
 
     def after_response(self, response_text: str) -> None:
+        """Handle after response for addon manager."""
         for addon in self._enabled_addons():
             response_perm = str(addon.manifest.permissions.get("response") or "none").lower()
             if addon.host is not None and response_perm in {"read", "modify"}:
@@ -300,6 +323,7 @@ class AddonManager:
         self.dispatch_event("response.after", {"text": response_text})
 
     def dispatch_event(self, event: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Dispatch event."""
         results: list[dict[str, Any]] = []
         event = str(event or "").strip()
         if not event:
@@ -317,6 +341,7 @@ class AddonManager:
         return results
 
     def get_tray_actions(self) -> list[dict[str, Any]]:
+        """Return tray actions."""
         actions: list[dict[str, Any]] = []
         for addon in self._enabled_addons():
             if not _has_ui_permission(addon, "tray"):
@@ -330,6 +355,7 @@ class AddonManager:
         return actions
 
     def run_tray_action(self, name: str, label: str) -> None:
+        """Run tray action."""
         addon = self._find(name)
         if addon is None or addon.host is None or not addon.enabled:
             raise ValueError(f"Addon not loaded: {name}")
@@ -338,6 +364,7 @@ class AddonManager:
         _call_host(addon, "run_tray_action", {"label": label}, timeout=5.0)
 
     def get_intents(self, caller_idx: int | None = None) -> list[dict[str, Any]]:
+        """Return intents."""
         intents: list[dict[str, Any]] = []
         for addon in self._enabled_addons():
             if not _has_ui_permission(addon, "intents"):
@@ -355,6 +382,7 @@ class AddonManager:
         return intents
 
     def run_intent(self, name: str, intent_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run intent."""
         addon = self._find(name)
         if addon is None or addon.host is None or not addon.enabled:
             raise ValueError(f"Addon not loaded: {name}")
@@ -364,6 +392,7 @@ class AddonManager:
         return result if isinstance(result, dict) else {}
 
     def get_hotkeys(self) -> list[dict[str, Any]]:
+        """Return hotkeys."""
         hotkeys: list[dict[str, Any]] = []
         for addon in self._enabled_addons():
             if not _has_permission(addon, "hotkeys"):
@@ -374,6 +403,7 @@ class AddonManager:
         return hotkeys
 
     def run_hotkey(self, name: str, hotkey_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run hotkey."""
         addon = self._find(name)
         if addon is None or addon.host is None or not addon.enabled:
             raise ValueError(f"Addon not loaded: {name}")
@@ -386,6 +416,7 @@ class AddonManager:
         return result if isinstance(result, dict) else {}
 
     def get_notifications(self) -> list[dict[str, Any]]:
+        """Return notifications."""
         notifications: list[dict[str, Any]] = []
         for addon in self._enabled_addons():
             if not _has_ui_permission(addon, "notifications"):
@@ -396,13 +427,16 @@ class AddonManager:
         return notifications
 
     def mod_names(self) -> list[str]:
+        """Handle mod names for addon manager."""
         return [m.name for m in self._mods]
 
     def is_enabled(self, name: str) -> bool:
+        """Return whether enabled is true."""
         addon = self._find(name)
         return bool(addon and addon.enabled)
 
     def set_enabled(self, name: str, enabled: bool) -> bool:
+        """Set enabled."""
         addon = self._find(name)
         if addon is None:
             return False
@@ -432,6 +466,7 @@ class AddonManager:
         return enabled
 
     def repair_environment(self, name: str) -> dict[str, Any]:
+        """Handle repair environment for addon manager."""
         addon = self._find(name)
         if addon is None:
             raise ValueError(f"Addon not loaded: {name}")
@@ -466,6 +501,7 @@ class AddonManager:
         return addon.runtime_status
 
     def get_settings(self, name: str) -> list[dict[str, Any]]:
+        """Return settings."""
         addon = self._find(name)
         if addon is None:
             return []
@@ -487,15 +523,18 @@ class AddonManager:
         return out
 
     def set_setting(self, name: str, key: str, value: Any) -> None:
+        """Set setting."""
         addon = self._find(name)
         if addon is None or not str(key).strip():
             return
         addon_store.set_setting(addon.id, str(key).strip(), value)
 
     def summaries(self) -> list[dict[str, Any]]:
+        """Handle summaries for addon manager."""
         return [self.payload(addon) for addon in self._mods]
 
     def payload(self, addon: LoadedAddon) -> dict[str, Any]:
+        """Handle payload for addon manager."""
         return {
             "id": addon.id,
             "name": addon.name,
@@ -521,6 +560,7 @@ class AddonManager:
         }
 
     def _register_tools(self, addon: LoadedAddon) -> None:
+        """Handle register tools for addon manager."""
         if self._tool_registry is None:
             return
         from core.tool_registry import ToolSpec
@@ -539,18 +579,21 @@ class AddonManager:
             self._tool_registry.register_builtin(spec)
 
     def _enabled_addons(self) -> list[LoadedAddon]:
+        """Handle enabled addons for addon manager."""
         return sorted(
             [addon for addon in self._mods if addon.enabled and addon.status != "error"],
             key=lambda addon: (addon.manifest.priority, addon.id),
         )
 
     def _find(self, name: str) -> LoadedAddon | None:
+        """Return the loaded addon matching *name* by id or name, else None."""
         for addon in self._mods:
             if addon.id == name or addon.name == name:
                 return addon
         return None
 
     def _activate_addon(self, addon: LoadedAddon) -> bool:
+        """Handle activate addon for addon manager."""
         if addon.host is not None:
             addon.host.stop()
             addon.host = None
@@ -604,6 +647,7 @@ class AddonManager:
         return True
 
     def _runtime_status(self, addon: LoadedAddon) -> dict[str, Any]:
+        """Handle runtime status for addon manager."""
         status = addon_runtime.environment_status(addon.id, addon.manifest.dependencies)
         if not addon.manifest.dependencies.has_dependencies:
             status["approved"] = True
@@ -620,6 +664,7 @@ class AddonManager:
 
 
 def load_manifest(folder: Path) -> AddonManifest:
+    """Load manifest."""
     path = _first_existing(folder / "addon.toml", folder / "plugin.toml")
     if path is None:
         legacy = folder / "__init__.py"
@@ -659,11 +704,13 @@ def load_manifest(folder: Path) -> AddonManifest:
     )
 
 
-def plugin_setting(addon_id: str, key: str, default: Any = None) -> Any:
+def addon_setting(addon_id: str, key: str, default: Any = None) -> Any:
+    """Return a persisted setting for an addon."""
     return addon_store.get_setting(_valid_id(addon_id), key, default)
 
 
 def init(addons_dir: Path | None = None) -> AddonManager:
+    """Handle init for addon manager."""
     global _manager
     _manager = AddonManager(addons_dir or ADDONS_DIR)
     _manager.load_all()
@@ -671,13 +718,16 @@ def init(addons_dir: Path | None = None) -> AddonManager:
 
 
 def get_manager() -> AddonManager:
+    """Return manager."""
     if _manager is None:
         raise RuntimeError("AddonManager not initialised yet; call init() first.")
     return _manager
 
 
 def _make_tool_executor(addon: LoadedAddon, name: str):
+    """Create tool executor."""
     def _executor(inputs: dict[str, Any]) -> str:
+        """Handle executor for addon manager."""
         if addon.host is None:
             addon.host = AddonHostProcess(addon)
         result = _call_host(addon, "execute_tool", {"name": name, "inputs": inputs or {}}, timeout=8.0)
@@ -687,7 +737,9 @@ def _make_tool_executor(addon: LoadedAddon, name: str):
 
 
 def _make_action_callback(addon: LoadedAddon, label: str):
+    """Create action callback."""
     def _callback() -> None:
+        """Handle callback for addon manager."""
         if addon.host is None:
             addon.host = AddonHostProcess(addon)
         _call_host(addon, "run_tray_action", {"label": label}, timeout=5.0)
@@ -696,6 +748,7 @@ def _make_action_callback(addon: LoadedAddon, label: str):
 
 
 def _call_host(addon: LoadedAddon, method: str, params: dict[str, Any] | None = None, *, timeout: float | None = None) -> Any:
+    """Call host."""
     if addon.host is None:
         return None
     try:
@@ -707,14 +760,17 @@ def _call_host(addon: LoadedAddon, method: str, params: dict[str, Any] | None = 
 
 
 def _safe_list(value: Any) -> list[Any]:
+    """Handle safe list for addon manager."""
     return value if isinstance(value, list) else []
 
 
 def _safe_tool_specs(value: Any) -> list[dict[str, Any]]:
+    """Handle safe tool specs for addon manager."""
     return [item for item in _safe_list(value) if isinstance(item, dict)]
 
 
 def _safe_int(value: Any, default: int) -> int:
+    """Handle safe int for addon manager."""
     try:
         return int(value)
     except Exception:
@@ -722,10 +778,12 @@ def _safe_int(value: Any, default: int) -> int:
 
 
 def _has_permission(addon: LoadedAddon, key: str) -> bool:
+    """Return whether permission is available."""
     return bool(addon.manifest.permissions.get(key))
 
 
 def _has_ui_permission(addon: LoadedAddon, feature: str) -> bool:
+    """Return whether ui permission is available."""
     ui = addon.manifest.permissions.get("ui")
     if isinstance(ui, list):
         return feature in {str(item) for item in ui}
@@ -733,6 +791,7 @@ def _has_ui_permission(addon: LoadedAddon, feature: str) -> bool:
 
 
 def _normalize_intent(addon_id: str, item: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize intent."""
     label = str(item.get("label") or item.get("name") or "").strip()
     prompt = str(item.get("prompt") or item.get("template") or "").strip()
     callback = bool(item.get("callback") or item.get("id"))
@@ -752,6 +811,7 @@ def _normalize_intent(addon_id: str, item: dict[str, Any]) -> dict[str, Any] | N
 
 
 def _safe_intents(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
+    """Handle safe intents for addon manager."""
     items = [*addon.manifest.intents, *_safe_tool_specs(dynamic)]
     out: list[dict[str, Any]] = []
     for item in items:
@@ -762,6 +822,7 @@ def _safe_intents(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
 
 
 def _safe_notifications(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
+    """Handle safe notifications for addon manager."""
     out: list[dict[str, Any]] = []
     for item in [*addon.manifest.notifications, *_safe_tool_specs(dynamic)]:
         title = str(item.get("title") or addon.name).strip()
@@ -772,6 +833,7 @@ def _safe_notifications(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]
 
 
 def _safe_hotkeys(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
+    """Handle safe hotkeys for addon manager."""
     out: list[dict[str, Any]] = []
     for item in [*addon.manifest.hotkeys, *_safe_tool_specs(dynamic)]:
         combo = str(item.get("hotkey") or item.get("combo") or "").strip()
@@ -791,15 +853,18 @@ def _safe_hotkeys(addon: LoadedAddon, dynamic: Any) -> list[dict[str, Any]]:
 
 
 def _data_dir(addon_id: str) -> Path:
+    """Handle data dir for addon manager."""
     return REPO_ROOT / "addon_data" / addon_id
 
 
 def _valid_id(value: str) -> str:
+    """Handle valid id for addon manager."""
     value = re.sub(r"[^a-zA-Z0-9-]+", "-", value.strip().lower()).strip("-")
     return value or "addon"
 
 
 def _first_existing(*paths: Path) -> Path | None:
+    """Handle first existing for addon manager."""
     for path in paths:
         if path.exists():
             return path
@@ -807,6 +872,7 @@ def _first_existing(*paths: Path) -> Path | None:
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
+    """Load toml."""
     text = path.read_text(encoding="utf-8")
     try:
         import tomllib

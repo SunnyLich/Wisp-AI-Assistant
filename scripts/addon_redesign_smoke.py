@@ -29,20 +29,23 @@ from typing import Callable
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-BRAIN_PATH = REPO_ROOT / "macos_py" / "brain"
+BRAIN_PATH = REPO_ROOT / "runtime" / "brain"
 if str(BRAIN_PATH) not in sys.path:
     sys.path.insert(0, str(BRAIN_PATH))
 
 
 @dataclass
 class Result:
+    """Model result."""
     name: str
     status: str
     detail: str = ""
 
 
 class Smoke:
+    """Model smoke."""
     def __init__(self, *, install_deps: bool, keep_temp: bool, verbose: bool) -> None:
+        """Initialize the smoke instance."""
         self.install_deps = install_deps
         self.keep_temp = keep_temp
         self.verbose = verbose
@@ -57,6 +60,7 @@ class Smoke:
         self._patch_runtime_paths()
 
     def _patch_runtime_paths(self) -> None:
+        """Handle patch runtime paths for smoke."""
         from core import addon_runtime, addon_store
         import core.addon_manager as addon_manager
         import core.plugin_manager as plugin_manager
@@ -70,20 +74,24 @@ class Smoke:
         paths.ADDONS_DIR = self.addons_dir
 
     def case_addons_dir(self, name: str) -> Path:
+        """Handle case addons dir for smoke."""
         addons_dir = self.temp_root / "cases" / name / "addons"
         addons_dir.mkdir(parents=True, exist_ok=True)
         return addons_dir
 
     def cleanup(self) -> None:
+        """Handle cleanup for smoke."""
         if self.keep_temp:
             print(f"\nKept temp root: {self.temp_root}")
             return
         shutil.rmtree(self.temp_root, ignore_errors=True)
 
     def record(self, name: str, status: str, detail: str = "") -> None:
+        """Record the smoke workflow."""
         self.results.append(Result(name, status, detail))
 
     def run_case(self, name: str, fn: Callable[[], None]) -> None:
+        """Run case."""
         diagnostics = io.StringIO()
         try:
             if self.verbose:
@@ -103,6 +111,7 @@ class Smoke:
                 print(captured[-4000:])
 
     def report(self) -> int:
+        """Handle report for smoke."""
         print("\nAddon Redesign Smoke Results")
         print("=" * 32)
         for result in self.results:
@@ -116,15 +125,18 @@ class Smoke:
 
 
 class SkipCase(RuntimeError):
+    """Model skip case."""
     pass
 
 
 def write(path: Path, text: str) -> None:
+    """Write dedented text to *path*, creating parent directories."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
 
 
 def make_addon(root: Path, folder_name: str, manifest: str, code: str) -> Path:
+    """Create addon."""
     folder = root / folder_name
     write(folder / "addon.toml", manifest)
     write(folder / "__init__.py", code)
@@ -132,6 +144,7 @@ def make_addon(root: Path, folder_name: str, manifest: str, code: str) -> Path:
 
 
 def manager_for(addons_dir: Path):
+    """Support command-line helper for scripts addon redesign smoke for manager for."""
     from core.addon_manager import AddonManager
 
     manager = AddonManager(addons_dir)
@@ -140,6 +153,7 @@ def manager_for(addons_dir: Path):
 
 
 def summary_by_id(manager, addon_id: str) -> dict:
+    """Support command-line helper for scripts addon redesign smoke for summary by id."""
     for item in manager.summaries():
         if item.get("id") == addon_id:
             return item
@@ -147,6 +161,7 @@ def summary_by_id(manager, addon_id: str) -> dict:
 
 
 def test_manifest_host_surfaces_and_distribution(smoke: Smoke) -> None:
+    """Verify manifest host surfaces and distribution behavior."""
     from core.addon_distribution import install_addon_archive, install_addon_folder
 
     source = make_addon(
@@ -285,6 +300,7 @@ def test_manifest_host_surfaces_and_distribution(smoke: Smoke) -> None:
 
 
 def test_dependency_runtime(smoke: Smoke) -> None:
+    """Verify dependency runtime behavior."""
     from core import addon_runtime, addon_store
     from core.addon_distribution import install_addon_folder
 
@@ -345,6 +361,7 @@ def test_dependency_runtime(smoke: Smoke) -> None:
 
 
 def test_bad_addon_resilience(smoke: Smoke) -> None:
+    """Verify bad addon resilience behavior."""
     from core.addon_distribution import install_addon_folder
 
     addons_dir = smoke.case_addons_dir("bad-resilience")
@@ -476,6 +493,7 @@ def test_bad_addon_resilience(smoke: Smoke) -> None:
 
 
 def test_permission_gating(smoke: Smoke) -> None:
+    """Verify permission gating behavior."""
     from core.addon_distribution import install_addon_folder
     import core.plugin_manager as plugin_manager
     import core.system.paths as paths
@@ -550,6 +568,7 @@ def test_permission_gating(smoke: Smoke) -> None:
 
 
 def test_archive_path_traversal(smoke: Smoke) -> None:
+    """Verify archive path traversal behavior."""
     from core.addon_distribution import install_addon_archive
 
     archive = smoke.temp_root / "bad-traversal.wisp"
@@ -568,6 +587,7 @@ def test_archive_path_traversal(smoke: Smoke) -> None:
 
 
 def main() -> int:
+    """Support command-line helper for scripts addon redesign smoke for main."""
     parser = argparse.ArgumentParser(description="Run addon redesign smoke tests.")
     parser.add_argument(
         "--install-deps",

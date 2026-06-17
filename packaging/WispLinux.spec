@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+# PyInstaller specification for the Linux Wisp executable bundle.
 
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
@@ -32,7 +33,7 @@ block_cipher = None
 
 
 a = Analysis(
-    [str(ROOT / "macos_py" / "supervisor" / "app.py")],
+    [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
     binaries=LITEPARSE_BINARIES + UV_BINARIES,
     datas=[

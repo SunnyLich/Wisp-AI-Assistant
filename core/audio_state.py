@@ -20,10 +20,12 @@ def set_tts_speed_boost(enabled: bool) -> None:
 
 
 def tts_speed_boost_enabled() -> bool:
+    """Handle TTS speed boost enabled for audio state."""
     with _tts_speed_lock:
         return _tts_speed_boost
 
 
 def current_tts_rate(*, playback_rate: float, hold_playback_rate: float) -> float:
+    """Handle current TTS rate for audio state."""
     rate = hold_playback_rate if tts_speed_boost_enabled() else playback_rate
     return max(0.25, min(4.0, float(rate)))

@@ -43,6 +43,7 @@ class HotkeyCaptureEdit(QLineEdit):
     _RECORD_STYLE = "background: #1e1e3a; color: #a0a0ff; border: 1px solid #6060cc;"
 
     def __init__(self, parent=None):
+        """Initialize the hotkey capture edit instance."""
         super().__init__(parent)
         self.setReadOnly(True)
         self.setPlaceholderText(t("Click to set..."))
@@ -51,11 +52,13 @@ class HotkeyCaptureEdit(QLineEdit):
         self._prev_text = ""
 
     def mousePressEvent(self, event):  # noqa: N802
+        """Handle mouse press event for hotkey capture edit."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._start_recording()
         super().mousePressEvent(event)
 
     def _start_recording(self) -> None:
+        """Start recording."""
         self._recording = True
         self._prev_text = self.text()
         self.setText(t("Press a key combo..."))
@@ -63,16 +66,19 @@ class HotkeyCaptureEdit(QLineEdit):
         self.setFocus()
 
     def _commit(self, combo: str) -> None:
+        """Handle commit for hotkey capture edit."""
         self._recording = False
         self.setStyleSheet(self._IDLE_STYLE)
         self.setText(combo)
 
     def _cancel(self) -> None:
+        """Cancel the hotkey capture edit workflow."""
         self._recording = False
         self.setStyleSheet(self._IDLE_STYLE)
         self.setText(self._prev_text)
 
     def keyPressEvent(self, event):  # noqa: N802
+        """Handle key press event for hotkey capture edit."""
         if not self._recording:
             super().keyPressEvent(event)
             return
@@ -81,7 +87,7 @@ class HotkeyCaptureEdit(QLineEdit):
             event.accept()
             return
         if qt_key == Qt.Key.Key_Escape:
-            self._cancel()
+            self._commit("")
             event.accept()
             return
         mods = event.modifiers()
@@ -109,12 +115,14 @@ class HotkeyCaptureEdit(QLineEdit):
         event.accept()
 
     def keyReleaseEvent(self, event):  # noqa: N802
+        """Handle key release event for hotkey capture edit."""
         if self._recording:
             event.accept()
         else:
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):  # noqa: N802
+        """Focus out event."""
         if self._recording:
             self._cancel()
         super().focusOutEvent(event)

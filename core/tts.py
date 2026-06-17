@@ -69,6 +69,7 @@ _cartesia_ws_lock = threading.Lock()
 
 
 def _get_cartesia_ws():
+    """Return cartesia ws."""
     global _cartesia_client, _cartesia_ws_manager, _cartesia_ws
     with _cartesia_ws_lock:
         if _cartesia_ws is None:
@@ -104,7 +105,7 @@ def reset_connections() -> None:
 def prewarm():
     """
     Open connections eagerly at app startup so the first user query is fast.
-    Call once from main.py after the event loop starts.
+    Call once after the event loop starts.
     """
     if not macos_safety.tts_prewarm_enabled():
         print("[tts] prewarm skipped in macOS safe mode.")
@@ -184,6 +185,7 @@ def stream_audio_from_chunks(text_chunks: Iterable[str],
 
 def _stream_cartesia(text_chunks: Iterable[str],
                      on_word_timestamps=None) -> Generator[bytes, None, None]:
+    """Stream cartesia."""
     try:
         ws = _get_cartesia_ws()
 
@@ -223,6 +225,7 @@ def _stream_cartesia(text_chunks: Iterable[str],
 # ------------------------------------------------------------------
 
 def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
+    """Stream elevenlabs."""
     try:
         sdk_clients.install_proxy_guard()
         from elevenlabs.client import ElevenLabs  # type: ignore
@@ -300,6 +303,7 @@ def test_connection(
     custom_voice: str | None = None,
     custom_model: str | None = None,
 ) -> tuple[bool, str]:
+    """Verify connection behavior."""
     provider = (provider or config.TTS_PROVIDER).lower().strip()
     cartesia_api_key = config.CARTESIA_API_KEY if cartesia_api_key is None else cartesia_api_key
     cartesia_voice_id = config.CARTESIA_VOICE_ID if cartesia_voice_id is None else cartesia_voice_id

@@ -31,6 +31,7 @@ _UIA_TextPatternId = 10014
 
 
 def _get_uia():
+    """Return uia."""
     global _uia
     if _uia is None:
         try:
@@ -172,6 +173,7 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
     # Windows/Linux path. mss is imported lazily so macOS does not load or drive
     # the Python CoreGraphics capture backend inside the Qt process.
     def _grab() -> Image.Image:
+        """Handle grab for capture."""
         import mss
 
         with mss.mss() as sct:
@@ -213,6 +215,7 @@ def get_clipboard_text() -> str | None:
 
 
 def _safe_get_clipboard() -> str | None:
+    """Handle safe get clipboard for capture."""
     try:
         return pyperclip.paste()
     except Exception:

@@ -48,15 +48,18 @@ _bake_lock = threading.Lock()
 
 
 def _slug(phrase: str) -> str:
+    """Handle slug for filler bake."""
     s = re.sub(r"[^a-z0-9]+", "_", phrase.lower()).strip("_")
     return s or "clip"
 
 
 def _filename(phrase: str) -> str:
+    """Handle filename for filler bake."""
     return f"{_FILE_PREFIX}{_slug(phrase)}.wav"
 
 
 def _read_voice_marker(dir_path: str) -> str:
+    """Read voice marker."""
     path = os.path.join(dir_path, _VOICE_MARKER)
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -66,6 +69,7 @@ def _read_voice_marker(dir_path: str) -> str:
 
 
 def _write_voice_marker(dir_path: str, voice_id: str) -> None:
+    """Write voice marker."""
     path = os.path.join(dir_path, _VOICE_MARKER)
     try:
         with open(path, "w", encoding="utf-8") as f:

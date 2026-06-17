@@ -25,6 +25,7 @@ import threading
 def _main() -> int:
     # Protect the protocol channel: keep a private binary handle to the *real*
     # stdout, then point fd 1 at stderr so stray prints don't land on the wire.
+    """Handle main for macos helper host."""
     real_out = os.fdopen(os.dup(1), "wb", buffering=0)
     os.dup2(2, 1)
     sys.stdout = sys.stderr
@@ -36,6 +37,7 @@ def _main() -> int:
     write_lock = threading.Lock()
 
     def emit(obj: dict) -> None:
+        """Write a message to the parent over the protocol pipe (thread-safe)."""
         with write_lock:
             try:
                 protocol.write_message(real_out, obj)
@@ -45,6 +47,7 @@ def _main() -> int:
     set_event_sink(emit)
 
     def respond(req_id, ok: bool, *, result=None, error=None) -> None:
+        """Handle respond for macos helper host."""
         msg = {"id": req_id, "ok": ok}
         if ok:
             msg["result"] = result

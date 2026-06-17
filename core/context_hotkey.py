@@ -12,6 +12,7 @@ log = logging.getLogger("wisp.context.hotkey")
 
 
 def window_pid_win(hwnd: int, *, is_win: bool) -> int:
+    """Handle window pid win for context hotkey."""
     if not is_win or not hwnd:
         return 0
     try:
@@ -25,6 +26,7 @@ def window_pid_win(hwnd: int, *, is_win: bool) -> int:
 
 
 def window_title_win(hwnd: int, *, is_win: bool) -> str:
+    """Handle window title win for context hotkey."""
     if not is_win or not hwnd:
         return ""
     try:
@@ -48,6 +50,7 @@ def is_external_context_window_win(
     pid_for_hwnd: Callable[[int], int],
     title_for_hwnd: Callable[[int], str],
 ) -> bool:
+    """Return whether external context window win is true."""
     if not is_win or not hwnd:
         return False
     try:
@@ -70,6 +73,7 @@ def find_external_context_window_win(
     is_win: bool,
     is_external: Callable[[int], bool],
 ) -> int:
+    """Find external context window win."""
     if not is_win:
         return 0
     try:
@@ -95,6 +99,7 @@ def find_external_context_window_win(
 
 
 def browser_context_text(snapshot: Any) -> str:
+    """Handle browser context text for context hotkey."""
     active_window = getattr(snapshot, "active_window", None)
     url = str(getattr(active_window, "url", "") or "").strip()
     hwnd = int(getattr(active_window, "hwnd", 0) or 0)
@@ -102,7 +107,10 @@ def browser_context_text(snapshot: Any) -> str:
     if not content and (url or hwnd):
         content = context_fetcher.fetch_browser_content_for_window(url, hwnd)
     log.info("browser context url=%r hwnd=%s chars=%d", url, hwnd, len(content or ""))
+    if not (url or hwnd or content):
+        return ""
     bits: list[str] = []
+    bits.append(f"Source priority: {'primary' if is_browser_window(active_window) else 'supporting'}")
     if url:
         bits.append(f"URL: {url}")
     if content:
@@ -111,6 +119,7 @@ def browser_context_text(snapshot: Any) -> str:
 
 
 def is_browser_window(window: Any) -> bool:
+    """Return whether browser window is true."""
     if not window:
         return False
     if str(getattr(window, "url", "") or "").strip():
@@ -121,6 +130,7 @@ def is_browser_window(window: Any) -> bool:
 
 
 def context_priority_source(snapshot: Any, ambient_text: str, active_document_text: str) -> str:
+    """Handle context priority source for context hotkey."""
     if not active_document_text or "[Browser/Web]" not in (ambient_text or ""):
         return ""
     return "Browser/Web" if is_browser_window(getattr(snapshot, "active_window", None)) else "Active document"

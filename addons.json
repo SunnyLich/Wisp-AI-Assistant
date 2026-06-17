@@ -1,7 +1,7 @@
 {
   "addons": {
     "healthcheck": {
-      "enabled": true,
+      "enabled": false,
       "settings": {
         "log_prefix": "[healthcheckcustomized]"
       }

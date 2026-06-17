@@ -17,6 +17,7 @@ IS_MAC = sys.platform == "darwin"
 
 
 def _run(args: list[str], *, timeout: float = 5.0) -> subprocess.CompletedProcess:
+    """Run a subprocess with stdout discarded and stderr captured; never raises on non-zero exit."""
     return subprocess.run(
         args,
         stdout=subprocess.DEVNULL,

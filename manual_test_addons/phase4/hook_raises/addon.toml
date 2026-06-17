@@ -1,3 +1,4 @@
+# Manual QA manifest for an addon hook that raises during a query.
 [addon]
 id = "phase4-hook-raises"
 name = "Phase 4 Hook Raises"

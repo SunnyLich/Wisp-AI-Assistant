@@ -74,6 +74,7 @@ _FOLLOWUP_RE = re.compile(
 
 @dataclass
 class ChunkScore:
+    """Model chunk score."""
     chunk_id: str
     score: float
     vec: float
@@ -88,6 +89,7 @@ class ChunkScore:
 
 @dataclass
 class RouteResult:
+    """Model route result."""
     context_level: str            # none | tiny | selected | full
     selected_chunk_ids: list[str]
     confidence: float
@@ -98,6 +100,7 @@ class RouteResult:
     dropped_chunk_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Handle to dict for route result."""
         return {
             "context_level": self.context_level,
             "selected_chunk_ids": self.selected_chunk_ids,
@@ -107,9 +110,11 @@ class RouteResult:
 
 
 class ContextRouter:
+    """Model context router."""
     def __init__(
         self, chunks: list[ContextChunk] | None = None, *, rel_cutoff: float = REL_CUTOFF
     ) -> None:
+        """Initialize the context router instance."""
         self.chunks: list[ContextChunk] = chunks if chunks is not None else load_seed_chunks()
         self.by_id: dict[str, ContextChunk] = {c.id: c for c in self.chunks}
         self.index: RetrievalIndexes = build_indexes(self.chunks)
@@ -117,16 +122,19 @@ class ContextRouter:
         self.rel_cutoff: float = rel_cutoff
 
     def _eff_floor(self, base_floor: float, top: "ChunkScore | None") -> float:
+        """Handle eff floor for context router."""
         if top is None or self.rel_cutoff <= 0:
             return base_floor
         return max(base_floor, self.rel_cutoff * top.score)
 
     def _recency(self, chunk: ContextChunk, now: float) -> float:
+        """Handle recency for context router."""
         import time
         age_days = max(0.0, (now - chunk.last_used_at) / 86400.0)
         return 0.5 ** (age_days / RECENCY_HALFLIFE_DAYS)
 
     def _score_chunk(self, chunk: ContextChunk, q: Extracted, query: str, now: float) -> ChunkScore:
+        """Handle score chunk for context router."""
         idx = self.index
         c_terms = {t.lower() for t in chunk.terms}
         c_phrases = {p.lower() for p in chunk.phrases}
@@ -183,6 +191,7 @@ class ContextRouter:
         )
 
     def route(self, query: str) -> RouteResult:
+        """Handle route for context router."""
         import time
         now = time.time()
         q = extract(query)
@@ -260,6 +269,7 @@ class ContextRouter:
     def _collect(
         self, scores: list[ChunkScore], *, limit: int, floor: float, match_type: str
     ) -> tuple[list[str], list[str]]:
+        """Handle collect for context router."""
         kept: list[str] = []
         dropped: list[str] = []
         for s in scores[:limit]:
@@ -278,6 +288,7 @@ class ContextRouter:
         scores: list[ChunkScore], *, match_type: str = "", floor: float = 0.0,
         dropped: list[str] | None = None,
     ) -> RouteResult:
+        """Handle mk for context router."""
         res = RouteResult(
             level, sel, conf, reason, scores,
             match_type=match_type, applied_floor=floor, dropped_chunk_ids=dropped or [],
@@ -289,6 +300,7 @@ class ContextRouter:
         return res
 
     def explain(self, query: str, top_n: int = 5) -> str:
+        """Handle explain for context router."""
         res = self.route(query)
         lines = [
             f"Q: {query}",

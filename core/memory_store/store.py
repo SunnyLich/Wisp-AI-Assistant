@@ -58,7 +58,7 @@ _CATEGORIES = ("project_context", "general")
 # A fact is either *global* (project == None / "") or scoped to a single
 # project id. Retrieval always returns global facts plus the facts of the
 # currently-active project, so "general" chatting and project work don't bleed
-# into each other. main.py sets the active project before each query/save.
+# into each other. The runtime sets the active project before each query/save.
 # ---------------------------------------------------------------------------
 
 _active_project_lock = threading.Lock()
@@ -81,11 +81,13 @@ def set_active_project(project_id: Optional[str]) -> None:
 
 
 def get_active_project() -> Optional[str]:
+    """Return active project."""
     with _active_project_lock:
         return _active_project_id
 
 
 def _fact_project(fact: dict) -> Optional[str]:
+    """Handle fact project for memory store store."""
     value = str(fact.get("project") or "").strip()
     return value or None
 
@@ -163,6 +165,7 @@ _DURABLE_CUES = (
 
 
 def _infer_category(text: str) -> str:
+    """Handle infer category for memory store store."""
     t = text.lower()
     for cat, kws in _CAT_KEYWORDS.items():
         if any(kw in t for kw in kws):
@@ -171,6 +174,7 @@ def _infer_category(text: str) -> str:
 
 
 def _now_iso() -> str:
+    """Handle now iso for memory store store."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -180,6 +184,7 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _normalize_fact_text(text: str) -> str:
+    """Normalize fact text."""
     return re.sub(r"\s+", " ", text.strip(" \t\r\n-•")).strip()
 
 
@@ -204,6 +209,7 @@ def _is_memory_worthy_fact(text: str, *, source: str) -> bool:
 
 
 def _lexical_overlap(query: str, fact: str) -> int:
+    """Handle lexical overlap for memory store store."""
     stop = {
         "the", "and", "for", "with", "that", "this", "you", "your", "are",
         "was", "were", "have", "has", "had", "what", "how", "can", "please",
@@ -214,6 +220,7 @@ def _lexical_overlap(query: str, fact: str) -> int:
 
 
 def _merge_fact_lists(*fact_lists: list[dict]) -> list[dict]:
+    """Merge fact lists."""
     merged: list[dict] = []
     seen: set[str] = set()
     for facts in fact_lists:
@@ -234,6 +241,7 @@ def _format_memory_block(
     top_k: int | None = None,
     project_id: Optional[str] = None,
 ) -> str:
+    """Format memory block."""
     if not facts:
         return ""
     in_scope = [fact for fact in facts if _fact_in_scope(fact, project_id)]
@@ -256,6 +264,7 @@ def _format_memory_block(
 
 
 def _fallback_read_all_unlocked() -> list[dict]:
+    """Handle fallback read all unlocked for memory store store."""
     if not os.path.exists(_FALLBACK_PATH):
         return []
     try:
@@ -267,6 +276,7 @@ def _fallback_read_all_unlocked() -> list[dict]:
 
 
 def _fallback_write_all_unlocked(facts: list[dict]) -> None:
+    """Handle fallback write all unlocked for memory store store."""
     os.makedirs(_MEMORY_DIR, exist_ok=True)
     with open(_FALLBACK_PATH, "w", encoding="utf-8") as f:
         json.dump(facts, f, indent=2, ensure_ascii=False)
@@ -351,11 +361,13 @@ def _legacy_chroma_facts() -> list[dict]:
 
 
 def _migrate_legacy_chroma_to_json() -> int:
+    """Handle migrate legacy chroma to json for memory store store."""
     with _FALLBACK_LOCK:
         return _fallback_merge_facts_unlocked(_legacy_chroma_facts())
 
 
 def _maybe_migrate_legacy_chroma_to_json() -> int:
+    """Handle maybe migrate legacy chroma to json for memory store store."""
     global _LEGACY_CHROMA_MIGRATION_ATTEMPTED
     if _LEGACY_CHROMA_MIGRATION_ATTEMPTED:
         return 0
@@ -420,6 +432,7 @@ def delete_fact_lightweight(fact_id: str) -> bool:
 def _fallback_upsert_unlocked(
     text: str, category: str, source: str, project: Optional[str] = None
 ) -> None:
+    """Handle fallback upsert unlocked for memory store store."""
     project = (project or "").strip() or None
     facts = _fallback_read_all_unlocked()
     now = _now_iso()
@@ -465,6 +478,7 @@ class MemoryManager:
     """
 
     def __init__(self) -> None:
+        """Initialize the memory manager instance."""
         try:
             os.makedirs(_MEMORY_DIR, exist_ok=True)
         except OSError as exc:
@@ -662,6 +676,7 @@ class MemoryManager:
 
     def _get_router(self, facts: list[dict]):
         # Return the cached ContextRouter, rebuilding when fact count changes.
+        """Return router."""
         if not _HAS_ROUTER:
             return None
         try:
@@ -678,6 +693,7 @@ class MemoryManager:
 
     def _rebuild_router(self, facts: list[dict], fact_count: int):
         # Build a ContextRouter from LTM facts (call while holding _ctx_router_lock).
+        """Handle rebuild router for memory manager."""
         try:
             chunks = []
             for fact in facts:
@@ -697,6 +713,7 @@ class MemoryManager:
 
     def _invalidate_router(self):
         # Signal that the router needs a rebuild on next retrieve_relevant call.
+        """Handle invalidate router for memory manager."""
         with self._ctx_router_lock:
             self._ctx_router_fact_count = -1
 
@@ -705,6 +722,7 @@ class MemoryManager:
     # ------------------------------------------------------------------
 
     def retrieve_relevant(self, query, top_k=None, project_id=None):
+        """Handle retrieve relevant for memory manager."""
         k = top_k if top_k is not None else config.MEMORY_TOP_K
         if project_id is None:
             project_id = get_active_project()
@@ -754,6 +772,7 @@ class MemoryManager:
     # ------------------------------------------------------------------
 
     def _schedule_consolidation(self) -> None:
+        """Schedule consolidation."""
         if not config.MEMORY_AUTO_CONSOLIDATE:
             return
         if not macos_safety.memory_background_llm_enabled():
@@ -766,6 +785,7 @@ class MemoryManager:
         self._consolidation_timer.start()
 
     def _sync_consolidation_timer(self) -> None:
+        """Handle sync consolidation timer for memory manager."""
         if config.MEMORY_AUTO_CONSOLIDATE:
             if self._consolidation_timer is None:
                 self._schedule_consolidation()
@@ -775,6 +795,7 @@ class MemoryManager:
             self._consolidation_timer = None
 
     def _consolidation_tick(self) -> None:
+        """Handle consolidation tick for memory manager."""
         try:
             self._consolidate()
         except Exception as exc:
@@ -858,6 +879,7 @@ class MemoryManager:
     def _fallback_upsert(
         self, text: str, category: str, source: str, project: Optional[str] = None
     ) -> None:
+        """Handle fallback upsert for memory manager."""
         text = _normalize_fact_text(text)
         with _FALLBACK_LOCK:
             _fallback_upsert_unlocked(text, category, source, project)
@@ -871,6 +893,7 @@ class MemoryManager:
         return self._fallback_get_all()
 
     def _fallback_get_all(self) -> list[dict]:
+        """Handle fallback get all for memory manager."""
         with _FALLBACK_LOCK:
             facts = _fallback_read_all_unlocked()
             return [fa for fa in facts if not fa.get("archived")]
@@ -928,6 +951,7 @@ class MemoryManager:
             return archived
 
     def _fallback_prune_low_value(self) -> int:
+        """Handle fallback prune low value for memory manager."""
         if not os.path.exists(_FALLBACK_PATH):
             return 0
         try:
@@ -951,11 +975,13 @@ class MemoryManager:
             return 0
 
     def _fallback_delete(self, fact_id: str) -> None:
+        """Handle fallback delete for memory manager."""
         delete_fact_lightweight(fact_id)
 
     def _fallback_update(
         self, fact_id: str, new_text: str, new_category: Optional[str], project=_UNCHANGED,
     ) -> None:
+        """Handle fallback update for memory manager."""
         update_fact_lightweight(fact_id, new_text, new_category, project)
 
     # ------------------------------------------------------------------
@@ -1082,6 +1108,7 @@ def get_all_facts_lightweight() -> list[dict]:
 
 
 def _fallback_get_all_from_path() -> list[dict]:
+    """Handle fallback get all from path for memory store store."""
     if not os.path.exists(_FALLBACK_PATH):
         return []
     try:
@@ -1090,4 +1117,3 @@ def _fallback_get_all_from_path() -> list[dict]:
         return [fa for fa in facts if not fa.get("archived")]
     except Exception:
         return []
-

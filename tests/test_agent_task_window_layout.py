@@ -1,3 +1,5 @@
+"""Tests for test agent task window layout."""
+
 from __future__ import annotations
 
 import os
@@ -12,6 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _qapp():
+    """Verify qapp behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -19,12 +22,14 @@ def _qapp():
 
 
 def _form_layouts(widget):
+    """Verify form layouts behavior."""
     from PySide6.QtWidgets import QFormLayout, QWidget
 
     seen = set()
     found = []
 
     def visit_layout(layout):
+        """Verify visit layout behavior."""
         if layout is None or id(layout) in seen:
             return
         seen.add(id(layout))
@@ -46,6 +51,7 @@ def _form_layouts(widget):
 
 
 def test_agent_task_forms_expand_across_platform_styles():
+    """Verify agent task forms expand across platform styles behavior."""
     _qapp()
     from PySide6.QtWidgets import QFormLayout
     from ui.agent.task_window import AgentTaskDialog
@@ -65,6 +71,7 @@ def test_agent_task_forms_expand_across_platform_styles():
 
 
 def test_agent_task_title_field_uses_extra_window_width():
+    """Verify agent task title field uses extra window width behavior."""
     app = _qapp()
     from ui.agent.task_window import AgentTaskDialog
 
@@ -87,6 +94,7 @@ def test_agent_task_title_field_uses_extra_window_width():
 
 
 def test_agent_communication_forms_expand_across_platform_styles():
+    """Verify agent communication forms expand across platform styles behavior."""
     _qapp()
     from PySide6.QtWidgets import QFormLayout
     from ui.agent.task_window import (
@@ -116,6 +124,7 @@ def test_agent_communication_forms_expand_across_platform_styles():
 
 
 def test_agent_communication_i18n_preserves_internal_values():
+    """Verify agent communication i18n preserves internal values behavior."""
     app = _qapp()
 
     import config

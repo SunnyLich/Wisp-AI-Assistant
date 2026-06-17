@@ -139,6 +139,7 @@ def open_agent_history(
     parent: QWidget | None = None,
     approval_notice_callback: ApprovalNoticeCallback | None = None,
 ) -> None:
+    """Open agent history."""
     window = AgentRunHistoryWindow(parent=parent, approval_notice_callback=approval_notice_callback)
     _agent_history_windows.append(window)
     window.destroyed.connect(
@@ -153,6 +154,7 @@ def launch_agent_run_window(
     parent: QWidget | None = None,
     approval_notice_callback: ApprovalNoticeCallback | None = None,
 ) -> "AgentRunWindow":
+    """Handle launch agent run window for UI agent task window."""
     window = AgentRunWindow(spec, parent=parent, approval_notice_callback=approval_notice_callback)
     _agent_run_windows.append(window)
     window.destroyed.connect(
@@ -195,23 +197,27 @@ def open_agent_task_dialog(
 
 
 def _approval_notice_callback_for(owner: object) -> ApprovalNoticeCallback | None:
+    """Handle approval notice callback for for UI agent task window."""
     callback = getattr(owner, "notify_agent_approval", None)
     if not callable(callback):
         return None
 
     def notify(text: str, resolved: bool) -> None:
+        """Handle notify for UI agent task window."""
         callback(text, resolved=resolved)
 
     return notify
 
 
 def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
+    """Handle expanding form layout for UI agent task window."""
     form = QFormLayout(parent)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     return form
 
 
 class AgentTaskDialog(QDialog):
+    """Qt dialog for agent task dialog."""
     _last_task_spec: AgentTaskSpec | None = None  # Class variable to store last submitted task
     """Mock GUI for collecting a complete, sandboxed agent task request."""
 
@@ -222,6 +228,7 @@ class AgentTaskDialog(QDialog):
         approval_notice_callback: ApprovalNoticeCallback | None = None,
         initial_spec: AgentTaskSpec | None = None,
     ):
+        """Initialize the agent task dialog instance."""
         super().__init__(parent)
         self._on_submit = on_submit
         self._approval_notice_callback = approval_notice_callback
@@ -249,6 +256,7 @@ class AgentTaskDialog(QDialog):
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
+        """Build ui."""
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(12)
@@ -301,6 +309,7 @@ class AgentTaskDialog(QDialog):
         root.addWidget(self._buttons())
 
     def _copy_from_last_task(self):
+        """Copy from last task."""
         spec = AgentTaskDialog._last_task_spec or self._load_last_task_spec()
         if spec:
             AgentTaskDialog._last_task_spec = spec
@@ -311,6 +320,7 @@ class AgentTaskDialog(QDialog):
 
     def _load_from_spec(self, spec: AgentTaskSpec):
         # Fill all fields from the given AgentTaskSpec
+        """Load from spec."""
         self.title_edit.setText(spec.title)
         self.objective_edit.setPlainText(spec.objective)
         self.scope_edit.setText(spec.scope_folder)
@@ -373,6 +383,7 @@ class AgentTaskDialog(QDialog):
             self.agent_list.setCurrentRow(0)
 
     def _task_group(self) -> QGroupBox:
+        """Handle task group for agent task dialog."""
         box = QGroupBox("Task")
         form = _expanding_form_layout(box)
         form.setSpacing(10)
@@ -458,6 +469,7 @@ class AgentTaskDialog(QDialog):
         return wrapper
 
     def _add_fallback_row(self, provider: str = "", model: str = "") -> None:
+        """Add fallback row."""
         row_w = QWidget()
         h = QHBoxLayout(row_w)
         h.setContentsMargins(0, 0, 0, 0)
@@ -488,20 +500,24 @@ class AgentTaskDialog(QDialog):
         self._fallback_rows.append(row_info)
 
     def _remove_fallback_row(self, row_info: dict) -> None:
+        """Remove fallback row."""
         if row_info in self._fallback_rows:
             self._fallback_rows.remove(row_info)
         row_info["widget"].deleteLater()
 
     def _clear_fallback_rows(self) -> None:
+        """Clear fallback rows."""
         for row in list(self._fallback_rows):
             self._remove_fallback_row(row)
 
     def _set_fallback_rows(self, raw: str) -> None:
+        """Set fallback rows."""
         self._clear_fallback_rows()
         for provider, model in parse_fallback_rows(raw):
             self._add_fallback_row(provider, model)
 
     def _collect_fallbacks(self) -> str:
+        """Handle collect fallbacks for agent task dialog."""
         parts: list[str] = []
         for row in self._fallback_rows:
             provider = row["provider"].currentText().strip()
@@ -522,6 +538,7 @@ class AgentTaskDialog(QDialog):
         self._set_fallback_rows(getattr(config, "LLM_FALLBACKS", "") or "")
 
     def _agents_group(self) -> QGroupBox:
+        """Handle agents group for agent task dialog."""
         box = QGroupBox("Agents & Communication")
         root = QVBoxLayout(box)
         root.setSpacing(10)
@@ -568,6 +585,7 @@ class AgentTaskDialog(QDialog):
         return box
 
     def _scope_group(self) -> QGroupBox:
+        """Handle scope group for agent task dialog."""
         box = QGroupBox("Filesystem Scope")
         layout = QVBoxLayout(box)
         layout.setSpacing(10)
@@ -583,6 +601,7 @@ class AgentTaskDialog(QDialog):
         return box
 
     def _scope_filters_group(self) -> QGroupBox:
+        """Handle scope filters group for agent task dialog."""
         box = QGroupBox("Scope Filters")
         layout = QVBoxLayout(box)
         layout.setSpacing(10)
@@ -610,11 +629,13 @@ class AgentTaskDialog(QDialog):
         return box
 
     def _toggle_advanced_settings(self) -> None:
+        """Handle toggle advanced settings for agent task dialog."""
         self._advanced_visible = not self._advanced_visible
         self.advanced_panel.setVisible(self._advanced_visible)
         self._fit_to_screen()
 
     def _permissions_group(self) -> QGroupBox:
+        """Handle permissions group for agent task dialog."""
         box = QGroupBox("Permission Modes")
         form = _expanding_form_layout(box)
         form.setSpacing(8)
@@ -636,6 +657,7 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _permission_combo(default: str) -> QComboBox:
+        """Handle permission combo for agent task dialog."""
         combo = QComboBox()
         _add_translated_combo_items(combo, _PERMISSION_OPTIONS)
         _set_combo_value(combo, default)
@@ -643,13 +665,16 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _permission_enabled(combo: QComboBox) -> bool:
+        """Handle permission enabled for agent task dialog."""
         return _combo_value(combo) != "never permit"
 
     @staticmethod
     def _permission_mode_from_bool(enabled: bool) -> str:
+        """Handle permission mode from bool for agent task dialog."""
         return "auto" if enabled else "never permit"
 
     def _runtime_group(self) -> QGroupBox:
+        """Handle runtime group for agent task dialog."""
         box = QGroupBox("Runtime")
         form = _expanding_form_layout(box)
         form.setSpacing(10)
@@ -691,6 +716,7 @@ class AgentTaskDialog(QDialog):
         return box
 
     def _prompt_limits_group(self) -> QGroupBox:
+        """Handle prompt limits group for agent task dialog."""
         box = QGroupBox("Prompt & Token Limits")
         form = _expanding_form_layout(box)
         form.setSpacing(10)
@@ -718,6 +744,7 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _number_spin(minimum: int, maximum: int, value: int, special_value_text: str = "") -> QSpinBox:
+        """Handle number spin for agent task dialog."""
         spin = QSpinBox()
         spin.setRange(minimum, maximum)
         # Shown when the spin sits at its minimum (e.g. 0 -> "No limit").
@@ -727,6 +754,7 @@ class AgentTaskDialog(QDialog):
         return spin
 
     def _output_group(self) -> QGroupBox:
+        """Handle output group for agent task dialog."""
         box = QGroupBox("Completion")
         form = _expanding_form_layout(box)
 
@@ -745,6 +773,7 @@ class AgentTaskDialog(QDialog):
         return box
 
     def _buttons(self) -> QWidget:
+        """Handle buttons for agent task dialog."""
         frame = QFrame()
         row = QHBoxLayout(frame)
         row.setContentsMargins(0, 0, 0, 0)
@@ -764,6 +793,7 @@ class AgentTaskDialog(QDialog):
         return frame
 
     def _load_defaults(self) -> None:
+        """Load defaults."""
         self.scope_edit.setText(str(Path.cwd()))
         # Default the model to the app's configured LLM (provider + model +
         # fallbacks) instead of the old "same as app" sentinel.
@@ -790,6 +820,7 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _default_agent_specs() -> list[dict[str, str]]:
+        """Handle default agent specs for agent task dialog."""
         return [
             {
                 "name": "Coordinator",
@@ -816,6 +847,7 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _default_communication_specs() -> list[dict[str, str]]:
+        """Handle default communication specs for agent task dialog."""
         return [
             {
                 "from_agent": "Coordinator",
@@ -851,6 +883,7 @@ class AgentTaskDialog(QDialog):
             self.agent_list.setCurrentRow(0)
 
     def _fit_to_screen(self) -> None:
+        """Handle fit to screen for agent task dialog."""
         screen = QApplication.primaryScreen()
         available_h = screen.availableGeometry().height() if screen is not None else 680
         fit_window_to_screen(
@@ -860,12 +893,14 @@ class AgentTaskDialog(QDialog):
         )
 
     def showEvent(self, event):  # noqa: N802
+        """Show event."""
         super().showEvent(event)
         self._fit_to_screen()
 
     # ------------------------------------------------------------------ Actions
 
     def _choose_scope(self) -> None:
+        """Handle choose scope for agent task dialog."""
         folder = QFileDialog.getExistingDirectory(
             self,
             "Choose Agent Scope Folder",
@@ -875,6 +910,7 @@ class AgentTaskDialog(QDialog):
             self.scope_edit.setText(folder)
 
     def _add_agent(self) -> None:
+        """Add agent."""
         self._save_current_agent()
         number = len(self._agent_specs) + 1
         self._agent_specs.append({
@@ -888,6 +924,7 @@ class AgentTaskDialog(QDialog):
         self.agent_list.setCurrentRow(len(self._agent_specs) - 1)
 
     def _remove_agent(self) -> None:
+        """Remove agent."""
         row = self.agent_list.currentRow()
         if row < 0 or row >= len(self._agent_specs):
             return
@@ -904,6 +941,7 @@ class AgentTaskDialog(QDialog):
             self.agent_list.setCurrentRow(min(row, self.agent_list.count() - 1))
 
     def _load_selected_agent(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        """Load selected agent."""
         if self._loading_agent:
             return
         self._save_current_agent()
@@ -928,6 +966,7 @@ class AgentTaskDialog(QDialog):
             self._loading_agent = False
 
     def _agent_role_changed(self, _role: str) -> None:
+        """Handle agent role changed for agent task dialog."""
         if self._loading_agent:
             return
         role = _combo_value(self.agent_role_combo, "Implementer")
@@ -938,6 +977,7 @@ class AgentTaskDialog(QDialog):
         self._save_current_agent()
 
     def _save_current_agent(self) -> None:
+        """Save current agent."""
         if self._loading_agent:
             return
         row = self._current_agent_row
@@ -964,6 +1004,7 @@ class AgentTaskDialog(QDialog):
             item.setText(self._agent_label(self._agent_specs[row]))
 
     def _add_communication(self) -> None:
+        """Add communication."""
         self._save_current_agent()
         agents = self._agent_names()
         if len(agents) < 2:
@@ -975,6 +1016,7 @@ class AgentTaskDialog(QDialog):
             self._refresh_communication_list()
 
     def _edit_communication(self) -> None:
+        """Handle edit communication for agent task dialog."""
         self._save_current_agent()
         row = self.communication_list.currentRow()
         if row < 0 or row >= len(self._communication_specs):
@@ -990,6 +1032,7 @@ class AgentTaskDialog(QDialog):
             self.communication_list.setCurrentRow(row)
 
     def _remove_communication(self) -> None:
+        """Remove communication."""
         row = self.communication_list.currentRow()
         if row < 0 or row >= len(self._communication_specs):
             return
@@ -997,6 +1040,7 @@ class AgentTaskDialog(QDialog):
         self._refresh_communication_list()
 
     def _create_pair_communications(self) -> None:
+        """Create pair communications."""
         self._save_current_agent()
         agents = self._agent_names()
         if len(agents) < 2:
@@ -1021,6 +1065,7 @@ class AgentTaskDialog(QDialog):
         self._refresh_communication_window()
 
     def _open_communication_window(self) -> None:
+        """Open communication window."""
         self._save_current_agent()
         if self._communication_window is None:
             self._communication_window = AgentCommunicationMapWindow(self, parent=None)
@@ -1031,10 +1076,12 @@ class AgentTaskDialog(QDialog):
         self._communication_window.activateWindow()
 
     def _refresh_communication_window(self) -> None:
+        """Refresh communication window."""
         if self._communication_window is not None:
             self._communication_window.refresh()
 
     def _refresh_agent_list(self) -> None:
+        """Refresh agent list."""
         self._loading_agent = True
         try:
             self.agent_list.clear()
@@ -1045,6 +1092,7 @@ class AgentTaskDialog(QDialog):
         self._refresh_communication_window()
 
     def _refresh_communication_list(self) -> None:
+        """Refresh communication list."""
         self.communication_list.clear()
         for spec in self._communication_specs:
             self.communication_list.addItem(QListWidgetItem(self._communication_label(spec)))
@@ -1052,12 +1100,14 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _agent_label(agent: dict[str, str]) -> str:
+        """Handle agent label for agent task dialog."""
         role = agent.get("role") or "Agent"
         name = agent.get("name") or role
         return f"{_display_agent_name(name)}  -  {_display_role(role)}"
 
     @staticmethod
     def _communication_label(spec: dict[str, str]) -> str:
+        """Handle communication label for agent task dialog."""
         return (
             f"{_display_agent_name(spec.get('from_agent', '?'))} -> "
             f"{_display_agent_name(spec.get('to_agent', '?'))}  "
@@ -1065,12 +1115,14 @@ class AgentTaskDialog(QDialog):
         )
 
     def _agent_names(self) -> list[str]:
+        """Handle agent names for agent task dialog."""
         return [
             (agent.get("name") or f"Agent {idx + 1}").strip()
             for idx, agent in enumerate(self._agent_specs)
         ]
 
     def _preview_spec(self) -> None:
+        """Handle preview spec for agent task dialog."""
         try:
             spec = self._collect_spec()
         except ValueError as exc:
@@ -1079,6 +1131,7 @@ class AgentTaskDialog(QDialog):
         QMessageBox.information(self, t("Agent Task Spec"), self._format_spec(spec))
 
     def _accept(self) -> None:
+        """Handle accept for agent task dialog."""
         try:
             spec = self._collect_spec()
         except ValueError as exc:
@@ -1102,6 +1155,7 @@ class AgentTaskDialog(QDialog):
     # ------------------------------------------------------------------ Spec
 
     def _collect_spec(self) -> AgentTaskSpec:
+        """Handle collect spec for agent task dialog."""
         self._save_current_agent()
         title = self.title_edit.text().strip()
         objective = self.objective_edit.toPlainText().strip()
@@ -1194,10 +1248,12 @@ class AgentTaskDialog(QDialog):
 
     @staticmethod
     def _split_globs(raw: str) -> list[str]:
+        """Split globs."""
         return [part.strip() for part in raw.split(",") if part.strip()]
 
     @staticmethod
     def _format_spec(spec: AgentTaskSpec) -> str:
+        """Format spec."""
         lines: list[str] = []
         for key, value in asdict(spec).items():
             if isinstance(value, list):
@@ -1207,14 +1263,17 @@ class AgentTaskDialog(QDialog):
 
     @classmethod
     def _task_history_root(cls) -> Path:
+        """Handle task history root for agent task dialog."""
         return AGENT_RUNS_DIR
 
     @classmethod
     def _last_task_path(cls) -> Path:
+        """Handle last task path for agent task dialog."""
         return cls._task_history_root() / "last_task.json"
 
     @classmethod
     def _save_last_task_spec(cls, spec: AgentTaskSpec) -> None:
+        """Save last task spec."""
         path = cls._last_task_path()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1224,6 +1283,7 @@ class AgentTaskDialog(QDialog):
 
     @classmethod
     def _load_last_task_spec(cls) -> AgentTaskSpec | None:
+        """Load last task spec."""
         candidates = [cls._last_task_path()]
         root = cls._task_history_root()
         if root.exists():
@@ -1245,7 +1305,9 @@ class AgentTaskDialog(QDialog):
 
 
 class _RelationshipItem(QGraphicsRectItem):
+    """Model relationship item."""
     def __init__(self, index: int, click_callback: Callable[[int], None], *args):
+        """Initialize the relationship item instance."""
         super().__init__(*args)
         self._index = index
         self._click_callback = click_callback
@@ -1255,19 +1317,23 @@ class _RelationshipItem(QGraphicsRectItem):
         self.setZValue(5)
 
     def hoverEnterEvent(self, event):  # noqa: N802
+        """Handle hover enter event for relationship item."""
         self.setBrush(QBrush(QColor(120, 167, 223, 24)))
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):  # noqa: N802
+        """Handle hover leave event for relationship item."""
         self.setBrush(QBrush(QColor(255, 255, 255, 1)))
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):  # noqa: N802
+        """Handle mouse press event for relationship item."""
         self._click_callback(self._index)
         event.accept()
 
 
 class _RelationshipAgentItem(QGraphicsItemGroup):
+    """Model relationship agent item."""
     def __init__(
         self,
         index: int,
@@ -1279,6 +1345,7 @@ class _RelationshipAgentItem(QGraphicsItemGroup):
         name: str,
         role: str,
     ):
+        """Initialize the relationship agent item instance."""
         super().__init__()
         self._index = index
         self._click_callback = click_callback
@@ -1314,33 +1381,40 @@ class _RelationshipAgentItem(QGraphicsItemGroup):
         self.setPos(x, y)
 
     def hoverEnterEvent(self, event):  # noqa: N802
+        """Handle hover enter event for relationship agent item."""
         self._node.setBrush(QBrush(QColor("#edf6ff")))
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):  # noqa: N802
+        """Handle hover leave event for relationship agent item."""
         self._node.setBrush(QBrush(QColor("#ffffff")))
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):  # noqa: N802
+        """Handle mouse press event for relationship agent item."""
         self._click_callback(self._index)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):  # noqa: N802
+        """Handle mouse release event for relationship agent item."""
         super().mouseReleaseEvent(event)
         self._move_callback(self._index, self.pos().x(), self.pos().y())
         self._release_callback()
 
     def itemChange(self, change, value):  # noqa: N802
+        """Handle item change for relationship agent item."""
         if self._alive and change == QGraphicsItemGroup.GraphicsItemChange.ItemPositionHasChanged:
             pos = self.pos()
             self._move_callback(self._index, pos.x(), pos.y())
         return super().itemChange(change, value)
 
     def mark_dead(self) -> None:
+        """Handle mark dead for relationship agent item."""
         self._alive = False
 
 
 class _LiveAgentItem(QGraphicsItemGroup):
+    """Model live agent item."""
     WIDTH = 220
     HEIGHT = 150
     TEXT_WIDTH = 196
@@ -1365,6 +1439,7 @@ class _LiveAgentItem(QGraphicsItemGroup):
         scale: float = 1.0,
         on_geometry_change: Callable[[int, float, float, float], None] | None = None,
     ):
+        """Initialize the live agent item instance."""
         super().__init__()
         self._index = index
         self._click_callback = click_callback
@@ -1455,23 +1530,28 @@ class _LiveAgentItem(QGraphicsItemGroup):
         self.setPos(x, y)
 
     def hoverEnterEvent(self, event):  # noqa: N802
+        """Handle hover enter event for live agent item."""
         self.setOpacity(0.88)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):  # noqa: N802
+        """Handle hover leave event for live agent item."""
         self.setOpacity(1.0)
         super().hoverLeaveEvent(event)
 
     def _in_grip(self, event) -> bool:
+        """Handle in grip for live agent item."""
         pos = event.pos()  # item-local coords (independent of the group's scale)
         return pos.x() >= self.WIDTH - self.GRIP and pos.y() >= self.HEIGHT - self.GRIP
 
     def _emit_geometry(self) -> None:
+        """Emit geometry."""
         if self._on_geometry_change is not None:
             p = self.pos()
             self._on_geometry_change(self._index, p.x(), p.y(), self._scale_factor)
 
     def mousePressEvent(self, event):  # noqa: N802
+        """Handle mouse press event for live agent item."""
         self._press_scene = event.scenePos()
         if self._in_grip(event):
             self._resizing = True
@@ -1481,6 +1561,7 @@ class _LiveAgentItem(QGraphicsItemGroup):
         super().mousePressEvent(event)  # arms the group's built-in drag-move
 
     def mouseMoveEvent(self, event):  # noqa: N802
+        """Handle mouse move event for live agent item."""
         if self._resizing:
             origin = self.scenePos()  # top-left; unaffected by setScale
             dx = event.scenePos().x() - origin.x()
@@ -1493,6 +1574,7 @@ class _LiveAgentItem(QGraphicsItemGroup):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):  # noqa: N802
+        """Handle mouse release event for live agent item."""
         if self._resizing:
             self._resizing = False
             event.accept()
@@ -1525,6 +1607,7 @@ class AgentCommunicationMapWindow(QDialog):
     """Visual mockup for multi-agent communication setup."""
 
     def __init__(self, task_dialog: AgentTaskDialog, parent: QWidget | None = None):
+        """Initialize the agent communication map window instance."""
         super().__init__(parent)
         self._task_dialog = task_dialog
         self._agent_map_positions: dict[str, tuple[float, float]] = {}
@@ -1707,6 +1790,7 @@ class AgentCommunicationMapWindow(QDialog):
         self.refresh()
 
     def refresh(self) -> None:
+        """Refresh the agent communication map window workflow."""
         current_agent = self.window_agent_list.currentRow() if hasattr(self, "window_agent_list") else 0
         current_exchange = self.exchange_list.currentRow() if hasattr(self, "exchange_list") else 0
         self._loading = True
@@ -1736,6 +1820,7 @@ class AgentCommunicationMapWindow(QDialog):
         self._draw_relationship_map()
 
     def _draw_relationship_map(self) -> None:
+        """Handle draw relationship map for agent communication map window."""
         for node in self._relationship_nodes:
             node.mark_dead()
         self._relationship_nodes.clear()
@@ -1794,6 +1879,7 @@ class AgentCommunicationMapWindow(QDialog):
             self.relationship_scene.addItem(text)
 
     def _edge_points(self, sx: float, sy: float, tx: float, ty: float) -> tuple[float, float, float, float]:
+        """Handle edge points for agent communication map window."""
         dx, dy = tx - sx, ty - sy
         length = max(1.0, math.hypot(dx, dy))
         ux, uy = dx / length, dy / length
@@ -1813,6 +1899,7 @@ class AgentCommunicationMapWindow(QDialog):
         )
 
     def _draw_double_arrow(self, sx: float, sy: float, tx: float, ty: float) -> None:
+        """Handle draw double arrow for agent communication map window."""
         pen = QPen(QColor("#5d7fa9"), 2.0)
         self.relationship_scene.addLine(sx, sy, tx, ty, pen)
         dx, dy = tx - sx, ty - sy
@@ -1833,6 +1920,7 @@ class AgentCommunicationMapWindow(QDialog):
             self.relationship_scene.addPath(path, QPen(QColor("#5d7fa9")), QBrush(QColor("#5d7fa9")))
 
     def _relationship_positions(self, count: int) -> list[tuple[float, float]]:
+        """Handle relationship positions for agent communication map window."""
         if count <= 0:
             return []
         cx, cy = 430, 130
@@ -1846,16 +1934,19 @@ class AgentCommunicationMapWindow(QDialog):
         ]
 
     def _select_exchange_from_map(self, index: int) -> None:
+        """Handle select exchange from map for agent communication map window."""
         if 0 <= index < self.exchange_list.count():
             self.exchange_list.setCurrentRow(index)
             self._load_exchange_row(index)
 
     def _select_agent_from_map(self, index: int) -> None:
+        """Handle select agent from map for agent communication map window."""
         if 0 <= index < self.window_agent_list.count():
             self.window_agent_list.setCurrentRow(index)
             self._load_agent_row(index)
 
     def _move_agent_on_map(self, index: int, x: float, y: float) -> None:
+        """Handle move agent on map for agent communication map window."""
         if index < 0 or index >= len(self._task_dialog._agent_specs):
             return
         agent = self._task_dialog._agent_specs[index]
@@ -1863,10 +1954,12 @@ class AgentCommunicationMapWindow(QDialog):
         self._agent_map_positions[name] = (x, y)
 
     def _add_agent(self) -> None:
+        """Add agent."""
         self._task_dialog._add_agent()
         self.refresh()
 
     def _remove_agent(self) -> None:
+        """Remove agent."""
         row = self.window_agent_list.currentRow()
         if row < 0:
             return
@@ -1875,6 +1968,7 @@ class AgentCommunicationMapWindow(QDialog):
         self.refresh()
 
     def _add_communication(self) -> None:
+        """Add communication."""
         agents = self._task_dialog._agent_names()
         if len(agents) < 2:
             QMessageBox.information(self, t("Communication"), t("Add at least two agents first."))
@@ -1891,10 +1985,12 @@ class AgentCommunicationMapWindow(QDialog):
         self.exchange_list.setCurrentRow(self.exchange_list.count() - 1)
 
     def _create_pairs(self) -> None:
+        """Create pairs."""
         self._task_dialog._create_pair_communications()
         self.refresh()
 
     def _remove_selected_exchange(self) -> None:
+        """Remove selected exchange."""
         item = self.exchange_list.currentItem()
         if item is None:
             return
@@ -1905,6 +2001,7 @@ class AgentCommunicationMapWindow(QDialog):
             self.refresh()
 
     def _load_agent_row(self, row: int) -> None:
+        """Load agent row."""
         if self._loading:
             return
         self._loading = True
@@ -1926,6 +2023,7 @@ class AgentCommunicationMapWindow(QDialog):
             self._loading = False
 
     def _map_agent_role_changed(self, _role: str) -> None:
+        """Handle map agent role changed for agent communication map window."""
         if self._loading:
             return
         role = _combo_value(self.map_agent_role, "Implementer")
@@ -1936,6 +2034,7 @@ class AgentCommunicationMapWindow(QDialog):
         self._save_agent_form()
 
     def _save_agent_form(self) -> None:
+        """Save agent form."""
         if self._loading:
             return
         row = self.window_agent_list.currentRow()
@@ -1961,6 +2060,7 @@ class AgentCommunicationMapWindow(QDialog):
         self.refresh()
 
     def _load_exchange_row(self, row: int) -> None:
+        """Load exchange row."""
         if self._loading:
             return
         self._loading = True
@@ -1982,6 +2082,7 @@ class AgentCommunicationMapWindow(QDialog):
             self._loading = False
 
     def _save_exchange_form(self) -> None:
+        """Save exchange form."""
         if self._loading:
             return
         row = self.exchange_list.currentRow()
@@ -2003,6 +2104,7 @@ class AgentCommunicationMapWindow(QDialog):
 
     @staticmethod
     def _communication_label(spec: dict[str, str]) -> str:
+        """Handle communication label for agent communication map window."""
         return (
             f"{_display_agent_name(spec.get('from_agent', '?'))} -> "
             f"{_display_agent_name(spec.get('to_agent', '?'))} "
@@ -2019,6 +2121,7 @@ class AgentCommunicationDialog(QDialog):
         communication: dict[str, str] | None = None,
         parent: QWidget | None = None,
     ):
+        """Initialize the agent communication dialog instance."""
         super().__init__(parent)
         self.communication: dict[str, str] | None = None
         self.setWindowTitle(t("Communication Exchange"))
@@ -2071,6 +2174,7 @@ class AgentCommunicationDialog(QDialog):
         localize_widget_tree(self)
 
     def _accept(self) -> None:
+        """Handle accept for agent communication dialog."""
         source = _combo_value(self.from_combo)
         target = _combo_value(self.to_combo)
         if not source or not target:
@@ -2093,6 +2197,7 @@ class AgentNudgeDialog(QDialog):
     """Single-window prompt for injecting a manual message into a live run."""
 
     def __init__(self, targets: list[str], parent: QWidget | None = None):
+        """Initialize the agent nudge dialog instance."""
         super().__init__(parent)
         self.nudge: dict[str, str] | None = None
         self.setWindowTitle(t("Nudge Agent"))
@@ -2123,6 +2228,7 @@ class AgentNudgeDialog(QDialog):
         localize_widget_tree(self)
 
     def _accept(self) -> None:
+        """Handle accept for agent nudge dialog."""
         target = _combo_value(self.target_combo)
         message = self.message_edit.toPlainText().strip()
         if not target:
@@ -2141,20 +2247,24 @@ class _FitGraphicsView(QGraphicsView):
     large minimum size or showing scrollbars."""
 
     def __init__(self, scene):
+        """Initialize the fit graphics view instance."""
         super().__init__(scene)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def fit_scene(self) -> None:
+        """Handle fit scene for fit graphics view."""
         rect = self.scene().sceneRect() if self.scene() else None
         if rect is not None and not rect.isEmpty():
             self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
 
     def resizeEvent(self, event):  # noqa: N802
+        """Resize event."""
         super().resizeEvent(event)
         self.fit_scene()
 
     def showEvent(self, event):  # noqa: N802
+        """Show event."""
         super().showEvent(event)
         self.fit_scene()
 
@@ -2173,6 +2283,7 @@ class AgentRunWindow(QDialog):
         parent: QWidget | None = None,
         approval_notice_callback: ApprovalNoticeCallback | None = None,
     ):
+        """Initialize the agent run window instance."""
         super().__init__(parent)
         self._spec = spec
         self._approval_notice_callback = approval_notice_callback
@@ -2357,11 +2468,13 @@ class AgentRunWindow(QDialog):
         fit_window_to_screen(self, preferred_width=1240, preferred_height=760)
 
     def showEvent(self, event):  # noqa: N802
+        """Show event."""
         super().showEvent(event)
         if self._thread is None:
             self._start_runner()
 
     def _start_runner(self) -> None:
+        """Start runner."""
         from core.agent.runner import AgentRunControl, AgentTaskRunner
 
         self._control = AgentRunControl()
@@ -2371,6 +2484,7 @@ class AgentRunWindow(QDialog):
         )
 
         def run_and_finish():
+            """Run and finish."""
             run_dir = runner.run(self._spec, self.log_line.emit, self.trace_entry.emit)
             self.finished.emit(str(run_dir))
 
@@ -2380,6 +2494,7 @@ class AgentRunWindow(QDialog):
         self._thread.start()
 
     def _request_approval(self, request: dict) -> bool:
+        """Handle request approval for agent run window."""
         import threading
 
         event = threading.Event()
@@ -2390,12 +2505,14 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _scroll_snapshot(view: QTextEdit) -> tuple[int, bool]:
+        """Handle scroll snapshot for agent run window."""
         bar = view.verticalScrollBar()
         value = bar.value()
         return value, value >= bar.maximum() - 4
 
     @staticmethod
     def _restore_scroll(view: QTextEdit, old_value: int, was_at_bottom: bool) -> None:
+        """Handle restore scroll for agent run window."""
         bar = view.verticalScrollBar()
         if was_at_bottom:
             bar.setValue(bar.maximum())
@@ -2404,24 +2521,28 @@ class AgentRunWindow(QDialog):
 
     @classmethod
     def _set_plain_text_preserving_scroll(cls, view: QTextEdit, text: str) -> None:
+        """Set plain text preserving scroll."""
         old_value, was_at_bottom = cls._scroll_snapshot(view)
         view.setPlainText(text)
         cls._restore_scroll(view, old_value, was_at_bottom)
 
     @classmethod
     def _set_html_preserving_scroll(cls, view: QTextEdit, text: str) -> None:
+        """Set html preserving scroll."""
         old_value, was_at_bottom = cls._scroll_snapshot(view)
         view.setHtml(text)
         cls._restore_scroll(view, old_value, was_at_bottom)
 
     @classmethod
     def _append_html_preserving_scroll(cls, view: QTextEdit, text: str) -> None:
+        """Append html preserving scroll."""
         old_value, was_at_bottom = cls._scroll_snapshot(view)
         view.append(text)
         cls._restore_scroll(view, old_value, was_at_bottom)
 
     @classmethod
     def _append_plain_text_preserving_scroll(cls, view: QTextEdit, text: str) -> None:
+        """Append plain text preserving scroll."""
         old_value, was_at_bottom = cls._scroll_snapshot(view)
         cursor = view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -2429,6 +2550,7 @@ class AgentRunWindow(QDialog):
         cls._restore_scroll(view, old_value, was_at_bottom)
 
     def _append_log(self, line: str) -> None:
+        """Append log."""
         self._update_live_meeting(line)
         if self._is_hidden_live_log_line(line):
             return
@@ -2436,12 +2558,14 @@ class AgentRunWindow(QDialog):
         self._draw_live_meeting()
 
     def _append_trace(self, entry: str) -> None:
+        """Append trace."""
         if self.tabs.currentWidget() is not self.trace_view:
             self._pending_trace_entries.append(entry)
             return
         self._append_trace_text(entry)
 
     def _flush_trace_if_visible(self, _index: int | None = None) -> None:
+        """Handle flush trace if visible for agent run window."""
         if self.tabs.currentWidget() is not self.trace_view or not self._pending_trace_entries:
             return
         entry = "".join(self._pending_trace_entries)
@@ -2449,9 +2573,11 @@ class AgentRunWindow(QDialog):
         self._append_trace_text(entry)
 
     def _append_trace_text(self, entry: str) -> None:
+        """Append trace text."""
         self._append_plain_text_preserving_scroll(self.trace_view, entry)
 
     def _update_live_meeting(self, line: str) -> None:
+        """Update live meeting."""
         event = parse_live_log_event(line)
         body = event.body
         if event.kind == "agent_turn":
@@ -2570,6 +2696,7 @@ class AgentRunWindow(QDialog):
             self._append_agent_history(self._active_agent, body)
 
     def _record_meeting_message(self, body: str) -> None:
+        """Record meeting message."""
         payload = body[len("message: "):]
         route, message = payload.split(": ", 1)
         source, target = route.split(" -> ", 1)
@@ -2594,6 +2721,7 @@ class AgentRunWindow(QDialog):
         self._refresh_shared_board()
 
     def _ensure_agent_state(self, name: str) -> None:
+        """Ensure agent state."""
         if name in self._agent_states:
             return
         self._agent_names.append(name)
@@ -2608,11 +2736,13 @@ class AgentRunWindow(QDialog):
         }
 
     def _set_agent_status(self, name: str, status: str, event: str) -> None:
+        """Set agent status."""
         self._ensure_agent_state(name)
         self._agent_states[name]["status"] = status
         self._append_agent_history(name, event)
 
     def _agent_health(self, name: str) -> dict:
+        """Handle agent health for agent run window."""
         self._ensure_agent_state(name)
         return self._agent_states[name].setdefault(
             "health",
@@ -2620,6 +2750,7 @@ class AgentRunWindow(QDialog):
         )
 
     def _record_model_latency(self, name: str, body: str) -> None:
+        """Record model latency."""
         health = self._agent_health(name)
         marker = " received in "
         if marker not in body:
@@ -2633,6 +2764,7 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _objective_from_thought(thought: str) -> str:
+        """Handle objective from thought for agent run window."""
         clean = " ".join(thought.split())
         for prefix in ("I need to ", "I will ", "I'll ", "Need to "):
             if clean.startswith(prefix):
@@ -2640,12 +2772,14 @@ class AgentRunWindow(QDialog):
         return AgentRunWindow._shorten(clean, 120)
 
     def _append_agent_history(self, name: str, event: str) -> None:
+        """Append agent history."""
         self._ensure_agent_state(name)
         history = self._agent_states[name]["history"]
         history.append(event)
         del history[:-40]
 
     def _draw_live_meeting(self) -> None:
+        """Handle draw live meeting for agent run window."""
         self.meeting_scene.clear()
         self.meeting_scene.setSceneRect(0, 0, 1080, 560)
         bg = QPainterPath()
@@ -2697,6 +2831,7 @@ class AgentRunWindow(QDialog):
         self._refresh_agent_detail()
 
     def _draw_last_message_arrow(self, centers: dict[str, tuple[float, float]]) -> None:
+        """Handle draw last message arrow for agent run window."""
         if not self._meeting_messages:
             return
         item = self._meeting_messages[-1]
@@ -2714,6 +2849,7 @@ class AgentRunWindow(QDialog):
         self._draw_live_arrow(centers[source], centers[target])
 
     def _draw_live_arrow(self, source: tuple[float, float], target: tuple[float, float]) -> None:
+        """Handle draw live arrow for agent run window."""
         sx, sy = source
         tx, ty = target
         sx_edge, sy_edge, tx_edge, ty_edge = self._live_edge_points(sx, sy, tx, ty)
@@ -2735,6 +2871,7 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _live_edge_points(sx: float, sy: float, tx: float, ty: float) -> tuple[float, float, float, float]:
+        """Handle live edge points for agent run window."""
         dx, dy = tx - sx, ty - sy
         length = max(1.0, math.hypot(dx, dy))
         ux, uy = dx / length, dy / length
@@ -2753,6 +2890,7 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _shorten(text: str, max_chars: int) -> str:
+        """Handle shorten for agent run window."""
         clean = " ".join(text.split())
         if len(clean) <= max_chars:
             return clean
@@ -2760,6 +2898,7 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _live_agent_positions(count: int) -> list[tuple[float, float]]:
+        """Handle live agent positions for agent run window."""
         if count <= 0:
             return []
         cx, cy = 540, 280
@@ -2773,6 +2912,7 @@ class AgentRunWindow(QDialog):
         ]
 
     def _select_live_agent(self, index: int) -> None:
+        """Handle select live agent for agent run window."""
         if 0 <= index < len(self._agent_names):
             self._selected_agent = self._agent_names[index]
             self._draw_live_meeting()
@@ -2804,6 +2944,7 @@ class AgentRunWindow(QDialog):
         self._draw_live_meeting()
 
     def _refresh_agent_detail(self) -> None:
+        """Refresh agent detail."""
         name = self._selected_agent
         state = self._agent_states.get(name)
         if not state:
@@ -2827,6 +2968,7 @@ class AgentRunWindow(QDialog):
         self._set_plain_text_preserving_scroll(self.agent_activity_view, history or f"- {t('No activity yet.')}")
 
     def _health_badge(self, name: str) -> str:
+        """Handle health badge for agent run window."""
         health = self._agent_health(name)
         calls = int(health.get("calls", 0))
         if not calls:
@@ -2839,6 +2981,7 @@ class AgentRunWindow(QDialog):
         )
 
     def _health_detail(self, name: str) -> str:
+        """Handle health detail for agent run window."""
         health = self._agent_health(name)
         calls = int(health.get("calls", 0))
         avg = 0.0 if not calls else float(health.get("total_latency", 0.0)) / calls
@@ -2850,6 +2993,7 @@ class AgentRunWindow(QDialog):
         )
 
     def _refresh_shared_board(self) -> None:
+        """Refresh shared board."""
         if not hasattr(self, "shared_board_view"):
             return
         if not self._meeting_messages:
@@ -2864,9 +3008,11 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _is_hidden_live_log_line(line: str) -> bool:
+        """Return whether hidden live log line is true."""
         return "] next agent:" in line
 
     def _format_live_log_line(self, line: str) -> str:
+        """Format live log line."""
         stamp = ""
         body = line
         if line.startswith("[") and "] " in line:
@@ -2887,6 +3033,7 @@ class AgentRunWindow(QDialog):
 
     @staticmethod
     def _agent_label(name: str, role: str) -> str:
+        """Handle agent label for agent run window."""
         safe_name = html.escape(_display_agent_name(name))
         safe_role = html.escape(_display_role(role))
         if safe_role and safe_role.lower() != safe_name.lower():
@@ -2894,6 +3041,7 @@ class AgentRunWindow(QDialog):
         return f"<b>{safe_name}</b>"
 
     def _on_finished(self, run_dir: str) -> None:
+        """Handle finished events."""
         self._run_dir = run_dir
         self.status_lbl.setText(f"{t('Finished. Log:')} {run_dir}")
         self.cancel_btn.setEnabled(False)
@@ -2906,6 +3054,7 @@ class AgentRunWindow(QDialog):
         self._load_finished_artifacts(Path(run_dir))
 
     def _load_finished_artifacts(self, run_dir: Path) -> None:
+        """Load finished artifacts."""
         trace_path = run_dir / "verbose.log"
         final_path = run_dir / "final.md"
         if trace_path.exists():
@@ -2914,6 +3063,7 @@ class AgentRunWindow(QDialog):
             self._set_plain_text_preserving_scroll(self.final_view, final_path.read_text(encoding="utf-8", errors="replace"))
 
     def _show_approval(self, request: dict, state: object) -> None:
+        """Show approval."""
         details = request.get("details", {})
         detail_text = ", ".join(f"{k}={v}" for k, v in details.items())
         self._pending_approval = state
@@ -2931,6 +3081,7 @@ class AgentRunWindow(QDialog):
         QApplication.alert(self, 0)
 
     def _finish_approval(self, approved: bool) -> None:
+        """Handle finish approval for agent run window."""
         if not self._pending_approval:
             return
         self._pending_approval["approved"] = approved
@@ -2945,6 +3096,7 @@ class AgentRunWindow(QDialog):
             )
 
     def _toggle_pause(self) -> None:
+        """Handle toggle pause for agent run window."""
         if self._control is None:
             return
         if self._control.is_pause_requested():
@@ -2957,6 +3109,7 @@ class AgentRunWindow(QDialog):
             self.status_lbl.setText(t("Will pause after current turn"))
 
     def _send_manual_nudge(self) -> None:
+        """Send manual nudge."""
         if self._control is None:
             return
         dialog = AgentNudgeDialog(self._agent_names + ["ALL"], parent=self)
@@ -2970,6 +3123,7 @@ class AgentRunWindow(QDialog):
         self._draw_live_meeting()
 
     def _cancel_run(self) -> None:
+        """Cancel run."""
         if self._control is not None:
             self._control.cancel()
         self.status_lbl.setText(t("Cancelling..."))
@@ -2978,13 +3132,16 @@ class AgentRunWindow(QDialog):
         self.nudge_btn.setEnabled(False)
 
     def _open_result_folder(self) -> None:
+        """Open result folder."""
         if self._run_dir:
             QDesktopServices.openUrl(QUrl.fromLocalFile(self._run_dir))
 
     def _open_scope_folder(self) -> None:
+        """Open scope folder."""
         QDesktopServices.openUrl(QUrl.fromLocalFile(self._spec.scope_folder))
 
     def _retry_run(self) -> None:
+        """Handle retry run for agent run window."""
         launch_agent_run_window(
             self._spec,
             parent=None,
@@ -2992,6 +3149,7 @@ class AgentRunWindow(QDialog):
         )
 
     def _continue_run(self) -> None:
+        """Handle continue run for agent run window."""
         if not self._run_dir:
             return
         try:
@@ -3006,6 +3164,7 @@ class AgentRunWindow(QDialog):
         )
 
     def _open_diff(self) -> None:
+        """Open diff."""
         if not self._run_dir:
             return
         path = Path(self._run_dir) / "diff.patch"
@@ -3017,7 +3176,9 @@ class AgentRunWindow(QDialog):
 
 
 class DiffViewer(QDialog):
+    """Model diff viewer."""
     def __init__(self, diff_path: Path, parent: QWidget | None = None):
+        """Initialize the diff viewer instance."""
         super().__init__(parent)
         self.setWindowTitle(t("Agent Diff"))
         self.setMinimumSize(880, 580)
@@ -3040,6 +3201,7 @@ class AgentRunHistoryWindow(QDialog):
         parent: QWidget | None = None,
         approval_notice_callback: ApprovalNoticeCallback | None = None,
     ):
+        """Initialize the agent run history window instance."""
         super().__init__(parent)
         self._approval_notice_callback = approval_notice_callback
         self._runs_root = AGENT_RUNS_DIR
@@ -3100,6 +3262,7 @@ class AgentRunHistoryWindow(QDialog):
         fit_window_to_screen(self, preferred_width=1020, preferred_height=680)
 
     def _load_runs(self) -> None:
+        """Load runs."""
         self.run_list.clear()
         self._runs_root.mkdir(parents=True, exist_ok=True)
         runs = sorted(
@@ -3117,6 +3280,7 @@ class AgentRunHistoryWindow(QDialog):
             self._clear_views("No agent task runs yet.")
 
     def _load_selected_run(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        """Load selected run."""
         if current is None:
             return
         run_dir = Path(current.data(Qt.ItemDataRole.UserRole))
@@ -3127,10 +3291,12 @@ class AgentRunHistoryWindow(QDialog):
         self.diff_view.setPlainText(self._read_text(run_dir / "diff.patch") or "(no diff artifact)")
 
     def _open_current_run(self) -> None:
+        """Open current run."""
         if self._current_run:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._current_run)))
 
     def _retry_current_run(self) -> None:
+        """Handle retry current run for agent run history window."""
         if not self._current_run:
             return
         try:
@@ -3145,6 +3311,7 @@ class AgentRunHistoryWindow(QDialog):
         )
 
     def _continue_current_run(self) -> None:
+        """Handle continue current run for agent run history window."""
         if not self._current_run:
             return
         try:
@@ -3159,22 +3326,26 @@ class AgentRunHistoryWindow(QDialog):
         )
 
     def _clear_views(self, text: str) -> None:
+        """Clear views."""
         for view in (self.summary_view, self.log_view, self.trace_view, self.diff_view):
             view.setPlainText(text)
 
     def _summary_text(self, run_dir: Path) -> str:
+        """Handle summary text for agent run history window."""
         task = self._read_text(run_dir / "task.json")
         final = self._read_text(run_dir / "final.md") or "(no final report)"
         return f"Run folder:\n{run_dir}\n\nFinal report:\n{final}\n\nTask spec:\n{task or '(missing task.json)'}"
 
     @staticmethod
     def _read_text(path: Path) -> str:
+        """Read text."""
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8", errors="replace")
 
     @staticmethod
     def _display_name(run_dir: Path) -> str:
+        """Handle display name for agent run history window."""
         task_path = run_dir / "task.json"
         if task_path.exists():
             try:

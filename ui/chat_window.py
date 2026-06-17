@@ -55,6 +55,7 @@ _SIDEBAR_FADE_W = 34
 
 
 def _truncate_for_display(text: str, limit: int, label: str = "display") -> str:
+    """Handle truncate for display for UI chat window."""
     text = str(text or "")
     if len(text) <= limit:
         return text
@@ -66,6 +67,7 @@ def _truncate_segments_for_display(
     segments: list[tuple[str, bool]],
     limit: int = _CHAT_RENDER_CHAR_LIMIT,
 ) -> list[tuple[str, bool]]:
+    """Handle truncate segments for display for UI chat window."""
     total = sum(len(text) for text, _is_thought in segments)
     if total <= limit:
         return segments
@@ -92,12 +94,15 @@ def _truncate_segments_for_display(
 
 
 class _StreamSignals(QObject):
+    """Model stream signals."""
     chunk     = Signal(str)
     finished  = Signal()
 
 
 class _MessageTextView(QTextBrowser):
+    """Model message text view."""
     def __init__(self, style_sheet: str):
+        """Initialize the message text view instance."""
         super().__init__()
         self.setOpenLinks(False)
         self.setReadOnly(True)
@@ -113,16 +118,19 @@ class _MessageTextView(QTextBrowser):
         self.textChanged.connect(self._sync_height)
 
     def _sync_height(self):
+        """Handle sync height for message text view."""
         doc_h = self.document().documentLayout().documentSize().height()
         margin = self.contentsMargins().top() + self.contentsMargins().bottom()
         self.setFixedHeight(max(38, int(doc_h + margin + 6)))
 
     def showEvent(self, event):
+        """Show event."""
         super().showEvent(event)
         # Document layout hasn't run before first show — recompute height now.
         QTimer.singleShot(0, self._sync_height)
 
     def resizeEvent(self, event):
+        """Resize event."""
         super().resizeEvent(event)
         if event.size().width() != event.oldSize().width():
             self._sync_height()
@@ -132,6 +140,7 @@ class _ConversationTitleButton(QPushButton):
     """Paints a sidebar title with a right-edge fade under the overlaid menu."""
 
     def __init__(self, title: str, *, active: bool, latest: bool) -> None:
+        """Initialize the conversation title button instance."""
         super().__init__("")
         self._title = title
         self._active = active
@@ -145,12 +154,14 @@ class _ConversationTitleButton(QPushButton):
         self.setStyleSheet("QPushButton { background: transparent; border: none; }")
 
     def set_sidebar_state(self, *, active: bool, latest: bool) -> None:
+        """Set sidebar state."""
         self._active = active
         self._latest = latest
         self.setChecked(active)
         self.update()
 
     def paintEvent(self, event):  # noqa: N802 - Qt override
+        """Paint event."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         rect = self.rect()
@@ -195,6 +206,7 @@ class _ConversationSidebarRow(QWidget):
     """Sidebar row with a full-width title and an overlaid options button."""
 
     def __init__(self, title_btn: QPushButton, menu_btn: QPushButton) -> None:
+        """Initialize the conversation sidebar row instance."""
         super().__init__()
         self.setFixedHeight(52)
         self.setStyleSheet("background: transparent;")
@@ -205,10 +217,12 @@ class _ConversationSidebarRow(QWidget):
         self._layout_children()
 
     def resizeEvent(self, event):  # noqa: N802 - Qt override
+        """Resize event."""
         super().resizeEvent(event)
         self._layout_children()
 
     def _layout_children(self) -> None:
+        """Handle layout children for conversation sidebar row."""
         self._title_btn.setGeometry(self.rect())
         self._menu_btn.setGeometry(
             max(0, self.width() - _SIDEBAR_MENU_W - 4),
@@ -220,6 +234,7 @@ class _ConversationSidebarRow(QWidget):
 
 
 def _merge_display_segments(segments: list[tuple[str, bool]], text: str, is_thought: bool) -> list[tuple[str, bool]]:
+    """Merge display segments."""
     if not text:
         return segments
     if segments and segments[-1][1] == is_thought:
@@ -230,6 +245,7 @@ def _merge_display_segments(segments: list[tuple[str, bool]], text: str, is_thou
 
 
 def _segment_text_to_html(text: str) -> str:
+    """Handle segment text to html for UI chat window."""
     return html.escape(text).replace("\n", "<br>")
 
 
@@ -263,6 +279,7 @@ def _reply_html(text: str, start_idx: int, read_count: int | None) -> tuple[int,
     idx = start_idx
 
     def flush(segment: str, is_bold: bool) -> None:
+        """Handle flush for UI chat window."""
         nonlocal idx
         for piece in _WS_RE.split(segment):
             if not piece:
@@ -299,6 +316,7 @@ def _reply_html(text: str, start_idx: int, read_count: int | None) -> tuple[int,
 def _assistant_segments_to_html(
     segments: list[tuple[str, bool]], read_count: int | None = 0
 ) -> str:
+    """Handle assistant segments to html for UI chat window."""
     parts: list[str] = []
     idx = 0
     prev_is_thought: bool | None = None
@@ -316,10 +334,12 @@ def _assistant_segments_to_html(
 
 
 def _assistant_text_to_html(text: str, read_count: int | None = 0) -> str:
+    """Handle assistant text to html for UI chat window."""
     return _assistant_segments_to_html(split_tagged_text(text), read_count)
 
 
 class ChatWindow(QWidget):
+    """Qt window for chat window."""
     def __init__(
         self,
         conversations: list[list[dict]],
@@ -403,6 +423,7 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Build
 
     def _build_ui(self):
+        """Build ui."""
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -418,6 +439,7 @@ class ChatWindow(QWidget):
         root.addWidget(splitter, stretch=1)
 
     def _make_title_bar(self) -> QWidget:
+        """Create title bar."""
         bar = QWidget()
         bar.setFixedHeight(38)
         bar.setStyleSheet(f"background: {_TITLE_BG}; border-bottom: 1px solid {_BORDER};")
@@ -464,6 +486,7 @@ class ChatWindow(QWidget):
         return combo
 
     def _reload_project_combo(self) -> None:
+        """Handle reload project combo for chat window."""
         combo = self._project_combo
         combo.blockSignals(True)
         combo.clear()
@@ -475,6 +498,7 @@ class ChatWindow(QWidget):
         combo.blockSignals(False)
 
     def _on_project_selected(self, _index: int) -> None:
+        """Handle project selected events."""
         data = self._project_combo.currentData()
         if data == self._NEW_PROJECT_SENTINEL:
             self._create_project_interactive()
@@ -486,6 +510,7 @@ class ChatWindow(QWidget):
             self._on_project_change(data)
 
     def _create_project_interactive(self) -> None:
+        """Create project interactive."""
         name, ok = QInputDialog.getText(self, t("New project"), t("Project name:"))
         name = (name or "").strip()
         if not ok or not name or self._on_new_project is None:
@@ -504,6 +529,7 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Sidebar
 
     def _make_sidebar(self) -> QWidget:
+        """Create sidebar."""
         sidebar = QWidget()
         sidebar.setMinimumWidth(100)
         sidebar.setStyleSheet(f"background: {_SIDEBAR_BG};")
@@ -537,6 +563,7 @@ class ChatWindow(QWidget):
         return sidebar
 
     def _rebuild_sidebar(self):
+        """Handle rebuild sidebar for chat window."""
         while self._sidebar_layout.count():
             item = self._sidebar_layout.takeAt(0)
             if item.widget():
@@ -561,6 +588,7 @@ class ChatWindow(QWidget):
         self._sidebar_layout.addStretch()
 
     def _conversation_title(self, idx: int, conv: dict) -> str:
+        """Handle conversation title for chat window."""
         override = str(conv.get("title_override") or "").strip()
         if override:
             return override
@@ -571,6 +599,7 @@ class ChatWindow(QWidget):
         return prefix + str(raw).strip().replace("\n", " ")
 
     def _make_sidebar_row(self, idx: int, conv: dict) -> tuple[QWidget, QPushButton]:
+        """Create sidebar row."""
         title = self._conversation_title(idx, conv)
         if conv.get("pinned"):
             title = "📌 " + title
@@ -598,6 +627,7 @@ class ChatWindow(QWidget):
         return row, btn
 
     def _open_conversation_menu(self, idx: int, anchor: QWidget | None = None) -> None:
+        """Open conversation menu."""
         if not (0 <= idx < len(self._conversations)):
             return
         conv = self._conversations[idx]
@@ -632,6 +662,7 @@ class ChatWindow(QWidget):
         menu.popup(pos)
 
     def _toggle_pin(self, idx: int) -> None:
+        """Handle toggle pin for chat window."""
         if not (0 <= idx < len(self._conversations)):
             return
         conv = self._conversations[idx]
@@ -640,6 +671,7 @@ class ChatWindow(QWidget):
         self._persist()
 
     def _rename_conversation(self, idx: int) -> None:
+        """Handle rename conversation for chat window."""
         if not (0 <= idx < len(self._conversations)):
             return
         conv = self._conversations[idx]
@@ -654,6 +686,7 @@ class ChatWindow(QWidget):
         self._persist()
 
     def _assign_project(self, idx: int, project_id: str) -> None:
+        """Handle assign project for chat window."""
         if not (0 <= idx < len(self._conversations)):
             return
         self._conversations[idx]["project_id"] = project_id
@@ -661,6 +694,7 @@ class ChatWindow(QWidget):
         self._persist()
 
     def _delete_conversation(self, idx: int) -> None:
+        """Delete conversation."""
         if not (0 <= idx < len(self._conversations)):
             return
         if self._streaming and idx == self._active_idx:
@@ -703,6 +737,7 @@ class ChatWindow(QWidget):
         self._stack.setCurrentIndex(max(0, min(self._active_idx, self._stack.count() - 1)))
 
     def _persist(self) -> None:
+        """Handle persist for chat window."""
         if self._persist_fn:
             try:
                 self._persist_fn()
@@ -710,6 +745,7 @@ class ChatWindow(QWidget):
                 pass
 
     def _btn_style(self, active: bool, latest: bool) -> str:
+        """Handle btn style for chat window."""
         bg = _SEL_BG if active else "transparent"
         c  = _ACCENT if latest else _TEXT
         return (
@@ -720,6 +756,7 @@ class ChatWindow(QWidget):
         )
 
     def _switch(self, idx: int):
+        """Handle switch for chat window."""
         self._active_idx = idx
         if idx < self._stack.count():
             self._ensure_page_built(idx)
@@ -755,6 +792,7 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Right panel
 
     def _make_right_panel(self) -> QWidget:
+        """Create right panel."""
         panel = QWidget()
         vl = QVBoxLayout(panel)
         vl.setContentsMargins(0, 0, 0, 0)
@@ -794,6 +832,7 @@ class ChatWindow(QWidget):
         return panel
 
     def start_new_conversation(self, auto_message: str | None = None):
+        """Start new conversation."""
         if self._streaming:
             return
 
@@ -852,12 +891,14 @@ class ChatWindow(QWidget):
             self._switch(len(self._conversations) - 1)
 
     def _make_page_placeholder(self) -> QLabel:
+        """Create page placeholder."""
         ph = QLabel(t("Loading conversation..."))
         ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ph.setStyleSheet(f"color: {_HINT}; background: {_BG};")
         return ph
 
     def _ensure_page_built(self, idx: int) -> None:
+        """Ensure page built."""
         if idx in self._built_pages or idx < 0 or idx >= len(self._conversations):
             return
         if idx >= self._stack.count():
@@ -869,6 +910,7 @@ class ChatWindow(QWidget):
         self._stack.insertWidget(idx, page)
 
     def _make_page(self, idx: int, conv: dict) -> QScrollArea:
+        """Create page."""
         self._built_pages.add(idx)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -934,6 +976,7 @@ class ChatWindow(QWidget):
         return lbl
 
     def _make_input_area(self) -> QWidget:
+        """Create input area."""
         frame = QWidget()
         frame.setStyleSheet(f"background: {_TITLE_BG}; border-top: 1px solid {_BORDER};")
         h = QHBoxLayout(frame)
@@ -965,6 +1008,7 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Bubbles
 
     def _bubble(self, layout, text: str, role: str, image_b64: str | None = None) -> _MessageTextView:
+        """Handle bubble for chat window."""
         bg = '#3a3a5c' if role == 'user' else '#26263a'
         display_text = _truncate_for_display(text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
         lbl = _MessageTextView(
@@ -1015,6 +1059,7 @@ class ChatWindow(QWidget):
         return lbl
 
     def _active_layout(self):
+        """Handle active layout for chat window."""
         active_idx = self._active_idx
         if active_idx < 0 or active_idx >= self._stack.count():
             return None
@@ -1022,6 +1067,7 @@ class ChatWindow(QWidget):
         return getattr(page, "_msg_layout", None)
 
     def _active_scroll(self) -> QScrollArea | None:
+        """Handle active scroll for chat window."""
         active_idx = self._active_idx
         if active_idx < 0 or active_idx >= self._stack.count():
             return None
@@ -1029,6 +1075,7 @@ class ChatWindow(QWidget):
         return page if isinstance(page, QScrollArea) else None
 
     def _scroll_bottom(self):
+        """Handle scroll bottom for chat window."""
         scroll = self._active_scroll()
         if scroll:
             QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(
@@ -1038,12 +1085,14 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Sending
 
     def _on_send_clicked(self):
+        """Handle send clicked events."""
         text = self._input.toPlainText().strip()
         if text and not self._streaming:
             self._input.clear()
             self._send(text)
 
     def _send(self, text: str):
+        """Send the chat window workflow."""
         if self._streaming or not self._conversations:
             return
         self._streaming = True
@@ -1073,6 +1122,7 @@ class ChatWindow(QWidget):
         messages = [{"role": "system", "content": sys_content}] + conv["messages"]
 
         def _stream():
+            """Stream the chat window workflow."""
             try:
                 for chunk in self._send_fn(messages):
                     self._signals.chunk.emit(chunk)
@@ -1082,6 +1132,7 @@ class ChatWindow(QWidget):
         threading.Thread(target=_stream, daemon=True).start()
 
     def _on_chunk(self, chunk: str):
+        """Handle chunk events."""
         self._current_ai_text += chunk
         if self._current_ai_parser is None:
             self._current_ai_parser = ThoughtStreamParser()
@@ -1096,6 +1147,7 @@ class ChatWindow(QWidget):
         self._scroll_bottom()
 
     def _on_finished(self):
+        """Handle finished events."""
         if self._current_ai_parser is not None:
             flushed = self._current_ai_parser.finish()
             self._current_ai_segments = merge_segment_iterables(self._current_ai_segments, flushed)
@@ -1169,6 +1221,7 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Events
 
     def eventFilter(self, obj, event):
+        """Handle event filter for chat window."""
         from PySide6.QtCore import QEvent
         if obj is self._input and event.type() == QEvent.Type.KeyPress:
             if (event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
@@ -1180,9 +1233,11 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Helpers
 
     def _center_on_screen(self):
+        """Handle center on screen for chat window."""
         fit_window_to_screen(self, preferred_width=_W, preferred_height=_H)
 
     def showEvent(self, event):  # noqa: N802
+        """Show event."""
         super().showEvent(event)
         self._center_on_screen()
 

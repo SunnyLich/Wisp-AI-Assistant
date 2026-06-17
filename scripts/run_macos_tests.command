@@ -4,7 +4,7 @@
 #
 # This is the macOS gate now that Wisp uses one Python app across Windows and
 # macOS. It provisions the repo .venv from requirements-macos.lock and runs the
-# normal Python test suite plus the macOS worker tests.
+# normal Python test suite plus the runtime worker tests.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -220,7 +220,7 @@ if ! "$VPY" -c "import pytest" >/dev/null 2>&1; then
   run_logged "python-pytest-install" "$VPY" -m pip install pytest
 fi
 
-run_logged "python-tests" "$VPY" -m pytest tests macos_py/brain/tests -q
+run_logged "python-tests" "$VPY" -m pytest tests runtime/brain/tests -q
 
 echo
 echo "Pure-Python macOS verification passed."

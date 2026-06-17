@@ -17,10 +17,12 @@ _DIM_ALPHA = 110   # overlay darkness 0–255
 
 
 class SnipOverlay(QWidget):
+    """Model snip overlay."""
     region_selected = Signal(dict)   # mss-format: {left, top, width, height}
     cancelled       = Signal()
 
     def __init__(self, parent=None):
+        """Initialize the snip overlay instance."""
         super().__init__(parent)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -52,6 +54,7 @@ class SnipOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def paintEvent(self, _event):
+        """Paint event."""
         if not self._first_paint_logged:
             self._first_paint_logged = True
             print(
@@ -88,17 +91,20 @@ class SnipOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event):
+        """Handle mouse press event for snip overlay."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._origin = event.pos()
             self._sel_rect = QRect(self._origin, self._origin)
             self.update()
 
     def mouseMoveEvent(self, event):
+        """Handle mouse move event for snip overlay."""
         if self._origin is not None:
             self._sel_rect = QRect(self._origin, event.pos()).normalized()
             self.update()
 
     def mouseReleaseEvent(self, event):
+        """Handle mouse release event for snip overlay."""
         if event.button() == Qt.MouseButton.LeftButton and self._origin is not None:
             rect = QRect(self._origin, event.pos()).normalized()
             self._sel_rect = None
@@ -122,6 +128,7 @@ class SnipOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def keyPressEvent(self, event):
+        """Handle key press event for snip overlay."""
         if event.key() == Qt.Key.Key_Escape:
             self._unhook()
             self.cancelled.emit()
@@ -132,6 +139,7 @@ class SnipOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def showEvent(self, event):
+        """Show event."""
         super().showEvent(event)
         self.raise_()
         self.activateWindow()
@@ -142,12 +150,14 @@ class SnipOverlay(QWidget):
         QTimer.singleShot(0, self._grab_keyboard)
 
     def _grab_keyboard(self):
+        """Handle grab keyboard for snip overlay."""
         self.raise_()
         self.activateWindow()
         self.setFocus()
         self.grabKeyboard()
 
     def _unhook(self):
+        """Handle unhook for snip overlay."""
         try:
             self.releaseKeyboard()
         except Exception:

@@ -1,1 +1,2 @@
+# Build-only dependencies for packaging Wisp executables.
 pyinstaller>=6.15.0

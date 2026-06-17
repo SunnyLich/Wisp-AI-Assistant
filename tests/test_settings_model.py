@@ -1,3 +1,5 @@
+"""Tests for test settings model."""
+
 from __future__ import annotations
 
 import os
@@ -8,6 +10,7 @@ from core.settings_model import AppSettings
 
 
 def test_get_settings_returns_typed_snapshot():
+    """Verify get settings returns typed snapshot behavior."""
     previous_rows = list(config.CALLER_ROWS)
     previous_voice = dict(config.VOICE_CALLER)
     previous_settings = config.SETTINGS

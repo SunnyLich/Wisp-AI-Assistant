@@ -30,10 +30,12 @@ _lock = threading.RLock()
 
 
 def _now_iso() -> str:
+    """Handle now iso for conversation store store."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _read_json(path, default):
+    """Read json."""
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -43,6 +45,7 @@ def _read_json(path, default):
 
 
 def _atomic_write_json(path, data) -> None:
+    """Handle atomic write json for conversation store store."""
     os.makedirs(CHATS_DIR, exist_ok=True)
     tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -57,10 +60,12 @@ def _atomic_write_json(path, data) -> None:
 # ---------------------------------------------------------------------------
 
 def _default_general() -> dict:
+    """Handle default general for conversation store store."""
     return {"id": GENERAL_PROJECT_ID, "name": _GENERAL_PROJECT_NAME, "created_at": _now_iso()}
 
 
 def _ensure_general(projects: list[dict]) -> list[dict]:
+    """Ensure general."""
     if not any(p.get("id") == GENERAL_PROJECT_ID for p in projects):
         projects = [_default_general(), *projects]
     return projects
@@ -76,6 +81,7 @@ def load_projects() -> list[dict]:
 
 
 def save_projects(projects: list[dict]) -> None:
+    """Save projects."""
     with _lock:
         _atomic_write_json(PROJECTS_FILE, _ensure_general(projects))
 
@@ -141,6 +147,7 @@ def load_conversations() -> list[dict]:
 
 
 def _has_content(conv: dict) -> bool:
+    """Return whether content is available."""
     return any(str(m.get("content") or "").strip() for m in conv.get("messages", []))
 
 
@@ -171,6 +178,7 @@ def _clean_conversation(conv: dict) -> dict:
 
 
 def _derive_title(conv: dict, limit: int = 48) -> str:
+    """Handle derive title for conversation store store."""
     for msg in conv.get("messages", []):
         if msg.get("role") == "user" and msg.get("content"):
             text = " ".join(str(msg["content"]).split())

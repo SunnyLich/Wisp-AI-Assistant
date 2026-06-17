@@ -58,6 +58,7 @@ _DUMMY_KEYS = {"openai": "sk-test-0000", "cartesia": "test-0000", "anthropic": "
 
 
 def _note_platform() -> None:
+    """Support command-line helper for scripts macos testbot for note platform."""
     if sys.platform != "darwin":
         print(f"[testbot] NOTE: sys.platform={sys.platform!r} — the segfaults are macOS-only; "
               "this run only checks the code path doesn't error.")
@@ -68,6 +69,7 @@ def _note_platform() -> None:
 # ---------------------------------------------------------------------------
 
 def _build_openai(unsafe: bool) -> None:
+    """Build openai."""
     from core.system.native_locks import ssl_init_lock
     from core.system import sdk_clients
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
@@ -76,6 +78,7 @@ def _build_openai(unsafe: bool) -> None:
 
 
 def _build_anthropic(unsafe: bool) -> None:
+    """Build anthropic."""
     from core.system.native_locks import ssl_init_lock
     from core.system import sdk_clients
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
@@ -87,6 +90,7 @@ def _build_cartesia(unsafe: bool) -> None:
     # Construct the client only (builds httpx + SSL context) — no websocket_connect,
     # so no network/valid key is needed. This is the frame that segfaulted
     # (core/tts.py _get_cartesia_ws -> Cartesia(...) -> create_ssl_context).
+    """Build cartesia."""
     from cartesia import Cartesia  # type: ignore
     from core.system.native_locks import ssl_init_lock
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
@@ -109,6 +113,7 @@ def _available_builders(unsafe: bool):
 
 
 def run_ssl_race(iterations: int, unsafe: bool) -> int:
+    """Run ssl race."""
     _note_platform()
     builders = _available_builders(unsafe)
     if len(builders) < 2:
@@ -122,6 +127,7 @@ def run_ssl_race(iterations: int, unsafe: bool) -> int:
         errors: list[BaseException] = []
 
         def worker(build):
+            """Handle worker for local."""
             try:
                 barrier.wait()          # release all builders at the same instant
                 build()
@@ -149,6 +155,7 @@ def run_ssl_race(iterations: int, unsafe: bool) -> int:
 # ---------------------------------------------------------------------------
 
 def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
+    """Run query."""
     _note_platform()
     from core.llm_clients import client as llm
     from core import tts as tts_module
@@ -166,6 +173,7 @@ def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
     text_q: "queue.Queue[str | None]" = queue.Queue()
 
     def llm_producer():
+        """Support command-line helper for scripts macos testbot for llm producer."""
         try:
             for chunk in llm.stream_response(prompt, None, use_tools=False):
                 sys.stdout.write(chunk)
@@ -177,6 +185,7 @@ def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
             text_q.put(None)
 
     def _chunks():
+        """Support command-line helper for scripts macos testbot for chunks."""
         while True:
             item = text_q.get()
             if item is None:
@@ -210,6 +219,7 @@ def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
 # ---------------------------------------------------------------------------
 
 def run_qt(prompt: str, timeout: float) -> int:
+    """Run qt."""
     _note_platform()
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import QTimer
@@ -222,7 +232,7 @@ def run_qt(prompt: str, timeout: float) -> int:
 
     # Register the REAL main-thread invoker — this is the piece that hops the
     # CoreAudio stream open/close onto the GUI thread (and is implicated in the
-    # original crash). On macOS main.py does exactly this at startup.
+    # original crash). The runtime bootstrap does this at startup.
     invoker = app_main._MainThreadInvoker()
     audio.set_main_thread_runner(invoker.run_on_main)
 
@@ -237,9 +247,11 @@ def run_qt(prompt: str, timeout: float) -> int:
     done = threading.Event()
 
     def worker():
+        """Support command-line helper for scripts macos testbot for worker."""
         text_q: "queue.Queue[str | None]" = queue.Queue()
 
         def llm_producer():
+            """Support command-line helper for scripts macos testbot for llm producer."""
             try:
                 for chunk in llm.stream_response(prompt, None, use_tools=False):
                     sys.stdout.write(chunk)
@@ -251,6 +263,7 @@ def run_qt(prompt: str, timeout: float) -> int:
                 text_q.put(None)
 
         def chunks():
+            """Support command-line helper for scripts macos testbot for chunks."""
             while True:
                 item = text_q.get()
                 if item is None:
@@ -266,6 +279,7 @@ def run_qt(prompt: str, timeout: float) -> int:
 
     # Quit the Qt loop once playback finishes or the timeout elapses.
     def poll():
+        """Support command-line helper for scripts macos testbot for poll."""
         if done.wait(0):
             faulthandler.cancel_dump_traceback_later()
             print("\n--- done ---")
@@ -280,6 +294,7 @@ def run_qt(prompt: str, timeout: float) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Support command-line helper for scripts macos testbot for main."""
     parser = argparse.ArgumentParser(description="macOS native-crash testbot / debug harness")
     parser.add_argument("--timeout", type=float, default=60.0,
                         help="seconds before faulthandler dumps all stacks and exits (default 60)")

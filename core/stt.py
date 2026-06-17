@@ -49,6 +49,7 @@ _chunks_lock = threading.Lock()
 # ------------------------------------------------------------------
 
 def _get_model():
+    """Return model."""
     global _model, _active_device, _active_compute
     with _model_lock:
         if _model is None:
@@ -123,6 +124,7 @@ def prewarm(on_ready=None):
         return
 
     def _worker() -> None:
+        """Handle worker for stt."""
         try:
             _get_model()
         except Exception as exc:
@@ -163,6 +165,7 @@ def start_recording():
     # hotkey fires this from a worker thread, so open on the main thread (see
     # run_on_main); inline no-op on Windows/Linux.
     def _open():
+        """Open the PortAudio input stream (must run on the main thread on macOS)."""
         s = sd.InputStream(
             samplerate=SAMPLE_RATE,
             channels=1,
@@ -178,6 +181,7 @@ def start_recording():
 
 
 def _audio_callback(indata: np.ndarray, frames: int, time, status):
+    """Handle audio callback for stt."""
     if _recording:
         with _chunks_lock:
             _chunks.append(indata.copy())

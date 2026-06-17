@@ -1,4 +1,5 @@
 @echo off
+REM Windows wrapper that launches the PowerShell executable build script.
 setlocal
 
 set "SCRIPT_DIR=%~dp0"

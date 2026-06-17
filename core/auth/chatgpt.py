@@ -53,15 +53,18 @@ _KEYRING_ACCOUNT = "chatgpt-oauth"
 # ---------------------------------------------------------------------------
 
 def _generate_code_verifier() -> str:
+    """Handle generate code verifier for auth chatgpt."""
     return base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
 
 
 def _generate_code_challenge(verifier: str) -> str:
+    """Handle generate code challenge for auth chatgpt."""
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
 def _generate_state() -> str:
+    """Handle generate state for auth chatgpt."""
     return base64.urlsafe_b64encode(secrets.token_bytes(16)).rstrip(b"=").decode()
 
 
@@ -75,6 +78,7 @@ _TOKEN_FILE = _pathlib.Path(__file__).parent.parent / "private" / ".chatgpt_toke
 
 
 def _keyring_get() -> str | None:
+    """Handle keyring get for auth chatgpt."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
@@ -84,6 +88,7 @@ def _keyring_get() -> str | None:
 
 
 def _keyring_set(value: str) -> bool:
+    """Handle keyring set for auth chatgpt."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
@@ -94,6 +99,7 @@ def _keyring_set(value: str) -> bool:
 
 
 def _keyring_delete() -> None:
+    """Handle keyring delete for auth chatgpt."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
@@ -145,6 +151,7 @@ def clear_tokens() -> None:
 # ---------------------------------------------------------------------------
 
 def _post_form(url: str, params: dict) -> dict:
+    """Handle post form for auth chatgpt."""
     import urllib.request
     body = urlencode(params).encode()
     req = urllib.request.Request(
@@ -158,6 +165,7 @@ def _post_form(url: str, params: dict) -> dict:
 
 
 def _post_json(url: str, payload: dict) -> dict:
+    """Handle post json for auth chatgpt."""
     import urllib.request
     body = json.dumps(payload).encode()
     req = urllib.request.Request(
@@ -171,6 +179,7 @@ def _post_json(url: str, payload: dict) -> dict:
 
 
 def _exchange_code(code: str, verifier: str, redirect_uri: str) -> dict:
+    """Handle exchange code for auth chatgpt."""
     return _post_form(f"{_ISSUER}/oauth/token", {
         "grant_type":    "authorization_code",
         "code":          code,
@@ -181,6 +190,7 @@ def _exchange_code(code: str, verifier: str, redirect_uri: str) -> dict:
 
 
 def _do_refresh(refresh_token: str) -> dict:
+    """Handle do refresh for auth chatgpt."""
     return _post_form(f"{_ISSUER}/oauth/token", {
         "grant_type":    "refresh_token",
         "refresh_token": refresh_token,
@@ -288,6 +298,7 @@ def start_browser_login(
     ``on_success(tokens)`` / ``on_error(message)`` are called from that thread.
     """
     def _run() -> None:
+        """Drive the browser PKCE OAuth flow on the background thread."""
         import webbrowser
 
         verifier  = _generate_code_verifier()
@@ -312,10 +323,13 @@ def start_browser_login(
         done   = threading.Event()
 
         class _Handler(BaseHTTPRequestHandler):
+            """Model handler."""
             def log_message(self, *args):   # silence access log
+                """Log message."""
                 pass
 
             def do_GET(self):              # noqa: N802
+                """Handle do g e t for handler."""
                 parsed = urlparse(self.path)
                 if parsed.path != "/auth/callback":
                     self.send_response(404)
@@ -341,6 +355,7 @@ def start_browser_login(
                 done.set()
 
             def _send_html(self, html: str) -> None:
+                """Send html."""
                 body = html.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -400,6 +415,7 @@ def start_device_login(
     _POLLING_SAFETY_MS = 3000  # extra margin on top of the server-supplied interval
 
     def _run() -> None:
+        """Drive the device-code OAuth flow (poll until authorised) on the background thread."""
         try:
             device = _post_json(
                 f"{_ISSUER}/api/accounts/deviceauth/usercode",

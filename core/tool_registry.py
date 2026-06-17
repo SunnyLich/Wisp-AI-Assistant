@@ -33,11 +33,16 @@ _DEFAULT_KEYWORD_MAP: dict[str, list[str]] = {
     "git_diff":     ["git", "diff", "commit", "branch", "change", "merge"],
     "github_repo":  ["github", "repo", "repository"],
     "github_issue": ["github", "issue", "pr", "pull request", "ticket"],
+    "list_files":   ["file", "folder", "directory", "list files", "workspace"],
+    "read_file":    ["file", "read", "open", "inspect", "workspace"],
+    "edit_file":    ["file", "edit", "change", "replace", "patch", "fix"],
+    "write_file":   ["file", "write", "create", "save", "overwrite"],
 }
 
 
 @dataclass(frozen=True)
 class ToolSpec:
+    """Store tool spec configuration data."""
     name: str
     description: str
     input_schema: dict
@@ -49,6 +54,7 @@ class ToolSpec:
     opt_in: bool = False
 
     def anthropic_schema(self) -> dict:
+        """Handle anthropic schema for tool spec."""
         if self.server_schema:
             return dict(self.server_schema)
         return {
@@ -58,6 +64,7 @@ class ToolSpec:
         }
 
     def openai_schema(self) -> dict:
+        """Handle openai schema for tool spec."""
         return {
             "type": "function",
             "function": {
@@ -69,7 +76,9 @@ class ToolSpec:
 
 
 class ToolRegistry:
+    """Model tool registry."""
     def __init__(self, plugin_dir: Path | None = None):
+        """Initialize the tool registry instance."""
         self.plugin_dir = plugin_dir or Path(config.TOOL_PLUGIN_DIR)
         self._builtins: dict[str, ToolSpec] = {}
         self._scripts: dict[str, ToolSpec] | None = None
@@ -101,6 +110,7 @@ class ToolRegistry:
         self._keyword_map = dict(_DEFAULT_KEYWORD_MAP)
 
     def save_keyword_filters(self, path: Path) -> None:
+        """Save keyword filters."""
         import json
         path.write_text(
             json.dumps(self._keyword_map, indent=2, ensure_ascii=False),
@@ -108,6 +118,7 @@ class ToolRegistry:
         )
 
     def set_keyword_filter(self, tool_name: str, keywords: list[str]) -> None:
+        """Set keyword filter."""
         self._keyword_map[tool_name] = [k.lower().strip() for k in keywords if k.strip()]
 
     def _tool_visible(self, name: str, prompt: str) -> bool:
@@ -135,6 +146,7 @@ class ToolRegistry:
         ]
 
     def register_builtin(self, spec: ToolSpec) -> None:
+        """Handle register builtin for tool registry."""
         import re
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", spec.name):
             raise ValueError(f"Invalid tool name {spec.name!r} — use only letters, digits, _ or -")
@@ -149,6 +161,7 @@ class ToolRegistry:
         return len(doomed)
 
     def schemas(self, include_server_tools: bool = True) -> list[dict]:
+        """Handle schemas for tool registry."""
         specs = self.list_tools(include_server_tools=include_server_tools)
         return [spec.anthropic_schema() for spec in specs]
 
@@ -161,6 +174,7 @@ class ToolRegistry:
         # Opt-in tools are kept out of the default sets; callers add them back
         # explicitly. Server tools are Anthropic-only, so the OpenAI/Groq path
         # (include_server_tools=False) drops both.
+        """List tools."""
         tools = []
         for spec in self._builtins.values():
             if spec.opt_in:
@@ -176,6 +190,7 @@ class ToolRegistry:
         return self._builtins.get(name) or self._load_script_tools().get(name)
 
     def execute(self, name: str, inputs: dict) -> str:
+        """Handle execute for tool registry."""
         spec = self._builtins.get(name) or self._load_script_tools().get(name)
         if not spec:
             return f"Unknown tool: {name!r}"
@@ -184,9 +199,11 @@ class ToolRegistry:
         return spec.executor(inputs or {})
 
     def refresh(self) -> None:
+        """Drop the cached script tools so they reload on next access."""
         self._scripts = None
 
     def _load_script_tools(self) -> dict[str, ToolSpec]:
+        """Load script tools."""
         if self._scripts is not None:
             return self._scripts
 
@@ -209,6 +226,7 @@ class ToolRegistry:
         return loaded
 
     def _load_script_tool(self, folder: Path) -> ToolSpec | None:
+        """Load script tool."""
         manifest_path = _first_existing(folder / "tool.toml", folder / "tool.json")
         script_path = folder / "tool.py"
         if not manifest_path or not script_path.exists():
@@ -232,6 +250,7 @@ class ToolRegistry:
         max_output_chars = int(manifest.get("max_output_chars", 12000))
 
         def _executor(inputs: dict, *, _script=script_path, _timeout=timeout, _max=max_output_chars) -> str:
+            """Handle executor for tool registry."""
             return _run_script_tool(_script, inputs, timeout=_timeout, max_output_chars=_max)
 
         return ToolSpec(
@@ -244,6 +263,7 @@ class ToolRegistry:
 
 
 def _first_existing(*paths: Path) -> Path | None:
+    """Handle first existing for tool registry."""
     for path in paths:
         if path.exists():
             return path
@@ -251,6 +271,7 @@ def _first_existing(*paths: Path) -> Path | None:
 
 
 def _load_manifest(path: Path) -> dict:
+    """Load manifest."""
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() == ".json":
         return json.loads(text)
@@ -287,6 +308,7 @@ def _load_simple_toml(text: str) -> dict:
 
 
 def _parse_simple_toml_value(value: str):
+    """Parse simple toml value."""
     value = value.strip()
     if value.startswith('"') and value.endswith('"'):
         return value[1:-1]
@@ -315,6 +337,7 @@ def _run_script_tool(
     timeout: float,
     max_output_chars: int,
 ) -> str:
+    """Run script tool."""
     payload = json.dumps({"inputs": inputs, "context": {}}, ensure_ascii=False)
     proc = subprocess.run(
         [sys.executable, str(script_path)],
@@ -346,12 +369,14 @@ def _run_script_tool(
 
 
 def _valid_tool_name(name: str) -> bool:
+    """Handle valid tool name for tool registry."""
     if not name:
         return False
     return all(c.isalnum() or c in {"_", "-"} for c in name)
 
 
 def _as_bool(value) -> bool:
+    """Handle as bool for tool registry."""
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}

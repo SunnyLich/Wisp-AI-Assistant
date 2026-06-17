@@ -15,6 +15,7 @@ secrets.*
 # Local/generated assets
 doll/
 tmp_debug_agent/
+model_files/
 
 # Local planning docs (living, not for VCS)
 MACOS_NATIVE_PLAN.md

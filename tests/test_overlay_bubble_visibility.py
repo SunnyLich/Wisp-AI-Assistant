@@ -1,3 +1,5 @@
+"""Tests for test overlay bubble visibility."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -11,6 +13,7 @@ pytestmark = pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, rea
 
 
 def test_bubble_chunk_restores_hidden_icon():
+    """Verify bubble chunk restores hidden icon behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 

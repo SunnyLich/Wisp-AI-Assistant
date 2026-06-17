@@ -1,4 +1,4 @@
-# macOS Native Threading
+﻿# macOS Native Threading
 
 Wisp uses worker threads for hotkeys, capture, transcription, LLM streaming,
 TTS streaming, model probes, OAuth flows, and memory maintenance. On macOS,
@@ -72,13 +72,13 @@ off by default, so the in-process paths remain the shipping behavior until the
 worker is proven on the Mac.
 
 Pieces:
-- `protocol.py` — newline-delimited JSON framing (request / response / event).
-- `host.py` — worker entry point; redirects fd 1 → stderr so library prints
+- `protocol.py` â€” newline-delimited JSON framing (request / response / event).
+- `host.py` â€” worker entry point; redirects fd 1 â†’ stderr so library prints
   can't corrupt the protocol channel, then serves requests in order.
-- `handlers.py` — methods that run *inside* the worker. Native deps
+- `handlers.py` â€” methods that run *inside* the worker. Native deps
   (sounddevice, faster-whisper) are imported lazily so the worker boots and can
   answer `ping` on any OS (this is what lets the IPC harness be tested off-mac).
-- `client.py` — parent-side supervisor: lazy spawn, reader thread, request/
+- `client.py` â€” parent-side supervisor: lazy spawn, reader thread, request/
   response correlation, event dispatch, restart-on-death, fail-fast on exit.
 
 **Migrated so far:** STT (faster-whisper/torch + mic). `core.stt` delegates to
@@ -87,8 +87,8 @@ back, so JSON framing suffices and `core.stt` no longer imports `sounddevice`.
 
 **Design note for the audio stage (TTS + playback):** these belong in the worker
 *together*, not separately. If synthesis moved out but playback stayed in the
-GUI, raw PCM would have to stream across IPC just to be played — worst of both
-worlds. Instead the whole "text chunks → synthesized PCM → speaker" pipeline
+GUI, raw PCM would have to stream across IPC just to be played â€” worst of both
+worlds. Instead the whole "text chunks â†’ synthesized PCM â†’ speaker" pipeline
 runs in the worker: text chunks go worker-ward (small), PCM is played *in* the
 worker and never crosses IPC, and only lightweight events (audio_start,
 amplitude, word_timestamps, done) stream back for bubble/lip-sync. That needs a
@@ -97,10 +97,10 @@ verified on the Mac on top of a proven STT foundation before it is built.
 
 ## Window parenting (separate from the threading rules above)
 
-The floating icon overlay (`ui/overlay.py`) is a `Qt.WindowType.Tool` window —
+The floating icon overlay (`ui/overlay.py`) is a `Qt.WindowType.Tool` window â€”
 an NSPanel on macOS. Do **not** parent a normal top-level window (settings,
-plugin manager, chat, viewers) to it: attaching a regular child NSWindow to an
+addon manager, chat, viewers) to it: attaching a regular child NSWindow to an
 NSPanel segfaults Cocoa on `show()`. Open these windows with `parent=None` and
 let them grab focus via `raise_()` + `activateWindow()`. `open_settings()` and
-`open_plugin_manager()` keep the parent only on Linux; everywhere else they pass
+`open_addon_manager()` keep the parent only on Linux; everywhere else they pass
 `None`. This is a Cocoa window-graph hazard, not a worker-thread hazard.

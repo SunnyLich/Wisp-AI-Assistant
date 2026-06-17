@@ -30,14 +30,17 @@ _SYNTHETIC_CTRL_C_UNTIL = 0.0
 
 
 def _normalise_combo(combo: str) -> str:
+    """Normalize combo."""
     return "+".join(part.strip().lower() for part in combo.split("+") if part.strip())
 
 
 def is_recent_synthetic_ctrl_c() -> bool:
+    """Return whether recent synthetic ctrl c is true."""
     return time.monotonic() <= _SYNTHETIC_CTRL_C_UNTIL
 
 
 def _mark_synthetic_ctrl_c(seconds: float = 0.75) -> None:
+    """Handle mark synthetic ctrl c for platform utils."""
     global _SYNTHETIC_CTRL_C_UNTIL
     _SYNTHETIC_CTRL_C_UNTIL = max(_SYNTHETIC_CTRL_C_UNTIL, time.monotonic() + seconds)
 
@@ -100,6 +103,7 @@ _MAC_MOD_FLAGS: dict[str, int] = {
 
 
 def _send_keys_macos_pyobjc(combo: str) -> None:
+    """Send keys macos pyobjc."""
     import Quartz  # type: ignore
 
     flags = 0
@@ -117,6 +121,7 @@ def _send_keys_macos_pyobjc(combo: str) -> None:
     # posting from the hotkey/worker thread trace-traps (SIGTRAP). Hop onto the
     # main thread (run_on_main is inline when already there / off-macOS).
     def _post():
+        """Post the synthetic modifier+key down/up CGEvent pair to the HID event tap."""
         src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
         down = Quartz.CGEventCreateKeyboardEvent(src, keycode, True)
         Quartz.CGEventSetFlags(down, flags)
@@ -129,6 +134,7 @@ def _send_keys_macos_pyobjc(combo: str) -> None:
 
 
 def _send_keys_pynput(combo: str) -> None:
+    """Send keys pynput."""
     from pynput.keyboard import Controller, Key, KeyCode  # type: ignore
 
     _KEY_MAP = {
@@ -217,6 +223,7 @@ _ewmh_instance = None
 
 
 def _get_ewmh():
+    """Return ewmh."""
     global _ewmh_instance
     if _ewmh_instance is None:
         from ewmh import EWMH  # type: ignore
@@ -225,6 +232,7 @@ def _get_ewmh():
 
 
 def _xlib_active_window() -> int:
+    """Handle xlib active window for platform utils."""
     try:
         ew = _get_ewmh()
         win = ew.getActiveWindow()
@@ -234,6 +242,7 @@ def _xlib_active_window() -> int:
 
 
 def _xlib_focus_window(wid: int) -> None:
+    """Handle xlib focus window for platform utils."""
     try:
         ew = _get_ewmh()
         win = ew.display.create_resource_object("window", wid)
@@ -317,6 +326,7 @@ def _mac_on_screen_windows() -> list:
     inherit the main-thread hop without each needing their own.
     """
     def _query() -> list:
+        """Return CoreGraphics' on-screen window dicts (must run on the main thread)."""
         try:
             from Quartz import (
                 CGWindowListCopyWindowInfo,
@@ -339,6 +349,7 @@ def _mac_active_window() -> int:
     onto the main thread (the nested _mac_on_screen_windows call then runs inline).
     """
     def _query() -> int:
+        """Return the frontmost app's layer-0 window number (0 if none)."""
         try:
             from AppKit import NSWorkspace
             app = NSWorkspace.sharedWorkspace().frontmostApplication()
@@ -382,6 +393,7 @@ def _mac_focus_window(wid: int) -> None:
     the main thread — run the whole thing through run_on_main.
     """
     def _focus() -> None:
+        """Activate the app that owns the window via NSRunningApplication."""
         try:
             info = _mac_window_info(wid)
             if not info or not info.get("pid"):
@@ -420,6 +432,7 @@ def keep_overlay_visible_across_apps(widget) -> None:
         return
 
     def _apply() -> None:
+        """Clear hidesOnDeactivate and let the NSPanel float across all Spaces."""
         try:
             import objc  # type: ignore
             from AppKit import (  # type: ignore
@@ -458,6 +471,7 @@ def activate_self() -> None:
         return
 
     def _activate() -> None:
+        """Activate our own NSApplication so the overlay can take keyboard focus."""
         try:
             from AppKit import NSApplication
             NSApplication.sharedApplication().activateIgnoringOtherApps_(True)

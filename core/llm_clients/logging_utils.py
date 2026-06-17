@@ -8,6 +8,7 @@ LOGGER_NAME = "wisp.llm"
 
 
 def get_logger() -> logging.Logger:
+    """Return logger."""
     return logging.getLogger(LOGGER_NAME)
 
 

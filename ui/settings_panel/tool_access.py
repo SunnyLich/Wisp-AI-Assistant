@@ -39,11 +39,14 @@ CONTEXT_GOVERNED_TOOLS: dict[str, str] = {
     "capture_screen": "Screenshot",
 }
 
+LOCAL_FILE_TOOL_NAMES = {"list_files", "read_file", "edit_file", "write_file"}
+
 _MODE_LABELS = [("Off", "off"), ("On", "on"), ("Let model decide", "model")]
 _MODE_DISPLAY = {"off": "Off", "auto": "On", "model": "Let model decide"}
 
 
 def _mode_tooltip() -> str:
+    """Handle mode tooltip for UI settings panel tool access."""
     return (
         f"{t('Off')} - {t('never offered to the model for this hotkey.')}\n"
         f"{t('On')} - {t('always offered.')}\n"
@@ -73,7 +76,10 @@ def list_extra_tools() -> list:
     except Exception:
         pass
     return sorted(
-        (s for s in registry.list_tools() if s.name not in CONTEXT_GOVERNED_TOOLS),
+        (
+            s for s in registry.list_tools()
+            if s.name not in CONTEXT_GOVERNED_TOOLS and s.name not in LOCAL_FILE_TOOL_NAMES
+        ),
         key=lambda s: s.name,
     )
 
@@ -98,6 +104,7 @@ class ToolAccessDialog(QDialog):
         overrides: dict[str, str] | None = None,
         governed_modes: dict[str, str] | None = None,
     ):
+        """Initialize the tool access dialog instance."""
         super().__init__(parent)
         self.setWindowTitle(f"{t('Allowed tools')} — {t(method_label)}")
         self.setModal(True)
@@ -158,7 +165,7 @@ class ToolAccessDialog(QDialog):
         extra = list_extra_tools()
         if not extra:
             empty = QLabel(
-                f"<small>{t('No extra tools found. Install script tools under the legacy tool folder, or enable addons that add tools.')}</small>"
+                f"<small>{t('No extra tools found. Enable addons that add model tools.')}</small>"
             )
             empty.setWordWrap(True)
             layout.addWidget(empty)
@@ -190,6 +197,7 @@ class ToolAccessDialog(QDialog):
         mode: str,
         default: str,
     ) -> None:
+        """Add tool row."""
         row = QWidget()
         h = QHBoxLayout(row)
         h.setContentsMargins(0, 0, 0, 0)
@@ -233,6 +241,7 @@ class ToolAccessDialog(QDialog):
 
 
 def _separator() -> QFrame:
+    """Handle separator for UI settings panel tool access."""
     sep = QFrame()
     sep.setFrameShape(QFrame.Shape.HLine)
     sep.setStyleSheet("max-height: 1px; background: rgba(128,128,128,0.25); margin: 4px 0;")

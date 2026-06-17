@@ -1,3 +1,5 @@
+"""Tests for test bubble transcript."""
+
 import os
 import sys
 
@@ -6,6 +8,7 @@ import pytest
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_transcript_preview_is_replaced_by_first_reply_chunk():
+    """Verify transcript preview is replaced by first reply chunk behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 

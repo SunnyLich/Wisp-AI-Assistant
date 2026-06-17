@@ -21,20 +21,24 @@ class GenerationCounter:
     """Monotonic, thread-safe generation id used to cancel superseded queries."""
 
     def __init__(self) -> None:
+        """Initialize the generation counter instance."""
         self._value = 0
         self._lock = threading.Lock()
 
     def next(self) -> int:
+        """Handle next for generation counter."""
         with self._lock:
             self._value += 1
             return self._value
 
     @property
     def current(self) -> int:
+        """Handle current for generation counter."""
         with self._lock:
             return self._value
 
     def is_current(self, gen_id: int) -> bool:
+        """Return whether current is true."""
         with self._lock:
             return gen_id == self._value
 
@@ -56,12 +60,14 @@ class ContextInputs:
 
 @dataclass
 class BuiltContext:
+    """Model built context."""
     user_message: str
     ambient_ctx: str
     screenshot_b64: str | None
 
 
 def _context_sources(ambient_text: str, all_contexts: list[str], active_document_text: str) -> set[str]:
+    """Handle context sources for query pipeline."""
     sources: set[str] = set()
     if "[Browser/Web]" in (ambient_text or ""):
         sources.add("Browser/Web")
@@ -75,6 +81,7 @@ def _context_sources(ambient_text: str, all_contexts: list[str], active_document
 
 
 def _context_priority_note(priority_context: str, sources: set[str]) -> str:
+    """Handle context priority note for query pipeline."""
     priority = (priority_context or "").strip()
     if priority not in sources or len(sources) < 2:
         return ""
@@ -125,25 +132,25 @@ def build_context(
     all_contexts = context_items + ([inp.selected] if inp.selected else [])
     sources = _context_sources(inp.ambient_text, all_contexts, inp.active_document_text)
 
-    ambient_ctx = inp.ambient_text
-    if all_contexts:
-        ctx_block = (
-            "\n\n".join(f"Context {i + 1}:\n{c}" for i, c in enumerate(all_contexts))
-            if len(all_contexts) > 1
-            else all_contexts[0]
-        )
-        ambient_ctx = f"{ambient_ctx}\n\n---\n{ctx_block}" if ambient_ctx else ctx_block
-
-    if inp.active_document_text:
-        ambient_ctx = (
-            f"{ambient_ctx}\n\n---\n[Active document]\n{inp.active_document_text}"
-            if ambient_ctx
-            else f"[Active document]\n{inp.active_document_text}"
-        )
-
+    ctx_block = (
+        "\n\n".join(f"Context {i + 1}:\n{c}" for i, c in enumerate(all_contexts))
+        if len(all_contexts) > 1
+        else (all_contexts[0] if all_contexts else "")
+    )
+    active_doc_block = (
+        f"[Active document]\n{inp.active_document_text}" if inp.active_document_text else ""
+    )
     priority_note = _context_priority_note(inp.priority_context, sources)
-    if priority_note:
-        ambient_ctx = f"{priority_note}\n\n---\n{ambient_ctx}" if ambient_ctx else priority_note
+
+    # Assemble in order — priority note, ambient snapshot, user-provided context,
+    # active document — joined by the section separator. join() inserts separators
+    # only *between* present parts, so empty sections drop out without leaving a
+    # dangling "---" at the start.
+    ambient_ctx = "\n\n---\n".join(
+        part
+        for part in (priority_note, inp.ambient_text, ctx_block, active_doc_block)
+        if part
+    )
 
     return BuiltContext(
         user_message=inp.intent_prompt,

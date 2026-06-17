@@ -1,3 +1,5 @@
+"""Tests for test chat window render limits."""
+
 import os
 import sys
 import time
@@ -13,6 +15,7 @@ from ui.chat_window import (
 
 
 def test_truncate_for_display_caps_large_text():
+    """Verify truncate for display caps large text behavior."""
     text = "x" * (_CHAT_RENDER_CHAR_LIMIT + 50)
 
     result = _truncate_for_display(text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
@@ -23,6 +26,7 @@ def test_truncate_for_display_caps_large_text():
 
 
 def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
+    """Verify truncate segments preserves visible prefix and adds marker behavior."""
     segments = [
         ("thought:" + "a" * 20, True),
         ("reply:" + "b" * 20, False),
@@ -37,6 +41,7 @@ def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_chat_window_opens_large_last_chat_without_render_freeze():
+    """Verify chat window opens large last chat without render freeze behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -66,6 +71,7 @@ def test_chat_window_opens_large_last_chat_without_render_freeze():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_chat_sidebar_options_button_stays_visible_for_long_titles():
+    """Verify chat sidebar options button stays visible for long titles behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -99,6 +105,7 @@ def test_chat_sidebar_options_button_stays_visible_for_long_titles():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
+    """Verify chat sidebar options menu anchors to button behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
@@ -108,6 +115,7 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
     captured = []
 
     def fake_popup(self, pos):
+        """Verify fake popup behavior."""
         captured.append(pos)
         return None
 

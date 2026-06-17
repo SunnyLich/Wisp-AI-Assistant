@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class LiveLogEvent:
+    """Model live log event."""
     kind: str
     body: str
     agent: str = ""
@@ -23,6 +24,7 @@ def log_body(line: str) -> str:
 
 
 def parse_live_log_event(line: str) -> LiveLogEvent:
+    """Parse live log event."""
     body = log_body(line)
     if body.startswith("agent turn ") and ": " in body:
         return LiveLogEvent("agent_turn", body, agent=body.rsplit(": ", 1)[1].strip())

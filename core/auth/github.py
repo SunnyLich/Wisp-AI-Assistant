@@ -38,10 +38,12 @@ def configured_client_id() -> str:
 
 
 def has_configured_client_id() -> bool:
+    """Return whether configured client id is available."""
     return bool(configured_client_id())
 
 
 def _keyring_get() -> str | None:
+    """Handle keyring get for auth github."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
@@ -51,6 +53,7 @@ def _keyring_get() -> str | None:
 
 
 def _keyring_set(value: str) -> bool:
+    """Handle keyring set for auth github."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
@@ -61,6 +64,7 @@ def _keyring_set(value: str) -> bool:
 
 
 def _keyring_delete() -> None:
+    """Handle keyring delete for auth github."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
@@ -70,6 +74,7 @@ def _keyring_delete() -> None:
 
 
 def get_tokens() -> dict | None:
+    """Return tokens."""
     raw = _keyring_get()
     if not raw and _TOKEN_FILE.exists():
         try:
@@ -85,6 +90,7 @@ def get_tokens() -> dict | None:
 
 
 def save_tokens(tokens: dict) -> None:
+    """Save tokens."""
     serialized = json.dumps(tokens)
     if not _keyring_set(serialized):
         print(
@@ -96,6 +102,7 @@ def save_tokens(tokens: dict) -> None:
 
 
 def clear_tokens() -> None:
+    """Clear tokens."""
     _keyring_delete()
     try:
         _TOKEN_FILE.unlink(missing_ok=True)
@@ -107,6 +114,7 @@ _TOKEN_WARN_DAYS = 365
 
 
 def get_valid_access_token() -> str | None:
+    """Return valid access token."""
     tokens = get_tokens()
     if not tokens:
         return None
@@ -122,12 +130,14 @@ def get_valid_access_token() -> str | None:
 
 
 def get_user_login() -> str | None:
+    """Return user login."""
     tokens = get_tokens()
     user = tokens.get("user") if tokens else None
     return user.get("login") if isinstance(user, dict) else None
 
 
 def _post_form(url: str, params: dict) -> dict:
+    """Handle post form for auth github."""
     import requests  # type: ignore
 
     resp = requests.post(
@@ -144,6 +154,7 @@ def _post_form(url: str, params: dict) -> dict:
 
 
 def _get_json(url: str, token: str) -> dict:
+    """Return json."""
     import requests  # type: ignore
 
     resp = requests.get(
@@ -161,6 +172,7 @@ def _get_json(url: str, token: str) -> dict:
 
 
 def _tokens_from_raw(raw: dict) -> dict:
+    """Handle tokens from raw for auth github."""
     access = raw["access_token"]
     user = _get_json(_USER_URL, access)
     return {
@@ -189,6 +201,7 @@ def start_device_login(
     """
 
     def _run() -> None:
+        """Drive the GitHub device OAuth flow on the background thread."""
         client_id = configured_client_id()
         if not client_id:
             on_error(

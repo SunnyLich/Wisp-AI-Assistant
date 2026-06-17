@@ -79,10 +79,6 @@
       <translation>Ajusta cuánto texto externo puede recopilar Wisp antes de consultar al modelo.</translation>
     </message>
     <message>
-      <source>legacy tool folder / script tool folder</source>
-      <translation>carpeta de herramientas heredadas / carpeta de scripts</translation>
-    </message>
-    <message>
       <source>Memory tuning</source>
       <translation>Ajuste de memoria</translation>
     </message>
@@ -1227,10 +1223,6 @@ Dejar decidir al modelo — expone estado/diff de git y herramientas de reposito
       <translation>Último razonamiento</translation>
     </message>
     <message>
-      <source>Legacy tool folder</source>
-      <translation>Carpeta de herramientas heredada</translation>
-    </message>
-    <message>
       <source>Let model decide</source>
       <translation>Dejar que el modelo decida</translation>
     </message>
@@ -1441,10 +1433,6 @@ Pulsa Ctrl+Q para preguntar algo.</translation>
       <translation>Sin objetivo actual.</translation>
     </message>
     <message>
-      <source>No extra tools found. Install script tools under the legacy tool folder, or enable addons that add tools.</source>
-      <translation>No se encontraron herramientas adicionales. Instala herramientas de script en la carpeta heredada o activa complementos que añadan herramientas.</translation>
-    </message>
-    <message>
       <source>No facts stored yet.
 Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.</source>
       <translation>Aún no hay hechos guardados.
@@ -1467,8 +1455,8 @@ Di "remember that ...", "note that ..." o "keep in mind ..." para guardar un hec
       <translation>No hay paquetes declarados</translation>
     </message>
     <message>
-      <source>No plugins found.</source>
-      <translation>No se encontraron plugins.</translation>
+      <source>No addons found.</source>
+      <translation>No se encontraron addons.</translation>
     </message>
     <message>
       <source>No previous task found to copy.</source>
@@ -2654,5 +2642,33 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
       <source>xhigh</source>
       <translation>muy alto</translation>
     </message>
-  </context>
+    <message>
+      <source>Model file access</source>
+      <translation>Acceso a archivos del modelo</translation>
+    </message>
+    <message>
+      <source>One folder per line. Leave empty to turn local file access off.</source>
+      <translation>Una carpeta por l?nea. D?jalo vac?o para desactivar el acceso a archivos locales.</translation>
+    </message>
+    <message>
+      <source>Ask before writing</source>
+      <translation>Preguntar antes de escribir</translation>
+    </message>
+    <message>
+      <source>Write automatically</source>
+      <translation>Escribir autom?ticamente</translation>
+    </message>
+    <message>
+      <source>One private pattern per line. Matching files are always refused.</source>
+      <translation>Un patr?n privado por l?nea. Los archivos que coincidan siempre se rechazan.</translation>
+    </message>
+    <message>
+      <source>Folders the model may use</source>
+      <translation>Carpetas que puede usar el modelo</translation>
+    </message>
+    <message>
+      <source>Private file patterns</source>
+      <translation>Patrones de archivos privados</translation>
+    </message>
+  <message><source>These folders are the only places the model can list or read files. Each keybind chooses whether local files are off, read-only, ask-before-write, or automatic.</source><translation>Estas carpetas son los únicos lugares donde el modelo puede listar o leer archivos. Cada atajo decide si los archivos locales están desactivados, son de solo lectura, piden confirmación antes de escribir o se escriben automáticamente.</translation></message><message><source>Read only</source><translation>Solo lectura</translation></message><message><source>Local files:</source><translation>Archivos locales:</translation></message><message><source>No extra tools found. Enable addons that add model tools.</source><translation>No se encontraron herramientas adicionales. Activa addons que agreguen herramientas para el modelo.</translation></message></context>
 </TS>

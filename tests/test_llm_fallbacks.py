@@ -1,3 +1,5 @@
+"""Tests for test llm fallbacks."""
+
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -6,10 +8,13 @@ from core.llm_clients import client as llm
 
 
 class LlmFallbackTests(unittest.TestCase):
+    """Test case for llm fallback tests behavior."""
     def setUp(self):
+        """Verify set up behavior."""
         llm._route_capabilities.clear()
 
     def test_route_candidates_dedupes_primary_and_fallbacks(self):
+        """Verify route candidates dedupes primary and fallbacks behavior."""
         routes = llm._route_candidates(
             "chatgpt",
             "gpt-5.5",
@@ -26,9 +31,11 @@ class LlmFallbackTests(unittest.TestCase):
         )
 
     def test_stream_with_fallbacks_tries_next_route_before_output(self):
+        """Verify stream with fallbacks tries next route before output behavior."""
         attempts = []
 
         def factory(provider, model):
+            """Verify factory behavior."""
             attempts.append((provider, model))
             if provider == "bad":
                 raise RuntimeError("boom")
@@ -46,7 +53,9 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(attempts, [("bad", "first"), ("good", "second")])
 
     def test_stream_with_fallbacks_cools_down_no_content_route(self):
+        """Verify stream with fallbacks cools down no content route behavior."""
         def factory(provider, model):
+            """Verify factory behavior."""
             if provider == "empty":
                 return
                 yield "unreachable"
@@ -65,7 +74,9 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertTrue(llm._is_route_cooling("empty", "first"))
 
     def test_stream_with_fallbacks_does_not_mix_after_output(self):
+        """Verify stream with fallbacks does not mix after output behavior."""
         def factory(provider, model):
+            """Verify factory behavior."""
             yield "partial"
             raise RuntimeError("late")
 
@@ -79,6 +90,7 @@ class LlmFallbackTests(unittest.TestCase):
             )
 
     def test_vision_route_preserves_ambient_and_memory_context(self):
+        """Verify vision route preserves ambient and memory context behavior."""
         captured = {}
 
         def fake_stream_openai(
@@ -90,6 +102,7 @@ class LlmFallbackTests(unittest.TestCase):
             memory_context="",
             **_kwargs,
         ):
+            """Verify fake stream openai behavior."""
             captured["user_message"] = user_message
             captured["image_base64"] = image_base64
             captured["ambient_context"] = ambient_context
@@ -119,9 +132,11 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertIn("Memory text", captured["memory_context"])
 
     def test_codex_vision_input_text_includes_context(self):
+        """Verify codex vision input text includes context behavior."""
         captured = {}
 
         def fake_response_stream(_client, kwargs, **_meta):
+            """Verify fake response stream behavior."""
             captured["kwargs"] = kwargs
             yield "ok"
 
@@ -145,6 +160,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(content[1]["type"], "input_image")
 
     def test_active_document_falls_back_to_window_text_when_no_path(self):
+        """Verify active document falls back to window text when no path behavior."""
         with patch("core.context_fetcher.get_all_open_document_paths", return_value=[]), \
              patch(
                  "core.context_fetcher.get_all_open_document_window_texts",
@@ -155,10 +171,13 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(text, "[Notes.txt]\nhello from notepad")
 
     def test_stream_with_fallbacks_cools_down_transient_503_and_summarizes_failures(self):
+        """Verify stream with fallbacks cools down transient 503 and summarizes failures behavior."""
         class TransientError(RuntimeError):
+            """Exception raised for transient error failures."""
             status_code = 503
 
         def factory(provider, model):
+            """Verify factory behavior."""
             raise TransientError(f"{provider}/{model} high demand")
             yield "unreachable"
 
@@ -176,11 +195,13 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertTrue(llm._is_route_cooling("google", "fallback"))
 
     def test_stream_with_fallbacks_fails_fast_when_all_routes_are_cooling(self):
+        """Verify stream with fallbacks fails fast when all routes are cooling behavior."""
         llm._route_cooldowns.clear()
         llm._mark_route_cooling("google", "primary")
         llm._mark_route_cooling("google", "fallback")
 
         def factory(provider, model):
+            """Verify factory behavior."""
             raise AssertionError(f"should not call {provider}/{model}")
             yield "unreachable"
 
@@ -194,20 +215,24 @@ class LlmFallbackTests(unittest.TestCase):
             )
 
     def test_google_provider_uses_google_api_key(self):
+        """Verify google provider uses google api key behavior."""
         with patch.object(llm.config, "GOOGLE_API_KEY", "google-key"):
             self.assertEqual(llm._api_key_for("google"), "google-key")
 
     def test_capture_screen_uses_provided_supervisor_image(self):
+        """Verify capture screen uses provided supervisor image behavior."""
         with patch("core.capture.get_screen_snippet") as capture:
             self.assertEqual(llm._capture_screen_b64("provided-image"), "provided-image")
             capture.assert_not_called()
 
     def test_capture_screen_failed_precapture_does_not_fallback_to_brain_capture(self):
+        """Verify capture screen failed precapture does not fallback to brain capture behavior."""
         with patch("core.capture.get_screen_snippet") as capture:
             self.assertIsNone(llm._capture_screen_b64(""))
             capture.assert_not_called()
 
     def test_openai_vision_model_skips_configured_vision_route_when_cooling(self):
+        """Verify openai vision model skips configured vision route when cooling behavior."""
         llm._route_cooldowns.clear()
         llm._mark_route_cooling("google", "gemini-3.5-flash")
 
@@ -218,6 +243,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(model, "gemma-4-31b-it")
 
     def test_openai_tool_call_suppresses_preamble_until_final_answer(self):
+        """Verify openai tool call suppresses preamble until final answer behavior."""
         first_round_chunks = [
             SimpleNamespace(
                 choices=[
@@ -247,17 +273,23 @@ class LlmFallbackTests(unittest.TestCase):
         ]
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter(first_round_chunks)
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def __init__(self):
+                """Initialize the fake completions instance."""
                 self.calls = []
 
             def create(self, **kwargs):
+                """Verify create behavior."""
                 self.calls.append(kwargs)
                 if len(self.calls) == 1:
                     return FakeStream()
@@ -289,6 +321,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(chunks, ["Here is what I can see."])
 
     def test_openai_text_screenshot_request_continues_with_implicit_tool_call(self):
+        """Verify openai text screenshot request continues with implicit tool call behavior."""
         first_round_chunks = [
             SimpleNamespace(
                 choices=[
@@ -304,17 +337,23 @@ class LlmFallbackTests(unittest.TestCase):
         ]
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter(first_round_chunks)
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def __init__(self):
+                """Initialize the fake completions instance."""
                 self.calls = []
 
             def create(self, **kwargs):
+                """Verify create behavior."""
                 self.calls.append(kwargs)
                 if len(self.calls) == 1:
                     return FakeStream()
@@ -350,6 +389,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(follow_up_messages[-1]["content"][1]["type"], "image_url")
 
     def test_anthropic_tool_call_suppresses_preamble_until_final_answer(self):
+        """Verify anthropic tool call suppresses preamble until final answer behavior."""
         first_response = SimpleNamespace(
             stop_reason="tool_use",
             content=[
@@ -363,22 +403,29 @@ class LlmFallbackTests(unittest.TestCase):
         )
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             text_stream = ["I need a screenshot."]
 
             def __enter__(self):
+                """Enter the context manager."""
                 return self
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
             def get_final_message(self):
+                """Verify get final message behavior."""
                 return first_response
 
         class FakeMessages:
+            """Test case for fake messages behavior."""
             def stream(self, **kwargs):
+                """Verify stream behavior."""
                 return FakeStream()
 
             def create(self, **kwargs):
+                """Verify create behavior."""
                 return SimpleNamespace(
                     stop_reason="stop",
                     content=[SimpleNamespace(type="text", text="Here is what I can see.")],
@@ -400,8 +447,11 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(chunks, ["Here is what I can see."])
 
     def test_dynamic_openai_client_uses_google_base_url(self):
+        """Verify dynamic openai client uses google base url behavior."""
         class FakeOpenAI:
+            """Test case for fake open a i behavior."""
             def __init__(self, **kwargs):
+                """Initialize the fake open a i instance."""
                 self.kwargs = kwargs
 
         with patch.object(llm.config, "GOOGLE_API_KEY", "google-key"), patch(
@@ -413,25 +463,80 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(client.kwargs["api_key"], "google-key")
         self.assertEqual(client.kwargs["base_url"], llm._GOOGLE_OPENAI_BASE_URL)
 
+    def test_openai_compatible_provider_base_urls_match_official_docs(self):
+        """Verify openai compatible provider base urls match official docs behavior."""
+        expected = {
+            "deepseek": "https://api.deepseek.com",
+            "together": "https://api.together.ai/v1",
+        }
+
+        for provider, base_url in expected.items():
+            with self.subTest(provider=provider):
+                self.assertEqual(llm._OPENAI_COMPAT_PROVIDERS[provider][1], base_url)
+
+    def test_openrouter_credential_probe_uses_provider_base_url(self):
+        """Verify openrouter credential probe uses provider base url behavior."""
+        calls = []
+
+        def fake_openai_client(**kwargs):
+            """Verify fake openai client behavior."""
+            calls.append(kwargs)
+            return object()
+
+        with patch.object(llm.sdk_clients, "openai_client", fake_openai_client), \
+             patch.object(llm, "_run_openai_compat_probe"):
+            llm._probe_openai_compat_route_with_credentials(
+                "openrouter",
+                "deepseek/deepseek-v4-flash",
+                api_key="sk-or-v1-test",
+            )
+
+        self.assertEqual(
+            calls,
+            [{"api_key": "sk-or-v1-test", "base_url": llm._OPENROUTER_BASE_URL}],
+        )
+
+    def test_openrouter_route_test_reports_missing_explicit_key_before_probe(self):
+        """Verify route tests catch a missing OpenRouter key before probing."""
+        with patch.object(llm, "_probe_openai_compat_route_with_credentials") as probe:
+            ok, message = llm.test_route_connection(
+                "openrouter",
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "LLM",
+                compat_keys={"openrouter": ""},
+            )
+
+        self.assertFalse(ok)
+        self.assertIn("API key is not configured", message)
+        probe.assert_not_called()
+
     def test_text_route_probe_uses_openai_compatible_client(self):
+        """Verify text route probe uses openai compatible client behavior."""
         calls = []
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([object()])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 return FakeStream()
 
         class FakeChat:
+            """Test case for fake chat behavior."""
             completions = FakeCompletions()
 
         class FakeClient:
+            """Client for fake client communication."""
             chat = FakeChat()
 
         with patch("core.llm_clients.client._check_route_config_with_credentials"), patch("openai.OpenAI", return_value=FakeClient()):
@@ -448,22 +553,28 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertTrue(calls[0]["stream"])
 
     def test_text_route_probe_retries_non_streaming_when_stream_rejected(self):
+        """Verify text route probe retries non streaming when stream rejected behavior."""
         calls = []
 
         class StreamModeError(RuntimeError):
+            """Exception raised for stream mode error failures."""
             status_code = 400
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 if kwargs.get("stream"):
                     raise StreamModeError("stream is not supported for this model")
                 return SimpleNamespace(choices=[])
 
         class FakeChat:
+            """Test case for fake chat behavior."""
             completions = FakeCompletions()
 
         class FakeClient:
+            """Client for fake client communication."""
             chat = FakeChat()
 
         with patch("core.llm_clients.client._check_route_config_with_credentials"), patch("openai.OpenAI", return_value=FakeClient()):
@@ -479,13 +590,17 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual([call["stream"] for call in calls], [True, False])
 
     def test_openai_compat_runtime_retries_non_streaming_when_stream_rejected(self):
+        """Verify openai compat runtime retries non streaming when stream rejected behavior."""
         calls = []
 
         class StreamModeError(RuntimeError):
+            """Exception raised for stream mode error failures."""
             status_code = 400
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 if kwargs.get("stream"):
                     raise StreamModeError("stream is not supported for this model")
@@ -514,11 +629,64 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual([call["stream"] for call in calls], [True, False])
         self.assertFalse(llm._get_route_capabilities("google", "model").supports_stream)
 
+    def test_request_specific_stream_false_error_does_not_disable_route_streaming(self):
+        """Verify request specific stream false error does not disable route streaming behavior."""
+        calls = []
+
+        class StreamFalseRequiredError(RuntimeError):
+            """Exception raised when one request shape must be non-streaming."""
+            status_code = 400
+
+        class FakeCompletions:
+            """Test case for fake completions behavior."""
+            def create(self, **kwargs):
+                """Verify create behavior."""
+                calls.append(kwargs)
+                if kwargs.get("stream"):
+                    raise StreamFalseRequiredError(
+                        "json_object is not compatible with streaming - stream must be false"
+                    )
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(content="json reply", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+
+        class FakeChat:
+            """Test case for fake chat behavior."""
+            completions = FakeCompletions()
+
+        fake_client = SimpleNamespace(chat=FakeChat())
+
+        chunks = list(
+            llm._stream_openai_compat(
+                "hi",
+                None,
+                "gpt-oss-120b",
+                fake_client,
+                "",
+                "",
+                use_tools=False,
+                provider="cerebras",
+                json_mode=True,
+            )
+        )
+
+        self.assertEqual(chunks, ["json reply"])
+        self.assertEqual([call["stream"] for call in calls], [True, False])
+        self.assertIsNot(llm._get_route_capabilities("cerebras", "gpt-oss-120b").supports_stream, False)
+
     def test_openai_compat_defaults_to_single_tool_call_without_parallel_param(self):
+        """Verify openai compat defaults to single tool call without parallel param behavior."""
         calls = []
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([
                     SimpleNamespace(
                         choices=[
@@ -531,10 +699,13 @@ class LlmFallbackTests(unittest.TestCase):
                 ])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 return FakeStream()
 
@@ -558,13 +729,17 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertNotIn("parallel_tool_calls", calls[0])
 
     def test_openai_compat_parallel_tool_param_is_removed_without_disabling_tools(self):
+        """Verify openai compat parallel tool param is removed without disabling tools behavior."""
         calls = []
 
         class UnsupportedParameterError(RuntimeError):
+            """Exception raised for unsupported parameter error failures."""
             status_code = 400
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([
                     SimpleNamespace(
                         choices=[
@@ -577,10 +752,13 @@ class LlmFallbackTests(unittest.TestCase):
                 ])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 if "parallel_tool_calls" in kwargs:
                     raise UnsupportedParameterError("Unsupported parameter: 'parallel_tool_calls'")
@@ -610,13 +788,17 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertFalse(llm._get_route_capabilities("google", "model").supports_parallel_tools)
 
     def test_openai_compat_tools_unsupported_downgrades_to_frontloaded_context(self):
+        """Verify openai compat tools unsupported downgrades to frontloaded context behavior."""
         calls = []
 
         class ToolUnsupportedError(RuntimeError):
+            """Exception raised for tool unsupported error failures."""
             status_code = 400
 
         class FakeStream:
+            """Test case for fake stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([
                     SimpleNamespace(
                         choices=[
@@ -629,10 +811,13 @@ class LlmFallbackTests(unittest.TestCase):
                 ])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 if "tools" in kwargs:
                     raise ToolUnsupportedError("tools are not supported for this model")
@@ -662,24 +847,32 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertFalse(llm._get_route_capabilities("google", "model").supports_tools)
 
     def test_chatgpt_route_probe_retries_streaming_when_create_rejected(self):
+        """Verify chatgpt route probe retries streaming when create rejected behavior."""
         calls = []
 
         class StreamRequiredError(RuntimeError):
+            """Exception raised for stream required error failures."""
             status_code = 400
 
         class FakeResponseStream:
+            """Test case for fake response stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([SimpleNamespace(type="response.output_text.delta", delta="OK")])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeResponses:
+            """Test case for fake responses behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(("create", kwargs))
                 raise StreamRequiredError("stream must be true for this model")
 
             def stream(self, **kwargs):
+                """Verify stream behavior."""
                 calls.append(("stream", kwargs))
                 return FakeResponseStream()
 
@@ -689,13 +882,17 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual([kind for kind, _kwargs in calls], ["create", "stream"])
 
     def test_chatgpt_route_probe_retries_without_unsupported_max_output_tokens(self):
+        """Verify chatgpt route probe retries without unsupported max output tokens behavior."""
         calls = []
 
         class UnsupportedParameterError(RuntimeError):
+            """Exception raised for unsupported parameter error failures."""
             status_code = 400
 
         class FakeResponses:
+            """Test case for fake responses behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 if "max_output_tokens" in kwargs:
                     raise UnsupportedParameterError(
@@ -711,27 +908,36 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertNotIn("max_output_tokens", calls[1])
 
     def test_chatgpt_route_probe_stream_retry_strips_unsupported_max_output_tokens(self):
+        """Verify chatgpt route probe stream retry strips unsupported max output tokens behavior."""
         calls = []
 
         class StreamRequiredError(RuntimeError):
+            """Exception raised for stream required error failures."""
             status_code = 400
 
         class UnsupportedParameterError(RuntimeError):
+            """Exception raised for unsupported parameter error failures."""
             status_code = 400
 
         class FakeResponseStream:
+            """Test case for fake response stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([SimpleNamespace(type="response.output_text.delta", delta="OK")])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeResponses:
+            """Test case for fake responses behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(("create", kwargs))
                 raise StreamRequiredError("stream must be true for this model")
 
             def stream(self, **kwargs):
+                """Verify stream behavior."""
                 calls.append(("stream", kwargs))
                 if "max_output_tokens" in kwargs:
                     raise UnsupportedParameterError(
@@ -747,17 +953,22 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertNotIn("max_output_tokens", calls[2][1])
 
     def test_chatgpt_runtime_retries_create_when_stream_rejected(self):
+        """Verify chatgpt runtime retries create when stream rejected behavior."""
         calls = []
 
         class StreamModeError(RuntimeError):
+            """Exception raised for stream mode error failures."""
             status_code = 400
 
         class FakeResponses:
+            """Test case for fake responses behavior."""
             def stream(self, **kwargs):
+                """Verify stream behavior."""
                 calls.append(("stream", kwargs))
                 raise StreamModeError("streaming is not supported for this model")
 
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(("create", kwargs))
                 return SimpleNamespace(output_text="created reply")
 
@@ -768,17 +979,23 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertFalse(llm._get_route_capabilities("chatgpt", "gpt-5.5").supports_stream)
 
     def test_chatgpt_runtime_accepts_allowed_tools_allowlist(self):
+        """Verify chatgpt runtime accepts allowed tools allowlist behavior."""
         calls = []
 
         class FakeResponseStream:
+            """Test case for fake response stream behavior."""
             def __enter__(self):
+                """Enter the context manager."""
                 return iter([SimpleNamespace(type="response.output_text.delta", delta="OK")])
 
             def __exit__(self, exc_type, exc, tb):
+                """Exit the context manager."""
                 return False
 
         class FakeResponses:
+            """Test case for fake responses behavior."""
             def stream(self, **kwargs):
+                """Verify stream behavior."""
                 calls.append(kwargs)
                 return FakeResponseStream()
 
@@ -796,31 +1013,40 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
     def test_macos_openai_compat_query_uses_non_streaming_safe_mode(self):
+        """Verify macos openai compat query uses non streaming safe mode behavior."""
         calls = []
 
         class FakeMessage:
+            """Test case for fake message behavior."""
             content = "hello"
 
         class FakeChoice:
+            """Test case for fake choice behavior."""
             message = FakeMessage()
 
         class FakeResponse:
+            """Test case for fake response behavior."""
             choices = [FakeChoice()]
 
         class FakeCompletions:
+            """Test case for fake completions behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 return FakeResponse()
 
         class FakeChat:
+            """Test case for fake chat behavior."""
             completions = FakeCompletions()
 
         class FakeClient:
+            """Client for fake client communication."""
             chat = FakeChat()
 
         stdlib_calls = []
 
         def fake_stdlib(provider, kwargs):
+            """Verify fake stdlib behavior."""
             stdlib_calls.append((provider, kwargs))
             return "hello"
 
@@ -845,6 +1071,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertNotIn("tools", stdlib_calls[0][1])
 
     def test_macos_openai_compat_route_skips_sdk_client_construction(self):
+        """Verify macos openai compat route skips sdk client construction behavior."""
         with patch.object(llm.macos_safety.sys, "platform", "darwin"), \
              patch.dict(llm.macos_safety.os.environ, {}, clear=True), \
              patch.object(llm, "_check_route_config"), \
@@ -867,14 +1094,18 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(chunks, ["ok"])
 
     def test_vision_route_probe_uses_test_image(self):
+        """Verify vision route probe uses test image behavior."""
         calls = []
 
         class FakeMessages:
+            """Test case for fake messages behavior."""
             def create(self, **kwargs):
+                """Verify create behavior."""
                 calls.append(kwargs)
                 return object()
 
         class FakeClient:
+            """Client for fake client communication."""
             messages = FakeMessages()
 
         fake_anthropic = type("FakeAnthropicModule", (), {"Anthropic": lambda self=None, api_key=None: FakeClient()})()
@@ -893,6 +1124,7 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(content[0]["source"]["data"], llm._TEST_IMAGE_BASE64)
 
     def test_copilot_route_probe_requires_non_empty_response(self):
+        """Verify copilot route probe requires non empty response behavior."""
         with patch("core.auth.copilot_auth.get_token", return_value="github_pat_test"), patch(
             "core.auth.copilot_auth.validate_token_format",
             return_value=(True, "ok"),

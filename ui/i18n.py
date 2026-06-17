@@ -47,6 +47,7 @@ _qt_translator_language = ""
 
 
 def _system_language() -> str:
+    """Handle system language for UI i18n."""
     loc = ""
     try:
         loc = locale.getlocale()[0] or ""
@@ -60,12 +61,14 @@ def _system_language() -> str:
 
 
 def _normalize_language(raw: str) -> str:
+    """Normalize language."""
     value = str(raw or "").strip()
     code = _LANGUAGE_ALIASES.get(value.lower(), value)
     return code if code in _SUPPORTED_LANGUAGES else "en"
 
 
 def current_language() -> str:
+    """Handle current language for UI i18n."""
     try:
         import config
 
@@ -76,6 +79,7 @@ def current_language() -> str:
 
 
 def _qt_catalog_path(code: str) -> Path:
+    """Handle qt catalog path for UI i18n."""
     return _QT_LOCALES_DIR / f"wisp_{code}.qm"
 
 
@@ -131,11 +135,13 @@ def t(text: str, context: str = _QT_CONTEXT) -> str:
 
 
 def install(app: Any) -> None:
+    """Apply the saved UI language to the Qt application."""
     if app is not None:
         set_language(app=app)
 
 
 def _original(obj: Any, prop_name: str, value: str) -> str:
+    """Handle original for UI i18n."""
     store_name = f"_wisp_i18n_{prop_name}"
     try:
         original = obj.property(store_name)
@@ -148,6 +154,7 @@ def _original(obj: Any, prop_name: str, value: str) -> str:
 
 
 def _translate_action(action: Any) -> None:
+    """Handle translate action for UI i18n."""
     try:
         text = action.text()
     except Exception:
@@ -243,6 +250,7 @@ def localize_widget_tree(root: Any) -> None:
 
 
 def refresh_all_widgets(app: Any = None) -> None:
+    """Refresh all widgets."""
     try:
         from PySide6.QtWidgets import QApplication
 

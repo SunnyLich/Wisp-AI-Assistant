@@ -67,6 +67,7 @@ def _account(name: str) -> str:
 
 
 def _write_blob_raw(blob: dict) -> None:
+    """Write blob raw."""
     with keychain_lock():
         import keyring  # type: ignore
         keyring.set_password(_KEYRING_SERVICE, _BLOB_ACCOUNT, json.dumps(blob))
@@ -147,6 +148,7 @@ def _save_blob(blob: dict) -> None:
 
 
 def _invalidate_cache() -> None:
+    """Handle invalidate cache for secret store."""
     global _blob_cache
     with _cache_lock:
         _blob_cache = None
@@ -186,7 +188,12 @@ def get_keychain_secret(name: str) -> str:
 
 
 def has_secret(name: str) -> bool:
-    return bool(get_secret(name)) or configured_marker(name)
+    """Return whether secret is available."""
+    if get_secret(name):
+        return True
+    if configured_marker(name) and name in API_KEY_NAMES:
+        set_configured_marker(name, False)
+    return False
 
 
 def secret_source(name: str) -> str:
@@ -195,6 +202,8 @@ def secret_source(name: str) -> str:
         return "keychain"
     if os.getenv(name, ""):
         return "env"
+    if configured_marker(name) and name in API_KEY_NAMES:
+        set_configured_marker(name, False)
     return "none"
 
 
@@ -237,6 +246,7 @@ def set_secret(name: str, value: str) -> None:
 
 
 def delete_secret(name: str) -> None:
+    """Delete secret."""
     try:
         blob = dict(_load_blob())
         if name in blob:
@@ -273,10 +283,12 @@ def migrate_env_secrets(env: dict[str, str]) -> list[str]:
 
 
 def configured_marker(name: str) -> bool:
+    """Handle configured marker for secret store."""
     return bool(_read_meta().get(name))
 
 
 def set_configured_marker(name: str, configured: bool) -> None:
+    """Set configured marker."""
     data = _read_meta()
     if configured:
         data[name] = True
@@ -287,6 +299,7 @@ def set_configured_marker(name: str, configured: bool) -> None:
 
 
 def _read_meta() -> dict:
+    """Read meta."""
     try:
         return json.loads(_META_FILE.read_text(encoding="utf-8"))
     except Exception:

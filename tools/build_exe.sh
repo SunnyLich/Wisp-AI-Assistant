@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Builds the Linux Wisp executable with PyInstaller and required assets.
 set -euo pipefail
 
 CLEAN=false

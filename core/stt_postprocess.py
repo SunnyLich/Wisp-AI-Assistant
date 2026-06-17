@@ -5,6 +5,7 @@ from collections import Counter
 
 
 def _normal_token(token: str) -> str:
+    """Handle normal token for STT postprocess."""
     return token.strip(" \t\r\n.,!?;:\"'()[]{}<>").casefold()
 
 
@@ -25,6 +26,7 @@ def looks_like_repeated_token_noise(text: str) -> bool:
 
 
 def clean_transcript(text: str) -> str:
+    """Handle clean transcript for STT postprocess."""
     text = " ".join((text or "").split()).strip()
     if looks_like_repeated_token_noise(text):
         return ""

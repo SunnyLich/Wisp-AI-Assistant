@@ -1,4 +1,4 @@
-"""Tests for process-hosted addons and the plugin compatibility facade."""
+﻿"""Tests for process-hosted addons and the plugin compatibility facade."""
 from __future__ import annotations
 
 import os
@@ -14,14 +14,14 @@ from core.addon_distribution import install_addon_archive, install_addon_folder
 import core.addon_manager as am
 import core.addon_runtime as addon_runtime
 import core.addon_store as addon_store
-import core.plugin_manager as pm
+import core.addon_manager as pm
 from core.tool_registry import ToolRegistry
 
 
 _ADDON_SRC = """
 import os
 import sys
-from core.plugin_manager import plugin_setting
+from core.addon_manager import addon_setting
 
 def before_query(prompt, context):
     print("before-query-log", file=sys.stderr, flush=True)
@@ -60,6 +60,7 @@ def get_hotkeys():
 
 
 def _make_manager(tmp_path: Path, monkeypatch) -> tuple[am.AddonManager, Path]:
+    """Verify make manager behavior."""
     addons_dir = tmp_path / "addons"
     addon_dir = addons_dir / "demo"
     addon_dir.mkdir(parents=True)
@@ -110,6 +111,7 @@ def _make_manager(tmp_path: Path, monkeypatch) -> tuple[am.AddonManager, Path]:
 
 
 def test_addon_hooks_and_tools_run_in_host_process(tmp_path, monkeypatch):
+    """Verify addon hooks and tools run in host process behavior."""
     manager, _store_path = _make_manager(tmp_path, monkeypatch)
     registry = ToolRegistry(plugin_dir=Path("does-not-exist"))
     manager.on_startup(am.AppContext(signals=None, model_tool_registry=registry, config=config))
@@ -128,6 +130,7 @@ def test_addon_hooks_and_tools_run_in_host_process(tmp_path, monkeypatch):
 
 
 def test_addon_events_intents_and_notifications(tmp_path, monkeypatch):
+    """Verify addon events intents and notifications behavior."""
     manager, _store_path = _make_manager(tmp_path, monkeypatch)
 
     intents = manager.get_intents(caller_idx=0)
@@ -146,6 +149,7 @@ def test_addon_events_intents_and_notifications(tmp_path, monkeypatch):
 
 
 def test_addon_enable_and_settings_round_trip(tmp_path, monkeypatch):
+    """Verify addon enable and settings round trip behavior."""
     manager, store_path = _make_manager(tmp_path, monkeypatch)
     registry = ToolRegistry(plugin_dir=Path("does-not-exist"))
     manager.on_startup(am.AppContext(signals=None, model_tool_registry=registry, config=config))
@@ -154,10 +158,10 @@ def test_addon_enable_and_settings_round_trip(tmp_path, monkeypatch):
     assert settings == [
         {"key": "greeting", "label": "Greeting", "type": "text", "default": "hi", "value": "hi"}
     ]
-    assert pm.plugin_setting("demo", "greeting", "fallback") == "fallback"
+    assert pm.addon_setting("demo", "greeting", "fallback") == "fallback"
 
     manager.set_setting("demo", "greeting", "hello")
-    assert pm.plugin_setting("demo", "greeting") == "hello"
+    assert pm.addon_setting("demo", "greeting") == "hello"
     assert manager.get_settings("demo")[0]["value"] == "hello"
     assert "hello" in store_path.read_text(encoding="utf-8")
 
@@ -172,6 +176,7 @@ def test_addon_enable_and_settings_round_trip(tmp_path, monkeypatch):
 
 
 def test_addon_stderr_is_exposed_in_summary_logs(tmp_path, monkeypatch):
+    """Verify addon stderr is exposed in summary logs behavior."""
     manager, _store_path = _make_manager(tmp_path, monkeypatch)
 
     manager.before_query("hi", "")
@@ -187,6 +192,7 @@ def test_addon_stderr_is_exposed_in_summary_logs(tmp_path, monkeypatch):
 
 
 def test_addon_with_dependencies_waits_for_environment(tmp_path, monkeypatch):
+    """Verify addon with dependencies waits for environment behavior."""
     monkeypatch.setattr(addon_runtime, "ADDON_ENVS_DIR", tmp_path / "addon_envs")
     addons_dir = tmp_path / "addons"
     addon_dir = addons_dir / "needs_deps"
@@ -223,6 +229,7 @@ def test_addon_with_dependencies_waits_for_environment(tmp_path, monkeypatch):
 
 
 def test_approved_addon_with_missing_environment_needs_install(tmp_path, monkeypatch):
+    """Verify approved addon with missing environment needs install behavior."""
     monkeypatch.setattr(addon_runtime, "ADDON_ENVS_DIR", tmp_path / "addon_envs")
     addons_dir = tmp_path / "addons"
     addon_dir = addons_dir / "needs_deps"
@@ -258,6 +265,7 @@ def test_approved_addon_with_missing_environment_needs_install(tmp_path, monkeyp
 
 
 def test_addon_repair_environment_uses_ready_runtime(tmp_path, monkeypatch):
+    """Verify addon repair environment uses ready runtime behavior."""
     deps = addon_runtime.AddonDependencies(python=">=3.11", packages=["demo-pkg"])
     monkeypatch.setattr(addon_runtime, "ADDON_ENVS_DIR", tmp_path / "addon_envs")
     env_dir = addon_runtime.env_path("demo")
@@ -273,6 +281,7 @@ def test_addon_repair_environment_uses_ready_runtime(tmp_path, monkeypatch):
 
 
 def test_repair_environment_approves_current_dependency_hash(tmp_path, monkeypatch):
+    """Verify repair environment approves current dependency hash behavior."""
     addons_dir = tmp_path / "addons"
     addon_dir = addons_dir / "needs_deps"
     addon_dir.mkdir(parents=True)
@@ -296,6 +305,7 @@ def test_repair_environment_approves_current_dependency_hash(tmp_path, monkeypat
     monkeypatch.setattr(am.addon_store, "_STORE_PATH", store_path)
 
     def fake_provision(addon_id, deps, *, force=False):
+        """Verify fake provision behavior."""
         return {
             "tier": "2",
             "ready": True,
@@ -318,6 +328,7 @@ def test_repair_environment_approves_current_dependency_hash(tmp_path, monkeypat
 
 
 def test_install_addon_archive_rejects_path_traversal(tmp_path):
+    """Verify install addon archive rejects path traversal behavior."""
     archive = tmp_path / "bad.wisp"
     with zipfile.ZipFile(archive, "w") as zf:
         zf.writestr("../evil.txt", "nope")
@@ -327,6 +338,7 @@ def test_install_addon_archive_rejects_path_traversal(tmp_path):
 
 
 def test_install_addon_archive_extracts_single_addon(tmp_path):
+    """Verify install addon archive extracts single addon behavior."""
     archive = tmp_path / "demo.wisp"
     with zipfile.ZipFile(archive, "w") as zf:
         zf.writestr("demo/addon.toml", "[addon]\nid = 'demo'\nname = 'Demo'\n")
@@ -339,6 +351,7 @@ def test_install_addon_archive_extracts_single_addon(tmp_path):
 
 
 def test_install_addon_folder_copies_single_addon(tmp_path):
+    """Verify install addon folder copies single addon behavior."""
     source = tmp_path / "source" / "demo"
     source.mkdir(parents=True)
     (source / "addon.toml").write_text("[addon]\nid = 'demo'\nname = 'Demo'\n", encoding="utf-8")
@@ -351,6 +364,7 @@ def test_install_addon_folder_copies_single_addon(tmp_path):
 
 
 def test_missing_permissions_deny_surfaces(tmp_path, monkeypatch):
+    """Verify missing permissions deny surfaces behavior."""
     addons_dir = tmp_path / "addons"
     addon_dir = addons_dir / "locked"
     addon_dir.mkdir(parents=True)

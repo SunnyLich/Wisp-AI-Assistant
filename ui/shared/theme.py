@@ -50,6 +50,7 @@ def is_dark_mode() -> bool:
 
 
 def _hex(c: QColor) -> str:
+    """Handle hex for UI shared theme."""
     return f"#{c.red():02x}{c.green():02x}{c.blue():02x}"
 
 
@@ -172,6 +173,7 @@ def _apply_color_scheme_hint(app: QApplication) -> None:
 
 
 def _app_stylesheet(c: dict[str, str]) -> str:
+    """Handle app stylesheet for UI shared theme."""
     return f"""
         QWidget {{
             background-color: {c["bg"]};

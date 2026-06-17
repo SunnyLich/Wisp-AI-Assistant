@@ -33,46 +33,59 @@ _sf_loaded = False
 
 
 def _raise_sounddevice_unavailable() -> None:
+    """Handle raise sounddevice unavailable for audio."""
     raise ModuleNotFoundError("sounddevice is required for audio playback") from _SD_IMPORT_ERROR
 
 
 class _MissingRawOutputStream:
+    """Model missing raw output stream."""
     def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        """Initialize the missing raw output stream instance."""
         _raise_sounddevice_unavailable()
 
     def __enter__(self):
+        """Enter the context manager."""
         return self
 
     def __exit__(self, *exc):  # noqa: ANN002, ANN003
+        """Exit the context manager."""
         return False
 
 
 class _MissingSoundDevice:
+    """Model missing sound device."""
     RawOutputStream = _MissingRawOutputStream
 
     class default:
+        """Model default."""
         device = (None, None)
 
     @staticmethod
     def play(*args, **kwargs):  # noqa: ANN002, ANN003
+        """Handle play for missing sound device."""
         _raise_sounddevice_unavailable()
 
     @staticmethod
     def wait() -> None:
+        """Handle wait for missing sound device."""
         _raise_sounddevice_unavailable()
 
     @staticmethod
     def stop() -> None:
+        """Raise: the sounddevice library is unavailable."""
         _raise_sounddevice_unavailable()
 
     @staticmethod
     def query_devices():  # noqa: ANN201
+        """Query devices."""
         _raise_sounddevice_unavailable()
 
 
 class _MissingSoundFile:
+    """Model missing sound file."""
     @staticmethod
     def read(*args, **kwargs):  # noqa: ANN002, ANN003
+        """Raise: the soundfile library is unavailable."""
         raise ModuleNotFoundError("soundfile is required for filler audio decoding") from _SF_IMPORT_ERROR
 
 
@@ -81,6 +94,7 @@ sf = _MissingSoundFile()
 
 
 def _load_sounddevice_if_allowed():
+    """Load sounddevice if allowed."""
     global sd, _SD_IMPORT_ERROR, _sd_loaded
     if _sd_loaded:
         return sd
@@ -97,6 +111,7 @@ def _load_sounddevice_if_allowed():
 
 
 def _load_soundfile_if_allowed():
+    """Load soundfile if allowed."""
     global sf, _SF_IMPORT_ERROR, _sf_loaded
     if _sf_loaded:
         return sf
@@ -137,10 +152,12 @@ def stop() -> None:
 
 
 def set_tts_speed_boost(enabled: bool) -> None:
+    """Set tts speed boost."""
     audio_state.set_tts_speed_boost(enabled)
 
 
 def _current_tts_rate() -> float:
+    """Handle current TTS rate for audio."""
     return audio_state.current_tts_rate(
         playback_rate=config.TTS_PLAYBACK_RATE,
         hold_playback_rate=config.TTS_HOLD_PLAYBACK_RATE,
@@ -233,6 +250,7 @@ def play_filler():
 
 
 def _play_clip(data: np.ndarray, samplerate: int):
+    """Handle play clip for audio."""
     try:
         sd_mod = _load_sounddevice_if_allowed()
         # sd.play opens and starts a PortAudio output stream, so it must run on
@@ -248,6 +266,7 @@ def _play_clip(data: np.ndarray, samplerate: int):
         # block on its completion event here (a plain flag wait, safe off-main),
         # then hop the close back onto the main thread.
         def _start():
+            """Start playback on the main thread and return its callback context."""
             sd_mod.play(data, samplerate)
             return sd_mod._last_callback  # the _CallbackContext play() just created
         ctx = _run_on_main(_start)
@@ -303,6 +322,7 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                             on_audio_start: callable | None,
                             on_word_timestamps: callable | None,
                             on_amplitude: callable | None):
+    """Stream and play chunks."""
     configured_provider = config.TTS_PROVIDER.lower()
     provider = configured_provider
     if not _macos_audio_enabled():
@@ -333,6 +353,7 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
 
     # Producer: fetch TTS audio chunks
     def producer():
+        """Handle producer for audio."""
         try:
             for chunk in tts_module.stream_audio_from_chunks(text_chunks,
                                                               on_word_timestamps=on_word_timestamps):
@@ -362,11 +383,13 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         pass
 
     def _open_stream():
+        """Open stream."""
         s = sd_mod.RawOutputStream(samplerate=sample_rate, channels=channels, dtype=dtype)
         s.start()  # RawOutputStream's context manager normally does this on __enter__
         return s
 
     def _close_stream(s):
+        """Close stream."""
         try:
             s.stop()
         finally:

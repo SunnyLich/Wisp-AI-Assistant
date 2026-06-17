@@ -47,7 +47,7 @@ one host per plugin that declares its own dependencies (see §4).
 
 Why:
 - The app is *already* a supervisor + worker-process architecture with JSON
-  IPC (`macos_py/supervisor/ipc.py`); a plugin host is just another worker
+  IPC (`runtime/supervisor/ipc.py`); a plugin host is just another worker
   kind. The `macos_helper` subprocess precedent shows the pattern works.
 - Permissions become **enforceable at the IPC boundary** instead of honor-system:
   the supervisor only services requests the manifest declared and the user

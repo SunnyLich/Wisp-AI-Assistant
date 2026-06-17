@@ -1,3 +1,4 @@
+# Manual QA manifest for an addon with intentionally invalid Python syntax.
 [addon]
 id = "phase4-bad-syntax"
 name = "Phase 4 Bad Syntax"

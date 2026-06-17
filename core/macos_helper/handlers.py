@@ -26,16 +26,19 @@ _emit_event: Callable[[dict[str, Any]], None] | None = None
 
 
 def set_event_sink(fn: Callable[[dict[str, Any]], None]) -> None:
+    """Set event sink."""
     global _emit_event
     _emit_event = fn
 
 
 def _emit(event: str, data: Any = None) -> None:
+    """Forward an event dict to the registered event sink, if any."""
     if _emit_event is not None:
         _emit_event({"event": event, "data": data})
 
 
 def _log(msg: str) -> None:
+    """Print a helper log line to stderr."""
     print(f"[helper] {msg}", flush=True)  # → stderr (host redirects fd 1 to fd 2)
 
 
@@ -65,6 +68,7 @@ _chunks_lock = threading.Lock()
 
 
 def _get_model():
+    """Return model."""
     global _model, _model_ready
     with _model_lock:
         if _model is None:
@@ -85,6 +89,7 @@ def stt_prewarm() -> None:
     """Load the model in a background thread; return immediately so the request
     loop is not blocked by the (slow) first model load."""
     def _worker() -> None:
+        """Handle worker for macos helper handlers."""
         try:
             _get_model()
         except Exception as exc:  # noqa: BLE001 — best effort, logged
@@ -113,6 +118,7 @@ def stt_is_ready() -> dict[str, Any]:
 
 
 def _audio_callback(indata, frames, time_info, status) -> None:
+    """Handle audio callback for macos helper handlers."""
     if _recording:
         with _chunks_lock:
             _chunks.append(indata.copy())

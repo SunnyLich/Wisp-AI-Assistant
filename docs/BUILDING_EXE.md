@@ -1,7 +1,7 @@
 # Building The Windows EXE
 
 This project includes a PyInstaller build path for the supervisor runtime
-(`macos_py.supervisor.app`).
+(`runtime.supervisor.app`).
 
 From PowerShell in the project root:
 
@@ -39,7 +39,7 @@ Notes:
 - API keys are not bundled. Users should enter them in Settings so they are saved to the OS keychain.
 - `.env.example` is bundled as a template, but your local `.env` is not included.
 - The packaged executable starts the same supervisor worker runtime as the
-  launchers, not the legacy single-process `main.py` path.
+  launchers.
 - Addon dependency environments in packaged builds require `uv`. Place `uv.exe`
   at `bin\uv.exe` or `tools\uv.exe` before building and PyInstaller will bundle
   it into `dist\Wisp\bin\uv.exe`.

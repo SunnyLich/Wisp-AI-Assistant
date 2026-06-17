@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Regenerates the locked macOS requirements file from the shared inputs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

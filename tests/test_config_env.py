@@ -1,3 +1,5 @@
+"""Tests for test config env."""
+
 import os
 import unittest
 from unittest.mock import patch
@@ -6,7 +8,9 @@ import config
 
 
 class ConfigEnvTests(unittest.TestCase):
+    """Test case for config env tests behavior."""
     def test_reload_parses_icon_size_and_bool_aliases(self):
+        """Verify reload parses icon size and bool aliases behavior."""
         previous = {
             "ICON_SIZE": config.ICON_SIZE,
             "DARK_MODE": config.DARK_MODE,
@@ -80,6 +84,7 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_assistant_language_is_appended_to_system_prompt(self):
+        """Verify assistant language is appended to system prompt behavior."""
         previous = {
             "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
             "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
@@ -103,6 +108,7 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_app_language_loads_from_env(self):
+        """Verify app language loads from env behavior."""
         previous = {"APP_LANGUAGE": config.APP_LANGUAGE}
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -117,7 +123,92 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_local_file_access_settings_load_from_env(self):
+        """Verify local file access settings load from env behavior."""
+        previous = {
+            "TOOL_FILE_ROOTS": list(getattr(config, "TOOL_FILE_ROOTS", [])),
+            "TOOL_FILE_MODE": getattr(config, "TOOL_FILE_MODE", "never"),
+            "TOOL_FILE_BLOCKED_GLOBS": list(getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "TOOL_FILE_ROOTS": f"root-a{os.pathsep}root-b",
+                    "TOOL_FILE_MODE": "ask",
+                    "TOOL_FILE_BLOCKED_GLOBS": ".git/**\n.env*",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.TOOL_FILE_ROOTS, ["root-a", "root-b"])
+            self.assertEqual(config.TOOL_FILE_MODE, "ask")
+            self.assertEqual(config.TOOL_FILE_BLOCKED_GLOBS, [".git/**", ".env*"])
+            self.assertEqual(config.SETTINGS.tool_file_roots, ("root-a", "root-b"))
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_local_file_access_defaults_to_app_folder(self):
+        """Verify local file access defaults to an app-local folder."""
+        previous = {
+            "TOOL_FILE_ROOTS": list(getattr(config, "TOOL_FILE_ROOTS", [])),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("TOOL_FILE_ROOTS", None)
+                config.reload()
+
+            self.assertEqual(config.TOOL_FILE_ROOTS, [str(config.MODEL_FILE_ACCESS_DIR)])
+            self.assertTrue(config.MODEL_FILE_ACCESS_DIR.exists())
+            self.assertEqual(config.SETTINGS.tool_file_roots, (str(config.MODEL_FILE_ACCESS_DIR),))
+
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"TOOL_FILE_ROOTS": ""},
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.TOOL_FILE_ROOTS, [])
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_per_caller_file_access_modes_load_from_env(self):
+        """Verify local file access is configured per keybind and voice caller."""
+        previous = {
+            "CALLER_ROWS": [dict(row) for row in getattr(config, "CALLER_ROWS", [])],
+            "VOICE_CALLER": dict(getattr(config, "VOICE_CALLER", {})),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "CALLER_COUNT": "1",
+                    "CALLER_1_FILE_ACCESS": "ask",
+                    "VOICE_FILE_ACCESS": "read",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.CALLER_ROWS[0]["file_access"], "ask")
+            self.assertEqual(config.VOICE_CALLER["file_access"], "read")
+            self.assertEqual(config.SETTINGS.callers.callers[0]["file_access"], "ask")
+        finally:
+            config.CALLER_ROWS.clear()
+            config.CALLER_ROWS.extend(previous["CALLER_ROWS"])
+            config.VOICE_CALLER.clear()
+            config.VOICE_CALLER.update(previous["VOICE_CALLER"])
+            config.SETTINGS = previous["SETTINGS"]
+
     def test_assistant_language_can_match_user(self):
+        """Verify assistant language can match user behavior."""
         previous = {
             "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
             "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
@@ -139,12 +230,14 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_reload_refreshes_secret_cache(self):
+        """Verify reload refreshes secret cache behavior."""
         with patch("config.load_dotenv"), patch.object(config.secret_store, "refresh_cache") as refresh:
             config.reload()
 
         refresh.assert_called_once_with()
 
     def test_caller_context_modes_load_from_new_env_keys(self):
+        """Verify caller context modes load from new env keys behavior."""
         previous_rows = list(config.CALLER_ROWS)
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -172,6 +265,7 @@ class ConfigEnvTests(unittest.TestCase):
             config.CALLER_ROWS[:] = previous_rows
 
     def test_caller_context_modes_migrate_legacy_tool_keys(self):
+        """Verify caller context modes migrate legacy tool keys behavior."""
         previous_rows = list(config.CALLER_ROWS)
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -211,6 +305,7 @@ class ConfigEnvTests(unittest.TestCase):
     )
 
     def test_voice_caller_defaults_mirror_general_caller(self):
+        """Verify voice caller defaults mirror general caller behavior."""
         previous = dict(config.VOICE_CALLER)
         try:
             with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
@@ -232,6 +327,7 @@ class ConfigEnvTests(unittest.TestCase):
             config.VOICE_CALLER.update(previous)
 
     def test_voice_caller_loads_env_overrides_and_tools(self):
+        """Verify voice caller loads env overrides and tools behavior."""
         previous = dict(config.VOICE_CALLER)
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -261,6 +357,7 @@ class ConfigEnvTests(unittest.TestCase):
             config.VOICE_CALLER.update(previous)
 
     def test_caller_tool_overrides_load_from_env(self):
+        """Verify caller tool overrides load from env behavior."""
         previous_rows = list(config.CALLER_ROWS)
         try:
             with patch("config.load_dotenv"), patch.dict(

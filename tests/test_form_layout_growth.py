@@ -1,3 +1,5 @@
+"""Tests for test form layout growth."""
+
 from __future__ import annotations
 
 import os
@@ -12,6 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _qapp():
+    """Verify qapp behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -19,12 +22,14 @@ def _qapp():
 
 
 def _form_layouts(widget):
+    """Verify form layouts behavior."""
     from PySide6.QtWidgets import QFormLayout, QWidget
 
     seen = set()
     found = []
 
     def visit_layout(layout):
+        """Verify visit layout behavior."""
         if layout is None or id(layout) in seen:
             return
         seen.add(id(layout))
@@ -46,6 +51,7 @@ def _form_layouts(widget):
 
 
 def _assert_forms_expand(widgets):
+    """Verify assert forms expand behavior."""
     from PySide6.QtWidgets import QFormLayout
 
     forms = [form for widget in widgets for form in _form_layouts(widget)]
@@ -57,6 +63,7 @@ def _assert_forms_expand(widgets):
 
 
 def test_settings_forms_expand_across_platform_styles():
+    """Verify settings forms expand across platform styles behavior."""
     _qapp()
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -69,8 +76,9 @@ def test_settings_forms_expand_across_platform_styles():
 
 
 def test_addon_settings_forms_expand_across_platform_styles():
+    """Verify addon settings forms expand across platform styles behavior."""
     _qapp()
-    from ui.plugin_manager import AddonSettingsDialog
+    from ui.addon_manager import AddonSettingsDialog
 
     dialog = AddonSettingsDialog(
         manager=None,
@@ -88,13 +96,14 @@ def test_addon_settings_forms_expand_across_platform_styles():
         dialog.deleteLater()
 
 
-def test_macos_ui_host_plugin_settings_forms_expand_across_platform_styles():
+def test_macos_ui_host_addon_settings_forms_expand_across_platform_styles():
+    """Verify macos ui host plugin settings forms expand across platform styles behavior."""
     _qapp()
-    from macos_py.workers.ui_host import QtProtocolHost
+    from runtime.workers.ui_host import QtProtocolHost
 
     host = QtProtocolHost.__new__(QtProtocolHost)
     host.emit = lambda *_args, **_kwargs: None
-    widget = host._plugin_settings_box(
+    widget = host._addon_settings_box(
         "demo",
         [
             {"key": "path", "label": "Path", "type": "text", "value": "/tmp/demo"},

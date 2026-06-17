@@ -4,9 +4,9 @@
 
 # Wisp
 
-**Your AI — one keystroke from anywhere.**
+**Your AI â€” one keystroke from anywhere.**
 
-Press `Ctrl+Q`. Wisp reads what's on your screen, thinks out loud, and answers in under two seconds — spoken aloud, word by word, right where you're working. No switching apps. No copy-pasting. No waiting.
+Press `Ctrl+Q`. Wisp reads what's on your screen, thinks out loud, and answers in under two seconds â€” spoken aloud, word by word, right where you're working. No switching apps. No copy-pasting. No waiting.
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555?style=flat-square)](#install)
 [![Python](https://img.shields.io/badge/python-3.12.13-3572A5?style=flat-square)](#install)
@@ -20,29 +20,29 @@ Press `Ctrl+Q`. Wisp reads what's on your screen, thinks out loud, and answers i
 
 Download the repo and **double-click one file**:
 
-- **macOS** — `Start Wisp.command`
-- **Linux** — `Start Wisp.sh`
-- **Windows** — `Start Wisp.bat`
+- **macOS** â€” `Start Wisp.command`
+- **Linux** â€” `Start Wisp.sh`
+- **Windows** â€” `Start Wisp.bat`
 
 The first time, it installs everything Wisp needs and then starts the app. On
 macOS the launcher uses `requirements-macos.lock`; Windows and Linux use
 `requirements.txt`. Every time after, it just launches. That's the whole setup.
 
 > Requires **Python 3.12.13** (pinned in `.python-version`). The launcher finds it
-> automatically — install via [pyenv](https://github.com/pyenv/pyenv)
+> automatically â€” install via [pyenv](https://github.com/pyenv/pyenv)
 > (`pyenv install 3.12.13`) on macOS, or from [python.org](https://www.python.org/downloads/release/python-31213/) on Windows.
 
 ---
 
 ## What it does
 
-Wisp lives as a small animated icon in the corner of your screen — always on top, never in your way. Hit the hotkey and a slick intent picker drops in. Pick an action or type your own, and Wisp immediately:
+Wisp lives as a small animated icon in the corner of your screen â€” always on top, never in your way. Hit the hotkey and a slick intent picker drops in. Pick an action or type your own, and Wisp immediately:
 
-1. **Grabs context** — highlighted text, open documents, clipboard, active browser tab, or a screenshot you draw
-2. **Fires the query** — to your chosen LLM with full context already attached
-3. **Answers in ~1.5s** — streaming text to a speech bubble *and* speaking it aloud, word by word, in sync
+1. **Grabs context** â€” highlighted text, open documents, clipboard, active browser tab, or a screenshot you draw
+2. **Fires the query** â€” to your chosen LLM with full context already attached
+3. **Answers in ~1.5s** â€” streaming text to a speech bubble *and* speaking it aloud, word by word, in sync
 
-The icon plays a filler sound (`hm…`, `let me think…`) the instant you press the hotkey, so there's never a silent gap. By the time that finishes, the real answer is already coming in.
+The icon plays a filler sound (`hmâ€¦`, `let me thinkâ€¦`) the instant you press the hotkey, so there's never a silent gap. By the time that finishes, the real answer is already coming in.
 
 Click the icon at any time to open a full chat window for deeper conversations with memory of everything you've discussed.
 
@@ -50,17 +50,17 @@ Click the icon at any time to open a full chat window for deeper conversations w
 
 ## Features
 
-- **Instant hotkey** — `Ctrl+Q` drops a WASD intent picker; one more keypress fires the query. Zero mouse required.
-- **Speaks the answer** — Cartesia or ElevenLabs TTS streams the reply word-by-word, synced to the bubble text, at ~75ms voice latency
-- **Voice input** — hold `F9` to talk; release to transcribe with local Whisper and fire the query
-- **Context without lifting a finger** — reads your highlighted text, open Word/Excel/PDF/PowerPoint files, and live browser pages automatically
-- **See it, ask it** — `Ctrl+Alt+Q` draws a snip region; a vision model answers questions about whatever you captured
-- **Rewrite & paste** — `Ctrl+Shift+Q` rewrites selected text (fix grammar, simplify, change tone) and pastes the result back in place in one motion
-- **Remembers you** — a local JSON memory store keeps facts across sessions; relevant ones surface automatically on every query
-- **Bring your own model** — Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, Ollama, GitHub Copilot, and more
-- **Addons** — extend Wisp with query hooks, tray actions, settings, and model-callable tools; each addon runs in its own process
-- **Feels instant** — filler audio plays in milliseconds to mask the LLM round-trip; the real answer usually arrives before the filler finishes
-- **Stays out of the way** — icon auto-hides when idle, pops up on hotkey, disappears after the answer fades out
+- **Instant hotkey** â€” `Ctrl+Q` drops a WASD intent picker; one more keypress fires the query. Zero mouse required.
+- **Speaks the answer** â€” Cartesia or ElevenLabs TTS streams the reply word-by-word, synced to the bubble text, at ~75ms voice latency
+- **Voice input** â€” hold `F9` to talk; release to transcribe with local Whisper and fire the query
+- **Context without lifting a finger** â€” reads your highlighted text, open Word/Excel/PDF/PowerPoint files, and live browser pages automatically
+- **See it, ask it** â€” `Ctrl+Alt+Q` draws a snip region; a vision model answers questions about whatever you captured
+- **Rewrite & paste** â€” `Ctrl+Shift+Q` rewrites selected text (fix grammar, simplify, change tone) and pastes the result back in place in one motion
+- **Remembers you** â€” a local JSON memory store keeps facts across sessions; relevant ones surface automatically on every query
+- **Bring your own model** â€” Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, Ollama, GitHub Copilot, and more
+- **Addons** â€” extend Wisp with query hooks, tray actions, settings, and model-callable tools; each addon runs in its own process
+- **Feels instant** â€” filler audio plays in milliseconds to mask the LLM round-trip; the real answer usually arrives before the filler finishes
+- **Stays out of the way** â€” icon auto-hides when idle, pops up on hotkey, disappears after the answer fades out
 
 ---
 
@@ -69,10 +69,10 @@ Click the icon at any time to open a full chat window for deeper conversations w
 > **Scene 1:** You're staring at a Python traceback. You highlight the error, press `Ctrl+Q`, hit `D` ("How do I fix this?"):
 
 ```
-[filler audio: "hm…"]
-Wisp: "That's a circular import — move the import inside the function body
+[filler audio: "hmâ€¦"]
+Wisp: "That's a circular import â€” move the import inside the function body
        or restructure the module to break the cycle."
-       ↳ spoken aloud + bubble fades in word-by-word
+       â†³ spoken aloud + bubble fades in word-by-word
 ```
 Total time from keypress to first spoken word: **~1.5 seconds.**
 
@@ -81,13 +81,13 @@ Total time from keypress to first spoken word: **~1.5 seconds.**
 ```
 Before: "The thing does the stuff when you click it"
 After:  "Click the button to trigger the action."
-        ↳ rewritten and pasted back automatically
+        â†³ rewritten and pasted back automatically
 ```
 
 > **Scene 3:** You see a confusing UI in your browser. Press `Ctrl+Alt+Q`, draw a box around it:
 
 ```
-Wisp: "That's a CAPTCHA verification step — click the checkbox
+Wisp: "That's a CAPTCHA verification step â€” click the checkbox
        and complete the image puzzle to continue."
 ```
 
@@ -110,7 +110,7 @@ pip install -r requirements.txt
 Copy `.env.example` to `.env` and fill in at least one LLM API key.
 
 ```bash
-python -m macos_py.supervisor.app
+python -m runtime.supervisor.app
 ```
 
 Or use the platform launcher, which provisions dependencies and starts the same
@@ -144,14 +144,14 @@ Then run checks from the repo root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check core\context_hotkey.py core\llm_clients\messages.py macos_py\supervisor\tool_modes.py ui\agent\combo_helpers.py ui\settings_panel\helpers.py tests\test_context_hotkey_snapshot.py
-.\.venv\Scripts\python.exe -m mypy core\settings_model.py core\llm_clients\logging_utils.py macos_py\supervisor\tool_modes.py ui\agent\combo_helpers.py --follow-imports=skip
+.\.venv\Scripts\python.exe -m ruff check core\context_hotkey.py core\llm_clients\messages.py runtime\supervisor\tool_modes.py ui\agent\combo_helpers.py ui\settings_panel\helpers.py tests\test_context_hotkey_snapshot.py
+.\.venv\Scripts\python.exe -m mypy core\settings_model.py core\llm_clients\logging_utils.py runtime\supervisor\tool_modes.py ui\agent\combo_helpers.py --follow-imports=skip
 ```
 
 ```bash
 .venv/bin/python -m pytest
-.venv/bin/python -m ruff check core/context_hotkey.py core/llm_clients/messages.py macos_py/supervisor/tool_modes.py ui/agent/combo_helpers.py ui/settings_panel/helpers.py tests/test_context_hotkey_snapshot.py
-.venv/bin/python -m mypy core/settings_model.py core/llm_clients/logging_utils.py macos_py/supervisor/tool_modes.py ui/agent/combo_helpers.py --follow-imports=skip
+.venv/bin/python -m ruff check core/context_hotkey.py core/llm_clients/messages.py runtime/supervisor/tool_modes.py ui/agent/combo_helpers.py ui/settings_panel/helpers.py tests/test_context_hotkey_snapshot.py
+.venv/bin/python -m mypy core/settings_model.py core/llm_clients/logging_utils.py runtime/supervisor/tool_modes.py ui/agent/combo_helpers.py --follow-imports=skip
 ```
 
 ---
@@ -205,7 +205,7 @@ BUBBLE_LINES=3
 ### Memory
 
 ```env
-MEMORY_AUTO_CONSOLIDATE=false      # set true to consolidate STM → LTM automatically
+MEMORY_AUTO_CONSOLIDATE=false      # set true to consolidate STM â†’ LTM automatically
 MEMORY_TOP_K=3                     # facts injected per query
 ```
 
@@ -238,7 +238,7 @@ CALLER_2_PASTE_BACK=true           # auto-paste result back into the active app
 |--------|--------|
 | `Ctrl+Q` | Open intent picker (general) |
 | `Ctrl+Shift+Q` | Open intent picker (rewrite & paste) |
-| `Ctrl+Alt+Q` | Screen region selector → intent picker with screenshot |
+| `Ctrl+Alt+Q` | Screen region selector â†’ intent picker with screenshot |
 | `Alt+Q` | Append selected text to context buffer |
 | `Alt+W` | Clear context buffer |
 | `F9` (hold) | Record voice; release to transcribe and query |
@@ -270,13 +270,13 @@ Wisp remembers things so you don't have to repeat yourself. It uses a two-tier s
 - **Short-term (STM):** a rolling in-session log that auto-compresses as it grows, so long sessions stay fast
 - **Long-term (LTM):** a local JSON store of atomic facts extracted from your conversations
 
-On every query, the top-k relevant facts are selected with project scope plus lexical/router matching and quietly injected into the prompt. Over time, Wisp builds a picture of your projects, preferences, and recurring problems — and uses it. Tray icon → **Memory Viewer** to browse, edit, or delete anything stored.
+On every query, the top-k relevant facts are selected with project scope plus lexical/router matching and quietly injected into the prompt. Over time, Wisp builds a picture of your projects, preferences, and recurring problems â€” and uses it. Tray icon â†’ **Memory Viewer** to browse, edit, or delete anything stored.
 
 ---
 
 ## Agent framework
 
-`core/agent/` is an experimental background task runner for bigger jobs — think multi-step automations rather than quick lookups. Each task runs in a sandboxed workspace, logs every step auditably, and asks for approval before mutating files. Still early; not yet wired into the main UI.
+`core/agent/` is an experimental background task runner for bigger jobs â€” think multi-step automations rather than quick lookups. Each task runs in a sandboxed workspace, logs every step auditably, and asks for approval before mutating files. Still early; not yet wired into the main UI.
 
 ---
 
@@ -309,7 +309,17 @@ Start with [addons/README.md](addons/README.md) and the reference
 
 ## Contributing
 
-PRs and issues are welcome. Adding a new LLM provider is intentionally easy — each one is a small adapter in [core/llm_clients/routes.py](core/llm_clients/routes.py) that implements the same streaming interface. Add your adapter, register it in the route table, and it lights up everywhere (quick query, chat, vision, memory, fallback chains).
+PRs and issues are welcome. Adding a new LLM provider is intentionally easy â€” each one is a small adapter in [core/llm_clients/routes.py](core/llm_clients/routes.py) that implements the same streaming interface. Add your adapter, register it in the route table, and it lights up everywhere (quick query, chat, vision, memory, fallback chains).
+
+---
+
+## Developer docs
+
+- [Factory tour](docs/factory_tour/index.html) is the guided visual walkthrough
+  of Wisp as a factory, with tabs for each floor and links into the source.
+- [Developer README](docs/DEVELOPER_README.md) covers setup, runtime entrypoints, architecture ownership, checks, and debugging notes.
+- [Communication graph](docs/COMMUNICATION_GRAPH.md) shows how the supervisor, workers, core services, UI, addons, memory, chat, and agent code interact.
+- [Documentation plan](docs/DOCUMENTATION_PLAN.md) records the source documentation sweep and verification expectations.
 
 ---
 

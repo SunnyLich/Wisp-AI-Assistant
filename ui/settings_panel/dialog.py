@@ -21,7 +21,8 @@ from PySide6.QtCore import Qt, QTimer, QObject, Signal
 from PySide6.QtGui import QFont
 from core import secret_store
 from core.system.env_utils import (
-    format_tool_modes, normalize_screenshot_mode, parse_tool_modes,
+    format_tool_modes, normalize_file_access_mode, normalize_screenshot_mode,
+    parse_tool_modes,
 )
 import ui.settings_panel.env as settings_env
 from ui.settings_panel.hotkey_capture import HotkeyCaptureEdit
@@ -107,6 +108,13 @@ _STT_DEVICE_OPTIONS: tuple[tuple[str, str], ...] = (
 _DICTATE_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Paste raw transcript", "raw"),
     ("Light LLM cleanup", "llm"),
+)
+
+_FILE_ACCESS_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Off", "off"),
+    ("Read only", "read"),
+    ("Ask before writing", "ask"),
+    ("Write automatically", "auto"),
 )
 
 _SETTINGS_PRESET_KEY = "WISP_SETTINGS_PRESET"
@@ -201,6 +209,7 @@ class _ModelFetchSignals(QObject):
 
 
 def _read_env() -> dict[str, str]:
+    """Read env."""
     old_path = settings_env.ENV_PATH
     settings_env.ENV_PATH = ENV_PATH
     try:
@@ -210,10 +219,12 @@ def _read_env() -> dict[str, str]:
 
 
 def _format_env_value(value: str) -> str:
+    """Format env value."""
     return settings_env.format_settings_env_value(value)
 
 
 def _write_env(vals: dict[str, str], remove_keys: set[str] | None = None):
+    """Write env."""
     old_path = settings_env.ENV_PATH
     settings_env.ENV_PATH = ENV_PATH
     try:
@@ -223,7 +234,9 @@ def _write_env(vals: dict[str, str], remove_keys: set[str] | None = None):
 
 
 class SettingsDialog(QDialog):
+    """Qt dialog for settings dialog."""
     def __init__(self, parent=None, on_apply=None):
+        """Initialize the settings dialog instance."""
         super().__init__(parent)
         self._on_apply = on_apply  # callable() fired after a successful apply
         self._disposing = False
@@ -292,6 +305,7 @@ class SettingsDialog(QDialog):
         failures: list[str] = []
 
         def _store(key_name: str, value: str, label: str) -> bool:
+            """Handle store for settings dialog."""
             try:
                 secret_store.set_secret(key_name, value)
                 _settings_log.info("Saved %s (%s) to OS keychain", key_name, label)
@@ -363,19 +377,23 @@ class SettingsDialog(QDialog):
         super().changeEvent(event)
 
     def showEvent(self, event):                 # noqa: N802
+        """Show event."""
         super().showEvent(event)
         fit_window_to_screen(self, preferred_width=760, preferred_height=720)
         self._refresh_stt_active_backend()
 
     def hideEvent(self, event):                 # noqa: N802
+        """Hide event."""
         self._cancel_async_ui_updates()
         super().hideEvent(event)
 
     def closeEvent(self, event):                # noqa: N802
+        """Close event."""
         self._cancel_async_ui_updates()
         super().closeEvent(event)
 
     def _dispose_after_finished(self, _result: int) -> None:
+        """Handle dispose after finished for settings dialog."""
         self._disposing = True
         self._cancel_async_ui_updates()
         _clear_settings_dialog(self)
@@ -499,10 +517,12 @@ class SettingsDialog(QDialog):
     """
 
     def _apply_dialog_theme(self):
+        """Apply dialog theme."""
         from ui.shared.theme import is_dark_mode
         self.setStyleSheet(self._dialog_style(is_dark_mode()))
 
     def _build_ui(self):
+        """Build ui."""
         self._apply_dialog_theme()
         root = QVBoxLayout(self)
         root.setSpacing(12)
@@ -585,6 +605,7 @@ class SettingsDialog(QDialog):
         root.addLayout(btn_row)
 
     def _build_presets_menu(self, parent: QWidget) -> QMenu:
+        """Build presets menu."""
         menu = QMenu(parent)
         for slug, name in _PRESET_LABELS.items():
             action = menu.addAction(t(name))
@@ -594,20 +615,24 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _preset_slug(raw: str) -> str:
+        """Handle preset slug for settings dialog."""
         value = str(raw or "").strip()
         return value if value in _PRESET_LABELS else _PRESET_SLUGS.get(value.lower(), "")
 
     @staticmethod
     def _preset_override_key(slug: str, key: str) -> str:
+        """Handle preset override key for settings dialog."""
         safe_slug = slug.upper().replace("-", "_")
         return f"{_PRESET_ENV_PREFIX}{safe_slug}_{key}"
 
     @staticmethod
     def _key_from_preset_override(slug: str, env_key: str) -> str:
+        """Handle key from preset override for settings dialog."""
         prefix = SettingsDialog._preset_override_key(slug, "")
         return env_key[len(prefix):] if env_key.startswith(prefix) else ""
 
     def _preset_saved_values(self, slug: str) -> dict[str, str]:
+        """Handle preset saved values for settings dialog."""
         values: dict[str, str] = {}
         prefix = self._preset_override_key(slug, "")
         for env_key, value in self._env.items():
@@ -618,11 +643,13 @@ class SettingsDialog(QDialog):
         return values
 
     def _preset_effective_values(self, slug: str) -> dict[str, str]:
+        """Handle preset effective values for settings dialog."""
         values = dict(_PRESET_DEFAULTS.get(slug, {}))
         values.update(self._preset_saved_values(slug))
         return values
 
     def _preset_page_keys(self, slug: str, page: str, env: dict[str, str]) -> set[str]:
+        """Handle preset page keys for settings dialog."""
         keys = set(self._reset_env_keys_for_page(page, env))
         prefix = self._preset_override_key(slug, "")
         for env_key in env:
@@ -633,12 +660,14 @@ class SettingsDialog(QDialog):
         return keys
 
     def _preset_override_keys_for_keys(self, slug: str, keys: set[str], env: dict[str, str]) -> set[str]:
+        """Handle preset override keys for keys for settings dialog."""
         prefix = self._preset_override_key(slug, "")
         remove = {self._preset_override_key(slug, key) for key in keys}
         remove.update(env_key for env_key in env if env_key.startswith(prefix) and env_key[len(prefix):] in keys)
         return remove
 
     def _current_tab_name(self) -> str:
+        """Handle current tab name for settings dialog."""
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
             return ""
@@ -648,6 +677,7 @@ class SettingsDialog(QDialog):
         return tabs.tabText(idx).replace("*", "").strip()
 
     def _field_page_map(self) -> dict[str, str]:
+        """Handle field page map for settings dialog."""
         mapping: dict[str, str] = {}
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
@@ -661,9 +691,11 @@ class SettingsDialog(QDialog):
         return mapping
 
     def _page_for_dirty_key(self, key: str) -> str:
+        """Handle page for dirty key for settings dialog."""
         if key.startswith("CALLER_") or key.startswith("VOICE_") or key in {
             "HOTKEY_VOICE", "HOTKEY_DICTATE", "DICTATE_MODE",
             "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP",
+            "INTENT_CONTEXT_TOGGLE_KEYS", "INTENT_OVERLAY_TIMEOUT_MS",
             "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
         }:
             return "Keybinds"
@@ -676,6 +708,7 @@ class SettingsDialog(QDialog):
         return self._field_page_map().get(key, "")
 
     def _snapshot_settings(self) -> dict[str, str]:
+        """Handle snapshot settings for settings dialog."""
         snapshot: dict[str, str] = {}
 
         for key, widget in self._fields.items():
@@ -710,6 +743,7 @@ class SettingsDialog(QDialog):
             for name in (
                 "context_documents_mode", "context_browser_mode",
                 "context_github_mode", "context_memory_mode", "context_screenshot",
+                "file_access",
             ):
                 snapshot[f"{prefix}_{name.upper()}"] = str(blk[name].currentData())
             snapshot[f"{prefix}_TOOLS"] = format_tool_modes(blk.get("tool_overrides") or {})
@@ -726,6 +760,7 @@ class SettingsDialog(QDialog):
             for name in (
                 "context_documents_mode", "context_browser_mode",
                 "context_github_mode", "context_memory_mode", "context_screenshot",
+                "file_access",
             ):
                 snapshot[f"VOICE_{name.upper()}"] = str(vb[name].currentData())
             snapshot["VOICE_TOOLS"] = format_tool_modes(vb.get("tool_overrides") or {})
@@ -733,10 +768,12 @@ class SettingsDialog(QDialog):
         return snapshot
 
     def _reset_dirty_baseline(self) -> None:
+        """Reset dirty baseline."""
         self._dirty_baseline = self._snapshot_settings()
         self._refresh_dirty_state()
 
     def _schedule_dirty_refresh(self) -> None:
+        """Schedule dirty refresh."""
         if getattr(self, "_loading_values", False) or getattr(self, "_disposing", False):
             return
         if not hasattr(self, "_dirty_baseline"):
@@ -747,6 +784,7 @@ class SettingsDialog(QDialog):
         QTimer.singleShot(0, self._refresh_dirty_state)
 
     def _wire_change_tracking(self, root: QWidget | None = None) -> None:
+        """Handle wire change tracking for settings dialog."""
         root = root or self
         widgets = [root]
         widgets.extend(root.findChildren(QWidget))
@@ -765,6 +803,7 @@ class SettingsDialog(QDialog):
             widget.setProperty("_wisp_dirty_connected", True)
 
     def _refresh_dirty_state(self) -> None:
+        """Refresh dirty state."""
         self._dirty_refresh_scheduled = False
         current = self._snapshot_settings()
         baseline = getattr(self, "_dirty_baseline", {})
@@ -796,6 +835,7 @@ class SettingsDialog(QDialog):
             self._status_lbl.setText("")
 
     def _refresh_tab_labels(self) -> None:
+        """Refresh tab labels."""
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
             return
@@ -804,11 +844,13 @@ class SettingsDialog(QDialog):
             tabs.setTabText(idx, t(base) + suffix)
 
     def _refresh_search_index(self) -> None:
+        """Refresh search index."""
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
             return
 
         def _original_text(widget: QWidget, prop_name: str) -> str:
+            """Handle original text for settings dialog."""
             try:
                 return str(widget.property(f"_wisp_i18n_{prop_name}") or "")
             except Exception:
@@ -854,6 +896,7 @@ class SettingsDialog(QDialog):
         self._apply_settings_search()
 
     def _apply_settings_search(self) -> None:
+        """Apply settings search."""
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
             return
@@ -877,6 +920,7 @@ class SettingsDialog(QDialog):
             self._search_status_lbl.hide()
 
     def _set_value_for_env_key(self, key: str, value: str) -> bool:
+        """Set value for env key."""
         if key in self._fields:
             widget = self._fields[key]
             if isinstance(widget, QCheckBox):
@@ -894,6 +938,7 @@ class SettingsDialog(QDialog):
             "VOICE_CONTEXT_GITHUB_MODE": "context_github_mode",
             "VOICE_CONTEXT_MEMORY_MODE": "context_memory_mode",
             "VOICE_CONTEXT_SCREENSHOT": "context_screenshot",
+            "VOICE_FILE_ACCESS": "file_access",
         }
         if key in voice_mode_keys and hasattr(self, "_voice_block"):
             _set(self._voice_block[voice_mode_keys[key]], value)
@@ -933,6 +978,7 @@ class SettingsDialog(QDialog):
             "CONTEXT_GITHUB_MODE": "context_github_mode",
             "CONTEXT_MEMORY_MODE": "context_memory_mode",
             "CONTEXT_SCREENSHOT": "context_screenshot",
+            "FILE_ACCESS": "file_access",
         }
         if caller_key in mode_keys:
             _set(blk[mode_keys[caller_key]], value)
@@ -943,6 +989,7 @@ class SettingsDialog(QDialog):
         return False
 
     def _apply_env_values_to_ui(self, values: dict[str, str]) -> None:
+        """Apply env values to ui."""
         for section, provider_key, model_key, fallbacks_key in (
             ("LLM", "LLM_PROVIDER", "LLM_MODEL", "LLM_FALLBACKS"),
             ("VISION_LLM", "VISION_LLM_PROVIDER", "VISION_LLM_MODEL", "VISION_LLM_FALLBACKS"),
@@ -974,6 +1021,7 @@ class SettingsDialog(QDialog):
             self._set_value_for_env_key(key, value)
 
     def _preset_values_to_persist(self, vals: dict[str, str]) -> dict[str, str]:
+        """Handle preset values to persist for settings dialog."""
         slug = self._preset_slug(getattr(self, "_active_preset_slug", ""))
         if not slug:
             return {}
@@ -987,6 +1035,7 @@ class SettingsDialog(QDialog):
     def _set_context_modes(self, *, documents: str | None = None, browser: str | None = None,
                            github: str | None = None, memory: str | None = None,
                            screenshot: str | None = None, clear_tools: bool = False) -> None:
+        """Set context modes."""
         blocks = list(getattr(self, "_caller_blocks", []))
         if hasattr(self, "_voice_block"):
             blocks.append(self._voice_block)
@@ -1005,6 +1054,7 @@ class SettingsDialog(QDialog):
                 blk["tool_overrides"] = {}
 
     def _apply_preset(self, preset: str) -> None:
+        """Apply preset."""
         preset_key = self._preset_slug(preset)
         if not preset_key:
             return
@@ -1037,6 +1087,7 @@ class SettingsDialog(QDialog):
         )
 
     def _tab_llm(self) -> QWidget:
+        """Handle tab LLM for settings dialog."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -1285,6 +1336,7 @@ class SettingsDialog(QDialog):
         alias: str = "",
         stored: bool = False,
     ) -> dict:
+        """Add api key row."""
         row_w = QWidget()
         h = QHBoxLayout(row_w)
         h.setContentsMargins(0, 0, 0, 0)
@@ -1333,6 +1385,7 @@ class SettingsDialog(QDialog):
         return row_info
 
     def _remove_api_key_row(self, row_info: dict) -> None:
+        """Remove api key row."""
         if row_info in self._api_key_rows:
             self._api_key_rows.remove(row_info)
         row_info["widget"].deleteLater()
@@ -1341,6 +1394,7 @@ class SettingsDialog(QDialog):
         self._schedule_dirty_refresh()
 
     def _get_api_key_display_options(self) -> "list[tuple[str, str]]":
+        """Return api key display options."""
         options: list[tuple[str, str]] = []
         for row in self._api_key_rows:
             provider = _get(row["provider"])
@@ -1357,6 +1411,7 @@ class SettingsDialog(QDialog):
         return options
 
     def _refresh_model_api_key_combos(self) -> None:
+        """Refresh model api key combos."""
         options = self._get_api_key_display_options()
         for section_rows in self._model_section_rows.values():
             for row in section_rows:
@@ -1380,6 +1435,7 @@ class SettingsDialog(QDialog):
         provider: str = "",
         model: str = "",
     ) -> dict:
+        """Add model section row."""
         options = self._get_api_key_display_options()
 
         row_w = QWidget()
@@ -1445,6 +1501,7 @@ class SettingsDialog(QDialog):
         )
 
         def _on_key_change():
+            """Handle key change events."""
             p = api_key_combo.currentData() or ""
             self._fill_model_combo(
                 row_info, _PROVIDER_MODELS.get(p, []), p, self._model_value(row_info)
@@ -1498,6 +1555,7 @@ class SettingsDialog(QDialog):
         combo.blockSignals(False)
 
     def _on_model_combo_changed(self, row_info: dict) -> None:
+        """Handle model combo changed events."""
         combo = row_info["model_combo"]
         edit = row_info["model_edit"]
         if combo.currentData() == _CUSTOM_MODEL_SENTINEL:
@@ -1534,6 +1592,7 @@ class SettingsDialog(QDialog):
         row_info["_fetch_carrier"] = carrier  # keep alive until fetch completes
 
         def _worker():
+            """Handle worker for settings dialog."""
             try:
                 from core.llm_clients import client as llm
                 models = llm.list_models(provider, api_key=api_key, base_url=base_url)
@@ -1544,6 +1603,7 @@ class SettingsDialog(QDialog):
         threading.Thread(target=_worker, daemon=True, name="model-list-fetch").start()
 
     def _on_models_fetched(self, row_info: dict, models, err: str) -> None:
+        """Handle models fetched events."""
         refresh_btn = row_info["refresh_btn"]
         refresh_btn.setEnabled(True)
         refresh_btn.setText("↻")
@@ -1560,6 +1620,7 @@ class SettingsDialog(QDialog):
         refresh_btn.setToolTip(f"Live: {len(models)} models")
 
     def _remove_model_section_row(self, section_key: str, row_info: dict) -> None:
+        """Remove model section row."""
         rows = self._model_section_rows[section_key]
         if row_info in rows:
             rows.remove(row_info)
@@ -1568,6 +1629,7 @@ class SettingsDialog(QDialog):
         self._schedule_dirty_refresh()
 
     def _apply_model_section_to_all(self, source_key: str) -> None:
+        """Apply model section to all."""
         source_rows = self._model_section_rows[source_key]
         for sk in list(self._model_section_rows):
             if sk == source_key:
@@ -1580,6 +1642,7 @@ class SettingsDialog(QDialog):
                 self._add_model_section_row(sk, provider, model)
 
     def _effective_secret_value_from_provider(self, provider: str) -> str:
+        """Handle effective secret value from provider for settings dialog."""
         if provider == "custom":
             field = self._fields.get("CUSTOM_API_KEY")
             typed = _get(field).strip() if field is not None else ""
@@ -1608,6 +1671,7 @@ class SettingsDialog(QDialog):
     ]
 
     def _show_custom_presets_menu(self) -> None:
+        """Show custom presets menu."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QAction
 
@@ -1623,6 +1687,7 @@ class SettingsDialog(QDialog):
         menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
 
     def _apply_custom_preset(self, base_url: str, model_hint: str) -> None:
+        """Apply custom preset."""
         self._fields["CUSTOM_BASE_URL"].setText(base_url)
         for section_rows in self._model_section_rows.values():
             for row in section_rows:
@@ -1630,6 +1695,7 @@ class SettingsDialog(QDialog):
                     row["model_edit"].setPlaceholderText(f"e.g. {model_hint}")
 
     def _test_custom_connection(self) -> None:
+        """Verify custom connection behavior."""
         from core.llm_clients import client as llm
 
         provider = "custom"
@@ -1662,6 +1728,7 @@ class SettingsDialog(QDialog):
         )
 
     def _refresh_chatgpt_status(self) -> None:
+        """Refresh chatgpt status."""
         try:
             from core.auth import chatgpt as chatgpt_auth
             tokens = chatgpt_auth.get_tokens()
@@ -1678,15 +1745,18 @@ class SettingsDialog(QDialog):
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
 
     def _chatgpt_login_browser(self) -> None:
+        """Handle chatgpt login browser for settings dialog."""
         from core.auth import chatgpt as chatgpt_auth
         self._chatgpt_status_lbl.setText(t("Opening browser\u2026 waiting for callback"))
         self._chatgpt_status_lbl.setStyleSheet("color: #c0c040;")
         self._start_auth_poll()
 
         def on_success(_tokens):
+            """Handle success events."""
             pass  # polling timer will detect the saved tokens
 
         def on_error(msg):
+            """Handle error events."""
             self._auth_poll_error = msg  # picked up by poll tick
 
         chatgpt_auth.start_browser_login(on_success, on_error)
@@ -1702,6 +1772,7 @@ class SettingsDialog(QDialog):
 
     def _auth_poll_tick(self) -> None:
         # Check if the background thread stored a message
+        """Handle auth poll tick for settings dialog."""
         if self._auth_poll_error is not None:
             msg = self._auth_poll_error
             self._auth_poll_error = None  # clear so we don't re-trigger
@@ -1726,6 +1797,7 @@ class SettingsDialog(QDialog):
             self._chatgpt_status_lbl.setStyleSheet("color: #c04040;")
 
     def _chatgpt_logout(self) -> None:
+        """Handle chatgpt logout for settings dialog."""
         try:
             from core.auth import chatgpt as chatgpt_auth
             chatgpt_auth.clear_tokens()
@@ -1734,6 +1806,7 @@ class SettingsDialog(QDialog):
         self._refresh_chatgpt_status()
 
     def _refresh_github_status(self) -> None:
+        """Refresh github status."""
         try:
             from core.auth import github as github_auth
             tokens = github_auth.get_tokens()
@@ -1753,6 +1826,7 @@ class SettingsDialog(QDialog):
             self._github_status_lbl.setStyleSheet("color: #c04040;")
 
     def _github_login_device(self) -> None:
+        """Handle github login device for settings dialog."""
         import webbrowser
         import config as cfg
         from core.auth import github as github_auth
@@ -1772,6 +1846,7 @@ class SettingsDialog(QDialog):
         self._start_github_auth_poll()
 
         def on_code(url, user_code):
+            """Handle code events."""
             self._github_auth_poll_message = f"__device_code__{url}\n{user_code}"
             try:
                 webbrowser.open(url)
@@ -1779,14 +1854,17 @@ class SettingsDialog(QDialog):
                 pass
 
         def on_success(_tokens):
+            """Handle success events."""
             pass
 
         def on_error(msg):
+            """Handle error events."""
             self._github_auth_poll_message = msg
 
         github_auth.start_device_login(on_code, on_success, on_error)
 
     def _start_github_auth_poll(self) -> None:
+        """Start github auth poll."""
         self._github_auth_poll_message: str | None = None
         self._github_auth_poll_ticks = 0
         self._github_auth_poll_timer = QTimer(self)
@@ -1795,6 +1873,7 @@ class SettingsDialog(QDialog):
         self._github_auth_poll_timer.start()
 
     def _github_auth_poll_tick(self) -> None:
+        """Handle github auth poll tick for settings dialog."""
         if self._github_auth_poll_message is not None:
             msg = self._github_auth_poll_message
             self._github_auth_poll_message = None
@@ -1823,6 +1902,7 @@ class SettingsDialog(QDialog):
             self._github_status_lbl.setStyleSheet("color: #c04040;")
 
     def _github_logout(self) -> None:
+        """Handle github logout for settings dialog."""
         try:
             from core.auth import github as github_auth
             github_auth.clear_tokens()
@@ -1831,6 +1911,7 @@ class SettingsDialog(QDialog):
         self._refresh_github_status()
 
     def _refresh_copilot_status(self) -> None:
+        """Refresh copilot status."""
         try:
             from core.auth import copilot_auth
             stored, message = copilot_auth.token_status()
@@ -1843,6 +1924,7 @@ class SettingsDialog(QDialog):
             self._copilot_status_lbl.setStyleSheet("color: #c04040;")
 
     def _copilot_save_token(self) -> None:
+        """Handle copilot save token for settings dialog."""
         try:
             from core.auth import copilot_auth
             copilot_auth.save_token(self._copilot_token_edit.text())
@@ -1854,6 +1936,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "GitHub Copilot token", str(exc))
 
     def _copilot_clear_token(self) -> None:
+        """Handle copilot clear token for settings dialog."""
         try:
             from core.auth import copilot_auth
             copilot_auth.clear_token()
@@ -1865,6 +1948,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "GitHub Copilot token", str(exc))
 
     def _copilot_test_token(self) -> None:
+        """Handle copilot test token for settings dialog."""
         try:
             from core.auth import copilot_client
             ok, message = copilot_client.test_copilot_token()
@@ -1877,6 +1961,7 @@ class SettingsDialog(QDialog):
             self._copilot_status_lbl.setStyleSheet("color: #c04040;")
 
     def _tab_tts(self) -> QWidget:
+        """Handle tab TTS for settings dialog."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -2084,7 +2169,9 @@ class SettingsDialog(QDialog):
             "openai": openai_w,
             "openai_compatible": custom_w,
         }
-        outer.addWidget(keys_card)
+        # Sit directly under the Provider card (index 0) — the voice/key fields
+        # belong with the provider that selects them, above the STT section.
+        outer.insertWidget(1, keys_card)
         self._tts_provider_card = keys_card
 
         # ── TEST card ─────────────────────────────────────────────────────
@@ -2114,6 +2201,7 @@ class SettingsDialog(QDialog):
             card.setVisible(provider != "none")
 
     def _tab_prompt(self) -> QWidget:
+        """Handle tab prompt for settings dialog."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -2143,6 +2231,7 @@ class SettingsDialog(QDialog):
         return scroll
 
     def _tab_keybinds(self) -> QWidget:
+        """Handle tab keybinds for settings dialog."""
         from PySide6.QtWidgets import QScrollArea, QSizePolicy
         container = QWidget()
         outer_layout = QVBoxLayout(container)
@@ -2257,6 +2346,29 @@ class SettingsDialog(QDialog):
         self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
         self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
         self._fields["HOTKEY_SNIP"]          = self._kb_special_row("Snip screen region")
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setFixedWidth(120)
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("1234567")
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setToolTip(
+            t("Ordered keys for toggling App, Browser/Web, Selection, Clipboard, Screenshot, Memory, and Files in the intent overlay.")
+        )
+        self._fields["INTENT_OVERLAY_TIMEOUT_MS"] = QLineEdit()
+        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setFixedWidth(90)
+        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setPlaceholderText("60000")
+        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setToolTip(
+            t("How long the intent overlay stays open before closing itself. Use 0 to keep it open until you choose or cancel.")
+        )
+        context_key_row = QWidget()
+        context_key_h = QHBoxLayout(context_key_row)
+        context_key_h.setContentsMargins(0, 2, 0, 2)
+        context_key_h.setSpacing(10)
+        context_key_h.addSpacing(128)
+        context_key_h.addWidget(QLabel(t("Intent context keys:")))
+        context_key_h.addWidget(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"])
+        context_key_h.addWidget(QLabel(t("Timeout ms:")))
+        context_key_h.addWidget(self._fields["INTENT_OVERLAY_TIMEOUT_MS"])
+        context_key_h.addStretch()
+        self._keybinds_layout.addWidget(context_key_row)
 
         snip_ctx = QWidget()
         snip_h = QHBoxLayout(snip_ctx)
@@ -2310,6 +2422,7 @@ class SettingsDialog(QDialog):
         context_github_mode: str = "off",
         context_memory_mode: str = "auto",
         context_screenshot: str = "off",
+        file_access: str = "off",
     ) -> tuple[QWidget, dict]:
         """Build the shared per-hotkey context grid (used by callers and voice).
 
@@ -2358,6 +2471,17 @@ class SettingsDialog(QDialog):
             "• On — capture at hotkey time and send it with the query.\n"
             "• Let model decide — expose a screenshot tool during the answer."
         )
+        file_combo = _NoScrollCombo()
+        for label, value in _FILE_ACCESS_OPTIONS:
+            file_combo.addItem(t(label), value)
+        file_combo.setToolTip(
+            "Local files:\n"
+            "Off - do not expose file tools.\n"
+            "Read only - allow listing and reading configured folders.\n"
+            "Ask before writing - show a diff before edits or creates.\n"
+            "Write automatically - apply edits without asking."
+        )
+        _set(file_combo, normalize_file_access_mode(file_access))
         context_h.addWidget(QLabel(t("Context:")), 0, 0)
         context_h.addWidget(ambient_cb, 0, 1)
         context_h.addWidget(QLabel(t("Screenshot:")), 0, 2)
@@ -2370,6 +2494,8 @@ class SettingsDialog(QDialog):
         context_h.addWidget(browser_combo, 1, 3)
         context_h.addWidget(QLabel(t("Memory:")), 1, 4)
         context_h.addWidget(memory_combo, 1, 5)
+        context_h.addWidget(QLabel(t("Local files:")), 2, 0)
+        context_h.addWidget(file_combo, 2, 1)
         context_h.setColumnStretch(6, 1)
         controls = {
             "context_ambient": ambient_cb,
@@ -2378,6 +2504,7 @@ class SettingsDialog(QDialog):
             "context_github_mode": github_combo,
             "context_memory_mode": memory_combo,
             "context_screenshot": screenshot_combo,
+            "file_access": file_combo,
         }
         for combo in (
             docs_combo,
@@ -2385,6 +2512,7 @@ class SettingsDialog(QDialog):
             github_combo,
             memory_combo,
             screenshot_combo,
+            file_combo,
         ):
             combo.currentIndexChanged.connect(lambda _: self._schedule_warning_marker_refresh())
         return context_row, controls
@@ -2394,6 +2522,7 @@ class SettingsDialog(QDialog):
         from ui.settings_panel.tool_access import ToolAccessDialog
 
         def _mode_data(combo) -> str:
+            """Handle mode data for settings dialog."""
             return str(combo.currentData() or "off")
 
         governed_modes = {
@@ -2429,6 +2558,7 @@ class SettingsDialog(QDialog):
         context_github_mode: str = "off",
         context_memory_mode: str = "auto",
         context_screenshot: str = "off",
+        file_access: str = "off",
         tools: "dict[str, str] | None" = None,
         intents: "list[dict] | None" = None,
     ) -> None:
@@ -2480,6 +2610,7 @@ class SettingsDialog(QDialog):
             context_github_mode=context_github_mode,
             context_memory_mode=context_memory_mode,
             context_screenshot=context_screenshot,
+            file_access=file_access,
         )
         outer.addWidget(context_row)
 
@@ -2518,6 +2649,7 @@ class SettingsDialog(QDialog):
             "context_github_mode": context_controls["context_github_mode"],
             "context_memory_mode": context_controls["context_memory_mode"],
             "context_screenshot": context_controls["context_screenshot"],
+            "file_access": context_controls["file_access"],
             "tool_overrides": dict(tools or {}),
             "intents_layout": intents_vlayout,
             "intent_rows":    [],
@@ -2628,6 +2760,7 @@ class SettingsDialog(QDialog):
         blk["custom_prompt"] = prompt_edit
 
     def _delete_caller_intent_row(self, blk: dict, row_info: dict) -> None:
+        """Delete caller intent row."""
         if row_info in blk["intent_rows"]:
             blk["intent_rows"].remove(row_info)
         row_info["widget"].deleteLater()
@@ -2635,6 +2768,7 @@ class SettingsDialog(QDialog):
         self._schedule_dirty_refresh()
 
     def _delete_caller_block(self, blk: dict) -> None:
+        """Delete caller block."""
         if blk in self._caller_blocks:
             self._caller_blocks.remove(blk)
         blk["widget"].deleteLater()
@@ -2678,6 +2812,7 @@ class SettingsDialog(QDialog):
         return scroll
 
     def _tab_tools(self) -> QWidget:
+        """Handle tab tools for settings dialog."""
         from core.llm_clients.client import get_tool_registry
         from core.system.paths import TOOL_KEYWORDS_FILE
 
@@ -2705,7 +2840,14 @@ class SettingsDialog(QDialog):
 
         try:
             first = True
-            for spec in registry.list_tools():
+            tools = registry.list_tools()
+            present = {spec.name for spec in tools}
+            for name in ("list_files", "read_file", "edit_file", "write_file"):
+                spec = registry.get_tool(name)
+                if spec is not None and name not in present:
+                    tools.append(spec)
+                    present.add(name)
+            for spec in tools:
                 keywords = registry._keyword_map.get(spec.name, [])
 
                 if not first:
@@ -2758,6 +2900,7 @@ class SettingsDialog(QDialog):
         return scroll
 
     def _save_tool_keywords(self, registry, path) -> None:
+        """Save tool keywords."""
         for tool_name, field in getattr(self, "_tool_keyword_fields", []):
             raw = field.text()
             keywords = [k.strip().lower() for k in raw.split(",") if k.strip()]
@@ -2770,6 +2913,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "Save failed", str(exc))
 
     def _tab_app(self) -> QWidget:
+        """Handle tab app for settings dialog."""
         from PySide6.QtWidgets import QScrollArea
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -2855,6 +2999,7 @@ class SettingsDialog(QDialog):
         return scroll
 
     def _tab_advanced(self) -> QWidget:
+        """Handle tab advanced for settings dialog."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -2880,14 +3025,39 @@ class SettingsDialog(QDialog):
         self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"].setPlaceholderText("e.g. 12000")
         self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"] = QLineEdit()
         self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"].setPlaceholderText("e.g. 12000")
-        self._fields["TOOL_PLUGIN_DIR"] = QLineEdit()
-        self._fields["TOOL_PLUGIN_DIR"].setPlaceholderText("legacy tool folder / script tool folder")
         context_f.addRow("Browser fetch chars", self._fields["CONTEXT_BROWSER_MAX_CHARS"])
         context_f.addRow("Auto document fetch chars", self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"])
         context_f.addRow("Tool document fetch chars", self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"])
-        context_f.addRow("Legacy tool folder", self._fields["TOOL_PLUGIN_DIR"])
         context_cv.addWidget(context_fw)
         outer.addWidget(context_card)
+
+        local_file_card, local_file_cv = self._card("Model file access")
+        local_file_note = QLabel(
+            t(
+                "These folders are the only places the model can list or read files. "
+                "Each keybind chooses whether local files are off, read-only, ask-before-write, or automatic."
+            )
+        )
+        local_file_note.setWordWrap(True)
+        local_file_cv.addWidget(local_file_note)
+        local_file_fw = QWidget()
+        local_file_f = _expanding_form_layout(local_file_fw)
+        local_file_f.setSpacing(8)
+        local_file_f.setContentsMargins(0, 0, 0, 0)
+        self._fields["TOOL_FILE_ROOTS"] = QTextEdit()
+        self._fields["TOOL_FILE_ROOTS"].setPlaceholderText(
+            "One folder per line. Leave empty to turn local file access off."
+        )
+        self._fields["TOOL_FILE_ROOTS"].setFixedHeight(72)
+        self._fields["TOOL_FILE_BLOCKED_GLOBS"] = QTextEdit()
+        self._fields["TOOL_FILE_BLOCKED_GLOBS"].setPlaceholderText(
+            "One private pattern per line. Matching files are always refused."
+        )
+        self._fields["TOOL_FILE_BLOCKED_GLOBS"].setFixedHeight(92)
+        local_file_f.addRow("Folders the model may use", self._fields["TOOL_FILE_ROOTS"])
+        local_file_f.addRow("Private file patterns", self._fields["TOOL_FILE_BLOCKED_GLOBS"])
+        local_file_cv.addWidget(local_file_fw)
+        outer.addWidget(local_file_card)
 
         memory_card, memory_cv = self._card("Memory tuning")
         memory_fw = QWidget()
@@ -2971,6 +3141,7 @@ class SettingsDialog(QDialog):
         self._theme_shown_mode = mode
 
     def _on_theme_mode_changed(self) -> None:
+        """Handle theme mode changed events."""
         if self._theme_syncing or not self._theme_templates:
             return
         new_mode = self._theme_edit_mode()
@@ -2984,6 +3155,7 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _model_combo(self, provider: str = "") -> QComboBox:
+        """Handle model combo for settings dialog."""
         models = _PROVIDER_MODELS.get(provider, [])
         cb = _NoScrollCombo()
         cb.setEditable(True)
@@ -2997,6 +3169,7 @@ class SettingsDialog(QDialog):
         return cb
 
     def _combo(self, options: list[str], current: str = "") -> QComboBox:
+        """Handle combo for settings dialog."""
         cb = _NoScrollCombo()
         for opt in options:
             cb.addItem(_PROVIDER_LABELS.get(opt, opt) if opt else "", opt)
@@ -3024,6 +3197,7 @@ class SettingsDialog(QDialog):
         swatch.setToolTip("Pick color")
 
         def _parse(text: str) -> QColor:
+            """Parse the settings dialog workflow."""
             s = text.strip()
             if s.startswith("#") and len(s) == 9:
                 try:
@@ -3034,11 +3208,13 @@ class SettingsDialog(QDialog):
             return c if c.isValid() else QColor()
 
         def _fmt(c: QColor) -> str:
+            """Handle fmt for settings dialog."""
             if alpha:
                 return f"#{c.red():02x}{c.green():02x}{c.blue():02x}{c.alpha():02x}"
             return f"#{c.red():02x}{c.green():02x}{c.blue():02x}"
 
         def _update_swatch(text=""):
+            """Update swatch."""
             c = _parse(edit.text())
             if c.isValid():
                 swatch.setStyleSheet(
@@ -3051,6 +3227,7 @@ class SettingsDialog(QDialog):
                 )
 
         def _pick():
+            """Handle pick for settings dialog."""
             c = _parse(edit.text())
             if not c.isValid():
                 c = QColor(255, 255, 255, 255)
@@ -3075,6 +3252,7 @@ class SettingsDialog(QDialog):
         return row
 
     def _button_row(self, *buttons: tuple[str, object]) -> QWidget:
+        """Handle button row for settings dialog."""
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -3108,6 +3286,7 @@ class SettingsDialog(QDialog):
         base_text: str | None = None,
         uppercase: bool = False,
     ) -> None:
+        """Handle register warning header for settings dialog."""
         if not hasattr(self, "_warning_headers"):
             self._warning_headers = {}
             self._warning_header_base_texts = {}
@@ -3121,6 +3300,7 @@ class SettingsDialog(QDialog):
             self._warning_header_uppercase_keys.discard(key)
 
     def _warning_header_text(self, key: str) -> str:
+        """Handle warning header text for settings dialog."""
         base = self._warning_header_base_texts.get(key, key)
         text = t(base)
         if key in getattr(self, "_warning_header_uppercase_keys", set()):
@@ -3128,6 +3308,7 @@ class SettingsDialog(QDialog):
         return text
 
     def _set_warning_markers(self, warnings_by_target: dict[str, list[str]]) -> None:
+        """Set warning markers."""
         if not hasattr(self, "_warning_headers"):
             return
         for key, label in self._warning_headers.items():
@@ -3141,7 +3322,9 @@ class SettingsDialog(QDialog):
                 label.setToolTip("")
 
     def _warning_values_from_current_ui(self) -> dict[str, str]:
+        """Handle warning values from current ui for settings dialog."""
         def _section_vals(sk: str) -> tuple[str, str]:
+            """Handle section vals for settings dialog."""
             rows = getattr(self, "_model_section_rows", {}).get(sk, [])
             if not rows:
                 return "", ""
@@ -3161,12 +3344,14 @@ class SettingsDialog(QDialog):
         }
 
     def _refresh_capability_warning_markers(self) -> None:
+        """Refresh capability warning markers."""
         _warnings, warnings_by_target = self._capability_warnings_for_values(
             self._warning_values_from_current_ui()
         )
         self._set_warning_markers(warnings_by_target)
 
     def _schedule_warning_marker_refresh(self) -> None:
+        """Schedule warning marker refresh."""
         if getattr(self, "_disposing", False):
             return
         QTimer.singleShot(0, self._refresh_capability_warning_markers)
@@ -3283,6 +3468,7 @@ class SettingsDialog(QDialog):
         return w
 
     def _password(self) -> QLineEdit:
+        """Handle password for settings dialog."""
         le = QLineEdit()
         le.setEchoMode(QLineEdit.EchoMode.Password)
         return le
@@ -3294,6 +3480,7 @@ class SettingsDialog(QDialog):
         label_prefix: str,
         providers: list[str] | None = None,
     ) -> None:
+        """Add fallback section."""
         add_btn = QPushButton("+ Add fallback")
         add_wrap = QHBoxLayout()
         add_wrap.setContentsMargins(0, 0, 0, 0)
@@ -3318,6 +3505,7 @@ class SettingsDialog(QDialog):
         model: str = "",
         providers: list[str] | None = None,
     ) -> None:
+        """Add fallback row."""
         provider_options = providers or self._fallback_rows.get(f"{key}__providers", ["groq", "openai", "anthropic", "google", "chatgpt", "copilot"])  # type: ignore[arg-type]
         provider_combo = self._combo(provider_options, provider)
         model_combo = self._model_combo(provider)
@@ -3358,6 +3546,7 @@ class SettingsDialog(QDialog):
         self._schedule_dirty_refresh()
 
     def _remove_fallback_row(self, key: str, row_info: dict) -> None:
+        """Remove fallback row."""
         if row_info in self._fallback_rows[key]:
             self._fallback_rows[key].remove(row_info)
         form = self._fallback_rows[f"{key}__form"]  # type: ignore[index]
@@ -3368,18 +3557,21 @@ class SettingsDialog(QDialog):
         self._schedule_dirty_refresh()
 
     def _renumber_fallback_rows(self, key: str) -> None:
+        """Handle renumber fallback rows for settings dialog."""
         prefix = self._fallback_rows[f"{key}__prefix"]  # type: ignore[index]
         for idx, row in enumerate(self._fallback_rows[key], 1):
             row["provider_label"].setText(f"{prefix} provider {idx}")
             row["model_label"].setText(f"{prefix} model {idx}")
 
     def _set_fallback_rows(self, key: str, raw: str) -> None:
+        """Set fallback rows."""
         for row in list(self._fallback_rows[key]):
             self._remove_fallback_row(key, row)
         for provider, model in _parse_fallback_rows(raw):
             self._add_fallback_row(key, provider, model)
 
     def _get_fallback_rows(self, key: str) -> str:
+        """Return fallback rows."""
         parts = []
         for row in self._fallback_rows[key]:
             provider = _get(row["provider"]).strip()
@@ -3393,9 +3585,11 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _secret_configured_fast(self, name: str) -> bool:
-        return bool((self._env.get(name) or "").strip()) or secret_store.configured_marker(name)
+        """Handle secret configured fast for settings dialog."""
+        return bool((self._env.get(name) or "").strip()) or secret_store.has_secret(name)
 
     def _load_values(self):
+        """Load values."""
         import config as cfg
         self._loading_values = True
         self._active_preset_slug = self._env.get(_SETTINGS_PRESET_KEY, "")
@@ -3424,6 +3618,7 @@ class SettingsDialog(QDialog):
 
         # ── Model sections ────────────────────────────────────────────────
         def _load_section(sk, penv, menv, fenv, pdef, mdef, fdef=""):
+            """Load section."""
             for r in list(self._model_section_rows[sk]):
                 self._remove_model_section_row(sk, r)
             self._add_model_section_row(
@@ -3471,6 +3666,14 @@ class SettingsDialog(QDialog):
         _set(self._fields["HOTKEY_ADD_CONTEXT"],   self._env.get("HOTKEY_ADD_CONTEXT",   cfg.HOTKEY_ADD_CONTEXT))
         _set(self._fields["HOTKEY_CLEAR_CONTEXT"], self._env.get("HOTKEY_CLEAR_CONTEXT", cfg.HOTKEY_CLEAR_CONTEXT))
         _set(self._fields["HOTKEY_SNIP"],          self._env.get("HOTKEY_SNIP",          cfg.HOTKEY_SNIP))
+        _set(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"], self._env.get(
+            "INTENT_CONTEXT_TOGGLE_KEYS",
+            getattr(cfg, "INTENT_CONTEXT_TOGGLE_KEYS", "1234567"),
+        ))
+        _set(self._fields["INTENT_OVERLAY_TIMEOUT_MS"], self._env.get(
+            "INTENT_OVERLAY_TIMEOUT_MS",
+            str(getattr(cfg, "INTENT_OVERLAY_TIMEOUT_MS", 60000)),
+        ))
         self._fields["SNIP_CONTEXT_AMBIENT"].setChecked(self._env.get("SNIP_CONTEXT_AMBIENT", str(cfg.SNIP_CONTEXT_AMBIENT)).lower() == "true")  # type: ignore
         self._fields["SNIP_CONTEXT_DOCUMENTS"].setChecked(self._env.get("SNIP_CONTEXT_DOCUMENTS", str(cfg.SNIP_CONTEXT_DOCUMENTS)).lower() == "true")  # type: ignore
         self._fields["SNIP_CONTEXT_TOOLS"].setChecked(self._env.get("SNIP_CONTEXT_TOOLS", str(cfg.SNIP_CONTEXT_TOOLS)).lower() == "true")  # type: ignore
@@ -3480,7 +3683,14 @@ class SettingsDialog(QDialog):
         _set(self._fields["CONTEXT_BROWSER_MAX_CHARS"], self._env.get("CONTEXT_BROWSER_MAX_CHARS", str(cfg.CONTEXT_BROWSER_MAX_CHARS)))
         _set(self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"], self._env.get("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", str(cfg.CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS)))
         _set(self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"], self._env.get("CONTEXT_TOOL_DOCUMENT_MAX_CHARS", str(cfg.CONTEXT_TOOL_DOCUMENT_MAX_CHARS)))
-        _set(self._fields["TOOL_PLUGIN_DIR"], self._env.get("TOOL_PLUGIN_DIR", cfg.TOOL_PLUGIN_DIR))
+        _set(self._fields["TOOL_FILE_ROOTS"], self._env.get("TOOL_FILE_ROOTS", "\n".join(getattr(cfg, "TOOL_FILE_ROOTS", []))))
+        _set(
+            self._fields["TOOL_FILE_BLOCKED_GLOBS"],
+            self._env.get(
+                "TOOL_FILE_BLOCKED_GLOBS",
+                "\n".join(getattr(cfg, "TOOL_FILE_BLOCKED_GLOBS", [])),
+            ),
+        )
 
         self._fields["MEMORY_AUTO_CONSOLIDATE"].setChecked(
             self._env.get("MEMORY_AUTO_CONSOLIDATE", str(cfg.MEMORY_AUTO_CONSOLIDATE)).lower() == "true"
@@ -3533,6 +3743,10 @@ class SettingsDialog(QDialog):
                 f"CALLER_{n}_CONTEXT_MEMORY_MODE",
                 cr.get("context_memory_mode") or "auto",
             )
+            file_access = self._env.get(
+                f"CALLER_{n}_FILE_ACCESS",
+                cr.get("file_access") or "off",
+            )
             tools_env = self._env.get(f"CALLER_{n}_TOOLS")
             caller_tools = (
                 parse_tool_modes(tools_env)
@@ -3553,6 +3767,7 @@ class SettingsDialog(QDialog):
                 context_github_mode = github_mode,
                 context_memory_mode = memory_mode,
                 context_screenshot = normalize_screenshot_mode(self._env.get(f"CALLER_{n}_CONTEXT_SCREENSHOT", cr.get("context_screenshot", "off"))),
+                file_access = normalize_file_access_mode(file_access),
                 tools      = caller_tools,
                 intents    = intents,
             )
@@ -3587,6 +3802,10 @@ class SettingsDialog(QDialog):
             normalize_screenshot_mode(
                 self._env.get("VOICE_CONTEXT_SCREENSHOT", vc.get("context_screenshot", "off"))
             ),
+        )
+        _set(
+            vb["file_access"],
+            normalize_file_access_mode(self._env.get("VOICE_FILE_ACCESS", vc.get("file_access", "off"))),
         )
         voice_tools_env = self._env.get("VOICE_TOOLS")
         vb["tool_overrides"] = (
@@ -3659,6 +3878,7 @@ class SettingsDialog(QDialog):
         self._reset_dirty_baseline()
 
     def _effective_secret_value(self, name: str) -> str:
+        """Handle effective secret value for settings dialog."""
         typed = _get(self._fields[name]).strip()
         if typed:
             return typed
@@ -3679,10 +3899,12 @@ class SettingsDialog(QDialog):
         label.setStyleSheet(f"color: {color};")
 
     def _set_test_pending(self, label: QLabel, message: str = "Testing...") -> None:
+        """Set test pending."""
         label.setText(_translate_status_message(message))
         label.setStyleSheet("color: #c0c040;")
 
     def _set_status_label(self, label: QLabel, ok, message: str) -> None:
+        """Set status label."""
         if ok is None:
             color = "palette(placeholder-text)"
         elif ok:
@@ -3693,10 +3915,12 @@ class SettingsDialog(QDialog):
         label.setStyleSheet(f"color: {color};")
 
     def _queue_status_result(self, token: int, attr: str, ok, message: str) -> None:
+        """Handle queue status result for settings dialog."""
         with self._pending_status_results_lock:
             self._pending_status_results.append((token, attr, ok, message))
 
     def _cancel_status_refresh(self) -> None:
+        """Cancel status refresh."""
         self._status_refresh_token += 1
         self._status_refresh_running = False
         with self._pending_status_results_lock:
@@ -3705,6 +3929,7 @@ class SettingsDialog(QDialog):
             self._status_result_timer.stop()
 
     def _cancel_async_ui_updates(self) -> None:
+        """Cancel async ui updates."""
         self._cancel_status_refresh()
         self._running_test_tokens.clear()
         self._latest_test_token.clear()
@@ -3718,6 +3943,7 @@ class SettingsDialog(QDialog):
                 timer.stop()
 
     def _schedule_open_status_refresh(self) -> None:
+        """Schedule open status refresh."""
         if getattr(self, "_disposing", False):
             return
         self._status_refresh_token += 1
@@ -3731,6 +3957,7 @@ class SettingsDialog(QDialog):
             self._status_result_timer.start()
 
         def _worker() -> None:
+            """Handle worker for settings dialog."""
             try:
                 try:
                     from core.auth import chatgpt as chatgpt_auth
@@ -3774,6 +4001,7 @@ class SettingsDialog(QDialog):
         threading.Thread(target=_worker, daemon=True, name="settings-status-refresh").start()
 
     def _drain_status_results(self) -> None:
+        """Handle drain status results for settings dialog."""
         if getattr(self, "_disposing", False):
             self._cancel_status_refresh()
             return
@@ -3793,6 +4021,7 @@ class SettingsDialog(QDialog):
             self._status_result_timer.stop()
 
     def _start_async_test(self, test_key: str, status_label: QLabel, runner) -> None:
+        """Start async test."""
         if getattr(self, "_disposing", False):
             return
         token = self._latest_test_token.get(test_key, 0) + 1
@@ -3801,6 +4030,7 @@ class SettingsDialog(QDialog):
         self._set_test_pending(status_label)
 
         def _worker() -> None:
+            """Handle worker for settings dialog."""
             try:
                 ok, message = runner()
             except Exception as exc:
@@ -3813,6 +4043,7 @@ class SettingsDialog(QDialog):
             self._test_result_timer.start()
 
     def _drain_test_results(self) -> None:
+        """Handle drain test results for settings dialog."""
         if getattr(self, "_disposing", False):
             self._cancel_async_ui_updates()
             return
@@ -3830,6 +4061,7 @@ class SettingsDialog(QDialog):
             self._test_result_timer.stop()
 
     def _test_llm_route(self, *, section_key: str, route_name: str, status_label: QLabel, image: bool = False) -> None:
+        """Verify llm route behavior."""
         from core.llm_clients import client as llm
 
         rows = self._model_section_rows.get(section_key, [])
@@ -3862,6 +4094,7 @@ class SettingsDialog(QDialog):
         def _run_all_routes():
             # Each route is probed independently; a failure on one is reported
             # against that exact provider/model and never attributed to another.
+            """Run all routes."""
             results: list[tuple[str, bool, str, str, str]] = []
             for idx, (provider, model) in enumerate(routes):
                 label = "Primary" if idx == 0 else f"Fallback {idx}"
@@ -3900,6 +4133,7 @@ class SettingsDialog(QDialog):
         self._start_async_test(test_key, status_label, _run_all_routes)
 
     def _test_primary_llm_connection(self) -> None:
+        """Verify primary llm connection behavior."""
         self._test_llm_route(
             section_key="LLM",
             route_name="LLM",
@@ -3907,6 +4141,7 @@ class SettingsDialog(QDialog):
         )
 
     def _test_vision_connection(self) -> None:
+        """Verify vision connection behavior."""
         self._test_llm_route(
             section_key="VISION_LLM",
             route_name="VISION_LLM",
@@ -3915,6 +4150,7 @@ class SettingsDialog(QDialog):
         )
 
     def _test_memory_connection(self) -> None:
+        """Verify memory connection behavior."""
         self._test_llm_route(
             section_key="MEMORY_LLM",
             route_name="MEMORY_LLM",
@@ -3922,6 +4158,7 @@ class SettingsDialog(QDialog):
         )
 
     def _test_tts_connection(self) -> None:
+        """Verify tts connection behavior."""
         from core import tts
 
         provider = _get(self._fields["TTS_PROVIDER"]).strip().lower()
@@ -3956,6 +4193,7 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _reset_stt_model_in_background() -> None:
+        """Reset stt model in background."""
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
             # In the split worker app, the UI process must not import core.stt:
             # that pulls in NumPy/faster-whisper and can stall Qt while Python is
@@ -3964,6 +4202,7 @@ class SettingsDialog(QDialog):
             return
 
         def _worker():
+            """Handle worker for settings dialog."""
             try:
                 from core import stt as _stt
                 _stt.reset_model()
@@ -4040,6 +4279,7 @@ class SettingsDialog(QDialog):
             lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
 
     def _stt_fields_changed(self, old_env: dict[str, str]) -> bool:
+        """Handle STT fields changed for settings dialog."""
         import config as cfg
 
         return any(
@@ -4049,7 +4289,8 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _block_uses_live_tools(blk: dict) -> bool:
-        return any(
+        """Handle block uses live tools for settings dialog."""
+        uses_context_tool = any(
             str(blk[key].currentData()) == "model"  # type: ignore[attr-defined]
             for key in (
                 "context_documents_mode",
@@ -4057,20 +4298,27 @@ class SettingsDialog(QDialog):
                 "context_github_mode",
                 "context_memory_mode",
             )
-        ) or any(
+        )
+        uses_override_tool = any(
             mode in {"on", "model"}
             for mode in (blk.get("tool_overrides") or {}).values()
         )
+        file_access = blk.get("file_access")
+        uses_file_tool = str(file_access.currentData() if file_access else "off") != "off"
+        return uses_context_tool or uses_override_tool or uses_file_tool
 
     @staticmethod
     def _block_uses_screenshot(blk: dict, mode: str) -> bool:
+        """Handle block uses screenshot for settings dialog."""
         return str(blk["context_screenshot"].currentData()) == mode  # type: ignore[attr-defined]
 
     def _capability_warnings_for_values(self, vals: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
+        """Handle capability warnings for values for settings dialog."""
         warnings: list[str] = []
         warnings_by_target: dict[str, list[str]] = {}
 
         def add_warning(targets: list[str], warning: str) -> None:
+            """Add warning."""
             warnings.append(warning)
             for target in targets:
                 warnings_by_target.setdefault(target, []).append(warning)
@@ -4185,6 +4433,7 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _reset_env_keys_for_page(page_name: str, env: dict[str, str]) -> set[str]:
+        """Reset env keys for page."""
         page = (page_name or "").strip()
         exact: dict[str, set[str]] = {
             "LLM": {
@@ -4207,7 +4456,8 @@ class SettingsDialog(QDialog):
             },
             "Keybinds": {
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
-                "HOTKEY_DICTATE", "DICTATE_MODE",
+                "HOTKEY_DICTATE", "DICTATE_MODE", "INTENT_CONTEXT_TOGGLE_KEYS",
+                "INTENT_OVERLAY_TIMEOUT_MS",
                 "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
                 "CALLER_COUNT",
             },
@@ -4226,6 +4476,7 @@ class SettingsDialog(QDialog):
             "Advanced": {
                 "CONTEXT_BROWSER_MAX_CHARS", "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS",
                 "CONTEXT_TOOL_DOCUMENT_MAX_CHARS", "TOOL_PLUGIN_DIR", "TOOL_GIT_ROOT",
+                "TOOL_FILE_ROOTS", "TOOL_FILE_MODE", "TOOL_FILE_BLOCKED_GLOBS",
                 "MEMORY_CONSOLIDATION_INTERVAL", "MEMORY_STM_TOKEN_BUDGET", "BUBBLE_HIDE_DELAY_MS",
                 "BUBBLE_REVEAL_WPM", "BUBBLE_HOLD_REVEAL_WPM",
                 "TTS_PLAYBACK_RATE", "TTS_HOLD_PLAYBACK_RATE",
@@ -4240,6 +4491,7 @@ class SettingsDialog(QDialog):
         return keys
 
     def _reload_after_page_reset(self, page_name: str = "") -> None:
+        """Handle reload after page reset for settings dialog."""
         try:
             import config
             from core.llm_clients import client as _llm
@@ -4265,6 +4517,7 @@ class SettingsDialog(QDialog):
             self._on_apply()
 
     def _reset_tools_page(self) -> None:
+        """Reset tools page."""
         from core.llm_clients.client import get_tool_registry
         from core.system.paths import TOOL_KEYWORDS_FILE
 
@@ -4277,6 +4530,7 @@ class SettingsDialog(QDialog):
             edit.setText(", ".join(registry._keyword_map.get(name, [])))
 
     def _reset_current_page(self) -> None:
+        """Reset current page."""
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
             return
@@ -4287,7 +4541,7 @@ class SettingsDialog(QDialog):
         confirm.setText(f"Reset the {page} page to defaults?")
         confirm.setInformativeText(
             "Only settings on this page will be reset. API keys, OAuth sign-ins, "
-            "stored memory, conversations, plugins, and settings on other pages "
+            "stored memory, conversations, addons, and settings on other pages "
             "will be left alone."
         )
         confirm.setStandardButtons(
@@ -4490,6 +4744,7 @@ class SettingsDialog(QDialog):
         self._save_api_keys_to_keychain()
 
         def _section_vals(sk):
+            """Handle section vals for settings dialog."""
             rows = self._model_section_rows.get(sk, [])
             if not rows:
                 return "", "", ""
@@ -4544,13 +4799,16 @@ class SettingsDialog(QDialog):
             "HOTKEY_ADD_CONTEXT":  _get(self._fields["HOTKEY_ADD_CONTEXT"]),
             "HOTKEY_CLEAR_CONTEXT": _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
             "HOTKEY_SNIP":         _get(self._fields["HOTKEY_SNIP"]),
+            "INTENT_CONTEXT_TOGGLE_KEYS": _get(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"]),
+            "INTENT_OVERLAY_TIMEOUT_MS": _get(self._fields["INTENT_OVERLAY_TIMEOUT_MS"]),
             "SNIP_CONTEXT_AMBIENT": str(self._fields["SNIP_CONTEXT_AMBIENT"].isChecked()),  # type: ignore
             "SNIP_CONTEXT_DOCUMENTS": str(self._fields["SNIP_CONTEXT_DOCUMENTS"].isChecked()),  # type: ignore
             "SNIP_CONTEXT_TOOLS": str(self._fields["SNIP_CONTEXT_TOOLS"].isChecked()),  # type: ignore
             "CONTEXT_BROWSER_MAX_CHARS": _get(self._fields["CONTEXT_BROWSER_MAX_CHARS"]),
             "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": _get(self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"]),
             "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": _get(self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"]),
-            "TOOL_PLUGIN_DIR": _get(self._fields["TOOL_PLUGIN_DIR"]),
+            "TOOL_FILE_ROOTS": _get(self._fields["TOOL_FILE_ROOTS"]),
+            "TOOL_FILE_BLOCKED_GLOBS": _get(self._fields["TOOL_FILE_BLOCKED_GLOBS"]),
             "CUSTOM_BASE_URL":            _get(self._fields["CUSTOM_BASE_URL"]),
             "GITHUB_CLIENT_ID":          _get(self._fields["GITHUB_CLIENT_ID"]),
             "GITHUB_OAUTH_SCOPES":       _get(self._fields["GITHUB_OAUTH_SCOPES"]),
@@ -4592,6 +4850,7 @@ class SettingsDialog(QDialog):
             "VOICE_CONTEXT_GITHUB_MODE": str(vb["context_github_mode"].currentData()),
             "VOICE_CONTEXT_MEMORY_MODE": str(vb["context_memory_mode"].currentData()),
             "VOICE_CONTEXT_SCREENSHOT": str(vb["context_screenshot"].currentData()),
+            "VOICE_FILE_ACCESS": str(vb["file_access"].currentData()),
             "VOICE_TOOLS": format_tool_modes(vb.get("tool_overrides") or {}),
         })
         # Key conflict check (caller hotkeys + special hotkeys)
@@ -4620,6 +4879,7 @@ class SettingsDialog(QDialog):
             vals[f"CALLER_{n}_CONTEXT_BROWSER_MODE"] = browser_mode
             vals[f"CALLER_{n}_CONTEXT_GITHUB_MODE"] = github_mode
             vals[f"CALLER_{n}_CONTEXT_MEMORY_MODE"] = memory_mode
+            vals[f"CALLER_{n}_FILE_ACCESS"] = str(blk["file_access"].currentData())  # type: ignore[attr-defined]
             # Compatibility values for older branches/scripts.
             vals[f"CALLER_{n}_CONTEXT_DOCUMENTS"] = str(documents_mode == "auto")
             vals[f"CALLER_{n}_CONTEXT_TOOLS"] = str(
@@ -4639,7 +4899,7 @@ class SettingsDialog(QDialog):
         _write_env(
             vals,
             remove_keys=set(secret_store.API_KEY_NAMES)
-            | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS"},
+            | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS", "TOOL_FILE_MODE"},
         )
 
         # Honor the user's choices, but warn if their model setup probably can't
@@ -4805,6 +5065,7 @@ _PROVIDER_LABELS: dict[str, str] = {
 
 
 def _model_hint(provider: str) -> str:
+    """Handle model hint for UI settings panel dialog."""
     return _MODEL_HINTS.get(provider.lower(), "model name")
 
 
@@ -4824,6 +5085,7 @@ def _refresh_model_combo(combo: QComboBox, provider: str) -> None:
 
 
 def _sep(visible: bool = False) -> QFrame:
+    """Handle sep for UI settings panel dialog."""
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
     line.setStyleSheet(
@@ -4833,6 +5095,7 @@ def _sep(visible: bool = False) -> QFrame:
 
 
 def _set(widget, value: str):
+    """Set *value* on a combo/line/text-edit widget, honoring custom-value rules."""
     if isinstance(widget, QComboBox):
         idx = widget.findData(value)
         if idx >= 0:
@@ -4853,6 +5116,7 @@ def _set(widget, value: str):
 
 
 def _get(widget) -> str:
+    """Return the current text/data value of a combo/line/text-edit widget."""
     if isinstance(widget, QComboBox):
         data = widget.currentData()
         return data if data is not None else widget.currentText()
@@ -4881,6 +5145,7 @@ def _seconds_str_to_ms(text, fallback_ms: int) -> str:
 
 
 def _desc_label(title: str, description: str) -> QLabel:
+    """Handle desc label for UI settings panel dialog."""
     lbl = QLabel(t(description))
     lbl.setWordWrap(True)
     lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
@@ -4888,6 +5153,7 @@ def _desc_label(title: str, description: str) -> QLabel:
 
 
 def _link_label(text: str, url: str) -> QLabel:
+    """Handle link label for UI settings panel dialog."""
     lbl = QLabel(f'<a href="{url}">{t(text)}</a>')
     lbl.setOpenExternalLinks(True)
     lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
@@ -4896,6 +5162,7 @@ def _link_label(text: str, url: str) -> QLabel:
 
 
 def _parse_fallback_rows(raw: str) -> list[tuple[str, str]]:
+    """Parse fallback rows."""
     return parse_fallback_rows(raw)
 
 
@@ -4908,6 +5175,7 @@ def _short_test_error(message: str, route_name: str) -> str:
 
 
 def _translate_status_message(message: str) -> str:
+    """Handle translate status message for UI settings panel dialog."""
     text = str(message or "")
     if "\n" in text:
         return "\n".join(_translate_status_message(part) for part in text.splitlines())
@@ -4929,6 +5197,7 @@ def _translate_status_message(message: str) -> str:
 
 
 def _dialog_is_usable(dialog: "SettingsDialog | None") -> bool:
+    """Handle dialog is usable for UI settings panel dialog."""
     if dialog is None or getattr(dialog, "_disposing", False):
         return False
     try:
@@ -4944,12 +5213,14 @@ def _dialog_is_usable(dialog: "SettingsDialog | None") -> bool:
 
 
 def _clear_settings_dialog(_obj=None) -> None:
+    """Clear settings dialog."""
     global _settings_dialog
     if _obj is None or _settings_dialog is None or _obj is _settings_dialog:
         _settings_dialog = None
 
 
 def _open_settings_now(parent=None, on_apply=None):
+    """Open settings now."""
     global _settings_dialog, _settings_open_pending
     _settings_open_pending = False
     # Never parent the settings window to the floating icon overlay: that overlay
@@ -4979,6 +5250,7 @@ def _open_settings_now(parent=None, on_apply=None):
 
 
 def open_settings(parent=None, on_apply=None):
+    """Open settings."""
     global _settings_open_pending
     if _settings_open_pending:
         return

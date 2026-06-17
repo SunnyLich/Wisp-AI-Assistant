@@ -1,3 +1,5 @@
+"""Tests for test tts macos safety."""
+
 import unittest
 from unittest import mock
 
@@ -6,7 +8,9 @@ from core import tts
 
 
 class TTSMacOSSafetyTests(unittest.TestCase):
+    """Test case for t t s mac o s safety tests behavior."""
     def test_prewarm_skips_cartesia_connection_in_safe_mode(self):
+        """Verify prewarm skips cartesia connection in safe mode behavior."""
         with mock.patch.object(tts.macos_safety.sys, "platform", "darwin"), \
              mock.patch.dict(tts.macos_safety.os.environ, {}, clear=True), \
              mock.patch.object(config, "TTS_PROVIDER", "cartesia"), \
@@ -14,9 +18,11 @@ class TTSMacOSSafetyTests(unittest.TestCase):
             tts.prewarm()
 
     def test_stream_audio_drains_text_without_tts_provider_in_safe_mode(self):
+        """Verify stream audio drains text without tts provider in safe mode behavior."""
         drained = []
 
         def text_chunks():
+            """Verify text chunks behavior."""
             drained.append("a")
             yield "hello"
             drained.append("b")

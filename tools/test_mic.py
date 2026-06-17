@@ -13,6 +13,7 @@ DURATION    = 4   # seconds to record
 
 
 def _require_sounddevice():
+    """Support developer tool for tools test mic for require sounddevice."""
     try:
         import sounddevice as sd
     except ImportError:
@@ -21,6 +22,7 @@ def _require_sounddevice():
     return sd
 
 def list_inputs():
+    """List inputs."""
     sd = _require_sounddevice()
     print("\n=== Audio input devices ===")
     devices = sd.query_devices()
@@ -32,6 +34,7 @@ def list_inputs():
     print()
 
 def record_and_transcribe():
+    """Record and transcribe."""
     sd = _require_sounddevice()
     import time
     for i in (3, 2, 1):

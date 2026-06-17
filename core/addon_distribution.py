@@ -11,6 +11,7 @@ from core.system.paths import ADDONS_DIR
 
 
 def install_addon_archive(archive_path: Path, addons_dir: Path | None = None, *, replace: bool = False) -> dict[str, Any]:
+    """Install addon archive."""
     archive_path = Path(archive_path)
     if archive_path.suffix.lower() not in {".zip", ".wisp"}:
         raise ValueError("addon archive must be a .zip or .wisp file")
@@ -35,6 +36,7 @@ def install_addon_archive(archive_path: Path, addons_dir: Path | None = None, *,
 
 
 def install_addon_folder(folder: Path, addons_dir: Path | None = None, *, replace: bool = False) -> dict[str, Any]:
+    """Install addon folder."""
     source = _find_addon_root(Path(folder))
     addon_id = _manifest_id(source)
     target_root = addons_dir or ADDONS_DIR
@@ -49,6 +51,7 @@ def install_addon_folder(folder: Path, addons_dir: Path | None = None, *, replac
 
 
 def _safe_extract(zf: zipfile.ZipFile, destination: Path) -> None:
+    """Handle safe extract for addon distribution."""
     dest = destination.resolve()
     for info in zf.infolist():
         name = info.filename.replace("\\", "/")
@@ -61,6 +64,7 @@ def _safe_extract(zf: zipfile.ZipFile, destination: Path) -> None:
 
 
 def _find_addon_root(root: Path) -> Path:
+    """Find addon root."""
     if (root / "addon.toml").exists() or (root / "plugin.toml").exists():
         return root
     candidates = [
@@ -74,6 +78,7 @@ def _find_addon_root(root: Path) -> Path:
 
 
 def _manifest_id(root: Path) -> str:
+    """Handle manifest id for addon distribution."""
     from core.addon_manager import load_manifest
 
     return load_manifest(root).id

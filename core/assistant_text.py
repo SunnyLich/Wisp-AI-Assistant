@@ -1,3 +1,5 @@
+"""Support Wisp core assistant text behavior."""
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -8,10 +10,12 @@ _CLOSE_TAGS = ("</think>", "</thinking>", "</thought>")
 
 
 def _relevant_tags(in_thought: bool) -> tuple[str, ...]:
+    """Handle relevant tags for assistant text."""
     return _CLOSE_TAGS if in_thought else _OPEN_TAGS
 
 
 def _find_next_tag(buffer: str, in_thought: bool) -> tuple[int, str] | None:
+    """Find next tag."""
     lowered = buffer.lower()
     matches = [
         (idx, tag)
@@ -24,6 +28,7 @@ def _find_next_tag(buffer: str, in_thought: bool) -> tuple[int, str] | None:
 
 
 def _partial_suffix_len(buffer: str, in_thought: bool) -> int:
+    """Handle partial suffix len for assistant text."""
     lowered = buffer.lower()
     best = 0
     for tag in _relevant_tags(in_thought):
@@ -36,6 +41,7 @@ def _partial_suffix_len(buffer: str, in_thought: bool) -> int:
 
 
 def _merge_segments(segments: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    """Merge segments."""
     merged: list[tuple[str, bool]] = []
     for text, is_thought in segments:
         if not text:
@@ -48,20 +54,25 @@ def _merge_segments(segments: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
 
 
 class ThoughtStreamParser:
+    """Model thought stream parser."""
     def __init__(self):
+        """Initialize the thought stream parser instance."""
         self._buffer = ""
         self._in_thought = False
 
     def feed(self, chunk: str) -> list[tuple[str, bool]]:
+        """Handle feed for thought stream parser."""
         if not chunk:
             return []
         self._buffer += chunk
         return self._drain(final=False)
 
     def finish(self) -> list[tuple[str, bool]]:
+        """Handle finish for thought stream parser."""
         return self._drain(final=True)
 
     def _drain(self, *, final: bool) -> list[tuple[str, bool]]:
+        """Handle drain for thought stream parser."""
         out: list[tuple[str, bool]] = []
         while self._buffer:
             match = _find_next_tag(self._buffer, self._in_thought)
@@ -81,6 +92,7 @@ class ThoughtStreamParser:
 
 
 def split_tagged_text(text: str) -> list[tuple[str, bool]]:
+    """Split tagged text."""
     parser = ThoughtStreamParser()
     segments = parser.feed(text)
     segments.extend(parser.finish())
@@ -88,14 +100,17 @@ def split_tagged_text(text: str) -> list[tuple[str, bool]]:
 
 
 def extract_reply_text(text: str) -> str:
+    """Extract reply text."""
     return "".join(segment for segment, is_thought in split_tagged_text(text) if not is_thought)
 
 
 def extract_thought_text(text: str) -> str:
+    """Extract thought text."""
     return "".join(segment for segment, is_thought in split_tagged_text(text) if is_thought)
 
 
 def merge_segment_iterables(*segment_lists: Iterable[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    """Merge segment iterables."""
     merged: list[tuple[str, bool]] = []
     for segments in segment_lists:
         merged.extend(segments)

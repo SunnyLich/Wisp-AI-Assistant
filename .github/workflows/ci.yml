@@ -1,3 +1,4 @@
+# Runs the cross-platform CI checks for Wisp pull requests and branch pushes.
 name: CI
 
 on:
@@ -6,11 +7,10 @@ on:
     paths:
       - "core/**"
       - "ui/**"
-      - "macos_py/**"
+      - "runtime/**"
       - "packaging/**"
       - "tests/**"
       - "scripts/**"
-      - "main.py"
       - "config.py"
       - "requirements*.txt"
       - "requirements-dev.txt"
@@ -22,11 +22,10 @@ on:
     paths:
       - "core/**"
       - "ui/**"
-      - "macos_py/**"
+      - "runtime/**"
       - "packaging/**"
       - "tests/**"
       - "scripts/**"
-      - "main.py"
       - "config.py"
       - "requirements*.txt"
       - "requirements-dev.txt"
@@ -70,7 +69,7 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Byte-compile all sources
-        run: python -m compileall -q core ui macos_py main.py config.py
+        run: python -m compileall -q core ui runtime config.py
 
       - name: Run test suite
         run: pytest -q -k "not platform_macos"

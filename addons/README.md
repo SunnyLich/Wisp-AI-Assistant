@@ -1,4 +1,4 @@
-# Addons
+﻿# Addons
 
 Addons extend Wisp with query hooks, response observers, tray actions, settings,
 and model-callable tools.
@@ -145,10 +145,7 @@ def get_tools() -> list[dict]:
 Read settings with:
 
 ```python
-from core.plugin_manager import plugin_setting
+from core.addon_manager import addon_setting
 
-value = plugin_setting("my-addon", "prefix", "[my-addon]")
+value = addon_setting("my-addon", "prefix", "[my-addon]")
 ```
-
-The `core.plugin_manager` import remains as a compatibility alias while the
-runtime migrates to addon naming.

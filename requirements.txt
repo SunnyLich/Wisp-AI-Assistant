@@ -1,3 +1,4 @@
+# Runtime dependencies required to launch and use Wisp locally.
 # --- Input capture ---
 pynput>=1.7.7             # global hotkeys (no admin rights required on Windows)
 keyboard>=0.13.5          # lightweight key-state checks during intent selection

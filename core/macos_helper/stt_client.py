@@ -3,7 +3,7 @@ core.macos_helper.stt_client — parent-side STT shim.
 
 Mirrors the public surface of ``core.stt`` (prewarm / start_recording /
 stop_and_transcribe) but forwards each call to the worker process. ``core.stt``
-delegates here when the macOS helper is enabled, so callers (main.py's voice
+delegates here when the macOS helper is enabled, so callers (voice
 path) are unchanged.
 
 Failures degrade gracefully rather than crashing the hotkey/voice threads: a

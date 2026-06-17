@@ -29,6 +29,7 @@ _HIDE_DELAY    = 3_500   # fallback ms after finish() before hiding
 
 
 def _color(value: str, fallback: QColor) -> QColor:
+    """Handle color for UI bubble."""
     raw = (value or "").strip()
     if raw.startswith("#") and len(raw) == 9:
         try:
@@ -48,6 +49,7 @@ class SpeechBubble(QWidget):
     """Compact always-on-top widget that streams LLM text next to the icon."""
 
     def __init__(self):
+        """Initialize the speech bubble instance."""
         super().__init__(None)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -175,6 +177,7 @@ class SpeechBubble(QWidget):
         self.update()
 
     def hideEvent(self, event):  # noqa: N802
+        """Hide event."""
         super().hideEvent(event)
         if self._hide_callback:
             self._hide_callback()
@@ -187,6 +190,7 @@ class SpeechBubble(QWidget):
         return QPoint(icon_x, icon_y)
 
     def mousePressEvent(self, event):
+        """Handle mouse press event for speech bubble."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._set_speed_boost(True)
             self._press_pos = event.globalPosition().toPoint()
@@ -196,6 +200,7 @@ class SpeechBubble(QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        """Handle mouse move event for speech bubble."""
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
             point = event.globalPosition().toPoint()
             if (self._press_pos is not None
@@ -208,6 +213,7 @@ class SpeechBubble(QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        """Handle mouse release event for speech bubble."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._set_speed_boost(False)
             # A click = pressed, didn't drag, and released quickly. A longer press
@@ -318,6 +324,7 @@ class SpeechBubble(QWidget):
             QTimer.singleShot(delay, lambda w=word, g=generation: self._advance_highlight(w, g))
 
     def _advance_highlight(self, word: str | None = None, generation: int | None = None):
+        """Handle advance highlight for speech bubble."""
         if generation is not None and generation != self._highlight_generation:
             return
         if word and self._revealed_count >= len(self._pending_words):
@@ -462,6 +469,7 @@ class SpeechBubble(QWidget):
         self._transcript_preview = True
 
     def _show_static_text(self, text: str, *, timeout_ms: int = 12000):
+        """Show static text."""
         self._hide_timer.stop()
         self._dot_timer.stop()
         self._reveal_timer.stop()
@@ -487,23 +495,28 @@ class SpeechBubble(QWidget):
     # ------------------------------------------------------------------
 
     def _tick_dots(self):
+        """Handle tick dots for speech bubble."""
         self._dot_count = (self._dot_count % 3) + 1
         self.update()
 
     def _emit_highlight(self, finished: bool = False):
+        """Emit highlight."""
         if self._highlight_callback:
             self._highlight_callback(self._full_text, self._revealed_count, finished)
 
     def _current_reveal_wpm(self) -> int:
+        """Handle current reveal wpm for speech bubble."""
         if self._speed_boosting:
             return max(1, int(getattr(config, "BUBBLE_HOLD_REVEAL_WPM", 480)))
         return max(1, int(getattr(config, "BUBBLE_REVEAL_WPM", 170)))
 
     @staticmethod
     def _hide_delay_ms() -> int:
+        """Hide delay ms."""
         return max(500, int(getattr(config, "BUBBLE_HIDE_DELAY_MS", _HIDE_DELAY)))
 
     def _current_tts_rate(self) -> float:
+        """Handle current TTS rate for speech bubble."""
         if self._speed_boosting:
             rate = getattr(config, "TTS_HOLD_PLAYBACK_RATE", 1.35)
         else:
@@ -511,15 +524,18 @@ class SpeechBubble(QWidget):
         return max(0.25, min(4.0, float(rate)))
 
     def _apply_reveal_speed(self):
+        """Apply reveal speed."""
         self._reveal_timer.setInterval(max(1, int(60_000 / self._current_reveal_wpm())))
 
     def _start_hide_timer(self, delay_ms: int | None = None) -> None:
+        """Start hide timer."""
         self._hide_timer.setInterval(
             max(1, int(self._hide_delay_ms() if delay_ms is None else delay_ms))
         )
         self._hide_timer.start()
 
     def _set_speed_boost(self, enabled: bool):
+        """Set speed boost."""
         if self._speed_boosting == enabled:
             return
         self._speed_boosting = enabled
@@ -530,6 +546,7 @@ class SpeechBubble(QWidget):
     def _reveal_next_word(self):
         # WPM fallback tick. _advance_highlight() also starts the hide countdown
         # once the reveal drains while _finishing, so we don't duplicate it here.
+        """Handle reveal next word for speech bubble."""
         if self._revealed_count < len(self._pending_words):
             self._advance_highlight()
         # Timer keeps running until finish() is called (which sets _finishing)
@@ -634,6 +651,7 @@ class SpeechBubble(QWidget):
 
     @staticmethod
     def _markdown_words(text: str) -> list[tuple[str, bool]]:
+        """Handle markdown words for speech bubble."""
         words: list[tuple[str, bool]] = []
         bold = False
         buf = ""
@@ -657,6 +675,7 @@ class SpeechBubble(QWidget):
     # ------------------------------------------------------------------
 
     def paintEvent(self, _event):
+        """Paint event."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 

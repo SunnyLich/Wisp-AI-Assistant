@@ -21,6 +21,7 @@ from .extract import extract
 
 @dataclass
 class ContextChunk:
+    """Model context chunk."""
     id: str
     text: str
     source: str = "memory"          # memory | recent_chat | project_doc | error_log | code_note
@@ -41,6 +42,7 @@ class ContextChunk:
         age_days: float = 0.0,
         importance: float = 0.5,
     ) -> "ContextChunk":
+        """Handle from text for context chunk."""
         ex = extract(text)
         now = time.time()
         ts = now - age_days * 86400

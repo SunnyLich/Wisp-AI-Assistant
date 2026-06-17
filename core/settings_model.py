@@ -11,17 +11,20 @@ from typing import Any
 
 
 def _copy_rows(value: Any) -> tuple[dict[str, Any], ...]:
+    """Copy rows."""
     if not isinstance(value, list):
         return ()
     return tuple(dict(row) for row in value if isinstance(row, dict))
 
 
 def _copy_dict(value: Any) -> dict[str, Any]:
+    """Copy dict."""
     return dict(value) if isinstance(value, dict) else {}
 
 
 @dataclass(frozen=True)
 class ModelSettings:
+    """Store model settings configuration data."""
     provider: str
     model: str
     fallbacks: str = ""
@@ -29,6 +32,7 @@ class ModelSettings:
 
 @dataclass(frozen=True)
 class ContextBudgets:
+    """Model context budgets."""
     browser_max_chars: int
     ambient_document_max_chars: int
     tool_document_max_chars: int
@@ -36,6 +40,7 @@ class ContextBudgets:
 
 @dataclass(frozen=True)
 class UiSettings:
+    """Store ui settings configuration data."""
     app_language: str
     assistant_language: str
     bubble_width: int
@@ -46,6 +51,7 @@ class UiSettings:
 
 @dataclass(frozen=True)
 class AudioSettings:
+    """Store audio settings configuration data."""
     tts_provider: str
     tts_playback_rate: float
     tts_hold_playback_rate: float
@@ -57,6 +63,7 @@ class AudioSettings:
 
 @dataclass(frozen=True)
 class MemorySettings:
+    """Store memory settings configuration data."""
     model: ModelSettings
     auto_consolidate: bool
     top_k: int
@@ -65,12 +72,14 @@ class MemorySettings:
 
 @dataclass(frozen=True)
 class CallerSettings:
+    """Store caller settings configuration data."""
     callers: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     voice: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class AppSettings:
+    """Store app settings configuration data."""
     llm: ModelSettings
     chat_llm: ModelSettings
     vision_llm: ModelSettings
@@ -81,10 +90,14 @@ class AppSettings:
     context: ContextBudgets
     tool_plugin_dir: str
     tool_git_root: str
+    tool_file_roots: tuple[str, ...]
+    tool_file_mode: str
+    tool_file_blocked_globs: tuple[str, ...]
     system_prompt_utility: str
 
     @classmethod
     def from_config(cls, values: dict[str, Any]) -> AppSettings:
+        """Handle from config for app settings."""
         return cls(
             llm=ModelSettings(
                 provider=str(values.get("LLM_PROVIDER", "")),
@@ -139,5 +152,10 @@ class AppSettings:
             ),
             tool_plugin_dir=str(values.get("TOOL_PLUGIN_DIR", "")),
             tool_git_root=str(values.get("TOOL_GIT_ROOT", "")),
+            tool_file_roots=tuple(str(v) for v in values.get("TOOL_FILE_ROOTS", ()) or ()),
+            tool_file_mode=str(values.get("TOOL_FILE_MODE", "never")),
+            tool_file_blocked_globs=tuple(
+                str(v) for v in values.get("TOOL_FILE_BLOCKED_GLOBS", ()) or ()
+            ),
             system_prompt_utility=str(values.get("SYSTEM_PROMPT_UTILITY", "")),
         )

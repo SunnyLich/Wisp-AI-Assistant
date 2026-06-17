@@ -1,3 +1,5 @@
+"""Tests for test document context contract."""
+
 from __future__ import annotations
 
 import importlib
@@ -10,6 +12,7 @@ import pytest
 
 @pytest.fixture()
 def win_context_fetcher():
+    """Verify win context fetcher behavior."""
     with patch.object(sys, "platform", "win32"):
         import core.context_fetcher as context_fetcher
 
@@ -86,6 +89,7 @@ def test_common_document_apps_resolve_open_file_paths(
     open_path,
     doc_name,
 ):
+    """Verify common document apps resolve open file paths behavior."""
     cf = win_context_fetcher
     win = cf.WindowInfo(title=title, process_name=process_name, pid=101)
 
@@ -96,6 +100,7 @@ def test_common_document_apps_resolve_open_file_paths(
 
 
 def test_unsaved_common_document_window_uses_visible_text_fallback(win_context_fetcher):
+    """Verify unsaved common document window uses visible text fallback behavior."""
     cf = win_context_fetcher
     cf._context_window = cf.WindowInfo(
         title="Untitled 1 \u2014 LibreOffice Calc",
@@ -112,6 +117,7 @@ def test_unsaved_common_document_window_uses_visible_text_fallback(win_context_f
 
 
 def test_text_and_csv_document_readers(tmp_path):
+    """Verify text and csv document readers behavior."""
     from core.llm_clients import client as llm
 
     text_path = tmp_path / "notes.md"
@@ -124,6 +130,7 @@ def test_text_and_csv_document_readers(tmp_path):
 
 
 def test_docx_reader_extracts_paragraph_text(tmp_path):
+    """Verify docx reader extracts paragraph text behavior."""
     pytest.importorskip("docx")
     from docx import Document
     from core.llm_clients import client as llm
@@ -137,6 +144,7 @@ def test_docx_reader_extracts_paragraph_text(tmp_path):
 
 
 def test_xlsx_reader_extracts_sheet_cells(tmp_path):
+    """Verify xlsx reader extracts sheet cells behavior."""
     pytest.importorskip("openpyxl")
     import openpyxl
     from core.llm_clients import client as llm
@@ -158,6 +166,7 @@ def test_xlsx_reader_extracts_sheet_cells(tmp_path):
 
 
 def test_pptx_reader_extracts_slide_text(tmp_path):
+    """Verify pptx reader extracts slide text behavior."""
     pytest.importorskip("pptx")
     from pptx import Presentation
     from core.llm_clients import client as llm
@@ -172,6 +181,7 @@ def test_pptx_reader_extracts_slide_text(tmp_path):
 
 
 def test_odt_reader_extracts_paragraph_text(tmp_path):
+    """Verify odt reader extracts paragraph text behavior."""
     pytest.importorskip("odf")
     from odf import text as odf_text
     from odf.opendocument import OpenDocumentText
@@ -186,6 +196,7 @@ def test_odt_reader_extracts_paragraph_text(tmp_path):
 
 
 def test_pdf_reader_dispatches_to_pdf_text_extractor(tmp_path, monkeypatch):
+    """Verify pdf reader dispatches to pdf text extractor behavior."""
     from core.llm_clients import client as llm
 
     path = tmp_path / "sample.pdf"

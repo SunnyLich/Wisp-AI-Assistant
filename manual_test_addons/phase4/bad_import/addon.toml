@@ -1,3 +1,4 @@
+# Manual QA manifest for an addon that fails during import.
 [addon]
 id = "phase4-bad-import"
 name = "Phase 4 Bad Import"

@@ -45,7 +45,7 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from threading import Lock
 from typing import Optional
-from urllib.parse import urlparse, unquote
+from urllib.parse import urljoin, urlparse, unquote
 
 from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
@@ -60,6 +60,7 @@ _IS_MAC = sys.platform == "darwin"
 
 @dataclass
 class WindowInfo:
+    """Model window info."""
     title: str = ""
     process_name: str = ""
     pid: int = 0
@@ -70,12 +71,14 @@ class WindowInfo:
 
 @dataclass
 class ClipboardInfo:
+    """Model clipboard info."""
     text: str = ""
     fmt: str = "empty"     # "text" | "image" | "other" | "empty"
 
 
 @dataclass
 class UIElementInfo:
+    """Model u i element info."""
     name: str = ""
     value: str = ""
     control_type: str = ""
@@ -85,6 +88,7 @@ class UIElementInfo:
 
 @dataclass
 class ContextSnapshot:
+    """Model context snapshot."""
     timestamp: float = 0.0
     active_window: WindowInfo = field(default_factory=WindowInfo)
     clipboard: ClipboardInfo = field(default_factory=ClipboardInfo)
@@ -174,7 +178,7 @@ def start_fs_watcher(paths: list[str] | None = None) -> None:
     """
     Start the background file-system watcher.  Safe to call multiple times.
     By default watches ~/Desktop, ~/Documents, ~/Downloads recursively.
-    Call once from app startup (e.g. main.py __init__).
+    Call once from app startup.
     """
     global _fs_observer
     if _fs_observer is not None:
@@ -198,7 +202,9 @@ def start_fs_watcher(paths: list[str] | None = None) -> None:
         from watchdog.events import FileSystemEventHandler  # type: ignore
 
         class _Handler(FileSystemEventHandler):
+            """Model handler."""
             def on_any_event(self, event):
+                """Handle any event events."""
                 if event.is_directory:
                     return
                 with _fs_events_lock:
@@ -246,6 +252,7 @@ def stop_fs_watcher() -> None:
 
 
 def _get_fs_events() -> list[str]:
+    """Return fs events."""
     with _fs_events_lock:
         return list(_fs_events_buf)
 
@@ -259,6 +266,251 @@ _PRIVATE_PREFIXES = ("192.168.", "10.", "172.16.", "172.17.", "172.18.",
                      "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
                      "172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
                      "172.29.", "172.30.", "172.31.")
+
+_PAGE_BOILERPLATE_TOKENS = {
+    "ad",
+    "ads",
+    "advertisement",
+    "banner",
+    "breadcrumbs",
+    "cookie",
+    "cookies",
+    "consent",
+    "footer",
+    "header",
+    "modal",
+    "nav",
+    "navigation",
+    "newsletter",
+    "popup",
+    "sidebar",
+    "subscribe",
+}
+_PAGE_BOILERPLATE_ROLES = {"banner", "navigation", "contentinfo", "complementary", "dialog"}
+_MAX_PAGE_HEADINGS = 20
+_MAX_PAGE_LINKS = 12
+
+
+@dataclass
+class PageContext:
+    """Structured page text prepared for model context."""
+
+    title: str = ""
+    description: str = ""
+    headings: list[str] = field(default_factory=list)
+    main_text: str = ""
+    links: list[tuple[str, str]] = field(default_factory=list)
+    content_label: str = "Main content"
+
+    def format(self, max_chars: int) -> str:
+        """Render the page context in priority order without relevance labels."""
+        parts: list[str] = []
+        if self.title:
+            parts.append(f"Title:\n{self.title}")
+        if self.description:
+            parts.append(f"Page description:\n{self.description}")
+        if self.headings:
+            headings = "\n".join(f"- {heading}" for heading in self.headings[:_MAX_PAGE_HEADINGS])
+            parts.append(f"Headings:\n{headings}")
+        if self.main_text:
+            parts.append(f"{self.content_label}:\n{self.main_text}")
+        if self.links:
+            links = "\n".join(f"- {label}: {href}" for label, href in self.links[:_MAX_PAGE_LINKS])
+            parts.append(f"Links:\n{links}")
+        text = "\n\n".join(part for part in parts if part).strip()
+        return _clip_page_context(_redact(text), max_chars)
+
+
+def _clip_page_context(text: str, max_chars: int | None) -> str:
+    """Clip page context without cutting through words when possible."""
+    text = (text or "").strip()
+    if not text or not max_chars or max_chars <= 0 or len(text) <= max_chars:
+        return text
+    suffix = "\n\n[truncated]"
+    limit = max(0, max_chars - len(suffix))
+    clipped = text[:limit].rsplit(" ", 1)[0].strip() or text[:limit].strip()
+    return f"{clipped}{suffix}"
+
+
+def _normalize_page_text(text: str) -> str:
+    """Normalize page text while preserving useful paragraph breaks."""
+    text = (text or "").replace("\xa0", " ")
+    text = re.sub(r"\r\n?", "\n", text)
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    cleaned: list[str] = []
+    seen_short: set[str] = set()
+    blank_pending = False
+    for line in lines:
+        if not line:
+            blank_pending = bool(cleaned)
+            continue
+        key = line.casefold()
+        if len(line) <= 100 and key in seen_short:
+            continue
+        if len(line) <= 100:
+            seen_short.add(key)
+        if blank_pending and cleaned and cleaned[-1]:
+            cleaned.append("")
+        cleaned.append(line)
+        blank_pending = False
+    return "\n".join(cleaned).strip()
+
+
+def _node_tokens(node) -> set[str]:
+    """Return normalized id/class/role tokens for an HTML node."""
+    raw: list[str] = []
+    for attr in ("id", "class", "role", "aria-label"):
+        value = node.get(attr)
+        if isinstance(value, list):
+            raw.extend(str(item) for item in value)
+        elif value:
+            raw.append(str(value))
+    tokens: set[str] = set()
+    for item in raw:
+        tokens.update(part for part in re.split(r"[^a-z0-9]+", item.lower()) if part)
+    return tokens
+
+
+def _is_page_boilerplate_node(node) -> bool:
+    """Return whether an HTML node is probably page chrome, not page content."""
+    name = str(getattr(node, "name", "") or "").lower()
+    if name in {"html", "body", "main", "article"}:
+        return False
+    role = str(node.get("role") or "").strip().lower()
+    if role in _PAGE_BOILERPLATE_ROLES:
+        return True
+    tokens = _node_tokens(node)
+    return bool(tokens & _PAGE_BOILERPLATE_TOKENS)
+
+
+def _unique_texts(values: list[str], max_items: int) -> list[str]:
+    """Keep non-empty strings once, preserving order."""
+    results: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _normalize_page_text(value)
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(text)
+        if len(results) >= max_items:
+            break
+    return results
+
+
+def _extract_html_page_context(url: str, html: str) -> PageContext:
+    """Extract title, headings, main content, and links from HTML."""
+    from bs4 import BeautifulSoup  # type: ignore
+
+    soup = BeautifulSoup(html or "", "html.parser")
+
+    title = _normalize_page_text(soup.title.get_text(" ", strip=True) if soup.title else "")
+    description = ""
+    meta = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
+    if meta is None:
+        meta = soup.find("meta", attrs={"property": re.compile(r"^og:description$", re.I)})
+    if meta is not None:
+        description = _normalize_page_text(str(meta.get("content") or ""))
+
+    for tag in soup(["script", "style", "template", "noscript", "svg", "iframe", "form"]):
+        tag.decompose()
+    for tag in list(soup.find_all(True)):
+        try:
+            if tag.has_attr("hidden") or str(tag.get("aria-hidden") or "").lower() == "true":
+                tag.decompose()
+            elif _is_page_boilerplate_node(tag):
+                tag.decompose()
+        except Exception:
+            continue
+
+    headings = _unique_texts(
+        [tag.get_text(" ", strip=True) for tag in soup.find_all(["h1", "h2", "h3"])],
+        _MAX_PAGE_HEADINGS,
+    )
+
+    root = soup.select_one("main, article, [role='main']") or soup.body or soup
+    main_text = _normalize_page_text(root.get_text("\n", strip=True))
+
+    links: list[tuple[str, str]] = []
+    seen_links: set[tuple[str, str]] = set()
+    for tag in root.find_all("a", href=True):
+        label = _normalize_page_text(tag.get_text(" ", strip=True))
+        href = urljoin(url, str(tag.get("href") or "").strip())
+        if not label or not href.startswith(("http://", "https://")):
+            continue
+        key = (label.casefold(), href)
+        if key in seen_links:
+            continue
+        seen_links.add(key)
+        links.append((label[:120], href))
+        if len(links) >= _MAX_PAGE_LINKS:
+            break
+
+    return PageContext(
+        title=title,
+        description=description,
+        headings=headings,
+        main_text=main_text,
+        links=links,
+    )
+
+
+def _looks_like_rendered_heading(line: str) -> bool:
+    """Best-effort heading detector for rendered browser text."""
+    text = line.strip()
+    if not (3 <= len(text) <= 100):
+        return False
+    if text.endswith((".", ",", ";", ":")):
+        return False
+    words = text.split()
+    if len(words) > 14:
+        return False
+    letters = sum(ch.isalpha() for ch in text)
+    return letters >= 2
+
+
+def _extract_rendered_page_context(rendered_text: str) -> PageContext:
+    """Extract a stable structure from rendered text captured from a browser."""
+    main_text = _normalize_page_text(rendered_text)
+    lines = [line.strip() for line in main_text.splitlines() if line.strip()]
+    title = lines[0] if lines and len(lines[0]) <= 140 else ""
+    heading_candidates = [
+        line for line in lines[1 if title else 0 :]
+        if _looks_like_rendered_heading(line)
+    ]
+    headings = _unique_texts(heading_candidates, _MAX_PAGE_HEADINGS)
+    return PageContext(
+        title=title,
+        headings=headings,
+        main_text=main_text,
+        content_label="Visible page content",
+    )
+
+
+def extract_useful_page_context(
+    *,
+    url: str = "",
+    html: str = "",
+    rendered_text: str = "",
+    max_chars: int | None = None,
+) -> str:
+    """Turn fetched or rendered page content into ordered model context."""
+    if max_chars is None:
+        max_chars = config.CONTEXT_BROWSER_MAX_CHARS
+    try:
+        page = (
+            _extract_html_page_context(url, html)
+            if html
+            else _extract_rendered_page_context(rendered_text)
+        )
+        formatted = page.format(max_chars)
+        return _redact(formatted)
+    except Exception:
+        fallback = _normalize_page_text(rendered_text or html)
+        return _clip_page_context(_redact(fallback), max_chars)
 
 
 def _fetch_browser_content(url: str, max_chars: int | None = None) -> str:
@@ -282,7 +534,6 @@ def _fetch_browser_content(url: str, max_chars: int | None = None) -> str:
 
     try:
         import requests                        # type: ignore
-        from bs4 import BeautifulSoup          # type: ignore
 
         resp = requests.get(
             url,
@@ -291,21 +542,7 @@ def _fetch_browser_content(url: str, max_chars: int | None = None) -> str:
             allow_redirects=True,
         )
         resp.raise_for_status()
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Strip boilerplate tags
-        for tag in soup(["script", "style", "nav", "header",
-                         "footer", "aside", "noscript", "svg"]):
-            tag.decompose()
-
-        text = soup.get_text(separator=" ", strip=True)
-        # Collapse runs of whitespace
-        text = re.sub(r'[ \t]+', ' ', text)
-        text = re.sub(r'\n{3,}', '\n\n', text).strip()
-        text = text[:max_chars]
-
-        return _redact(text)
+        return extract_useful_page_context(url=url, html=resp.text, max_chars=max_chars)
 
     except Exception:
         return ""
@@ -501,6 +738,7 @@ def _mac_browser_text(app_name: str, max_chars: int) -> str:
 
 
 def _fetch_active_window() -> WindowInfo:
+    """Handle fetch active window for context fetcher."""
     if _IS_WIN:
         return _fetch_active_window_win()
     if _IS_MAC:
@@ -509,6 +747,7 @@ def _fetch_active_window() -> WindowInfo:
 
 
 def _fetch_active_window_win() -> WindowInfo:
+    """Handle fetch active window win for context fetcher."""
     import ctypes
     try:
         user32 = ctypes.windll.user32
@@ -591,6 +830,7 @@ def get_browser_window_for_context(preferred_hwnd: int = 0) -> WindowInfo:
 
 
 def _find_visible_browser_window_win() -> WindowInfo:
+    """Find visible browser window win."""
     if not _IS_WIN:
         return WindowInfo()
     import ctypes
@@ -602,6 +842,7 @@ def _find_visible_browser_window_win() -> WindowInfo:
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
 
     def _callback(hwnd, _lparam):
+        """Handle callback for context fetcher."""
         try:
             if not user32.IsWindowVisible(hwnd):
                 return True
@@ -628,6 +869,7 @@ def _find_visible_browser_window_win() -> WindowInfo:
 
 
 def _fetch_active_window_linux() -> WindowInfo:
+    """Handle fetch active window linux for context fetcher."""
     from core.platform_utils import get_foreground_window, get_window_title, get_window_pid
     info = WindowInfo()
     try:
@@ -654,6 +896,7 @@ def _fetch_active_window_linux() -> WindowInfo:
 
 
 def _fetch_active_window_macos() -> WindowInfo:
+    """Handle fetch active window macos for context fetcher."""
     info = WindowInfo()
     try:
         from core.platform import macos_native
@@ -738,6 +981,93 @@ def _get_browser_url_uia(hwnd: int) -> str | None:
         return None
 
 
+_BROWSER_TEXT_CONTROL_TYPES = {
+    50004,  # Edit
+    50005,  # Hyperlink
+    50007,  # ListItem
+    50020,  # Text
+    50029,  # DataItem
+    50030,  # Document
+    50034,  # Header
+    50035,  # HeaderItem
+}
+
+
+def _rect_tuple(rect) -> tuple[float, float, float, float] | None:
+    """Return (left, top, right, bottom) for a UIA rectangle-like object."""
+    try:
+        left = float(getattr(rect, "left"))
+        top = float(getattr(rect, "top"))
+        right = float(getattr(rect, "right"))
+        bottom = float(getattr(rect, "bottom"))
+    except Exception:
+        return None
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom
+
+
+def _uia_element_rect(element) -> tuple[float, float, float, float] | None:
+    """Best-effort bounding rectangle read for a UIA element."""
+    try:
+        return _rect_tuple(element.CurrentBoundingRectangle)
+    except Exception:
+        return None
+
+
+def _browser_content_top(
+    root_rect: tuple[float, float, float, float] | None,
+    document_rects: list[tuple[float, float, float, float]],
+) -> float | None:
+    """Estimate where browser chrome ends and page content begins."""
+    if document_rects:
+        return min(rect[1] for rect in document_rects)
+    if not root_rect:
+        return None
+    height = root_rect[3] - root_rect[1]
+    toolbar_guess = min(180.0, max(90.0, height * 0.16))
+    return root_rect[1] + toolbar_guess
+
+
+def _is_probable_page_rect(
+    rect: tuple[float, float, float, float] | None,
+    content_top: float | None,
+) -> bool:
+    """Return whether an element rect is likely inside the browser page area."""
+    if rect is None or content_top is None:
+        return True
+    left, top, right, bottom = rect
+    if right <= left or bottom <= top:
+        return False
+    if bottom <= content_top:
+        return False
+    if top < content_top and (bottom - top) < 80:
+        return False
+    return True
+
+
+def _clean_browser_uia_text(text: str) -> str:
+    """Normalize UIA browser text while removing exact repeated short lines."""
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in re.split(r"\r?\n", text or "")]
+    cleaned: list[str] = []
+    seen_short: set[str] = set()
+    blank_pending = False
+    for line in lines:
+        if not line:
+            blank_pending = bool(cleaned)
+            continue
+        key = line.casefold()
+        if len(line) <= 80 and key in seen_short:
+            continue
+        if len(line) <= 80:
+            seen_short.add(key)
+        if blank_pending and cleaned and cleaned[-1]:
+            cleaned.append("")
+        cleaned.append(line)
+        blank_pending = False
+    return "\n".join(cleaned).strip()
+
+
 def _get_browser_text_uia(hwnd: int, max_chars: int) -> str | None:
     """Read the rendered page text from a browser window via UIA (Windows only).
 
@@ -756,20 +1086,103 @@ def _get_browser_text_uia(hwnd: int, max_chars: int) -> str | None:
         root = uia.ElementFromHandle(hwnd)
         if root is None:
             return None
-        # The page content is exposed as a Document control under the window.
-        condition = uia.CreatePropertyCondition(
+        root_rect = _uia_element_rect(root)
+
+        document_condition = uia.CreatePropertyCondition(
             30003,  # UIA_ControlTypePropertyId
             50030,  # UIA_DocumentControlTypeId
         )
-        el = root.FindFirst(uiac.TreeScope_Descendants, condition)
-        if el is None:
+        document_elements = root.FindAll(uiac.TreeScope_Descendants, document_condition)
+        documents = [
+            document_elements.GetElement(idx)
+            for idx in range(min(getattr(document_elements, "Length", 0) or 0, 20))
+        ]
+        document_rects = [
+            rect
+            for rect in (_uia_element_rect(el) for el in documents)
+            if rect is not None
+        ]
+        content_top = _browser_content_top(root_rect, document_rects)
+
+        parts: list[str] = []
+        seen: set[str] = set()
+
+        def _has_budget() -> bool:
+            return not max_chars or max_chars <= 0 or sum(len(part) for part in parts) < max_chars
+
+        def _add_text(text: str) -> None:
+            text = _clean_browser_uia_text(text)
+            if not text:
+                return
+            key = text.casefold()
+            if key in seen:
+                return
+            seen.add(key)
+            parts.append(text)
+
+        def _text_pattern_text(el, limit: int) -> str:
+            try:
+                raw = el.GetCurrentPattern(_UIA_TextPatternId)
+                if raw is None:
+                    return ""
+                tp = raw.QueryInterface(uiac.IUIAutomationTextPattern)
+                return tp.DocumentRange.GetText(limit if limit and limit > 0 else -1) or ""
+            except Exception:
+                return ""
+
+        def _value_pattern_text(el) -> str:
+            try:
+                raw = el.GetCurrentPattern(_UIA_ValuePatternId)
+                if raw is None:
+                    return ""
+                vp = raw.QueryInterface(uiac.IUIAutomationValuePattern)
+                return vp.CurrentValue or ""
+            except Exception:
+                return ""
+
+        # Ask each page Document for its own text first, but then keep walking:
+        # Chromium often exposes useful page text as many smaller descendants.
+        for el in documents:
+            if not _has_budget():
+                break
+            if not _is_probable_page_rect(_uia_element_rect(el), content_top):
+                continue
+            _add_text(_text_pattern_text(el, max_chars))
+
+        scan_roots = documents or [root]
+        true_condition = uia.CreateTrueCondition()
+        for scan_root in scan_roots:
+            if not _has_budget():
+                break
+            try:
+                descendants = scan_root.FindAll(uiac.TreeScope_Descendants, true_condition)
+            except Exception:
+                continue
+            for idx in range(min(getattr(descendants, "Length", 0) or 0, 1500)):
+                if not _has_budget():
+                    break
+                try:
+                    el = descendants.GetElement(idx)
+                    if not _is_probable_page_rect(_uia_element_rect(el), content_top):
+                        continue
+                    control_type = int(getattr(el, "CurrentControlType", 0) or 0)
+                    if control_type not in _BROWSER_TEXT_CONTROL_TYPES:
+                        continue
+                    text = _text_pattern_text(el, max_chars)
+                    if not text:
+                        text = _value_pattern_text(el)
+                    if not text:
+                        text = str(getattr(el, "CurrentName", "") or "")
+                    _add_text(text)
+                except Exception:
+                    continue
+
+        combined = "\n\n".join(part for part in parts if part).strip()
+        if not combined:
             return None
-        raw = el.GetCurrentPattern(10014)  # UIA_TextPatternId
-        if raw is None:
-            return None
-        tp = raw.QueryInterface(uiac.IUIAutomationTextPattern)
-        text = tp.DocumentRange.GetText(max_chars if max_chars and max_chars > 0 else -1)
-        return (text or "").strip() or None
+        if max_chars and max_chars > 0:
+            combined = combined[:max_chars]
+        return _redact(combined)
     except Exception:
         return None
 
@@ -869,9 +1282,11 @@ def _browser_content_win(active_win: WindowInfo, max_chars: int) -> str:
     if active_win.hwnd:
         raw = _get_browser_text_uia(active_win.hwnd, max_chars)
         if raw:
-            text = re.sub(r"[ \t]+", " ", raw)
-            text = re.sub(r"\n{3,}", "\n\n", text).strip()[:max_chars]
-            content = _redact(text)
+            content = extract_useful_page_context(
+                url=url,
+                rendered_text=raw,
+                max_chars=max_chars,
+            )
     # 2. Fall back to re-fetching the URL if the window read was empty/too short.
     if len(content) < 200:
         http = _fetch_browser_content(url, max_chars)
@@ -889,7 +1304,12 @@ def _browser_content_macos(active_win: WindowInfo, max_chars: int) -> str:
     since AppleScript targets the app's own front window)."""
     app = (active_win.process_name or "").strip()
     if app.lower() in _BROWSER_PROCS_MAC:
-        return _mac_browser_text(app, max_chars)
+        raw = _mac_browser_text(app, max_chars)
+        return extract_useful_page_context(
+            url=active_win.url or "",
+            rendered_text=raw,
+            max_chars=max_chars,
+        )
     return ""
 
 
@@ -908,6 +1328,7 @@ _CF_DIB = 8
 
 
 def _fetch_clipboard() -> ClipboardInfo:
+    """Handle fetch clipboard for context fetcher."""
     if _IS_WIN:
         return _fetch_clipboard_win()
     if _IS_MAC:
@@ -916,6 +1337,7 @@ def _fetch_clipboard() -> ClipboardInfo:
 
 
 def _fetch_clipboard_win() -> ClipboardInfo:
+    """Handle fetch clipboard win for context fetcher."""
     info = ClipboardInfo()
     try:
         import win32clipboard  # type: ignore
@@ -939,6 +1361,7 @@ def _fetch_clipboard_win() -> ClipboardInfo:
 
 
 def _fetch_clipboard_linux() -> ClipboardInfo:
+    """Handle fetch clipboard linux for context fetcher."""
     info = ClipboardInfo()
     try:
         import pyperclip  # type: ignore
@@ -954,6 +1377,7 @@ def _fetch_clipboard_linux() -> ClipboardInfo:
 
 
 def _fetch_clipboard_macos() -> ClipboardInfo:
+    """Handle fetch clipboard macos for context fetcher."""
     info = ClipboardInfo()
     try:
         from core.platform import macos_native
@@ -1014,6 +1438,7 @@ def _get_uia():
 
 
 def _fetch_ui_focused() -> UIElementInfo:
+    """Handle fetch ui focused for context fetcher."""
     info = UIElementInfo()
     if not _IS_WIN:
         return info
@@ -1096,6 +1521,7 @@ def _fetch_ui_focused() -> UIElementInfo:
 # ---------------------------------------------------------------------------
 
 def _fetch_recent_files(max_files: int = 10) -> list[str]:
+    """Handle fetch recent files for context fetcher."""
     return _fetch_recent_files_win(max_files) if _IS_WIN else _fetch_recent_files_linux(max_files)
 
 
@@ -1196,6 +1622,7 @@ def _capture_screen_to_file() -> str:
         from core.system.main_thread import run_on_main
 
         def _grab() -> None:
+            """Handle grab for local."""
             with mss.mss() as sct:
                 monitor = sct.monitors[1]  # primary monitor
                 raw = sct.grab(monitor)
@@ -1727,6 +2154,7 @@ def _extract_doc_name_from_window(win: WindowInfo) -> str:
     proc_lower = (win.process_name or "").lower()
 
     def _leading_title_piece() -> str:
+        """Handle leading title piece for context fetcher."""
         for sep in _DOC_TITLE_SEPARATORS:
             if sep in title:
                 return title.rsplit(sep, 1)[0].strip()
@@ -1885,6 +2313,7 @@ def _enumerate_open_doc_windows() -> list[WindowInfo]:
 
 
 def _enumerate_open_doc_windows_win() -> list[WindowInfo]:
+    """Handle enumerate open doc windows win for context fetcher."""
     import ctypes
     import ctypes.wintypes
 
@@ -1894,6 +2323,7 @@ def _enumerate_open_doc_windows_win() -> list[WindowInfo]:
     )
 
     def _callback(hwnd, _):
+        """Handle callback for context fetcher."""
         if not ctypes.windll.user32.IsWindowVisible(hwnd):
             return True
         length = ctypes.windll.user32.GetWindowTextLengthW(hwnd) + 1
@@ -1922,6 +2352,7 @@ def _enumerate_open_doc_windows_win() -> list[WindowInfo]:
 
 
 def _enumerate_open_doc_windows_linux() -> list[WindowInfo]:
+    """Handle enumerate open doc windows linux for context fetcher."""
     from core.platform_utils import list_visible_windows, get_window_title, get_window_pid
 
     results: list[WindowInfo] = []
@@ -1947,6 +2378,7 @@ def _enumerate_open_doc_windows_linux() -> list[WindowInfo]:
 
 
 def _enumerate_open_doc_windows_macos() -> list[WindowInfo]:
+    """Handle enumerate open doc windows macos for context fetcher."""
     from core.platform import macos_native
 
     results: list[WindowInfo] = []
@@ -1981,6 +2413,7 @@ def _enumerate_open_doc_windows_macos() -> list[WindowInfo]:
 
 
 def _mac_open_files_for_pid(pid: int) -> list[str]:
+    """Handle mac open files for pid for context fetcher."""
     if not _IS_MAC or pid <= 0:
         return []
     import subprocess
@@ -2014,6 +2447,7 @@ def _mac_open_files_for_pid(pid: int) -> list[str]:
 
 
 def _win_open_files_for_pid(pid: int) -> list[str]:
+    """Handle win open files for pid for context fetcher."""
     if not _IS_WIN or pid <= 0:
         return []
     try:
@@ -2034,6 +2468,7 @@ def _win_open_files_for_pid(pid: int) -> list[str]:
 
 
 def _linux_open_files_for_pid(pid: int) -> list[str]:
+    """Handle linux open files for pid for context fetcher."""
     if _IS_WIN or _IS_MAC or pid <= 0:
         return []
     try:
@@ -2054,6 +2489,7 @@ def _linux_open_files_for_pid(pid: int) -> list[str]:
 
 
 def _match_open_file_paths(candidates: list[str], doc_name: str) -> str:
+    """Handle match open file paths for context fetcher."""
     if not candidates:
         return ""
     target = os.path.basename((doc_name or "").strip()).lower()
@@ -2080,14 +2516,17 @@ def _match_open_file_paths(candidates: list[str], doc_name: str) -> str:
 
 
 def _mac_match_open_file(pid: int, doc_name: str) -> str:
+    """Handle mac match open file for context fetcher."""
     return _match_open_file_paths(_mac_open_files_for_pid(pid), doc_name)
 
 
 def _win_match_open_file(pid: int, doc_name: str) -> str:
+    """Handle win match open file for context fetcher."""
     return _match_open_file_paths(_win_open_files_for_pid(pid), doc_name)
 
 
 def _linux_match_open_file(pid: int, doc_name: str) -> str:
+    """Handle linux match open file for context fetcher."""
     return _match_open_file_paths(_linux_open_files_for_pid(pid), doc_name)
 
 
@@ -2227,6 +2666,7 @@ def format_context_for_prompt(snapshot: ContextSnapshot) -> str:
 def _snapshot_to_dict(snapshot: ContextSnapshot) -> dict:
     """Recursively convert dataclasses to plain dicts."""
     def _convert(obj):
+        """Handle convert for context fetcher."""
         if hasattr(obj, "__dataclass_fields__"):
             return {k: _convert(v) for k, v in vars(obj).items()}
         if isinstance(obj, list):
@@ -2237,6 +2677,7 @@ def _snapshot_to_dict(snapshot: ContextSnapshot) -> dict:
 
 
 def _persist(snapshot: ContextSnapshot) -> None:
+    """Handle persist for context fetcher."""
     try:
         data = _snapshot_to_dict(snapshot)
         with open(_TEMP_FILE, "w", encoding="utf-8") as f:

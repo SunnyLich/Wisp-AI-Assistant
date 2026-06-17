@@ -1,4 +1,7 @@
+"""Package marker and exports for manual test addons phase4 malformed surfaces."""
+
 def get_intents():
+    """Return intents."""
     return [
         None,
         "not a dict",
@@ -8,6 +11,7 @@ def get_intents():
 
 
 def get_notifications():
+    """Return notifications."""
     return [
         None,
         "not a dict",
@@ -17,6 +21,7 @@ def get_notifications():
 
 
 def get_hotkeys():
+    """Return hotkeys."""
     return [
         None,
         "not a dict",

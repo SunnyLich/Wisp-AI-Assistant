@@ -35,7 +35,9 @@ class HelperError(RuntimeError):
 
 
 class HelperClient:
+    """Client for helper client communication."""
     def __init__(self) -> None:
+        """Initialize the helper client instance."""
         self._proc: subprocess.Popen | None = None
         self._spawn_lock = threading.Lock()   # serializes spawn/shutdown
         self._write_lock = threading.Lock()    # serializes writes to the pipe
@@ -49,9 +51,11 @@ class HelperClient:
     # -- lifecycle ---------------------------------------------------------
 
     def _alive(self) -> bool:
+        """Handle alive for helper client."""
         return self._proc is not None and self._proc.poll() is None
 
     def _ensure_started(self) -> None:
+        """Ensure started."""
         if self._alive():
             return
         with self._spawn_lock:
@@ -60,6 +64,7 @@ class HelperClient:
             self._spawn()
 
     def _spawn(self) -> None:
+        """Handle spawn for helper client."""
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         log.info("Spawning macOS helper worker")
@@ -76,6 +81,7 @@ class HelperClient:
         threading.Thread(target=self._stderr_loop, args=(self._proc,), daemon=True).start()
 
     def shutdown(self) -> None:
+        """Handle shutdown for helper client."""
         with self._spawn_lock:
             self._shutting_down = True
             proc = self._proc
@@ -96,6 +102,7 @@ class HelperClient:
     # -- reader threads ----------------------------------------------------
 
     def _read_loop(self, proc: subprocess.Popen) -> None:
+        """Read loop."""
         stdout = proc.stdout
         assert stdout is not None
         while True:
@@ -121,6 +128,7 @@ class HelperClient:
             self._pending.clear()
 
     def _stderr_loop(self, proc: subprocess.Popen) -> None:
+        """Handle stderr loop for helper client."""
         stderr = proc.stderr
         assert stderr is not None
         for raw in iter(stderr.readline, b""):
@@ -129,6 +137,7 @@ class HelperClient:
                 log.debug("[worker] %s", line)
 
     def _dispatch_event(self, event: str, data: Any) -> None:
+        """Dispatch event."""
         for handler in self._event_handlers.get(event, ()):  # snapshot via .get
             try:
                 handler(data)
@@ -136,11 +145,13 @@ class HelperClient:
                 log.exception("event handler for %r failed", event)
 
     def on_event(self, event: str, handler: Callable[[Any], None]) -> None:
+        """Handle event events."""
         self._event_handlers.setdefault(event, []).append(handler)
 
     # -- requests ----------------------------------------------------------
 
     def _write(self, req: dict[str, Any]) -> None:
+        """Write a request to the helper worker's stdin (thread-safe)."""
         proc = self._proc
         if proc is None or proc.stdin is None:
             raise HelperError("helper worker not running")

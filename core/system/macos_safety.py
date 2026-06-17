@@ -14,14 +14,17 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
 def _env_true(name: str) -> bool:
+    """Handle env true for system macos safety."""
     return os.environ.get(name, "").strip().lower() in _TRUE_VALUES
 
 
 def _env_false(name: str) -> bool:
+    """Handle env false for system macos safety."""
     return os.environ.get(name, "").strip().lower() in _FALSE_VALUES
 
 
 def is_macos() -> bool:
+    """Return whether macos is true."""
     return sys.platform == "darwin"
 
 
@@ -36,10 +39,12 @@ def audio_enabled() -> bool:
 
 
 def tts_prewarm_enabled() -> bool:
+    """Handle TTS prewarm enabled for system macos safety."""
     return audio_enabled()
 
 
 def stt_prewarm_enabled() -> bool:
+    """Handle STT prewarm enabled for system macos safety."""
     return (
         not safe_mode_enabled()
         or _env_true("WISP_MACOS_ENABLE_AUDIO")

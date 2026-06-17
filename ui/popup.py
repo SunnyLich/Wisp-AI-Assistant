@@ -22,6 +22,7 @@ class TextPopup(QWidget):
     """
 
     def __init__(self, text: str, parent=None):
+        """Initialize the text popup instance."""
         super().__init__(parent)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -41,6 +42,7 @@ class TextPopup(QWidget):
         self._timer.start(AUTO_DISMISS_MS)
 
     def _build_ui(self, text: str):
+        """Build ui."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
 
@@ -58,6 +60,7 @@ class TextPopup(QWidget):
         self.adjustSize()
 
     def _position_near_icon(self):
+        """Handle position near icon for text popup."""
         screen = QApplication.primaryScreen().availableGeometry()
         # Place above the icon (bottom-right)
         x = screen.width() - POPUP_WIDTH - 20
@@ -65,4 +68,5 @@ class TextPopup(QWidget):
         self.move(x, y)
 
     def mousePressEvent(self, event):
+        """Handle mouse press event for text popup."""
         self.close()

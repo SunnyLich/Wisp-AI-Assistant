@@ -54,6 +54,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         approval_callback: ApprovalCallback | None = None,
         control: AgentRunControl | None = None,
     ):
+        """Initialize the agent task runner instance."""
         self.log_root = Path(log_root) if log_root else AGENT_RUNS_DIR
         self._model_callback = model_callback
         self._approval_callback = approval_callback
@@ -61,6 +62,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         self._write_lock = threading.Lock()
 
     def start(self, spec: AgentTaskLike, on_log: LogCallback | None = None) -> threading.Thread:
+        """Run the task on a daemon thread and return that thread."""
         thread = threading.Thread(target=self.run, args=(spec, on_log), daemon=True)
         thread.start()
         return thread
@@ -71,12 +73,14 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         on_log: LogCallback | None = None,
         on_trace: LogCallback | None = None,
     ) -> Path:
+        """Execute the agent task, writing logs to a fresh run directory; returns that dir."""
         run_dir = self._make_run_dir(spec.title)
         log_path = run_dir / "run.log"
         verbose_path = run_dir / "verbose.log"
         log_lock = threading.Lock()
 
         def log(message: str) -> None:
+            """Append a timestamped line to run.log and forward it to on_log."""
             stamped = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
             log_path.parent.mkdir(parents=True, exist_ok=True)
             with log_lock:
@@ -86,6 +90,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 on_log(stamped)
 
         def verbose(label: str, payload) -> None:  # noqa: ANN001
+            """Handle verbose for agent task runner."""
             stamped = f"\n[{datetime.now().strftime('%H:%M:%S')}] {label}\n"
             text = payload if isinstance(payload, str) else json.dumps(payload, indent=2, ensure_ascii=False)
             entry = stamped + self._truncate(text, 60_000) + "\n"
@@ -167,6 +172,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         log: LogCallback,
         verbose: Callable[[str, object], None] | None = None,
     ) -> tuple[str, list[dict], list[dict], dict[str, dict]]:
+        """Run agent loop."""
         agents = self._normalise_agents(spec)
         messages: list[dict] = []
         self._seed_communication_rules(spec, messages, log)
@@ -495,6 +501,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         tool_results: list[dict],
         log: LogCallback,
     ) -> None:
+        """Ensure handoff message."""
         source = str(active_agent.get("name") or "")
         target = str(next_agent.get("name") or "")
         if not source or not target or source == target:
@@ -528,6 +535,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         agents: list[dict],
         log: LogCallback,
     ) -> dict | None:
+        """Handle repeated failure guard for agent task runner."""
         failed = next((result for result in results if not result.get("ok", True)), None)
         if failed is None:
             streaks.pop(agent_name, None)
@@ -550,6 +558,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _completion_authority_agent(active_agent: dict, agents: list[dict]) -> dict | None:
+        """Handle completion authority agent for agent task runner."""
         active_name = str(active_agent.get("name") or "")
         active_role = str(active_agent.get("role") or "").lower()
         coordinator = next((agent for agent in agents if str(agent.get("role") or "").lower() == "coordinator"), None)
@@ -562,6 +571,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _is_role(agent: dict | None, role_name: str) -> bool:
+        """Return whether role is true."""
         role = str((agent or {}).get("role") or "").lower()
         name = str((agent or {}).get("name") or "").lower()
         expected = role_name.lower()
@@ -569,6 +579,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @classmethod
     def _pending_review_agent(cls, active_agent: dict, agents: list[dict], task_state: dict | None) -> dict | None:
+        """Handle pending review agent for agent task runner."""
         if not cls._is_role(active_agent, "coordinator"):
             return None
         if not isinstance(task_state, dict) or task_state.get("review_status") != "pending":
@@ -576,6 +587,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         return next((agent for agent in agents if cls._is_role(agent, "reviewer")), None)
 
     def _apply_manual_nudges(self, messages: list[dict], log: LogCallback) -> None:
+        """Apply manual nudges."""
         for nudge in self._control.drain_nudges():
             if self._message_already_present(messages, nudge):
                 continue
@@ -588,6 +600,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _message_already_present(messages: list[dict], item: dict) -> bool:
+        """Handle message already present for agent task runner."""
         source = str(item.get("from") or "")
         target = str(item.get("to") or "")
         message = str(item.get("message") or "")
@@ -600,6 +613,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _log_message_excerpt(message: str, max_chars: int = 500) -> str:
+        """Log message excerpt."""
         clean = " ".join(str(message or "").split())
         if len(clean) <= max_chars:
             return clean
@@ -608,6 +622,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _initial_agent_states(agents: list[dict]) -> dict[str, dict]:
+        """Handle initial agent states for agent task runner."""
         return {
             agent["name"]: {
                 "history": [],
@@ -619,6 +634,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _append_agent_history(agent_states: dict[str, dict], agent_name: str, item: str) -> None:
+        """Append agent history."""
         state = agent_states.setdefault(agent_name, {"history": [], "tool_context": "", "briefed": False})
         history = state.setdefault("history", [])
         history.append(item)
@@ -626,6 +642,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _file_payload_summary(response_text: str) -> str:
+        """Handle file payload summary for agent task runner."""
         try:
             parsed = AgentTaskRunner._parse_agent_response(response_text)
         except ValueError:
@@ -655,6 +672,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _spec_int(spec: AgentTaskLike, name: str, default: int) -> int:
+        """Handle spec int for agent task runner."""
         try:
             value = int(getattr(spec, name, default) or default)
         except (TypeError, ValueError):
@@ -683,6 +701,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _spec_float(spec: AgentTaskLike, name: str, default: float) -> float:
+        """Handle spec float for agent task runner."""
         try:
             value = float(getattr(spec, name, default))
         except (TypeError, ValueError):
@@ -691,6 +710,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _permission_modes_from_spec(spec: AgentTaskLike) -> dict[str, str]:
+        """Handle permission modes from spec for agent task runner."""
         return {
             "shell": str(getattr(spec, "shell_permission_mode", "") or "").strip().lower(),
             "network": str(getattr(spec, "network_permission_mode", "") or "").strip().lower(),
@@ -702,6 +722,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _tool_results_for_prompt(results: list[dict], spec: AgentTaskLike | None = None) -> str:
+        """Handle tool results for prompt for agent task runner."""
         compact_results = []
         for result in results:
             compact = dict(result)
@@ -716,6 +737,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _initial_task_state(files: list[str]) -> dict:
+        """Handle initial task state for agent task runner."""
         return {
             "relevant_files": [],
             "implementation_status": "unknown",
@@ -731,6 +753,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _compact_task_state(task_state: dict | None) -> dict:
+        """Handle compact task state for agent task runner."""
         if not isinstance(task_state, dict):
             return {}
         compact = dict(task_state)
@@ -740,15 +763,18 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _task_state_prompt_text(task_state: dict | None) -> str:
+        """Handle task state prompt text for agent task runner."""
         return json.dumps(AgentTaskRunner._compact_task_state(task_state), indent=2, ensure_ascii=False)
 
     @staticmethod
     def _add_unique(items: list, value) -> None:  # noqa: ANN001
+        """Add unique."""
         if value and value not in items:
             items.append(value)
 
     @staticmethod
     def _command_from_tool_args(args: dict) -> list[str] | None:
+        """Handle command from tool args for agent task runner."""
         command_args = args.get("args")
         if command_args is None:
             command_args = args.get("command")
@@ -765,6 +791,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _verification_key(command_args: Sequence[str] | None) -> str | None:
+        """Handle verification key for agent task runner."""
         if not command_args:
             return None
         args = [str(part).lower() for part in command_args]
@@ -780,6 +807,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _command_tool_name(command_args: Sequence[str] | None) -> str | None:
+        """Handle command tool name for agent task runner."""
         if not command_args:
             return None
         args = [str(part).lower() for part in command_args]
@@ -793,6 +821,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _command_from_result_message(message: str) -> list[str] | None:
+        """Handle command from result message for agent task runner."""
         if ":" in message and message.lower().startswith("exit "):
             message = message.split(":", 1)[1].strip()
         if not message:
@@ -804,6 +833,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _is_unavailable_message(message: str, data) -> bool:  # noqa: ANN001
+        """Return whether unavailable message is true."""
         text = message.lower()
         if isinstance(data, dict):
             text += "\n" + str(data.get("stderr") or "").lower()
@@ -828,6 +858,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         agent_name: str,
         log: LogCallback,
     ) -> None:
+        """Update task state."""
         thought = str(parsed.get("thought") or "").strip()
         if thought:
             task_state["next_step"] = cls._clip_prompt_line(thought, 220)
@@ -891,6 +922,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         tool: str = "",
         message: str = "",
     ):
+        """Handle compact tool result data for agent task runner."""
         text_limit = AgentTaskRunner._spec_int(spec, "tool_result_text_limit", 6000) if spec else 6000
         command_limit = AgentTaskRunner._spec_int(spec, "tool_result_command_limit", 8000) if spec else 8000
         value_limit = AgentTaskRunner._spec_int(spec, "tool_result_value_limit", 3000) if spec else 3000
@@ -916,6 +948,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _file_reference_for_prompt(path: str, content: str, excerpt_limit: int) -> dict:
+        """Handle file reference for prompt for agent task runner."""
         sha = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()
         return {
             "file_ref": path or "(unknown)",
@@ -943,9 +976,11 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         log: LogCallback,
         verbose: Callable[[str, object], None] | None = None,
     ) -> None:
+        """Run parallel read only round."""
         log(f"parallel read-only briefing started: {len(agents)} agents")
 
         def worker(agent: dict) -> dict:
+            """Handle worker for agent task runner."""
             agent_name = str(agent.get("name") or "<unknown>")
             turn: dict = {
                 "turn": 0,
@@ -1095,6 +1130,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         log(f"parallel work round started: {len(workers)} worker(s), up to {concurrency} at a time")
 
         def worker(agent: dict) -> dict:
+            """Handle worker for agent task runner."""
             agent_name = str(agent.get("name") or "<unknown>")
             turn: dict = {
                 "turn": 0,
@@ -1225,6 +1261,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         active_agent: dict | None = None,
         task_state: dict | None = None,
     ) -> list[str]:
+        """Handle allowed tool names for agent task runner."""
         role = str((active_agent or {}).get("role") or "").lower()
         name = str((active_agent or {}).get("name") or "").lower()
         is_coordinator = role == "coordinator" or name == "coordinator"
@@ -1256,6 +1293,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _capability_enabled(spec: AgentTaskLike, flag_name: str, mode_name: str) -> bool:
+        """Handle capability enabled for agent task runner."""
         mode = str(getattr(spec, mode_name, "") or "").strip().lower()
         if mode in {"never", "never permit", "deny"}:
             return False
@@ -1263,6 +1301,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _tool_reference_text(tool_names: list[str]) -> str:
+        """Handle tool reference text for agent task runner."""
         references = {
             "list_files": '- list_files args: {"limit": 300}',
             "read_file": '- read_file args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"}',
@@ -1281,6 +1320,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _tool_guidance_text(tool_names: list[str]) -> str:
+        """Handle tool guidance text for agent task runner."""
         guidance: list[str] = []
         if "patch_file" in tool_names:
             guidance.append("Prefer patch_file over write_file for edits. Only patch exact text you have read. ")
@@ -1309,6 +1349,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         compact: bool = False,
         task_state: dict | None = None,
     ) -> str:
+        """Build agent prompt."""
         verify_commands = verify_commands or []
         agents = self._normalise_agents(spec)
         communications = getattr(spec, "communications", []) or []
@@ -1317,6 +1358,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         agent_history = agent_history or []
 
         def field_value(obj, name: str) -> str:  # noqa: ANN001
+            """Handle field value for agent task runner."""
             if isinstance(obj, dict):
                 return str(obj.get(name, "") or "")
             return str(getattr(obj, name, "") or "")
@@ -1459,12 +1501,14 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _clip_prompt_line(line: str, max_chars: int = 220) -> str:
+        """Handle clip prompt line for agent task runner."""
         if len(line) <= max_chars:
             return line
         return line[: max_chars - 18].rstrip() + " ... [truncated]"
 
     @classmethod
     def _prompt_lines(cls, lines: list[str], *, limit: int, max_chars: int = 220) -> str:
+        """Handle prompt lines for agent task runner."""
         selected = lines[-limit:]
         if not selected:
             return "- (empty)"
@@ -1472,6 +1516,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _visible_file_summary(files: list[str], limit: int) -> str:
+        """Handle visible file summary for agent task runner."""
         filtered = [
             path for path in files
             if "__pycache__/" not in path.replace("\\", "/") and not path.endswith((".pyc", ".pyo"))
@@ -1496,6 +1541,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         read_only_phase: bool = False,
         task_state: dict | None = None,
     ) -> str:
+        """Build agent delta prompt."""
         allowed_tool_names = self._allowed_tool_names(
             spec,
             read_only_phase=read_only_phase,
@@ -1555,6 +1601,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         temperature: float | None = 0.0,
         json_mode: bool = True,
     ) -> str:
+        """Call model."""
         self._control.raise_if_cancelled()
         if self._model_callback is not None:
             started = time.perf_counter()
@@ -1571,6 +1618,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             progress_state = {"phase": "waiting", "chars": 0}
 
             def heartbeat() -> None:
+                """Handle heartbeat for agent task runner."""
                 while not heartbeat_done.wait(5):
                     elapsed = time.perf_counter() - started
                     if progress_state["phase"] == "waiting":
@@ -1628,6 +1676,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             })
 
     def _resolve_agent_route(self, spec: AgentTaskLike, agent: dict) -> tuple[str | None, str | None]:
+        """Handle resolve agent route for agent task runner."""
         task_provider = str(getattr(spec, "provider", "") or "").strip()
         task_model = str(getattr(spec, "model", "") or "").strip()
         provider = str(agent.get("provider", "") or "").strip()
@@ -1652,9 +1701,11 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         return raw or None
 
     def _normalise_agents(self, spec: AgentTaskLike) -> list[dict]:
+        """Normalize agents."""
         raw_agents = getattr(spec, "agents", None) or []
 
         def field_value(obj, name: str) -> str:  # noqa: ANN001
+            """Handle field value for agent task runner."""
             if isinstance(obj, dict):
                 return str(obj.get(name, "") or "")
             return str(getattr(obj, name, "") or "")
@@ -1702,6 +1753,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _field_value(obj, name: str) -> str:  # noqa: ANN001
+        """Handle field value for agent task runner."""
         if isinstance(obj, dict):
             return str(obj.get(name, "") or "")
         return str(getattr(obj, name, "") or "")
@@ -1716,6 +1768,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         tool_results: list[dict],
         log: LogCallback,
     ) -> dict:
+        """Handle select next agent for agent task runner."""
         names = {agent["name"].lower(): agent for agent in agents}
         role_names = {agent["role"].lower(): agent for agent in agents}
         active_name = active_agent["name"]
@@ -1725,6 +1778,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         reviewer = role_names.get("reviewer") or names.get("reviewer")
 
         def by_name_or_role(value: str) -> dict | None:
+            """Handle by name or role for agent task runner."""
             key = value.strip().lower()
             if key in {"self", "same", "me", active_agent["name"].lower()}:
                 return active_agent
@@ -1785,6 +1839,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _agent_alias_match(key: str, names: dict[str, dict], role_names: dict[str, dict]) -> dict | None:
+        """Handle agent alias match for agent task runner."""
         aliases = {
             "developer": ("implementer", "builder"),
             "dev": ("implementer", "builder"),
@@ -1806,6 +1861,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         names: dict[str, dict],
         role_names: dict[str, dict],
     ) -> dict | None:
+        """Handle latest direct message recipient for agent task runner."""
         for result in reversed(tool_results):
             if result.get("tool") != "send_message" or not result.get("ok", True):
                 continue
@@ -1823,6 +1879,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _latest_broadcast_message_recipient(tool_results: list[dict], active_agent: dict, agents: list[dict]) -> dict | None:
+        """Handle latest broadcast message recipient for agent task runner."""
         for result in reversed(tool_results):
             if result.get("tool") != "send_message" or not result.get("ok", True):
                 continue
@@ -1836,6 +1893,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _next_round_robin_agent(active_agent: dict, agents: list[dict]) -> dict:
+        """Handle next round robin agent for agent task runner."""
         if not agents:
             return active_agent
         for idx, agent in enumerate(agents):
@@ -1858,6 +1916,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         task_state: dict | None = None,
         leases: FileLeaseRegistry | None = None,
     ) -> ToolResult:
+        """Handle execute agent tool call for agent task runner."""
         if not isinstance(call, dict):
             return ToolResult("invalid", False, "Tool call must be an object.")
         tool = self._tool_call_name(call)
@@ -1947,6 +2006,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         spec: AgentTaskLike | None,
         task_state: dict | None,
     ) -> ToolResult | None:
+        """Handle impossible assignment error for agent task runner."""
         role = str((active_agent or {}).get("role") or "").lower()
         name = str((active_agent or {}).get("name") or "").lower()
         if role != "coordinator" and name != "coordinator":
@@ -1998,10 +2058,12 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _is_read_only_agent_tool(tool: str) -> bool:
+        """Return whether read only agent tool is true."""
         return tool in {"list_files", "read_file", "git_status", "git_diff", "send_message"}
 
     @staticmethod
     def _is_mutating_agent_tool(tool: str) -> bool:
+        """Return whether mutating agent tool is true."""
         return tool in {
             "create_file",
             "write_file",
@@ -2012,6 +2074,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         }
 
     def _guard_disabled_or_duplicate_tool(self, tool: str, args: dict, task_state: dict) -> ToolResult | None:
+        """Handle guard disabled or duplicate tool for agent task runner."""
         disabled_tools = task_state.get("disabled_tools") if isinstance(task_state, dict) else {}
         if not isinstance(disabled_tools, dict):
             disabled_tools = {}
@@ -2037,6 +2100,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
 
     def _execute_tool_call(self, tools: AgentToolbox, call) -> ToolResult:  # noqa: ANN001
+        """Handle execute tool call for agent task runner."""
         if not isinstance(call, dict):
             return ToolResult("invalid", False, "Tool call must be an object.")
         tool = self._tool_call_name(call)
@@ -2049,6 +2113,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         return self._execute_tool_call_unlocked(tools, tool, args)
 
     def _execute_tool_call_unlocked(self, tools: AgentToolbox, tool: str, args: dict) -> ToolResult:
+        """Handle execute tool call unlocked for agent task runner."""
         try:
             placeholder_error = self._placeholder_path_error(tools, tool, args)
             if placeholder_error:
@@ -2101,6 +2166,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
     @staticmethod
     def _placeholder_path_error(tools: AgentToolbox, tool: str, args: dict) -> str | None:
+        """Handle placeholder path error for agent task runner."""
         if tool not in {
             "read_file",
             "create_file",

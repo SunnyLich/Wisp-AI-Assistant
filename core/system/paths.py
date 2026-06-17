@@ -56,7 +56,7 @@ def _repo_root() -> Path:
 # Public paths
 # ---------------------------------------------------------------------------
 
-REPO_ROOT = _repo_root()          # user-writable: .env, memory, plugins
+REPO_ROOT = _repo_root()          # user-writable: .env, memory, addons
 _BUNDLE = _bundle_root()           # read-only bundled files
 
 ASSETS_DIR       = _BUNDLE / "assets"
@@ -68,7 +68,7 @@ FILLER_AUDIO_DIR = ASSETS_DIR / "filler"
 USER_FILLER_AUDIO_DIR = _user_data_dir() / "filler"
 
 # Single-instance lock. Lives in the user-data dir (not the repo / bundle) so a
-# dev run (`python -m macos_py.supervisor.app`) and an installed build contend for the *same* lock —
+# dev run (`python -m runtime.supervisor.app`) and an installed build contend for the *same* lock —
 # only one Wisp can be active at a time, regardless of how it was launched.
 SINGLE_INSTANCE_LOCK = _user_data_dir() / "wisp.lock"
 
@@ -80,6 +80,6 @@ PROJECTS_FILE     = CHATS_DIR / "projects.json"
 CONVERSATIONS_FILE = CHATS_DIR / "conversations.json"
 TOOLS_INSTALLED_DIR = REPO_ROOT / "tools" / "installed"
 MODEL_TOOLS_DIR     = REPO_ROOT / "model_tools"
+MODEL_FILE_ACCESS_DIR = REPO_ROOT / "model_files"
 ADDONS_DIR          = REPO_ROOT / "addons"
-PLUGINS_DIR         = ADDONS_DIR  # compatibility name for older plugin-manager callers
 TOOL_KEYWORDS_FILE  = REPO_ROOT / "tool_keywords.json"

@@ -1,3 +1,5 @@
+"""Manual addon fixture for manual test addons phase4 make bad archive."""
+
 from __future__ import annotations
 
 from pathlib import Path

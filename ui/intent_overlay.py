@@ -9,15 +9,15 @@ Press the matching key to pick, Escape to cancel.
 from __future__ import annotations
 import os
 import sys
-from PySide6.QtWidgets import QWidget, QApplication, QLineEdit
+from PySide6.QtWidgets import QWidget, QApplication, QLineEdit, QToolTip
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QRect
-from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath
+from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath, QFontMetrics
 import config
 from ui.i18n import t
 
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
-_DEBUG_KEYS = os.environ.get("WISP_INTENT_KEY_DEBUG", "1").strip().lower() not in {
+_DEBUG_KEYS = os.environ.get("WISP_INTENT_KEY_DEBUG", "0").strip().lower() not in {
     "0",
     "false",
     "no",
@@ -26,6 +26,7 @@ _DEBUG_KEYS = os.environ.get("WISP_INTENT_KEY_DEBUG", "1").strip().lower() not i
 
 
 def _key_name(key: int) -> str:
+    """Handle key name for UI intent overlay."""
     try:
         return Qt.Key(key).name
     except Exception:
@@ -33,6 +34,7 @@ def _key_name(key: int) -> str:
 
 
 def _safe_text_desc(text: str) -> str:
+    """Handle safe text desc for UI intent overlay."""
     if text == "":
         return "empty"
     if text == " ":
@@ -43,6 +45,7 @@ def _safe_text_desc(text: str) -> str:
 
 
 def _event_type_name(event) -> str:
+    """Handle event type name for UI intent overlay."""
     try:
         return event.type().name
     except Exception:
@@ -67,7 +70,7 @@ def _build_rows(caller_idx: int = 0) -> list[dict]:
         })
     for r in _addon_intent_rows(caller_idx, used_keys):
         rows.append(r)
-    custom_key = caller.get("custom_key", "s")
+    custom_key = str(caller.get("custom_key", "s") or "").strip()
     custom_label = str(caller.get("custom_label") or "").strip() or t("Custom prompt")
     rows.append({
         "glyph":     custom_key.upper(),
@@ -80,8 +83,9 @@ def _build_rows(caller_idx: int = 0) -> list[dict]:
 
 
 def _addon_intent_rows(caller_idx: int, used_keys: set[str]) -> list[dict]:
+    """Handle addon intent rows for UI intent overlay."""
     try:
-        from core.plugin_manager import get_manager
+        from core.addon_manager import get_manager
 
         manager = get_manager()
         intents = manager.get_intents(caller_idx) if hasattr(manager, "get_intents") else []
@@ -110,6 +114,7 @@ def _addon_intent_rows(caller_idx: int, used_keys: set[str]) -> list[dict]:
 
 
 def _choose_addon_intent_key(label: str, used_keys: set[str]) -> str:
+    """Handle choose addon intent key for UI intent overlay."""
     for char in label.upper():
         if char.isalnum() and char not in used_keys:
             return char
@@ -120,7 +125,7 @@ def _choose_addon_intent_key(label: str, used_keys: set[str]) -> str:
 
 
 # ── Layout constants ────────────────────────────────────────────────────────
-_W             = 300
+_W             = 520
 _ROW_H         = 64
 _PAD_V         = 10       # vertical padding around all rows
 _PAD_H         = 10       # horizontal margin inside the widget
@@ -131,8 +136,13 @@ _BADGE_H       = 38
 _BADGE_R       = 8        # badge corner radius
 _BADGE_X       = 12       # badge left offset inside row
 _TEXT_X        = _BADGE_X + _BADGE_W + 12
-_AUTO_CLOSE_MS = 5000
+_AUTO_CLOSE_MS = 60000
 _INPUT_EXTRA   = 54
+_CTX_H         = 92
+_CTX_GAP       = 4
+_CTX_CHIP_H    = 58
+_CTX_CHIP_W    = 68
+_CTX_TOP       = 8
 
 # ── Palette ─────────────────────────────────────────────────────────────────
 _BG         = QColor(20, 20, 30, 248)
@@ -145,14 +155,66 @@ _LABEL      = QColor(238, 238, 250, 228)
 _HINT       = QColor(135, 130, 160, 180)
 _HINT_ESC   = QColor(100, 96, 118, 140)
 _SEP        = QColor(255, 255, 255, 14)
+_CTX_OFF    = QColor(105, 108, 124, 170)
+_CTX_ON     = QColor(54, 177, 112, 220)
+_CTX_AUTO   = QColor(224, 176, 62, 230)
+_CTX_TEXT   = QColor(244, 245, 250, 235)
+_CTX_SUB    = QColor(190, 192, 205, 190)
+_WARN       = QColor(246, 197, 76, 245)
+
+
+def _context_toggle_keys() -> str:
+    """Return seven unique overlay-local context toggle keys."""
+    raw = str(getattr(config, "INTENT_CONTEXT_TOGGLE_KEYS", "1234567") or "1234567")
+    keys: list[str] = []
+    for ch in raw + "1234567":
+        if ch.isspace() or ch in keys:
+            continue
+        keys.append(ch)
+        if len(keys) >= 7:
+            break
+    return "".join(keys)
+
+
+def _default_context_items() -> list[dict]:
+    """Fallback context chips for callers that do not provide live metadata."""
+    keys = _context_toggle_keys()
+    labels = [
+        ("ambient", t("App")),
+        ("browser", t("Browser/Web")),
+        ("selection", t("Selection")),
+        ("clipboard", t("Clipboard")),
+        ("screenshot", t("Screenshot")),
+        ("memory", t("Memory")),
+        ("files", t("Files")),
+    ]
+    return [
+        {
+            "id": source,
+            "key": keys[idx],
+            "label": label,
+            "state": "off",
+            "tokens": "0 tok",
+            "warning": "",
+        }
+        for idx, (source, label) in enumerate(labels)
+    ]
 
 
 class IntentOverlay(QWidget):
+    """Model intent overlay."""
     intent_chosen = Signal(str, str)
     cancelled     = Signal()
     _raw_key      = Signal(str)
 
-    def __init__(self, caller_idx: int = 0, target_hwnd: int = 0, parent=None):
+    def __init__(
+        self,
+        caller_idx: int = 0,
+        target_hwnd: int = 0,
+        context_items: list[dict] | None = None,
+        parent=None,
+    ):
+        """Initialize the intent overlay instance."""
         super().__init__(parent)
         flags = (
             Qt.WindowType.FramelessWindowHint
@@ -169,10 +231,16 @@ class IntentOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMouseTracking(True)
 
         self._rows = _build_rows(caller_idx)
+        self._context_items = [dict(item) for item in (context_items or _default_context_items())]
+        self._warning_rects: list[tuple[QRect, str]] = []
+        self._last_warning_idx: int | None = None
+        self._auto_custom_mode = self._custom_row_index_without_key()
         n_rows = len(self._rows)
-        h = _PAD_V * 2 + _ROW_H * n_rows + 26   # 26px ESC hint
+        context_h = _CTX_H if self._context_items else 0
+        h = _PAD_V * 2 + context_h + _ROW_H * n_rows + 26   # 26px ESC hint
         self._normal_h = h
         self.setFixedSize(_W, h)
         self._target_hwnd = target_hwnd
@@ -187,6 +255,8 @@ class IntentOverlay(QWidget):
         self._kb_hook = None
         self._input_grabbed_keyboard = False
         self._drop_next_keypress = False
+        self._last_raw_context_key = ""
+        self._last_raw_context_at = 0.0
         self._raw_key.connect(self._on_raw_key)
 
         self._input_line = QLineEdit(self)
@@ -208,9 +278,15 @@ class IntentOverlay(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._cancel)
-        self._timer.start(_AUTO_CLOSE_MS)
+        timeout_ms = max(
+            0,
+            int(getattr(config, "INTENT_OVERLAY_TIMEOUT_MS", _AUTO_CLOSE_MS) or 0),
+        )
+        if timeout_ms:
+            self._timer.start(timeout_ms)
 
     def _debug(self, message: str) -> None:
+        """Handle debug for intent overlay."""
         if not _DEBUG_KEYS:
             return
         focus = QApplication.focusWidget()
@@ -237,6 +313,7 @@ class IntentOverlay(QWidget):
         )
 
     def _debug_key(self, source: str, event) -> None:
+        """Handle debug key for intent overlay."""
         if not _DEBUG_KEYS:
             return
         self._debug(
@@ -247,6 +324,7 @@ class IntentOverlay(QWidget):
         )
 
     def _resolve_screen_geometry(self) -> QRect:
+        """Handle resolve screen geometry for intent overlay."""
         app = QApplication.instance()
         if self._target_hwnd:
             if sys.platform == "win32":
@@ -274,15 +352,37 @@ class IntentOverlay(QWidget):
         return primary.geometry() if primary is not None else QRect(0, 0, _W, self._normal_h)
 
     def _move_to_screen_center(self, height: int) -> None:
+        """Handle move to screen center for intent overlay."""
         screen = self._screen_geometry
         self.move(
             screen.x() + (screen.width() - _W) // 2,
             screen.y() + (screen.height() - height) // 2,
         )
 
+    def context_choices(self) -> list[dict]:
+        """Return the current per-prompt context source states."""
+        return [dict(item) for item in self._context_items]
+
+    def update_context_items(self, items: list[dict]) -> None:
+        """Refresh context chip metadata while preserving user-toggled states."""
+        if not items:
+            return
+        current_by_id = {str(item.get("id") or ""): item for item in self._context_items}
+        refreshed: list[dict] = []
+        for item in items:
+            next_item = dict(item)
+            current = current_by_id.get(str(next_item.get("id") or ""))
+            if current is not None:
+                next_item["state"] = current.get("state", next_item.get("state", "off"))
+            refreshed.append(next_item)
+        self._context_items = refreshed
+        self._warning_rects = []
+        self.update()
+
     # ── Paint ─────────────────────────────────────────────────────────────
 
     def paintEvent(self, _event):
+        """Paint event."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -297,8 +397,16 @@ class IntentOverlay(QWidget):
         hint_font  = QFont("Segoe UI", 8)
         key_font   = QFont("Segoe UI", 12, QFont.Weight.Bold)
         esc_font   = QFont("Segoe UI", 7)
+        ctx_label_font = QFont("Segoe UI", 8, QFont.Weight.DemiBold)
+        ctx_state_font = QFont("Segoe UI", 7, QFont.Weight.DemiBold)
+        ctx_token_font = QFont("Segoe UI", 7)
 
         y = _PAD_V
+        self._warning_rects = []
+        if self._context_items:
+            self._paint_context_items(p, y, ctx_label_font, ctx_state_font, ctx_token_font)
+            y += _CTX_H
+
         for i, row in enumerate(self._rows):
             row_rect = QRect(_PAD_H, y, _W - _PAD_H * 2, _ROW_H)
             hovered  = (i == self._hovered)
@@ -344,7 +452,6 @@ class IntentOverlay(QWidget):
                 p.setFont(hint_font)
                 p.setPen(QPen(_HINT))
                 hint_y = y + (_ROW_H // 2) + 2
-                from PySide6.QtGui import QFontMetrics
                 elided = QFontMetrics(hint_font).elidedText(
                     subtitle, Qt.TextElideMode.ElideRight, text_w
                 )
@@ -365,9 +472,134 @@ class IntentOverlay(QWidget):
 
         p.end()
 
+    def _paint_context_items(
+        self,
+        p: QPainter,
+        y: int,
+        label_font: QFont,
+        state_font: QFont,
+        token_font: QFont,
+    ) -> None:
+        """Paint the per-prompt context controls."""
+        key_font = QFont("Segoe UI", 8, QFont.Weight.Bold)
+        x = _PAD_H
+        top = y + _CTX_TOP
+        for item in self._context_items:
+            rect = QRect(x, top, _CTX_CHIP_W, _CTX_CHIP_H)
+            state = str(item.get("state") or "off").lower()
+            color = _CTX_ON if state == "on" else (_CTX_AUTO if state == "auto" else _CTX_OFF)
+
+            path = QPainterPath()
+            path.addRoundedRect(rect, 7, 7)
+            bg = QColor(color)
+            bg.setAlpha(42 if state == "off" else 56)
+            p.fillPath(path, QBrush(bg))
+            p.setPen(QPen(color, 1))
+            p.drawPath(path)
+
+            key = str(item.get("key") or "")
+            if key:
+                p.setFont(key_font)
+                p.setPen(QPen(color))
+                p.drawText(rect.x() + 5, rect.y() + 4, 14, 14, Qt.AlignmentFlag.AlignCenter, key)
+
+            warning = str(item.get("warning") or "").strip()
+            if warning:
+                warn_rect = QRect(rect.right() - 18, rect.y() + 4, 14, 14)
+                self._warning_rects.append((warn_rect, warning))
+                p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                p.setPen(QPen(_WARN))
+                p.drawText(warn_rect, Qt.AlignmentFlag.AlignCenter, "⚠")
+
+            label = str(item.get("label") or "")
+            p.setFont(label_font)
+            p.setPen(QPen(_CTX_TEXT))
+            label = QFontMetrics(label_font).elidedText(
+                label, Qt.TextElideMode.ElideRight, rect.width() - 12
+            )
+            p.drawText(rect.x() + 6, rect.y() + 18, rect.width() - 12, 16,
+                       Qt.AlignmentFlag.AlignCenter, label)
+
+            state_label = {"on": t("On"), "auto": t("auto"), "off": t("Off")}.get(state, state)
+            p.setFont(state_font)
+            p.setPen(QPen(color))
+            p.drawText(rect.x() + 6, rect.y() + 34, rect.width() - 12, 12,
+                       Qt.AlignmentFlag.AlignCenter, state_label)
+
+            tokens = str(item.get("tokens") or "")
+            if tokens:
+                p.setFont(token_font)
+                p.setPen(QPen(_CTX_SUB))
+                tokens = QFontMetrics(token_font).elidedText(
+                    tokens, Qt.TextElideMode.ElideRight, rect.width() - 8
+                )
+                p.drawText(rect.x() + 4, rect.y() + 46, rect.width() - 8, 11,
+                           Qt.AlignmentFlag.AlignCenter, tokens)
+
+            x += _CTX_CHIP_W + _CTX_GAP
+            if x + _CTX_CHIP_W > _W - _PAD_H:
+                break
+
+    def _cycle_context_key(self, name: str) -> bool:
+        """Cycle a context source when its numeric overlay key is pressed."""
+        for item in self._context_items:
+            if name.lower() != str(item.get("key") or "").lower():
+                continue
+            state = str(item.get("state") or "off").lower()
+            if state == "auto":
+                item["state"] = "on"
+            elif state == "on":
+                item["state"] = "off"
+            else:
+                item["state"] = "on"
+            self.update()
+            return True
+        return False
+
+    def _mark_raw_context_key(self, name: str) -> None:
+        """Remember a raw-hook context key so Qt does not toggle it twice."""
+        import time
+
+        self._last_raw_context_key = str(name or "").lower()
+        self._last_raw_context_at = time.monotonic()
+
+    def _is_duplicate_qt_context_key(self, name: str) -> bool:
+        """Return whether this Qt key press was already handled by the raw hook."""
+        import time
+
+        key = str(name or "").lower()
+        return (
+            bool(key)
+            and key == self._last_raw_context_key
+            and time.monotonic() - self._last_raw_context_at < 0.18
+        )
+
+    def _context_warning_at(self, pos: QPoint) -> tuple[int, str] | None:
+        """Return the warning tooltip at a mouse position, if any."""
+        for idx, (rect, text) in enumerate(self._warning_rects):
+            if rect.contains(pos):
+                return idx, text
+        return None
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        """Show context warning reasons when hovering the warning sign."""
+        found = self._context_warning_at(event.position().toPoint())
+        if found is None:
+            if self._last_warning_idx is not None:
+                QToolTip.hideText()
+                self._last_warning_idx = None
+            super().mouseMoveEvent(event)
+            return
+        idx, text = found
+        if idx != self._last_warning_idx:
+            QToolTip.showText(event.globalPosition().toPoint(), text, self)
+            self._last_warning_idx = idx
+        super().mouseMoveEvent(event)
+
     # ── Key input ─────────────────────────────────────────────────────────
 
     def _select(self, idx: int):
+        """Handle select for intent overlay."""
         if self._handled:
             return
         if self._rows[idx]["is_custom"]:
@@ -381,7 +613,24 @@ class IntentOverlay(QWidget):
         self.update()
         QTimer.singleShot(80, lambda: self._fire(idx))
 
-    def _enter_custom_mode(self):
+    def _custom_row_index_without_key(self) -> int | None:
+        """Return the custom row index when it has no configured shortcut."""
+        for idx, row in enumerate(self._rows):
+            if row["is_custom"] and not row["glyph"]:
+                return idx
+        return None
+
+    def _enter_auto_custom_mode(self) -> None:
+        """Open the custom prompt directly when no custom shortcut is configured."""
+        if self._handled or self._custom_mode or self._auto_custom_mode is None:
+            return
+        self._hovered = self._auto_custom_mode
+        self._debug(f"auto-custom idx={self._auto_custom_mode}")
+        self._unhook()
+        self._enter_custom_mode(drop_trigger_key=False)
+
+    def _enter_custom_mode(self, *, drop_trigger_key: bool = True):
+        """Handle enter custom mode for intent overlay."""
         self._custom_mode = True
         self._debug("enter-custom-before")
         self._timer.stop()
@@ -394,12 +643,13 @@ class IntentOverlay(QWidget):
         self._input_line.show()
         self._focus_custom_input()
         self.update()
-        self._drop_next_keypress = True
+        self._drop_next_keypress = drop_trigger_key
         self._debug("enter-custom-after")
         for delay_ms in (25, 75, 150):
             QTimer.singleShot(delay_ms, self._focus_custom_input)
 
     def _focus_custom_input(self) -> None:
+        """Focus custom input."""
         if not self._custom_mode or self._input_line.isHidden():
             return
         self._debug("focus-custom-before")
@@ -414,7 +664,17 @@ class IntentOverlay(QWidget):
                 pass
         self._debug("focus-custom-after")
 
+    def _focus_overlay(self) -> None:
+        """Give the picker itself keyboard focus when not typing a custom prompt."""
+        if self._custom_mode:
+            return
+        self.raise_()
+        self.activateWindow()
+        self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+        self._debug("focus-overlay")
+
     def changeEvent(self, event):
+        """Handle change event for intent overlay."""
         from PySide6.QtCore import QEvent
         # macOS lacks the Popup flag (it blocks key-window status), so emulate
         # Popup's click-outside dismissal: once we've gained activation, cancel
@@ -427,6 +687,7 @@ class IntentOverlay(QWidget):
         super().changeEvent(event)
 
     def eventFilter(self, obj, event):
+        """Handle event filter for intent overlay."""
         from PySide6.QtCore import QEvent
         if obj is self._input_line and event.type() in {
             QEvent.Type.KeyPress,
@@ -446,6 +707,7 @@ class IntentOverlay(QWidget):
         return super().eventFilter(obj, event)
 
     def _fire_custom(self):
+        """Handle fire custom for intent overlay."""
         text = self._input_line.text().strip()
         if not text:
             return
@@ -457,10 +719,14 @@ class IntentOverlay(QWidget):
         self.close()
 
     def _on_raw_key(self, name: str):
+        """Handle raw key events."""
         if self._custom_mode:
             return
         if name in ('escape', 'esc'):
             self._cancel()
+            return
+        if self._cycle_context_key(name):
+            self._mark_raw_context_key(name)
             return
         for i, row in enumerate(self._rows):
             if name.lower() == row['glyph'].lower():
@@ -468,12 +734,20 @@ class IntentOverlay(QWidget):
                 return
 
     def keyPressEvent(self, event):
+        """Handle key press event for intent overlay."""
         self._debug_key("overlay-keypress", event)
         key_map: dict[Qt.Key, int] = {}
         for i, row in enumerate(self._rows):
             qt_key = getattr(Qt.Key, f"Key_{row['glyph']}", None)
             if qt_key is not None:
                 key_map[qt_key] = i
+        text = (event.text() or "").strip()
+        if text and self._is_duplicate_qt_context_key(text):
+            event.accept()
+            return
+        if text and self._cycle_context_key(text):
+            event.accept()
+            return
         idx = key_map.get(event.key())
         if idx is not None:
             self._select(idx)
@@ -515,22 +789,13 @@ class IntentOverlay(QWidget):
             pass
 
     def showEvent(self, event):
-        import sys as _sys
-        import time as _t
-
-        _t_show = _t.time()
+        """Show event."""
         super().showEvent(event)
         self.raise_()
         self.activateWindow()
         if _IS_WIN:
-            _s = _t.monotonic()
             self._win_force_foreground()
-            print(
-                f"[wisp-intent] showEvent ts={_t_show:.3f} "
-                f"force_fg={_t.monotonic() - _s:.3f}s",
-                file=_sys.stderr,
-                flush=True,
-            )
+        self._focus_overlay()
         self._closed = False
         self._debug("show")
         if _IS_WIN:
@@ -552,6 +817,7 @@ class IntentOverlay(QWidget):
             from pynput import keyboard as _kb  # type: ignore
 
             def _on_press(key):
+                """Handle press events."""
                 if self._closed:
                     return
                 try:
@@ -565,10 +831,16 @@ class IntentOverlay(QWidget):
             listener.daemon = True
             listener.start()
             self._kb_hook = listener
+        if self._auto_custom_mode is not None:
+            QTimer.singleShot(0, self._enter_auto_custom_mode)
+        elif _IS_WIN:
+            for delay_ms in (25, 75, 150):
+                QTimer.singleShot(delay_ms, self._focus_overlay)
 
     # ── Cleanup / fire ────────────────────────────────────────────────────
 
     def _unhook(self):
+        """Handle unhook for intent overlay."""
         self._closed = True
         if self._kb_hook is not None:
             try:
@@ -591,10 +863,12 @@ class IntentOverlay(QWidget):
         self._input_grabbed_keyboard = False
 
     def closeEvent(self, event):
+        """Close event."""
         self._unhook()
         super().closeEvent(event)
 
     def _fire(self, idx: int):
+        """Handle fire for intent overlay."""
         self._unhook()
         self._timer.stop()
         row = self._rows[idx]
@@ -602,6 +876,7 @@ class IntentOverlay(QWidget):
         self.close()
 
     def _cancel(self):
+        """Cancel the intent overlay workflow."""
         if self._handled:
             return
         self._handled = True

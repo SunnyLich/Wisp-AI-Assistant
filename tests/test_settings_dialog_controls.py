@@ -1,3 +1,5 @@
+"""Tests for test settings dialog controls."""
+
 import os
 import sys
 import threading
@@ -7,16 +9,20 @@ import pytest
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_combo_ignores_wheel_when_popup_closed():
+    """Verify settings combo ignores wheel when popup closed behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
     from ui.settings_panel.dialog import _NoScrollCombo
 
     class FakeWheelEvent:
+        """Test case for fake wheel event behavior."""
         def __init__(self) -> None:
+            """Initialize the fake wheel event instance."""
             self.ignored = False
 
         def ignore(self) -> None:
+            """Verify ignore behavior."""
             self.ignored = True
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -36,6 +42,7 @@ def test_settings_combo_ignores_wheel_when_popup_closed():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_memory_tab_does_not_show_stored_facts():
+    """Verify settings memory tab does not show stored facts behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -59,6 +66,7 @@ def test_settings_memory_tab_does_not_show_stored_facts():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_exposes_stt_settings():
+    """Verify tts voice tab exposes stt settings behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -115,6 +123,7 @@ def test_tts_voice_tab_exposes_stt_settings():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_does_not_import_stt_stack():
+    """Verify tts voice tab does not import stt stack behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -153,6 +162,7 @@ def test_tts_voice_tab_does_not_import_stt_stack():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_technical_combo_options_translate_model_names_only():
+    """Verify technical combo options translate model names only behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -188,6 +198,7 @@ def test_technical_combo_options_translate_model_names_only():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_stt_model_dropdown_preserves_saved_custom_value():
+    """Verify stt model dropdown preserves saved custom value behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -212,6 +223,7 @@ def test_stt_model_dropdown_preserves_saved_custom_value():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_app_tab_exposes_assistant_language_setting():
+    """Verify app tab exposes assistant language setting behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -245,6 +257,7 @@ def test_app_tab_exposes_assistant_language_setting():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_localize_widget_tree_uses_app_language(monkeypatch):
+    """Verify localize widget tree uses app language behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QVBoxLayout
 
@@ -270,6 +283,7 @@ def test_localize_widget_tree_uses_app_language(monkeypatch):
 
 
 def test_i18n_uses_qt_catalog_without_dynamic_matching(monkeypatch):
+    """Verify i18n uses qt catalog without dynamic matching behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -292,6 +306,7 @@ def test_i18n_uses_qt_catalog_without_dynamic_matching(monkeypatch):
 
 
 def test_i18n_supports_traditional_chinese(monkeypatch):
+    """Verify i18n supports traditional chinese behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -316,6 +331,7 @@ def test_i18n_supports_traditional_chinese(monkeypatch):
 
 
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
+    """Verify i18n translates settings apply tool warning behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -343,6 +359,7 @@ def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_i18n_translates_stt_backend_status_messages(monkeypatch):
+    """Verify i18n translates stt backend status messages behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -368,6 +385,7 @@ def test_i18n_translates_stt_backend_status_messages(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_llm_model_routing_surface_translates_to_traditional_chinese():
+    """Verify llm model routing surface translates to traditional chinese behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QComboBox, QLineEdit, QPushButton
 
@@ -473,6 +491,7 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
 
 
 def test_qt_catalogs_translate_exact_spanish_and_french_sources(monkeypatch):
+    """Verify qt catalogs translate exact spanish and french sources behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -497,6 +516,7 @@ def test_qt_catalogs_translate_exact_spanish_and_french_sources(monkeypatch):
 
 
 def test_i18n_translates_auth_ui_but_keeps_technical_tokens(monkeypatch):
+    """Verify i18n translates auth ui but keeps technical tokens behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -526,6 +546,7 @@ def test_i18n_translates_auth_ui_but_keeps_technical_tokens(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_status_label_setters_localize_dynamic_text():
+    """Verify status label setters localize dynamic text behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -552,14 +573,17 @@ def test_status_label_setters_localize_dynamic_text():
 
 
 def test_settings_open_requests_are_coalesced(monkeypatch):
+    """Verify settings open requests are coalesced behavior."""
     from ui.settings_panel import dialog as settings_dialog
 
     callbacks = []
 
     def fake_single_shot(_delay, callback):
+        """Verify fake single shot behavior."""
         callbacks.append(callback)
 
     def fake_open_now(**_kwargs):
+        """Verify fake open now behavior."""
         settings_dialog._settings_open_pending = False
 
     monkeypatch.setattr(settings_dialog.QTimer, "singleShot", fake_single_shot)
@@ -579,23 +603,30 @@ def test_settings_open_requests_are_coalesced(monkeypatch):
 
 
 def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch):
+    """Verify hidden settings dialog is replaced without clearing new one behavior."""
     from ui.settings_panel import dialog as settings_dialog
 
     class FakeSignal:
+        """Test case for fake signal behavior."""
         def __init__(self) -> None:
+            """Initialize the fake signal instance."""
             self._callbacks = []
 
         def connect(self, callback) -> None:
+            """Verify connect behavior."""
             self._callbacks.append(callback)
 
         def emit(self, obj=None) -> None:
+            """Verify emit behavior."""
             for callback in list(self._callbacks):
                 callback(obj)
 
     class FakeDialog:
+        """Qt dialog for fake dialog."""
         created = []
 
         def __init__(self, parent=None, on_apply=None) -> None:
+            """Initialize the fake dialog instance."""
             self.parent = parent
             self._on_apply = on_apply
             self._disposing = False
@@ -605,27 +636,35 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
             FakeDialog.created.append(self)
 
         def objectName(self):
+            """Verify object name behavior."""
             return "fake-settings"
 
         def isVisible(self):
+            """Verify is visible behavior."""
             return self.visible
 
         def isMinimized(self):
+            """Verify is minimized behavior."""
             return False
 
         def showNormal(self):
+            """Verify show normal behavior."""
             pass
 
         def show(self):
+            """Verify show behavior."""
             self.visible = True
 
         def raise_(self):
+            """Verify raise behavior."""
             pass
 
         def activateWindow(self):
+            """Verify activate window behavior."""
             pass
 
         def deleteLater(self):
+            """Verify delete later behavior."""
             self.deleted = True
 
     old = FakeDialog()
@@ -633,6 +672,7 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
     new_dialogs = []
 
     def make_dialog(parent=None, on_apply=None):
+        """Verify make dialog behavior."""
         dialog = FakeDialog(parent=parent, on_apply=on_apply)
         new_dialogs.append(dialog)
         return dialog
@@ -658,16 +698,21 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
 
 
 def test_cancel_status_refresh_invalidates_pending_results():
+    """Verify cancel status refresh invalidates pending results behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     class FakeTimer:
+        """Test case for fake timer behavior."""
         def __init__(self) -> None:
+            """Initialize the fake timer instance."""
             self.stopped = False
 
         def isActive(self):
+            """Verify is active behavior."""
             return True
 
         def stop(self):
+            """Verify stop behavior."""
             self.stopped = True
 
     dialog = SettingsDialog.__new__(SettingsDialog)
@@ -686,16 +731,21 @@ def test_cancel_status_refresh_invalidates_pending_results():
 
 
 def test_cancel_async_ui_updates_stops_test_and_auth_timers():
+    """Verify cancel async ui updates stops test and auth timers behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     class FakeTimer:
+        """Test case for fake timer behavior."""
         def __init__(self) -> None:
+            """Initialize the fake timer instance."""
             self.stopped = False
 
         def isActive(self):
+            """Verify is active behavior."""
             return True
 
         def stop(self):
+            """Verify stop behavior."""
             self.stopped = True
 
     dialog = SettingsDialog.__new__(SettingsDialog)
@@ -726,9 +776,11 @@ def test_cancel_async_ui_updates_stops_test_and_auth_timers():
 
 
 def test_ui_host_skips_direct_stt_reset_thread(monkeypatch):
+    """Verify ui host skips direct stt reset thread behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     def fail_thread_start(*_args, **_kwargs):
+        """Verify fail thread start behavior."""
         raise AssertionError("UI host must not start an STT reset thread")
 
     monkeypatch.setenv("WISP_MACOS_PY_UI_HOST", "1")
@@ -738,6 +790,7 @@ def test_ui_host_skips_direct_stt_reset_thread(monkeypatch):
 
 
 def test_reset_page_key_mapping_is_scoped():
+    """Verify reset page key mapping is scoped behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     env = {
@@ -770,6 +823,7 @@ def test_reset_page_key_mapping_is_scoped():
 
 
 def test_settings_tab_strip_uses_theme_background():
+    """Verify settings tab strip uses theme background behavior."""
     from ui.settings_panel.dialog import SettingsDialog
     from ui.shared.theme import theme_colors
 
@@ -787,6 +841,7 @@ def test_settings_tab_strip_uses_theme_background():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_tab_bar_has_explicit_painted_backing():
+    """Verify settings tab bar has explicit painted backing behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
@@ -811,6 +866,7 @@ def test_settings_tab_bar_has_explicit_painted_backing():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_custom_provider_is_model_route_option_without_api_key_table_row():
+    """Verify custom provider is model route option without api key table row behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -839,6 +895,7 @@ def test_custom_provider_is_model_route_option_without_api_key_table_row():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tool_warning_marks_associated_settings_headlines():
+    """Verify tool warning marks associated settings headlines behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -881,6 +938,7 @@ def test_tool_warning_marks_associated_settings_headlines():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_llm_tab_groups_credentials_and_models_under_full_height_rails():
+    """Verify llm tab groups credentials and models under full height rails behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QFrame, QWidget
 
@@ -913,6 +971,7 @@ def test_llm_tab_groups_credentials_and_models_under_full_height_rails():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_subscription_warning_marks_provider_credentials_headline():
+    """Verify subscription warning marks provider credentials headline behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -945,6 +1004,7 @@ def test_subscription_warning_marks_provider_credentials_headline():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_warning_markers_refresh_from_loaded_settings():
+    """Verify warning markers refresh from loaded settings behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -986,6 +1046,7 @@ def test_warning_markers_refresh_from_loaded_settings():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_footer_apply_stays_open_and_confirm_closes():
+    """Verify settings footer apply stays open and confirm closes behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QDialog, QPushButton
 
@@ -1021,6 +1082,7 @@ def test_settings_footer_apply_stays_open_and_confirm_closes():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_has_reset_page_button():
+    """Verify settings has reset page button behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -1052,6 +1114,7 @@ def test_settings_has_reset_page_button():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_search_filters_to_matching_page():
+    """Verify settings search filters to matching page behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLineEdit
 
@@ -1064,7 +1127,7 @@ def test_settings_search_filters_to_matching_page():
         search = dialog.findChild(QLineEdit, "settingsSearch")
         assert search is not None
 
-        search.setText("legacy tool folder")
+        search.setText("model file access")
         app.processEvents()
 
         tabs = dialog._tabs
@@ -1085,6 +1148,7 @@ def test_settings_search_filters_to_matching_page():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_dirty_marker_enables_apply_after_change():
+    """Verify settings dirty marker enables apply after change behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -1112,6 +1176,7 @@ def test_settings_dirty_marker_enables_apply_after_change():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_preset_marks_reviewable_changes_without_saving():
+    """Verify settings preset marks reviewable changes without saving behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -1139,6 +1204,7 @@ def test_settings_preset_marks_reviewable_changes_without_saving():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_active_preset_persists_user_edits_as_preset_overrides():
+    """Verify settings active preset persists user edits as preset overrides behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1164,6 +1230,7 @@ def test_settings_active_preset_persists_user_edits_as_preset_overrides():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_advanced_tab_keeps_only_tuning_controls():
+    """Verify settings advanced tab keeps only tuning controls behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -1185,6 +1252,7 @@ def test_settings_advanced_tab_keeps_only_tuning_controls():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_caller_memory_combo_uses_third_column_second_row():
+    """Verify caller memory combo uses third column second row behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QVBoxLayout, QWidget
 
@@ -1224,6 +1292,7 @@ def test_caller_memory_combo_uses_third_column_second_row():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_caller_custom_prompt_row_lives_with_intent_rows():
+    """Verify caller custom prompt row lives with intent rows behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
@@ -1263,6 +1332,7 @@ def test_caller_custom_prompt_row_lives_with_intent_rows():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_memory_panel_refresh_runs_on_background_thread(monkeypatch):
+    """Verify memory panel refresh runs on background thread behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1273,14 +1343,19 @@ def test_memory_panel_refresh_runs_on_background_thread(monkeypatch):
     started: list[dict] = []
 
     class FakeManager:
+        """Coordinate fake manager behavior."""
         def get_all_facts(self):
+            """Verify get all facts behavior."""
             raise AssertionError("refresh should not run on the UI thread")
 
     class FakeThread:
+        """Test case for fake thread behavior."""
         def __init__(self, *, target, name: str, daemon: bool) -> None:
+            """Initialize the fake thread instance."""
             started.append({"target": target, "name": name, "daemon": daemon, "started": False})
 
         def start(self) -> None:
+            """Verify start behavior."""
             started[-1]["started"] = True
 
     monkeypatch.setattr(memory_viewer.threading, "Thread", FakeThread)
@@ -1300,6 +1375,7 @@ def test_memory_panel_refresh_runs_on_background_thread(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_memory_panel_read_only_hides_mutation_controls():
+    """Verify memory panel read only hides mutation controls behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -1309,7 +1385,9 @@ def test_memory_panel_read_only_hides_mutation_controls():
     app = QApplication.instance() or QApplication(sys.argv)
 
     class FakeManager:
+        """Coordinate fake manager behavior."""
         def get_all_facts(self):
+            """Verify get all facts behavior."""
             return []
 
     panel = MemoryPanel(
@@ -1333,6 +1411,7 @@ def test_memory_panel_read_only_hides_mutation_controls():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_memory_panel_add_runs_on_background_thread(monkeypatch):
+    """Verify memory panel add runs on background thread behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1343,14 +1422,19 @@ def test_memory_panel_add_runs_on_background_thread(monkeypatch):
     started: list[dict] = []
 
     class FakeManager:
+        """Coordinate fake manager behavior."""
         def add_fact_manual(self, _text, _category):
+            """Verify add fact manual behavior."""
             raise AssertionError("add should not run on the UI thread")
 
     class FakeThread:
+        """Test case for fake thread behavior."""
         def __init__(self, *, target, name: str, daemon: bool) -> None:
+            """Initialize the fake thread instance."""
             started.append({"target": target, "name": name, "daemon": daemon, "started": False})
 
         def start(self) -> None:
+            """Verify start behavior."""
             started[-1]["started"] = True
 
     monkeypatch.setattr(memory_viewer.threading, "Thread", FakeThread)
@@ -1372,6 +1456,7 @@ def test_memory_panel_add_runs_on_background_thread(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_keybinds_has_voice_block_and_tools_buttons():
+    """Verify settings keybinds has voice block and tools buttons behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -1405,6 +1490,7 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
 
 
 def test_reset_keybinds_page_includes_voice_keys():
+    """Verify reset keybinds page includes voice keys behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     env = {
@@ -1423,6 +1509,7 @@ def test_reset_keybinds_page_includes_voice_keys():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tool_access_dialog_round_trips_overrides():
+    """Verify tool access dialog round trips overrides behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1447,6 +1534,7 @@ def test_tool_access_dialog_round_trips_overrides():
         assert {
             "web_search", "get_context", "git_status", "git_diff",
             "github_repo", "github_issue", "memory_search", "capture_screen",
+            "list_files", "read_file", "edit_file", "write_file",
         } <= set(combos)
         # Defaults follow the dropdowns: Git/GitHub + Memory are "Let model
         # decide"; a stored override (github_repo: off) wins over that.
@@ -1458,8 +1546,12 @@ def test_tool_access_dialog_round_trips_overrides():
         # A selector left matching its dropdown default stores nothing; the
         # explicit deviations round-trip.
         combos["web_search"].setCurrentIndex(combos["web_search"].findData("on"))
+        combos["read_file"].setCurrentIndex(combos["read_file"].findData("model"))
+        combos["edit_file"].setCurrentIndex(combos["edit_file"].findData("on"))
         result = dlg.selected_overrides()
         assert result["web_search"] == "on"
+        assert result["read_file"] == "model"
+        assert result["edit_file"] == "on"
         assert result["github_repo"] == "off"
         assert "git_status" not in result
         assert "memory_search" not in result
@@ -1469,6 +1561,7 @@ def test_tool_access_dialog_round_trips_overrides():
 
 
 def test_bubble_hide_delay_seconds_round_trip():
+    """Verify bubble hide delay seconds round trip behavior."""
     from ui.settings_panel.dialog import _ms_to_seconds_str, _seconds_str_to_ms
 
     assert _ms_to_seconds_str("3500", 3500) == "3.5"

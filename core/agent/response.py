@@ -11,8 +11,10 @@ from core.agent.runtime import LogCallback
 
 
 class AgentResponseMixin:
+    """Model agent response mixin."""
     @staticmethod
     def _compact_text(text: str, max_chars: int) -> str:
+        """Handle compact text for agent response mixin."""
         if len(text) <= max_chars:
             return text
         head = max_chars // 2
@@ -33,6 +35,7 @@ class AgentResponseMixin:
         model: str | None = None,
         fallbacks: str | None = None,
     ) -> str | None:
+        """Handle repair agent response for agent response mixin."""
         local_repair = self._locally_repair_agent_response(bad_response)
         if local_repair is not None:
             log("repaired invalid JSON locally")
@@ -75,10 +78,12 @@ class AgentResponseMixin:
 
     @staticmethod
     def _repair_response_excerpt(response_text: str, max_chars: int = 3000) -> str:
+        """Handle repair response excerpt for agent response mixin."""
         return AgentResponseMixin._compact_text(response_text, max_chars)
 
     @staticmethod
     def _parse_agent_response(response_text: str) -> dict:
+        """Parse agent response."""
         text = AgentResponseMixin._extract_json_text(response_text)
         if text.startswith("```"):
             lines = text.splitlines()
@@ -102,6 +107,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _locally_repair_agent_response(response_text: str) -> str | None:
+        """Handle locally repair agent response for agent response mixin."""
         text = AgentResponseMixin._strip_json_fence(AgentResponseMixin._extract_json_text(response_text))
         candidates = [text]
         sanitized = AgentResponseMixin._escape_control_chars_inside_json_strings(text)
@@ -137,6 +143,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _strip_json_fence(text: str) -> str:
+        """Handle strip json fence for agent response mixin."""
         text = text.strip()
         if not text.startswith("```"):
             return text
@@ -149,6 +156,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _escape_control_chars_inside_json_strings(text: str) -> str:
+        """Handle escape control chars inside json strings for agent response mixin."""
         result: list[str] = []
         in_string = False
         escaped = False
@@ -187,6 +195,7 @@ class AgentResponseMixin:
         # spends its whole token budget on a reasoning preamble and then gets cut
         # off mid-JSON must be detected here so the runner retries cheaply instead
         # of paying for a model repair call that can only guess at lost content.
+        """Handle looks like truncated agent response for agent response mixin."""
         text = response_text.strip()
         if not text:
             return False
@@ -292,6 +301,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _extract_json_text(response_text: str) -> str:
+        """Extract json text."""
         text = response_text.strip()
         fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
         if fenced:
@@ -315,6 +325,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _tool_call_name(call: dict) -> str:
+        """Handle tool call name for agent response mixin."""
         name = call.get("tool")
         if name is None:
             name = call.get("function")
@@ -326,6 +337,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _tool_call_args(call: dict) -> dict | object:
+        """Handle tool call args for agent response mixin."""
         args = call.get("args")
         if args is None:
             args = call.get("parameters")
@@ -337,6 +349,7 @@ class AgentResponseMixin:
 
     @staticmethod
     def _fallback_invalid_response(response_text: str) -> str:
+        """Handle fallback invalid response for agent response mixin."""
         return json.dumps(
             {
                 "thought": "The previous model response was malformed JSON and could not be repaired.",

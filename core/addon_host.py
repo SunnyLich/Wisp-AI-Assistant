@@ -14,6 +14,7 @@ from typing import Any
 
 @dataclass
 class HostContext:
+    """Model host context."""
     signals: Any
     model_tool_registry: Any
     config: Any
@@ -22,7 +23,9 @@ class HostContext:
 
 
 class AddonHost:
+    """Model addon host."""
     def __init__(self, addon_id: str, folder: Path, entry: str) -> None:
+        """Initialize the addon host instance."""
         self.addon_id = addon_id
         self.folder = folder
         self.entry = entry
@@ -30,6 +33,7 @@ class AddonHost:
         self.tool_executors: dict[str, Any] = {}
 
     def load(self) -> None:
+        """Import the addon's entry module into a namespaced package."""
         entry_path = (self.folder / self.entry).resolve()
         if not entry_path.exists():
             raise FileNotFoundError(f"addon entry does not exist: {entry_path}")
@@ -49,6 +53,7 @@ class AddonHost:
         self.module = module
 
     def call(self, method: str, params: dict[str, Any]) -> Any:
+        """Dispatch an RPC method (ping/hooks/lifecycle/tool) to the loaded addon."""
         if method == "ping":
             return {"ok": True, "pid": os.getpid()}
         if method == "hooks":
@@ -86,6 +91,7 @@ class AddonHost:
         raise ValueError(f"unknown addon host method: {method}")
 
     def _hook_names(self) -> list[str]:
+        """Handle hook names for addon host."""
         hooks = (
             "on_startup",
             "on_shutdown",
@@ -102,6 +108,7 @@ class AddonHost:
         return [name for name in hooks if hasattr(self.module, name)]
 
     def _on_startup(self, params: dict[str, Any]) -> None:
+        """Handle startup events."""
         import config
 
         data_dir = Path(str(params.get("data_dir") or self.folder / ".data"))
@@ -116,6 +123,7 @@ class AddonHost:
         return self._call_hook("on_startup", ctx)
 
     def _before_query(self, params: dict[str, Any]) -> dict[str, str]:
+        """Handle before query for addon host."""
         prompt = str(params.get("prompt") or "")
         context = str(params.get("context") or "")
         fn = getattr(self.module, "before_query", None)
@@ -132,6 +140,7 @@ class AddonHost:
         return {"prompt": prompt, "context": context}
 
     def _tray_labels(self) -> list[str]:
+        """Handle tray labels for addon host."""
         actions = self._call_list_hook("get_tray_actions")
         return [
             str(item.get("label") or "Action")
@@ -140,6 +149,7 @@ class AddonHost:
         ]
 
     def _run_tray_action(self, label: str) -> None:
+        """Run tray action."""
         if not label:
             raise ValueError("label is required")
         actions = self._call_list_hook("get_tray_actions")
@@ -154,6 +164,7 @@ class AddonHost:
         raise ValueError(f"addon action not found: {label}")
 
     def _intents(self) -> list[dict[str, Any]]:
+        """Handle intents for addon host."""
         intents = self._call_list_hook("get_intents")
         out: list[dict[str, Any]] = []
         for item in intents:
@@ -171,6 +182,7 @@ class AddonHost:
         return out
 
     def _run_intent(self, intent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run intent."""
         if not intent_id:
             raise ValueError("intent id is required")
         for item in self._call_list_hook("get_intents"):
@@ -188,12 +200,14 @@ class AddonHost:
         raise ValueError(f"addon intent not found: {intent_id}")
 
     def _on_event(self, event: str, payload: dict[str, Any]) -> Any:
+        """Handle event events."""
         fn = getattr(self.module, "on_event", None)
         if callable(fn):
             return fn(event, payload or {})
         return None
 
     def _hotkeys(self) -> list[dict[str, Any]]:
+        """Handle hotkeys for addon host."""
         hotkeys = self._call_list_hook("get_hotkeys")
         out: list[dict[str, Any]] = []
         for item in hotkeys:
@@ -210,6 +224,7 @@ class AddonHost:
         return out
 
     def _run_hotkey(self, hotkey_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run hotkey."""
         if not hotkey_id:
             raise ValueError("hotkey id is required")
         for item in self._call_list_hook("get_hotkeys"):
@@ -227,6 +242,7 @@ class AddonHost:
         raise ValueError(f"addon hotkey not found: {hotkey_id}")
 
     def _tools(self) -> list[dict[str, Any]]:
+        """Handle tools for addon host."""
         tools = self._call_list_hook("get_tools")
         out: list[dict[str, Any]] = []
         self.tool_executors.clear()
@@ -252,6 +268,7 @@ class AddonHost:
         return out
 
     def _execute_tool(self, name: str, inputs: dict[str, Any]) -> str:
+        """Handle execute tool for addon host."""
         executor = self.tool_executors.get(name)
         if executor is None:
             self._tools()
@@ -262,12 +279,14 @@ class AddonHost:
         return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
 
     def _call_hook(self, hook: str, *args: Any) -> Any:
+        """Call hook."""
         fn = getattr(self.module, hook, None)
         if callable(fn):
             return fn(*args)
         return None
 
     def _call_list_hook(self, hook: str) -> list[Any]:
+        """Call list hook."""
         fn = getattr(self.module, hook, None)
         if not callable(fn):
             return []
@@ -276,6 +295,7 @@ class AddonHost:
 
 
 def _respond(req_id: Any, result: Any = None, error: str | None = None) -> None:
+    """Handle respond for addon host."""
     payload = {"id": req_id, "result": result}
     if error is not None:
         payload["error"] = error
@@ -283,6 +303,7 @@ def _respond(req_id: Any, result: Any = None, error: str | None = None) -> None:
 
 
 def main() -> int:
+    """Handle main for addon host."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", required=True)
     parser.add_argument("--folder", required=True)

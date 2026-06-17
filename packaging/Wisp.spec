@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+# PyInstaller specification for the Windows Wisp executable bundle.
 
 from pathlib import Path
 import PySide6
@@ -43,7 +44,7 @@ block_cipher = None
 
 
 a = Analysis(
-    [str(ROOT / "macos_py" / "supervisor" / "app.py")],
+    [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
     binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES + UV_BINARIES,
     datas=[

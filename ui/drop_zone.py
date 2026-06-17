@@ -132,6 +132,7 @@ class VanishEffect(QWidget):
     _INTERVAL = 28   # ~36 fps -> ~504 ms total
 
     def __init__(self, global_pos: QPoint):
+        """Initialize the vanish effect instance."""
         super().__init__(None)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -152,6 +153,7 @@ class VanishEffect(QWidget):
         self.show()
 
     def _tick(self) -> None:
+        """Handle tick for vanish effect."""
         self._frame += 1
         if self._frame >= self._FRAMES:
             self._timer.stop()
@@ -160,6 +162,7 @@ class VanishEffect(QWidget):
         self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
+        """Paint event."""
         t = self._frame / self._FRAMES
         c = self._SIZE // 2
         p = QPainter(self)
@@ -204,6 +207,7 @@ class AddedContextToast(QWidget):
     """'Added as context!' label that appears above the icon and fades out."""
 
     def __init__(self, icon_pos: QPoint, icon_size: int):
+        """Initialize the added context toast instance."""
         super().__init__(None)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -242,6 +246,7 @@ class AddedContextToast(QWidget):
         self._hold.start(700)
 
     def _fade_out(self) -> None:
+        """Handle fade out for added context toast."""
         self._anim = QPropertyAnimation(self._effect, b"opacity", self)
         self._anim.setDuration(500)
         self._anim.setStartValue(1.0)
@@ -266,6 +271,7 @@ class ContextBadge(QWidget):
         parent: QWidget | None = None,
         removable: bool = True,
     ):
+        """Initialize the context badge instance."""
         super().__init__(parent)
         self._name      = display_name
         self._type      = item_type
@@ -303,6 +309,7 @@ class ContextBadge(QWidget):
 
     @staticmethod
     def _x_rect() -> QRect:
+        """Handle x rect for context badge."""
         return QRect(_BADGE_W - _X_W, 0, _X_W, _BADGE_H)
 
     # ------------------------------------------------------------------
@@ -310,6 +317,7 @@ class ContextBadge(QWidget):
     # ------------------------------------------------------------------
 
     def mouseMoveEvent(self, event) -> None:
+        """Handle mouse move event for context badge."""
         if not self._removable:
             return
         hover = self._x_rect().contains(event.pos())
@@ -321,12 +329,14 @@ class ContextBadge(QWidget):
             self.update()
 
     def leaveEvent(self, _event) -> None:
+        """Handle leave event for context badge."""
         if self._hovered:
             self._hovered = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.update()
 
     def mousePressEvent(self, event) -> None:
+        """Handle mouse press event for context badge."""
         if (
             self._removable
             and event.button() == Qt.MouseButton.LeftButton
@@ -341,6 +351,7 @@ class ContextBadge(QWidget):
     # ------------------------------------------------------------------
 
     def paintEvent(self, _event) -> None:  # noqa: N802
+        """Paint event."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -402,6 +413,7 @@ class ContextPanel(QWidget):
     """
 
     def __init__(self):
+        """Initialize the context panel instance."""
         super().__init__(None)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -431,6 +443,7 @@ class ContextPanel(QWidget):
         self._on_remove_item = cb
 
     def add_item(self, display_name: str, item_type: str) -> None:
+        """Add item."""
         if self._summary_mode:
             self._clear_badges()           # a real drop supersedes the sent-summary
             self._summary_mode = False
@@ -472,11 +485,13 @@ class ContextPanel(QWidget):
         self._update_visibility()
 
     def _clear_badges(self) -> None:
+        """Clear badges."""
         for b in self._badges:
             b.deleteLater()
         self._badges.clear()
 
     def clear_items(self) -> None:
+        """Clear items."""
         self._summary_timer.stop()
         self._summary_mode = False
         self._clear_badges()
@@ -484,6 +499,7 @@ class ContextPanel(QWidget):
         self._update_visibility()
 
     def reposition(self, icon_pos: QPoint, icon_size: int) -> None:
+        """Handle reposition for context panel."""
         self._icon_pos  = icon_pos
         self._icon_size = icon_size
         self._relayout()
@@ -498,6 +514,7 @@ class ContextPanel(QWidget):
         self._update_visibility()
 
     def _update_visibility(self) -> None:
+        """Update visibility."""
         should_show = self._drag_active or bool(self._badges)
         if should_show and not self.isVisible():
             self.show()
@@ -518,6 +535,7 @@ class ContextPanel(QWidget):
         badge.fade_out(lambda: self._finish_remove(badge, current_idx))
 
     def _finish_remove(self, badge: ContextBadge, data_idx: int) -> None:
+        """Handle finish remove for context panel."""
         if badge in self._badges:
             self._badges.remove(badge)
         badge.deleteLater()
@@ -538,6 +556,7 @@ class ContextPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _relayout(self) -> None:
+        """Handle relayout for context panel."""
         n = len(self._badges)
         if n == 0:
             panel_h = _ZONE_H
@@ -566,6 +585,7 @@ class ContextPanel(QWidget):
     # ------------------------------------------------------------------
 
     def paintEvent(self, _event) -> None:  # noqa: N802
+        """Paint event."""
         if self._badges or not self._drag_active:
             return
 

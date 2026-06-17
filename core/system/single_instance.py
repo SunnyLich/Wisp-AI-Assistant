@@ -5,7 +5,7 @@ for the lifetime of the process and released automatically by the OS on exit or
 crash, so there are no stale lock files to clean up.
 
 The lock lives in the user-data dir (see paths.SINGLE_INSTANCE_LOCK), so a dev
-run (`python -m macos_py.supervisor.app`) and an installed build contend for the same lock.
+run (`python -m runtime.supervisor.app`) and an installed build contend for the same lock.
 """
 from __future__ import annotations
 
@@ -40,6 +40,7 @@ def acquire() -> bool:
 
 
 def _acquire_windows() -> bool:
+    """Handle acquire windows for system single instance."""
     global _lock_handle
     import msvcrt
 
@@ -60,6 +61,7 @@ def _acquire_windows() -> bool:
 
 
 def _acquire_posix() -> bool:
+    """Handle acquire posix for system single instance."""
     global _lock_handle
     import fcntl
 

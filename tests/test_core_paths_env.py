@@ -1,7 +1,10 @@
+"""Tests for test core paths env."""
+
 import importlib
 
 
 def test_wisp_repo_root_env_overrides_writable_paths(tmp_path, monkeypatch):
+    """Verify wisp repo root env overrides writable paths behavior."""
     import core.system.paths as paths
 
     monkeypatch.setenv("WISP_REPO_ROOT", str(tmp_path))

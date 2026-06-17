@@ -13,6 +13,7 @@ LANGUAGES = ("zh", "zh-Hant", "es", "fr")
 
 
 def _lrelease_path() -> str | None:
+    """Support command-line helper for scripts i18n compile qt for lrelease path."""
     found = shutil.which("pyside6-lrelease") or shutil.which("lrelease")
     if found:
         return found
@@ -22,6 +23,7 @@ def _lrelease_path() -> str | None:
 
 
 def compile_qm(language: str) -> None:
+    """Compile qm."""
     lrelease = _lrelease_path()
     if not lrelease:
         raise RuntimeError("Could not find pyside6-lrelease or lrelease")
@@ -32,6 +34,7 @@ def compile_qm(language: str) -> None:
 
 
 def main() -> int:
+    """Support command-line helper for scripts i18n compile qt for main."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("languages", nargs="*", choices=LANGUAGES)
     args = parser.parse_args()

@@ -48,7 +48,7 @@ class OverlaySignals(QObject):
     chat_new_conversation  = Signal()        # a voice query created a new conversation
     chat_sync_conversation = Signal(int)     # a voice query appended to an existing conversation (idx)
     show_memory_viewer     = Signal()        # tray "Memory-¦" clicked
-    show_plugin_manager    = Signal()        # tray "Addon Manager" clicked
+    show_addon_manager    = Signal()        # tray "Addon Manager" clicked
     show_agent_task        = Signal()        # tray "Start agent task" clicked
     show_agent_history     = Signal()        # tray "Agent task history" clicked
     context_items_dropped  = Signal(object)  # list[(name, content, type)] from drag-drop
@@ -68,10 +68,12 @@ class IconOverlay(QMainWindow):
 
     @property
     def ICON_SIZE(self):
+        """Handle i c o NS i z e for icon overlay."""
         s = config.ICON_SIZE
         return (s, s)
 
     def __init__(self, signals: OverlaySignals):
+        """Initialize the icon overlay instance."""
         super().__init__()
         self.signals = signals
 
@@ -150,10 +152,12 @@ class IconOverlay(QMainWindow):
     def _build_window(self):
         # Hidden zero-size window anchors the tray icon. The visible companion is
         # a small independent QLabel so it can be dragged without a window frame.
+        """Build window."""
         self.setWindowFlags(Qt.WindowType.Tool)
         self.setFixedSize(0, 0)
 
     def _build_icon_label(self):
+        """Build icon label."""
         sz = config.ICON_SIZE
         margin = 20
         screen = QApplication.primaryScreen().availableGeometry()
@@ -197,10 +201,12 @@ class IconOverlay(QMainWindow):
         self._icon_hide_timer.timeout.connect(self._on_icon_hide_timeout)
 
     def _update_tray_context_menu(self) -> None:
+        """Update tray context menu."""
         if hasattr(self, "_tray") and hasattr(self, "_tray_menu"):
             self._tray.setContextMenu(self._tray_menu)
 
     def _build_tray(self):
+        """Build tray."""
         self._state_icons: dict[str, QIcon] = {}
         for state in ("idle", "listening", "thinking", "speaking"):
             p = os.path.join(ASSETS_DIR, f"{state}.png")
@@ -213,6 +219,7 @@ class IconOverlay(QMainWindow):
         self._tray.show()
 
     def _build_tray_menu(self) -> QMenu:
+        """Build tray menu."""
         menu = QMenu()
 
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
@@ -247,12 +254,12 @@ class IconOverlay(QMainWindow):
         menu.addAction(self._icon_toggle_action)
         menu.addSeparator()
         menu.addAction(memory_action)
-        plugin_manager_action = QAction(t("Addon Manager"), self)
+        addon_manager_action = QAction(t("Addon Manager"), self)
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
-            plugin_manager_action.triggered.connect(self.signals.show_plugin_manager.emit)
+            addon_manager_action.triggered.connect(self.signals.show_addon_manager.emit)
         else:
-            plugin_manager_action.triggered.connect(self._open_plugin_manager)
-        menu.addAction(plugin_manager_action)
+            addon_manager_action.triggered.connect(self._open_addon_manager)
+        menu.addAction(addon_manager_action)
         menu.addSeparator()
 
         menu.addAction(settings_action)
@@ -261,6 +268,7 @@ class IconOverlay(QMainWindow):
         return menu
 
     def _set_icon_pixmap(self, state: str):
+        """Set icon pixmap."""
         p = os.path.join(ASSETS_DIR, f"{state}.png")
         if not os.path.exists(p):
             p = os.path.join(ASSETS_DIR, "idle.png")
@@ -268,6 +276,7 @@ class IconOverlay(QMainWindow):
             self._icon_label.setPixmap(QPixmap(p))
 
     def _on_state_changed(self, state: str):
+        """Handle state changed events."""
         self._current_state = state
         icon = self._state_icons.get(state) or self._state_icons.get("idle")
         if icon:
@@ -277,6 +286,7 @@ class IconOverlay(QMainWindow):
             self._show_icon()
 
     def _on_mouth_amp(self, amp: float):
+        """Handle mouth amp events."""
         pass
 
     def apply_settings(self):
@@ -304,6 +314,7 @@ class IconOverlay(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_show_popup(self, text: str):
+        """Handle show popup events."""
         from ui.popup import TextPopup
         popup = TextPopup(text, parent=None)
         popup.show()
@@ -354,15 +365,17 @@ class IconOverlay(QMainWindow):
         # macOS. singleShot(0) lets the menu fully close first. (The menu actions
         # wired to App's *queued* signals — memory/chat — already get this for
         # free, which is why they don't crash and Settings did.)
+        """Open settings."""
         from ui.settings_panel.dialog import open_settings
         QTimer.singleShot(
             0, lambda: open_settings(parent=self, on_apply=self.signals.settings_applied.emit)
         )
 
-    def _open_plugin_manager(self):
+    def _open_addon_manager(self):
         # Deferred for the same reason as _open_settings (opened from a QMenu action).
-        from ui.plugin_manager import open_plugin_manager
-        QTimer.singleShot(0, lambda: open_plugin_manager(parent=self))
+        """Open plugin manager."""
+        from ui.addon_manager import open_addon_manager
+        QTimer.singleShot(0, lambda: open_addon_manager(parent=self))
 
     # ------------------------------------------------------------------
     # Icon visibility
@@ -375,11 +388,13 @@ class IconOverlay(QMainWindow):
     # ------------------------------------------------------------------
 
     def _raise_overlay(self):
+        """Handle raise overlay for icon overlay."""
         self.show()
         self.raise_()
         self.activateWindow()
 
     def _show_icon(self):
+        """Show icon."""
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
         self._icon_hide_timer.stop()
@@ -387,6 +402,7 @@ class IconOverlay(QMainWindow):
         self._icon_label.raise_()
 
     def _hide_icon(self):
+        """Hide icon."""
         if not hasattr(self, '_icon_hide_timer'):
             return
         if not config.ICON_AUTO_HIDE:
@@ -432,6 +448,7 @@ class IconOverlay(QMainWindow):
 
     @staticmethod
     def _icon_backstop_ms() -> int:
+        """Handle icon backstop ms for icon overlay."""
         return max(500, int(getattr(config, "ICON_BACKSTOP_MS", 5000)))
 
     def _on_show_context_summary(self, items):
@@ -465,6 +482,7 @@ class IconOverlay(QMainWindow):
             self._icon_label.hide()
 
     def _icon_label_clear(self):
+        """Handle icon label clear for icon overlay."""
         if not hasattr(self, '_icon_hide_timer') or not hasattr(self, '_icon_label'):
             return
         self._on_bubble_speed_boost(False)
@@ -477,9 +495,11 @@ class IconOverlay(QMainWindow):
     # ------------------------------------------------------------------
 
     def set_click_handler(self, handler):
+        """Set click handler."""
         pass  # icon click disabled
 
     def _on_click(self, event):
+        """Handle click events."""
         pass
 
     # ------------------------------------------------------------------
@@ -487,12 +507,18 @@ class IconOverlay(QMainWindow):
     # ------------------------------------------------------------------
 
     def eventFilter(self, obj, event):
+        """Handle event filter for icon overlay."""
         if obj is self._icon_label:
             t = event.type()
 
             # ---- mouse events ----
             if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
-                self._tray_menu.popup(event.globalPosition().toPoint())
+                self._right_press_on_icon = True
+                return True
+            if t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.RightButton:
+                if getattr(self, "_right_press_on_icon", False):
+                    self._right_press_on_icon = False
+                    self._tray_menu.popup(event.globalPosition().toPoint())
                 return True
             if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self._icon_press_pos = event.globalPosition().toPoint()
@@ -585,5 +611,5 @@ class IconOverlay(QMainWindow):
         self._icon_label.move(icon_pos)
 
     def _on_bubble_speed_boost(self, enabled: bool):
+        """Handle bubble speed boost events."""
         self.signals.bubble_speed.emit(bool(enabled))
-

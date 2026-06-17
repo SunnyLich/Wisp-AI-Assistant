@@ -6,16 +6,17 @@ from core import secret_store
 
 
 GOOGLE_OPENAI_BASE_URL  = "https://generativelanguage.googleapis.com/v1beta/openai/"
-DEEPSEEK_BASE_URL       = "https://api.deepseek.com/v1"
+DEEPSEEK_BASE_URL       = "https://api.deepseek.com"
 OPENROUTER_BASE_URL     = "https://openrouter.ai/api/v1"
 MISTRAL_BASE_URL        = "https://api.mistral.ai/v1"
 XAI_BASE_URL            = "https://api.x.ai/v1"
-TOGETHER_BASE_URL       = "https://api.together.xyz/v1"
+TOGETHER_BASE_URL       = "https://api.together.ai/v1"
 CEREBRAS_BASE_URL       = "https://api.cerebras.ai/v1"
 OLLAMA_BASE_URL         = "http://localhost:11434/v1"
 
 
 def api_key_for(provider: str) -> str:
+    """Handle api key for for LLM clients routes."""
     p = provider.lower()
     if p == "groq":
         return config.GROQ_API_KEY
@@ -49,6 +50,7 @@ def api_key_for(provider: str) -> str:
 
 
 def credential_source_for_provider(provider: str) -> str:
+    """Handle credential source for provider for LLM clients routes."""
     p = provider.lower()
     if p == "groq":
         return secret_store.secret_source("GROQ_API_KEY")
@@ -112,6 +114,7 @@ def parse_model_fallbacks(raw: str) -> list[tuple[str, str]]:
 
 
 def route_candidates(provider: str, model: str, fallback_raw: str) -> list[tuple[str, str]]:
+    """Handle route candidates for LLM clients routes."""
     routes: list[tuple[str, str]] = []
     if provider and model:
         routes.append((provider.lower(), model))

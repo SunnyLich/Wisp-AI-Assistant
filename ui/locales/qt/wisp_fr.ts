@@ -79,10 +79,6 @@
       <translation>Ajuste la quantité de texte externe que Wisp peut collecter avant d’interroger le modèle.</translation>
     </message>
     <message>
-      <source>legacy tool folder / script tool folder</source>
-      <translation>dossier d’outils hérités / dossier de scripts</translation>
-    </message>
-    <message>
       <source>Memory tuning</source>
       <translation>Réglage de la mémoire</translation>
     </message>
@@ -1227,10 +1223,6 @@ Laisser le modèle décider — expose le statut/diff git et les outils dépôt/
       <translation>Dernière pensée</translation>
     </message>
     <message>
-      <source>Legacy tool folder</source>
-      <translation>Dossier d’outils hérité</translation>
-    </message>
-    <message>
       <source>Let model decide</source>
       <translation>Laisser le modèle décider</translation>
     </message>
@@ -1441,10 +1433,6 @@ Appuyez sur Ctrl+Q pour poser une question.</translation>
       <translation>Aucun objectif actuel.</translation>
     </message>
     <message>
-      <source>No extra tools found. Install script tools under the legacy tool folder, or enable addons that add tools.</source>
-      <translation>Aucun outil supplémentaire trouvé. Installez des outils de script dans le dossier d’outils hérité ou activez des extensions qui ajoutent des outils.</translation>
-    </message>
-    <message>
       <source>No facts stored yet.
 Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.</source>
       <translation>Aucun fait enregistré pour le moment.
@@ -1467,7 +1455,7 @@ Dites "remember that ...", "note that ..." ou "keep in mind ..." pour enregistre
       <translation>Aucun paquet déclaré</translation>
     </message>
     <message>
-      <source>No plugins found.</source>
+      <source>No addons found.</source>
       <translation>Aucun plugin trouvé.</translation>
     </message>
     <message>
@@ -2654,5 +2642,33 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <source>xhigh</source>
       <translation>très élevé</translation>
     </message>
-  </context>
+    <message>
+      <source>Model file access</source>
+      <translation>Acc?s du mod?le aux fichiers</translation>
+    </message>
+    <message>
+      <source>One folder per line. Leave empty to turn local file access off.</source>
+      <translation>Un dossier par ligne. Laissez vide pour d?sactiver l?acc?s aux fichiers locaux.</translation>
+    </message>
+    <message>
+      <source>Ask before writing</source>
+      <translation>Demander avant d??crire</translation>
+    </message>
+    <message>
+      <source>Write automatically</source>
+      <translation>?crire automatiquement</translation>
+    </message>
+    <message>
+      <source>One private pattern per line. Matching files are always refused.</source>
+      <translation>Un motif priv? par ligne. Les fichiers correspondants sont toujours refus?s.</translation>
+    </message>
+    <message>
+      <source>Folders the model may use</source>
+      <translation>Dossiers que le mod?le peut utiliser</translation>
+    </message>
+    <message>
+      <source>Private file patterns</source>
+      <translation>Motifs de fichiers priv?s</translation>
+    </message>
+  <message><source>These folders are the only places the model can list or read files. Each keybind chooses whether local files are off, read-only, ask-before-write, or automatic.</source><translation>Ces dossiers sont les seuls endroits où le modèle peut lister ou lire des fichiers. Chaque raccourci choisit si les fichiers locaux sont désactivés, en lecture seule, soumis à confirmation avant écriture ou automatiques.</translation></message><message><source>Read only</source><translation>Lecture seule</translation></message><message><source>Local files:</source><translation>Fichiers locaux :</translation></message><message><source>No extra tools found. Enable addons that add model tools.</source><translation>Aucun outil supplémentaire trouvé. Activez des addons qui ajoutent des outils pour le modèle.</translation></message></context>
 </TS>

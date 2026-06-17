@@ -17,6 +17,7 @@ ROLE_RESPONSIBILITIES = {
 
 
 def role_responsibility(role: str) -> str:
+    """Handle role responsibility for agent task spec."""
     return ROLE_RESPONSIBILITIES.get(role.strip(), "")
 
 
@@ -35,6 +36,7 @@ def _int_or(value, default: int) -> int:  # noqa: ANN001
 
 
 def is_role_template(text: str) -> bool:
+    """Return whether role template is true."""
     normalized = " ".join(text.split())
     return any(" ".join(value.split()) == normalized for value in ROLE_RESPONSIBILITIES.values())
 
@@ -131,6 +133,7 @@ def continue_spec_from_run(run_dir: Path) -> AgentTaskSpec:
 
 
 def previous_run_context(run_dir: Path) -> str:
+    """Handle previous run context for agent task spec."""
     final = read_run_text(run_dir / "final.md")
     error = read_run_text(run_dir / "error.txt")
     run_log = read_run_text(run_dir / "run.log")
@@ -147,12 +150,14 @@ def previous_run_context(run_dir: Path) -> str:
 
 
 def read_run_text(path: Path) -> str:
+    """Read run text."""
     if not path.exists():
         return ""
     return path.read_text(encoding="utf-8", errors="replace").strip()
 
 
 def compact_for_continue(text: str, max_chars: int, *, tail_only: bool = False) -> str:
+    """Handle compact for continue for agent task spec."""
     if len(text) <= max_chars:
         return text
     if tail_only:
@@ -163,6 +168,7 @@ def compact_for_continue(text: str, max_chars: int, *, tail_only: bool = False) 
 
 
 def filtered_continue_run_log(text: str, *, max_lines: int = 40) -> str:
+    """Handle filtered continue run log for agent task spec."""
     noisy_patterns = (
         "model streaming response:",
         "model response still streaming",
@@ -226,6 +232,7 @@ def is_inside_scope(path: str | Path, scope_folder: str | Path) -> bool:
 
 
 def agent_task_spec_from_dict(data: dict) -> AgentTaskSpec:
+    """Handle agent task spec from dict for agent task spec."""
     agents = [
         AgentRoleSpec(
             name=str(agent.get("name") or "Agent"),

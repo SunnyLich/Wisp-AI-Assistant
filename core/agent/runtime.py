@@ -12,6 +12,7 @@ ApprovalCallback = Callable[[dict], bool]
 
 
 class AgentTaskLike(Protocol):
+    """Model agent task like."""
     title: str
     objective: str
     scope_folder: str
@@ -73,6 +74,7 @@ class AgentRunControl:
     """Thread-safe cancellation token for a running agent task."""
 
     def __init__(self):
+        """Initialize the agent run control instance."""
         self._cancelled = threading.Event()
         self._pause_after_turn = threading.Event()
         self._resume = threading.Event()
@@ -81,32 +83,40 @@ class AgentRunControl:
         self._nudges: list[dict[str, str]] = []
 
     def cancel(self) -> None:
+        """Signal the run to cancel by setting the cancelled flag."""
         self._cancelled.set()
 
     def is_cancelled(self) -> bool:
+        """Return whether cancelled is true."""
         return self._cancelled.is_set()
 
     def raise_if_cancelled(self) -> None:
+        """Handle raise if cancelled for agent run control."""
         if self.is_cancelled():
             raise AgentCancelled("Agent task was cancelled by the user.")
 
     def pause_after_turn(self) -> None:
+        """Handle pause after turn for agent run control."""
         self._pause_after_turn.set()
         self._resume.clear()
 
     def resume(self) -> None:
+        """Handle resume for agent run control."""
         self._pause_after_turn.clear()
         self._resume.set()
 
     def is_pause_requested(self) -> bool:
+        """Return whether pause requested is true."""
         return self._pause_after_turn.is_set()
 
     def wait_if_paused(self) -> None:
+        """Handle wait if paused for agent run control."""
         while self.is_pause_requested() and not self.is_cancelled():
             self._resume.wait(timeout=0.25)
         self.raise_if_cancelled()
 
     def add_nudge(self, target: str, message: str, source: str = "User") -> None:
+        """Add nudge."""
         target = target.strip() or "ALL"
         message = message.strip()
         if not message:
@@ -120,6 +130,7 @@ class AgentRunControl:
             })
 
     def drain_nudges(self) -> list[dict[str, str]]:
+        """Handle drain nudges for agent run control."""
         with self._nudge_lock:
             nudges = list(self._nudges)
             self._nudges.clear()
@@ -136,6 +147,7 @@ class FileLeaseRegistry:
     """
 
     def __init__(self):
+        """Initialize the file lease registry instance."""
         self._lock = threading.Lock()
         self._holders: dict[str, str] = {}
 
@@ -168,6 +180,7 @@ class FileLeaseRegistry:
         return granted, denied
 
     def release(self, agent: str, paths: list[str] | None = None) -> None:
+        """Handle release for file lease registry."""
         with self._lock:
             if paths is None:
                 self._holders = {p: h for p, h in self._holders.items() if h != agent}
@@ -177,14 +190,17 @@ class FileLeaseRegistry:
                     del self._holders[path]
 
     def release_all(self) -> None:
+        """Handle release all for file lease registry."""
         with self._lock:
             self._holders.clear()
 
     def holder(self, path: str) -> str | None:
+        """Handle holder for file lease registry."""
         with self._lock:
             return self._holders.get(path)
 
     def held_by(self, agent: str) -> list[str]:
+        """Handle held by for file lease registry."""
         with self._lock:
             return sorted(path for path, holder in self._holders.items() if holder == agent)
 
@@ -202,7 +218,9 @@ class AgentPermissions:
 
     @classmethod
     def from_spec(cls, spec: AgentTaskLike) -> "AgentPermissions":
+        """Handle from spec for agent permissions."""
         def enabled(flag_name: str, mode_name: str) -> bool:
+            """Handle enabled for agent permissions."""
             mode = str(getattr(spec, mode_name, "") or "").strip().lower()
             if mode in {"never", "never permit", "deny"}:
                 return False

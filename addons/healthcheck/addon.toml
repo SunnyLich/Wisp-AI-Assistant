@@ -1,3 +1,4 @@
+# Manifest for the bundled healthcheck addon used to exercise addon surfaces.
 [addon]
 id = "healthcheck"
 name = "Healthcheck"

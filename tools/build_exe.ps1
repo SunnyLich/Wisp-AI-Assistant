@@ -1,3 +1,4 @@
+# Builds the Windows Wisp executable with PyInstaller and required assets.
 param(
     [switch]$Clean,
     [switch]$SkipInstall,

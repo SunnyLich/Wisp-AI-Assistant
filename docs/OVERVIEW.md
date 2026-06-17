@@ -6,12 +6,10 @@ OS work, audio, and brain/model work into isolated worker processes.
 
 ## Top-Level Layout
 
-- `macos_py/supervisor/` is the primary runtime entrypoint and wires the
+- `runtime/supervisor/` is the primary runtime entrypoint and wires the
   application together: worker lifecycle,
   hotkeys, context buffering, memory, intent flow, chat windows, and voice/snip
   interactions.
-- `main.py` is the legacy single-process Qt entrypoint kept temporarily while
-  remaining callers migrate to the supervisor path.
 - `config.py` loads runtime configuration from `.env` and keychain-backed
   secrets.
 - `core/` contains service and integration code: LLM routing, audio, TTS/STT,
@@ -30,15 +28,15 @@ OS work, audio, and brain/model work into isolated worker processes.
   settings, intent picker, snip overlay, memory viewer, and agent task UI.
 - `ui/agent/`, `ui/settings_panel/`, and `ui/shared/` group the largest UI
   domains and shared widget helpers.
-- Compatibility modules and legacy entrypoints should stay thin. New runtime
-  work belongs under `macos_py/`, `core/`, or `ui/` according to ownership.
+- Compatibility modules should stay thin. New runtime work belongs under
+  `runtime/`, `core/`, or `ui/` according to ownership.
 - `addons/` contains process-hosted addons discovered by `core.addon_manager`.
 - `tools/installed/` is the legacy local script-tool directory discovered by
   `core.tool_registry`.
 - `tests/` covers parser helpers, config/settings behavior, model route
-  fallback logic, tool discovery, secret storage, TTS config, macOS worker
+  fallback logic, tool discovery, secret storage, TTS config, runtime worker
   boundaries, and the agent runner.
-- `macos_py/` contains the pure-Python supervisor, worker processes, and the
+- `runtime/` contains the pure-Python supervisor, worker processes, and the
   headless brain package used by the app.
 
 ## Addon Contract
@@ -49,13 +47,13 @@ Python host process and communicates with Wisp over JSON IPC. Both Windows and
 macOS discover the same addon metadata, hooks, tray actions, settings, and
 model-callable tools from that shared layer.
 
-The old `core.plugin_manager` import path remains as a compatibility facade for
+The old `core.addon_manager` import path remains as a compatibility facade for
 callers and older addon code, but new work should use addon naming and
 `core.addon_manager`.
 
 ## Runtime Flow
 
-1. `macos_py.supervisor` starts the UI, native, audio, and brain workers, then
+1. `runtime.supervisor` starts the UI, native, audio, and brain workers, then
    registers platform hotkeys through the native worker.
 2. A caller hotkey captures selected text or a screen snippet, then opens the
    intent picker.
@@ -73,7 +71,7 @@ callers and older addon code, but new work should use addon naming and
 - Keep shared contracts and pure helpers in `core/`; keep PyQt object creation,
   signal wiring, and widget layout in `ui/`.
 - The largest extraction candidates are `core/llm_clients/client.py`,
-  `macos_py/supervisor/flows.py`, `ui/settings_panel/dialog.py`, and
+  `runtime/supervisor/flows.py`, `ui/settings_panel/dialog.py`, and
   `ui/agent/task_window.py`. Split these only around stable boundaries such as
   data models, provider adapters, workflow controllers, view components, and
   pure parsers.
@@ -105,6 +103,6 @@ pinned to Python `3.12.13`, and a stale Python 3.14 venv should be rebuilt with
 Run the current focused lint/type baseline with:
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check core\context_hotkey.py core\llm_clients\messages.py macos_py\supervisor\tool_modes.py ui\agent\combo_helpers.py ui\settings_panel\helpers.py tests\test_context_hotkey_snapshot.py
-.\.venv\Scripts\python.exe -m mypy core\settings_model.py core\llm_clients\logging_utils.py macos_py\supervisor\tool_modes.py ui\agent\combo_helpers.py --follow-imports=skip
+.\.venv\Scripts\python.exe -m ruff check core\context_hotkey.py core\llm_clients\messages.py runtime\supervisor\tool_modes.py ui\agent\combo_helpers.py ui\settings_panel\helpers.py tests\test_context_hotkey_snapshot.py
+.\.venv\Scripts\python.exe -m mypy core\settings_model.py core\llm_clients\logging_utils.py runtime\supervisor\tool_modes.py ui\agent\combo_helpers.py --follow-imports=skip
 ```

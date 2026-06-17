@@ -15,6 +15,7 @@ FALSE_VALUES = {"0", "false", "no", "off"}
 #   "auto"  — always capture at hotkey time and attach it to the query
 #   "model" — expose the capture_screen tool so the model grabs one on demand
 SCREENSHOT_MODES = ("off", "auto", "model")
+FILE_ACCESS_MODES = ("off", "read", "ask", "auto")
 
 
 def normalize_screenshot_mode(value, default: str = "off") -> str:
@@ -32,7 +33,34 @@ def normalize_screenshot_mode(value, default: str = "off") -> str:
 
 
 def env_screenshot_mode(name: str, default: str = "off") -> str:
+    """Handle env screenshot mode for system env utils."""
     return normalize_screenshot_mode(os.getenv(name), default)
+
+
+def normalize_file_access_mode(value, default: str = "off") -> str:
+    """Map a raw value to off/read/ask/auto local-file access."""
+    v = str(value if value is not None else default).strip().lower()
+    aliases = {
+        "none": "off",
+        "never": "off",
+        "disabled": "off",
+        "readonly": "read",
+        "read-only": "read",
+        "read_only": "read",
+        "on": "ask",
+        "true": "ask",
+        "yes": "ask",
+        "model": "ask",
+        "write": "ask",
+        "always": "auto",
+    }
+    v = aliases.get(v, v)
+    return v if v in FILE_ACCESS_MODES else default
+
+
+def env_file_access_mode(name: str, default: str = "off") -> str:
+    """Read a per-caller local-file access mode from the environment."""
+    return normalize_file_access_mode(os.getenv(name), default)
 
 
 # Per-caller tool override modes:
@@ -66,6 +94,7 @@ def format_tool_modes(modes: dict[str, str]) -> str:
 
 
 def env_bool(name: str, default: bool = False) -> bool:
+    """Handle env bool for system env utils."""
     value = os.getenv(name)
     if value is None:
         return default
@@ -78,6 +107,7 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def env_int(name: str, default: int) -> int:
+    """Handle env int for system env utils."""
     value = os.getenv(name)
     if value is None:
         return default
@@ -88,6 +118,7 @@ def env_int(name: str, default: int) -> int:
 
 
 def env_float(name: str, default: float) -> float:
+    """Handle env float for system env utils."""
     value = os.getenv(name)
     if value is None:
         return default
@@ -98,6 +129,7 @@ def env_float(name: str, default: float) -> float:
 
 
 def read_env_file(path: Path) -> dict[str, str]:
+    """Read env file."""
     if not path.exists():
         return {}
     return {
@@ -108,6 +140,7 @@ def read_env_file(path: Path) -> dict[str, str]:
 
 
 def format_env_value(value: str) -> str:
+    """Format env value."""
     if any(ch in value for ch in ("\n", "\r", '"', "#")):
         escaped = (
             value.replace("\\", "\\\\")
@@ -125,6 +158,7 @@ def write_env_file(
     values: dict[str, str],
     remove_keys: set[str] | None = None,
 ) -> None:
+    """Write env file."""
     remove_keys = remove_keys or set()
     lines: list[str] = []
     written: set[str] = set()

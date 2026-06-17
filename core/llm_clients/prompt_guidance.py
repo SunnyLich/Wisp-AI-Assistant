@@ -59,10 +59,12 @@ REWRITE_SYSTEM_PROMPT = (
 
 
 def append_note(system: str, note: str) -> str:
+    """Append note."""
     return f"{system}\n\n{note}" if system else note
 
 
 def with_tools_note(system: str, tools_offered: bool) -> str:
+    """Handle with tools note for LLM clients prompt guidance."""
     if not tools_offered:
         return system
     return append_note(system, TOOLS_NOTE)

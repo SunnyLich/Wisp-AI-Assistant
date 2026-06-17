@@ -23,6 +23,7 @@ from core.llm_clients import client as llm
 
 
 def run_latency_test(user_text: str, image_base64: str | None = None):
+    """Run latency test."""
     print(f"\n{'='*60}")
     print(f"  LLM provider : {config.LLM_PROVIDER} / {config.LLM_MODEL}")
     print(f"  TTS provider : {config.TTS_PROVIDER}")
@@ -50,6 +51,7 @@ def run_latency_test(user_text: str, image_base64: str | None = None):
     done_event = threading.Event()
 
     def llm_producer():
+        """Handle LLM producer for prototype latency."""
         nonlocal full_text, t_llm_first, t_llm_done
         try:
             for chunk in llm.stream_response(user_text, image_base64):
@@ -67,6 +69,7 @@ def run_latency_test(user_text: str, image_base64: str | None = None):
             t_llm_done = t_llm_done_local
 
     def llm_chunk_iter():
+        """Handle LLM chunk iter for prototype latency."""
         while True:
             chunk = llm_chunk_q.get()
             if chunk is None:
@@ -74,6 +77,7 @@ def run_latency_test(user_text: str, image_base64: str | None = None):
             yield chunk
 
     def tts_consumer():
+        """Handle TTS consumer for prototype latency."""
         nonlocal t_tts_first_audio
         if config.TTS_PROVIDER == "none":
             done_event.set()
@@ -125,6 +129,7 @@ def run_latency_test(user_text: str, image_base64: str | None = None):
 
 
 def main():
+    """Handle main for prototype latency."""
     parser = argparse.ArgumentParser(description="Latency loop prototype")
     parser.add_argument("--text", default="What is a kernel in operating systems?",
                         help="Query text to send to LLM")

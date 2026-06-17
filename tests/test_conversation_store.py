@@ -1,3 +1,5 @@
+"""Tests for test conversation store."""
+
 import importlib
 
 import core.system.paths as paths
@@ -5,6 +7,7 @@ from core.conversation_store import store
 
 
 def _isolate(tmp_path, monkeypatch):
+    """Verify isolate behavior."""
     chats = tmp_path / "chats"
     monkeypatch.setattr(store, "CHATS_DIR", chats)
     monkeypatch.setattr(store, "PROJECTS_FILE", chats / "projects.json")
@@ -12,6 +15,7 @@ def _isolate(tmp_path, monkeypatch):
 
 
 def test_general_project_always_present(tmp_path, monkeypatch):
+    """Verify general project always present behavior."""
     _isolate(tmp_path, monkeypatch)
     projects = store.load_projects()
     assert projects[0]["id"] == store.GENERAL_PROJECT_ID
@@ -19,6 +23,7 @@ def test_general_project_always_present(tmp_path, monkeypatch):
 
 
 def test_add_and_delete_project(tmp_path, monkeypatch):
+    """Verify add and delete project behavior."""
     _isolate(tmp_path, monkeypatch)
     proj = store.add_project("Wisp Redesign")
     assert proj["id"] != store.GENERAL_PROJECT_ID
@@ -33,11 +38,13 @@ def test_add_and_delete_project(tmp_path, monkeypatch):
 
 
 def test_cannot_delete_general(tmp_path, monkeypatch):
+    """Verify cannot delete general behavior."""
     _isolate(tmp_path, monkeypatch)
     assert store.delete_project(store.GENERAL_PROJECT_ID) is False
 
 
 def test_conversation_round_trip_and_title(tmp_path, monkeypatch):
+    """Verify conversation round trip and title behavior."""
     _isolate(tmp_path, monkeypatch)
     convs = [
         {
@@ -60,6 +67,7 @@ def test_conversation_round_trip_and_title(tmp_path, monkeypatch):
 
 
 def test_pin_and_rename_round_trip(tmp_path, monkeypatch):
+    """Verify pin and rename round trip behavior."""
     _isolate(tmp_path, monkeypatch)
     store.save_conversations([
         {
@@ -74,6 +82,7 @@ def test_pin_and_rename_round_trip(tmp_path, monkeypatch):
 
 
 def test_deleting_project_reassigns_conversations(tmp_path, monkeypatch):
+    """Verify deleting project reassigns conversations behavior."""
     _isolate(tmp_path, monkeypatch)
     proj = store.add_project("Temp")
     store.save_conversations([
@@ -85,6 +94,7 @@ def test_deleting_project_reassigns_conversations(tmp_path, monkeypatch):
 
 
 def test_paths_expose_chats_locations():
+    """Verify paths expose chats locations behavior."""
     importlib.reload(paths)
     assert paths.CHATS_DIR.name == "chats"
     assert paths.PROJECTS_FILE.name == "projects.json"

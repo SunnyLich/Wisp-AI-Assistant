@@ -28,6 +28,7 @@ def install_proxy_guard() -> None:
 
 
 def httpx_client(**kwargs):
+    """Handle httpx client for system sdk clients."""
     import httpx
 
     install_proxy_guard()
@@ -37,6 +38,7 @@ def httpx_client(**kwargs):
 
 
 def openai_client(**kwargs):
+    """Handle openai client for system sdk clients."""
     from openai import OpenAI
 
     install_proxy_guard()
@@ -46,6 +48,7 @@ def openai_client(**kwargs):
 
 
 def anthropic_client(**kwargs):
+    """Handle anthropic client for system sdk clients."""
     import anthropic
 
     install_proxy_guard()

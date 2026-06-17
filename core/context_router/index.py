@@ -22,6 +22,7 @@ from .extract import COMMON_WORDS
 
 @dataclass
 class RetrievalIndexes:
+    """Model retrieval indexes."""
     n_chunks: int = 0
     term_doc_freq: dict[str, int] = field(default_factory=dict)
     phrase_doc_freq: dict[str, int] = field(default_factory=dict)
@@ -32,24 +33,28 @@ class RetrievalIndexes:
 
     # --- rarity scores (higher = rarer = stronger evidence) ---------------
     def term_idf(self, term: str) -> float:
+        """Handle term idf for retrieval indexes."""
         df = self.term_doc_freq.get(term.lower(), 0)
         if df == 0:
             return math.log((self.n_chunks + 1) / 1.0)
         return math.log((self.n_chunks + 1) / (df + 1))
 
     def identifier_idf(self, ident: str) -> float:
+        """Handle identifier idf for retrieval indexes."""
         df = self.identifier_doc_freq.get(ident.lower(), 0)
         if df == 0:
             return 0.0
         return math.log((self.n_chunks + 1) / (df + 1)) + 1.0
 
     def phrase_idf(self, phrase: str) -> float:
+        """Handle phrase idf for retrieval indexes."""
         df = self.phrase_doc_freq.get(phrase.lower(), 0)
         if df == 0:
             return 0.0
         return math.log((self.n_chunks + 1) / (df + 1)) + 0.5
 
     def max_term_idf(self) -> float:
+        """Handle max term idf for retrieval indexes."""
         return math.log((self.n_chunks + 1) / 1.0)
 
     def is_common(self, term: str) -> bool:
@@ -63,6 +68,7 @@ class RetrievalIndexes:
 
 
 def build_indexes(chunks: list[ContextChunk]) -> RetrievalIndexes:
+    """Build indexes."""
     idx = RetrievalIndexes(n_chunks=len(chunks))
     tdf: dict[str, int] = defaultdict(int)
     pdf: dict[str, int] = defaultdict(int)

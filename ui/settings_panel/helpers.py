@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QToolTip, QWidget
 
 
 def parse_fallback_rows(raw: str) -> list[tuple[str, str]]:
+    """Parse fallback rows."""
     rows: list[tuple[str, str]] = []
     for part in raw.replace(";", "\n").splitlines():
         item = part.strip()
@@ -20,6 +21,7 @@ class NoScrollCombo(QComboBox):
     """QComboBox that keeps passive wheel scrolling on the settings page."""
 
     def wheelEvent(self, event):  # noqa: N802 - Qt override
+        """Handle wheel event for no scroll combo."""
         if self.view().isVisible():
             super().wheelEvent(event)
         else:
@@ -30,10 +32,12 @@ class WarningHeaderLabel(QLabel):
     """Header label that keeps warning help visible while hovered."""
 
     def __init__(self, text: str = "") -> None:
+        """Initialize the warning header label instance."""
         super().__init__(text)
         self.setMouseTracking(True)
 
     def enterEvent(self, event):  # noqa: N802 - Qt override
+        """Handle enter event for warning header label."""
         tip = self.toolTip()
         if tip:
             QToolTip.showText(
@@ -46,11 +50,13 @@ class WarningHeaderLabel(QLabel):
         super().enterEvent(event)
 
     def leaveEvent(self, event):  # noqa: N802 - Qt override
+        """Handle leave event for warning header label."""
         QToolTip.hideText()
         super().leaveEvent(event)
 
 
 def context_mode_combo(value: str, *, allow_auto: bool = True) -> NoScrollCombo:
+    """Handle context mode combo for UI settings panel helpers."""
     combo = NoScrollCombo()
     combo.addItem("Off", "off")
     if allow_auto:
@@ -62,6 +68,7 @@ def context_mode_combo(value: str, *, allow_auto: bool = True) -> NoScrollCombo:
 
 
 def expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
+    """Handle expanding form layout for UI settings panel helpers."""
     form = QFormLayout(parent)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     return form

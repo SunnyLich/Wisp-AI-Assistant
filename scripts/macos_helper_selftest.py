@@ -28,10 +28,12 @@ from core.macos_helper.client import HelperClient, HelperError
 
 
 def main() -> int:
+    """Support command-line helper for scripts macos helper selftest for main."""
     client = HelperClient()
     checks: list[bool] = []
 
     def record(name: str, ok: bool, detail: str = "") -> None:
+        """Record a check result and print a PASS/FAIL line."""
         checks.append(ok)
         line = f"{'PASS' if ok else 'FAIL'} {name}"
         if detail:
@@ -78,6 +80,7 @@ def main() -> int:
 
 
 def _finish(checks: list[bool]) -> int:
+    """Support command-line helper for scripts macos helper selftest for finish."""
     passed = sum(1 for c in checks if c)
     print(f"--- {passed}/{len(checks)} checks passed ---", flush=True)
     return 0 if checks and passed == len(checks) else 1

@@ -27,10 +27,12 @@ LOG_ROOT = REPO_ROOT / "build_logs"
 
 
 def _timestamp() -> str:
+    """Support command-line helper for scripts run personal os tests for timestamp."""
     return _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def _safe_name(name: str) -> str:
+    """Support command-line helper for scripts run personal os tests for safe name."""
     return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in name)
 
 
@@ -42,6 +44,7 @@ def _run_step(
     env: dict[str, str] | None = None,
     timeout: int | None = None,
 ) -> int:
+    """Run step."""
     print()
     print(f"== {name} ==")
     print("command:", " ".join(args))
@@ -89,6 +92,7 @@ def _run_step(
 
 
 def _gui_smoke(args: argparse.Namespace) -> int:
+    """Support command-line helper for scripts run personal os tests for gui smoke."""
     screenshot_dir = Path(args.screenshot_dir).resolve()
     screenshot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,9 +113,11 @@ def _gui_smoke(args: argparse.Namespace) -> int:
     created = []
 
     def _dummy_send(_messages):
+        """Support command-line helper for scripts run personal os tests for dummy send."""
         yield "GUI smoke reply"
 
     def add_widget(name: str, widget, *, min_width: int = 360, min_height: int = 180) -> None:
+        """Add widget."""
         widget.setObjectName(f"personalOsSmoke_{name}")
         if widget.width() < min_width or widget.height() < min_height:
             widget.resize(max(widget.width(), min_width), max(widget.height(), min_height))
@@ -194,6 +200,7 @@ def _gui_smoke(args: argparse.Namespace) -> int:
 
 
 def _main(argv: list[str]) -> int:
+    """Support command-line helper for scripts run personal os tests for main."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--real-gui",
@@ -244,7 +251,7 @@ def _main(argv: list[str]) -> int:
         "-m",
         "pytest",
         "tests",
-        "macos_py/brain/tests",
+        "runtime/brain/tests",
         "-q",
     ]
     if args.pytest_args:

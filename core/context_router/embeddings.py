@@ -19,6 +19,7 @@ from .extract import STOPWORDS, _WORD_RE
 
 
 def _tokenize(text: str) -> list[str]:
+    """Handle tokenize for context router embeddings."""
     return [
         w.strip("'") for w in _WORD_RE.findall(text.lower())
         if len(w.strip("'")) >= 2 and w.strip("'") not in STOPWORDS
@@ -31,6 +32,7 @@ class LexicalEmbedder:
     name = "lexical"
 
     def __init__(self, chunks: list[ContextChunk]) -> None:
+        """Initialize the lexical embedder instance."""
         n = max(1, len(chunks))
         df: Counter[str] = Counter()
         for c in chunks:
@@ -42,6 +44,7 @@ class LexicalEmbedder:
         self._default_idf = math.log((n + 1) / 1.0) + 1.0
 
     def _vec(self, text: str) -> dict[str, float]:
+        """Handle vec for lexical embedder."""
         tf = Counter(_tokenize(text))
         return {
             tok: count * self._idf.get(tok, self._default_idf)
@@ -49,6 +52,7 @@ class LexicalEmbedder:
         }
 
     def similarity(self, query: str, chunk_text: str) -> float:
+        """Handle similarity for lexical embedder."""
         a = self._vec(query)
         b = self._vec(chunk_text)
         if not a or not b:
@@ -68,6 +72,7 @@ class SentenceTransformerEmbedder:
     name = "sentence-transformers"
 
     def __init__(self, chunks: list[ContextChunk], model: str = "all-MiniLM-L6-v2") -> None:
+        """Initialize the sentence transformer embedder instance."""
         from sentence_transformers import SentenceTransformer  # type: ignore
         import numpy as np  # type: ignore
 
@@ -78,6 +83,7 @@ class SentenceTransformerEmbedder:
             self._cache[c.text] = self._encode(c.text)
 
     def _encode(self, text: str):
+        """Handle encode for sentence transformer embedder."""
         v = self._cache.get(text)
         if v is None:
             v = self._model.encode(text, normalize_embeddings=True)
@@ -85,6 +91,7 @@ class SentenceTransformerEmbedder:
         return v
 
     def similarity(self, query: str, chunk_text: str) -> float:
+        """Handle similarity for sentence transformer embedder."""
         qv = self._encode(query)
         cv = self._encode(chunk_text)
         return float(self._np.dot(qv, cv))

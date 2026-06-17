@@ -19,6 +19,7 @@ import urllib.request as _urllib_request
 import config
 from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
+from core.tools.local_files import execute_live_file_tool, normalize_file_access_mode
 from core.system import macos_safety
 from core.system.native_locks import native_init_lock, ssl_init_lock
 from core.system import sdk_clients
@@ -50,9 +51,12 @@ from core.llm_clients.prompt_guidance import (
     with_tools_note as _with_tools_note,
 )
 from dataclasses import dataclass, field
-from typing import Generator
+from typing import Callable, Generator
 
 _TOOL_REGISTRY = ToolRegistry()
+_LOCAL_FILE_TOOLS = {"list_files", "read_file", "edit_file", "write_file"}
+_FILE_EDIT_APPROVAL_CALLBACK: Callable[[dict], bool] | None = None
+_LIVE_TOOL_CONTEXT = _threading.local()
 
 
 def _log_context(
@@ -65,6 +69,7 @@ def _log_context(
     """Log a compact preview of a context block for debugging."""
 
     def _trim(line: str) -> str:
+        """Handle trim for LLM clients client."""
         return line if len(line) <= max_line else line[:max_line] + "-¦"
 
     lines = [_trim(l) for l in text.splitlines() if l.strip()]
@@ -91,10 +96,12 @@ def _log_context(
 
 
 def _ambient_document_max_chars() -> int:
+    """Handle ambient document max chars for LLM clients client."""
     return config.get_settings().context.ambient_document_max_chars
 
 
 def _tool_document_max_chars() -> int:
+    """Handle tool document max chars for LLM clients client."""
     return config.get_settings().context.tool_document_max_chars
 
 
@@ -260,6 +267,7 @@ def _execute_get_context(inputs: dict) -> str:
 
 
 def _execute_memory_search(inputs: dict) -> str:
+    """Handle execute memory search for LLM clients client."""
     query = str((inputs or {}).get("query") or "").strip()
     top_k_raw = (inputs or {}).get("top_k")
     try:
@@ -277,6 +285,7 @@ def _execute_memory_search(inputs: dict) -> str:
 
 
 def _execute_memory_save(inputs: dict) -> str:
+    """Handle execute memory save for LLM clients client."""
     text = str((inputs or {}).get("text") or "").strip()
     scope = str((inputs or {}).get("scope") or "").strip().lower()
     # Unset/unknown scope means "follow the conversation's project" (the store
@@ -298,16 +307,19 @@ def _execute_memory_save(inputs: dict) -> str:
 
 
 def _execute_git_status(inputs: dict) -> str:
+    """Handle execute git status for LLM clients client."""
     cwd = inputs.get("cwd") or config.TOOL_GIT_ROOT
     return _run_read_only_command(["git", "status", "--short"], cwd=cwd)
 
 
 def _execute_git_diff(inputs: dict) -> str:
+    """Handle execute git diff for LLM clients client."""
     cwd = inputs.get("cwd") or config.TOOL_GIT_ROOT
     return _run_read_only_command(["git", "diff", "--", "."], cwd=cwd)
 
 
 def _run_read_only_command(args: list[str], cwd: str) -> str:
+    """Run read only command."""
     import subprocess
     from pathlib import Path
 
@@ -323,7 +335,63 @@ def _run_read_only_command(args: list[str], cwd: str) -> str:
     return output[:12000] or f"{' '.join(args)} returned no output."
 
 
+def set_file_edit_approval_callback(callback: Callable[[dict], bool] | None) -> None:
+    """Register the UI callback used by ask-mode local file edits."""
+    global _FILE_EDIT_APPROVAL_CALLBACK
+    _FILE_EDIT_APPROVAL_CALLBACK = callback
+
+
+def set_live_file_access_mode(mode: str | None) -> None:
+    """Set local-file access mode for the current live model request thread."""
+    if mode is None:
+        if hasattr(_LIVE_TOOL_CONTEXT, "file_access_mode"):
+            delattr(_LIVE_TOOL_CONTEXT, "file_access_mode")
+        return
+    _LIVE_TOOL_CONTEXT.file_access_mode = normalize_file_access_mode(mode)
+
+
+def _execute_list_files(inputs: dict) -> str:
+    """List text-accessible files within a configured local-file root."""
+    return execute_live_file_tool(
+        "list_files",
+        inputs or {},
+        access_mode=_effective_live_file_access_mode(["list_files"]),
+        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+    )
+
+
+def _execute_read_file(inputs: dict) -> str:
+    """Read a UTF-8 text file within a configured local-file root."""
+    return execute_live_file_tool(
+        "read_file",
+        inputs or {},
+        access_mode=_effective_live_file_access_mode(["read_file"]),
+        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+    )
+
+
+def _execute_edit_file(inputs: dict) -> str:
+    """Replace one exact text span in a configured local-file root."""
+    return execute_live_file_tool(
+        "edit_file",
+        inputs or {},
+        access_mode=_effective_live_file_access_mode(["edit_file"]),
+        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+    )
+
+
+def _execute_write_file(inputs: dict) -> str:
+    """Create or overwrite a text file in a configured local-file root."""
+    return execute_live_file_tool(
+        "write_file",
+        inputs or {},
+        access_mode=_effective_live_file_access_mode(["write_file"]),
+        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+    )
+
+
 def _execute_github_repo(inputs: dict) -> str:
+    """Handle execute github repo for LLM clients client."""
     repo = str(inputs.get("repo") or "").strip()
     if not repo:
         return "Missing repo. Use owner/name."
@@ -331,6 +399,7 @@ def _execute_github_repo(inputs: dict) -> str:
 
 
 def _execute_github_issue(inputs: dict) -> str:
+    """Handle execute github issue for LLM clients client."""
     repo = str(inputs.get("repo") or "").strip()
     number = str(inputs.get("number") or "").strip()
     if not repo or not number:
@@ -339,6 +408,7 @@ def _execute_github_issue(inputs: dict) -> str:
 
 
 def _github_get_json(url: str) -> str:
+    """Handle github get json for LLM clients client."""
     import json
     import urllib.request
     from core.auth import github as github_auth
@@ -361,6 +431,7 @@ def _github_get_json(url: str) -> str:
 
 
 def _register_builtin_tools() -> None:
+    """Handle register builtin tools for LLM clients client."""
     _TOOL_REGISTRY.register_builtin(
         ToolSpec(
             name="web_search",
@@ -508,6 +579,87 @@ def _register_builtin_tools() -> None:
     )
     _TOOL_REGISTRY.register_builtin(
         ToolSpec(
+            name="list_files",
+            description=(
+                "List files under a folder inside the user's configured local-file roots. "
+                "Requires the caller to explicitly allow local file tools."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Required for relative folders when multiple roots are configured."},
+                    "folder": {"type": "string", "description": "Folder to list. Use an absolute path or a path relative to root."},
+                    "limit": {"type": "integer", "description": "Maximum files to return."},
+                },
+                "required": [],
+            },
+            executor=_execute_list_files,
+            opt_in=True,
+        )
+    )
+    _TOOL_REGISTRY.register_builtin(
+        ToolSpec(
+            name="read_file",
+            description=(
+                "Read a UTF-8 text file inside the user's configured local-file roots. "
+                "Blocked globs and size limits are enforced."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Required for relative paths when multiple roots are configured."},
+                    "path": {"type": "string", "description": "Absolute path, or a path relative to root."},
+                    "max_chars": {"type": "integer", "description": "Maximum characters to return."},
+                },
+                "required": ["path"],
+            },
+            executor=_execute_read_file,
+            opt_in=True,
+        )
+    )
+    _TOOL_REGISTRY.register_builtin(
+        ToolSpec(
+            name="edit_file",
+            description=(
+                "Replace exactly one matching text span in a file inside the user's "
+                "configured local-file roots. Uses the configured never/ask/auto edit mode."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Required for relative paths when multiple roots are configured."},
+                    "path": {"type": "string", "description": "Absolute path, or a path relative to root."},
+                    "old": {"type": "string", "description": "Exact existing text to replace. Must match exactly once."},
+                    "new": {"type": "string", "description": "Replacement text."},
+                },
+                "required": ["path", "old", "new"],
+            },
+            executor=_execute_edit_file,
+            opt_in=True,
+        )
+    )
+    _TOOL_REGISTRY.register_builtin(
+        ToolSpec(
+            name="write_file",
+            description=(
+                "Create or overwrite a UTF-8 text file inside the user's configured "
+                "local-file roots. Uses the configured never/ask/auto edit mode."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Required for relative paths when multiple roots are configured."},
+                    "path": {"type": "string", "description": "Absolute path, or a path relative to root."},
+                    "content": {"type": "string", "description": "Full file content to write."},
+                },
+                "required": ["path", "content"],
+            },
+            executor=_execute_write_file,
+            opt_in=True,
+        )
+    )
+    _TOOL_REGISTRY.register_builtin(
+        ToolSpec(
             name="github_repo",
             description="Fetch GitHub repository metadata using the signed-in GitHub OAuth account.",
             input_schema={
@@ -581,6 +733,7 @@ _VISION_MODEL_HINTS = (
 
 
 def _model_accepts_images(model: str) -> bool:
+    """Handle model accepts images for LLM clients client."""
     m = (model or "").strip().lower()
     return any(hint in m for hint in _VISION_MODEL_HINTS)
 
@@ -596,6 +749,7 @@ _NO_CUSTOM_SAMPLING_HINTS = (
 
 
 def _model_rejects_custom_sampling(model: str) -> bool:
+    """Handle model rejects custom sampling for LLM clients client."""
     m = (model or "").strip().lower()
     return any(hint in m for hint in _NO_CUSTOM_SAMPLING_HINTS)
 
@@ -621,6 +775,7 @@ _MAX_COMPLETION_TOKENS_HINTS = ("gpt-5", "o1", "o3", "o4")
 
 
 def _model_uses_max_completion_tokens(model: str) -> bool:
+    """Handle model uses max completion tokens for LLM clients client."""
     m = (model or "").strip().lower()
     return any(hint in m for hint in _MAX_COMPLETION_TOKENS_HINTS)
 
@@ -780,6 +935,13 @@ def _get_tool_schemas(
             if _tool_schema_allowed(schema.get("name", ""), allowed_tools)
         ]
         _append_pinned_tool_schemas(schemas, pinned_tools, allowed_tools)
+        _append_local_file_tool_schemas(
+            schemas,
+            prompt,
+            allowed_tools,
+            pinned_tools,
+            unfiltered=unfiltered,
+        )
     if include_screenshot:
         spec = _TOOL_REGISTRY.get_tool("capture_screen")
         if spec is not None:
@@ -819,6 +981,13 @@ def _get_openai_tool_schemas(
             )
         ]
         _append_pinned_tool_schemas(schemas, pinned_tools, allowed_tools, openai_format=True)
+        _append_local_file_tool_schemas(
+            schemas,
+            prompt,
+            allowed_tools,
+            pinned_tools,
+            openai_format=True,
+        )
     if include_screenshot:
         spec = _TOOL_REGISTRY.get_tool("capture_screen")
         if spec is not None:
@@ -834,7 +1003,38 @@ def _get_openai_tool_schemas(
     return schemas
 
 
+def _get_responses_tool_schemas(
+    prompt: str = "",
+    *,
+    include_general: bool = True,
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+) -> list[dict]:
+    """Responses API function schemas for a query."""
+    schemas = _get_openai_tool_schemas(
+        prompt,
+        include_general=include_general,
+        include_screenshot=False,
+        allowed_tools=allowed_tools,
+        pinned_tools=pinned_tools,
+    )
+    result: list[dict] = []
+    for schema in schemas:
+        fn = schema.get("function") or {}
+        name = str(fn.get("name") or "")
+        if not name:
+            continue
+        result.append({
+            "type": "function",
+            "name": name,
+            "description": str(fn.get("description") or ""),
+            "parameters": fn.get("parameters") or {"type": "object", "properties": {}},
+        })
+    return result
+
+
 def _tool_schema_allowed(name: str, allowed_tools: list[str] | None) -> bool:
+    """Handle tool schema allowed for LLM clients client."""
     if allowed_tools is None:
         return True
     allowed = set(allowed_tools)
@@ -877,7 +1077,38 @@ def _append_pinned_tool_schemas(
         present.add(name)
 
 
+def _append_local_file_tool_schemas(
+    schemas: list[dict],
+    prompt: str,
+    allowed_tools: list[str] | None,
+    pinned_tools: list[str] | None,
+    *,
+    openai_format: bool = False,
+    unfiltered: bool = False,
+) -> None:
+    """Add explicitly allowed local file tools without exposing them by default."""
+    if allowed_tools is None:
+        return
+    allowed = set(allowed_tools)
+    pinned = set(pinned_tools or [])
+    if openai_format:
+        present = {((s.get("function") or {}).get("name") or "") for s in schemas}
+    else:
+        present = {s.get("name", "") for s in schemas}
+    for name in sorted(_LOCAL_FILE_TOOLS):
+        if name not in allowed or name in present:
+            continue
+        if name not in pinned and not unfiltered and not _TOOL_REGISTRY._tool_visible(name, prompt):
+            continue
+        spec = _TOOL_REGISTRY.get_tool(name)
+        if spec is None:
+            continue
+        schemas.append(spec.openai_schema() if openai_format else spec.anthropic_schema())
+        present.add(name)
+
+
 def _tool_schema_names(schemas: list[dict] | None, *, openai_format: bool = False) -> list[str]:
+    """Handle tool schema names for LLM clients client."""
     names: list[str] = []
     for schema in schemas or []:
         if openai_format:
@@ -898,6 +1129,7 @@ def _log_offered_model_tools(
     schemas: list[dict] | None,
     openai_format: bool = False,
 ) -> None:
+    """Log offered model tools."""
     offered = _tool_schema_names(schemas, openai_format=openai_format)
     print(
         f"[llm] tools offered provider={provider or 'unknown'} model={model!r} "
@@ -913,6 +1145,7 @@ def _log_offered_model_tools(
 
 
 def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None = None) -> str:
+    """Handle execute model tool for LLM clients client."""
     if allowed_tools is not None:
         allowed = set(allowed_tools)
         if name == "get_context":
@@ -922,10 +1155,32 @@ def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None
                 return f"Tool {name!r} is disabled for this context source."
         elif name not in allowed:
             return f"Tool {name!r} is disabled for this caller."
+    if name in _LOCAL_FILE_TOOLS:
+        return execute_live_file_tool(
+            name,
+            inputs or {},
+            access_mode=_effective_live_file_access_mode(allowed_tools),
+            approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+        )
     return _TOOL_REGISTRY.execute(name, inputs)
 
 
+def _effective_live_file_access_mode(allowed_tools: list[str] | None = None) -> str:
+    """Return the live request's local-file mode, with legacy fallback."""
+    explicit = getattr(_LIVE_TOOL_CONTEXT, "file_access_mode", None)
+    if explicit:
+        return normalize_file_access_mode(explicit)
+    allowed = set(allowed_tools or [])
+    legacy = str(getattr(config, "TOOL_FILE_MODE", "never") or "never").strip().lower()
+    if legacy in {"ask", "auto"} and allowed & {"edit_file", "write_file"}:
+        return legacy
+    if allowed & {"list_files", "read_file"}:
+        return "read"
+    return normalize_file_access_mode(legacy)
+
+
 def _tools_allow(allowed_tools: list[str] | None, *names: str) -> bool:
+    """Handle tools allow for LLM clients client."""
     if allowed_tools is None:
         return True
     allowed = set(allowed_tools)
@@ -936,6 +1191,7 @@ def _frontload_context_for_disabled_tools(
     allowed_tools: list[str] | None,
     query: str = "",
 ) -> str:
+    """Handle frontload context for disabled tools for LLM clients client."""
     parts: list[str] = []
     if _tools_allow(allowed_tools, "get_context", "get_context.documents"):
         try:
@@ -975,6 +1231,7 @@ def _frontload_context_for_disabled_tools(
 
 
 def _append_ambient_context(ambient_context: str, extra: str) -> str:
+    """Append ambient context."""
     extra = (extra or "").strip()
     if not extra:
         return ambient_context
@@ -986,6 +1243,7 @@ def _inject_frontloaded_tool_context(
     allowed_tools: list[str] | None,
     query: str = "",
 ) -> str:
+    """Handle inject frontloaded tool context for LLM clients client."""
     return _append_ambient_context(
         ambient_context,
         _frontload_context_for_disabled_tools(allowed_tools, query=query),
@@ -1031,6 +1289,7 @@ def _openai_vision_model(provider: str, current_model: str) -> str:
 
 
 def _init_keyword_filters() -> None:
+    """Handle init keyword filters for LLM clients client."""
     from core.system.paths import TOOL_KEYWORDS_FILE
     _TOOL_REGISTRY.load_keyword_filters(TOOL_KEYWORDS_FILE)
     if not TOOL_KEYWORDS_FILE.exists():
@@ -1111,6 +1370,7 @@ def read_active_document_for_context_with_debug(active_window: dict | None = Non
 
 
 def read_active_document_for_context() -> str:
+    """Read active document for context."""
     text, _debug = read_active_document_for_context_with_debug()
     return text
 
@@ -1144,10 +1404,12 @@ _codex_client_lock = _threading.Lock()
 
 
 def _route_key(provider: str, model: str) -> tuple[str, str]:
+    """Handle route key for LLM clients client."""
     return ((provider or "").lower(), model or "")
 
 
 def _is_route_cooling(provider: str, model: str) -> bool:
+    """Return whether route cooling is true."""
     key = _route_key(provider, model)
     with _route_cooldowns_lock:
         until = _route_cooldowns.get(key)
@@ -1160,6 +1422,7 @@ def _is_route_cooling(provider: str, model: str) -> bool:
 
 
 def _mark_route_cooling(provider: str, model: str, seconds: float = _ROUTE_COOLDOWN_SECONDS) -> None:
+    """Handle mark route cooling for LLM clients client."""
     with _route_cooldowns_lock:
         _route_cooldowns[_route_key(provider, model)] = _time.time() + seconds
 
@@ -1206,6 +1469,7 @@ def _route_failure_summary(
     attempts: list[tuple[str, str, Exception | str]],
     last_exc: Exception,
 ) -> RuntimeError:
+    """Handle route failure summary for LLM clients client."""
     details = []
     for provider, model, err in attempts:
         details.append(f"{provider}/{model}: {err}")
@@ -1245,10 +1509,12 @@ class _CodexTransport:
     """
 
     def __init__(self):
+        """Initialize the codex transport instance."""
         import httpx
         self._inner = httpx.HTTPTransport()
 
     def handle_request(self, request):
+        """Handle request."""
         import httpx
         from core.auth import chatgpt as chatgpt_auth
 
@@ -1277,10 +1543,12 @@ class _CodexTransport:
         return self._inner.handle_request(new_req)
 
     def close(self):
+        """Close the wrapped transport."""
         self._inner.close()
 
 
 def _get_codex_client():
+    """Return codex client."""
     global _codex_client
     if _codex_client is None:
         with _codex_client_lock:
@@ -1304,6 +1572,7 @@ def _get_chat_codex_client():
 # ------------------------------------------------------------------
 
 def _log_model_route(kind: str, provider: str, model: str, use_tools: bool = False) -> None:
+    """Log model route."""
     import time
 
     ts = time.strftime("%H:%M:%S")
@@ -1340,6 +1609,7 @@ _OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
 
 @dataclass
 class RouteCapabilities:
+    """Model route capabilities."""
     supports_stream: bool | None = None
     requires_stream: bool | None = None
     supports_tools: bool | None = None
@@ -1355,6 +1625,7 @@ _route_capabilities_lock = _threading.Lock()
 
 
 def _openai_compat_base_url(provider: str) -> str:
+    """Handle openai compat base url for LLM clients client."""
     provider = (provider or "").strip().lower()
     if provider == "openai":
         return "https://api.openai.com/v1"
@@ -1365,6 +1636,7 @@ def _openai_compat_base_url(provider: str) -> str:
 
 
 def _route_endpoint(provider: str) -> str:
+    """Handle route endpoint for LLM clients client."""
     provider = (provider or "").strip().lower()
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
         return _openai_compat_base_url(provider).rstrip("/")
@@ -1378,6 +1650,7 @@ def _route_endpoint(provider: str) -> str:
 
 
 def _route_capability_key(provider: str, model: str) -> tuple[str, str, str]:
+    """Handle route capability key for LLM clients client."""
     return (
         (provider or "").strip().lower(),
         model or "",
@@ -1386,6 +1659,7 @@ def _route_capability_key(provider: str, model: str) -> tuple[str, str, str]:
 
 
 def _get_route_capabilities(provider: str, model: str) -> RouteCapabilities:
+    """Return route capabilities."""
     key = _route_capability_key(provider, model)
     with _route_capabilities_lock:
         cap = _route_capabilities.get(key)
@@ -1396,6 +1670,7 @@ def _get_route_capabilities(provider: str, model: str) -> RouteCapabilities:
 
 
 def _update_route_capabilities(provider: str, model: str, **facts) -> None:
+    """Update route capabilities."""
     cap = _get_route_capabilities(provider, model)
     for name, value in facts.items():
         if hasattr(cap, name):
@@ -1403,6 +1678,7 @@ def _update_route_capabilities(provider: str, model: str, **facts) -> None:
 
 
 def _mark_unsupported_parameter(provider: str, model: str, name: str) -> None:
+    """Handle mark unsupported parameter for LLM clients client."""
     if not name:
         return
     cap = _get_route_capabilities(provider, model)
@@ -1493,7 +1769,8 @@ def _stream_openai_compat_plain(
                 kwargs = adjusted
                 continue
             if kwargs.get("stream") and _stream_mode_error(exc):
-                _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
+                if not _stream_false_required_error(exc):
+                    _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
                 kwargs = dict(kwargs)
                 kwargs["stream"] = False
                 print("[llm] OpenAI-compatible stream rejected; retrying non-streaming", flush=True)
@@ -1514,6 +1791,7 @@ def _stream_openai_compat_plain(
 
 
 def _openai_compat_api_key(provider: str) -> str:
+    """Handle openai compat api key for LLM clients client."""
     provider = (provider or "").strip().lower()
     if provider == "openai":
         return config.OPENAI_API_KEY
@@ -1547,6 +1825,7 @@ def _get_openai_compat_stdlib_ssl_context():
 
 
 def _openai_compat_message_text(response) -> str:
+    """Handle openai compat message text for LLM clients client."""
     choice = response.choices[0] if getattr(response, "choices", None) else None
     if choice is None:
         return ""
@@ -1568,6 +1847,7 @@ def _openai_compat_message_text(response) -> str:
 
 
 def _openai_compat_message_tool_calls(response) -> dict[int, dict]:
+    """Handle openai compat message tool calls for LLM clients client."""
     choice = response.choices[0] if getattr(response, "choices", None) else None
     message = getattr(choice, "message", None) if choice is not None else None
     tool_calls = getattr(message, "tool_calls", None) or []
@@ -1583,19 +1863,130 @@ def _openai_compat_message_tool_calls(response) -> dict[int, dict]:
 
 
 def _response_output_text(response) -> str:
-    text = getattr(response, "output_text", "")
+    """Handle response output text for LLM clients client."""
+    if isinstance(response, dict):
+        text = response.get("output_text", "")
+        output = response.get("output", []) or []
+    else:
+        text = getattr(response, "output_text", "")
+        output = getattr(response, "output", []) or []
     if isinstance(text, str) and text:
         return text
     parts: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        for content in getattr(item, "content", []) or []:
-            value = getattr(content, "text", "")
+    for item in output:
+        content_items = item.get("content", []) if isinstance(item, dict) else getattr(item, "content", [])
+        for content in content_items or []:
+            value = content.get("text", "") if isinstance(content, dict) else getattr(content, "text", "")
             if value:
                 parts.append(str(value))
     return "".join(parts).strip()
 
 
+def _response_id(response) -> str:
+    """Return a Responses API id from object or dict response data."""
+    if isinstance(response, dict):
+        return str(response.get("id") or "")
+    return str(getattr(response, "id", "") or "")
+
+
+def _response_output_items(response) -> list:
+    """Return Responses API output items from object or dict response data."""
+    if isinstance(response, dict):
+        output = response.get("output", []) or []
+    else:
+        output = getattr(response, "output", []) or []
+    return list(output)
+
+
+def _response_function_calls(response) -> list[dict[str, str]]:
+    """Extract function_call items from a Responses API response."""
+    calls: list[dict[str, str]] = []
+    for item in _response_output_items(response):
+        if isinstance(item, dict):
+            item_type = str(item.get("type") or "")
+            name = str(item.get("name") or "")
+            arguments = str(item.get("arguments") or "")
+            call_id = str(item.get("call_id") or item.get("id") or "")
+        else:
+            item_type = str(getattr(item, "type", "") or "")
+            name = str(getattr(item, "name", "") or "")
+            arguments = str(getattr(item, "arguments", "") or "")
+            call_id = str(getattr(item, "call_id", "") or getattr(item, "id", "") or "")
+        if item_type == "function_call" and name:
+            calls.append({"name": name, "arguments": arguments, "call_id": call_id})
+    return calls
+
+
+def _responses_create_with_retries(client, kwargs: dict, *, provider: str, model: str):
+    """Create a Responses API response, retrying unsupported parameters."""
+    current = dict(kwargs)
+    while True:
+        try:
+            return client.responses.create(**current)
+        except Exception as exc:
+            _record_route_error_capabilities(provider, model, exc)
+            retry_kwargs = _without_unsupported_parameter(current, exc)
+            if retry_kwargs is None:
+                raise
+            name = _unsupported_parameter_name(exc)
+            _mark_unsupported_parameter(provider, model, name)
+            if name == "tools":
+                raise
+            print("[llm] Responses create rejected unsupported parameter; retrying without it", flush=True)
+            current = retry_kwargs
+
+
+def _run_responses_tool_loop(
+    client,
+    kwargs: dict,
+    *,
+    provider: str,
+    model: str,
+    allowed_tools: list[str] | None = None,
+    max_rounds: int = 3,
+) -> Generator[str, None, None]:
+    """Run a non-streaming Responses API function-call loop."""
+    response = _responses_create_with_retries(client, kwargs, provider=provider, model=model)
+    _update_route_capabilities(provider, model, supports_tools=True)
+    for _round in range(max_rounds):
+        calls = _response_function_calls(response)
+        if not calls:
+            text = _response_output_text(response)
+            if text:
+                yield text
+            return
+        tool_outputs = []
+        for call in calls:
+            try:
+                inputs = _stdlib_json.loads(call["arguments"] or "{}")
+                if not isinstance(inputs, dict):
+                    inputs = {}
+            except Exception:
+                inputs = {}
+            result = _execute_model_tool(call["name"], inputs, allowed_tools=allowed_tools)
+            tool_outputs.append({
+                "type": "function_call_output",
+                "call_id": call["call_id"],
+                "output": result,
+            })
+        response = _responses_create_with_retries(
+            client,
+            {
+                "model": model,
+                "input": tool_outputs,
+                "previous_response_id": _response_id(response),
+                "store": False,
+            },
+            provider=provider,
+            model=model,
+        )
+    text = _response_output_text(response)
+    if text:
+        yield text
+
+
 def _stream_mode_error(exc: Exception) -> bool:
+    """Stream mode error."""
     status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
     text = str(exc).lower()
     if "stream" not in text and "streaming" not in text:
@@ -1614,6 +2005,7 @@ def _stream_mode_error(exc: Exception) -> bool:
 
 
 def _requires_stream_error(exc: Exception) -> bool:
+    """Handle requires stream error for LLM clients client."""
     text = str(exc).lower()
     return any(
         marker in text
@@ -1628,6 +2020,7 @@ def _requires_stream_error(exc: Exception) -> bool:
 
 
 def _streaming_not_supported_error(exc: Exception) -> bool:
+    """Handle streaming not supported error for LLM clients client."""
     text = str(exc).lower()
     if _requires_stream_error(exc):
         return False
@@ -1644,7 +2037,22 @@ def _streaming_not_supported_error(exc: Exception) -> bool:
     )
 
 
+def _stream_false_required_error(exc: Exception) -> bool:
+    """Return whether this request, not the whole route, must be non-streaming."""
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "stream must be false",
+            "stream=false",
+            "not compatible with streaming",
+            "not compatible with stream",
+        )
+    )
+
+
 def _tools_not_supported_error(exc: Exception) -> bool:
+    """Handle tools not supported error for LLM clients client."""
     text = str(exc).lower()
     if "tool" not in text and "function" not in text:
         return False
@@ -1662,6 +2070,7 @@ def _tools_not_supported_error(exc: Exception) -> bool:
 
 
 def _json_mode_not_supported_error(exc: Exception) -> bool:
+    """Handle json mode not supported error for LLM clients client."""
     text = str(exc).lower()
     return (
         "response_format" in text
@@ -1671,6 +2080,7 @@ def _json_mode_not_supported_error(exc: Exception) -> bool:
 
 
 def _image_not_supported_error(exc: Exception) -> bool:
+    """Handle image not supported error for LLM clients client."""
     text = str(exc).lower()
     return (
         any(marker in text for marker in ("image", "vision", "input_image", "image_url"))
@@ -1679,6 +2089,7 @@ def _image_not_supported_error(exc: Exception) -> bool:
 
 
 def _record_route_error_capabilities(provider: str, model: str, exc: Exception) -> None:
+    """Record route error capabilities."""
     name = _unsupported_parameter_name(exc)
     if name:
         _mark_unsupported_parameter(provider, model, name)
@@ -1695,6 +2106,7 @@ def _record_route_error_capabilities(provider: str, model: str, exc: Exception) 
 
 
 def _unsupported_parameter_name(exc: Exception) -> str:
+    """Handle unsupported parameter name for LLM clients client."""
     text = str(exc)
     lowered = text.lower()
     # "Unsupported value: 'temperature' does not support 0.5 with this model. Only
@@ -1725,6 +2137,7 @@ def _unsupported_parameter_name(exc: Exception) -> str:
 
 
 def _without_unsupported_parameter(kwargs: dict, exc: Exception) -> dict | None:
+    """Handle without unsupported parameter for LLM clients client."""
     name = _unsupported_parameter_name(exc)
     if not name or name not in kwargs:
         return None
@@ -1740,6 +2153,7 @@ def _response_stream_text(
     provider: str = "",
     model: str = "",
 ) -> Generator[str, None, None]:
+    """Handle response stream text for LLM clients client."""
     kwargs = dict(kwargs)
     cap = _get_route_capabilities(provider, model) if provider or model else None
     if cap is not None:
@@ -1786,7 +2200,8 @@ def _response_stream_text(
         if not _stream_mode_error(exc):
             raise
         if provider or model:
-            _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
+            if not _stream_false_required_error(exc):
+                _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
         print("[llm] Responses stream rejected; retrying non-streaming", flush=True)
         try:
             response = client.responses.create(**kwargs)
@@ -1813,6 +2228,7 @@ def _response_stream_text(
 def _openai_compat_stdlib_completion_text(provider: str, kwargs: dict) -> str:
     """Blocking OpenAI-compatible completion without importing provider SDKs."""
     def _request_completion() -> str:
+        """Handle request completion for LLM clients client."""
         base_url = _openai_compat_base_url(provider).rstrip("/")
         if not base_url:
             raise ValueError(f"No OpenAI-compatible base URL configured for {provider!r}")
@@ -1877,6 +2293,7 @@ def _build_dynamic_openai_client(provider: str):
     # not the SDK default (2) which slowly re-hammers an exhausted model every
     # turn with backoff before the fallback chain (which switches models) is
     # ever reached. Quota cooldown (see _stream_with_fallbacks) handles the rest.
+    """Build dynamic openai client."""
     if provider in _OPENAI_COMPAT_PROVIDERS:
         key_attr, base_url = _OPENAI_COMPAT_PROVIDERS[provider]
         api_key = getattr(config, key_attr) if key_attr else "ollama"
@@ -1887,6 +2304,7 @@ def _build_dynamic_openai_client(provider: str):
 
 
 def _dynamic_openai_client(provider: str):
+    """Handle dynamic openai client for LLM clients client."""
     with _dynamic_client_lock:
         client = _dynamic_openai_clients.get(provider)
         if client is None:
@@ -1897,6 +2315,7 @@ def _dynamic_openai_client(provider: str):
 
 
 def _dynamic_anthropic_client():
+    """Handle dynamic anthropic client for LLM clients client."""
     global _dynamic_anthropic_client_cache
     with _dynamic_client_lock:
         if _dynamic_anthropic_client_cache is None:
@@ -1982,6 +2401,7 @@ _CHATGPT_SUPPORTED_MODELS = {
 
 
 def _check_llm_config() -> None:
+    """Check llm config."""
     if not config.LLM_MODEL:
         raise ValueError(
             "LLM_MODEL is not set in .env. "
@@ -2023,6 +2443,7 @@ def _check_llm_config() -> None:
 
 
 def _check_chat_llm_config() -> None:
+    """Check chat llm config."""
     if not config.CHAT_LLM_MODEL:
         raise ValueError(
             "CHAT_LLM_MODEL is not set in .env. "
@@ -2064,6 +2485,7 @@ def _check_chat_llm_config() -> None:
 
 
 def _check_vision_config() -> None:
+    """Check vision config."""
     if not config.VISION_LLM_MODEL:
         raise ValueError(
             "VISION_LLM_MODEL is not set in .env. "
@@ -2098,6 +2520,7 @@ def _check_vision_config() -> None:
 
 
 def _check_route_config(provider: str, model: str, route_name: str) -> None:
+    """Check route config."""
     if not provider or not model:
         raise ValueError(f"{route_name} route is missing provider or model.")
     if provider == "chatgpt":
@@ -2134,6 +2557,7 @@ def _check_route_config_with_credentials(
     custom_base_url: str = "",
     compat_keys: dict[str, str] | None = None,
 ) -> None:
+    """Check route config with credentials."""
     if not provider or not model:
         raise ValueError(f"{route_name} route is missing provider or model.")
     if provider == "chatgpt":
@@ -2162,7 +2586,12 @@ def _check_route_config_with_credentials(
             raise ValueError(f"{route_name} route uses anthropic, but its API key is not configured.")
         return
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
-        if compat_keys and not compat_keys.get(provider, ""):
+        api_key = (
+            compat_keys.get(provider, "")
+            if compat_keys is not None
+            else _api_key_for(provider)
+        )
+        if not api_key:
             raise ValueError(f"{route_name} route uses {provider!r}, but its API key is not configured.")
         return
     if not _api_key_for(provider):
@@ -2170,6 +2599,7 @@ def _check_route_config_with_credentials(
 
 
 def _get_openai_client():
+    """Return openai client."""
     global _openai_client
     if _openai_client is None:
         with ssl_init_lock():
@@ -2201,6 +2631,7 @@ def _get_chat_openai_client():
 
 
 def _get_anthropic_client():
+    """Return anthropic client."""
     global _anthropic_client
     if _anthropic_client is None:
         with ssl_init_lock():
@@ -2209,6 +2640,7 @@ def _get_anthropic_client():
 
 
 def _get_chat_anthropic_client():
+    """Return chat anthropic client."""
     if config.CHAT_LLM_PROVIDER.lower() == config.LLM_PROVIDER.lower():
         return _get_anthropic_client()
     global _chat_anthropic_client
@@ -2219,6 +2651,7 @@ def _get_chat_anthropic_client():
 
 
 def _get_vision_openai_client():
+    """Return vision openai client."""
     global _vision_openai_client
     if _vision_openai_client is None:
         with ssl_init_lock():
@@ -2238,6 +2671,7 @@ def _get_vision_openai_client():
 
 
 def _get_vision_anthropic_client():
+    """Return vision anthropic client."""
     global _vision_anthropic_client
     if _vision_anthropic_client is None:
         with ssl_init_lock():
@@ -2246,6 +2680,7 @@ def _get_vision_anthropic_client():
 
 
 def _run_openai_compat_probe(client, *, provider: str, model: str, messages: list) -> None:
+    """Run openai compat probe."""
     cap = _get_route_capabilities(provider, model)
     kwargs = {
         "model": model,
@@ -2283,6 +2718,7 @@ def _run_openai_compat_probe(client, *, provider: str, model: str, messages: lis
 
 
 def _probe_openai_compat_route(provider: str, model: str, image_base64: str | None = None) -> None:
+    """Handle probe openai compat route for LLM clients client."""
     client = _dynamic_openai_client(provider)
     _run_openai_compat_probe(
         client,
@@ -2300,13 +2736,13 @@ def _probe_openai_compat_route_with_credentials(
     base_url: str = "",
     image_base64: str | None = None,
 ) -> None:
+    """Handle probe openai compat route with credentials for LLM clients client."""
     with ssl_init_lock():
-        if provider == "groq":
-            client = sdk_clients.openai_client(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        elif provider == "google":
-            client = sdk_clients.openai_client(api_key=api_key, base_url=_GOOGLE_OPENAI_BASE_URL)
-        elif provider == "custom":
+        if provider == "custom":
             client = sdk_clients.openai_client(api_key=api_key or "no-key", base_url=base_url or config.CUSTOM_BASE_URL)
+        elif provider in _OPENAI_COMPAT_PROVIDERS:
+            _key_attr, provider_base_url = _OPENAI_COMPAT_PROVIDERS[provider]
+            client = sdk_clients.openai_client(api_key=api_key or "no-key", base_url=provider_base_url)
         else:
             client = sdk_clients.openai_client(api_key=api_key)
     _run_openai_compat_probe(
@@ -2318,6 +2754,7 @@ def _probe_openai_compat_route_with_credentials(
 
 
 def _probe_anthropic_route(model: str, image_base64: str | None = None) -> None:
+    """Handle probe anthropic route for LLM clients client."""
     client = _dynamic_anthropic_client()
     if image_base64:
         content = [
@@ -2341,6 +2778,7 @@ def _probe_anthropic_route(model: str, image_base64: str | None = None) -> None:
 
 
 def _probe_anthropic_route_with_api_key(model: str, api_key: str, image_base64: str | None = None) -> None:
+    """Handle probe anthropic route with api key for LLM clients client."""
     with ssl_init_lock():
         client = sdk_clients.anthropic_client(api_key=api_key)
     if image_base64:
@@ -2365,6 +2803,7 @@ def _probe_anthropic_route_with_api_key(model: str, api_key: str, image_base64: 
 
 
 def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
+    """Handle probe chatgpt route for LLM clients client."""
     client = _get_codex_client()
     if image_base64:
         content = [
@@ -2412,6 +2851,7 @@ def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
 
 
 def _probe_copilot_route(model: str) -> None:
+    """Handle probe copilot route for LLM clients client."""
     from core.auth import copilot_client
 
     text = copilot_client.ask(
@@ -2456,6 +2896,7 @@ def test_route_connection(
             _check_route_config(provider, model, route_name)
 
         def _probe_compat(image_b64=None):
+            """Handle probe compat for local."""
             if explicit_credentials and compat_keys and provider in compat_keys:
                 _probe_openai_compat_route_with_credentials(
                     provider, model,
@@ -2622,6 +3063,7 @@ def _stream_with_fallbacks(
     candidates: list[tuple[str, str]],
     factory,
 ) -> Generator[str, None, None]:
+    """Stream with fallbacks."""
     import time
     # Try routes not in quota cooldown first; keep cooling ones as last resort so
     # a fully-throttled chain still attempts something rather than failing cold.
@@ -2750,6 +3192,7 @@ def _stream_single_response_route(
     json_mode: bool = False,
     history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
+    """Stream single response route."""
     _check_route_config(provider, model, route_name)
     model = _normalize_model_for_provider(provider, model)
     # capture_screen also needs the Anthropic tool loop, so it counts as "tools".
@@ -2849,6 +3292,8 @@ def _stream_single_response_route(
             memory_context,
             use_tools,
             allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
+            history=history,
         )
     elif provider == "copilot":
         yield from _stream_copilot(
@@ -2871,6 +3316,7 @@ def _stream_copilot(
     use_tools: bool = False,
     allowed_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
+    """Stream copilot."""
     from core.auth import copilot_client
 
     if use_tools:
@@ -2916,6 +3362,7 @@ def _stream_openai_compat(
     json_mode: bool = False,
     history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
+    """Stream openai compat."""
     import json as _json
 
     provider = (provider or "").strip().lower()
@@ -3017,6 +3464,7 @@ def _stream_openai_compat(
         return
 
     def _retry_without_live_tools(reason: str) -> Generator[str, None, None]:
+        """Handle retry without live tools for LLM clients client."""
         print(f"[llm] OpenAI-compatible live tools disabled for this route: {reason}", flush=True)
         _update_route_capabilities(provider, model, supports_tools=False)
         yield from _stream_openai_compat(
@@ -3105,7 +3553,8 @@ def _stream_openai_compat(
             return
         if not kwargs.get("stream") or not _stream_mode_error(exc):
             raise
-        _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
+        if not _stream_false_required_error(exc):
+            _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
         retry_kwargs = dict(kwargs)
         retry_kwargs["stream"] = False
         print("[llm] OpenAI-compatible stream rejected; retrying non-streaming", flush=True)
@@ -3251,6 +3700,19 @@ def _build_codex_text(user_message: str, ambient_context: str = "", memory_conte
     return "\n\n".join(parts)
 
 
+def _codex_history_prefix(prior_turns: list[dict]) -> str:
+    """Render sanitized history into the single-text Codex request format."""
+    lines: list[str] = []
+    for turn in prior_turns:
+        role = str(turn.get("role") or "").strip().lower()
+        content = str(turn.get("content") or "").strip()
+        if not content:
+            continue
+        label = "User" if role == "user" else "Assistant"
+        lines.append(f"{label}: {content}")
+    return ("\n".join(lines) + "\n") if lines else ""
+
+
 def _stream_codex(
     user_message: str,
     model: str,
@@ -3259,24 +3721,59 @@ def _stream_codex(
     memory_context: str = "",
     use_tools: bool = False,
     allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+    history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
     """Stream a response via the Codex endpoint using the Responses API."""
-    # The Responses API tool-call loop (previous_response_id chaining) is not
-    # implemented here.  When tools are requested we eagerly inject context that
-    # Claude would otherwise fetch on demand: open supported documents and clipboard.
+    prior_turns = _sanitize_history(history)
+    history_prefix = _codex_history_prefix(prior_turns)
+    text = _build_codex_text(
+        (history_prefix + user_message) if history_prefix else user_message,
+        ambient_context,
+        memory_context,
+    )
     if use_tools:
-        _update_route_capabilities("chatgpt", model, supports_tools=False)
-        print(
-            f"[llm] ChatGPT/Codex route does not support live model tools here; "
-            f"front-loading supported local context instead. allowed={allowed_tools or []}",
-            flush=True,
+        tools = _get_responses_tool_schemas(
+            user_message,
+            include_general=True,
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
         )
-        if _tools_allow(allowed_tools, "web_search", "get_context.browser"):
+        if tools:
+            _log_offered_model_tools(
+                "chatgpt",
+                model,
+                allowed_tools=allowed_tools,
+                pinned_tools=pinned_tools,
+                schemas=[{"function": {"name": t.get("name", "")}} for t in tools],
+                openai_format=True,
+            )
+            try:
+                yield from _run_responses_tool_loop(
+                    client,
+                    {
+                        "model": model,
+                        "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
+                        "instructions": _with_tools_note(config.get_system_prompt(), True),
+                        "tools": tools,
+                        "store": False,
+                    },
+                    provider="chatgpt",
+                    model=model,
+                    allowed_tools=allowed_tools,
+                )
+                return
+            except Exception as exc:
+                if not _tools_not_supported_error(exc) and _without_unsupported_parameter({"tools": tools}, exc) is None:
+                    raise
+                _update_route_capabilities("chatgpt", model, supports_tools=False)
+                print(
+                    f"[llm] ChatGPT/Codex live tools unavailable; front-loading supported context instead. {exc}",
+                    flush=True,
+                )
+        else:
             print(
-                "[llm] warning: Browser/Web model tools are enabled, but this "
-                "ChatGPT/Codex route cannot call web_search/get_context live. "
-                "Use Browser/Web auto mode to attach the page, or a live-tool "
-                "provider for model-decided browser/web calls.",
+                f"[llm] ChatGPT/Codex tools requested, but no schemas were available. allowed={allowed_tools or []}",
                 flush=True,
             )
         ambient_context = _inject_frontloaded_tool_context(
@@ -3284,7 +3781,11 @@ def _stream_codex(
             allowed_tools,
             query=user_message,
         )
-    text = _build_codex_text(user_message, ambient_context, memory_context)
+        text = _build_codex_text(
+            (history_prefix + user_message) if history_prefix else user_message,
+            ambient_context,
+            memory_context,
+        )
     yield from _response_stream_text(
         client,
         {
@@ -3426,6 +3927,7 @@ def _stream_anthropic(
     temperature: float | None = None,
     history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
+    """Stream anthropic."""
     tools_active = use_tools or allow_screenshot_tool
     prior_turns = _sanitize_history(history)
     cap = _get_route_capabilities("anthropic", model)
@@ -3628,6 +4130,7 @@ def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the 
 
 
 def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -> Generator[str, None, None]:
+    """Stream single rewrite route."""
     _check_route_config(provider, model, "LLM")
     _log_model_route("rewrite", provider, model, use_tools=False)
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
@@ -3845,6 +4348,7 @@ def stream_response_with_history(
 def _stream_single_history_route(
     provider: str, model: str, messages: list, route_name: str = "CHAT_LLM"
 ) -> Generator[str, None, None]:
+    """Stream single history route."""
     _check_route_config(provider, model, route_name)
     _log_model_route("chat", provider, model, use_tools=(provider == "anthropic"))
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
@@ -3935,4 +4439,3 @@ def _stream_single_history_route(
         )
     else:
         raise ValueError(f"Unknown chat LLM provider: {provider}")
-

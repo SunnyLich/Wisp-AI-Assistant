@@ -74,6 +74,7 @@ def _build_project_combo(projects: list[dict] | None) -> QComboBox:
 
 
 class _MemoryPanelSignals(QObject):
+    """Model memory panel signals."""
     loaded = Signal(int, object, str)
     mutation_done = Signal(str)
 
@@ -85,6 +86,7 @@ class _FactRow(QWidget):
         self, fact: dict, manager: "MemoryManager", parent: QWidget, *,
         read_only: bool = False, projects: list[dict] | None = None,
     ):
+        """Initialize the fact row instance."""
         super().__init__(parent)
         self._fact_id = fact["id"]
         self._manager = manager
@@ -126,12 +128,15 @@ class _FactRow(QWidget):
             layout.addWidget(del_btn)
 
     def _on_text_changed(self) -> None:
+        """Handle text changed events."""
         self._save_fact()
 
     def _on_scope_changed(self) -> None:
+        """Handle scope changed events."""
         self._save_fact()
 
     def _save_fact(self) -> None:
+        """Save fact."""
         new_text = self._text_edit.text().strip()
         if not new_text:
             return
@@ -142,6 +147,7 @@ class _FactRow(QWidget):
         )
 
     def _on_delete(self) -> None:
+        """Handle delete events."""
         confirm = QMessageBox.question(
             self,
             t("Delete fact"),
@@ -161,7 +167,9 @@ class _FactRow(QWidget):
             self.deleteLater()
 
     def _run_background(self, fn, action: str) -> None:
+        """Run background."""
         def worker() -> None:
+            """Handle worker for fact row."""
             try:
                 fn()
             except Exception as exc:
@@ -190,6 +198,7 @@ class MemoryPanel(QWidget):
         *,
         read_only: bool = False,
     ):
+        """Initialize the memory panel instance."""
         super().__init__(parent)
         self._manager = manager
         self._read_only = read_only
@@ -208,6 +217,7 @@ class MemoryPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
+        """Build ui."""
         root = QVBoxLayout(self)
         root.setSpacing(6)
         root.setContentsMargins(0, 0, 0, 0)
@@ -260,6 +270,7 @@ class MemoryPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _load_facts(self, facts: list[dict] | None = None) -> None:
+        """Load facts."""
         if facts is None:
             self.refresh_facts()
             return
@@ -267,6 +278,7 @@ class MemoryPanel(QWidget):
         self._render_facts(facts)
 
     def refresh_facts(self) -> None:
+        """Refresh facts."""
         if self._loading:
             return
         self._loading = True
@@ -277,6 +289,7 @@ class MemoryPanel(QWidget):
             self._refresh_btn.setText(t("Refreshing..."))
 
         def worker() -> None:
+            """Handle worker for memory panel."""
             try:
                 facts = self._manager.get_all_facts()
                 self._signals.loaded.emit(token, facts, "")
@@ -290,6 +303,7 @@ class MemoryPanel(QWidget):
         ).start()
 
     def _on_facts_loaded(self, token: int, facts, error: str) -> None:
+        """Handle facts loaded events."""
         if token != self._load_token:
             return
         self._loading = False
@@ -303,6 +317,7 @@ class MemoryPanel(QWidget):
         self._render_facts(list(facts or []))
 
     def _render_facts(self, facts: list[dict]) -> None:
+        """Render facts."""
         from core.conversation_store.store import GENERAL_PROJECT_ID
 
         # Group by project id ("" == General). Facts referencing a project that
@@ -365,6 +380,7 @@ class MemoryPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _on_add_fact(self) -> None:
+        """Handle add fact events."""
         text = self._add_text.text().strip()
         if not text:
             return
@@ -373,7 +389,9 @@ class MemoryPanel(QWidget):
         self._run_add_fact(text, project)
 
     def _run_add_fact(self, text: str, project: str) -> None:
+        """Run add fact."""
         def worker() -> None:
+            """Handle worker for memory panel."""
             error = ""
             try:
                 self._manager.add_fact_manual(text, project=project)
@@ -389,6 +407,7 @@ class MemoryPanel(QWidget):
         ).start()
 
     def _on_mutation_done(self, error: str) -> None:
+        """Handle mutation done events."""
         if error:
             QMessageBox.warning(self, t("Memory update failed"), error)
             return
@@ -402,6 +421,7 @@ class MemoryViewer(QDialog):
     """
 
     def __init__(self, manager: "MemoryManager", parent=None):
+        """Initialize the memory viewer instance."""
         super().__init__(parent)
         self.setWindowTitle(t("Long-term Memory"))
         self.setMinimumSize(760, 560)
@@ -437,6 +457,7 @@ class MemoryViewer(QDialog):
         root.addLayout(btn_row)
 
     def showEvent(self, event):  # noqa: N802
+        """Show event."""
         super().showEvent(event)
         fit_window_to_screen(self, preferred_width=820, preferred_height=640)
 

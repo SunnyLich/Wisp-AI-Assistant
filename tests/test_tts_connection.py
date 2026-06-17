@@ -1,3 +1,5 @@
+"""Tests for test tts connection."""
+
 import sys
 import types
 import unittest
@@ -7,13 +9,16 @@ from core import tts
 
 
 class TtsConnectionTests(unittest.TestCase):
+    """Test case for tts connection tests behavior."""
     def test_none_provider_reports_disabled(self):
+        """Verify none provider reports disabled behavior."""
         ok, message = tts.test_connection("none")
 
         self.assertTrue(ok)
         self.assertIn("disabled", message)
 
     def test_cartesia_connection_requires_voice_id(self):
+        """Verify cartesia connection requires voice id behavior."""
         ok, message = tts.test_connection(
             "cartesia",
             cartesia_api_key="cartesia-key",
@@ -24,11 +29,15 @@ class TtsConnectionTests(unittest.TestCase):
         self.assertIn("CARTESIA_VOICE_ID", message)
 
     def test_elevenlabs_connection_succeeds_when_audio_arrives(self):
+        """Verify elevenlabs connection succeeds when audio arrives behavior."""
         class FakeElevenLabs:
+            """Test case for fake eleven labs behavior."""
             def __init__(self, api_key):
+                """Initialize the fake eleven labs instance."""
                 self.api_key = api_key
 
             def generate(self, **kwargs):
+                """Verify generate behavior."""
                 yield b"audio"
 
         fake_module = types.ModuleType("elevenlabs.client")

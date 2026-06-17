@@ -32,6 +32,7 @@ _RESIZE_MARGIN = 6
 # Colours are substituted explicitly from theme_colors() so the bar matches the
 # content regardless of the (possibly stale) application palette.
 def _title_bar_qss(c: dict[str, str]) -> str:
+    """Handle title bar qss for UI shared framed."""
     return f"""
 #wispTitleBar {{
     background: {c["bg"]};
@@ -61,6 +62,7 @@ class _WinButton(QPushButton):
     looks identical on every OS. Background/hover still come from the stylesheet."""
 
     def __init__(self, kind: str, parent: QWidget):
+        """Initialize the win button instance."""
         super().__init__(parent)
         self._kind = kind
         self._glyph_color = QColor("#000000")
@@ -70,10 +72,12 @@ class _WinButton(QPushButton):
         self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def set_glyph_color(self, colour: QColor) -> None:
+        """Set glyph color."""
         self._glyph_color = QColor(colour)
         self.update()
 
     def paintEvent(self, event):  # noqa: N802
+        """Paint event."""
         super().paintEvent(event)  # stylesheet background / hover / pressed
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -98,6 +102,7 @@ class _TitleBar(QWidget):
     """Draggable title bar with minimise / maximise / close buttons."""
 
     def __init__(self, window: QWidget):
+        """Initialize the title bar instance."""
         super().__init__(window)
         self._window = window
         self._theming = False
@@ -152,6 +157,7 @@ class _TitleBar(QWidget):
 
     def changeEvent(self, event):  # noqa: N802
         # The app palette changing is our signal that the theme was swapped.
+        """Handle change event for title bar."""
         if event.type() in (
             QEvent.Type.PaletteChange, QEvent.Type.ApplicationPaletteChange
         ):
@@ -159,12 +165,14 @@ class _TitleBar(QWidget):
         super().changeEvent(event)
 
     def _toggle_max(self) -> None:
+        """Handle toggle max for title bar."""
         if self._window.isMaximized():
             self._window.showNormal()
         else:
             self._window.showMaximized()
 
     def mousePressEvent(self, event):  # noqa: N802
+        """Handle mouse press event for title bar."""
         if event.button() == Qt.MouseButton.LeftButton:
             handle = self._window.windowHandle()
             if handle is not None:
@@ -174,6 +182,7 @@ class _TitleBar(QWidget):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):  # noqa: N802
+        """Handle mouse double click event for title bar."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._toggle_max()
             event.accept()
@@ -185,6 +194,7 @@ class _ResizeGrip(QWidget):
     """Invisible hit-area along a window edge/corner that drives a WM resize."""
 
     def __init__(self, window: QWidget, edges: Qt.Edge, cursor: Qt.CursorShape):
+        """Initialize the resize grip instance."""
         super().__init__(window)
         self._window = window
         self._edges = edges
@@ -194,6 +204,7 @@ class _ResizeGrip(QWidget):
         self.setStyleSheet("background: transparent;")
 
     def mousePressEvent(self, event):  # noqa: N802
+        """Handle mouse press event for resize grip."""
         if event.button() == Qt.MouseButton.LeftButton and not self._window.isMaximized():
             handle = self._window.windowHandle()
             if handle is not None:
@@ -212,6 +223,7 @@ class _WindowChrome(QObject):
     """
 
     def __init__(self, window: QWidget):
+        """Initialize the window chrome instance."""
         super().__init__(window)
         self._window = window
         self._title_bar: _TitleBar | None = None
@@ -221,6 +233,7 @@ class _WindowChrome(QObject):
         window.installEventFilter(self)
 
     def eventFilter(self, obj, event):  # noqa: N802
+        """Handle event filter for window chrome."""
         if obj is self._window:
             et = event.type()
             if not self._installed and et in (
@@ -232,6 +245,7 @@ class _WindowChrome(QObject):
         return False
 
     def _install(self) -> None:
+        """Install the window chrome workflow."""
         w = self._window
         old_layout = w.layout()
         if old_layout is None:
@@ -256,6 +270,7 @@ class _WindowChrome(QObject):
         self._reposition_grips()
 
     def _make_grips(self) -> None:
+        """Create grips."""
         w = self._window
         E = Qt.Edge
         C = Qt.CursorShape
@@ -273,6 +288,7 @@ class _WindowChrome(QObject):
             self._grips.append(_ResizeGrip(w, edges, cursor))
 
     def _reposition_grips(self) -> None:
+        """Handle reposition grips for window chrome."""
         if not self._grips:
             return
         w = self._window

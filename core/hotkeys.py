@@ -27,10 +27,12 @@ _HOTKEY_ACTION_MODIFIER_TOKENS = {"ctrl", "control", "alt", "win", "cmd", "comma
 
 
 def _hotkey_parts(hotkey_str: str) -> list[str]:
+    """Handle hotkey parts for hotkeys."""
     return [part.strip().lower() for part in (hotkey_str or "").split("+") if part.strip()]
 
 
 def _is_f_key(token: str) -> bool:
+    """Return whether f key is true."""
     if not (token.startswith("f") and token[1:].isdigit()):
         return False
     try:
@@ -59,7 +61,7 @@ def is_safe_global_hotkey(hotkey_str: str) -> bool:
 
 # ANSI virtual keycodes (kVK_*), layout-independent. Shared by the Carbon
 # RegisterEventHotKey backend and the off-console CGEventTap backend (the latter
-# lives in macos_py.workers.hotkey_helper and imports this), so it is defined at
+# lives in runtime.workers.hotkey_helper and imports this), so it is defined at
 # module level rather than inside the macOS-only block.
 MACOS_VIRTUAL_KEYCODES: dict[str, int] = {
     "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
@@ -80,6 +82,7 @@ MACOS_VIRTUAL_KEYCODES: dict[str, int] = {
 
 
 def _macos_accessibility_enabled() -> bool:
+    """Handle macos accessibility enabled for hotkeys."""
     if not _IS_MAC:
         return True
     try:
@@ -228,6 +231,7 @@ def _to_pynput_hotkey(hotkey_str: str, *, ctrl_as_cmd: bool = False) -> str | No
 
 
 def _to_pynput_hotkeys(hotkey_str: str) -> list[str]:
+    """Handle to pynput hotkeys for hotkeys."""
     primary = _to_pynput_hotkey(hotkey_str)
     if not primary:
         return []
@@ -273,6 +277,7 @@ class HotkeyListener:
         on_dictate_stop: Callable[[], None] | None = None,
         extra_hotkeys: list[tuple[str, Callable[[], None]]] | None = None,
     ):
+        """Initialize the hotkey listener instance."""
         self._hotkey_defs: list[tuple[str, Callable]] = []
         for i, cb in enumerate(on_callers):
             if i < len(config.CALLER_ROWS):
@@ -312,6 +317,7 @@ class HotkeyListener:
         self._ptt_map: dict = {}
 
     def start(self) -> bool:
+        """Start the global hotkey backend, plus the push-to-talk listener (off macOS)."""
         started = self._impl.start()
         if not started:
             return False
@@ -325,12 +331,14 @@ class HotkeyListener:
         return True
 
     def status(self) -> dict[str, object]:
+        """Handle status for hotkey listener."""
         status_fn = getattr(self._impl, "status", None)
         if callable(status_fn):
             return dict(status_fn())
         return {"started": True, "registered": len(self._hotkey_defs), "requested": len(self._hotkey_defs)}
 
     def stop(self) -> None:
+        """Stop the global hotkey backend and any push-to-talk listener."""
         self._impl.stop()
         if self._voice_listener:
             vl = self._voice_listener
@@ -349,9 +357,11 @@ class HotkeyListener:
     # ------------------------------------------------------------------
 
     def _start_voice_listener(self) -> None:
+        """Start voice listener."""
         from pynput import keyboard as _kb
 
         def _resolve(hotkey_str: str):
+            """Handle resolve for hotkey listener."""
             s = (hotkey_str or "").lower().strip()
             if not s:
                 return None
@@ -384,11 +394,13 @@ class HotkeyListener:
         self._voice_listener.start()
 
     def _voice_press(self, key) -> None:
+        """Handle voice press for hotkey listener."""
         binding = self._ptt_map.get(key)
         if binding and binding[0]:
             binding[0]()
 
     def _voice_release(self, key) -> None:
+        """Handle voice release for hotkey listener."""
         binding = self._ptt_map.get(key)
         if binding and binding[1]:
             binding[1]()
@@ -399,7 +411,9 @@ class HotkeyListener:
 # ---------------------------------------------------------------------------
 
 class _Win32Impl:
+    """Model win32 impl."""
     def __init__(self, hotkey_defs: list[tuple[str, Callable]]):
+        """Initialize the win32 impl instance."""
         self._hotkey_defs = hotkey_defs
         self._callbacks: dict[int, Callable] = {}
         self._pump_tid   = 0
@@ -409,6 +423,7 @@ class _Win32Impl:
         self._status_reason = "not started"
 
     def start(self) -> bool:
+        """Start the Win32 message-pump thread that registers and serves the hotkeys."""
         self._pump_thread = threading.Thread(
             target=self._message_pump,
             daemon=True,
@@ -419,6 +434,7 @@ class _Win32Impl:
         return self._started
 
     def status(self) -> dict[str, object]:
+        """Handle status for win32 impl."""
         return {
             "started": self._started,
             "registered": len(self._callbacks),
@@ -427,11 +443,13 @@ class _Win32Impl:
         }
 
     def stop(self) -> None:
+        """Post WM_QUIT to the pump thread, unregistering the hotkeys and stopping."""
         if self._pump_tid:
             _user32.PostThreadMessageW(self._pump_tid, WM_QUIT, 0, 0)
             self._pump_tid = 0
 
     def _message_pump(self) -> None:
+        """Handle message pump for win32 impl."""
         import ctypes
         self._pump_tid = _kernel32.GetCurrentThreadId()
 
@@ -494,9 +512,11 @@ if _IS_MAC:
     import ctypes.util
 
     class _EventTypeSpec(ctypes.Structure):
+        """Model event type spec."""
         _fields_ = [("eventClass", ctypes.c_uint32), ("eventKind", ctypes.c_uint32)]
 
     class _EventHotKeyID(ctypes.Structure):
+        """Model event hot key i d."""
         _fields_ = [("signature", ctypes.c_uint32), ("id", ctypes.c_uint32)]
 
     # OSStatus handler(EventHandlerCallRef, EventRef, void *userData)
@@ -505,6 +525,7 @@ if _IS_MAC:
     )
 
     def _four_char_code(s: str) -> int:
+        """Handle four char code for local."""
         return (ord(s[0]) << 24) | (ord(s[1]) << 16) | (ord(s[2]) << 8) | ord(s[3])
 
     _kEventClassKeyboard     = _four_char_code("keyb")
@@ -569,6 +590,7 @@ if _IS_MAC:
 
 
 class _CarbonImpl:
+    """Model carbon impl."""
     def __init__(
         self,
         hotkey_defs: list[tuple[str, Callable]],
@@ -577,6 +599,7 @@ class _CarbonImpl:
         on_voice_start: Callable[[], None] | None = None,
         on_voice_stop: Callable[[], None] | None = None,
     ):
+        """Initialize the carbon impl instance."""
         self._hotkey_defs = hotkey_defs
         self._handler_ref = ctypes.c_void_p()
         self._hotkey_refs: list = []
@@ -589,6 +612,7 @@ class _CarbonImpl:
         self._signature = _four_char_code("Wisp")
 
     def start(self) -> bool:
+        """Register the global hotkeys via Carbon RegisterEventHotKey (macOS)."""
         if _carbon is None:
             print("[hotkeys] Carbon backend unavailable; global hotkeys disabled.")
             return False
@@ -683,6 +707,7 @@ class _CarbonImpl:
         # already hopped onto the main thread by core.system.main_thread.run_on_main
         # (see core.platform_utils / core.capture / core.stt), so running the callback
         # on a worker thread is safe — the main-thread-only work still lands on main.
+        """Carbon hotkey callback: identify which hotkey fired and run its handler on a daemon thread."""
         try:
             hk_id = _EventHotKeyID()
             status = _carbon.GetEventParameter(
@@ -713,6 +738,7 @@ class _CarbonImpl:
         return 0  # noErr
 
     def stop(self) -> None:
+        """Unregister all Carbon hotkeys and remove the installed event handler."""
         for ref in self._hotkey_refs:
             try:
                 _carbon.UnregisterEventHotKey(ref)
@@ -735,11 +761,14 @@ class _CarbonImpl:
 # ---------------------------------------------------------------------------
 
 class _PynputImpl:
+    """Model pynput impl."""
     def __init__(self, hotkey_defs: list[tuple[str, Callable]]):
+        """Initialize the pynput impl instance."""
         self._hotkey_defs = hotkey_defs
         self._global_hotkeys = None
 
     def start(self) -> bool:
+        """Start the pynput GlobalHotKeys listener (requires Accessibility on macOS)."""
         from pynput import keyboard as _kb  # type: ignore
 
         if _IS_MAC and not _macos_accessibility_enabled():
@@ -755,7 +784,9 @@ class _PynputImpl:
 
             # Wrap cb so it runs in its own thread (mirrors Win32 behaviour)
             def _make_cb(f: Callable) -> Callable:
+                """Create cb."""
                 def _cb():
+                    """Handle cb for pynput impl."""
                     threading.Thread(target=f, daemon=True).start()
                 return _cb
 
@@ -779,6 +810,7 @@ class _PynputImpl:
         return True
 
     def stop(self) -> None:
+        """Stop the pynput GlobalHotKeys listener."""
         if self._global_hotkeys is not None:
             gh = self._global_hotkeys
             self._global_hotkeys = None

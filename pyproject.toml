@@ -1,3 +1,4 @@
+# Project metadata and shared tool configuration for the Wisp Python package.
 [project]
 name = "wisp"
 version = "0.1.0"
@@ -29,4 +30,4 @@ python_version = "3.12"
 ignore_missing_imports = true
 warn_unused_configs = true
 no_implicit_optional = true
-files = ["core", "macos_py", "ui", "tests"]
+files = ["core", "runtime", "ui", "tests"]

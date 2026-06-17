@@ -19,6 +19,7 @@ class CopilotTokenError(RuntimeError):
 
 
 def _keyring_module():
+    """Handle keyring module for auth copilot auth."""
     try:
         import keyring  # type: ignore
     except Exception as exc:
@@ -27,6 +28,7 @@ def _keyring_module():
 
 
 def validate_token_format(token: str) -> tuple[bool, str]:
+    """Validate token format."""
     token = token.strip()
     if not token:
         return False, "Paste a GitHub Copilot-capable token first."
@@ -46,6 +48,7 @@ def validate_token_format(token: str) -> tuple[bool, str]:
 
 
 def save_token(token: str) -> None:
+    """Save token."""
     token = token.strip()
     ok, message = validate_token_format(token)
     if not ok:
@@ -59,6 +62,7 @@ def save_token(token: str) -> None:
 
 
 def get_token() -> str | None:
+    """Return token."""
     try:
         with keychain_lock():
             keyring = _keyring_module()
@@ -68,6 +72,7 @@ def get_token() -> str | None:
 
 
 def clear_token() -> None:
+    """Clear token."""
     try:
         with keychain_lock():
             keyring = _keyring_module()
@@ -80,6 +85,7 @@ def clear_token() -> None:
 
 
 def token_status() -> tuple[bool, str]:
+    """Handle token status for auth copilot auth."""
     token = get_token()
     if not token:
         return False, "Not configured"

@@ -18,6 +18,7 @@ class ScopedWorkspace:
         allowed_globs: Iterable[str] | None = None,
         blocked_globs: Iterable[str] | None = None,
     ):
+        """Initialize the scoped workspace instance."""
         self.root = Path(scope_folder).expanduser().resolve()
         if not self.root.exists() or not self.root.is_dir():
             raise ValueError(f"Invalid scope folder: {scope_folder}")
@@ -25,6 +26,7 @@ class ScopedWorkspace:
         self.blocked_globs = [g for g in (blocked_globs or []) if g]
 
     def resolve(self, path: str | Path = ".") -> Path:
+        """Handle resolve for scoped workspace."""
         raw = Path(path)
         candidate = raw if raw.is_absolute() else self.root / raw
         candidate = candidate.expanduser().resolve()
@@ -34,11 +36,18 @@ class ScopedWorkspace:
         return candidate
 
     def relative(self, path: str | Path) -> str:
+        """Handle relative for scoped workspace."""
         return str(self.resolve(path).relative_to(self.root)).replace("\\", "/")
 
-    def list_files(self, *, limit: int = 300) -> list[str]:
+    def list_files(self, folder: str | Path = ".", *, limit: int = 300) -> list[str]:
+        """List files."""
+        base = self.resolve(folder)
+        if not base.exists():
+            raise FileNotFoundError(str(base))
+        if not base.is_dir():
+            raise PermissionDenied("Only folder listing is supported.")
         files: list[str] = []
-        for path in self.root.rglob("*"):
+        for path in base.rglob("*"):
             if len(files) >= limit:
                 break
             if not path.is_file():
@@ -52,10 +61,12 @@ class ScopedWorkspace:
         return files
 
     def read_text(self, path: str | Path, *, max_chars: int = 20_000) -> str:
+        """Read text."""
         resolved = self.resolve(path)
         return resolved.read_text(encoding="utf-8", errors="replace")[:max_chars]
 
     def write_text(self, path: str | Path, content: str, *, create: bool, edit: bool) -> None:
+        """Write text."""
         resolved = self.resolve(path)
         exists = resolved.exists()
         if exists and not edit:
@@ -66,6 +77,7 @@ class ScopedWorkspace:
         resolved.write_text(content, encoding="utf-8")
 
     def patch_text(self, path: str | Path, old: str, new: str, *, edit: bool) -> int:
+        """Handle patch text for scoped workspace."""
         if not edit:
             raise PermissionDenied("Editing files is disabled for this task.")
         if not old:
@@ -79,6 +91,7 @@ class ScopedWorkspace:
         return 1
 
     def delete_file(self, path: str | Path, *, delete: bool) -> None:
+        """Delete file."""
         if not delete:
             raise PermissionDenied("Deleting files is disabled for this task.")
         resolved = self.resolve(path)
@@ -89,6 +102,7 @@ class ScopedWorkspace:
         resolved.unlink()
 
     def _check_globs(self, path: Path) -> None:
+        """Check globs."""
         rel = str(path.relative_to(self.root)).replace("\\", "/") if path != self.root else "."
         if self.allowed_globs and not any(fnmatch.fnmatch(rel, g) for g in self.allowed_globs):
             raise ScopeViolation(f"Path is not in allowed globs: {rel}")

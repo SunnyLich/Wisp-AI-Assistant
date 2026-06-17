@@ -70,7 +70,7 @@ Expected:
 To test the LLM rejection from PowerShell while Wisp is using this repo:
 
 ```powershell
-$env:PYTHONPATH = "macos_py/brain"
+$env:PYTHONPATH = "runtime/brain"
 .\.venv\Scripts\python.exe -c "from wisp_brain import handlers; handlers.HANDLERS['brain.plugins.llm_call'](plugin_name='phase4-permissions-locked', prompt='hello')"
 ```
 

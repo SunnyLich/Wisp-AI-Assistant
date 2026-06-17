@@ -62,12 +62,14 @@ REPORT_OPTIONS = (
 
 
 def add_translated_combo_items(combo: QComboBox, values: tuple[str, ...]) -> None:
+    """Add translated combo items."""
     for value in values:
         combo.addItem(t(value), value)
         combo.setItemData(combo.count() - 1, value, I18N_SOURCE_ROLE)
 
 
 def combo_value(combo: QComboBox, default: str = "") -> str:
+    """Handle combo value for UI agent combo helpers."""
     text = combo.currentText().strip()
     for idx in range(combo.count()):
         if combo.itemText(idx).strip() != text:
@@ -78,6 +80,7 @@ def combo_value(combo: QComboBox, default: str = "") -> str:
 
 
 def set_combo_value(combo: QComboBox, value: str) -> None:
+    """Set combo value."""
     value = str(value or "").strip()
     if not value:
         combo.setCurrentText("")
@@ -95,16 +98,20 @@ def set_combo_value(combo: QComboBox, value: str) -> None:
 
 
 def display_known(value: str, options: tuple[str, ...]) -> str:
+    """Handle display known for UI agent combo helpers."""
     return t(value) if value in options else value
 
 
 def display_role(role: str) -> str:
+    """Handle display role for UI agent combo helpers."""
     return display_known(role, AGENT_ROLE_OPTIONS)
 
 
 def display_agent_name(name: str) -> str:
+    """Handle display agent name for UI agent combo helpers."""
     return display_known(name, DEFAULT_AGENT_NAME_OPTIONS)
 
 
 def display_phase(phase: str) -> str:
+    """Handle display phase for UI agent combo helpers."""
     return display_known(phase, COMMUNICATION_PHASE_OPTIONS)

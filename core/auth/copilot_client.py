@@ -15,10 +15,12 @@ _COPILOT_STATE_HOME = os.path.abspath(
 
 
 def _available_sdk_module() -> str | None:
+    """Handle available sdk module for auth copilot client."""
     return _SDK_MODULE if importlib.util.find_spec(_SDK_MODULE) else None
 
 
 def _extract_content(response) -> str:
+    """Extract content."""
     data = getattr(response, "data", None)
     content = getattr(data, "content", None) if data is not None else None
     if content is None and isinstance(data, dict):
@@ -30,6 +32,7 @@ def _extract_content(response) -> str:
 
 
 def _client_options(token: str) -> dict:
+    """Handle client options for auth copilot client."""
     import config
 
     env = dict(os.environ)
@@ -51,10 +54,12 @@ def _client_options(token: str) -> dict:
 
 
 def _deny_permission(_request, _context) -> dict:
+    """Handle deny permission for auth copilot client."""
     return {"kind": "denied-by-rules", "rules": []}
 
 
 def _approve_permission(_request, _context) -> dict:
+    """Handle approve permission for auth copilot client."""
     return {"kind": "approved", "rules": []}
 
 
@@ -65,6 +70,7 @@ async def _ask_async(
     session_id: str | None = None,
     allow_tools: bool = False,
 ) -> str:
+    """Handle ask async for auth copilot client."""
     from copilot import CopilotClient  # type: ignore
     from core.auth import copilot_auth
 
@@ -105,6 +111,7 @@ def _ask_sync(
     session_id: str | None = None,
     allow_tools: bool = False,
 ) -> str:
+    """Handle ask sync for auth copilot client."""
     return asyncio.run(_ask_async(prompt, model, system, session_id, allow_tools))
 
 
@@ -115,6 +122,7 @@ def ask(
     session_id: str | None = None,
     allow_tools: bool = False,
 ) -> str:
+    """Handle ask for auth copilot client."""
     try:
         asyncio.get_running_loop()
     except RuntimeError as exc:
@@ -131,12 +139,14 @@ def stream(
     session_id: str | None = None,
     allow_tools: bool = False,
 ) -> Iterable[str]:
+    """Yield the Copilot reply as a single chunk (non-streaming shim)."""
     text = ask(prompt, model, system, session_id, allow_tools)
     if text:
         yield text
 
 
 def test_copilot_token() -> tuple[bool, str]:
+    """Verify copilot token behavior."""
     from core.auth import copilot_auth
 
     token = copilot_auth.get_token()

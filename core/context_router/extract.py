@@ -49,6 +49,7 @@ class Extracted:
     identifiers: list[str] = field(default_factory=list)    # distinctive, case-preserved
 
     def all_lower(self) -> set[str]:
+        """Handle all lower for extracted."""
         return (
             {t.lower() for t in self.terms}
             | {p.lower() for p in self.phrases}
@@ -81,6 +82,7 @@ _WORD_RE = re.compile(r"[A-Za-z0-9']+")
 
 
 def _looks_like_decimal(tok: str) -> bool:
+    """Handle looks like decimal for context router extract."""
     return bool(re.fullmatch(r"\d+(?:\.\d+)*", tok))
 
 

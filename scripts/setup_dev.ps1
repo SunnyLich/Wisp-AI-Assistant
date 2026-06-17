@@ -1,3 +1,4 @@
+# Windows developer setup script for creating the pinned Wisp virtual environment.
 param(
     [switch]$UseGlobalPython
 )

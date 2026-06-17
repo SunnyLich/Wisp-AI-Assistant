@@ -1,3 +1,5 @@
+"""Tests for test query pipeline."""
+
 import threading
 import unittest
 
@@ -11,56 +13,69 @@ from core.query_pipeline import (
 def _build(**kwargs):
     # Default the document reader to one that echoes a marker so tests never
     # touch the real llm client.
+    """Verify build behavior."""
     reader = kwargs.pop("read_document_file", lambda p: f"DOC<{p}>")
     return build_context(ContextInputs(intent_prompt="ask", **kwargs), read_document_file=reader)
 
 
 class BuildContextTests(unittest.TestCase):
+    """Test case for build context tests behavior."""
     def test_user_message_is_the_intent_prompt(self):
+        """Verify user message is the intent prompt behavior."""
         out = _build()
         self.assertEqual(out.user_message, "ask")
         self.assertEqual(out.ambient_ctx, "")
         self.assertIsNone(out.screenshot_b64)
 
     def test_single_context_is_not_numbered(self):
+        """Verify single context is not numbered behavior."""
         out = _build(selected="hello")
         self.assertEqual(out.ambient_ctx, "hello")
 
     def test_multiple_contexts_are_numbered(self):
+        """Verify multiple contexts are numbered behavior."""
         out = _build(buffered_items=["one"], selected="two")
         self.assertEqual(out.ambient_ctx, "Context 1:\none\n\nContext 2:\ntwo")
 
     def test_ambient_text_is_prefixed_with_separator(self):
+        """Verify ambient text is prefixed with separator behavior."""
         out = _build(ambient_text="AMB", selected="sel")
         self.assertEqual(out.ambient_ctx, "AMB\n\n---\nsel")
 
     def test_ambient_text_alone_when_no_other_context(self):
+        """Verify ambient text alone when no other context behavior."""
         out = _build(ambient_text="AMB")
         self.assertEqual(out.ambient_ctx, "AMB")
 
     def test_clipboard_appended_after_buffered_items(self):
+        """Verify clipboard appended after buffered items behavior."""
         out = _build(buffered_items=["buf"], clipboard_text="clip")
         self.assertEqual(out.ambient_ctx, "Context 1:\nbuf\n\nContext 2:\nclip")
 
     def test_clipboard_none_is_ignored(self):
+        """Verify clipboard none is ignored behavior."""
         out = _build(buffered_items=["buf"], clipboard_text=None)
         self.assertEqual(out.ambient_ctx, "buf")
 
     def test_dropped_image_becomes_vision_input_when_none_present(self):
+        """Verify dropped image becomes vision input when none present behavior."""
         out = _build(drop_items=[("shot.png", "BASE64", "image")])
         self.assertEqual(out.screenshot_b64, "BASE64")
         self.assertEqual(out.ambient_ctx, "")
 
     def test_dropped_image_kept_as_context_when_screenshot_exists(self):
+        """Verify dropped image kept as context when screenshot exists behavior."""
         out = _build(screenshot_b64="EXISTING", drop_items=[("shot.png", "BASE64", "image")])
         self.assertEqual(out.screenshot_b64, "EXISTING")
         self.assertEqual(out.ambient_ctx, "BASE64")
 
     def test_dropped_document_is_read_and_labelled(self):
+        """Verify dropped document is read and labelled behavior."""
         out = _build(drop_items=[("notes.txt", "/tmp/notes.txt", "document_path")])
         self.assertEqual(out.ambient_ctx, "[notes.txt]\nDOC</tmp/notes.txt>")
 
     def test_dropped_document_empty_read_is_skipped(self):
+        """Verify dropped document empty read is skipped behavior."""
         out = _build(
             drop_items=[("empty.txt", "/tmp/empty.txt", "document_path")],
             read_document_file=lambda p: "",
@@ -68,10 +83,12 @@ class BuildContextTests(unittest.TestCase):
         self.assertEqual(out.ambient_ctx, "")
 
     def test_active_document_appended_when_no_screenshot(self):
+        """Verify active document appended when no screenshot behavior."""
         out = _build(selected="sel", active_document_text="ACTIVE")
         self.assertEqual(out.ambient_ctx, "sel\n\n---\n[Active document]\nACTIVE")
 
     def test_priority_note_added_when_browser_and_document_context_exist(self):
+        """Verify priority note added when browser and document context exist behavior."""
         out = _build(
             ambient_text="[Browser/Web]\nWEB",
             active_document_text="ACTIVE",
@@ -87,6 +104,7 @@ class BuildContextTests(unittest.TestCase):
         )
 
     def test_priority_note_omitted_for_single_context(self):
+        """Verify priority note omitted for single context behavior."""
         out = _build(
             active_document_text="ACTIVE",
             priority_context="Active document",
@@ -96,10 +114,12 @@ class BuildContextTests(unittest.TestCase):
     def test_active_document_kept_when_screenshot_present(self):
         # A screenshot shows pixels, not document text — enabling documents must
         # still inject them even on vision queries.
+        """Verify active document kept when screenshot present behavior."""
         out = _build(screenshot_b64="SHOT", active_document_text="ACTIVE")
         self.assertEqual(out.ambient_ctx, "[Active document]\nACTIVE")
 
     def test_active_document_kept_when_dropped_image_promotes_to_screenshot(self):
+        """Verify active document kept when dropped image promotes to screenshot behavior."""
         out = _build(
             drop_items=[("shot.png", "BASE64", "image")],
             active_document_text="ACTIVE",
@@ -108,6 +128,7 @@ class BuildContextTests(unittest.TestCase):
         self.assertEqual(out.ambient_ctx, "[Active document]\nACTIVE")
 
     def test_full_precedence_order(self):
+        """Verify full precedence order behavior."""
         out = _build(
             buffered_items=["buf"],
             drop_items=[("d.txt", "/p", "document_path"), ("x", "raw", "text")],
@@ -129,16 +150,20 @@ class BuildContextTests(unittest.TestCase):
 
 
 class GenerationCounterTests(unittest.TestCase):
+    """Test case for generation counter tests behavior."""
     def test_starts_at_zero(self):
+        """Verify starts at zero behavior."""
         self.assertEqual(GenerationCounter().current, 0)
 
     def test_next_increments_and_returns(self):
+        """Verify next increments and returns behavior."""
         c = GenerationCounter()
         self.assertEqual(c.next(), 1)
         self.assertEqual(c.next(), 2)
         self.assertEqual(c.current, 2)
 
     def test_is_current_only_for_latest(self):
+        """Verify is current only for latest behavior."""
         c = GenerationCounter()
         first = c.next()
         second = c.next()
@@ -146,11 +171,13 @@ class GenerationCounterTests(unittest.TestCase):
         self.assertTrue(c.is_current(second))
 
     def test_concurrent_next_yields_unique_ids(self):
+        """Verify concurrent next yields unique ids behavior."""
         c = GenerationCounter()
         seen: list[int] = []
         lock = threading.Lock()
 
         def worker():
+            """Verify worker behavior."""
             gid = c.next()
             with lock:
                 seen.append(gid)

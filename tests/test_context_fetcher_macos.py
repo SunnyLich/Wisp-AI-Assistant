@@ -1,3 +1,5 @@
+"""Tests for test context fetcher macos."""
+
 import importlib
 import sys
 import types
@@ -6,18 +8,22 @@ from unittest.mock import patch
 
 
 class MacContextFetcherDocumentTests(unittest.TestCase):
+    """Test case for mac context fetcher document tests behavior."""
     def setUp(self):
+        """Verify set up behavior."""
         self._platform_patch = patch.object(sys, "platform", "darwin")
         self._platform_patch.start()
         import core.context_fetcher as context_fetcher
         self.cf = importlib.reload(context_fetcher)
 
     def tearDown(self):
+        """Verify tear down behavior."""
         self._platform_patch.stop()
         import core.context_fetcher as context_fetcher
         importlib.reload(context_fetcher)
 
     def test_enumerate_open_doc_windows_uses_macos_helper(self):
+        """Verify enumerate open doc windows uses macos helper behavior."""
         rows = [
             {"process_name": "TextEdit", "pid": 101, "frontmost": True, "title": "Notes.txt - TextEdit"},
             {"process_name": "Finder", "pid": 202, "frontmost": False, "title": "Downloads"},
@@ -32,6 +38,7 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
         self.assertEqual(wins[0].pid, 101)
 
     def test_resolve_doc_path_matches_open_file_from_lsof(self):
+        """Verify resolve doc path matches open file from lsof behavior."""
         win = self.cf.WindowInfo(title="Notes.txt - TextEdit", process_name="TextEdit", pid=101)
         lsof_result = types.SimpleNamespace(
             returncode=0,
@@ -40,6 +47,7 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
         )
 
         def _isfile(path):
+            """Verify isfile behavior."""
             return path == "/Users/test/Documents/Notes.txt"
 
         with patch("subprocess.run", return_value=lsof_result), \
@@ -49,6 +57,7 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
         self.assertEqual(resolved, "/Users/test/Documents/Notes.txt")
 
     def test_fetch_active_window_uses_frontmost_macos_window(self):
+        """Verify fetch active window uses frontmost macos window behavior."""
         rows = [
             {"process_name": "Finder", "pid": 202, "frontmost": False, "title": "Downloads"},
             {"process_name": "TextEdit", "pid": 101, "frontmost": True, "title": "Notes.txt"},
@@ -62,6 +71,7 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
         self.assertEqual(win.pid, 101)
 
     def test_plain_textedit_title_resolves_open_file_from_lsof(self):
+        """Verify plain textedit title resolves open file from lsof behavior."""
         win = self.cf.WindowInfo(title="Notes.txt", process_name="TextEdit", pid=101)
         lsof_result = types.SimpleNamespace(
             returncode=0,
@@ -70,6 +80,7 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
         )
 
         def _isfile(path):
+            """Verify isfile behavior."""
             return path == "/Users/test/Documents/Notes.txt"
 
         with patch("subprocess.run", return_value=lsof_result), \

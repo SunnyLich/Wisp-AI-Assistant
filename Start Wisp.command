@@ -172,4 +172,4 @@ setup_venv
 export WISP_REPO_ROOT="$REPO_ROOT"
 export PYTHONUNBUFFERED=1
 
-exec "$VPY" -m macos_py.supervisor.app
+exec "$VPY" -m runtime.supervisor.app

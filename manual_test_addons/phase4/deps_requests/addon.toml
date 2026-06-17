@@ -1,3 +1,4 @@
+# Manual QA manifest for addon dependency approval and repair flows.
 [addon]
 id = "phase4-deps-requests"
 name = "Phase 4 Dependency Test"

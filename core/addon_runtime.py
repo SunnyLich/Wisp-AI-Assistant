@@ -19,15 +19,18 @@ ADDON_ENVS_DIR = REPO_ROOT / "addon_envs"
 
 @dataclass(frozen=True)
 class AddonDependencies:
+    """Model addon dependencies."""
     python: str = ""
     packages: list[str] = field(default_factory=list)
 
     @property
     def has_dependencies(self) -> bool:
+        """Return whether dependencies is available."""
         return bool(self.python or self.packages)
 
 
 def dependencies_from_manifest(raw: Any) -> AddonDependencies:
+    """Handle dependencies from manifest for addon runtime."""
     if not isinstance(raw, dict):
         return AddonDependencies()
     packages = raw.get("packages") or []
@@ -42,16 +45,19 @@ def dependencies_from_manifest(raw: Any) -> AddonDependencies:
 
 
 def env_path(addon_id: str) -> Path:
+    """Handle env path for addon runtime."""
     return ADDON_ENVS_DIR / addon_id
 
 
 def python_path(env_dir: Path) -> Path:
+    """Handle python path for addon runtime."""
     if sys.platform == "win32":
         return env_dir / "Scripts" / "python.exe"
     return env_dir / "bin" / "python"
 
 
 def dependency_hash(deps: AddonDependencies) -> str:
+    """Handle dependency hash for addon runtime."""
     payload = {
         "python": deps.python,
         "packages": deps.packages,
@@ -61,6 +67,7 @@ def dependency_hash(deps: AddonDependencies) -> str:
 
 
 def environment_status(addon_id: str, deps: AddonDependencies) -> dict[str, Any]:
+    """Handle environment status for addon runtime."""
     if not deps.has_dependencies:
         return {
             "tier": "1",
@@ -95,6 +102,7 @@ def environment_status(addon_id: str, deps: AddonDependencies) -> dict[str, Any]
 
 
 def provision_environment(addon_id: str, deps: AddonDependencies, *, force: bool = False) -> dict[str, Any]:
+    """Handle provision environment for addon runtime."""
     if not deps.has_dependencies:
         return environment_status(addon_id, deps)
 
@@ -125,6 +133,7 @@ def provision_environment(addon_id: str, deps: AddonDependencies, *, force: bool
 
 
 def _read_marker(root: Path) -> dict[str, Any]:
+    """Read marker."""
     marker = root / "addon-env.json"
     if not marker.exists():
         return {}
@@ -136,6 +145,7 @@ def _read_marker(root: Path) -> dict[str, Any]:
 
 
 def _write_marker(root: Path, deps: AddonDependencies) -> None:
+    """Write marker."""
     marker = root / "addon-env.json"
     marker.write_text(
         json.dumps(
@@ -152,6 +162,7 @@ def _write_marker(root: Path, deps: AddonDependencies) -> None:
 
 
 def _find_uv() -> str:
+    """Find uv."""
     found = shutil.which("uv")
     if found:
         return found
@@ -173,6 +184,7 @@ def _find_uv() -> str:
 
 
 def _run(cmd: list[str]) -> None:
+    """Run *cmd* in the repo root with pip version noise suppressed; raises on failure."""
     env = os.environ.copy()
     env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
     try:

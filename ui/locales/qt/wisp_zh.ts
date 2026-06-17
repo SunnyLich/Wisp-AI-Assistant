@@ -79,10 +79,6 @@
       <translation>调整 Wisp 在询问模型前可收集的外部文本量。</translation>
     </message>
     <message>
-      <source>legacy tool folder / script tool folder</source>
-      <translation>旧版工具文件夹 / 脚本工具文件夹</translation>
-    </message>
-    <message>
       <source>Memory tuning</source>
       <translation>记忆调优</translation>
     </message>
@@ -1227,10 +1223,6 @@ Let model decide — expose git status/diff and GitHub repo/issue tools.</source
       <translation>最新思考</translation>
     </message>
     <message>
-      <source>Legacy tool folder</source>
-      <translation>旧版工具文件夹</translation>
-    </message>
-    <message>
       <source>Let model decide</source>
       <translation>让模型决定</translation>
     </message>
@@ -1441,10 +1433,6 @@ Press Ctrl+Q to ask something.</source>
       <translation>没有当前目标。</translation>
     </message>
     <message>
-      <source>No extra tools found. Install script tools under the legacy tool folder, or enable addons that add tools.</source>
-      <translation>未找到额外工具。请在旧版工具文件夹中安装脚本工具，或启用会添加工具的插件。</translation>
-    </message>
-    <message>
       <source>No facts stored yet.
 Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.</source>
       <translation>还没有保存事实。
@@ -1467,7 +1455,7 @@ Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.
       <translation>未声明包</translation>
     </message>
     <message>
-      <source>No plugins found.</source>
+      <source>No addons found.</source>
       <translation>未找到插件。</translation>
     </message>
     <message>
@@ -2654,5 +2642,33 @@ Let model decide — expose an open-document tool during the answer.</source>
       <source>xhigh</source>
       <translation>超高</translation>
     </message>
-  </context>
+    <message>
+      <source>Model file access</source>
+      <translation>模型文件访问</translation>
+    </message>
+    <message>
+      <source>One folder per line. Leave empty to turn local file access off.</source>
+      <translation>每行一个文件夹。留空可关闭本地文件访问。</translation>
+    </message>
+    <message>
+      <source>Ask before writing</source>
+      <translation>写入前询问</translation>
+    </message>
+    <message>
+      <source>Write automatically</source>
+      <translation>自动写入</translation>
+    </message>
+    <message>
+      <source>One private pattern per line. Matching files are always refused.</source>
+      <translation>每行一个私密文件模式。匹配的文件始终会被拒绝。</translation>
+    </message>
+    <message>
+      <source>Folders the model may use</source>
+      <translation>模型可使用的文件夹</translation>
+    </message>
+    <message>
+      <source>Private file patterns</source>
+      <translation>私密文件模式</translation>
+    </message>
+  <message><source>These folders are the only places the model can list or read files. Each keybind chooses whether local files are off, read-only, ask-before-write, or automatic.</source><translation>这些文件夹是模型唯一可以列出或读取文件的位置。每个快捷键都可以选择本地文件为关闭、只读、写入前询问或自动写入。</translation></message><message><source>Read only</source><translation>只读</translation></message><message><source>Local files:</source><translation>本地文件：</translation></message><message><source>No extra tools found. Enable addons that add model tools.</source><translation>没有找到额外工具。请启用会添加模型工具的扩展。</translation></message></context>
 </TS>

@@ -93,4 +93,4 @@ if errorlevel 1 ( echo Dependency install failed. & pause & exit /b 1 )
 :run
 set "WISP_REPO_ROOT=%CD%"
 set "PYTHONUNBUFFERED=1"
-"%VPY%" -m macos_py.supervisor.app
+"%VPY%" -m runtime.supervisor.app

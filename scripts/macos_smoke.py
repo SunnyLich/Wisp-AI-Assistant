@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main() -> int:
+    """Support command-line helper for scripts macos smoke for main."""
     if sys.platform != "darwin":
         print(f"SKIP: not macOS (sys.platform={sys.platform!r})")
         return 0
