@@ -1241,7 +1241,9 @@ def brain_query(
     request's id; the full text is the final response result.
     """
     from core.query_pipeline import ContextInputs, build_context
+    import config
 
+    trust_privacy_mode = bool(getattr(config, "TRUST_PRIVACY_MODE", True))
     if memory_enabled:
         try:
             # Scope memory (retrieval + saves) to the conversation's project for
@@ -1282,10 +1284,14 @@ def brain_query(
             ambient_text=ambient_text,
             active_document_text=active_document,
             priority_context=context_priority,
+            trust_privacy_mode=trust_privacy_mode,
         )
     )
     built = _apply_frontloaded_tools(built, frontload_tools)
     built = _apply_addon_before_query(built)
+    if trust_privacy_mode:
+        built = _redact_built_context(built)
+        memory_context = _redact_text(memory_context)
 
     parts: list[str] = []
     for chunk in _stream_query_reply(
@@ -1307,6 +1313,28 @@ def brain_query(
     ctx.emit("reply.done", {"text": full})
     _notify_addon_after_response(full)
     return {"text": full}
+
+
+def _redact_text(text: str | None) -> str:
+    """Apply the shared sensitive-data redactor to model-bound text."""
+    if not text:
+        return ""
+    from core.context_fetcher import _redact
+
+    return _redact(str(text))
+
+
+def _redact_built_context(built: Any) -> Any:
+    """Redact text fields on a BuiltContext-like object after hooks/tools run."""
+    try:
+        return type(built)(
+            user_message=_redact_text(getattr(built, "user_message", "")),
+            ambient_ctx=_redact_text(getattr(built, "ambient_ctx", "")),
+            screenshot_b64=getattr(built, "screenshot_b64", None),
+        )
+    except Exception as exc:  # noqa: BLE001 - privacy pass should not block answering
+        _log(f"privacy redaction skipped: {type(exc).__name__}: {exc}")
+        return built
 
 
 def _apply_frontloaded_tools(built: Any, frontload_tools: list[str] | None) -> Any:

@@ -412,6 +412,53 @@ class BuiltinModelToolsTests(unittest.TestCase):
             config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
             llm.set_live_file_access_mode(None)
 
+    def test_chatgpt_stream_required_error_wording_is_detected(self):
+        """Verify ChatGPT stream-required wording is treated as recoverable."""
+        exc = Exception("stream isn't true")
+
+        self.assertTrue(llm._requires_stream_error(exc))
+        self.assertTrue(llm._stream_mode_error(exc))
+
+    def test_chatgpt_responses_stream_sets_explicit_stream_body(self):
+        """Verify Responses streaming sends stream=true for ChatGPT Codex."""
+        calls = []
+
+        class StreamContext:
+            """Minimal Responses stream context manager."""
+
+            def __enter__(self):
+                """Enter the fake stream."""
+                return iter([SimpleNamespace(type="response.output_text.delta", delta="OK")])
+
+            def __exit__(self, *_args):
+                """Exit the fake stream."""
+                return False
+
+        class Responses:
+            """Fake Responses API."""
+
+            def stream(self, **kwargs):
+                """Record streaming kwargs."""
+                calls.append(kwargs)
+                return StreamContext()
+
+        client = SimpleNamespace(responses=Responses())
+        text = "".join(
+            llm._response_stream_text(
+                client,
+                {
+                    "model": "gpt-5.5-test",
+                    "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}],
+                    "store": False,
+                },
+                provider="chatgpt",
+                model="gpt-5.5-test",
+            )
+        )
+
+        self.assertEqual(text, "OK")
+        self.assertEqual(calls[0]["extra_body"]["stream"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

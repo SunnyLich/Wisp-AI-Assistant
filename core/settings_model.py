@@ -22,6 +22,20 @@ def _copy_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _copy_bool(value: Any, default: bool = False) -> bool:
+    """Copy bool."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 @dataclass(frozen=True)
 class ModelSettings:
     """Store model settings configuration data."""
@@ -47,6 +61,9 @@ class UiSettings:
     bubble_lines: int
     icon_size: int
     bubble_hide_delay_ms: int
+    bubble_scroll_enabled: bool
+    bubble_scroll_snap_enabled: bool
+    bubble_scroll_snap_delay_ms: int
 
 
 @dataclass(frozen=True)
@@ -71,6 +88,12 @@ class MemorySettings:
 
 
 @dataclass(frozen=True)
+class PrivacySettings:
+    """Store trust and privacy settings configuration data."""
+    trust_privacy_mode: bool
+
+
+@dataclass(frozen=True)
 class CallerSettings:
     """Store caller settings configuration data."""
     callers: tuple[dict[str, Any], ...] = field(default_factory=tuple)
@@ -86,6 +109,7 @@ class AppSettings:
     ui: UiSettings
     audio: AudioSettings
     memory: MemorySettings
+    privacy: PrivacySettings
     callers: CallerSettings
     context: ContextBudgets
     tool_plugin_dir: str
@@ -121,6 +145,9 @@ class AppSettings:
                 bubble_lines=int(values.get("BUBBLE_LINES", 0)),
                 icon_size=int(values.get("ICON_SIZE", 0)),
                 bubble_hide_delay_ms=int(values.get("BUBBLE_HIDE_DELAY_MS", 0)),
+                bubble_scroll_enabled=_copy_bool(values.get("BUBBLE_SCROLL_ENABLED"), True),
+                bubble_scroll_snap_enabled=_copy_bool(values.get("BUBBLE_SCROLL_SNAP_ENABLED"), True),
+                bubble_scroll_snap_delay_ms=int(values.get("BUBBLE_SCROLL_SNAP_DELAY_MS", 0)),
             ),
             audio=AudioSettings(
                 tts_provider=str(values.get("TTS_PROVIDER", "")),
@@ -140,6 +167,9 @@ class AppSettings:
                 auto_consolidate=bool(values.get("MEMORY_AUTO_CONSOLIDATE", False)),
                 top_k=int(values.get("MEMORY_TOP_K", 0)),
                 stm_token_budget=int(values.get("MEMORY_STM_TOKEN_BUDGET", 0)),
+            ),
+            privacy=PrivacySettings(
+                trust_privacy_mode=_copy_bool(values.get("TRUST_PRIVACY_MODE"), True),
             ),
             callers=CallerSettings(
                 callers=_copy_rows(values.get("CALLER_ROWS")),

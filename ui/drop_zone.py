@@ -46,12 +46,23 @@ _TYPE_COLORS = {
     "file":  QColor( 80, 220, 140),
 }
 
+_BASE_ICON_SIZE = 80
 _BADGE_W   = 172   # wider to accommodate X button
 _BADGE_H   = 28
 _BADGE_GAP = 5
 _DOT_R     = 5
 _X_W       = 22    # width of the remove button hit area
 _ZONE_H    = 64    # placeholder panel height when empty
+
+
+def _context_scale(icon_size: int) -> float:
+    """Return the context-panel scale relative to the default icon size."""
+    return max(0.5, float(icon_size or _BASE_ICON_SIZE) / _BASE_ICON_SIZE)
+
+
+def _scaled(value: int | float, scale: float) -> int:
+    """Scale a UI measurement while keeping it at least one pixel."""
+    return max(1, int(round(value * scale)))
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +281,7 @@ class ContextBadge(QWidget):
         on_remove: Callable[[], None] | None = None,
         parent: QWidget | None = None,
         removable: bool = True,
+        icon_size: int = _BASE_ICON_SIZE,
     ):
         """Initialize the context badge instance."""
         super().__init__(parent)
@@ -279,8 +291,9 @@ class ContextBadge(QWidget):
         self._removable = removable   # False = read-only "this was sent" badge (no X)
         self._hovered   = False   # is the X button hovered?
         self._removing  = False   # guard against double-remove
+        self._scale     = _context_scale(icon_size)
 
-        self.setFixedSize(_BADGE_W, _BADGE_H)
+        self.setFixedSize(self._badge_w, self._badge_h)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(removable)
 
@@ -303,14 +316,42 @@ class ContextBadge(QWidget):
         self._anim.finished.connect(callback)
         self._anim.start()
 
+    def set_icon_size(self, icon_size: int) -> None:
+        """Resize this badge so it tracks the current overlay icon size."""
+        scale = _context_scale(icon_size)
+        if abs(scale - self._scale) < 0.001:
+            return
+        self._scale = scale
+        self.setFixedSize(self._badge_w, self._badge_h)
+        self.update()
+
     # ------------------------------------------------------------------
     # Internal geometry
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _x_rect() -> QRect:
+    @property
+    def _badge_w(self) -> int:
+        """Scaled badge width."""
+        return _scaled(_BADGE_W, self._scale)
+
+    @property
+    def _badge_h(self) -> int:
+        """Scaled badge height."""
+        return _scaled(_BADGE_H, self._scale)
+
+    @property
+    def _dot_r(self) -> int:
+        """Scaled type-dot diameter."""
+        return _scaled(_DOT_R, self._scale)
+
+    @property
+    def _x_w(self) -> int:
+        """Scaled remove-button hit-area width."""
+        return _scaled(_X_W, self._scale)
+
+    def _x_rect(self) -> QRect:
         """Handle x rect for context badge."""
-        return QRect(_BADGE_W - _X_W, 0, _X_W, _BADGE_H)
+        return QRect(self._badge_w - self._x_w, 0, self._x_w, self._badge_h)
 
     # ------------------------------------------------------------------
     # Events
@@ -358,22 +399,29 @@ class ContextBadge(QWidget):
         # Background pill
         p.setBrush(QBrush(QColor(28, 28, 48, 210)))
         p.setPen(QPen(QColor(80, 80, 128, 160), 1))
-        p.drawRoundedRect(0, 0, _BADGE_W, _BADGE_H, 6, 6)
+        radius = _scaled(6, self._scale)
+        p.drawRoundedRect(0, 0, self._badge_w, self._badge_h, radius, radius)
 
         # Type indicator dot
         dot = _TYPE_COLORS.get(self._type, QColor(150, 150, 150))
         p.setBrush(QBrush(dot))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(8, _BADGE_H // 2 - _DOT_R // 2, _DOT_R, _DOT_R)
+        dot_r = self._dot_r
+        p.drawEllipse(
+            _scaled(8, self._scale),
+            self._badge_h // 2 - dot_r // 2,
+            dot_r,
+            dot_r,
+        )
 
         # Display name (leaves room for the X button only when removable)
-        text_x = 8 + _DOT_R + 6
-        reserved = _X_W if self._removable else 8
-        text_w = _BADGE_W - text_x - reserved - 2
-        p.setFont(QFont("Segoe UI", 8))
+        text_x = _scaled(8 + _DOT_R + 6, self._scale)
+        reserved = self._x_w if self._removable else _scaled(8, self._scale)
+        text_w = self._badge_w - text_x - reserved - _scaled(2, self._scale)
+        p.setFont(QFont("Segoe UI", _scaled(8, self._scale)))
         p.setPen(QColor(210, 210, 235, 225))
         p.drawText(
-            QRectF(text_x, 0, text_w, _BADGE_H),
+            QRectF(text_x, 0, text_w, self._badge_h),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             self._name,
         )
@@ -388,9 +436,18 @@ class ContextBadge(QWidget):
         p.setBrush(QBrush(x_bg))
         p.setPen(Qt.PenStyle.NoPen)
         xr = self._x_rect()
-        p.drawRoundedRect(xr.adjusted(2, 3, -2, -3), 4, 4)
+        p.drawRoundedRect(
+            xr.adjusted(
+                _scaled(2, self._scale),
+                _scaled(3, self._scale),
+                -_scaled(2, self._scale),
+                -_scaled(3, self._scale),
+            ),
+            _scaled(4, self._scale),
+            _scaled(4, self._scale),
+        )
 
-        p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+        p.setFont(QFont("Segoe UI", _scaled(8, self._scale), QFont.Weight.Bold))
         p.setPen(QColor(220, 100, 100, x_alpha))
         p.drawText(
             QRectF(xr),
@@ -426,13 +483,14 @@ class ContextPanel(QWidget):
         self._on_remove_item: Callable[[int], None] | None = None
         self._icon_pos  = QPoint(0, 0)
         self._icon_size = 80
+        self._scale = _context_scale(self._icon_size)
         self._drag_active = False
         self._summary_mode = False   # showing read-only "context sent" badges
         self._summary_timer = QTimer(self)
         self._summary_timer.setSingleShot(True)
         self._summary_timer.timeout.connect(self.clear_summary)
-        self.setFixedWidth(_BADGE_W)
-        self.resize(_BADGE_W, _ZONE_H)
+        self.setFixedWidth(self._badge_w)
+        self.resize(self._badge_w, self._zone_h)
 
     # ------------------------------------------------------------------
     # Public API
@@ -453,6 +511,7 @@ class ContextPanel(QWidget):
             item_type,
             on_remove=lambda b=None, i=idx: self._badge_remove_clicked(i),
             parent=self,
+            icon_size=self._icon_size,
         )
         self._badges.append(badge)
         self._relayout()
@@ -467,7 +526,14 @@ class ContextPanel(QWidget):
         self._clear_badges()
         self._summary_mode = True
         for name, item_type in items:
-            badge = ContextBadge(name, item_type, on_remove=None, parent=self, removable=False)
+            badge = ContextBadge(
+                name,
+                item_type,
+                on_remove=None,
+                parent=self,
+                removable=False,
+                icon_size=self._icon_size,
+            )
             self._badges.append(badge)
         self._relayout()
         self._update_visibility()
@@ -502,6 +568,7 @@ class ContextPanel(QWidget):
         """Handle reposition for context panel."""
         self._icon_pos  = icon_pos
         self._icon_size = icon_size
+        self._scale = _context_scale(icon_size)
         self._relayout()
         self._update_visibility()
 
@@ -555,28 +622,51 @@ class ContextPanel(QWidget):
     # Layout
     # ------------------------------------------------------------------
 
+    @property
+    def _badge_w(self) -> int:
+        """Scaled panel width."""
+        return _scaled(_BADGE_W, self._scale)
+
+    @property
+    def _badge_h(self) -> int:
+        """Scaled badge height."""
+        return _scaled(_BADGE_H, self._scale)
+
+    @property
+    def _badge_gap(self) -> int:
+        """Scaled gap between the icon and badge rows."""
+        return _scaled(_BADGE_GAP, self._scale)
+
+    @property
+    def _zone_h(self) -> int:
+        """Scaled empty drop-zone height."""
+        return _scaled(_ZONE_H, self._scale)
+
     def _relayout(self) -> None:
         """Handle relayout for context panel."""
+        self._scale = _context_scale(self._icon_size)
         n = len(self._badges)
         if n == 0:
-            panel_h = _ZONE_H
+            panel_h = self._zone_h
         else:
-            panel_h = n * (_BADGE_H + _BADGE_GAP) - _BADGE_GAP
-            panel_h = max(panel_h, _ZONE_H)
+            panel_h = n * (self._badge_h + self._badge_gap) - self._badge_gap
+            panel_h = max(panel_h, self._zone_h)
 
-        self.resize(_BADGE_W, panel_h)
+        self.setFixedWidth(self._badge_w)
+        self.resize(self._badge_w, panel_h)
 
         for i, badge in enumerate(self._badges):
-            badge.move(0, i * (_BADGE_H + _BADGE_GAP))
+            badge.set_icon_size(self._icon_size)
+            badge.move(0, i * (self._badge_h + self._badge_gap))
             badge.show()
 
         # Sit just to the right of the icon (matches the bubble's right-side
         # offset pattern in bubble.icon_pos_for_bubble), not centred over it.
-        x = self._icon_pos.x() + self._icon_size + _BADGE_GAP
+        x = self._icon_pos.x() + self._icon_size + self._badge_gap
         if not self._badges:
             y = self._icon_pos.y() + self._icon_size // 2 - panel_h // 2
         else:
-            y = self._icon_pos.y() + self._icon_size // 2 - _ZONE_H // 2
+            y = self._icon_pos.y() + self._icon_size // 2 - self._zone_h // 2
         self.move(x, y)
         self.update()
 
@@ -593,13 +683,26 @@ class ContextPanel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Translucent dashed border while the user is actively dragging context.
-        dash_pen = QPen(QColor(120, 120, 200, 65), 1.5, Qt.PenStyle.DashLine)
-        dash_pen.setDashPattern([4, 4])
+        dash_pen = QPen(
+            QColor(120, 120, 200, 65),
+            max(1.0, 1.5 * self._scale),
+            Qt.PenStyle.DashLine,
+        )
+        dash_pen.setDashPattern([_scaled(4, self._scale), _scaled(4, self._scale)])
         p.setPen(dash_pen)
         p.setBrush(QBrush(QColor(18, 18, 45, 22)))
-        p.drawRoundedRect(1, 1, self.width() - 2, self.height() - 2, 10, 10)
+        inset = _scaled(1, self._scale)
+        radius = _scaled(10, self._scale)
+        p.drawRoundedRect(
+            inset,
+            inset,
+            self.width() - 2 * inset,
+            self.height() - 2 * inset,
+            radius,
+            radius,
+        )
 
-        p.setFont(QFont("Segoe UI", 8))
+        p.setFont(QFont("Segoe UI", _scaled(8, self._scale)))
         p.setPen(QColor(150, 150, 220, 85))
         p.drawText(
             self.rect(),

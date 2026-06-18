@@ -1798,8 +1798,9 @@ class QtProtocolHost:
         self._intent.destroyed.connect(lambda: setattr(self, "_intent", None))
         self._intent.show()
         self._intent.raise_()
-        self._intent.activateWindow()
-        self._intent.setFocus()
+        if sys.platform != "win32":
+            self._intent.activateWindow()
+            self._intent.setFocus()
         return {"shown": True, "caller_idx": caller_idx}
 
     def _update_intent_context_items(

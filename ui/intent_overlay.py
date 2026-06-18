@@ -654,6 +654,8 @@ class IntentOverlay(QWidget):
             return
         self._debug("focus-custom-before")
         self.raise_()
+        if _IS_WIN:
+            self._win_force_foreground()
         self.activateWindow()
         self._input_line.setFocus(Qt.FocusReason.OtherFocusReason)
         if _IS_WIN and not self._input_grabbed_keyboard:
@@ -676,19 +678,21 @@ class IntentOverlay(QWidget):
     def changeEvent(self, event):
         """Handle change event for intent overlay."""
         from PySide6.QtCore import QEvent
-        # macOS lacks the Popup flag (it blocks key-window status), so emulate
-        # Popup's click-outside dismissal: once we've gained activation, cancel
-        # when the window loses it (user clicked another app/window).
-        if _IS_MAC and event.type() == QEvent.Type.ActivationChange:
+        # Once we've gained activation, cancel when the window loses it (user
+        # clicked another app/window). macOS needs this because it cannot use
+        # Popup here; Windows/Linux need it when custom prompt mode grabs keys.
+        if event.type() == QEvent.Type.ActivationChange:
             if self.isActiveWindow():
                 self._was_activated = True
             elif self._was_activated and not self._handled:
-                self._cancel()
+                QTimer.singleShot(0, self._cancel_if_focus_left)
         super().changeEvent(event)
 
     def eventFilter(self, obj, event):
         """Handle event filter for intent overlay."""
         from PySide6.QtCore import QEvent
+        if obj is self._input_line and event.type() == QEvent.Type.FocusOut:
+            QTimer.singleShot(0, self._cancel_if_focus_left)
         if obj is self._input_line and event.type() in {
             QEvent.Type.KeyPress,
             QEvent.Type.ShortcutOverride,
@@ -705,6 +709,16 @@ class IntentOverlay(QWidget):
                     self._drop_next_keypress = False  # not the trigger key — let it through
                     self._debug_key("input-filter-pass-first-key", event)
         return super().eventFilter(obj, event)
+
+    def _cancel_if_focus_left(self) -> None:
+        """Cancel when focus has moved outside the overlay."""
+        if self._handled or not self.isVisible():
+            return
+        focus = QApplication.focusWidget()
+        if focus is not None and (focus is self or self.isAncestorOf(focus)):
+            return
+        self._debug("focus-left-cancel")
+        self._cancel()
 
     def _fire_custom(self):
         """Handle fire custom for intent overlay."""
@@ -792,10 +806,9 @@ class IntentOverlay(QWidget):
         """Show event."""
         super().showEvent(event)
         self.raise_()
-        self.activateWindow()
-        if _IS_WIN:
-            self._win_force_foreground()
-        self._focus_overlay()
+        if not _IS_WIN:
+            self.activateWindow()
+            self._focus_overlay()
         self._closed = False
         self._debug("show")
         if _IS_WIN:

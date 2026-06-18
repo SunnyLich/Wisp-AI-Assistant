@@ -56,6 +56,7 @@ class ContextInputs:
     clipboard_text: str | None = None                  # already read when caller opted in
     active_document_text: str = ""                      # already read + filtered, or ""
     priority_context: str = ""                          # e.g. "Browser/Web" or "Active document"
+    trust_privacy_mode: bool = True
 
 
 @dataclass
@@ -92,6 +93,17 @@ def _context_priority_note(priority_context: str, sources: set[str]) -> str:
     )
 
 
+def _redact_if_enabled(text: str | None, enabled: bool) -> str:
+    """Apply the shared sensitive-data redactor when privacy mode is enabled."""
+    if not text:
+        return ""
+    if not enabled:
+        return str(text)
+    from core.context_fetcher import _redact
+
+    return _redact(str(text))
+
+
 def build_context(
     inp: ContextInputs,
     *,
@@ -114,7 +126,10 @@ def build_context(
         read_document_file = _rdf
 
     screenshot_b64 = inp.screenshot_b64
-    context_items: list[str] = list(inp.buffered_items)
+    privacy_enabled = bool(inp.trust_privacy_mode)
+    context_items: list[str] = [
+        _redact_if_enabled(item, privacy_enabled) for item in inp.buffered_items
+    ]
 
     for name, content, item_type in inp.drop_items:
         if item_type == "image" and screenshot_b64 is None:
@@ -122,24 +137,28 @@ def build_context(
         elif item_type == "document_path":
             doc_text = read_document_file(content)
             if doc_text:
-                context_items.append(f"[{name}]\n{doc_text}")
+                context_items.append(
+                    _redact_if_enabled(f"[{name}]\n{doc_text}", privacy_enabled)
+                )
         else:
-            context_items.append(content)
+            context_items.append(_redact_if_enabled(content, privacy_enabled))
 
     if inp.clipboard_text:
-        context_items.append(inp.clipboard_text)
+        context_items.append(_redact_if_enabled(inp.clipboard_text, privacy_enabled))
 
-    all_contexts = context_items + ([inp.selected] if inp.selected else [])
-    sources = _context_sources(inp.ambient_text, all_contexts, inp.active_document_text)
+    selected = _redact_if_enabled(inp.selected, privacy_enabled)
+    ambient_text = _redact_if_enabled(inp.ambient_text, privacy_enabled)
+    active_document_text = _redact_if_enabled(inp.active_document_text, privacy_enabled)
+
+    all_contexts = context_items + ([selected] if selected else [])
+    sources = _context_sources(ambient_text, all_contexts, active_document_text)
 
     ctx_block = (
         "\n\n".join(f"Context {i + 1}:\n{c}" for i, c in enumerate(all_contexts))
         if len(all_contexts) > 1
         else (all_contexts[0] if all_contexts else "")
     )
-    active_doc_block = (
-        f"[Active document]\n{inp.active_document_text}" if inp.active_document_text else ""
-    )
+    active_doc_block = f"[Active document]\n{active_document_text}" if active_document_text else ""
     priority_note = _context_priority_note(inp.priority_context, sources)
 
     # Assemble in order — priority note, ambient snapshot, user-provided context,
@@ -148,12 +167,12 @@ def build_context(
     # dangling "---" at the start.
     ambient_ctx = "\n\n---\n".join(
         part
-        for part in (priority_note, inp.ambient_text, ctx_block, active_doc_block)
+        for part in (priority_note, ambient_text, ctx_block, active_doc_block)
         if part
     )
 
     return BuiltContext(
-        user_message=inp.intent_prompt,
+        user_message=_redact_if_enabled(inp.intent_prompt, privacy_enabled),
         ambient_ctx=ambient_ctx,
         screenshot_b64=screenshot_b64,
     )

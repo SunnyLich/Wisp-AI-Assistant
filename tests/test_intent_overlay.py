@@ -19,6 +19,7 @@ def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
     old_rows = list(config.CALLER_ROWS)
     grabs: list[QLineEdit] = []
     releases: list[QLineEdit] = []
+    force_foreground_calls: list[bool] = []
 
     def grab_keyboard(self):
         """Verify grab keyboard behavior."""
@@ -29,6 +30,11 @@ def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
         releases.append(self)
 
     monkeypatch.setattr(intent_overlay, "_IS_WIN", True)
+    monkeypatch.setattr(
+        intent_overlay.IntentOverlay,
+        "_win_force_foreground",
+        lambda self: force_foreground_calls.append(True),
+    )
     monkeypatch.setattr(QLineEdit, "grabKeyboard", grab_keyboard)
     monkeypatch.setattr(QLineEdit, "releaseKeyboard", release_keyboard)
     config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
@@ -37,6 +43,7 @@ def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
         overlay._enter_custom_mode()
 
         assert overlay._input_line.isHidden() is False
+        assert force_foreground_calls == [True]
         assert grabs == [overlay._input_line]
         assert overlay._input_grabbed_keyboard is True
 
@@ -109,6 +116,51 @@ def test_intent_overlay_auto_custom_prompt_keeps_first_typed_key(monkeypatch):
         assert overlay._custom_mode is True
         assert overlay._input_line.isHidden() is False
         assert overlay._drop_next_keypress is False
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_cancel_if_focus_leaves(monkeypatch):
+    """Verify clicking away cancels a pending custom prompt."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    cancelled: list[bool] = []
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.cancelled.connect(lambda: cancelled.append(True))
+    try:
+        overlay.show()
+        overlay._enter_custom_mode()
+        monkeypatch.setattr(
+            intent_overlay.QApplication,
+            "focusWidget",
+            staticmethod(lambda: overlay._input_line),
+        )
+
+        overlay._cancel_if_focus_left()
+
+        assert cancelled == []
+        assert overlay._handled is False
+
+        monkeypatch.setattr(
+            intent_overlay.QApplication,
+            "focusWidget",
+            staticmethod(lambda: None),
+        )
+
+        overlay._cancel_if_focus_left()
+
+        assert cancelled == [True]
+        assert overlay._handled is True
     finally:
         config.CALLER_ROWS[:] = old_rows
         overlay.close()

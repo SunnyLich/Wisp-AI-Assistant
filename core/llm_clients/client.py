@@ -1936,6 +1936,15 @@ def _responses_create_with_retries(client, kwargs: dict, *, provider: str, model
             current = retry_kwargs
 
 
+def _responses_stream_kwargs(kwargs: dict) -> dict:
+    """Return kwargs for Responses streaming with an explicit body stream flag."""
+    current = dict(kwargs)
+    extra_body = dict(current.get("extra_body") or {})
+    extra_body["stream"] = True
+    current["extra_body"] = extra_body
+    return current
+
+
 def _run_responses_tool_loop(
     client,
     kwargs: dict,
@@ -1997,6 +2006,9 @@ def _stream_mode_error(exc: Exception) -> bool:
             "unsupported",
             "not supported",
             "must be",
+            "is not true",
+            "isn't true",
+            "isnt true",
             "required",
             "invalid",
             "unrecognized",
@@ -2011,6 +2023,10 @@ def _requires_stream_error(exc: Exception) -> bool:
         marker in text
         for marker in (
             "stream must be true",
+            "stream must be set to true",
+            "stream is not true",
+            "stream isn't true",
+            "stream isnt true",
             "stream=true",
             "requires stream",
             "requires streaming",
@@ -2179,7 +2195,7 @@ def _response_stream_text(
                 yield text
             return
     try:
-        with client.responses.stream(**kwargs) as stream:
+        with client.responses.stream(**_responses_stream_kwargs(kwargs)) as stream:
             if cap is not None:
                 cap.supports_stream = True
             for event in stream:
@@ -2835,7 +2851,7 @@ def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
         _update_route_capabilities("chatgpt", model, supports_stream=True, requires_stream=True)
         print("[llm] ChatGPT route probe create rejected; retrying streaming", flush=True)
         try:
-            with client.responses.stream(**kwargs) as stream:
+            with client.responses.stream(**_responses_stream_kwargs(kwargs)) as stream:
                 for _event in stream:
                     break
         except Exception as stream_exc:
@@ -2845,7 +2861,7 @@ def _probe_chatgpt_route(model: str, image_base64: str | None = None) -> None:
                 raise
             _mark_unsupported_parameter("chatgpt", model, _unsupported_parameter_name(stream_exc))
             print("[llm] ChatGPT route probe stream rejected unsupported parameter; retrying without it", flush=True)
-            with client.responses.stream(**retry_kwargs) as stream:
+            with client.responses.stream(**_responses_stream_kwargs(retry_kwargs)) as stream:
                 for _event in stream:
                     break
 
@@ -3764,8 +3780,14 @@ def _stream_codex(
                 )
                 return
             except Exception as exc:
-                if not _tools_not_supported_error(exc) and _without_unsupported_parameter({"tools": tools}, exc) is None:
+                if (
+                    not _requires_stream_error(exc)
+                    and not _tools_not_supported_error(exc)
+                    and _without_unsupported_parameter({"tools": tools}, exc) is None
+                ):
                     raise
+                if _requires_stream_error(exc):
+                    _update_route_capabilities("chatgpt", model, supports_stream=True, requires_stream=True)
                 _update_route_capabilities("chatgpt", model, supports_tools=False)
                 print(
                     f"[llm] ChatGPT/Codex live tools unavailable; front-loading supported context instead. {exc}",

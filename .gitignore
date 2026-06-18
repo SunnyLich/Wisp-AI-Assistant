@@ -16,6 +16,7 @@ secrets.*
 doll/
 tmp_debug_agent/
 model_files/
+.understand-anything/
 
 # Local planning docs (living, not for VCS)
 MACOS_NATIVE_PLAN.md

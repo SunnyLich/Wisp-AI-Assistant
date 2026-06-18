@@ -73,11 +73,13 @@ class SpeechBubble(QWidget):
         self._full_text = ""
         self._thought_text = ""
         self._lines: list[str] = []
+        self._all_line_segments: list[list[tuple[str, bool, int | None, bool, bool]]] = []
         self._line_segments: list[list[tuple[str, bool, int | None, bool, bool]]] = []
         self._thinking = False
         self._transcript_preview = False
         self._dot_count = 1
         self._last_chunk_ended_with_space = True  # guards mid-word chunk merging
+        self._manual_scroll_start: int | None = None
 
         # Read-position mode (syncs highlighting to audio playback speed)
         self._reveal_mode = False
@@ -121,6 +123,12 @@ class SpeechBubble(QWidget):
         self._reveal_timer = QTimer(self)
         self._apply_reveal_speed()
         self._reveal_timer.timeout.connect(self._reveal_next_word)
+
+        # Manual wheel scrolling while speech is active; snaps back to the
+        # current highlight after a short configurable delay.
+        self._scroll_snap_timer = QTimer(self)
+        self._scroll_snap_timer.setSingleShot(True)
+        self._scroll_snap_timer.timeout.connect(self._snap_scroll_to_highlight)
 
         # Drag support
         self._drag_offset = None          # QPoint while dragging
@@ -172,6 +180,9 @@ class SpeechBubble(QWidget):
         self._read_word_color = _color(config.BUBBLE_READ_WORD_COLOR, QColor(77, 163, 255))
         self._hide_timer.setInterval(self._hide_delay_ms())
         self._apply_reveal_speed()
+        if not self._bubble_scroll_enabled():
+            self._manual_scroll_start = None
+            self._scroll_snap_timer.stop()
         if self._full_text:
             self._rewrap()
         self.update()
@@ -229,20 +240,55 @@ class SpeechBubble(QWidget):
                 self._click_callback()
         super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event):  # noqa: N802
+        """Scroll the bubble text without requiring focus."""
+        if not self._bubble_scroll_enabled() or not self._all_line_segments:
+            super().wheelEvent(event)
+            return
+
+        visible_lines = self._visible_line_count()
+        max_start = max(0, len(self._all_line_segments) - visible_lines)
+        if max_start <= 0:
+            event.accept()
+            return
+
+        delta_y = event.angleDelta().y()
+        if delta_y == 0:
+            delta_y = event.pixelDelta().y()
+        if delta_y == 0:
+            event.accept()
+            return
+
+        steps = max(1, abs(delta_y) // 120) if abs(delta_y) >= 120 else 1
+        current = self._manual_scroll_start
+        if current is None:
+            current = self._highlight_start_line(self._all_line_segments)
+        if delta_y > 0:
+            current -= steps
+        else:
+            current += steps
+        self._manual_scroll_start = max(0, min(max_start, current))
+        self._apply_visible_lines()
+        self._schedule_scroll_snap()
+        event.accept()
+
     def show_listening(self):
         """Show a static mic indicator while the user holds F9."""
         self._full_text = ""
         self._thought_text = ""
         self._highlight_generation += 1
         self._lines = ["\u25cf Recording — release to send"]
+        self._all_line_segments = []
         self._line_segments = [[("Recording - release to send", False, None, False, False)]]
         self._thinking = False
         self._transcript_preview = False
         self._pending_words = []
         self._revealed_count = 0
+        self._manual_scroll_start = None
         self._reveal_mode = False
         self._audio_started = False
         self._pre_audio_timestamps = []
+        self._scroll_snap_timer.stop()
         self._reveal_timer.stop()
         self._dot_timer.stop()
         self._hide_timer.stop()
@@ -256,6 +302,7 @@ class SpeechBubble(QWidget):
         self._thought_text = ""
         self._highlight_generation += 1
         self._lines = []
+        self._all_line_segments = []
         self._line_segments = []
         self._thinking = True
         self._transcript_preview = False
@@ -263,10 +310,12 @@ class SpeechBubble(QWidget):
         self._last_chunk_ended_with_space = True
         self._pending_words = []
         self._revealed_count = 0
+        self._manual_scroll_start = None
         self._finishing = False
         self._reveal_mode = False
         self._audio_started = False
         self._pre_audio_timestamps = []
+        self._scroll_snap_timer.stop()
         self._reveal_timer.stop()
         self._hide_timer.stop()
         self._dot_timer.start()
@@ -288,6 +337,7 @@ class SpeechBubble(QWidget):
             self._revealed_count = 0
             self._full_text = " ".join(self._pending_words)
             self._lines = []
+            self._all_line_segments = []
             self._line_segments = []
             self._apply_reveal_speed()
             self._reveal_timer.start()
@@ -355,7 +405,9 @@ class SpeechBubble(QWidget):
             self._pending_words = []
             self._full_text = ""
             self._revealed_count = 0
+            self._manual_scroll_start = None
             self._lines = []
+            self._all_line_segments = []
             self._line_segments = []
         if self._thinking:
             self._thinking = False
@@ -438,6 +490,7 @@ class SpeechBubble(QWidget):
         self._hide_timer.stop()
         self._dot_timer.stop()
         self._reveal_timer.stop()
+        self._scroll_snap_timer.stop()
         self._reveal_mode = False
         self._finishing = False
         self._timestamp_mode = False
@@ -447,12 +500,14 @@ class SpeechBubble(QWidget):
         self._highlight_generation += 1
         self._pending_words = []
         self._revealed_count = 0
+        self._manual_scroll_start = None
         self._pre_audio_timestamps = []
         self._thinking = False
         self._transcript_preview = False
         self._full_text = ""
         self._thought_text = ""
         self._lines = []
+        self._all_line_segments = []
         self._line_segments = []
         self.hide()
 
@@ -473,12 +528,14 @@ class SpeechBubble(QWidget):
         self._hide_timer.stop()
         self._dot_timer.stop()
         self._reveal_timer.stop()
+        self._scroll_snap_timer.stop()
         self._reveal_mode = False
         self._finishing = False
         self._timestamp_mode = False
         self._audio_started = False
         self._thinking = False
         self._transcript_preview = False
+        self._manual_scroll_start = None
         self._thought_text = ""
         self._pending_words = text.split()
         self._revealed_count = len(self._pending_words)
@@ -514,6 +571,21 @@ class SpeechBubble(QWidget):
     def _hide_delay_ms() -> int:
         """Hide delay ms."""
         return max(500, int(getattr(config, "BUBBLE_HIDE_DELAY_MS", _HIDE_DELAY)))
+
+    @staticmethod
+    def _bubble_scroll_enabled() -> bool:
+        """Whether wheel scrolling inside the bubble is enabled."""
+        return bool(getattr(config, "BUBBLE_SCROLL_ENABLED", True))
+
+    @staticmethod
+    def _bubble_scroll_snap_enabled() -> bool:
+        """Whether manual bubble scroll snaps back to the live highlight."""
+        return bool(getattr(config, "BUBBLE_SCROLL_SNAP_ENABLED", True))
+
+    @staticmethod
+    def _bubble_scroll_snap_delay_ms() -> int:
+        """Delay before snapping manual scroll back to the current highlight."""
+        return max(0, int(getattr(config, "BUBBLE_SCROLL_SNAP_DELAY_MS", 2500)))
 
     def _current_tts_rate(self) -> float:
         """Handle current TTS rate for speech bubble."""
@@ -552,7 +624,7 @@ class SpeechBubble(QWidget):
         # Timer keeps running until finish() is called (which sets _finishing)
 
     def _rewrap(self):
-        """Word-wrap _full_text and scroll the visible window to the read position."""
+        """Word-wrap _full_text and update the visible window."""
         thought_words = self._markdown_words(self._thought_text)
         reply_words = self._markdown_words(self._full_text)
         # Expand each whitespace word into breakable units. CJK text has no
@@ -587,22 +659,83 @@ class SpeechBubble(QWidget):
             prev_is_thought = is_thought
         if current:
             lines.append(current)
-        visible_lines = max(1, config.BUBBLE_LINES)
+        self._all_line_segments = lines
+        self._apply_visible_lines()
+
+    def _visible_line_count(self) -> int:
+        """Return the configured number of visible bubble lines."""
+        return max(1, int(getattr(config, "BUBBLE_LINES", 1)))
+
+    def _highlight_start_line(self, lines: list[list[tuple[str, bool, int | None, bool, bool]]]) -> int:
+        """Return the line window start that follows the last highlighted word."""
+        visible_lines = self._visible_line_count()
         if not lines:
-            visible = []
-        elif self._revealed_count <= 0:
-            visible = lines[max(0, len(lines) - visible_lines):]
+            return 0
+        if self._revealed_count <= 0:
+            return max(0, len(lines) - visible_lines)
+
+        reply_indexes = [
+            reply_idx
+            for line in lines
+            for _word, _bold, reply_idx, is_thought, _sb in line
+            if not is_thought and reply_idx is not None
+        ]
+        if not reply_indexes:
+            return max(0, len(lines) - visible_lines)
+
+        target_idx = min(self._revealed_count - 1, max(reply_indexes))
+        target_line = 0
+        for line_idx, line in enumerate(lines):
+            if any(reply_idx == target_idx for _word, _bold, reply_idx, _is_thought, _sb in line):
+                target_line = line_idx
+                break
+        return max(0, target_line - visible_lines + 1)
+
+    def _apply_visible_lines(self) -> None:
+        """Apply either manual scroll or highlight-follow to visible lines."""
+        visible_lines = self._visible_line_count()
+        lines = self._all_line_segments
+        if not lines:
+            visible: list[list[tuple[str, bool, int | None, bool, bool]]] = []
         else:
-            target_idx = min(self._revealed_count - 1, len(reply_words) - 1)
-            target_line = 0
-            for line_idx, line in enumerate(lines):
-                if any(reply_idx == target_idx for _word, _bold, reply_idx, _is_thought, _sb in line):
-                    target_line = line_idx
-                    break
-            start_line = max(0, target_line - visible_lines + 1)
+            max_start = max(0, len(lines) - visible_lines)
+            if self._manual_scroll_start is None or not self._bubble_scroll_enabled():
+                if not self._bubble_scroll_enabled():
+                    self._manual_scroll_start = None
+                start_line = self._highlight_start_line(lines)
+            else:
+                start_line = max(0, min(max_start, self._manual_scroll_start))
+                self._manual_scroll_start = start_line
             visible = lines[start_line:start_line + visible_lines]
         self._line_segments = visible
         self._lines = [self._join_units(line) for line in visible]
+
+    def _schedule_scroll_snap(self) -> None:
+        """Schedule snap-back after manual wheel scrolling."""
+        self._scroll_snap_timer.stop()
+        if not self._bubble_scroll_snap_enabled() or not self._is_speaking():
+            return
+        delay_ms = self._bubble_scroll_snap_delay_ms()
+        if delay_ms <= 0:
+            self._snap_scroll_to_highlight()
+        else:
+            self._scroll_snap_timer.start(delay_ms)
+
+    def _snap_scroll_to_highlight(self) -> None:
+        """Return the visible window to the current highlighted word."""
+        if not self._is_speaking():
+            return
+        self._manual_scroll_start = None
+        self._apply_visible_lines()
+        self.update()
+
+    def _is_speaking(self) -> bool:
+        """True while the bubble is still advancing spoken/read highlights."""
+        if self._thinking or self._transcript_preview:
+            return False
+        if self._revealed_count < len(self._pending_words):
+            return True
+        return self._finishing or self._reveal_mode or self._timestamp_mode
 
     @staticmethod
     def _is_cjk(ch: str) -> bool:

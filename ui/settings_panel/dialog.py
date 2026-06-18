@@ -2934,6 +2934,10 @@ class SettingsDialog(QDialog):
         theme_combo.addItem("Light", "light")
         theme_combo.addItem("Dark", "dark")
         self._fields["THEME_MODE"] = theme_combo
+        self._fields["TRUST_PRIVACY_MODE"] = QCheckBox("Trust/privacy mode")
+        self._fields["TRUST_PRIVACY_MODE"].setToolTip(
+            "Default on. Redacts sensitive text patterns from context before model requests."
+        )
         self._fields["ICON_AUTO_HIDE"] = QCheckBox("Auto-hide icon (only visible when active)")
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox("Auto-elaborate when opening chat")
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
@@ -2957,6 +2961,14 @@ class SettingsDialog(QDialog):
         self._fields["BUBBLE_WIDTH"].setPlaceholderText("e.g. 340")
         self._fields["BUBBLE_LINES"] = QLineEdit()
         self._fields["BUBBLE_LINES"].setPlaceholderText("e.g. 3")
+        self._fields["BUBBLE_SCROLL_ENABLED"] = QCheckBox("Wheel-scroll text bubble")
+        self._fields["BUBBLE_SCROLL_ENABLED"].setToolTip(
+            "Let the mouse wheel scroll the bubble text while the pointer is over it."
+        )
+        self._fields["BUBBLE_SCROLL_SNAP_ENABLED"] = QCheckBox("Snap bubble scroll back while speaking")
+        self._fields["BUBBLE_SCROLL_SNAP_ENABLED"].setToolTip(
+            "After manual scrolling, return to the current highlighted word if speech is still active."
+        )
         _bg_row      = self._color_field("THEME_BG",      "e.g. #1c1e26", alpha=False)
         _surface_row = self._color_field("THEME_SURFACE", "e.g. #17181d", alpha=False)
         _text_row    = self._color_field("THEME_TEXT",    "e.g. #e8e8f0", alpha=False)
@@ -2980,6 +2992,7 @@ class SettingsDialog(QDialog):
         f.addRow("Surface color", _surface_row)
         f.addRow("Text color", _text_row)
         f.addRow("Accent color", _accent_row)
+        f.addRow("", self._fields["TRUST_PRIVACY_MODE"])
         f.addRow("", self._fields["ICON_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
         f.addRow("Elaborate prompt", self._fields["CHAT_ELABORATE_PROMPT"])
@@ -2989,6 +3002,8 @@ class SettingsDialog(QDialog):
         f.addRow("Icon size (px)", self._fields["ICON_SIZE"])
         f.addRow("Text bubble width (px)", self._fields["BUBBLE_WIDTH"])
         f.addRow("Text bubble lines", self._fields["BUBBLE_LINES"])
+        f.addRow("", self._fields["BUBBLE_SCROLL_ENABLED"])
+        f.addRow("", self._fields["BUBBLE_SCROLL_SNAP_ENABLED"])
         f.addRow("Text bubble color", _bubble_color_row)
         f.addRow("Text bubble text color", _bubble_text_color_row)
         f.addRow("Read word color", _read_word_color_row)
@@ -3087,6 +3102,11 @@ class SettingsDialog(QDialog):
         self._fields["BUBBLE_HIDE_DELAY_S"].setToolTip(
             "How long the text bubble stays on screen after the last word, in seconds."
         )
+        self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"] = QLineEdit()
+        self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"].setPlaceholderText("e.g. 2.5")
+        self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"].setToolTip(
+            "How long to wait after wheel scrolling before returning to the highlighted word."
+        )
         self._fields["TTS_PLAYBACK_RATE"] = QLineEdit()
         self._fields["TTS_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.0")
         self._fields["TTS_HOLD_PLAYBACK_RATE"] = QLineEdit()
@@ -3094,6 +3114,7 @@ class SettingsDialog(QDialog):
         timing_f.addRow("Text bubble speed (WPM)", self._fields["BUBBLE_REVEAL_WPM"])
         timing_f.addRow("Text bubble hold speed (WPM)", self._fields["BUBBLE_HOLD_REVEAL_WPM"])
         timing_f.addRow("Text bubble display time (s)", self._fields["BUBBLE_HIDE_DELAY_S"])
+        timing_f.addRow("Bubble scroll snap delay (s)", self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"])
         timing_f.addRow("TTS speed", self._fields["TTS_PLAYBACK_RATE"])
         timing_f.addRow("TTS hold speed", self._fields["TTS_HOLD_PLAYBACK_RATE"])
         timing_cv.addWidget(timing_fw)
@@ -3837,6 +3858,10 @@ class SettingsDialog(QDialog):
         self._theme_shown_mode = ""
         self._show_theme_template(self._theme_edit_mode())
         self._fields["ICON_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
+        self._fields["TRUST_PRIVACY_MODE"].setChecked(
+            self._env.get("TRUST_PRIVACY_MODE", str(getattr(cfg, "TRUST_PRIVACY_MODE", True))).lower()
+            == "true"
+        )  # type: ignore
 
         auto_elab = self._env.get("CHAT_AUTO_ELABORATE", str(cfg.CHAT_AUTO_ELABORATE)).lower() == "true"
         self._fields["CHAT_AUTO_ELABORATE"].setChecked(auto_elab)  # type: ignore
@@ -3854,6 +3879,20 @@ class SettingsDialog(QDialog):
         _set(self._fields["ICON_SIZE"],    self._env.get("ICON_SIZE", self._env.get("DOLL_SIZE", str(cfg.ICON_SIZE))))
         _set(self._fields["BUBBLE_WIDTH"], self._env.get("BUBBLE_WIDTH", str(cfg.BUBBLE_WIDTH)))
         _set(self._fields["BUBBLE_LINES"], self._env.get("BUBBLE_LINES", str(cfg.BUBBLE_LINES)))
+        self._fields["BUBBLE_SCROLL_ENABLED"].setChecked(  # type: ignore
+            self._env.get(
+                "BUBBLE_SCROLL_ENABLED",
+                str(getattr(cfg, "BUBBLE_SCROLL_ENABLED", True)),
+            ).lower()
+            == "true"
+        )
+        self._fields["BUBBLE_SCROLL_SNAP_ENABLED"].setChecked(  # type: ignore
+            self._env.get(
+                "BUBBLE_SCROLL_SNAP_ENABLED",
+                str(getattr(cfg, "BUBBLE_SCROLL_SNAP_ENABLED", True)),
+            ).lower()
+            == "true"
+        )
         _set(self._fields["BUBBLE_COLOR"], self._env.get("BUBBLE_COLOR", cfg.BUBBLE_COLOR))
         _set(self._fields["BUBBLE_TEXT_COLOR"], self._env.get("BUBBLE_TEXT_COLOR", cfg.BUBBLE_TEXT_COLOR))
         _set(self._fields["BUBBLE_READ_WORD_COLOR"], self._env.get("BUBBLE_READ_WORD_COLOR", cfg.BUBBLE_READ_WORD_COLOR))
@@ -3864,6 +3903,16 @@ class SettingsDialog(QDialog):
             _ms_to_seconds_str(
                 self._env.get("BUBBLE_HIDE_DELAY_MS", str(cfg.BUBBLE_HIDE_DELAY_MS)),
                 cfg.BUBBLE_HIDE_DELAY_MS,
+            ),
+        )
+        _set(
+            self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"],
+            _ms_to_seconds_str(
+                self._env.get(
+                    "BUBBLE_SCROLL_SNAP_DELAY_MS",
+                    str(getattr(cfg, "BUBBLE_SCROLL_SNAP_DELAY_MS", 2500)),
+                ),
+                getattr(cfg, "BUBBLE_SCROLL_SNAP_DELAY_MS", 2500),
             ),
         )
         _set(self._fields["TTS_PLAYBACK_RATE"], self._env.get("TTS_PLAYBACK_RATE", str(cfg.TTS_PLAYBACK_RATE)))
@@ -4462,13 +4511,14 @@ class SettingsDialog(QDialog):
                 "CALLER_COUNT",
             },
             "App": {
-                "THEME_MODE", "DARK_MODE", "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE",
+                "THEME_MODE", "DARK_MODE", "TRUST_PRIVACY_MODE",
+                "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE",
                 "THEME_DARK_BG", "THEME_DARK_SURFACE", "THEME_DARK_TEXT", "THEME_DARK_ACCENT",
                 "THEME_LIGHT_BG", "THEME_LIGHT_SURFACE", "THEME_LIGHT_TEXT", "THEME_LIGHT_ACCENT",
                 "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT", "APP_LANGUAGE", "ASSISTANT_LANGUAGE",
                 "ICON_SIZE", "DOLL_SIZE", "ICON_BACKSTOP_MS", "DOLL_ICON_BACKSTOP_MS",
                 "BUBBLE_WIDTH", "BUBBLE_LINES", "BUBBLE_COLOR", "BUBBLE_TEXT_COLOR",
-                "BUBBLE_READ_WORD_COLOR",
+                "BUBBLE_READ_WORD_COLOR", "BUBBLE_SCROLL_ENABLED", "BUBBLE_SCROLL_SNAP_ENABLED",
             },
             "Memory": {
                 "MEMORY_AUTO_CONSOLIDATE", "MEMORY_TOP_K",
@@ -4478,7 +4528,7 @@ class SettingsDialog(QDialog):
                 "CONTEXT_TOOL_DOCUMENT_MAX_CHARS", "TOOL_PLUGIN_DIR", "TOOL_GIT_ROOT",
                 "TOOL_FILE_ROOTS", "TOOL_FILE_MODE", "TOOL_FILE_BLOCKED_GLOBS",
                 "MEMORY_CONSOLIDATION_INTERVAL", "MEMORY_STM_TOKEN_BUDGET", "BUBBLE_HIDE_DELAY_MS",
-                "BUBBLE_REVEAL_WPM", "BUBBLE_HOLD_REVEAL_WPM",
+                "BUBBLE_REVEAL_WPM", "BUBBLE_HOLD_REVEAL_WPM", "BUBBLE_SCROLL_SNAP_DELAY_MS",
                 "TTS_PLAYBACK_RATE", "TTS_HOLD_PLAYBACK_RATE",
             },
         }
@@ -4818,6 +4868,7 @@ class SettingsDialog(QDialog):
             "MEMORY_STM_TOKEN_BUDGET":  _get(self._fields["MEMORY_STM_TOKEN_BUDGET"]),
             "CALLER_COUNT":  str(len(self._caller_blocks)),
             "THEME_MODE":       self._fields["THEME_MODE"].currentData(),  # type: ignore[attr-defined]
+            "TRUST_PRIVACY_MODE": str(self._fields["TRUST_PRIVACY_MODE"].isChecked()),  # type: ignore
             "ICON_AUTO_HIDE":    str(self._fields["ICON_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
@@ -4826,6 +4877,8 @@ class SettingsDialog(QDialog):
             "ICON_SIZE":    _get(self._fields["ICON_SIZE"]),
             "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
             "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
+            "BUBBLE_SCROLL_ENABLED": str(self._fields["BUBBLE_SCROLL_ENABLED"].isChecked()),  # type: ignore
+            "BUBBLE_SCROLL_SNAP_ENABLED": str(self._fields["BUBBLE_SCROLL_SNAP_ENABLED"].isChecked()),  # type: ignore
             "BUBBLE_COLOR": _get(self._fields["BUBBLE_COLOR"]),
             "BUBBLE_TEXT_COLOR": _get(self._fields["BUBBLE_TEXT_COLOR"]),
             "BUBBLE_READ_WORD_COLOR": _get(self._fields["BUBBLE_READ_WORD_COLOR"]),
@@ -4833,6 +4886,9 @@ class SettingsDialog(QDialog):
             "BUBBLE_HOLD_REVEAL_WPM": _get(self._fields["BUBBLE_HOLD_REVEAL_WPM"]),
             "BUBBLE_HIDE_DELAY_MS": _seconds_str_to_ms(
                 _get(self._fields["BUBBLE_HIDE_DELAY_S"]), 3500
+            ),
+            "BUBBLE_SCROLL_SNAP_DELAY_MS": _seconds_str_to_ms(
+                _get(self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"]), 2500
             ),
             "TTS_PLAYBACK_RATE": _get(self._fields["TTS_PLAYBACK_RATE"]),
             "TTS_HOLD_PLAYBACK_RATE": _get(self._fields["TTS_HOLD_PLAYBACK_RATE"]),

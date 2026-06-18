@@ -282,6 +282,7 @@ def _load_config() -> None:
     global OPENAI_TTS_VOICE, OPENAI_TTS_MODEL
     global TTS_CUSTOM_BASE_URL, TTS_CUSTOM_VOICE, TTS_CUSTOM_MODEL, TTS_CUSTOM_SAMPLE_RATE
     global THEME_MODE, DARK_MODE, ICON_AUTO_HIDE, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
+    global TRUST_PRIVACY_MODE
     global APP_LANGUAGE, ASSISTANT_LANGUAGE
     global THEME_DARK_BG, THEME_DARK_SURFACE, THEME_DARK_TEXT, THEME_DARK_ACCENT
     global THEME_LIGHT_BG, THEME_LIGHT_SURFACE, THEME_LIGHT_TEXT, THEME_LIGHT_ACCENT
@@ -295,6 +296,7 @@ def _load_config() -> None:
     global CONTEXT_BROWSER_MAX_CHARS, CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS, CONTEXT_TOOL_DOCUMENT_MAX_CHARS
     global TOOL_PLUGIN_DIR, TOOL_GIT_ROOT, TOOL_FILE_ROOTS, TOOL_FILE_MODE, TOOL_FILE_BLOCKED_GLOBS
     global BUBBLE_WIDTH, BUBBLE_LINES, BUBBLE_COLOR, BUBBLE_TEXT_COLOR, BUBBLE_READ_WORD_COLOR
+    global BUBBLE_SCROLL_ENABLED, BUBBLE_SCROLL_SNAP_ENABLED, BUBBLE_SCROLL_SNAP_DELAY_MS
     global ICON_SIZE, ICON_BACKSTOP_MS, BUBBLE_HIDE_DELAY_MS
     global BUBBLE_REVEAL_WPM, BUBBLE_HOLD_REVEAL_WPM
     global TTS_PLAYBACK_RATE, TTS_HOLD_PLAYBACK_RATE
@@ -363,6 +365,7 @@ def _load_config() -> None:
     # --- App behaviour ---
     THEME_MODE            = os.getenv("THEME_MODE", "system")  # "dark" | "light" | "system"
     DARK_MODE             = env_bool("DARK_MODE", THEME_MODE == "dark")
+    TRUST_PRIVACY_MODE    = env_bool("TRUST_PRIVACY_MODE", True)
     # Customizable theme templates. Each mode (light/dark) is a template of four
     # base colours; switching mode swaps the template. The rest of the palette
     # (cards, borders, buttons, hovers) is derived from these four, so the user
@@ -456,6 +459,9 @@ def _load_config() -> None:
     BUBBLE_COLOR           = os.getenv("BUBBLE_COLOR",           "#1c1c24dc")
     BUBBLE_TEXT_COLOR      = os.getenv("BUBBLE_TEXT_COLOR",      "#e6e6e6")
     BUBBLE_READ_WORD_COLOR = os.getenv("BUBBLE_READ_WORD_COLOR", "#4da3ff")
+    BUBBLE_SCROLL_ENABLED  = env_bool("BUBBLE_SCROLL_ENABLED", True)
+    BUBBLE_SCROLL_SNAP_ENABLED = env_bool("BUBBLE_SCROLL_SNAP_ENABLED", True)
+    BUBBLE_SCROLL_SNAP_DELAY_MS = env_int("BUBBLE_SCROLL_SNAP_DELAY_MS", 2500)
     # ICON_SIZE / ICON_BACKSTOP_MS (formerly DOLL_SIZE / DOLL_ICON_BACKSTOP_MS) —
     # old keys still honored for back-compat.
     ICON_SIZE              = env_int("ICON_SIZE",     env_int("DOLL_SIZE",             80))

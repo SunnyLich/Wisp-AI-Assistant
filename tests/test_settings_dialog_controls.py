@@ -225,7 +225,7 @@ def test_stt_model_dropdown_preserves_saved_custom_value():
 def test_app_tab_exposes_assistant_language_setting():
     """Verify app tab exposes assistant language setting behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QCheckBox, QLabel
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -237,9 +237,12 @@ def test_app_tab_exposes_assistant_language_setting():
     try:
         assert "APP_LANGUAGE" in dialog._fields
         assert "ASSISTANT_LANGUAGE" in dialog._fields
+        assert "TRUST_PRIVACY_MODE" in dialog._fields
         labels = {label.text() for label in tab.findChildren(QLabel)}
+        checkboxes = {checkbox.text() for checkbox in tab.findChildren(QCheckBox)}
         assert "App language" in labels
         assert "Assistant language" in labels
+        assert "Trust/privacy mode" in checkboxes
         app_values = {
             dialog._fields["APP_LANGUAGE"].itemData(i)
             for i in range(dialog._fields["APP_LANGUAGE"].count())
@@ -800,6 +803,8 @@ def test_reset_page_key_mapping_is_scoped():
         "CALLER_1_HOTKEY": "ctrl+q",
         "CALLER_2_CONTEXT_MEMORY_MODE": "model",
         "BUBBLE_WIDTH": "420",
+        "BUBBLE_SCROLL_ENABLED": "False",
+        "BUBBLE_SCROLL_SNAP_DELAY_MS": "2200",
         "MEMORY_TOP_K": "7",
         "STT_MODEL": "small",
         "APP_LANGUAGE": "zh",
@@ -815,6 +820,8 @@ def test_reset_page_key_mapping_is_scoped():
         "HOTKEY_SNIP",
     }
     assert "BUBBLE_WIDTH" in SettingsDialog._reset_env_keys_for_page("App", env)
+    assert "BUBBLE_SCROLL_ENABLED" in SettingsDialog._reset_env_keys_for_page("App", env)
+    assert "BUBBLE_SCROLL_SNAP_DELAY_MS" in SettingsDialog._reset_env_keys_for_page("Advanced", env)
     assert "APP_LANGUAGE" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "ASSISTANT_LANGUAGE" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "MEMORY_TOP_K" in SettingsDialog._reset_env_keys_for_page("Memory", env)

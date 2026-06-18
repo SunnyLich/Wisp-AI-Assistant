@@ -148,6 +148,29 @@ class BuildContextTests(unittest.TestCase):
             "---\n[Active document]\nACTIVE",
         )
 
+    def test_privacy_mode_redacts_sensitive_text_by_default(self):
+        """Verify privacy mode redacts sensitive text by default behavior."""
+        out = _build(
+            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            clipboard_text="Bearer abcdefghijklmnopqrstuvwxyz1234567890",
+            active_document_text="password=supersecret",
+        )
+
+        self.assertIn("[API_KEY]", out.ambient_ctx)
+        self.assertIn("[BEARER_TOKEN]", out.ambient_ctx)
+        self.assertIn("[REDACTED_CREDENTIAL]", out.ambient_ctx)
+        self.assertNotIn("sk-proj-", out.ambient_ctx)
+        self.assertNotIn("supersecret", out.ambient_ctx)
+
+    def test_privacy_mode_can_be_disabled_for_context_building(self):
+        """Verify privacy mode can be disabled for context building behavior."""
+        out = _build(
+            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            trust_privacy_mode=False,
+        )
+
+        self.assertIn("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", out.ambient_ctx)
+
 
 class GenerationCounterTests(unittest.TestCase):
     """Test case for generation counter tests behavior."""
