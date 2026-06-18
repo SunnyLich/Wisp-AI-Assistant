@@ -450,6 +450,7 @@ class FlowController:
         )
         t_show = time.monotonic()
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
+        self._fire(self.ui, "ui.reply.listening")
         self._schedule(self._collect_initial_intent_context, pending, generation, t0, t_show)
         log.info(
             "caller %d picker shown before context total=%.2fs",

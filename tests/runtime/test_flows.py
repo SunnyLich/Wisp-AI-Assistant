@@ -201,6 +201,7 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert audio.last_call("audio.prewarm")["wait"] is False
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
     assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
+    assert ui.calls_for("ui.reply.listening")
 
 
 def test_intent_context_uses_unknown_tokens_for_deferred_sources():
