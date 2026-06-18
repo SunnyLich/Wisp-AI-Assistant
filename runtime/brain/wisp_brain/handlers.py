@@ -36,6 +36,8 @@ STREAMING: set[str] = set()
 _STT_MODEL = None
 _AGENT_APPROVALS: dict[str, dict[str, Any]] = {}
 _AGENT_APPROVALS_LOCK = threading.Lock()
+_LIVE_FILE_APPROVALS: dict[str, dict[str, Any]] = {}
+_LIVE_FILE_APPROVALS_LOCK = threading.Lock()
 
 
 class StreamContext:
@@ -1225,6 +1227,7 @@ def brain_query(
     allowed_tools: list[str] | None = None,
     pinned_tools: list[str] | None = None,
     frontload_tools: list[str] | None = None,
+    file_access_mode: str = "",
     allow_screenshot_tool: bool = False,
     screenshot_tool_b64: str | None = None,
     include_active_document: bool = False,
@@ -1303,6 +1306,8 @@ def brain_query(
         screenshot_tool_b64,
         pinned_tools=pinned_tools,
         history=history,
+        ctx=ctx,
+        file_access_mode=file_access_mode,
     ):
         if ctx.cancelled:
             break
@@ -1417,6 +1422,8 @@ def _stream_query_reply(
     screenshot_tool_b64: str | None = None,
     pinned_tools: list[str] | None = None,
     history: list[dict] | None = None,
+    ctx: StreamContext | None = None,
+    file_access_mode: str = "",
 ) -> Iterator[str]:
     """Token stream for ``brain.query``: real provider, or deterministic offline.
 
@@ -1435,20 +1442,26 @@ def _stream_query_reply(
             yield word + " "
         return
 
-    from core.llm_clients.client import stream_response
+    from core.llm_clients import client as llm_client
 
-    yield from stream_response(
-        built.user_message,
-        image_base64=built.screenshot_b64,
-        ambient_context=built.ambient_ctx,
-        memory_context=memory_context,
-        use_tools=use_tools,
-        allowed_tools=allowed_tools,
-        pinned_tools=pinned_tools,
-        allow_screenshot_tool=allow_screenshot_tool,
-        screenshot_tool_b64=screenshot_tool_b64,
-        history=history,
-    )
+    llm_client.set_live_file_access_mode(file_access_mode or None)
+    llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
+    try:
+        yield from llm_client.stream_response(
+            built.user_message,
+            image_base64=built.screenshot_b64,
+            ambient_context=built.ambient_ctx,
+            memory_context=memory_context,
+            use_tools=use_tools,
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
+            allow_screenshot_tool=allow_screenshot_tool,
+            screenshot_tool_b64=screenshot_tool_b64,
+            history=history,
+        )
+    finally:
+        llm_client.set_live_file_access_mode(None)
+        llm_client.set_live_file_approval_callback(None)
 
 
 @handler("brain.rewrite", streaming=True)
@@ -1494,6 +1507,10 @@ def brain_chat(
     memory_context: str = "",
     memory_enabled: bool = True,
     memory_project: str | None = None,
+    use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+    file_access_mode: str = "",
 ) -> dict[str, Any]:
     """Stream a multi-turn chat reply from the existing chat LLM path."""
     turns = _normalize_chat_messages(messages or [])
@@ -1530,7 +1547,15 @@ def brain_chat(
             _log(f"chat memory retrieval skipped: {type(exc).__name__}: {exc}")
 
     parts: list[str] = []
-    for chunk in _stream_chat_reply(turns, memory_context):
+    for chunk in _stream_chat_reply(
+        turns,
+        memory_context,
+        use_tools=use_tools,
+        allowed_tools=allowed_tools,
+        pinned_tools=pinned_tools,
+        ctx=ctx,
+        file_access_mode=file_access_mode,
+    ):
         if ctx.cancelled:
             break
         parts.append(chunk)
@@ -1562,7 +1587,16 @@ def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, s
     return turns
 
 
-def _stream_chat_reply(messages: list[dict[str, str]], memory_context: str) -> Iterator[str]:
+def _stream_chat_reply(
+    messages: list[dict[str, str]],
+    memory_context: str,
+    *,
+    use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+    ctx: StreamContext | None = None,
+    file_access_mode: str = "",
+) -> Iterator[str]:
     """Stream chat reply."""
     if _offline_brain():
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
@@ -1571,9 +1605,21 @@ def _stream_chat_reply(messages: list[dict[str, str]], memory_context: str) -> I
             yield word + " "
         return
 
-    from core.llm_clients.client import stream_response_with_history
+    from core.llm_clients import client as llm_client
 
-    yield from stream_response_with_history(messages, memory_context=memory_context)
+    llm_client.set_live_file_access_mode(file_access_mode or None)
+    llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
+    try:
+        yield from llm_client.stream_response_with_history(
+            messages,
+            memory_context=memory_context,
+            use_tools=use_tools,
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
+        )
+    finally:
+        llm_client.set_live_file_access_mode(None)
+        llm_client.set_live_file_approval_callback(None)
 
 
 @handler("brain.memory.add")
@@ -1829,6 +1875,32 @@ def _agent_approval_callback(ctx: StreamContext) -> Callable[[dict], bool]:
     return request_approval
 
 
+def _live_file_approval_callback(ctx: StreamContext) -> Callable[[dict], bool]:
+    """Return a callback that asks the UI before live model file writes."""
+    def request_approval(request: dict) -> bool:
+        """Ask the supervisor/UI to resolve one live file approval."""
+        approval_id = uuid.uuid4().hex
+        event = threading.Event()
+        state: dict[str, Any] = {"event": event, "approved": False}
+        with _LIVE_FILE_APPROVALS_LOCK:
+            _LIVE_FILE_APPROVALS[approval_id] = state
+
+        payload = dict(request)
+        payload["approval_id"] = approval_id
+        ctx.emit("live_file.approval.request", payload)
+
+        try:
+            while not event.wait(0.1):
+                if ctx.cancelled:
+                    return False
+            return bool(state["approved"])
+        finally:
+            with _LIVE_FILE_APPROVALS_LOCK:
+                _LIVE_FILE_APPROVALS.pop(approval_id, None)
+
+    return request_approval
+
+
 @handler("brain.agent.approval.respond")
 def brain_agent_approval_respond(approval_id: str = "", approved: bool = False) -> dict[str, Any]:
     """Resolve one pending agent approval prompt emitted by ``brain.agent.run``."""
@@ -1838,6 +1910,25 @@ def brain_agent_approval_respond(approval_id: str = "", approved: bool = False) 
 
     with _AGENT_APPROVALS_LOCK:
         state = _AGENT_APPROVALS.get(cleaned)
+    if state is None:
+        return {"ok": False, "message": "approval request is no longer pending"}
+
+    state["approved"] = bool(approved)
+    event = state.get("event")
+    if isinstance(event, threading.Event):
+        event.set()
+    return {"ok": True, "approved": bool(approved)}
+
+
+@handler("brain.live_file.approval.respond")
+def brain_live_file_approval_respond(approval_id: str = "", approved: bool = False) -> dict[str, Any]:
+    """Resolve one pending live model file-edit approval prompt."""
+    cleaned = approval_id.strip()
+    if not cleaned:
+        raise ValueError("approval_id is required")
+
+    with _LIVE_FILE_APPROVALS_LOCK:
+        state = _LIVE_FILE_APPROVALS.get(cleaned)
     if state is None:
         return {"ok": False, "message": "approval request is no longer pending"}
 

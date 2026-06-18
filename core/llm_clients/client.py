@@ -350,13 +350,27 @@ def set_live_file_access_mode(mode: str | None) -> None:
     _LIVE_TOOL_CONTEXT.file_access_mode = normalize_file_access_mode(mode)
 
 
+def set_live_file_approval_callback(callback: Callable[[dict], bool] | None) -> None:
+    """Set the approval callback for the current live model request thread."""
+    if callback is None:
+        if hasattr(_LIVE_TOOL_CONTEXT, "file_approval_callback"):
+            delattr(_LIVE_TOOL_CONTEXT, "file_approval_callback")
+        return
+    _LIVE_TOOL_CONTEXT.file_approval_callback = callback
+
+
+def _effective_live_file_approval_callback() -> Callable[[dict], bool] | None:
+    """Return the live request approval callback, falling back to the global hook."""
+    return getattr(_LIVE_TOOL_CONTEXT, "file_approval_callback", None) or _FILE_EDIT_APPROVAL_CALLBACK
+
+
 def _execute_list_files(inputs: dict) -> str:
     """List text-accessible files within a configured local-file root."""
     return execute_live_file_tool(
         "list_files",
         inputs or {},
         access_mode=_effective_live_file_access_mode(["list_files"]),
-        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+        approval_callback=_effective_live_file_approval_callback(),
     )
 
 
@@ -366,7 +380,7 @@ def _execute_read_file(inputs: dict) -> str:
         "read_file",
         inputs or {},
         access_mode=_effective_live_file_access_mode(["read_file"]),
-        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+        approval_callback=_effective_live_file_approval_callback(),
     )
 
 
@@ -376,7 +390,7 @@ def _execute_edit_file(inputs: dict) -> str:
         "edit_file",
         inputs or {},
         access_mode=_effective_live_file_access_mode(["edit_file"]),
-        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+        approval_callback=_effective_live_file_approval_callback(),
     )
 
 
@@ -386,7 +400,7 @@ def _execute_write_file(inputs: dict) -> str:
         "write_file",
         inputs or {},
         access_mode=_effective_live_file_access_mode(["write_file"]),
-        approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+        approval_callback=_effective_live_file_approval_callback(),
     )
 
 
@@ -1160,7 +1174,7 @@ def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None
             name,
             inputs or {},
             access_mode=_effective_live_file_access_mode(allowed_tools),
-            approval_callback=_FILE_EDIT_APPROVAL_CALLBACK,
+            approval_callback=_effective_live_file_approval_callback(),
         )
     return _TOOL_REGISTRY.execute(name, inputs)
 
@@ -4310,6 +4324,9 @@ def _mark_anthropic_history_cache(turns: list) -> None:
 def stream_response_with_history(
     messages: list,
     memory_context: str = "",
+    use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """
     Stream a response given a pre-built messages list including history.
@@ -4362,17 +4379,29 @@ def stream_response_with_history(
         kind,
         candidates,
         lambda provider, model: _stream_single_history_route(
-            provider, model, messages, route_name=route_name
+            provider,
+            model,
+            messages,
+            route_name=route_name,
+            use_tools=use_tools,
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
         ),
     )
 
 
 def _stream_single_history_route(
-    provider: str, model: str, messages: list, route_name: str = "CHAT_LLM"
+    provider: str,
+    model: str,
+    messages: list,
+    route_name: str = "CHAT_LLM",
+    use_tools: bool = False,
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Stream single history route."""
     _check_route_config(provider, model, route_name)
-    _log_model_route("chat", provider, model, use_tools=(provider == "anthropic"))
+    _log_model_route("chat", provider, model, use_tools=use_tools)
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
         kwargs = {
             "model": model,
@@ -4392,7 +4421,15 @@ def _stream_single_history_route(
         # tools render at the front of the prompt, so a set that changes between
         # turns would invalidate the whole prompt cache. The fixed set keeps the
         # prefix byte-identical and stays cached with the system prompt.
-        chat_tools = _get_tool_schemas(unfiltered=True)
+        chat_tools = (
+            _get_tool_schemas(
+                allowed_tools=allowed_tools,
+                pinned_tools=pinned_tools,
+                unfiltered=True,
+            )
+            if use_tools
+            else []
+        )
         # Prompt caching: cache the frozen system prompt and the stable history
         # prefix so replayed turns (incl. screenshots) bill at ~0.1x on follow-ups.
         system = _anthropic_cached_system(system)
@@ -4402,7 +4439,7 @@ def _stream_single_history_route(
             max_tokens=1024,
             system=system,
             messages=turns,
-            tools=chat_tools,
+            **({"tools": chat_tools} if chat_tools else {}),
         ) as stream:
             for text in stream.text_stream:
                 yield text
@@ -4433,6 +4470,54 @@ def _stream_single_history_route(
                     "type": "input_image",
                     "image_url": f"data:image/png;base64,{m['image_base64']}",
                 })
+        if use_tools:
+            tools = _get_responses_tool_schemas(
+                str(last_user or full_input),
+                include_general=True,
+                allowed_tools=allowed_tools,
+                pinned_tools=pinned_tools,
+            )
+            if tools:
+                _log_offered_model_tools(
+                    "chatgpt",
+                    model,
+                    allowed_tools=allowed_tools,
+                    pinned_tools=pinned_tools,
+                    schemas=[{"function": {"name": t.get("name", "")}} for t in tools],
+                    openai_format=True,
+                )
+                try:
+                    instructions = _with_tools_note(system_msg, True)
+                    instructions = _with_memory_search_note(instructions, allowed_tools)
+                    instructions = _with_memory_save_note(instructions, allowed_tools)
+                    yield from _run_responses_tool_loop(
+                        _get_chat_codex_client(),
+                        {
+                            "model": model,
+                            "input": [{"type": "message", "role": "user", "content": content}],
+                            "instructions": instructions,
+                            "tools": tools,
+                            "store": False,
+                        },
+                        provider="chatgpt",
+                        model=model,
+                        allowed_tools=allowed_tools,
+                    )
+                    return
+                except Exception as exc:
+                    if (
+                        not _requires_stream_error(exc)
+                        and not _tools_not_supported_error(exc)
+                        and _without_unsupported_parameter({"tools": tools}, exc) is None
+                    ):
+                        raise
+                    if _requires_stream_error(exc):
+                        _update_route_capabilities("chatgpt", model, supports_stream=True, requires_stream=True)
+                    _update_route_capabilities("chatgpt", model, supports_tools=False)
+                    print(
+                        f"[llm] ChatGPT/Codex chat tools unavailable; retrying without live tools. {exc}",
+                        flush=True,
+                    )
         yield from _response_stream_text(
             _get_chat_codex_client(),
             {

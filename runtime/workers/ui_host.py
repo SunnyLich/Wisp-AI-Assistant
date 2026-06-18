@@ -1632,6 +1632,8 @@ class QtProtocolHost:
             return self._chat_active_history()
         if method == "ui.chat.ingest":
             return self._chat_ingest()
+        if method == "ui.live_file.approval.request":
+            return self._live_file_approval_request(**params)
         if method == "ui.show_chat":
             return self._show_chat(force_new=bool(params.get("new", False)))
         if method == "ui.show_settings":
@@ -2108,6 +2110,32 @@ class QtProtocolHost:
         if stream is not None:
             stream.put(("error", error))
         return {"queued": stream is not None}
+
+    def _live_file_approval_request(self, **params: Any) -> dict[str, Any]:
+        """Ask the user to approve a live model file write/edit."""
+        from PySide6.QtWidgets import QMessageBox
+
+        details = params.get("details") if isinstance(params.get("details"), dict) else {}
+        action = str(params.get("action") or "file edit")
+        path = str(params.get("path") or details.get("path") or "").strip()
+        diff = str(params.get("diff") or details.get("diff") or "").strip()
+        lines = [t("Wisp wants permission to modify a local file.")]
+        if action:
+            lines.append(f"{t('Action:')} {action}")
+        if path:
+            lines.append(f"{t('Path:')} {path}")
+
+        box = QMessageBox(self._chat or self._overlay)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(t("Approve File Change"))
+        box.setText("\n".join(lines))
+        box.setInformativeText(t("Allow this file change?"))
+        if diff:
+            box.setDetailedText(diff[:20000])
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        approved = box.exec() == QMessageBox.StandardButton.Yes
+        return {"approved": bool(approved)}
 
     def _chat_add_conversation(
         self,

@@ -730,6 +730,7 @@ class FlowController:
 
     def chat_request(self, data: dict[str, Any]) -> None:
         """Handle chat request for flow controller."""
+        self._reload_supervisor_config_if_changed()
         request_id = str(data.get("request_id") or "")
         messages = data.get("messages") or []
         if not request_id:
@@ -750,8 +751,23 @@ class FlowController:
             elif event == "reply.done":
                 done_seen = True
                 self._safe_call(self.ui, "ui.chat.done", {"request_id": request_id}, timeout=30.0)
+            elif event == "live_file.approval.request":
+                self._handle_live_file_approval_request(payload)
 
-        chat_params: dict[str, Any] = {"messages": messages}
+        try:
+            caller_idx = int(data.get("caller_idx", 0) or 0)
+        except (TypeError, ValueError):
+            caller_idx = 0
+        caller = self._caller(caller_idx)
+        allowed_tools = self._allowed_model_tools(caller)
+        pinned_tools = self._pinned_model_tools(caller)
+        chat_params: dict[str, Any] = {
+            "messages": messages,
+            "use_tools": bool(allowed_tools),
+            "allowed_tools": allowed_tools,
+            "pinned_tools": pinned_tools,
+            "file_access_mode": tool_modes.local_file_access_mode(caller),
+        }
         try:
             hist = self._safe_call(self.ui, "ui.chat.active_history", {}, timeout=10.0)
             if isinstance(hist, dict):
@@ -1228,6 +1244,8 @@ class FlowController:
                     self._last_reply = text_done
                 if not (self._tts_enabled() and text_done):
                     self._on_reply_done(payload)
+            elif event == "live_file.approval.request":
+                self._handle_live_file_approval_request(payload)
 
         # Continue the conversation selected in the chat window: replay its prior
         # turns so the model has full context. ui_host is the source of truth for
@@ -1512,6 +1530,27 @@ class FlowController:
     def _notice(self, text: str) -> None:
         """Handle notice for flow controller."""
         self._safe_call(self.ui, "ui.reply.notice", {"text": text}, timeout=30.0)
+
+    def _handle_live_file_approval_request(self, payload: Any) -> None:
+        """Ask the UI to approve a live model file edit, then answer the brain."""
+        if not isinstance(payload, dict):
+            return
+        approval_id = str(payload.get("approval_id") or "")
+        if not approval_id:
+            return
+        result = self._safe_call(
+            self.ui,
+            "ui.live_file.approval.request",
+            payload,
+            timeout=600.0,
+        ) or {}
+        approved = bool(result.get("approved")) if isinstance(result, dict) else False
+        self._safe_call(
+            self.brain,
+            "brain.live_file.approval.respond",
+            {"approval_id": approval_id, "approved": approved},
+            timeout=30.0,
+        )
 
     def _stt_warming(self) -> bool:
         """True when the STT model isn't loaded/warmed yet, so the next transcribe
@@ -1969,6 +2008,7 @@ class FlowController:
             "allowed_tools": allowed_tools,
             "pinned_tools": pinned_tools,
             "frontload_tools": frontload_tools,
+            "file_access_mode": tool_modes.local_file_access_mode(caller),
             "allow_screenshot_tool": allow_screenshot_tool,
             "screenshot_tool_b64": screenshot_tool_b64,
             "include_active_document": include_active_document and not active_document_text,

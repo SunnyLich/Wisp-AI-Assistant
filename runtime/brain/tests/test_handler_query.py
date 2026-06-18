@@ -97,6 +97,8 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         screenshot_tool_b64,
         pinned_tools=None,
         history=None,
+        ctx=None,
+        file_access_mode="",
     ):
         """Verify fake stream behavior."""
         captured["use_tools"] = use_tools
@@ -105,6 +107,8 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         captured["screenshot_tool_b64"] = screenshot_tool_b64
         captured["pinned_tools"] = pinned_tools
         captured["history"] = history
+        captured["ctx"] = ctx
+        captured["file_access_mode"] = file_access_mode
         yield "ok"
 
     monkeypatch.setattr(handlers, "_stream_query_reply", fake_stream)
@@ -118,6 +122,7 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         pinned_tools=["my_tool"],
         allow_screenshot_tool=True,
         screenshot_tool_b64="screen-data",
+        file_access_mode="ask",
     )
 
     assert result["text"] == "ok"
@@ -129,6 +134,8 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         "screenshot_tool_b64": "screen-data",
         "pinned_tools": ["my_tool"],
         "history": None,
+        "ctx": ctx,
+        "file_access_mode": "ask",
     }
 
 

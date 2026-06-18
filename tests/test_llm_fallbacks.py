@@ -1012,6 +1012,40 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(chunks, ["OK"])
         self.assertEqual(len(calls), 1)
 
+    def test_chatgpt_history_route_uses_allowed_tools(self):
+        """Verify ChatGPT chat history route can offer granted file tools."""
+        calls = []
+
+        class FakeResponses:
+            """Fake Responses API for a no-tool-call response."""
+            def create(self, **kwargs):
+                """Record the request and return final text."""
+                calls.append(kwargs)
+                return SimpleNamespace(id="resp_1", output_text="done", output=[])
+
+        with (
+            patch.object(llm, "_check_route_config", return_value=None),
+            patch.object(llm, "_get_chat_codex_client", return_value=SimpleNamespace(responses=FakeResponses())),
+        ):
+            chunks = list(
+                llm._stream_single_history_route(
+                    "chatgpt",
+                    "gpt-5.5",
+                    [
+                        {"role": "system", "content": "Be useful."},
+                        {"role": "user", "content": "write a file"},
+                    ],
+                    use_tools=True,
+                    allowed_tools=["write_file"],
+                    pinned_tools=["write_file"],
+                )
+            )
+
+        self.assertEqual(chunks, ["done"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("tools", calls[0])
+        self.assertEqual([tool["name"] for tool in calls[0]["tools"]], ["write_file"])
+
     def test_macos_openai_compat_query_uses_non_streaming_safe_mode(self):
         """Verify macos openai compat query uses non streaming safe mode behavior."""
         calls = []

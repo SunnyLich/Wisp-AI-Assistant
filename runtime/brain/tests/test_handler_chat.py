@@ -1,6 +1,8 @@
 ﻿"""Unit tests for the ``brain.chat`` handler."""
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from wisp_brain import handlers
@@ -54,10 +56,24 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
     """Verify chat normalizes messages and forwards memory context behavior."""
     captured = {}
 
-    def fake_stream(messages, memory_context):
+    def fake_stream(
+        messages,
+        memory_context,
+        *,
+        use_tools=False,
+        allowed_tools=None,
+        pinned_tools=None,
+        ctx=None,
+        file_access_mode="",
+    ):
         """Verify fake stream behavior."""
         captured["messages"] = messages
         captured["memory_context"] = memory_context
+        captured["use_tools"] = use_tools
+        captured["allowed_tools"] = allowed_tools
+        captured["pinned_tools"] = pinned_tools
+        captured["ctx"] = ctx
+        captured["file_access_mode"] = file_access_mode
         yield "ok"
 
     monkeypatch.setattr(handlers, "_stream_chat_reply", fake_stream)
@@ -71,6 +87,10 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
             {"role": "assistant", "content": ""},
         ],
         memory_context="[Memory]\n- one fact",
+        use_tools=True,
+        allowed_tools=["read_file"],
+        pinned_tools=["read_file"],
+        file_access_mode="read",
     )
 
     assert result["text"] == "ok"
@@ -81,6 +101,11 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
             {"role": "user", "content": "tell me more"},
         ],
         "memory_context": "[Memory]\n- one fact",
+        "use_tools": True,
+        "allowed_tools": ["read_file"],
+        "pinned_tools": ["read_file"],
+        "ctx": ctx,
+        "file_access_mode": "read",
     }
 
 
@@ -119,3 +144,40 @@ def test_chat_precancelled_yields_empty(record_ctx):
 
     assert result["text"] == ""
     assert _chunks(events) == []
+
+
+def test_live_file_approval_callback_emits_request_and_accepts_response(record_ctx):
+    """Verify live file approval callback waits for the matching response."""
+    events, ctx = record_ctx()
+    approved = {"value": False}
+
+    def wait_for_approval():
+        """Run the blocking approval callback in a worker thread."""
+        approved["value"] = handlers._live_file_approval_callback(ctx)({
+            "action": "edit_file",
+            "path": "note.txt",
+        })
+
+    thread = threading.Thread(target=wait_for_approval, daemon=True)
+    thread.start()
+    try:
+        request = None
+        for _ in range(50):
+            requests = [data for event, data in events if event == "live_file.approval.request"]
+            if requests:
+                request = requests[0]
+                break
+            threading.Event().wait(0.02)
+        assert request is not None
+        assert request["action"] == "edit_file"
+
+        result = handlers.HANDLERS["brain.live_file.approval.respond"](
+            approval_id=request["approval_id"],
+            approved=True,
+        )
+        assert result == {"ok": True, "approved": True}
+    finally:
+        ctx.cancelled = True
+        thread.join(timeout=2.0)
+
+    assert approved["value"] is True

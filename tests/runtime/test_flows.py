@@ -1526,6 +1526,58 @@ def test_chat_request_streams_through_brain_chat():
     assert ui.last_call("ui.chat.done")["params"]["request_id"] == "chat-1"
 
 
+def test_chat_request_inherits_first_caller_file_tools():
+    """Verify chat requests carry file tool grants from the first caller row."""
+    rows = [
+        {
+            "file_access": "ask",
+            "tools": {},
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+        }
+    ]
+    brain = FakeWorker(stream_handlers={"brain.chat": query_stream("chat reply")})
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+        ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "edit a file"}]})
+
+    params = brain.last_call("brain.chat")["params"]
+    assert params["use_tools"] is True
+    assert params["file_access_mode"] == "ask"
+    assert set(params["allowed_tools"]) >= {"list_files", "read_file", "edit_file", "write_file"}
+    assert set(params["pinned_tools"]) >= {"list_files", "read_file", "edit_file", "write_file"}
+
+
+def test_chat_live_file_approval_routes_to_ui_and_brain():
+    """Verify live file approval requests are resolved back to the brain worker."""
+    def chat_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        """Emit one live file approval request during chat."""
+        on_event(
+            "live_file.approval.request",
+            {"approval_id": "file-1", "action": "edit_file", "path": "note.txt"},
+            1,
+        )
+        on_event("reply.done", {"text": "ok"}, 1)
+        return {"text": "ok"}
+
+    brain = FakeWorker(
+        handlers={"brain.live_file.approval.respond": lambda params: {"ok": True, "approved": params["approved"]}},
+        stream_handlers={"brain.chat": chat_stream},
+    )
+    ui = FakeWorker(handlers={"ui.live_file.approval.request": lambda _params: {"approved": True}})
+    _flow, _native, ui, brain, _audio = make_flow(ui=ui, brain=brain)
+
+    ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "edit"}]})
+
+    assert ui.last_call("ui.live_file.approval.request")["params"]["approval_id"] == "file-1"
+    assert brain.last_call("brain.live_file.approval.respond")["params"] == {
+        "approval_id": "file-1",
+        "approved": True,
+    }
+
+
 def test_icon_summon_routes_to_first_caller_like_default_hotkey():
     """Verify icon summon routes to first caller like default hotkey behavior."""
     rows = [
