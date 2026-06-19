@@ -35,6 +35,7 @@ _DEFAULT_KEYWORD_MAP: dict[str, list[str]] = {
     "github_issue": ["github", "issue", "pr", "pull request", "ticket"],
     "list_files":   ["file", "folder", "directory", "list files", "workspace"],
     "read_file":    ["file", "read", "open", "inspect", "workspace"],
+    "create_file":  ["file", "create", "new file", "save", "write"],
     "edit_file":    ["file", "edit", "change", "replace", "patch", "fix"],
     "write_file":   ["file", "write", "create", "save", "overwrite"],
 }

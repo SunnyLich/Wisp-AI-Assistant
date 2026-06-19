@@ -44,7 +44,7 @@ def local_file_access_mode(caller: dict[str, Any]) -> str:
         return normalize_file_access_mode(explicit)
     overrides = tool_overrides(caller)
     enabled = {name for name, mode in overrides.items() if mode in {"on", "model"}}
-    if enabled & {"edit_file", "write_file"}:
+    if enabled & {"create_file", "edit_file", "write_file"}:
         return "ask"
     if enabled & {"list_files", "read_file"}:
         return "read"

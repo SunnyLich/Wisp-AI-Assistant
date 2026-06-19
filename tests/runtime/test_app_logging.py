@@ -26,6 +26,22 @@ def test_dispatch_module_mode_runs_requested_worker_module(monkeypatch):
     assert supervisor_app.sys.argv == ["runtime.workers.audio_host", "--flag"]
 
 
+def test_runtime_log_mode_defaults_to_crash(tmp_path, monkeypatch):
+    """Verify normal runs do not create debug runtime logs by default."""
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+
+    assert supervisor_app._runtime_log_mode() == "crash"
+
+
+def test_runtime_log_mode_debug_env_enables_debug_logs(monkeypatch):
+    """Verify debug launchers opt in to persistent runtime logs."""
+    monkeypatch.setenv("WISP_RUNTIME_LOG_MODE", "debug")
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+
+    assert supervisor_app._runtime_log_mode() == "debug"
+
+
 def test_prepare_run_log_dir_sets_env_and_latest_pointer(tmp_path, monkeypatch):
     """Verify prepare run log dir sets env and latest pointer behavior."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
@@ -36,6 +52,19 @@ def test_prepare_run_log_dir_sets_env_and_latest_pointer(tmp_path, monkeypatch):
     assert log_dir.is_dir()
     assert log_dir.parent == tmp_path / "build_logs"
     assert Path(supervisor_app.os.environ["WISP_RUN_LOG_DIR"]) == log_dir
+    assert (tmp_path / "build_logs" / "latest_wisp_runtime.txt").read_text(encoding="utf-8") == str(log_dir)
+
+
+def test_prepare_crash_log_dir_does_not_enable_worker_logs(tmp_path, monkeypatch):
+    """Verify crash-only log dirs do not turn on worker stderr file logging."""
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
+
+    log_dir = supervisor_app._prepare_run_log_dir(reason="crash", expose_to_workers=False)
+
+    assert log_dir.is_dir()
+    assert log_dir.name.startswith("wisp_crash_")
+    assert "WISP_RUN_LOG_DIR" not in supervisor_app.os.environ
     assert (tmp_path / "build_logs" / "latest_wisp_runtime.txt").read_text(encoding="utf-8") == str(log_dir)
 
 
@@ -52,7 +81,8 @@ def test_prepare_run_log_dir_respects_existing_env(tmp_path, monkeypatch):
 
 def test_main_exits_when_single_instance_lock_is_held(tmp_path, monkeypatch):
     """Verify main exits when single instance lock is held behavior."""
-    monkeypatch.setenv("WISP_RUN_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
     monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: False)
 
     class ShouldNotStart:
@@ -68,7 +98,8 @@ def test_main_exits_when_single_instance_lock_is_held(tmp_path, monkeypatch):
 
 def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
     """Verify main exits when ui worker exits behavior."""
-    monkeypatch.setenv("WISP_RUN_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
     monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: True)
     instances = []
 
@@ -132,3 +163,78 @@ def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
     assert supervisor_app.main() == 0
     assert instances
     assert instances[0].shutdown_called is True
+    assert not (tmp_path / "build_logs").exists()
+
+
+def test_main_writes_crash_log_when_ui_worker_exits_nonzero(tmp_path, monkeypatch):
+    """Verify normal mode writes logs only after an abrupt UI worker exit."""
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
+    monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: True)
+
+    class FakeWorker:
+        """Test worker with stderr tail support."""
+        def __init__(self):
+            """Initialize the fake worker."""
+            self.exit_handlers = []
+
+        def on_exit(self, handler):
+            """Store exit handler."""
+            self.exit_handlers.append(handler)
+
+        def on_event(self, _event, _handler):
+            """Ignore event handlers."""
+            pass
+
+        def call(self, _method, _params=None, *, timeout=30.0, wait=True):
+            """Return a fake response."""
+            return {"started": True}
+
+        def stderr_tail(self, _max_lines=20):
+            """Return fake stderr tail."""
+            return "recent worker stderr"
+
+    class FakeSupervisor:
+        """Fake supervisor."""
+        def __init__(self):
+            """Initialize fake supervisor."""
+            self.workers = {
+                "native": FakeWorker(),
+                "ui": FakeWorker(),
+                "brain": FakeWorker(),
+                "audio": FakeWorker(),
+            }
+
+        def start_all(self):
+            """No-op start."""
+            return {}
+
+        def shutdown(self):
+            """No-op shutdown."""
+            return None
+
+    class FakeFlowController:
+        """Fake flow controller that simulates a UI crash."""
+        def __init__(self, *, native, ui, brain, audio):
+            """Initialize fake flow controller."""
+            self.ui = ui
+
+        def start(self):
+            """Emit non-zero UI exit."""
+            for handler in list(self.ui.exit_handlers):
+                handler(9)
+
+        def start_hotkeys(self):
+            """No-op hotkeys."""
+            return {"started": True}
+
+    monkeypatch.setattr(supervisor_app, "WispSupervisor", FakeSupervisor)
+    monkeypatch.setattr(supervisor_app, "FlowController", FakeFlowController)
+
+    assert supervisor_app.main() == 0
+    crash_logs = list((tmp_path / "build_logs").glob("wisp_crash_*/supervisor-crash.log"))
+    assert len(crash_logs) == 1
+    report = crash_logs[0].read_text(encoding="utf-8")
+    assert "UI worker exited with code 9" in report
+    assert "recent worker stderr" in report

@@ -128,7 +128,7 @@ def _default_tool_file_roots() -> list[str]:
 def _file_access_default_from_tool_overrides(tools: dict[str, str]) -> str:
     """Infer the new per-caller file mode from legacy local-file tool overrides."""
     enabled = {name for name, mode in (tools or {}).items() if mode in {"on", "model"}}
-    if enabled & {"edit_file", "write_file"}:
+    if enabled & {"create_file", "edit_file", "write_file"}:
         return normalize_file_access_mode(os.getenv("TOOL_FILE_MODE"), "ask")
     if enabled & {"list_files", "read_file"}:
         return "read"

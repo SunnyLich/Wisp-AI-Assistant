@@ -403,7 +403,7 @@ class ChatWindow(QWidget):
         self._signals.finished.connect(self._on_finished)
 
         self.setWindowTitle(t("Chat"))
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Window)
         enable_standard_window_controls(self)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setStyleSheet(f"background: {_BG}; color: {_TEXT};")
@@ -1240,4 +1240,3 @@ class ChatWindow(QWidget):
         """Show event."""
         super().showEvent(event)
         self._center_on_screen()
-

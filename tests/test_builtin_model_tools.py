@@ -318,6 +318,24 @@ class BuiltinModelToolsTests(unittest.TestCase):
                 self.assertEqual(note.read_text(encoding="utf-8"), "hello there")
                 self.assertEqual(approvals[0]["action"], "edit_file")
                 self.assertIn("-hello world", approvals[0]["diff"])
+
+                created = root / "hello.py"
+                result = llm._execute_model_tool(
+                    "create_file",
+                    {"path": str(created), "content": 'print("Hello, world!")\n'},
+                    allowed_tools=["create_file"],
+                )
+
+                self.assertIn("hello.py", result)
+                self.assertEqual(created.read_text(encoding="utf-8"), 'print("Hello, world!")\n')
+                self.assertIn(
+                    "failed",
+                    llm._execute_model_tool(
+                        "create_file",
+                        {"path": str(created), "content": "again\n"},
+                        allowed_tools=["create_file"],
+                    ),
+                )
         finally:
             config.TOOL_FILE_ROOTS = old_roots
             config.TOOL_FILE_MODE = old_mode
@@ -375,7 +393,7 @@ class BuiltinModelToolsTests(unittest.TestCase):
                         SimpleNamespace(
                             type="function_call",
                             call_id="call_1",
-                            name="write_file",
+                            name="create_file",
                             arguments='{"path":"whatever.txt","content":"Whatever"}',
                         )
                     ],
@@ -398,19 +416,256 @@ class BuiltinModelToolsTests(unittest.TestCase):
                         "gpt-test",
                         client,
                         use_tools=True,
-                        allowed_tools=["write_file", "read_file", "list_files"],
-                        pinned_tools=["write_file"],
+                        allowed_tools=["create_file", "write_file", "read_file", "list_files"],
+                        pinned_tools=["create_file"],
                     )
                 )
 
                 self.assertEqual(text, "Created whatever.txt.")
                 self.assertEqual((root / "whatever.txt").read_text(encoding="utf-8"), "Whatever")
                 self.assertIn("tools", client.responses.calls[0])
+                self.assertIs(client.responses.calls[0]["store"], True)
                 self.assertEqual(client.responses.calls[1]["previous_response_id"], "resp_1")
+                self.assertIs(client.responses.calls[1]["store"], True)
+                self.assertIn("instructions", client.responses.calls[1])
         finally:
             config.TOOL_FILE_ROOTS = old_roots
             config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
             llm.set_live_file_access_mode(None)
+
+    def test_codex_responses_tool_loop_falls_back_when_tool_output_loses_state(self):
+        """Verify tool output fallback handles routes that do not retain prior calls."""
+        old_roots = getattr(config, "TOOL_FILE_ROOTS", [])
+        old_blocked = getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])
+        llm.set_live_file_access_mode("auto")
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config.TOOL_FILE_ROOTS = [str(root)]
+                config.TOOL_FILE_BLOCKED_GLOBS = []
+
+                first = SimpleNamespace(
+                    id="resp_1",
+                    output_text="",
+                    output=[
+                        SimpleNamespace(
+                            id="fc_1",
+                            type="function_call",
+                            call_id="call_1",
+                            name="create_file",
+                            arguments='{"path":"fallback.txt","content":"Fallback"}',
+                        )
+                    ],
+                )
+                final = SimpleNamespace(id="resp_2", output_text="Created fallback.txt.", output=[])
+
+                class MissingToolCall(RuntimeError):
+                    status_code = 400
+
+                class Responses:
+                    def __init__(self):
+                        self.calls = []
+
+                    def create(self, **kwargs):
+                        self.calls.append(kwargs)
+                        if len(self.calls) == 1:
+                            return first
+                        if kwargs.get("previous_response_id"):
+                            raise MissingToolCall(
+                                "No tool call found for function call output with call_id call_1."
+                            )
+                        return final
+
+                responses = Responses()
+                client = SimpleNamespace(responses=responses)
+
+                text = "".join(
+                    llm._stream_codex(
+                        "create fallback file",
+                        "gpt-test",
+                        client,
+                        use_tools=True,
+                        allowed_tools=["create_file"],
+                        pinned_tools=["create_file"],
+                    )
+                )
+
+                self.assertEqual(text, "Created fallback.txt.")
+                self.assertEqual((root / "fallback.txt").read_text(encoding="utf-8"), "Fallback")
+                self.assertEqual(len(responses.calls), 3)
+                self.assertEqual(responses.calls[1]["input"][0]["type"], "function_call_output")
+                self.assertNotIn("previous_response_id", responses.calls[2])
+                self.assertEqual(responses.calls[2]["input"][0]["type"], "function_call")
+                self.assertEqual(responses.calls[2]["input"][1]["type"], "function_call_output")
+        finally:
+            config.TOOL_FILE_ROOTS = old_roots
+            config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+            llm.set_live_file_access_mode(None)
+
+    def test_codex_responses_tool_loop_handles_store_must_be_false_routes(self):
+        """Verify store=false-only Responses routes still complete tool loops."""
+        old_roots = getattr(config, "TOOL_FILE_ROOTS", [])
+        old_blocked = getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])
+        llm.set_live_file_access_mode("auto")
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config.TOOL_FILE_ROOTS = [str(root)]
+                config.TOOL_FILE_BLOCKED_GLOBS = []
+
+                first = SimpleNamespace(
+                    id="resp_1",
+                    output_text="",
+                    output=[
+                        SimpleNamespace(
+                            id="fc_1",
+                            type="function_call",
+                            call_id="call_1",
+                            name="create_file",
+                            arguments='{"path":"store_false.txt","content":"Store false"}',
+                        )
+                    ],
+                )
+                final = SimpleNamespace(id="resp_2", output_text="Created store_false.txt.", output=[])
+
+                class StoreMustBeFalse(RuntimeError):
+                    status_code = 400
+
+                class MissingToolCall(RuntimeError):
+                    status_code = 400
+
+                class Responses:
+                    def __init__(self):
+                        self.calls = []
+
+                    def create(self, **kwargs):
+                        self.calls.append(kwargs)
+                        if kwargs.get("store") is True:
+                            raise StoreMustBeFalse("{'detail': 'Store must be set to false'}")
+                        if len(self.calls) <= 2:
+                            return first
+                        if kwargs.get("previous_response_id"):
+                            raise MissingToolCall(
+                                "No tool call found for function call output with call_id call_1."
+                            )
+                        return final
+
+                responses = Responses()
+                client = SimpleNamespace(responses=responses)
+
+                text = "".join(
+                    llm._stream_codex(
+                        "create store false file",
+                        "gpt-test",
+                        client,
+                        use_tools=True,
+                        allowed_tools=["create_file"],
+                        pinned_tools=["create_file"],
+                    )
+                )
+
+                self.assertEqual(text, "Created store_false.txt.")
+                self.assertEqual((root / "store_false.txt").read_text(encoding="utf-8"), "Store false")
+                self.assertGreaterEqual(len(responses.calls), 5)
+                self.assertIs(responses.calls[0]["store"], True)
+                self.assertIs(responses.calls[1]["store"], False)
+                self.assertIs(responses.calls[2]["store"], True)
+                self.assertIs(responses.calls[3]["store"], False)
+                self.assertNotIn("previous_response_id", responses.calls[-1])
+                self.assertEqual(responses.calls[-1]["input"][0]["type"], "function_call")
+                self.assertEqual(responses.calls[-1]["input"][1]["type"], "function_call_output")
+        finally:
+            config.TOOL_FILE_ROOTS = old_roots
+            config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+            llm.set_live_file_access_mode(None)
+
+    def test_codex_stream_required_tool_loop_can_write_local_file(self):
+        """Verify stream-required ChatGPT Responses models still execute tools."""
+        old_roots = getattr(config, "TOOL_FILE_ROOTS", [])
+        old_blocked = getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])
+        llm._route_capabilities.clear()
+        llm.set_live_file_access_mode("auto")
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config.TOOL_FILE_ROOTS = [str(root)]
+                config.TOOL_FILE_BLOCKED_GLOBS = []
+
+                class StreamRequiredError(RuntimeError):
+                    status_code = 400
+
+                first_item = SimpleNamespace(
+                    type="function_call",
+                    call_id="call_1",
+                    name="create_file",
+                    arguments='{"path":"streamed.txt","content":"Hello world"}',
+                )
+
+                class ResponseStream:
+                    def __init__(self, events):
+                        self.events = events
+
+                    def __enter__(self):
+                        return iter(self.events)
+
+                    def __exit__(self, *_args):
+                        return False
+
+                class Responses:
+                    def __init__(self):
+                        self.create_calls = []
+                        self.stream_calls = []
+
+                    def create(self, **kwargs):
+                        self.create_calls.append(kwargs)
+                        raise StreamRequiredError("stream must be true for this model")
+
+                    def stream(self, **kwargs):
+                        self.stream_calls.append(kwargs)
+                        if len(self.stream_calls) == 1:
+                            return ResponseStream([
+                                SimpleNamespace(type="response.output_item.done", item=first_item),
+                                SimpleNamespace(
+                                    type="response.completed",
+                                    response=SimpleNamespace(id="resp_1", output_text="", output=[first_item]),
+                                ),
+                            ])
+                        return ResponseStream([
+                            SimpleNamespace(type="response.output_text.delta", delta="Created streamed.txt."),
+                            SimpleNamespace(
+                                type="response.completed",
+                                response=SimpleNamespace(id="resp_2", output_text="", output=[]),
+                            ),
+                        ])
+
+                responses = Responses()
+                client = SimpleNamespace(responses=responses)
+
+                text = "".join(
+                    llm._stream_codex(
+                        "create a hello world file",
+                        "gpt-test-stream",
+                        client,
+                        use_tools=True,
+                        allowed_tools=["create_file", "write_file", "read_file", "list_files"],
+                        pinned_tools=["create_file"],
+                    )
+                )
+
+                self.assertEqual(text, "Created streamed.txt.")
+                self.assertEqual((root / "streamed.txt").read_text(encoding="utf-8"), "Hello world")
+                self.assertEqual(len(responses.create_calls), 2)
+                self.assertEqual(len(responses.stream_calls), 2)
+                self.assertIn("tools", responses.stream_calls[0])
+                self.assertIs(responses.stream_calls[0]["store"], True)
+                self.assertEqual(responses.stream_calls[1]["previous_response_id"], "resp_1")
+                self.assertIs(responses.stream_calls[1]["store"], True)
+                self.assertIn("instructions", responses.stream_calls[1])
+        finally:
+            config.TOOL_FILE_ROOTS = old_roots
+            config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+            llm.set_live_file_access_mode(None)
+            llm._route_capabilities.clear()
 
     def test_chatgpt_stream_required_error_wording_is_detected(self):
         """Verify ChatGPT stream-required wording is treated as recoverable."""

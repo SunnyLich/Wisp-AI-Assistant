@@ -39,7 +39,14 @@ CONTEXT_GOVERNED_TOOLS: dict[str, str] = {
     "capture_screen": "Screenshot",
 }
 
-LOCAL_FILE_TOOL_NAMES = {"list_files", "read_file", "edit_file", "write_file"}
+LOCAL_FILE_TOOL_ROWS: tuple[tuple[str, str], ...] = (
+    ("list_files", "List configured file roots."),
+    ("read_file", "Read files from configured file roots."),
+    ("create_file", "Create new files in configured file roots."),
+    ("edit_file", "Patch files in configured file roots."),
+    ("write_file", "Create or overwrite files in configured file roots."),
+)
+LOCAL_FILE_TOOL_NAMES = {name for name, _note in LOCAL_FILE_TOOL_ROWS}
 
 _MODE_LABELS = [("Off", "off"), ("On", "on"), ("Let model decide", "model")]
 _MODE_DISPLAY = {"off": "Off", "auto": "On", "model": "Let model decide"}
@@ -90,6 +97,16 @@ def _governed_default(governs: str, governed_modes: dict[str, str]) -> str:
     for part in governs.split(" / "):
         if str(governed_modes.get(part, "")).strip().lower() == "model":
             return "model"
+    return "off"
+
+
+def _file_tool_default(name: str, file_mode: str) -> str:
+    """Tool exposure implied by the caller's Local files dropdown."""
+    mode = str(file_mode or "off").strip().lower()
+    if mode == "read":
+        return "on" if name in {"list_files", "read_file"} else "off"
+    if mode in {"ask", "auto"}:
+        return "on"
     return "off"
 
 
@@ -154,6 +171,22 @@ class ToolAccessDialog(QDialog):
             ]
             note = " · ".join(states) if states else t(governs)
             self._add_tool_row(layout, name, note, overrides.get(name, default), default)
+
+        layout.addWidget(_separator())
+
+        # ── Local file tools (default: follow Local files dropdown) ───────
+        file_hdr = QLabel(t("LOCAL FILE TOOLS"))
+        file_hdr.setObjectName("sectionHeader")
+        layout.addWidget(file_hdr)
+        file_mode = str(governed_modes.get("Files", "off") or "off").strip().lower()
+        file_note = QLabel(
+            f"<small>{t('These default to the Local files dropdown. Writes still follow the configured file roots and approval mode.')}</small>"
+        )
+        file_note.setWordWrap(True)
+        layout.addWidget(file_note)
+        for name, note in LOCAL_FILE_TOOL_ROWS:
+            default = _file_tool_default(name, file_mode)
+            self._add_tool_row(layout, name, t(note), overrides.get(name, default), default)
 
         layout.addWidget(_separator())
 

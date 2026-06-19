@@ -40,6 +40,22 @@ def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_window_is_not_always_on_top():
+    """Verify chat window behaves like a normal app window."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow([{"messages": [{"role": "user", "content": "hello"}]}], lambda _messages: iter(()))
+    try:
+        assert not (window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_chat_window_opens_large_last_chat_without_render_freeze():
     """Verify chat window opens large last chat without render freeze behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

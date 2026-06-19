@@ -1880,9 +1880,9 @@ class QtProtocolHost:
         self._ensure_bubble().start_thinking()
         return {"thinking": True}
 
-    def _reply_listening(self) -> dict[str, Any]:
+    def _reply_listening(self, text: str = "") -> dict[str, Any]:
         """Handle reply listening for qt protocol host."""
-        self._ensure_bubble().show_listening()
+        self._ensure_bubble().show_listening(text or None)
         return {"listening": True}
 
     def _reply_start_reveal(self) -> dict[str, Any]:

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from core.tools.local_files import file_tools_for_access
 from runtime.supervisor import tool_modes
 
 log = logging.getLogger("wisp.runtime.flows")
@@ -450,7 +451,6 @@ class FlowController:
         )
         t_show = time.monotonic()
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
-        self._fire(self.ui, "ui.reply.listening")
         self._schedule(self._collect_initial_intent_context, pending, generation, t0, t_show)
         log.info(
             "caller %d picker shown before context total=%.2fs",
@@ -564,10 +564,21 @@ class FlowController:
         self._voice_screenshot_b64 = None
         self._fire(self.audio, "audio.stop")
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
-        self._fire(self.ui, "ui.reply.listening")
-        self.audio.call("audio.record.start", timeout=20.0)
+        try:
+            record_result = self.audio.call("audio.record.start", timeout=20.0)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("voice record start failed")
+            self._notice(f"Couldn't start recording: {self._friendly_error(exc)}")
+            self._mark_voice_idle()
+            self._set_idle()
+            return
+        if isinstance(record_result, dict) and record_result.get("recording") is False:
+            self._mark_voice_idle()
+            self._set_idle()
+            return
         if not self._mark_voice_recording():
             return
+        self._fire(self.ui, "ui.reply.listening")
         # include_browser=False keeps a slow page fetch off the record-start
         # path; _brain_query_params fetches it lazily at query time instead.
         self._voice_context = self._context_snapshot(caller, include_browser=False)
@@ -626,12 +637,19 @@ class FlowController:
         self._dictate_focus_token = int(context.get("focus_token") or 0)
         self._fire(self.audio, "audio.stop")
         try:
-            self.audio.call("audio.record.start", timeout=20.0)
+            record_result = self.audio.call("audio.record.start", timeout=20.0)
         except Exception as exc:  # noqa: BLE001 â€” surface mic/worker failure in the UI
             log.exception("dictation record start failed")
             self._notice(f"Couldn't start dictation: {self._friendly_error(exc)}")
             self._mark_dictate_idle()
             self._set_idle()
+            return
+        if isinstance(record_result, dict) and record_result.get("recording") is False:
+            self._mark_dictate_idle()
+            self._set_idle()
+            return
+        self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
+        self._fire(self.ui, "ui.reply.listening")
 
     def dictate_stop(self) -> None:
         """Stop dictation, transcribe, optionally LLM-clean, and paste into the
@@ -759,14 +777,13 @@ class FlowController:
         except (TypeError, ValueError):
             caller_idx = 0
         caller = self._caller(caller_idx)
-        allowed_tools = self._allowed_model_tools(caller)
-        pinned_tools = self._pinned_model_tools(caller)
+        allowed_tools, pinned_tools, file_access_mode = self._chat_tool_policy(caller)
         chat_params: dict[str, Any] = {
             "messages": messages,
             "use_tools": bool(allowed_tools),
             "allowed_tools": allowed_tools,
             "pinned_tools": pinned_tools,
-            "file_access_mode": tool_modes.local_file_access_mode(caller),
+            "file_access_mode": file_access_mode,
         }
         try:
             hist = self._safe_call(self.ui, "ui.chat.active_history", {}, timeout=10.0)
@@ -2068,6 +2085,18 @@ class FlowController:
         ``get_context``, so pin the schema name here.
         """
         return tool_modes.pinned_model_tools(caller)
+
+    def _chat_tool_policy(self, caller: dict[str, Any]) -> tuple[list[str], list[str], str]:
+        """Return chat tool grants, with ask-mode local files as a chat fallback."""
+        allowed = self._allowed_model_tools(caller)
+        pinned = self._pinned_model_tools(caller)
+        file_access_mode = tool_modes.local_file_access_mode(caller)
+        if file_access_mode == "off":
+            file_access_mode = "ask"
+            for name in file_tools_for_access(file_access_mode):
+                if name not in allowed:
+                    allowed.append(name)
+        return allowed, pinned, file_access_mode
 
     def _screenshot_tool_allowed(self, caller: dict[str, Any]) -> bool:
         """Whether capture_screen is exposed: the Screenshot dropdown's "model"

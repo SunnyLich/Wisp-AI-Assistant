@@ -209,6 +209,36 @@ def test_intent_overlay_preserves_custom_prompt_label():
         config.CALLER_ROWS[:] = old_rows
 
 
+def test_intent_overlay_context_palette_uses_theme_settings():
+    """Verify context chip colors derive from the active settings theme."""
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_values = {
+        "THEME_MODE": getattr(config, "THEME_MODE", "system"),
+        "THEME_DARK_BG": getattr(config, "THEME_DARK_BG", "#1c1e26"),
+        "THEME_DARK_SURFACE": getattr(config, "THEME_DARK_SURFACE", "#17181d"),
+        "THEME_DARK_TEXT": getattr(config, "THEME_DARK_TEXT", "#e8e8f0"),
+        "THEME_DARK_ACCENT": getattr(config, "THEME_DARK_ACCENT", "#8b87ff"),
+    }
+    try:
+        config.THEME_MODE = "dark"
+        config.THEME_DARK_BG = "#101820"
+        config.THEME_DARK_SURFACE = "#203040"
+        config.THEME_DARK_TEXT = "#f0ead6"
+        config.THEME_DARK_ACCENT = "#ff3366"
+
+        palette = intent_overlay._theme_palette()
+
+        assert palette["ctx_on"].name().lower() == "#ff3366"
+        assert palette["ctx_text"].name().lower() == "#f0ead6"
+        assert palette["badge_bg"].name().lower() == "#203040"
+        assert palette["bg"].name().lower() == "#101820"
+    finally:
+        for key, value in old_values.items():
+            setattr(config, key, value)
+
+
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_cycles_context_chip(monkeypatch):
     """Verify numeric context chips cycle independently of intent rows."""
@@ -267,7 +297,7 @@ def test_intent_overlay_dedupes_raw_and_qt_context_key(monkeypatch):
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_apply_intent_context_choices_updates_caller_policy():
     """Verify overlay context choices become real per-prompt caller policy."""
-    from main import App
+    from runtime.supervisor.flows import FlowController
 
     caller = {
         "context_ambient": True,
@@ -277,7 +307,7 @@ def test_apply_intent_context_choices_updates_caller_policy():
         "file_access": "ask",
     }
 
-    updated = App._apply_intent_context_choices(
+    updated = FlowController._apply_intent_context_choices(
         caller,
         [
             {"id": "browser", "state": "off"},

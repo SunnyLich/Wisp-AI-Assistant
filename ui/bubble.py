@@ -272,14 +272,15 @@ class SpeechBubble(QWidget):
         self._schedule_scroll_snap()
         event.accept()
 
-    def show_listening(self):
-        """Show a static mic indicator while the user holds F9."""
+    def show_listening(self, text: str | None = None):
+        """Show a static status indicator while the app waits for user input."""
+        message = str(text or "Recording - release to send").strip()
         self._full_text = ""
         self._thought_text = ""
         self._highlight_generation += 1
-        self._lines = ["\u25cf Recording — release to send"]
+        self._lines = [f"\u25cf {message}"]
         self._all_line_segments = []
-        self._line_segments = [[("Recording - release to send", False, None, False, False)]]
+        self._line_segments = [[(message, False, None, False, False)]]
         self._thinking = False
         self._transcript_preview = False
         self._pending_words = []

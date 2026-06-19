@@ -30,9 +30,10 @@ def build_openai_messages(
     ambient_context: str = "",
     memory_context: str = "",
     history: list[dict] | None = None,
+    system_prompt: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build openai messages."""
-    system = config.get_system_prompt()
+    system = system_prompt if system_prompt is not None else config.get_system_prompt()
     if memory_context:
         system += f"\n\n{memory_context}"
     if ambient_context:

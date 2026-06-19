@@ -1532,6 +1532,7 @@ def test_tool_access_dialog_round_trips_overrides():
             "Git/GitHub": "model",
             "Memory": "model",
             "Screenshot": "off",
+            "Files": "read",
         },
     )
 
@@ -1541,7 +1542,7 @@ def test_tool_access_dialog_round_trips_overrides():
         assert {
             "web_search", "get_context", "git_status", "git_diff",
             "github_repo", "github_issue", "memory_search", "capture_screen",
-            "list_files", "read_file", "edit_file", "write_file",
+            "list_files", "read_file", "create_file", "edit_file", "write_file",
         } <= set(combos)
         # Defaults follow the dropdowns: Git/GitHub + Memory are "Let model
         # decide"; a stored override (github_repo: off) wins over that.
@@ -1549,6 +1550,8 @@ def test_tool_access_dialog_round_trips_overrides():
         assert combos["memory_search"].currentData() == "model"
         assert combos["github_repo"].currentData() == "off"
         assert combos["web_search"].currentData() == "off"
+        assert combos["read_file"].currentData() == "on"
+        assert combos["create_file"].currentData() == "off"
 
         # A selector left matching its dropdown default stores nothing; the
         # explicit deviations round-trip.

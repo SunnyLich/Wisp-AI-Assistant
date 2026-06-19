@@ -27,6 +27,8 @@ Download the repo and **double-click one file**:
 The first time, it installs everything Wisp needs and then starts the app. On
 macOS the launcher uses `requirements-macos.lock`; Windows and Linux use
 `requirements.txt`. Every time after, it just launches. That's the whole setup.
+Normal launchers do not keep runtime logs unless Wisp exits abruptly. Use
+`Start Wisp Debug.*` when you want full `build_logs/wisp_runtime_*` logs.
 
 > Requires **Python 3.12.13** (pinned in `.python-version`). The launcher finds it
 > automatically â€” install via [pyenv](https://github.com/pyenv/pyenv)
@@ -120,6 +122,9 @@ pure-Python worker supervisor:
 bash "Start Wisp.command"   # macOS
 bash "Start Wisp.sh"        # Linux
 ```
+
+Use `Start Wisp Debug.command`, `Start Wisp Debug.sh`, or
+`Start Wisp Debug.bat` to keep full runtime logs while debugging.
 
 Run the macOS Python test gate with:
 

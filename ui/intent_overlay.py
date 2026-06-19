@@ -163,6 +163,44 @@ _CTX_SUB    = QColor(190, 192, 205, 190)
 _WARN       = QColor(246, 197, 76, 245)
 
 
+def _qcolor(value: str | None, fallback: QColor | str, alpha: int | None = None) -> QColor:
+    """Parse a theme color with a fallback and optional alpha override."""
+    color = QColor(str(value or ""))
+    if not color.isValid():
+        color = QColor(fallback)
+    if alpha is not None:
+        color.setAlpha(max(0, min(255, alpha)))
+    return color
+
+
+def _theme_palette() -> dict[str, QColor]:
+    """Return intent overlay colors derived from the active settings theme."""
+    try:
+        from ui.shared.theme import theme_colors
+
+        colors = theme_colors()
+    except Exception:
+        colors = {}
+    return {
+        "bg": _qcolor(colors.get("bg"), _BG, 248),
+        "border": _qcolor(colors.get("border"), _BORDER, 54),
+        "row_hl": _qcolor(colors.get("accent"), _ROW_HL, 24),
+        "badge_bg": _qcolor(colors.get("surface"), _BADGE_BG, 255),
+        "badge_hl": _qcolor(colors.get("accent"), _BADGE_HL, 64),
+        "key": _qcolor(colors.get("accent"), _KEY_COLOR, 240),
+        "label": _qcolor(colors.get("text"), _LABEL, 228),
+        "hint": _qcolor(colors.get("text_dim"), _HINT, 190),
+        "hint_esc": _qcolor(colors.get("text_dim"), _HINT_ESC, 150),
+        "sep": _qcolor(colors.get("border"), _SEP, 55),
+        "ctx_off": _qcolor(colors.get("text_dim"), _CTX_OFF, 170),
+        "ctx_on": _qcolor(colors.get("accent"), _CTX_ON, 230),
+        "ctx_auto": _qcolor(colors.get("accent_hover") or colors.get("accent"), _CTX_AUTO, 230),
+        "ctx_text": _qcolor(colors.get("text"), _CTX_TEXT, 235),
+        "ctx_sub": _qcolor(colors.get("text_dim"), _CTX_SUB, 190),
+        "warn": _qcolor(colors.get("accent_hover") or colors.get("accent"), _WARN, 245),
+    }
+
+
 def _context_toggle_keys() -> str:
     """Return seven unique overlay-local context toggle keys."""
     raw = str(getattr(config, "INTENT_CONTEXT_TOGGLE_KEYS", "1234567") or "1234567")
@@ -385,12 +423,13 @@ class IntentOverlay(QWidget):
         """Paint event."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        palette = _theme_palette()
 
         # Widget background with border
         path = QPainterPath()
         path.addRoundedRect(0.5, 0.5, _W - 1, self.height() - 1, _RADIUS, _RADIUS)
-        p.fillPath(path, QBrush(_BG))
-        p.setPen(QPen(_BORDER, 1))
+        p.fillPath(path, QBrush(palette["bg"]))
+        p.setPen(QPen(palette["border"], 1))
         p.drawPath(path)
 
         label_font = QFont("Segoe UI", 10, QFont.Weight.DemiBold)
@@ -404,7 +443,7 @@ class IntentOverlay(QWidget):
         y = _PAD_V
         self._warning_rects = []
         if self._context_items:
-            self._paint_context_items(p, y, ctx_label_font, ctx_state_font, ctx_token_font)
+            self._paint_context_items(p, y, ctx_label_font, ctx_state_font, ctx_token_font, palette)
             y += _CTX_H
 
         for i, row in enumerate(self._rows):
@@ -418,28 +457,28 @@ class IntentOverlay(QWidget):
                     _PAD_H, y, _W - _PAD_H * 2, _ROW_H,
                     _ROW_RADIUS, _ROW_RADIUS,
                 )
-                p.fillPath(rp, QBrush(_ROW_HL))
+                p.fillPath(rp, QBrush(palette["row_hl"]))
 
             # Separator above (skip first row)
             if i > 0:
-                p.setPen(QPen(_SEP, 1))
+                p.setPen(QPen(palette["sep"], 1))
                 p.drawLine(_PAD_H + _BADGE_W + 12, y, _W - _PAD_H, y)
 
             # Badge background
             badge_y = y + (_ROW_H - _BADGE_H) // 2
             bp = QPainterPath()
             bp.addRoundedRect(_BADGE_X, badge_y, _BADGE_W, _BADGE_H, _BADGE_R, _BADGE_R)
-            p.fillPath(bp, QBrush(_BADGE_HL if hovered else _BADGE_BG))
+            p.fillPath(bp, QBrush(palette["badge_hl"] if hovered else palette["badge_bg"]))
 
             # Key letter
             p.setFont(key_font)
-            p.setPen(QPen(_KEY_COLOR))
+            p.setPen(QPen(palette["key"]))
             p.drawText(_BADGE_X, badge_y, _BADGE_W, _BADGE_H,
                        Qt.AlignmentFlag.AlignCenter, row["glyph"])
 
             # Label
             p.setFont(label_font)
-            p.setPen(QPen(_LABEL))
+            p.setPen(QPen(palette["label"]))
             text_w = _W - _PAD_H - _TEXT_X
             label_y = y + (_ROW_H // 2) - 12
             p.drawText(_TEXT_X, label_y, text_w, 20,
@@ -450,7 +489,7 @@ class IntentOverlay(QWidget):
             subtitle = row["hint"] if row["is_custom"] else (row["prompt"] or row["hint"])
             if subtitle:
                 p.setFont(hint_font)
-                p.setPen(QPen(_HINT))
+                p.setPen(QPen(palette["hint"]))
                 hint_y = y + (_ROW_H // 2) + 2
                 elided = QFontMetrics(hint_font).elidedText(
                     subtitle, Qt.TextElideMode.ElideRight, text_w
@@ -467,7 +506,7 @@ class IntentOverlay(QWidget):
         else:
             esc_y = y + 4
         p.setFont(esc_font)
-        p.setPen(QPen(_HINT_ESC))
+        p.setPen(QPen(palette["hint_esc"]))
         p.drawText(0, esc_y, _W, 18, Qt.AlignmentFlag.AlignCenter, t("ESC to cancel"))
 
         p.end()
@@ -479,15 +518,19 @@ class IntentOverlay(QWidget):
         label_font: QFont,
         state_font: QFont,
         token_font: QFont,
+        palette: dict[str, QColor] | None = None,
     ) -> None:
         """Paint the per-prompt context controls."""
+        palette = palette or _theme_palette()
         key_font = QFont("Segoe UI", 8, QFont.Weight.Bold)
         x = _PAD_H
         top = y + _CTX_TOP
         for item in self._context_items:
             rect = QRect(x, top, _CTX_CHIP_W, _CTX_CHIP_H)
             state = str(item.get("state") or "off").lower()
-            color = _CTX_ON if state == "on" else (_CTX_AUTO if state == "auto" else _CTX_OFF)
+            color = palette["ctx_on"] if state == "on" else (
+                palette["ctx_auto"] if state == "auto" else palette["ctx_off"]
+            )
 
             path = QPainterPath()
             path.addRoundedRect(rect, 7, 7)
@@ -508,12 +551,12 @@ class IntentOverlay(QWidget):
                 warn_rect = QRect(rect.right() - 18, rect.y() + 4, 14, 14)
                 self._warning_rects.append((warn_rect, warning))
                 p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-                p.setPen(QPen(_WARN))
+                p.setPen(QPen(palette["warn"]))
                 p.drawText(warn_rect, Qt.AlignmentFlag.AlignCenter, "⚠")
 
             label = str(item.get("label") or "")
             p.setFont(label_font)
-            p.setPen(QPen(_CTX_TEXT))
+            p.setPen(QPen(palette["ctx_text"]))
             label = QFontMetrics(label_font).elidedText(
                 label, Qt.TextElideMode.ElideRight, rect.width() - 12
             )
@@ -529,7 +572,7 @@ class IntentOverlay(QWidget):
             tokens = str(item.get("tokens") or "")
             if tokens:
                 p.setFont(token_font)
-                p.setPen(QPen(_CTX_SUB))
+                p.setPen(QPen(palette["ctx_sub"]))
                 tokens = QFontMetrics(token_font).elidedText(
                     tokens, Qt.TextElideMode.ElideRight, rect.width() - 8
                 )

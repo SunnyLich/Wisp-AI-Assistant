@@ -37,6 +37,10 @@ bash "Start Wisp.command"
 bash "Start Wisp.sh"
 ```
 
+Normal launchers keep runtime logs off unless Wisp exits abruptly. Use
+`Start Wisp Debug.bat`, `Start Wisp Debug.command`, or `Start Wisp Debug.sh`
+to keep full runtime logs during local debugging.
+
 ## Runtime Entrypoints
 
 - `runtime/supervisor/app.py` is the current supervisor-first app entrypoint.
@@ -140,7 +144,9 @@ bash scripts/run_macos_tests.command
 
 ## Debugging Notes
 
-- Supervisor logs are written under `build_logs/wisp_runtime_*`.
+- Debug supervisor logs are written under `build_logs/wisp_runtime_*`.
+- Normal launcher runs only write `build_logs/wisp_crash_*` after an abrupt
+  supervisor or UI-worker exit.
 - `build_logs/latest_wisp_runtime.txt` points at the newest supervisor log
   directory when the supervisor entrypoint created it.
 - UI freeze reports are emitted by the UI worker watchdog when the Qt event loop

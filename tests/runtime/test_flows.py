@@ -201,7 +201,7 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert audio.last_call("audio.prewarm")["wait"] is False
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
     assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
-    assert ui.calls_for("ui.reply.listening")
+    assert not ui.calls_for("ui.reply.listening")
 
 
 def test_intent_context_uses_unknown_tokens_for_deferred_sources():
@@ -1307,8 +1307,38 @@ def test_voice_start_starts_recording_before_context_capture():
     native.emit("native.hotkey", {"kind": "voice_start"})
 
     assert audio.calls_for("audio.record.start")
-    assert ui.calls_for("ui.reply.listening")
+    assert ui.last_call("ui.reply.listening")["params"] == {}
     assert ui.calls_for("ui.overlay.state")[0]["params"]["state"] == "listening"
+
+
+def test_voice_start_does_not_show_recording_bubble_when_recording_fails():
+    """Verify recording bubble only appears after the recorder actually starts."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+
+    def fail_start(_params):
+        """Simulate recorder startup failure."""
+        raise RuntimeError("mic unavailable")
+
+    audio = FakeWorker({"audio.record.start": fail_start})
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "voice_start"})
+
+    assert audio.calls_for("audio.record.start")
+    assert not ui.calls_for("ui.reply.listening")
+    assert ui.calls_for("ui.reply.notice")
+
+
+def test_voice_start_does_not_show_recording_bubble_when_recorder_reports_false():
+    """Verify explicit non-recording result stays quiet."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    audio = FakeWorker({"audio.record.start": lambda _params: {"recording": False}})
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "voice_start"})
+
+    assert audio.calls_for("audio.record.start")
+    assert not ui.calls_for("ui.reply.listening")
 
 
 def test_voice_start_key_repeat_is_ignored_until_release():
@@ -1416,8 +1446,8 @@ def test_voice_screenshot_auto_captures_at_voice_start(tmp_path):
     assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
 
 
-def test_dictation_does_not_raise_overlay_or_bubble_on_normal_path():
-    """Verify dictation does not raise overlay or bubble on normal path behavior."""
+def test_dictation_shows_recording_ui_after_recording_starts():
+    """Verify dictation shows recording UI only after the recorder starts."""
     native = FakeWorker(
         {
             "native.context.snapshot": context_handler(selected="", pid=777, focus_token=9),
@@ -1438,9 +1468,41 @@ def test_dictation_does_not_raise_overlay_or_bubble_on_normal_path():
     assert paste["focus_token"] == 9
     assert audio.calls_for("audio.record.start")
     assert audio.calls_for("audio.record.stop_transcribe")
-    assert all(call["params"].get("state") == "idle" for call in ui.calls_for("ui.overlay.state"))
-    assert not ui.calls_for("ui.reply.listening")
+    assert ui.calls_for("ui.overlay.state")[0]["params"]["state"] == "listening"
+    assert ui.calls_for("ui.reply.listening")
     assert not ui.calls_for("ui.reply.reset")
+
+
+def test_dictation_does_not_show_recording_ui_when_recording_fails():
+    """Verify failed dictation start does not claim recording."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="", pid=777, focus_token=9)})
+
+    def fail_start(_params):
+        """Simulate recorder startup failure."""
+        raise RuntimeError("mic unavailable")
+
+    audio = FakeWorker({"audio.record.start": fail_start})
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+
+    assert audio.calls_for("audio.record.start")
+    assert not ui.calls_for("ui.reply.listening")
+    assert not any(call["params"].get("state") == "listening" for call in ui.calls_for("ui.overlay.state"))
+    assert ui.calls_for("ui.reply.notice")
+
+
+def test_dictation_does_not_show_recording_ui_when_recorder_reports_false():
+    """Verify explicit dictation non-recording result stays quiet."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="", pid=777, focus_token=9)})
+    audio = FakeWorker({"audio.record.start": lambda _params: {"recording": False}})
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+
+    assert audio.calls_for("audio.record.start")
+    assert not ui.calls_for("ui.reply.listening")
+    assert not any(call["params"].get("state") == "listening" for call in ui.calls_for("ui.overlay.state"))
 
 
 def test_caller_tool_overrides_reach_brain_query():
@@ -1526,6 +1588,30 @@ def test_chat_request_streams_through_brain_chat():
     assert ui.last_call("ui.chat.done")["params"]["request_id"] == "chat-1"
 
 
+def test_chat_request_enables_ask_file_tools_when_caller_files_are_off():
+    """Verify chat can create files even when hotkey file access is off."""
+    rows = [
+        {
+            "file_access": "off",
+            "tools": {},
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+        }
+    ]
+    brain = FakeWorker(stream_handlers={"brain.chat": query_stream("chat reply")})
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+        ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "create a file"}]})
+
+    params = brain.last_call("brain.chat")["params"]
+    assert params["use_tools"] is True
+    assert params["file_access_mode"] == "ask"
+    assert set(params["allowed_tools"]) >= {"list_files", "read_file", "create_file", "edit_file", "write_file"}
+    assert not ({"list_files", "read_file", "create_file", "edit_file", "write_file"} & set(params["pinned_tools"]))
+
+
 def test_chat_request_inherits_first_caller_file_tools():
     """Verify chat requests carry file tool grants from the first caller row."""
     rows = [
@@ -1546,8 +1632,8 @@ def test_chat_request_inherits_first_caller_file_tools():
     params = brain.last_call("brain.chat")["params"]
     assert params["use_tools"] is True
     assert params["file_access_mode"] == "ask"
-    assert set(params["allowed_tools"]) >= {"list_files", "read_file", "edit_file", "write_file"}
-    assert set(params["pinned_tools"]) >= {"list_files", "read_file", "edit_file", "write_file"}
+    assert set(params["allowed_tools"]) >= {"list_files", "read_file", "create_file", "edit_file", "write_file"}
+    assert set(params["pinned_tools"]) >= {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 
 
 def test_chat_live_file_approval_routes_to_ui_and_brain():

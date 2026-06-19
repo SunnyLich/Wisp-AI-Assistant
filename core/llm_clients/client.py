@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Generator
 
 _TOOL_REGISTRY = ToolRegistry()
-_LOCAL_FILE_TOOLS = {"list_files", "read_file", "edit_file", "write_file"}
+_LOCAL_FILE_TOOLS = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 _FILE_EDIT_APPROVAL_CALLBACK: Callable[[dict], bool] | None = None
 _LIVE_TOOL_CONTEXT = _threading.local()
 
@@ -394,6 +394,16 @@ def _execute_edit_file(inputs: dict) -> str:
     )
 
 
+def _execute_create_file(inputs: dict) -> str:
+    """Create a new text file within a configured local-file root."""
+    return execute_live_file_tool(
+        "create_file",
+        inputs or {},
+        access_mode=_effective_live_file_access_mode(["create_file"]),
+        approval_callback=_effective_live_file_approval_callback(),
+    )
+
+
 def _execute_write_file(inputs: dict) -> str:
     """Create or overwrite a text file in a configured local-file root."""
     return execute_live_file_tool(
@@ -649,6 +659,27 @@ def _register_builtin_tools() -> None:
                 "required": ["path", "old", "new"],
             },
             executor=_execute_edit_file,
+            opt_in=True,
+        )
+    )
+    _TOOL_REGISTRY.register_builtin(
+        ToolSpec(
+            name="create_file",
+            description=(
+                "Create a new UTF-8 text file inside the user's configured "
+                "local-file roots. Fails if the file already exists. Uses the "
+                "configured never/ask/auto create mode."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Required for relative paths when multiple roots are configured."},
+                    "path": {"type": "string", "description": "Absolute path, or a path relative to root."},
+                    "content": {"type": "string", "description": "Full file content to write."},
+                },
+                "required": ["path", "content"],
+            },
+            executor=_execute_create_file,
             opt_in=True,
         )
     )
@@ -1186,7 +1217,7 @@ def _effective_live_file_access_mode(allowed_tools: list[str] | None = None) -> 
         return normalize_file_access_mode(explicit)
     allowed = set(allowed_tools or [])
     legacy = str(getattr(config, "TOOL_FILE_MODE", "never") or "never").strip().lower()
-    if legacy in {"ask", "auto"} and allowed & {"edit_file", "write_file"}:
+    if legacy in {"ask", "auto"} and allowed & {"create_file", "edit_file", "write_file"}:
         return legacy
     if allowed & {"list_files", "read_file"}:
         return "read"
@@ -1918,17 +1949,131 @@ def _response_function_calls(response) -> list[dict[str, str]]:
     for item in _response_output_items(response):
         if isinstance(item, dict):
             item_type = str(item.get("type") or "")
+            item_id = str(item.get("id") or "")
             name = str(item.get("name") or "")
             arguments = str(item.get("arguments") or "")
-            call_id = str(item.get("call_id") or item.get("id") or "")
+            call_id = str(item.get("call_id") or item_id or "")
         else:
             item_type = str(getattr(item, "type", "") or "")
+            item_id = str(getattr(item, "id", "") or "")
             name = str(getattr(item, "name", "") or "")
             arguments = str(getattr(item, "arguments", "") or "")
-            call_id = str(getattr(item, "call_id", "") or getattr(item, "id", "") or "")
+            call_id = str(getattr(item, "call_id", "") or item_id or "")
         if item_type == "function_call" and name:
-            calls.append({"name": name, "arguments": arguments, "call_id": call_id})
+            calls.append({"id": item_id, "name": name, "arguments": arguments, "call_id": call_id})
     return calls
+
+
+def _event_value(obj, name: str, default=None):
+    """Read an event/object field from either a dict or SDK object."""
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _normalized_response_item(item) -> dict:
+    """Convert a streamed Responses output item to the shape create() returns."""
+    if isinstance(item, dict):
+        return dict(item)
+    normalized: dict = {}
+    for field_name in ("id", "type", "call_id", "name", "arguments", "content", "status", "role"):
+        value = getattr(item, field_name, None)
+        if value is not None:
+            normalized[field_name] = value
+    return normalized
+
+
+def _responses_stream_to_response(client, kwargs: dict, *, provider: str, model: str):
+    """Stream a Responses request and reconstruct a minimal response object."""
+    current = dict(kwargs)
+    while True:
+        response_id = ""
+        output_text: list[str] = []
+        output_items: dict[str, dict] = {}
+        completed_response = None
+        try:
+            with client.responses.stream(**_responses_stream_kwargs(current)) as stream:
+                _update_route_capabilities(provider, model, supports_stream=True, requires_stream=True)
+                for event in stream:
+                    event_type = str(_event_value(event, "type", "") or "")
+                    response = _event_value(event, "response", None)
+                    if response is not None:
+                        response_id = response_id or _response_id(response)
+                    if event_type == "response.completed":
+                        completed_response = response
+                        continue
+                    if event_type == "response.output_text.delta":
+                        delta = str(_event_value(event, "delta", "") or "")
+                        if delta:
+                            output_text.append(delta)
+                        continue
+                    if event_type in {"response.output_item.added", "response.output_item.done"}:
+                        item = _event_value(event, "item", None)
+                        if item is not None:
+                            normalized = _normalized_response_item(item)
+                            output_index = _event_value(event, "output_index", None)
+                            key = str(
+                                output_index
+                                if output_index not in (None, "")
+                                else normalized.get("id")
+                                or normalized.get("call_id")
+                                or len(output_items)
+                            )
+                            existing = output_items.get(key, {})
+                            merged = {**existing, **{k: v for k, v in normalized.items() if v not in (None, "")}}
+                            output_items[key] = merged
+                        continue
+                    if event_type in {
+                        "response.function_call_arguments.delta",
+                        "response.function_call_arguments.done",
+                    }:
+                        output_index = _event_value(event, "output_index", None)
+                        key = str(
+                            output_index
+                            if output_index not in (None, "")
+                            else _event_value(event, "item_id", "")
+                            or _event_value(event, "output_index", "")
+                            or len(output_items)
+                        )
+                        item = output_items.setdefault(key, {"type": "function_call"})
+                        for field_name in ("call_id", "name"):
+                            value = _event_value(event, field_name, None)
+                            if value:
+                                item[field_name] = value
+                        arguments = str(_event_value(event, "arguments", "") or "")
+                        if event_type.endswith(".delta"):
+                            item["arguments"] = str(item.get("arguments") or "") + str(
+                                _event_value(event, "delta", "") or ""
+                            )
+                        elif arguments:
+                            item["arguments"] = arguments
+        except Exception as exc:
+            _record_route_error_capabilities(provider, model, exc)
+            if _store_must_be_false_error(exc) and current.get("store") is True:
+                current = dict(current)
+                current["store"] = False
+                print("[llm] Responses stream requires store=false; retrying without stored response", flush=True)
+                continue
+            retry_kwargs = _without_unsupported_parameter(current, exc)
+            if retry_kwargs is None:
+                raise
+            name = _unsupported_parameter_name(exc)
+            _mark_unsupported_parameter(provider, model, name)
+            if name == "tools":
+                raise
+            print("[llm] Responses stream rejected unsupported parameter; retrying without it", flush=True)
+            current = retry_kwargs
+            continue
+
+        if completed_response is not None:
+            completed_output = _response_output_items(completed_response)
+            if completed_output or _response_output_text(completed_response):
+                return completed_response
+        return {
+            "id": response_id,
+            "output_text": "".join(output_text),
+            "output": list(output_items.values()),
+        }
 
 
 def _responses_create_with_retries(client, kwargs: dict, *, provider: str, model: str):
@@ -1939,6 +2084,14 @@ def _responses_create_with_retries(client, kwargs: dict, *, provider: str, model
             return client.responses.create(**current)
         except Exception as exc:
             _record_route_error_capabilities(provider, model, exc)
+            if _store_must_be_false_error(exc) and current.get("store") is True:
+                current = dict(current)
+                current["store"] = False
+                print("[llm] Responses create requires store=false; retrying without stored response", flush=True)
+                continue
+            if _requires_stream_error(exc):
+                _update_route_capabilities(provider, model, supports_stream=True, requires_stream=True)
+                return _responses_stream_to_response(client, current, provider=provider, model=model)
             retry_kwargs = _without_unsupported_parameter(current, exc)
             if retry_kwargs is None:
                 raise
@@ -1950,6 +2103,16 @@ def _responses_create_with_retries(client, kwargs: dict, *, provider: str, model
             current = retry_kwargs
 
 
+def _responses_tool_loop_kwargs(kwargs: dict) -> dict:
+    """Keep Responses tool-call turns available for later function outputs."""
+    current = dict(kwargs)
+    # Responses function_call_output items are matched against prior tool calls
+    # via previous_response_id. Some routes cannot do that if the prior response
+    # was created with store=false, so tool loops must be stateful.
+    current["store"] = True
+    return current
+
+
 def _responses_stream_kwargs(kwargs: dict) -> dict:
     """Return kwargs for Responses streaming with an explicit body stream flag."""
     current = dict(kwargs)
@@ -1957,6 +2120,44 @@ def _responses_stream_kwargs(kwargs: dict) -> dict:
     extra_body["stream"] = True
     current["extra_body"] = extra_body
     return current
+
+
+def _no_matching_tool_call_error(exc: Exception) -> bool:
+    """Return True when a Responses route rejects a tool output linkage."""
+    text = str(exc).lower()
+    return "no tool call found" in text and "function call output" in text
+
+
+def _store_must_be_false_error(exc: Exception) -> bool:
+    """Return True when a Responses route rejects stored responses."""
+    text = str(exc).lower()
+    return "store" in text and "false" in text and any(
+        marker in text
+        for marker in (
+            "must be",
+            "must set",
+            "set to",
+            "should be",
+            "only supports",
+        )
+    )
+
+
+def _stateless_tool_output_input(calls: list[dict[str, str]], tool_outputs: list[dict]) -> list[dict]:
+    """Build a fallback input that carries function calls and outputs together."""
+    items: list[dict] = []
+    for call, output in zip(calls, tool_outputs):
+        call_item = {
+            "type": "function_call",
+            "call_id": call["call_id"],
+            "name": call["name"],
+            "arguments": call.get("arguments") or "{}",
+        }
+        if call.get("id"):
+            call_item["id"] = call["id"]
+        items.append(call_item)
+        items.append(output)
+    return items
 
 
 def _run_responses_tool_loop(
@@ -1969,7 +2170,13 @@ def _run_responses_tool_loop(
     max_rounds: int = 3,
 ) -> Generator[str, None, None]:
     """Run a non-streaming Responses API function-call loop."""
-    response = _responses_create_with_retries(client, kwargs, provider=provider, model=model)
+    followup_instructions = kwargs.get("instructions")
+    response = _responses_create_with_retries(
+        client,
+        _responses_tool_loop_kwargs(kwargs),
+        provider=provider,
+        model=model,
+    )
     _update_route_capabilities(provider, model, supports_tools=True)
     for _round in range(max_rounds):
         calls = _response_function_calls(response)
@@ -1992,17 +2199,37 @@ def _run_responses_tool_loop(
                 "call_id": call["call_id"],
                 "output": result,
             })
-        response = _responses_create_with_retries(
-            client,
-            {
+        followup_kwargs = {
+            "model": model,
+            "input": tool_outputs,
+            "previous_response_id": _response_id(response),
+            "store": True,
+        }
+        if followup_instructions:
+            followup_kwargs["instructions"] = followup_instructions
+        try:
+            response = _responses_create_with_retries(
+                client,
+                followup_kwargs,
+                provider=provider,
+                model=model,
+            )
+        except Exception as exc:
+            if not _no_matching_tool_call_error(exc):
+                raise
+            fallback_kwargs = {
                 "model": model,
-                "input": tool_outputs,
-                "previous_response_id": _response_id(response),
+                "input": _stateless_tool_output_input(calls, tool_outputs),
                 "store": False,
-            },
-            provider=provider,
-            model=model,
-        )
+            }
+            if followup_instructions:
+                fallback_kwargs["instructions"] = followup_instructions
+            response = _responses_create_with_retries(
+                client,
+                fallback_kwargs,
+                provider=provider,
+                model=model,
+            )
     text = _response_output_text(response)
     if text:
         yield text
@@ -3221,6 +3448,8 @@ def _stream_single_response_route(
     temperature: float | None = None,
     json_mode: bool = False,
     history: list[dict] | None = None,
+    system_prompt: str | None = None,
+    route_kind: str = "query",
 ) -> Generator[str, None, None]:
     """Stream single response route."""
     _check_route_config(provider, model, route_name)
@@ -3238,7 +3467,7 @@ def _stream_single_response_route(
     tools_for_log = anthropic_tools and not image_base64
     if provider in _OPENAI_COMPAT_PROVIDER_SET and not macos_safety.openai_compat_tools_enabled():
         tools_for_log = False
-    _log_model_route("vision" if image_base64 else "query", provider, effective_model, use_tools=tools_for_log)
+    _log_model_route("vision" if image_base64 else route_kind, provider, effective_model, use_tools=tools_for_log)
     if image_base64:
         if provider in _OPENAI_COMPAT_PROVIDER_SET:
             client = None if _use_macos_openai_compat_non_streaming(provider) else _dynamic_openai_client(provider)
@@ -3295,6 +3524,7 @@ def _stream_single_response_route(
             temperature=temperature,
             json_mode=json_mode,
             history=history,
+            system_prompt=system_prompt,
         )
     elif provider == "anthropic":
         yield from _stream_anthropic(
@@ -3312,6 +3542,7 @@ def _stream_single_response_route(
             max_tokens=max_tokens,
             temperature=temperature,
             history=history,
+            system_prompt=system_prompt,
         )
     elif provider == "chatgpt":
         yield from _stream_codex(
@@ -3324,6 +3555,7 @@ def _stream_single_response_route(
             allowed_tools=allowed_tools,
             pinned_tools=pinned_tools,
             history=history,
+            system_prompt=system_prompt,
         )
     elif provider == "copilot":
         yield from _stream_copilot(
@@ -3333,6 +3565,8 @@ def _stream_single_response_route(
             memory_context,
             use_tools,
             allowed_tools=allowed_tools,
+            history=history,
+            system_prompt=system_prompt,
         )
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
@@ -3345,6 +3579,8 @@ def _stream_copilot(
     memory_context: str = "",
     use_tools: bool = False,
     allowed_tools: list[str] | None = None,
+    history: list[dict] | None = None,
+    system_prompt: str | None = None,
 ) -> Generator[str, None, None]:
     """Stream copilot."""
     from core.auth import copilot_client
@@ -3357,15 +3593,20 @@ def _stream_copilot(
             query=user_message,
         )
     parts = []
+    if system_prompt:
+        parts.append(system_prompt)
     if memory_context:
         parts.append(memory_context)
     if ambient_context:
         parts.append("Context:\n" + ambient_context)
     system = "\n\n".join(parts)
+    history_prefix = _codex_history_prefix(_sanitize_history(history))
+    prompt = (history_prefix + user_message) if history_prefix else user_message
     yield from copilot_client.stream(
-        user_message,
+        prompt,
         model,
         system=system,
+        session_id="wisp-chat" if history else None,
         allow_tools=False,
     )
 
@@ -3391,6 +3632,7 @@ def _stream_openai_compat(
     temperature: float | None = None,
     json_mode: bool = False,
     history: list[dict] | None = None,
+    system_prompt: str | None = None,
 ) -> Generator[str, None, None]:
     """Stream openai compat."""
     import json as _json
@@ -3426,7 +3668,14 @@ def _stream_openai_compat(
         tools_allowed = False
         use_tools = False
         allow_screenshot_tool = False
-    messages = _build_openai_messages(user_message, image_base64, ambient_context, memory_context, history)
+    messages = _build_openai_messages(
+        user_message,
+        image_base64,
+        ambient_context,
+        memory_context,
+        history,
+        system_prompt=system_prompt,
+    )
     expose_screenshot = tools_allowed and allow_screenshot_tool and not image_base64 and not json_mode
     if expose_screenshot and messages and messages[0].get("role") == "system":
         messages[0]["content"] = _with_screenshot_note(messages[0]["content"], True)
@@ -3516,6 +3765,8 @@ def _stream_openai_compat(
             max_tokens=max_tokens,
             temperature=temperature,
             json_mode=json_mode,
+            history=history,
+            system_prompt=system_prompt,
         )
 
     # Stream first round — yield text, accumulate any tool-call deltas.
@@ -3576,6 +3827,8 @@ def _stream_openai_compat(
                 max_tokens=max_tokens,
                 temperature=temperature,
                 json_mode=json_mode,
+                history=history,
+                system_prompt=system_prompt,
             )
             return
         if tools and _tools_not_supported_error(exc):
@@ -3753,6 +4006,7 @@ def _stream_codex(
     allowed_tools: list[str] | None = None,
     pinned_tools: list[str] | None = None,
     history: list[dict] | None = None,
+    system_prompt: str | None = None,
 ) -> Generator[str, None, None]:
     """Stream a response via the Codex endpoint using the Responses API."""
     prior_turns = _sanitize_history(history)
@@ -3784,7 +4038,7 @@ def _stream_codex(
                     {
                         "model": model,
                         "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
-                        "instructions": _with_tools_note(config.get_system_prompt(), True),
+                        "instructions": _with_tools_note(system_prompt or config.get_system_prompt(), True),
                         "tools": tools,
                         "store": False,
                     },
@@ -3827,7 +4081,7 @@ def _stream_codex(
         {
             "model": model,
             "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
-            "instructions": config.get_system_prompt(),
+            "instructions": system_prompt or config.get_system_prompt(),
             "store": False,
         },
         provider="chatgpt",
@@ -3962,6 +4216,7 @@ def _stream_anthropic(
     max_tokens: int | None = None,
     temperature: float | None = None,
     history: list[dict] | None = None,
+    system_prompt: str | None = None,
 ) -> Generator[str, None, None]:
     """Stream anthropic."""
     tools_active = use_tools or allow_screenshot_tool
@@ -3982,7 +4237,7 @@ def _stream_anthropic(
         use_tools = False
         allow_screenshot_tool = False
 
-    system = _with_screenshot_note(config.get_system_prompt(), allow_screenshot_tool)
+    system = _with_screenshot_note(system_prompt or config.get_system_prompt(), allow_screenshot_tool)
     system = _with_tools_note(system, use_tools)
     system = _with_memory_search_note(system, allowed_tools if use_tools else None)
     system = _with_memory_save_note(system, allowed_tools if use_tools else None)
@@ -4066,6 +4321,7 @@ def _stream_anthropic(
             max_tokens=max_tokens,
             temperature=temperature,
             history=history,
+            system_prompt=system_prompt,
         )
         return
 
@@ -4109,6 +4365,8 @@ def _stream_anthropic(
                 screenshot_tool_b64=screenshot_tool_b64,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                history=history,
+                system_prompt=system_prompt,
             )
             return
         if _streaming_not_supported_error(exc):
@@ -4227,6 +4485,34 @@ def _history_user_has_image(messages: list) -> bool:
         m.get("role") == "user" and m.get("image_base64")
         for m in messages
     )
+
+
+def _history_text_payload(messages: list) -> tuple[str, str, list[dict]]:
+    """Return (system, latest user message, prior text turns) for shared chat routing."""
+    system = next(
+        (
+            str(m.get("content") or "")
+            for m in messages
+            if m.get("role") == "system"
+        ),
+        config.get_system_prompt(),
+    )
+    turns: list[dict[str, str]] = []
+    for m in messages:
+        role = str(m.get("role") or "").strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content = m.get("content")
+        if not isinstance(content, str):
+            continue
+        turns.append({"role": role, "content": content})
+    last_user_idx = next(
+        (idx for idx in range(len(turns) - 1, -1, -1) if turns[idx].get("role") == "user"),
+        -1,
+    )
+    if last_user_idx < 0:
+        return system, "", turns
+    return system, turns[last_user_idx].get("content") or "", turns[:last_user_idx]
 
 
 def _openai_history_payload(messages: list) -> list:
@@ -4400,6 +4686,28 @@ def _stream_single_history_route(
     pinned_tools: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Stream single history route."""
+    if not _history_user_has_image(messages):
+        system_msg, user_message, history = _history_text_payload(messages)
+        chat_temperature = 0.7 if provider in _OPENAI_COMPAT_PROVIDER_SET else None
+        yield from _stream_single_response_route(
+            provider,
+            model,
+            user_message,
+            None,
+            "",
+            "",
+            use_tools=use_tools,
+            route_name=route_name,
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
+            max_tokens=1024,
+            temperature=chat_temperature,
+            history=history,
+            system_prompt=system_msg,
+            route_kind="chat",
+        )
+        return
+
     _check_route_config(provider, model, route_name)
     _log_model_route("chat", provider, model, use_tools=use_tools)
     if provider in _OPENAI_COMPAT_PROVIDER_SET:

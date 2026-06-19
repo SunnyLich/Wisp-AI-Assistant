@@ -11,9 +11,9 @@ from core.agent.toolbox import AgentToolbox
 from core.agent.workspace import ScopedWorkspace
 
 
-LOCAL_FILE_TOOLS = {"list_files", "read_file", "edit_file", "write_file"}
+LOCAL_FILE_TOOLS = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 READ_FILE_TOOLS = {"list_files", "read_file"}
-WRITE_FILE_TOOLS = {"edit_file", "write_file"}
+WRITE_FILE_TOOLS = {"create_file", "edit_file", "write_file"}
 FILE_ACCESS_MODES = ("off", "read", "ask", "auto")
 
 ApprovalCallback = Callable[[dict], bool]
@@ -204,6 +204,8 @@ def _dispatch_tool(toolbox: AgentToolbox, name: str, inputs: dict, rel_path: str
             message=f"Edited {toolbox.workspace.relative(rel_path)}.",
             data=result.data,
         )
+    if name == "create_file":
+        return toolbox.create_file(rel_path, str(inputs.get("content") or ""))
     if name == "write_file":
         return toolbox.write_file(rel_path, str(inputs.get("content") or ""))
     raise PermissionDenied(f"Unknown local file tool: {name}")

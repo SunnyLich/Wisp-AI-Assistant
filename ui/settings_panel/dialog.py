@@ -2531,6 +2531,7 @@ class SettingsDialog(QDialog):
             "Git/GitHub": _mode_data(blk["context_github_mode"]),
             "Memory": _mode_data(blk["context_memory_mode"]),
             "Screenshot": _mode_data(blk["context_screenshot"]),
+            "Files": _mode_data(blk["file_access"]),
         }
         dlg = ToolAccessDialog(
             self,
@@ -2842,7 +2843,7 @@ class SettingsDialog(QDialog):
             first = True
             tools = registry.list_tools()
             present = {spec.name for spec in tools}
-            for name in ("list_files", "read_file", "edit_file", "write_file"):
+            for name in ("list_files", "read_file", "create_file", "edit_file", "write_file"):
                 spec = registry.get_tool(name)
                 if spec is not None and name not in present:
                     tools.append(spec)

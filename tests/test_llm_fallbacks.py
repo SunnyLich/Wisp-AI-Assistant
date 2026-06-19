@@ -1025,7 +1025,7 @@ class LlmFallbackTests(unittest.TestCase):
 
         with (
             patch.object(llm, "_check_route_config", return_value=None),
-            patch.object(llm, "_get_chat_codex_client", return_value=SimpleNamespace(responses=FakeResponses())),
+            patch.object(llm, "_get_codex_client", return_value=SimpleNamespace(responses=FakeResponses())),
         ):
             chunks = list(
                 llm._stream_single_history_route(
@@ -1045,6 +1045,116 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn("tools", calls[0])
         self.assertEqual([tool["name"] for tool in calls[0]["tools"]], ["write_file"])
+        self.assertIn("Be useful.", calls[0]["instructions"])
+
+    def test_openai_compat_history_route_uses_allowed_tools(self):
+        """Verify OpenAI-compatible chat history routes can offer file tools."""
+        calls = []
+
+        class FakeStream:
+            """Fake streaming response."""
+            def __enter__(self):
+                """Enter fake stream."""
+                return iter([
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="stop",
+                                delta=SimpleNamespace(content="done", tool_calls=[]),
+                            )
+                        ]
+                    )
+                ])
+
+            def __exit__(self, exc_type, exc, tb):
+                """Exit fake stream."""
+                return False
+
+        class FakeCompletions:
+            """Fake chat completions API."""
+            def create(self, **kwargs):
+                """Record request and return fake stream."""
+                calls.append(kwargs)
+                return FakeStream()
+
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+        with (
+            patch.object(llm, "_check_route_config", return_value=None),
+            patch.object(llm, "_dynamic_openai_client", return_value=fake_client),
+            patch.object(llm.macos_safety, "openai_compat_tools_enabled", return_value=True),
+        ):
+            chunks = list(
+                llm._stream_single_history_route(
+                    "openai",
+                    "gpt-4o",
+                    [
+                        {"role": "user", "content": "previous"},
+                        {"role": "assistant", "content": "ok"},
+                        {"role": "system", "content": "Chat rules."},
+                        {"role": "user", "content": "create hello_world.py"},
+                    ],
+                    use_tools=True,
+                    allowed_tools=["create_file"],
+                    pinned_tools=[],
+                )
+            )
+
+        self.assertEqual(chunks, ["done"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("tools", calls[0])
+        self.assertEqual(
+            [tool["function"]["name"] for tool in calls[0]["tools"]],
+            ["create_file"],
+        )
+        self.assertIn("Chat rules.", calls[0]["messages"][0]["content"])
+        self.assertEqual(calls[0]["temperature"], 0.7)
+        self.assertEqual(
+            [message["role"] for message in calls[0]["messages"][1:]],
+            ["user", "assistant", "user"],
+        )
+
+    def test_copilot_history_route_preserves_history_and_system(self):
+        """Verify Copilot chat history uses the shared route without losing turns."""
+        calls = []
+
+        def fake_stream(prompt, model, *, system="", session_id=None, allow_tools=True):
+            """Record Copilot stream arguments."""
+            calls.append({
+                "prompt": prompt,
+                "model": model,
+                "system": system,
+                "session_id": session_id,
+                "allow_tools": allow_tools,
+            })
+            yield "done"
+
+        with (
+            patch.object(llm, "_check_route_config", return_value=None),
+            patch("core.auth.copilot_client.stream", fake_stream),
+        ):
+            chunks = list(
+                llm._stream_single_history_route(
+                    "copilot",
+                    "gpt-4.1",
+                    [
+                        {"role": "system", "content": "Chat rules."},
+                        {"role": "user", "content": "previous"},
+                        {"role": "assistant", "content": "ok"},
+                        {"role": "user", "content": "now"},
+                    ],
+                    use_tools=True,
+                    allowed_tools=["create_file"],
+                )
+            )
+
+        self.assertEqual(chunks, ["done"])
+        self.assertEqual(calls[0]["system"], "Chat rules.")
+        self.assertIn("User: previous", calls[0]["prompt"])
+        self.assertIn("Assistant: ok", calls[0]["prompt"])
+        self.assertTrue(calls[0]["prompt"].endswith("now"))
+        self.assertEqual(calls[0]["session_id"], "wisp-chat")
+        self.assertFalse(calls[0]["allow_tools"])
 
     def test_macos_openai_compat_query_uses_non_streaming_safe_mode(self):
         """Verify macos openai compat query uses non streaming safe mode behavior."""
