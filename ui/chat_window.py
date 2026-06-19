@@ -49,10 +49,11 @@ from PySide6.QtWidgets import (
 )
 
 import config
-from core.assistant_text import ThoughtStreamParser, merge_segment_iterables, split_tagged_text
+from core.assistant_text import ThoughtStreamParser, merge_segment_iterables
 from core.conversation_store import store as _conversation_store
 from core.conversation_store.store import GENERAL_PROJECT_ID as _GENERAL_PROJECT_ID
 from runtime.supervisor import tool_modes
+from ui.chat_rendering import _assistant_segments_to_html, _assistant_text_to_html
 from ui.i18n import t
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
@@ -698,100 +699,6 @@ def _merge_display_segments(segments: list[tuple[str, bool]], text: str, is_thou
     else:
         segments.append((text, is_thought))
     return segments
-
-
-def _segment_text_to_html(text: str) -> str:
-    """Handle segment text to html for UI chat window."""
-    return html.escape(text).replace("\n", "<br>")
-
-
-_WS_RE = re.compile(r"(\s+)")
-
-
-def _accent_color() -> str:
-    """The same colour the speech bubble uses to highlight TTS-read words."""
-    return getattr(config, "BUBBLE_READ_WORD_COLOR", "#4da3ff") or "#4da3ff"
-
-
-def _reply_html(text: str, start_idx: int, read_count: int | None) -> tuple[int, str]:
-    """Render a reply (non-thought) segment.
-
-    Parses ``**``/``__`` markdown bold the same way the speech bubble does. Bold
-    words are accent-coloured only while the TTS read-position is sweeping over
-    them; otherwise they stay bold in the normal text colour. Every whitespace-
-    delimited word advances a running index so it lines up with the bubble's read
-    position. ``read_count`` meanings:
-
-    * ``0``    — no bold words coloured (resting / history / after the highlight
-                 has reverted). This is the default.
-    * ``N>0``  — bold words whose index < N are coloured (live read-position).
-    * ``None`` — all bold words coloured (the brief "fully read" flash before the
-                 colour reverts).
-
-    Returns ``(next_idx, html)``.
-    """
-    accent = _accent_color()
-    parts: list[str] = []
-    idx = start_idx
-
-    def flush(segment: str, is_bold: bool) -> None:
-        """Handle flush for UI chat window."""
-        nonlocal idx
-        for piece in _WS_RE.split(segment):
-            if not piece:
-                continue
-            if piece.isspace():
-                parts.append(piece.replace("\n", "<br>"))
-                continue
-            if is_bold:
-                read = read_count is None or idx < read_count
-                style = "font-weight:bold;"
-                if read:
-                    style += f"color:{accent};"
-                parts.append(f'<span style="{style}">{html.escape(piece)}</span>')
-            else:
-                parts.append(html.escape(piece))
-            idx += 1
-
-    bold = False
-    buf = ""
-    i = 0
-    while i < len(text):
-        if text.startswith("**", i) or text.startswith("__", i):
-            flush(buf, bold)
-            buf = ""
-            bold = not bold
-            i += 2
-            continue
-        buf += text[i]
-        i += 1
-    flush(buf, bold)
-    return idx, "".join(parts)
-
-
-def _assistant_segments_to_html(
-    segments: list[tuple[str, bool]], read_count: int | None = 0
-) -> str:
-    """Handle assistant segments to html for UI chat window."""
-    parts: list[str] = []
-    idx = 0
-    prev_is_thought: bool | None = None
-    for text, is_thought in segments:
-        if is_thought:
-            parts.append(f'<span style="color: #8f8f9e;">{_segment_text_to_html(text)}</span>')
-        else:
-            # Separate the model's thinking from its reply with a line break.
-            if prev_is_thought:
-                parts.append("<br>")
-            idx, body = _reply_html(text, idx, read_count)
-            parts.append(body)
-        prev_is_thought = is_thought
-    return "".join(parts)
-
-
-def _assistant_text_to_html(text: str, read_count: int | None = 0) -> str:
-    """Handle assistant text to html for UI chat window."""
-    return _assistant_segments_to_html(split_tagged_text(text), read_count)
 
 
 class ChatWindow(QWidget):
@@ -1814,7 +1721,6 @@ class ChatWindow(QWidget):
             f"QTextBrowser::selection {{ background: rgba(160,160,255,60); color: {_TEXT}; }}"
         )
         if role == "assistant":
-            lbl._assistant_source = display_text  # type: ignore[attr-defined]  used by live highlight
             lbl.setHtml(_assistant_text_to_html(display_text))
         else:
             lbl.setPlainText(display_text)
@@ -2427,15 +2333,7 @@ class ChatWindow(QWidget):
         self._new_chat_btn.setEnabled(True)
 
     def update_live_highlight(self, reply_text: str, revealed_count: int, finished: bool):
-        """Mirror the speech bubble's TTS read-position onto the latest reply.
-
-        The voice reply is the last assistant message of the newest conversation.
-        The full streamed text is shown as soon as it arrives; while audio plays
-        we re-render so its bold words light up (accent colour) up to the spoken
-        word. When playback finishes every bold word is highlighted briefly, then
-        the colour reverts to normal a few seconds later. Works whether the chat
-        was already open (the page was ingested) or opened mid-reply.
-        """
+        """Optionally mirror a read-position without wiring bubble/TTS events here."""
         if not self._conversations:
             return
         last_idx = len(self._conversations) - 1
@@ -2446,7 +2344,6 @@ class ChatWindow(QWidget):
         if view is None:
             return
         display_text = _truncate_for_display(reply_text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
-        view._assistant_source = display_text  # type: ignore[attr-defined]
         if finished:
             # Flash all bold words highlighted, then revert to the normal colour.
             view.setHtml(_assistant_text_to_html(display_text, None))

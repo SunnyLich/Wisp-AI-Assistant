@@ -39,6 +39,7 @@ class OverlaySignals(QObject):
     bubble_finish      = Signal()      # response done, start hide countdown
     bubble_clear       = Signal()      # hide immediately
     bubble_highlight   = Signal(str, int, bool)  # (reply_text, revealed_count, finished)
+    bubble_stop_requested = Signal()   # user clicked X on the bubble
     show_icon          = Signal()      # make icon visible
     hide_icon          = Signal()      # hide icon after short delay
     raise_overlay      = Signal()      # bring overlay to foreground (Linux)
@@ -91,6 +92,7 @@ class IconOverlay(QMainWindow):
         self._bubble.set_highlight_callback(
             lambda text, count, finished: signals.bubble_highlight.emit(text, count, finished)
         )
+        self._bubble.set_stop_callback(signals.bubble_stop_requested.emit)
         self._current_state = "idle"
 
         # Drop-context panel (right side of icon)

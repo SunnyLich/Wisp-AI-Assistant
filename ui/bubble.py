@@ -7,7 +7,7 @@ Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
 from PySide6.QtWidgets import QWidget, QApplication
-from PySide6.QtCore import Qt, QTimer, QElapsedTimer
+from PySide6.QtCore import Qt, QTimer, QElapsedTimer, QRect
 from PySide6.QtGui import (
     QPainter, QColor, QFont, QFontMetrics,
     QBrush, QPen, QPainterPath,
@@ -26,6 +26,8 @@ _ICON_W       = 80
 _ICON_H       = 80
 _ICON_MARGIN  = 20
 _HIDE_DELAY    = 3_500   # fallback ms after finish() before hiding
+_CLOSE_SIZE    = 18
+_CLOSE_MARGIN  = 6
 
 
 def _color(value: str, fallback: QColor) -> QColor:
@@ -57,6 +59,7 @@ class SpeechBubble(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setMouseTracking(True)
 
         self._font = QFont("Segoe UI", _FONT_SIZE)
         self._bold_font = QFont("Segoe UI", _FONT_SIZE)
@@ -97,7 +100,7 @@ class SpeechBubble(QWidget):
         # Derive size from config
         screen = QApplication.primaryScreen().availableGeometry()
         self._bubble_w = config.BUBBLE_WIDTH
-        self._text_w = self._bubble_w - _PAD * 2
+        self._text_w = self._bubble_w - _PAD * 2 - _CLOSE_SIZE
         self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
 
@@ -136,11 +139,14 @@ class SpeechBubble(QWidget):
         self._press_pos = None            # global press position (click vs drag)
         self._press_timer = QElapsedTimer()  # measures press duration (click vs hold-to-speed)
         self._dragged = False             # True once the press moved past the click threshold
+        self._close_hover = False
+        self._close_pressed = False
         self._companion_callback = None   # called with new QPoint after each drag move
         self._hide_callback = None        # called when this widget hides (for icon sync)
         self._speed_callback = None       # called with True while hold-to-speed is active
         self._click_callback = None       # called on a click (no drag) — opens the chat window
         self._highlight_callback = None   # called(reply_text, revealed_count, finished)
+        self._stop_callback = None        # called when the user clicks the close/stop affordance
 
     # ------------------------------------------------------------------
     # Drag API
@@ -170,10 +176,14 @@ class SpeechBubble(QWidget):
         """
         self._highlight_callback = fn
 
+    def set_stop_callback(self, fn):
+        """Register callback fired when the user stops the visible bubble reply."""
+        self._stop_callback = fn
+
     def apply_config(self):
         """Apply live bubble size/line/speed settings after config.reload()."""
         self._bubble_w = config.BUBBLE_WIDTH
-        self._text_w = self._bubble_w - _PAD * 2
+        self._text_w = self._bubble_w - _PAD * 2 - _CLOSE_SIZE
         self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
         self._bubble_color = _color(config.BUBBLE_COLOR, QColor(28, 28, 36, 220))
@@ -204,6 +214,11 @@ class SpeechBubble(QWidget):
     def mousePressEvent(self, event):
         """Handle mouse press event for speech bubble."""
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._close_rect().contains(event.position().toPoint()):
+                self._close_pressed = True
+                event.accept()
+                self.update()
+                return
             self._set_speed_boost(True)
             self._press_pos = event.globalPosition().toPoint()
             self._press_timer.restart()
@@ -213,6 +228,13 @@ class SpeechBubble(QWidget):
 
     def mouseMoveEvent(self, event):
         """Handle mouse move event for speech bubble."""
+        hovering_close = self._close_rect().contains(event.position().toPoint())
+        if hovering_close != self._close_hover:
+            self._close_hover = hovering_close
+            self.update()
+        if self._close_pressed:
+            event.accept()
+            return
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
             point = event.globalPosition().toPoint()
             if (self._press_pos is not None
@@ -227,6 +249,16 @@ class SpeechBubble(QWidget):
     def mouseReleaseEvent(self, event):
         """Handle mouse release event for speech bubble."""
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._close_pressed:
+                should_stop = self._close_rect().contains(event.position().toPoint())
+                self._close_pressed = False
+                if should_stop:
+                    if self._stop_callback:
+                        self._stop_callback()
+                    self.clear()
+                event.accept()
+                self.update()
+                return
             self._set_speed_boost(False)
             # A click = pressed, didn't drag, and released quickly. A longer press
             # is the hold-to-speed gesture and must not open the chat window.
@@ -240,6 +272,12 @@ class SpeechBubble(QWidget):
             if was_click and self._click_callback:
                 self._click_callback()
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        """Clear hover state when the pointer leaves the bubble."""
+        self._close_hover = False
+        self.update()
+        super().leaveEvent(event)
 
     def wheelEvent(self, event):  # noqa: N802
         """Scroll the bubble text without requiring focus."""
@@ -567,6 +605,15 @@ class SpeechBubble(QWidget):
         if self._highlight_callback:
             self._highlight_callback(self._full_text, self._revealed_count, finished)
 
+    def _close_rect(self) -> QRect:
+        """Return the top-right close/stop hit target inside the bubble body."""
+        return QRect(
+            self._bubble_w - _CLOSE_MARGIN - _CLOSE_SIZE,
+            _CLOSE_MARGIN,
+            _CLOSE_SIZE,
+            _CLOSE_SIZE,
+        )
+
     def _current_reveal_wpm(self) -> int:
         """Handle current reveal wpm for speech bubble."""
         if self._speed_boosting:
@@ -852,6 +899,28 @@ class SpeechBubble(QWidget):
         p.setBrush(QBrush(self._bubble_color))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawPath(path)
+
+        close_rect = self._close_rect()
+        if self._close_hover or self._close_pressed:
+            hover_color = QColor(255, 255, 255, 24 if not self._close_pressed else 40)
+            p.setBrush(QBrush(hover_color))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(close_rect, 6, 6)
+        close_pen = QColor(205, 205, 220, 220 if self._close_hover else 150)
+        p.setPen(QPen(close_pen, 1.7))
+        pad = 5
+        p.drawLine(
+            close_rect.left() + pad,
+            close_rect.top() + pad,
+            close_rect.right() - pad,
+            close_rect.bottom() - pad,
+        )
+        p.drawLine(
+            close_rect.right() - pad,
+            close_rect.top() + pad,
+            close_rect.left() + pad,
+            close_rect.bottom() - pad,
+        )
 
         # Content
         p.setFont(self._font)

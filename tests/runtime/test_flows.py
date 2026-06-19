@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import queue
 import tempfile
 import threading
 import time
@@ -283,6 +284,27 @@ def test_bubble_speed_event_forwards_to_audio_worker():
     ui.emit("ui.bubble.speed", {"enabled": True})
 
     assert audio.last_call("audio.speed_boost")["params"] == {"enabled": True}
+
+
+def test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue():
+    """Verify bubble stop mutes visible output for the current reply."""
+    flow, _native, ui, _brain, audio = make_flow()
+    generation = flow._new_generation()
+    q: "queue.Queue[str | None]" = queue.Queue()
+    with flow._tts_lock:
+        flow._tts_generation = generation
+        flow._tts_queue = q
+        flow._tts_sequence_active = True
+
+    ui.emit("ui.bubble.stop", {})
+
+    assert flow._reply_bubble_cancelled(generation)
+    assert audio.last_call("audio.stop")
+    assert ui.last_call("ui.reply.reset")
+    assert ui.last_call("ui.overlay.state")["params"] == {"state": "idle"}
+    assert q.get_nowait() is None
+    flow._queue_tts_segment(generation, "do not speak")
+    assert not audio.calls_for("audio.tts.synthesize")
 
 
 def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():

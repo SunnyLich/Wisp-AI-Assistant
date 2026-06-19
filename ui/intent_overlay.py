@@ -1038,8 +1038,13 @@ class IntentOverlay(QWidget):
         idx = key_map.get(event.key())
         if idx is not None:
             self._select(idx)
+            event.accept()
+            return
         elif event.key() == Qt.Key.Key_Escape:
             self._cancel()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _win_force_foreground(self) -> None:
         """Force the overlay to the foreground on Windows, past the foreground lock.
@@ -1088,7 +1093,10 @@ class IntentOverlay(QWidget):
             import keyboard  # type: ignore
             self._kb_hook = keyboard.on_press(
                 lambda e: None if (not e or not e.name or self._closed) else self._raw_key.emit(e.name),
-                suppress=False,
+                # This picker is modal for a few seconds. Without suppression,
+                # context toggles like 1-7 also type into the app that was focused
+                # before the overlay appeared.
+                suppress=True,
             )
         elif _IS_MAC:
             # No global keyboard hook on macOS: pynput's Listener installs a

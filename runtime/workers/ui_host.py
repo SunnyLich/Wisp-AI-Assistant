@@ -1696,6 +1696,9 @@ class QtProtocolHost:
             self._overlay_signals.bubble_speed.connect(
                 lambda enabled: self.emit("ui.bubble.speed", {"enabled": bool(enabled)})
             )
+            self._overlay_signals.bubble_stop_requested.connect(
+                lambda: self.emit("ui.bubble.stop", {})
+            )
             self._overlay_signals.summon_caller.connect(
                 lambda idx: self.emit("ui.summon_caller", {"caller_idx": int(idx)})
             )
@@ -1738,6 +1741,7 @@ class QtProtocolHost:
                 from ui.bubble import SpeechBubble
 
                 self._bubble = SpeechBubble()
+                self._bubble.set_stop_callback(lambda: self.emit("ui.bubble.stop", {}))
         return self._bubble
 
     def _show_overlay(self) -> dict[str, Any]:
@@ -1991,8 +1995,6 @@ class QtProtocolHost:
 
     def _bubble_highlight(self, text: str, revealed_count: int, finished: bool) -> None:
         """Handle bubble highlight for qt protocol host."""
-        if self._chat is not None:
-            self._chat.update_live_highlight(text, int(revealed_count), bool(finished))
         self.emit(
             "ui.bubble.highlight",
             {"text": text, "revealed_count": int(revealed_count), "finished": bool(finished)},

@@ -311,6 +311,7 @@ class FlowController:
         self._tts_generation = 0
         self._tts_queue: "queue.Queue[str | None] | None" = None
         self._tts_sequence_active = False
+        self._reply_bubble_cancelled_generation = 0
         self._config_mtime = self._current_config_mtime()
 
     # -- lifecycle -----------------------------------------------------
@@ -349,6 +350,7 @@ class FlowController:
         self.ui.on_event("ui.agent.history.continue", self._on_agent_history_continue)
         self.ui.on_event("ui.settings.applied", self._on_settings_applied)
         self.ui.on_event("ui.bubble.speed", self._on_bubble_speed)
+        self.ui.on_event("ui.bubble.stop", self._on_bubble_stop)
         self.brain.on_event("reply.chunk", self._on_reply_chunk)
         self.brain.on_event("reply.done", self._on_reply_done)
         self.brain.on_event("agent.log", self._forward_agent_event("ui.agent.log"))
@@ -560,6 +562,10 @@ class FlowController:
             timeout=5.0,
         )
 
+    def _on_bubble_stop(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Stop the visible reply bubble and any speech for the current answer."""
+        self._schedule(self.stop_reply_bubble)
+
     def _on_audio_playback_started(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle audio playback started events."""
         self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
@@ -738,6 +744,16 @@ class FlowController:
         log.info("snip: ui.show_snip round-trip %.2fs", time.monotonic() - t0)
         self._fire(self.audio, "audio.stop")
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
+
+    def stop_reply_bubble(self) -> None:
+        """Hide the reply bubble and stop TTS for the current answer."""
+        with self._lock:
+            generation = self._current_generation
+            self._reply_bubble_cancelled_generation = generation
+        self._cancel_tts_sequence(generation)
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
+        self._safe_call(self.ui, "ui.overlay.state", {"state": "idle"}, timeout=30.0)
 
     def snip_region_selected(self, region: dict[str, Any]) -> None:
         """Handle snip region selected for flow controller."""
@@ -1578,6 +1594,8 @@ class FlowController:
                     log.info("query first reply chunk after %.2fs", time.monotonic() - query_started)
                 if not bool((payload or {}).get("is_progress")) and not bool((payload or {}).get("is_thought")):
                     streamed_reply_parts.append(str((payload or {}).get("text") or ""))
+                if self._reply_bubble_cancelled(gen):
+                    return
                 for segment, is_thought, is_progress in self._on_reply_chunk(payload):
                     if tts_segmenter is not None and is_progress and not is_thought:
                         self._queue_tts_segment(gen, segment)
@@ -1650,9 +1668,10 @@ class FlowController:
         text = str((result or {}).get("text") or "")
         file_context = list((result or {}).get("file_context") or [])
         self._last_reply = text
-        if text and "".join(streamed_reply_parts) != text:
+        bubble_cancelled = self._reply_bubble_cancelled(gen)
+        if text and not bubble_cancelled and "".join(streamed_reply_parts) != text:
             self._replace_reply_text(text)
-        if tts_segmenter is not None:
+        if tts_segmenter is not None and not bubble_cancelled:
             for tts_segment in tts_segmenter.finish():
                 self._queue_tts_segment(gen, tts_segment)
             self._finish_tts_sequence(gen)
@@ -1678,7 +1697,9 @@ class FlowController:
                 },
                 timeout=30.0,
             )
-        if self._is_current(gen) and text and self._tts_enabled():
+        if bubble_cancelled:
+            self._set_idle()
+        elif self._is_current(gen) and text and self._tts_enabled():
             if not self._tts_sequence_is_active():
                 self._speak_text(text, generation=gen)
         elif text and "".join(streamed_reply_parts) != text:
@@ -1847,6 +1868,11 @@ class FlowController:
         """Return whether current is true."""
         with self._lock:
             return generation == self._current_generation
+
+    def _reply_bubble_cancelled(self, generation: int) -> bool:
+        """Return whether bubble/TTS output was muted for this generation."""
+        with self._lock:
+            return generation == self._reply_bubble_cancelled_generation
 
     def _claim_voice_start(self) -> bool:
         """Handle claim voice start for flow controller."""
@@ -2999,8 +3025,20 @@ class FlowController:
         with self._tts_lock:
             return self._tts_sequence_active
 
+    def _cancel_tts_sequence(self, generation: int) -> None:
+        """Cancel queued TTS segments for one generation."""
+        with self._tts_lock:
+            q = self._tts_queue if self._tts_generation == generation else None
+            if q is not None:
+                self._tts_queue = None
+                self._tts_sequence_active = False
+        if q is not None:
+            q.put(None)
+
     def _ensure_tts_sequence(self, generation: int) -> "queue.Queue[str | None]":
         """Create or return the segmented TTS queue for this generation."""
+        if self._reply_bubble_cancelled(generation):
+            raise RuntimeError("reply bubble output is muted for this generation")
         with self._tts_lock:
             if self._tts_queue is not None and self._tts_generation == generation:
                 return self._tts_queue
@@ -3014,12 +3052,18 @@ class FlowController:
     def _queue_tts_segment(self, generation: int, text: str) -> None:
         """Queue one completed reply segment for TTS playback."""
         segment = " ".join((text or "").split())
-        if not segment or not self._is_current(generation):
+        if not segment or not self._is_current(generation) or self._reply_bubble_cancelled(generation):
             return
-        self._ensure_tts_sequence(generation).put(segment)
+        try:
+            q = self._ensure_tts_sequence(generation)
+        except RuntimeError:
+            return
+        q.put(segment)
 
     def _finish_tts_sequence(self, generation: int) -> None:
         """Close the segmented TTS queue for this generation."""
+        if self._reply_bubble_cancelled(generation):
+            return
         with self._tts_lock:
             q = self._tts_queue if self._tts_generation == generation else None
         if q is not None:
@@ -3028,21 +3072,21 @@ class FlowController:
     def _tts_sequence_worker(self, generation: int, q: "queue.Queue[str | None]") -> None:
         """Synthesize and play queued TTS segments sequentially."""
         try:
-            while self._is_current(generation):
+            while self._is_current(generation) and not self._reply_bubble_cancelled(generation):
                 segment = q.get()
                 if segment is None:
                     break
-                if not self._is_current(generation):
+                if not self._is_current(generation) or self._reply_bubble_cancelled(generation):
                     break
                 played = self._speak_text(segment, generation=generation, wait_for_playback=True)
-                if not played or not self._is_current(generation):
+                if not played or not self._is_current(generation) or self._reply_bubble_cancelled(generation):
                     break
         finally:
             with self._tts_lock:
                 if self._tts_queue is q:
                     self._tts_queue = None
                     self._tts_sequence_active = False
-            if self._is_current(generation):
+            if self._is_current(generation) and not self._reply_bubble_cancelled(generation):
                 self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
                 self._set_idle()
 
@@ -3054,13 +3098,17 @@ class FlowController:
         wait_for_playback: bool = False,
     ) -> bool:
         """Handle speak text for flow controller."""
-        if generation is not None and not self._is_current(generation):
+        if generation is not None and (
+            not self._is_current(generation) or self._reply_bubble_cancelled(generation)
+        ):
             return False
         try:
             result = self.audio.call("audio.tts.synthesize", {"text": text}, timeout=180.0)
             path = result.get("path") if isinstance(result, dict) else ""
             if path:
-                if generation is not None and not self._is_current(generation):
+                if generation is not None and (
+                    not self._is_current(generation) or self._reply_bubble_cancelled(generation)
+                ):
                     return False
                 self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
                 # Buffer Cartesia word timestamps in the bubble *before* playback

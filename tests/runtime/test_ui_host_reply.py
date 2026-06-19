@@ -25,6 +25,28 @@ def test_reply_chunk_accepts_progress_metadata() -> None:
     assert bubble.chunks == [("Reading files...", False)]
 
 
+def test_bubble_highlight_does_not_mutate_chat_window() -> None:
+    """Verify TTS bubble highlight leaves selectable chat transcript alone."""
+    from types import SimpleNamespace
+
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    chat_updates = []
+    emitted = []
+    host._chat = SimpleNamespace(
+        update_live_highlight=lambda *args: chat_updates.append(args)
+    )
+    host.emit = lambda event, payload: emitted.append((event, payload))  # type: ignore[method-assign]
+
+    host._bubble_highlight("done", 1, False)
+
+    assert chat_updates == []
+    assert emitted == [
+        ("ui.bubble.highlight", {"text": "done", "revealed_count": 1, "finished": False})
+    ]
+
+
 def test_chat_add_conversation_stamps_metadata() -> None:
     """Verify hotkey-created conversations carry display-only timestamps."""
     from runtime.workers.ui_host import QtProtocolHost
