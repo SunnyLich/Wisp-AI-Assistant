@@ -188,6 +188,7 @@ def _clean_messages(messages: list, fallback_created_at: str) -> list[dict]:
         if not isinstance(raw, dict):
             continue
         item = dict(raw)
+        item.setdefault("id", str(uuid.uuid4()))
         item.setdefault("created_at", fallback_created_at)
         cleaned.append(item)
     return cleaned

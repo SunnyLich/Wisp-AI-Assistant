@@ -65,6 +65,7 @@ def test_conversation_round_trip_and_title(tmp_path, monkeypatch):
     assert loaded[0]["project_id"] == store.GENERAL_PROJECT_ID
     assert loaded[0]["id"]
     assert all(msg.get("created_at") for msg in loaded[0]["messages"])
+    assert all(msg.get("id") for msg in loaded[0]["messages"])
 
 
 def test_pin_and_rename_round_trip(tmp_path, monkeypatch):

@@ -7,11 +7,13 @@ import time
 import pytest
 
 from ui.chat_window import (
-    ChatWindow,
     _CHAT_RENDER_CHAR_LIMIT,
+    ChatWindow,
     _chat_model_messages,
     _file_context_text,
     _format_conversation_datetime,
+    _latest_tool_context_from_messages,
+    _merge_file_context_from_messages,
     _message_timestamp_text,
     _truncate_for_display,
     _truncate_segments_for_display,
@@ -51,8 +53,19 @@ def test_conversation_datetime_formats_for_history_display():
 def test_chat_model_messages_excludes_timestamp_metadata():
     """Verify model payload only carries role/content and screenshots."""
     messages = [
-        {"role": "user", "content": "hi", "created_at": "2026-06-19T15:52:16+00:00"},
-        {"role": "assistant", "content": "hello", "updated_at": "2026-06-19T15:52:17+00:00"},
+        {
+            "role": "user",
+            "content": "hi",
+            "id": "m1",
+            "created_at": "2026-06-19T15:52:16+00:00",
+        },
+        {
+            "role": "assistant",
+            "content": "hello",
+            "id": "m2",
+            "updated_at": "2026-06-19T15:52:17+00:00",
+            "file_context": [{"tool": "read_file", "path": "a.py"}],
+        },
     ]
 
     assert _chat_model_messages(messages) == [
@@ -82,6 +95,32 @@ def test_file_context_text_mentions_exact_prior_path():
 
     assert r"C:\repo\model_files\hello_world.py" in text
     assert "that file" in text
+
+
+def test_hidden_context_rebuilds_from_retained_messages():
+    """Verify branch/rewind metadata can be rebuilt from message-scoped metadata."""
+    file_context = [
+        {
+            "tool": "create_file",
+            "path": r"C:\repo\model_files\hello_world.py",
+            "relative_path": "hello_world.py",
+            "root": "",
+            "ok": True,
+            "message": "",
+        }
+    ]
+    tool_context = {
+        "allowed_tools": ["read_file"],
+        "pinned_tools": ["read_file"],
+        "file_access_mode": "ask",
+    }
+    messages = [
+        {"role": "user", "content": "create"},
+        {"role": "assistant", "content": "done", "file_context": file_context, "tool_context": tool_context},
+    ]
+
+    assert _merge_file_context_from_messages(messages) == file_context
+    assert _latest_tool_context_from_messages(messages) == tool_context
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -302,6 +341,28 @@ def test_chat_window_reports_initial_active_conversation():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_window_selection_notice_names_continued_chat():
+    """Verify switching chats shows which conversation will continue."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [
+        {"messages": [{"role": "user", "content": "old topic"}]},
+        {"messages": [{"role": "user", "content": "new topic"}]},
+    ]
+    window = ChatWindow(conversations, lambda _messages: iter(()), active_idx=0)
+    try:
+        window._switch(1)
+
+        assert window._past_notice.isHidden() is False
+        assert "new topic" in window._past_notice.text()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
     """Verify chat sidebar options menu anchors to button behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -349,11 +410,11 @@ def test_chat_final_text_replaces_partial_stream_before_persist():
         window._on_final_text("first part plus second part")
         window._on_finished()
 
-        assert conversations[0]["messages"][-1] == {
-            "role": "assistant",
-            "content": "first part plus second part",
-            "created_at": conversations[0]["messages"][-1]["created_at"],
-        }
+        saved = conversations[0]["messages"][-1]
+        assert saved["role"] == "assistant"
+        assert saved["content"] == "first part plus second part"
+        assert saved["created_at"]
+        assert saved["id"]
         assert conversations[0]["updated_at"]
     finally:
         window.close()
@@ -423,6 +484,112 @@ def test_chat_window_persists_returned_tool_context():
         window._on_finished()
 
         assert conversations[0]["tool_context"] == tool_context
+        assert conversations[0]["messages"][-1]["tool_context"] == tool_context
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_branch_from_message_recomputes_hidden_context():
+    """Verify branching keeps only retained message-scoped hidden context."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    first_file_context = [
+        {
+            "tool": "create_file",
+            "path": r"C:\repo\first.py",
+            "relative_path": "first.py",
+            "root": "",
+            "ok": True,
+            "message": "",
+        }
+    ]
+    later_file_context = [
+        {
+            "tool": "create_file",
+            "path": r"C:\repo\later.py",
+            "relative_path": "later.py",
+            "root": "",
+            "ok": True,
+            "message": "",
+        }
+    ]
+    first_tool_context = {
+        "allowed_tools": ["read_file"],
+        "pinned_tools": ["read_file"],
+        "file_access_mode": "read",
+    }
+    later_tool_context = {
+        "allowed_tools": ["read_file", "edit_file"],
+        "pinned_tools": ["edit_file"],
+        "file_access_mode": "ask",
+    }
+    conversations = [
+        {
+            "messages": [
+                {"role": "user", "content": "first", "context": "[Attached]\nfirst context"},
+                {
+                    "role": "assistant",
+                    "content": "done",
+                    "file_context": first_file_context,
+                    "tool_context": first_tool_context,
+                },
+                {"role": "user", "content": "later", "context": "[Attached]\nlater context"},
+                {
+                    "role": "assistant",
+                    "content": "later done",
+                    "file_context": later_file_context,
+                    "tool_context": later_tool_context,
+                },
+            ],
+            "context": "first context\n\n---\nlater context",
+            "file_context": first_file_context + later_file_context,
+            "tool_context": later_tool_context,
+        }
+    ]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    try:
+        window._branch_from_message(0, 1)
+
+        assert len(conversations) == 2
+        branch = conversations[1]
+        assert [m["content"] for m in branch["messages"]] == ["first", "done"]
+        assert branch["context"] == "[Attached]\nfirst context"
+        assert branch["file_context"] == first_file_context
+        assert branch["tool_context"] == first_tool_context
+        assert window._active_idx == 1
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_rewind_current_chat_requires_confirmation(monkeypatch):
+    """Verify destructive rewind truncates only after confirmation."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [
+        {
+            "messages": [
+                {"role": "user", "content": "first", "context": "first context"},
+                {"role": "assistant", "content": "done"},
+                {"role": "user", "content": "later", "context": "later context"},
+            ],
+            "context": "first context\n\n---\nlater context",
+        }
+    ]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+    try:
+        window._rewind_to_message(0, 0)
+
+        assert [m["content"] for m in conversations[0]["messages"]] == ["first"]
+        assert conversations[0]["context"] == "first context"
     finally:
         window.close()
         app.processEvents()
@@ -461,6 +628,43 @@ def test_chat_window_drop_attachments_feed_next_message_context_and_image():
         assert captured[0][-1]["image_base64"] == "IMAGEB64"
         assert conversations[0]["messages"][0]["image_base64"] == "IMAGEB64"
         assert "remember this text" in conversations[0]["context"]
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_attachment_button_path_feeds_next_message_context(tmp_path):
+    """Verify file-picker attachments use the same context path as drag/drop."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    captured = []
+    note = tmp_path / "note.txt"
+    note.write_text("button-added context", encoding="utf-8")
+    conversations = [{"messages": []}]
+
+    def send_fn(messages):
+        captured.append(messages)
+        yield "ok"
+
+    window = ChatWindow(conversations, send_fn)
+    try:
+        attach_btn = window.findChild(QPushButton, "chatAttachButton")
+        assert attach_btn is not None
+        assert attach_btn.text() == "+"
+
+        assert window._add_attachment_paths([str(note)]) is True
+        window._send("use the picked file")
+        for _ in range(20):
+            app.processEvents()
+            if captured:
+                break
+
+        assert captured
+        assert "button-added context" in captured[0][0]["content"]
+        assert "button-added context" in conversations[0]["context"]
     finally:
         window.close()
         app.processEvents()

@@ -13,10 +13,10 @@ import inspect
 import re
 import threading
 import uuid
+from copy import deepcopy
 from datetime import UTC, datetime
 
-import config
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QMimeData, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -46,6 +47,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+import config
 from core.assistant_text import ThoughtStreamParser, merge_segment_iterables, split_tagged_text
 from core.conversation_store.store import GENERAL_PROJECT_ID as _GENERAL_PROJECT_ID
 from runtime.supervisor import tool_modes
@@ -113,6 +116,25 @@ def _touch_conversation(conv: dict, *, now: str | None = None) -> str:
     conv.setdefault("created_at", stamp)
     conv["updated_at"] = stamp
     return stamp
+
+
+def _ensure_message_metadata(msg: dict, *, fallback_created_at: str | None = None) -> dict:
+    """Ensure one persisted chat turn has stable display and action metadata."""
+    if not isinstance(msg, dict):
+        return msg
+    msg.setdefault("id", str(uuid.uuid4()))
+    msg.setdefault("created_at", fallback_created_at or _now_iso())
+    return msg
+
+
+def _ensure_conversation_metadata(conv: dict) -> None:
+    """Backfill stable IDs/timestamps for older in-memory conversations."""
+    stamp = conv.get("created_at") or conv.get("updated_at") or _now_iso()
+    conv.setdefault("created_at", stamp)
+    conv.setdefault("updated_at", stamp)
+    for msg in conv.get("messages", []) or []:
+        if isinstance(msg, dict):
+            _ensure_message_metadata(msg, fallback_created_at=stamp)
 
 
 def _chat_model_messages(messages: list[dict]) -> list[dict[str, str]]:
@@ -189,6 +211,45 @@ def _merge_tool_context(conv: dict, raw: dict) -> None:
     ctx = _normalized_tool_context(raw)
     if ctx:
         conv["tool_context"] = ctx
+
+
+def _merge_file_context_from_messages(messages: list) -> list[dict]:
+    """Rebuild conversation file metadata from retained message metadata."""
+    items: list = []
+    for msg in messages or []:
+        if isinstance(msg, dict):
+            items.extend(msg.get("file_context") or [])
+    return _normalized_file_context(items)
+
+
+def _latest_tool_context_from_messages(messages: list) -> dict:
+    """Return the latest retained tool policy metadata from assistant replies."""
+    latest: dict = {}
+    for msg in messages or []:
+        if isinstance(msg, dict):
+            ctx = _normalized_tool_context(msg.get("tool_context") or {})
+            if ctx:
+                latest = ctx
+    return latest
+
+
+def _context_from_messages(messages: list) -> str:
+    """Rebuild hidden context from retained message-scoped context blocks."""
+    blocks: list[str] = []
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        raw = msg.get("context")
+        if isinstance(raw, list):
+            for item in raw:
+                text = str(item or "").strip()
+                if text:
+                    blocks.append(text)
+        else:
+            text = str(raw or "").strip()
+            if text:
+                blocks.append(text)
+    return "\n\n---\n".join(blocks)
 
 
 def _context_mode(value: object, default: str = "off") -> str:
@@ -431,6 +492,10 @@ class _MessageTextView(QTextBrowser):
         super().resizeEvent(event)
         if event.size().width() != event.oldSize().width():
             self._sync_height()
+
+    def wheelEvent(self, event):  # noqa: N802
+        """Let the conversation page scroll instead of the individual bubble."""
+        event.ignore()
 
 
 class _ConversationTitleButton(QPushButton):
@@ -687,6 +752,9 @@ class ChatWindow(QWidget):
         """
         super().__init__()
         self._conversations = conversations  # live reference -” NOT a copy
+        for conv in self._conversations:
+            if isinstance(conv, dict):
+                _ensure_conversation_metadata(conv)
         self._send_fn = send_fn
         self._on_select = on_select
         self._projects = list(projects or [])
@@ -708,6 +776,7 @@ class ChatWindow(QWidget):
         self._pending_attachment_image_b64: str | None = None
         self._pending_attachment_labels: list[str] = []
         self._attachment_label: QLabel | None = None
+        self._attach_btn: QPushButton | None = None
         self._context_controls: dict[str, QPushButton] = {}
         self._context_control_options: dict[str, list[tuple[str, str]]] = {}
         self._context_control_labels: dict[str, str] = {}
@@ -1098,7 +1167,7 @@ class ChatWindow(QWidget):
         if idx < self._stack.count():
             self._ensure_page_built(idx)
             self._stack.setCurrentIndex(idx)
-        self._past_notice.setVisible(False)
+        self._update_selected_conversation_notice(idx)
         self._input_frame.setEnabled(bool(self._conversations))
         for real_idx, btn in self._sidebar_btns:
             is_sel = (real_idx == idx)
@@ -1113,6 +1182,16 @@ class ChatWindow(QWidget):
         if self._on_select and 0 <= idx < len(self._conversations):
             self._on_select(idx)
         self._refresh_context_controls()
+
+    def _update_selected_conversation_notice(self, idx: int) -> None:
+        """Show which conversation the composer will continue."""
+        if not (0 <= idx < len(self._conversations)):
+            self._past_notice.setVisible(False)
+            return
+        title = self._conversation_title(idx, self._conversations[idx])
+        self._past_notice.setText(f"  {t('Continuing')}: {title}")
+        self._past_notice.setToolTip(title)
+        self._past_notice.setVisible(True)
 
     def sync_conversation(self, idx: int) -> None:
         """Rebuild and show a conversation a hotkey/voice prompt just appended to.
@@ -1275,7 +1354,8 @@ class ChatWindow(QWidget):
             layout.insertWidget(insert_at, hint)  # sits above the first message
 
         last_ai: _MessageTextView | None = None
-        for msg in conv["messages"]:
+        _ensure_conversation_metadata(conv)
+        for msg_idx, msg in enumerate(conv["messages"]):
             display_text = msg.get("display_content", msg["content"])
             view = self._bubble(
                 layout,
@@ -1283,6 +1363,8 @@ class ChatWindow(QWidget):
                 msg["role"],
                 msg.get("image_base64"),
                 created_at=msg.get("created_at") or conv.get("created_at"),
+                conversation_index=idx,
+                message_index=msg_idx,
             )
             if msg["role"] == "assistant":
                 last_ai = view
@@ -1377,6 +1459,21 @@ class ChatWindow(QWidget):
         )
         self._input.installEventFilter(self)
 
+        self._attach_btn = QPushButton("+")
+        self._attach_btn.setObjectName("chatAttachButton")
+        self._attach_btn.setFixedSize(34, 46)
+        self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._attach_btn.setToolTip(t("Add files or images as context"))
+        self._attach_btn.setAccessibleName(t("Add files or images as context"))
+        self._attach_btn.setStyleSheet(
+            f"QPushButton {{ background: rgba(160,160,255,18); color: {_ACCENT};"
+            f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 18pt;"
+            " font-weight: 400; padding: 0 0 3px 0; }}"
+            "QPushButton:hover { background: rgba(160,160,255,32); }"
+            "QPushButton:disabled { color: #666; border-color: rgba(255,255,255,10); }"
+        )
+        self._attach_btn.clicked.connect(self._choose_attachments)
+
         self._send_btn = QPushButton(t("Send"))
         self._send_btn.setFixedSize(64, 46)
         self._send_btn.setStyleSheet(
@@ -1386,6 +1483,7 @@ class ChatWindow(QWidget):
             f"QPushButton:disabled {{ background: #444; color: #666; }}"
         )
         self._send_btn.clicked.connect(self._on_send_clicked)
+        h.addWidget(self._attach_btn)
         h.addWidget(self._input)
         h.addWidget(self._send_btn)
         outer.addLayout(h)
@@ -1556,6 +1654,8 @@ class ChatWindow(QWidget):
         image_b64: str | None = None,
         *,
         created_at: str | None = None,
+        conversation_index: int | None = None,
+        message_index: int | None = None,
     ) -> _MessageTextView:
         """Handle bubble for chat window."""
         bg = '#3a3a5c' if role == 'user' else '#26263a'
@@ -1577,13 +1677,49 @@ class ChatWindow(QWidget):
             role_text = f"{role_text} · {stamp}"
         role_lbl = QLabel(role_text)
         role_lbl.setStyleSheet(f"color: {_HINT}; background: transparent; font-size: 8pt;")
+        role_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         wrapper = QWidget()
         wrapper.setStyleSheet("background: transparent;")
+        if conversation_index is not None and message_index is not None:
+            wrapper.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            wrapper.customContextMenuRequested.connect(
+                lambda pos, w=wrapper, ci=conversation_index, mi=message_index: self._open_message_menu(
+                    ci,
+                    mi,
+                    w,
+                    pos,
+                )
+            )
         wl = QVBoxLayout(wrapper)
         wl.setContentsMargins(0, 0, 0, 0)
         wl.setSpacing(2)
-        wl.addWidget(role_lbl)
+        header = QWidget()
+        header.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(4)
+        hl.addWidget(role_lbl)
+        if conversation_index is not None and message_index is not None:
+            menu_btn = QPushButton("...")
+            menu_btn.setFixedSize(28, 20)
+            menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            menu_btn.setToolTip(t("Message options"))
+            menu_btn.setAccessibleName(t("Message options"))
+            menu_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
+                " font-size: 9pt; font-weight: 700; padding: 0; margin: 0; }"
+                f"QPushButton:hover {{ background: rgba(255,255,255,12); color: {_TEXT}; }}"
+            )
+            menu_btn.clicked.connect(
+                lambda _checked=False, button=menu_btn, ci=conversation_index, mi=message_index: self._open_message_menu(
+                    ci,
+                    mi,
+                    button,
+                )
+            )
+            hl.addWidget(menu_btn)
+        wl.addWidget(header)
 
         if image_b64 and role == "user":
             try:
@@ -1610,6 +1746,117 @@ class ChatWindow(QWidget):
         wl.addWidget(lbl)
         layout.insertWidget(layout.count() - 1, wrapper)  # before trailing stretch
         return lbl
+
+    def _open_message_menu(
+        self,
+        conversation_index: int,
+        message_index: int,
+        anchor: QWidget | None = None,
+        local_pos=None,
+    ) -> None:
+        """Open actions for one message bubble."""
+        if self._streaming:
+            return
+        if not (0 <= conversation_index < len(self._conversations)):
+            return
+        messages = self._conversations[conversation_index].get("messages", [])
+        if not (0 <= message_index < len(messages)):
+            return
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {_TITLE_BG}; color: {_TEXT};"
+            f" border: 1px solid {_BORDER}; }}"
+            f"QMenu::item:selected {{ background: {_SEL_BG}; }}"
+        )
+        menu.addAction(
+            t("Branch from here"),
+            lambda ci=conversation_index, mi=message_index: self._branch_from_message(ci, mi),
+        )
+        menu.addSeparator()
+        menu.addAction(
+            t("Rewind current chat to here"),
+            lambda ci=conversation_index, mi=message_index: self._rewind_to_message(ci, mi),
+        )
+        if anchor is None:
+            pos = self.mapToGlobal(self.rect().center())
+        elif local_pos is not None:
+            pos = anchor.mapToGlobal(local_pos)
+        else:
+            pos = anchor.mapToGlobal(anchor.rect().bottomLeft())
+        menu.popup(pos)
+
+    def _conversation_slice(self, conv: dict, message_index: int, *, new_id: bool) -> dict:
+        """Copy a conversation through one message and rebuild hidden context."""
+        retained = deepcopy((conv.get("messages") or [])[: message_index + 1])
+        now = _now_iso()
+        for msg in retained:
+            if isinstance(msg, dict):
+                _ensure_message_metadata(msg, fallback_created_at=conv.get("created_at") or now)
+        retained_all = message_index == len(conv.get("messages", []) or []) - 1
+        context = _context_from_messages(retained)
+        file_context = _merge_file_context_from_messages(retained)
+        tool_context = _latest_tool_context_from_messages(retained)
+        if retained_all:
+            context = context or str(conv.get("context") or "")
+            file_context = file_context or _normalized_file_context(conv.get("file_context") or [])
+            tool_context = tool_context or _normalized_tool_context(conv.get("tool_context") or {})
+        sliced = {
+            "id": str(uuid.uuid4()) if new_id else (conv.get("id") or str(uuid.uuid4())),
+            "project_id": conv.get("project_id") or _GENERAL_PROJECT_ID,
+            "messages": retained,
+            "context": context,
+            "file_context": file_context,
+            "tool_context": tool_context,
+            "context_policy": _normalized_context_policy(conv.get("context_policy") or {}),
+            "created_at": conv.get("created_at") or now,
+            "updated_at": now,
+        }
+        return sliced
+
+    def _branch_from_message(self, conversation_index: int, message_index: int) -> None:
+        """Create and select a non-destructive branch ending at a message."""
+        if self._streaming or not (0 <= conversation_index < len(self._conversations)):
+            return
+        conv = self._conversations[conversation_index]
+        if not (0 <= message_index < len(conv.get("messages", []))):
+            return
+        branch = self._conversation_slice(conv, message_index, new_id=True)
+        self._conversations.append(branch)
+        if self._has_placeholder:
+            placeholder = self._stack.widget(0)
+            self._stack.removeWidget(placeholder)
+            placeholder.deleteLater()
+            self._has_placeholder = False
+        idx = len(self._conversations) - 1
+        self._stack.addWidget(self._make_page(idx, branch))
+        self._input_frame.setEnabled(True)
+        self._rebuild_sidebar()
+        self._switch(idx)
+        self._persist()
+
+    def _rewind_to_message(self, conversation_index: int, message_index: int) -> None:
+        """Destructively truncate the active conversation after confirmation."""
+        if self._streaming or conversation_index != self._active_idx:
+            return
+        if not (0 <= conversation_index < len(self._conversations)):
+            return
+        conv = self._conversations[conversation_index]
+        messages = conv.get("messages", [])
+        if not (0 <= message_index < len(messages)) or message_index == len(messages) - 1:
+            return
+        if QMessageBox.question(
+            self,
+            t("Rewind conversation"),
+            t("Remove all messages after this one? This cannot be undone."),
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        sliced = self._conversation_slice(conv, message_index, new_id=False)
+        conv.clear()
+        conv.update(sliced)
+        self._built_pages.discard(conversation_index)
+        self._rebuild_sidebar()
+        self._switch(conversation_index)
+        self._persist()
 
     def _active_layout(self):
         """Handle active layout for chat window."""
@@ -1651,6 +1898,30 @@ class ChatWindow(QWidget):
             event.acceptProposedAction()
             return
         super().dropEvent(event)
+
+    def _choose_attachments(self) -> None:
+        """Open a picker and attach selected files to the next outgoing turn."""
+        paths, _selected_filter = QFileDialog.getOpenFileNames(
+            self,
+            t("Add files or images"),
+            "",
+            (
+                f"{t('Supported files')} (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.tiff *.tif "
+                "*.txt *.md *.py *.js *.ts *.json *.yaml *.yml *.csv *.html *.css *.xml "
+                "*.docx *.pdf *.xlsx *.xls *.pptx *.odt *.ods *.odp);;"
+                f"{t('All files')} (*)"
+            ),
+        )
+        self._add_attachment_paths(paths)
+
+    def _add_attachment_paths(self, paths: list[str]) -> bool:
+        """Attach local files by reusing the drag/drop MIME extraction path."""
+        local_paths = [str(path or "").strip() for path in paths or [] if str(path or "").strip()]
+        if not local_paths:
+            return False
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(path) for path in local_paths])
+        return self._add_attachments_from_mime(mime)
 
     def _add_attachments_from_mime(self, mime) -> bool:
         """Convert dropped MIME data into next-message context/image attachments."""
@@ -1765,20 +2036,30 @@ class ChatWindow(QWidget):
         attachment_context, attachment_image, attachment_labels = self._consume_pending_attachments()
         if attachment_context:
             label = ", ".join(attachment_labels) if attachment_labels else t("Attachments")
-            conv["context"] = _append_context_block(
-                conv.get("context", ""),
-                f"{t('Attached')} · {label}",
-                attachment_context,
-            )
+            attachment_context_block = f"[{t('Attached')} · {label}]\n{attachment_context.strip()}"
+            conv["context"] = _append_context_block(conv.get("context", ""), f"{t('Attached')} · {label}", attachment_context)
+        else:
+            attachment_context_block = ""
         context_policy = _ensure_conversation_context_policy(conv)
         now = _touch_conversation(conv)
 
         layout = self._active_layout()
         if layout:
-            self._bubble(layout, text, "user", attachment_image, created_at=now)
+            self._bubble(
+                layout,
+                text,
+                "user",
+                attachment_image,
+                created_at=now,
+                conversation_index=self._active_idx,
+                message_index=len(conv["messages"]),
+            )
         user_message = {"role": "user", "content": text, "created_at": now}
+        _ensure_message_metadata(user_message, fallback_created_at=now)
         if attachment_image:
             user_message["image_base64"] = attachment_image
+        if attachment_context_block:
+            user_message["context"] = attachment_context_block
         conv["messages"].append(user_message)
 
         self._current_ai_text = ""
@@ -1901,8 +2182,13 @@ class ChatWindow(QWidget):
             conv = self._conversations[self._active_idx]
             stamp = _touch_conversation(conv)
             message = {"role": "assistant", "content": self._current_ai_reply_text, "created_at": stamp}
+            _ensure_message_metadata(message, fallback_created_at=stamp)
             if self._current_ai_text != self._current_ai_reply_text:
                 message["display_content"] = self._current_ai_text
+            if self._current_file_context:
+                message["file_context"] = self._current_file_context
+            if self._current_tool_context:
+                message["tool_context"] = self._current_tool_context
             conv["messages"].append(message)
             _merge_file_context(conv, self._current_file_context)
             _merge_tool_context(conv, self._current_tool_context)
@@ -1956,7 +2242,7 @@ class ChatWindow(QWidget):
             self._scroll_bottom()
 
     @staticmethod
-    def _revert_highlight(view: "_MessageTextView", source: str):
+    def _revert_highlight(view: _MessageTextView, source: str):
         """Re-render a finished reply with no highlight (bold words back to normal)."""
         try:
             view.setHtml(_assistant_text_to_html(source, 0))

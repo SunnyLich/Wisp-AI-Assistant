@@ -119,6 +119,28 @@ def test_chat_request_reuses_active_conversation_tool_context() -> None:
     ]
 
 
+def test_selecting_chat_shows_overlay_continuation_notice() -> None:
+    """Verify chat selection reflects the target conversation in the bubble."""
+    from types import SimpleNamespace
+
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = 0
+    host._all_conversations = [
+        {"messages": [{"role": "user", "content": "old chat"}]},
+        {"messages": [{"role": "user", "content": "new chat"}]},
+    ]
+    host._chat = SimpleNamespace(_streaming=False)
+    notices = []
+    host._ensure_bubble = lambda: SimpleNamespace(show_notice=lambda text, timeout_ms=0: notices.append((text, timeout_ms)))  # type: ignore[attr-defined]
+
+    host._set_active_conversation(1)
+
+    assert host._active_conversation_idx == 1
+    assert notices == [("Continuing: new chat", 2500)]
+
+
 def test_chat_stream_preserves_structured_thought_chunks() -> None:
     """Verify chat stream yields thought metadata instead of flattening it."""
     from runtime.workers.ui_host import QtProtocolHost

@@ -2039,8 +2039,35 @@ class QtProtocolHost:
 
     def _set_active_conversation(self, idx) -> None:
         """Chat window selected/started a conversation -> retarget hotkey prompts."""
+        previous_idx = self._active_conversation_idx
         if idx is None or (isinstance(idx, int) and 0 <= idx < len(self._all_conversations)):
             self._active_conversation_idx = idx
+        if (
+            isinstance(idx, int)
+            and idx != previous_idx
+            and self._chat is not None
+            and not bool(getattr(self._chat, "_streaming", False))
+        ):
+            title = self._chat_notice_title(idx)
+            if title:
+                try:
+                    self._ensure_bubble().show_notice(f"{t('Continuing')}: {title}", timeout_ms=2500)
+                except Exception:
+                    log.debug("failed to show chat selection notice", exc_info=True)
+
+    def _chat_notice_title(self, idx: int, limit: int = 48) -> str:
+        """Return a compact conversation title for overlay selection notices."""
+        if not (0 <= idx < len(self._all_conversations)):
+            return ""
+        conv = self._all_conversations[idx]
+        override = str(conv.get("title_override") or "").strip()
+        if override:
+            return override[:limit] + ("..." if len(override) > limit else "")
+        for msg in conv.get("messages", []):
+            if msg.get("role") == "user" and msg.get("content"):
+                text = " ".join(str(msg.get("content") or "").split())
+                return text[:limit] + ("..." if len(text) > limit else "")
+        return t("New chat")
 
     def _chat_active_history(self) -> dict[str, Any]:
         """Return prior turns + memory project for the active conversation.
@@ -2251,10 +2278,29 @@ class QtProtocolHost:
         from datetime import UTC, datetime
 
         now = datetime.now(UTC).isoformat()
-        user_msg: dict[str, Any] = {"role": "user", "content": user, "created_at": now}
+        user_msg: dict[str, Any] = {
+            "id": str(_uuid.uuid4()),
+            "role": "user",
+            "content": user,
+            "created_at": now,
+        }
         if image_base64:
             user_msg["image_base64"] = image_base64
-        assistant_msg = {"role": "assistant", "content": assistant, "created_at": now}
+        context_text = str(context or "").strip()
+        if context_text:
+            user_msg["context"] = context_text
+        assistant_msg = {
+            "id": str(_uuid.uuid4()),
+            "role": "assistant",
+            "content": assistant,
+            "created_at": now,
+        }
+        normalized_file_context = self._normalized_file_context(file_context or [])
+        normalized_tool_context = self._normalized_tool_context(tool_context or {})
+        if normalized_file_context:
+            assistant_msg["file_context"] = normalized_file_context
+        if normalized_tool_context:
+            assistant_msg["tool_context"] = normalized_tool_context
 
         idx = self._active_conversation_idx
         if idx is not None and 0 <= idx < len(self._all_conversations):
@@ -2262,9 +2308,12 @@ class QtProtocolHost:
             conv = self._all_conversations[idx]
             conv.setdefault("created_at", now)
             conv["updated_at"] = now
+            if context_text:
+                current_context = str(conv.get("context") or "").strip()
+                conv["context"] = f"{current_context}\n\n---\n{context_text}" if current_context else context_text
             conv.setdefault("messages", []).extend([user_msg, assistant_msg])
-            self._merge_file_context(conv, file_context or [])
-            self._merge_tool_context(conv, tool_context or {})
+            self._merge_file_context(conv, normalized_file_context)
+            self._merge_tool_context(conv, normalized_tool_context)
             normalized_policy = self._normalized_context_policy(context_policy or {})
             if normalized_policy:
                 conv["context_policy"] = normalized_policy
@@ -2279,11 +2328,11 @@ class QtProtocolHost:
                 "id": str(_uuid.uuid4()),
                 "project_id": self._active_project_id,
                 "messages": [user_msg, assistant_msg],
-                "context": context or "",
+                "context": context_text,
                 "created_at": now,
                 "updated_at": now,
-                "file_context": self._normalized_file_context(file_context or []),
-                "tool_context": self._normalized_tool_context(tool_context or {}),
+                "file_context": normalized_file_context,
+                "tool_context": normalized_tool_context,
                 "context_policy": self._normalized_context_policy(context_policy or {}),
             }
         )
