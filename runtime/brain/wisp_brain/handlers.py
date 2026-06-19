@@ -38,6 +38,7 @@ _AGENT_APPROVALS: dict[str, dict[str, Any]] = {}
 _AGENT_APPROVALS_LOCK = threading.Lock()
 _LIVE_FILE_APPROVALS: dict[str, dict[str, Any]] = {}
 _LIVE_FILE_APPROVALS_LOCK = threading.Lock()
+_LIVE_FILE_TOOL_NAMES = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 
 
 class StreamContext:
@@ -71,6 +72,25 @@ def handler(name: str, *, streaming: bool = False) -> Callable[[Callable[..., An
 def _log(msg: str) -> None:
     """Print a brain-worker log line to stderr."""
     print(f"[brain] {msg}", flush=True)  # -> stderr (host redirects fd 1 to fd 2)
+
+
+def _reload_config_for_live_file_tools(
+    *,
+    use_tools: bool,
+    allowed_tools: list[str] | None,
+    file_access_mode: str,
+) -> None:
+    """Reload settings before live file tools read TOOL_FILE_ROOTS."""
+    if not use_tools or not file_access_mode:
+        return
+    if not (set(allowed_tools or []) & _LIVE_FILE_TOOL_NAMES):
+        return
+    try:
+        import config
+
+        config.reload()
+    except Exception as exc:  # noqa: BLE001 - stale config should not kill the query
+        _log(f"config reload before local file tools failed: {type(exc).__name__}: {exc}")
 
 
 def _runtime_output_dir() -> Path:
@@ -1246,6 +1266,11 @@ def brain_query(
     from core.query_pipeline import ContextInputs, build_context
     import config
 
+    _reload_config_for_live_file_tools(
+        use_tools=use_tools,
+        allowed_tools=allowed_tools,
+        file_access_mode=file_access_mode,
+    )
     trust_privacy_mode = bool(getattr(config, "TRUST_PRIVACY_MODE", True))
     if memory_enabled:
         try:
@@ -1311,8 +1336,11 @@ def brain_query(
     ):
         if ctx.cancelled:
             break
-        parts.append(chunk)
-        ctx.emit("reply.chunk", {"text": chunk})
+        text = str(chunk)
+        is_progress = _stream_chunk_kind(chunk) == "progress"
+        if not is_progress:
+            parts.append(text)
+        ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress})
 
     full = "".join(parts)
     ctx.emit("reply.done", {"text": full})
@@ -1513,6 +1541,11 @@ def brain_chat(
     file_access_mode: str = "",
 ) -> dict[str, Any]:
     """Stream a multi-turn chat reply from the existing chat LLM path."""
+    _reload_config_for_live_file_tools(
+        use_tools=use_tools,
+        allowed_tools=allowed_tools,
+        file_access_mode=file_access_mode,
+    )
     turns = _normalize_chat_messages(messages or [])
     if not turns:
         raise ValueError("messages must include at least one user turn")
@@ -1558,8 +1591,11 @@ def brain_chat(
     ):
         if ctx.cancelled:
             break
-        parts.append(chunk)
-        ctx.emit("reply.chunk", {"text": chunk})
+        text = str(chunk)
+        is_progress = _stream_chunk_kind(chunk) == "progress"
+        if not is_progress:
+            parts.append(text)
+        ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress})
 
     full = "".join(parts)
     ctx.emit("reply.done", {"text": full})
@@ -1585,6 +1621,11 @@ def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, s
         if text or turn.get("image_base64"):
             turns.append(turn)
     return turns
+
+
+def _stream_chunk_kind(chunk: Any) -> str:
+    """Return stream chunk kind metadata, defaulting to final-answer text."""
+    return str(getattr(chunk, "kind", "answer") or "answer")
 
 
 def _stream_chat_reply(

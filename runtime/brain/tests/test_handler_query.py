@@ -139,6 +139,51 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
     }
 
 
+def test_query_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch):
+    """Verify progress narration streams live but is excluded from final text."""
+    class ProgressChunk(str):
+        """String-like progress chunk."""
+        kind = "progress"
+
+    def fake_stream(*_args, **_kwargs):
+        """Emit progress then final answer."""
+        yield ProgressChunk("Checking the file first.")
+        yield "Done."
+
+    monkeypatch.setattr(handlers, "_stream_query_reply", fake_stream)
+    events, ctx = record_ctx()
+
+    result = handlers.HANDLERS["brain.query"](ctx, intent_prompt="edit file", memory_context="(none)")
+
+    assert result["text"] == "Done."
+    assert _chunks(events) == ["Checking the file first.", "Done."]
+    progress = [data for event, data in events if event == "reply.chunk" and data.get("is_progress")]
+    assert progress == [{"text": "Checking the file first.", "is_progress": True}]
+    assert [data for event, data in events if event == "reply.done"] == [{"text": "Done."}]
+
+
+def test_query_reloads_config_before_live_file_tools(record_ctx, monkeypatch):
+    """Verify query refreshes TOOL_FILE_ROOTS before live local-file tools run."""
+    import config
+
+    reloads = []
+    monkeypatch.setattr(config, "reload", lambda: reloads.append(True))
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="create hello.py",
+        memory_enabled=False,
+        use_tools=True,
+        allowed_tools=["create_file"],
+        file_access_mode="ask",
+    )
+
+    assert result["text"].startswith("[fake-llm]")
+    assert "".join(_chunks(events)) == result["text"]
+    assert reloads == [True]
+
+
 def test_query_includes_active_document_when_requested(record_ctx, monkeypatch):
     """Verify query includes active document when requested behavior."""
     from core.llm_clients import client as llm_client

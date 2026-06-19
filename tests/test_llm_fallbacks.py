@@ -242,8 +242,8 @@ class LlmFallbackTests(unittest.TestCase):
 
         self.assertEqual(model, "gemma-4-31b-it")
 
-    def test_openai_tool_call_suppresses_preamble_until_final_answer(self):
-        """Verify openai tool call suppresses preamble until final answer behavior."""
+    def test_openai_tool_call_marks_preamble_as_progress_before_final_answer(self):
+        """Verify OpenAI-compatible tool preambles are progress, not final answer."""
         first_round_chunks = [
             SimpleNamespace(
                 choices=[
@@ -318,7 +318,229 @@ class LlmFallbackTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(chunks, ["Here is what I can see."])
+        self.assertEqual(chunks, ["I need a screenshot.", "Here is what I can see."])
+        self.assertEqual(getattr(chunks[0], "kind", ""), "progress")
+        self.assertEqual(getattr(chunks[1], "kind", "answer"), "answer")
+
+    def test_openai_followup_tool_call_marks_intermediate_text_as_progress(self):
+        """Verify follow-up text with another tool call is progress, not final."""
+        first_round_chunks = [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="tool_calls",
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call_1",
+                                    function=SimpleNamespace(
+                                        name="read_file",
+                                        arguments='{"path":"hello_world.py"}',
+                                    ),
+                                )
+                            ],
+                        ),
+                    )
+                ]
+            )
+        ]
+
+        class FakeStream:
+            """Fake first-round stream."""
+            def __enter__(self):
+                """Enter fake stream."""
+                return iter(first_round_chunks)
+
+            def __exit__(self, exc_type, exc, tb):
+                """Exit fake stream."""
+                return False
+
+        class FakeCompletions:
+            """Fake chat completions API."""
+            def __init__(self):
+                """Initialize fake completions."""
+                self.calls = []
+
+            def create(self, **kwargs):
+                """Record request and return staged responses."""
+                self.calls.append(kwargs)
+                if len(self.calls) == 1:
+                    return FakeStream()
+                if len(self.calls) == 2:
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="tool_calls",
+                                message=SimpleNamespace(
+                                    content="hello_world.py contains print('Hello, world!').",
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            id="call_2",
+                                            function=SimpleNamespace(
+                                                name="edit_file",
+                                                arguments=(
+                                                    '{"path":"hello_world.py",'
+                                                    '"old":"print(\\"Hello, world!\\")",'
+                                                    '"new":"# Say hello\\nprint(\\"Hello, world!\\")"}'
+                                                ),
+                                            ),
+                                        )
+                                    ],
+                                ),
+                            )
+                        ]
+                    )
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="stop",
+                            message=SimpleNamespace(content="Updated hello_world.py.", tool_calls=None),
+                        )
+                    ]
+                )
+
+        completions = FakeCompletions()
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+        with (
+            patch.object(llm.macos_safety, "openai_compat_tools_enabled", return_value=True),
+            patch.object(llm, "_execute_model_tool", return_value="ok"),
+        ):
+            chunks = list(
+                llm._stream_openai_compat(
+                    "add a comment to hello_world.py",
+                    None,
+                    "gpt-4o",
+                    fake_client,
+                    use_tools=True,
+                    allowed_tools=["read_file", "edit_file"],
+                    pinned_tools=["read_file", "edit_file"],
+                    provider="openai",
+                )
+            )
+
+        self.assertEqual(chunks, ["hello_world.py contains print('Hello, world!').", "Updated hello_world.py."])
+        self.assertEqual(getattr(chunks[0], "kind", ""), "progress")
+        self.assertEqual(getattr(chunks[1], "kind", "answer"), "answer")
+        self.assertEqual(len(completions.calls), 3)
+
+    def test_openai_file_edit_continues_when_followup_stops_after_read(self):
+        """Verify OpenAI-compatible file edits do not stop after only reading."""
+        outer_self = self
+        first_round_chunks = [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="tool_calls",
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call_1",
+                                    function=SimpleNamespace(
+                                        name="read_file",
+                                        arguments='{"path":"hello_world.py"}',
+                                    ),
+                                )
+                            ],
+                        ),
+                    )
+                ]
+            )
+        ]
+
+        class FakeStream:
+            """Fake first-round stream."""
+            def __enter__(self):
+                """Enter fake stream."""
+                return iter(first_round_chunks)
+
+            def __exit__(self, exc_type, exc, tb):
+                """Exit fake stream."""
+                return False
+
+        class FakeCompletions:
+            """Fake chat completions API."""
+            def __init__(self):
+                """Initialize fake completions."""
+                self.calls = []
+
+            def create(self, **kwargs):
+                """Record request and return staged responses."""
+                self.calls.append(kwargs)
+                if len(self.calls) == 1:
+                    return FakeStream()
+                if len(self.calls) == 2:
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="stop",
+                                message=SimpleNamespace(
+                                    content="hello_world.py contains print('Hello, world!').",
+                                    tool_calls=None,
+                                ),
+                            )
+                        ]
+                )
+                if len(self.calls) == 3:
+                    outer_self.assertIn("only gathered file context", str(kwargs.get("messages")))
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                finish_reason="tool_calls",
+                                message=SimpleNamespace(
+                                    content=None,
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            id="call_2",
+                                            function=SimpleNamespace(
+                                                name="edit_file",
+                                                arguments=(
+                                                    '{"path":"hello_world.py",'
+                                                    '"old":"print(\\"Hello, world!\\")",'
+                                                    '"new":"# Say hello\\nprint(\\"Hello, world!\\")"}'
+                                                ),
+                                            ),
+                                        )
+                                    ],
+                                ),
+                            )
+                        ]
+                    )
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="stop",
+                            message=SimpleNamespace(content="Updated hello_world.py.", tool_calls=None),
+                        )
+                    ]
+                )
+
+        completions = FakeCompletions()
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+        with (
+            patch.object(llm.macos_safety, "openai_compat_tools_enabled", return_value=True),
+            patch.object(llm, "_execute_model_tool", return_value="ok"),
+        ):
+            chunks = list(
+                llm._stream_openai_compat(
+                    "add a comment to hello_world.py",
+                    None,
+                    "gpt-4o",
+                    fake_client,
+                    use_tools=True,
+                    allowed_tools=["read_file", "edit_file"],
+                    pinned_tools=["read_file", "edit_file"],
+                    provider="openai",
+                )
+            )
+
+        self.assertEqual(chunks, ["Updated hello_world.py."])
+        self.assertEqual(len(completions.calls), 4)
 
     def test_openai_text_screenshot_request_continues_with_implicit_tool_call(self):
         """Verify openai text screenshot request continues with implicit tool call behavior."""
@@ -382,14 +604,19 @@ class LlmFallbackTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(chunks, ["I can see the Wisp window."])
+        self.assertEqual(chunks, [
+            "I need to use the screenshot tool to answer this.",
+            "I can see the Wisp window.",
+        ])
+        self.assertEqual(getattr(chunks[0], "kind", ""), "progress")
+        self.assertEqual(getattr(chunks[1], "kind", "answer"), "answer")
         follow_up_messages = completions.calls[1]["messages"]
         self.assertEqual(follow_up_messages[-2]["role"], "tool")
         self.assertEqual(follow_up_messages[-1]["role"], "user")
         self.assertEqual(follow_up_messages[-1]["content"][1]["type"], "image_url")
 
-    def test_anthropic_tool_call_suppresses_preamble_until_final_answer(self):
-        """Verify anthropic tool call suppresses preamble until final answer behavior."""
+    def test_anthropic_tool_call_marks_preamble_as_progress_before_final_answer(self):
+        """Verify Anthropic tool preambles are progress, not final answer."""
         first_response = SimpleNamespace(
             stop_reason="tool_use",
             content=[
@@ -444,7 +671,9 @@ class LlmFallbackTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(chunks, ["Here is what I can see."])
+        self.assertEqual(chunks, ["I need a screenshot.", "Here is what I can see."])
+        self.assertEqual(getattr(chunks[0], "kind", ""), "progress")
+        self.assertEqual(getattr(chunks[1], "kind", "answer"), "answer")
 
     def test_dynamic_openai_client_uses_google_base_url(self):
         """Verify dynamic openai client uses google base url behavior."""

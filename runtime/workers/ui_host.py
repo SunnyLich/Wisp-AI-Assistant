@@ -2067,6 +2067,7 @@ class QtProtocolHost:
             """Send with memory."""
             request_id = f"chat-{next(self._chat_request_ids)}"
             stream: "queue.Queue[tuple[str, Any]]" = queue.Queue()
+            streamed_text = ""
             with self._chat_streams_lock:
                 self._chat_streams[request_id] = stream
             self.emit("ui.chat.request", {"request_id": request_id, "messages": messages})
@@ -2074,8 +2075,20 @@ class QtProtocolHost:
                 while True:
                     kind, payload = stream.get()
                     if kind == "chunk":
-                        yield str(payload or "")
+                        if isinstance(payload, dict):
+                            chunk = str(payload.get("text") or "")
+                        else:
+                            chunk = str(payload or "")
+                        streamed_text += chunk
+                        yield chunk
                     elif kind == "done":
+                        final_text = ""
+                        if isinstance(payload, dict):
+                            final_text = str(payload.get("text") or "")
+                        elif payload is not None:
+                            final_text = str(payload)
+                        if final_text and final_text != streamed_text:
+                            yield {"type": "final", "text": final_text}
                         return
                     elif kind == "error":
                         raise RuntimeError(str(payload or "chat failed"))
@@ -2090,18 +2103,18 @@ class QtProtocolHost:
         with self._chat_streams_lock:
             return self._chat_streams.get(str(request_id))
 
-    def _chat_chunk(self, request_id: str = "", text: str = "") -> dict[str, Any]:
+    def _chat_chunk(self, request_id: str = "", text: str = "", is_progress: bool = False) -> dict[str, Any]:
         """Handle chat chunk for qt protocol host."""
         stream = self._chat_stream(request_id)
         if stream is not None:
-            stream.put(("chunk", text))
+            stream.put(("chunk", {"text": text, "is_progress": bool(is_progress)}))
         return {"queued": stream is not None}
 
-    def _chat_done(self, request_id: str = "") -> dict[str, Any]:
+    def _chat_done(self, request_id: str = "", text: str = "") -> dict[str, Any]:
         """Handle chat done for qt protocol host."""
         stream = self._chat_stream(request_id)
         if stream is not None:
-            stream.put(("done", None))
+            stream.put(("done", {"text": text}))
         return {"queued": stream is not None}
 
     def _chat_error(self, request_id: str = "", error: str = "") -> dict[str, Any]:

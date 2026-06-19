@@ -19,7 +19,11 @@ import urllib.request as _urllib_request
 import config
 from pathlib import Path
 from core.tool_registry import ToolRegistry, ToolSpec
-from core.tools.local_files import execute_live_file_tool, normalize_file_access_mode
+from core.tools.local_files import (
+    execute_live_file_tool,
+    configured_file_roots,
+    normalize_file_access_mode,
+)
 from core.system import macos_safety
 from core.system.native_locks import native_init_lock, ssl_init_lock
 from core.system import sdk_clients
@@ -57,6 +61,20 @@ _TOOL_REGISTRY = ToolRegistry()
 _LOCAL_FILE_TOOLS = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 _FILE_EDIT_APPROVAL_CALLBACK: Callable[[dict], bool] | None = None
 _LIVE_TOOL_CONTEXT = _threading.local()
+
+
+class StreamTextChunk(str):
+    """String chunk carrying stream metadata for UI/TTS routing."""
+
+    def __new__(cls, text: str, *, kind: str = "answer"):
+        obj = str.__new__(cls, text)
+        obj.kind = kind
+        return obj
+
+
+def _progress_chunk(text: str) -> StreamTextChunk:
+    """Return a progress narration chunk that is not part of final answer text."""
+    return StreamTextChunk(text, kind="progress")
 
 
 def _log_context(
@@ -646,7 +664,9 @@ def _register_builtin_tools() -> None:
             name="edit_file",
             description=(
                 "Replace exactly one matching text span in a file inside the user's "
-                "configured local-file roots. Uses the configured never/ask/auto edit mode."
+                "configured local-file roots. Use this when the user asks to edit, "
+                "change, update, modify, patch, or fix an existing file and you know "
+                "the exact old text. Uses the configured never/ask/auto edit mode."
             ),
             input_schema={
                 "type": "object",
@@ -688,7 +708,9 @@ def _register_builtin_tools() -> None:
             name="write_file",
             description=(
                 "Create or overwrite a UTF-8 text file inside the user's configured "
-                "local-file roots. Uses the configured never/ask/auto edit mode."
+                "local-file roots. Use this when the user asks to replace the whole "
+                "contents of an existing file, or when edit_file cannot target a "
+                "single exact span. Uses the configured never/ask/auto edit mode."
             ),
             input_schema={
                 "type": "object",
@@ -1230,6 +1252,106 @@ def _tools_allow(allowed_tools: list[str] | None, *names: str) -> bool:
         return True
     allowed = set(allowed_tools)
     return any(name in allowed for name in names)
+
+
+def _with_local_file_tools_note(system: str, allowed_tools: list[str] | None) -> str:
+    """Tell the model exactly when and where live local-file tools are available."""
+    allowed = set(allowed_tools or [])
+    file_tools = sorted(allowed & _LOCAL_FILE_TOOLS)
+    if not file_tools:
+        return system
+    mode = _effective_live_file_access_mode(file_tools)
+    if mode == "off":
+        return system
+    roots = configured_file_roots()
+    if not roots:
+        note = (
+            "Local file tools are enabled for this query, but no existing allowed "
+            "folder is configured. If a local-file operation is requested, say "
+            "that Wisp needs an allowed folder in Settings."
+        )
+        return f"{system}\n\n{note}" if system else note
+    root_lines = "\n".join(f"- {root}" for root in roots)
+    actions = []
+    if "list_files" in file_tools or "read_file" in file_tools:
+        actions.append("list/read files")
+    if mode in {"ask", "auto"} and {"create_file", "edit_file", "write_file"} & set(file_tools):
+        actions.append("create/edit/write files")
+    action_text = " and ".join(actions) if actions else "use local file tools"
+    approval = " The app may ask the user to approve writes." if mode == "ask" else ""
+    relative_hint = (
+        " Use relative paths directly when there is one root; when multiple roots "
+        "are listed, include the intended root argument."
+    )
+    note = (
+        "Local file access is available for this query. You can "
+        f"{action_text} inside these allowed folders:\n{root_lines}\n"
+        "When the user requests a file operation, complete the requested operation "
+        "with the appropriate local file tool before replying. Use read_file only "
+        "to gather needed context; reading a file is not a substitute for a "
+        "requested create, edit, or write operation."
+        f"{relative_hint}{approval}"
+    )
+    return f"{system}\n\n{note}" if system else note
+
+
+def _file_mutation_requested(text: str, allowed_tools: list[str] | None) -> bool:
+    """Best-effort detection that the user asked for a file write/edit action."""
+    allowed = set(allowed_tools or [])
+    if not (allowed & {"create_file", "edit_file", "write_file"}):
+        return False
+    lowered = (text or "").lower()
+    if not any(
+        word in lowered
+        for word in (
+            "add",
+            "append",
+            "change",
+            "comment",
+            "create",
+            "edit",
+            "fix",
+            "make",
+            "modify",
+            "overwrite",
+            "patch",
+            "replace",
+            "save",
+            "update",
+            "write",
+        )
+    ):
+        return False
+    if any(word in lowered for word in ("file", "folder", "workspace", "directory")):
+        return True
+    import re
+
+    return bool(re.search(r"\b[\w.-]+\.(?:py|txt|md|json|csv|js|ts|tsx|jsx|html|css|yaml|yml|toml|ini|bat|sh)\b", lowered))
+
+
+def _needs_file_mutation_continuation(
+    *,
+    user_intent: str,
+    allowed_tools: list[str] | None,
+    executed_tools: list[str],
+) -> bool:
+    """Return True when the model stopped after discovery but a write was requested."""
+    if not _file_mutation_requested(user_intent, allowed_tools):
+        return False
+    executed = set(executed_tools)
+    return bool(executed & {"list_files", "read_file"}) and not bool(
+        executed & {"create_file", "edit_file", "write_file"}
+    )
+
+
+def _file_mutation_continuation_prompt() -> str:
+    """Prompt used when a model stops after file discovery on a mutating request."""
+    return (
+        "Continue the file operation requested by the user. You have only gathered "
+        "file context so far; if the requested change is possible inside the allowed "
+        "folder, call the appropriate create_file, edit_file, or write_file tool "
+        "before giving the final answer."
+    )
 
 
 def _frontload_context_for_disabled_tools(
@@ -2167,10 +2289,13 @@ def _run_responses_tool_loop(
     provider: str,
     model: str,
     allowed_tools: list[str] | None = None,
+    user_intent: str = "",
     max_rounds: int = 3,
 ) -> Generator[str, None, None]:
     """Run a non-streaming Responses API function-call loop."""
     followup_instructions = kwargs.get("instructions")
+    executed_tools: list[str] = []
+    mutation_continuation_sent = False
     response = _responses_create_with_retries(
         client,
         _responses_tool_loop_kwargs(kwargs),
@@ -2181,10 +2306,41 @@ def _run_responses_tool_loop(
     for _round in range(max_rounds):
         calls = _response_function_calls(response)
         if not calls:
+            if (
+                not mutation_continuation_sent
+                and _needs_file_mutation_continuation(
+                    user_intent=user_intent,
+                    allowed_tools=allowed_tools,
+                    executed_tools=executed_tools,
+                )
+            ):
+                mutation_continuation_sent = True
+                followup_kwargs = {
+                    "model": model,
+                    "input": [{
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": _file_mutation_continuation_prompt()}],
+                    }],
+                    "previous_response_id": _response_id(response),
+                    "store": True,
+                }
+                if followup_instructions:
+                    followup_kwargs["instructions"] = followup_instructions
+                response = _responses_create_with_retries(
+                    client,
+                    followup_kwargs,
+                    provider=provider,
+                    model=model,
+                )
+                continue
             text = _response_output_text(response)
             if text:
                 yield text
             return
+        progress_text = _response_output_text(response)
+        if progress_text:
+            yield _progress_chunk(progress_text)
         tool_outputs = []
         for call in calls:
             try:
@@ -2193,6 +2349,7 @@ def _run_responses_tool_loop(
                     inputs = {}
             except Exception:
                 inputs = {}
+            executed_tools.append(call["name"])
             result = _execute_model_tool(call["name"], inputs, allowed_tools=allowed_tools)
             tool_outputs.append({
                 "type": "function_call_output",
@@ -3705,6 +3862,7 @@ def _stream_openai_compat(
         )
     if tools and messages and messages[0].get("role") == "system":
         messages[0]["content"] = _with_tools_note(messages[0]["content"], True)
+        messages[0]["content"] = _with_local_file_tools_note(messages[0]["content"], allowed_tools)
         messages[0]["content"] = _with_memory_search_note(messages[0]["content"], allowed_tools)
         messages[0]["content"] = _with_memory_save_note(messages[0]["content"], allowed_tools)
 
@@ -3890,11 +4048,20 @@ def _stream_openai_compat(
          "function": {"name": tc["name"], "arguments": tc["arguments"]}}
         for tc in tool_calls_acc.values()
     ]
-    messages.append({"role": "assistant", "content": None, "tool_calls": assistant_tool_calls})
+    first_round_progress = "".join(first_round_text)
+    if first_round_progress:
+        yield _progress_chunk(first_round_progress)
+    messages.append({
+        "role": "assistant",
+        "content": "".join(first_round_text) or None,
+        "tool_calls": assistant_tool_calls,
+    })
 
     # Tool-call loop (up to 3 rounds, non-streaming for follow-ups).
     current_model = model
     vision_mode = False
+    executed_tools: list[str] = []
+    mutation_continuation_sent = False
     for _round in range(3):
         pending_image_b64: str | None = None
         for tc in tool_calls_acc.values():
@@ -3916,6 +4083,7 @@ def _stream_openai_compat(
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ack})
                 _log_context("tool: capture_screen", "<screenshot>" if pending_image_b64 else "<failed>")
             else:
+                executed_tools.append(tc["name"])
                 result = _execute_model_tool(tc["name"], inputs, allowed_tools=allowed_tools)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
@@ -3945,13 +4113,43 @@ def _stream_openai_compat(
         follow_up = client.chat.completions.create(**follow_up_kwargs)
         choice = follow_up.choices[0]
         text = choice.message.content or ""
-        if text:
-            yield text
         if choice.finish_reason != "tool_calls":
-            return
+            if (
+                not mutation_continuation_sent
+                and not vision_mode
+                and _needs_file_mutation_continuation(
+                    user_intent=user_message,
+                    allowed_tools=allowed_tools,
+                    executed_tools=executed_tools,
+                )
+            ):
+                mutation_continuation_sent = True
+                if text:
+                    messages.append({"role": "assistant", "content": text})
+                messages.append({
+                    "role": "user",
+                    "content": _file_mutation_continuation_prompt(),
+                })
+                follow_up_kwargs["messages"] = messages
+                follow_up = client.chat.completions.create(**follow_up_kwargs)
+                choice = follow_up.choices[0]
+                text = choice.message.content or ""
+                if choice.finish_reason == "tool_calls":
+                    # Fall through to the normal tool-call handling below.
+                    pass
+                else:
+                    if text:
+                        yield text
+                    return
+            else:
+                if text:
+                    yield text
+                return
         # Another tool round — update accumulator and append assistant turn.
         tool_calls_acc = {}
         if choice.message.tool_calls:
+            if text:
+                yield _progress_chunk(text)
             for i, tc in enumerate(choice.message.tool_calls):
                 tool_calls_acc[i] = {
                     "id": tc.id,
@@ -3959,7 +4157,7 @@ def _stream_openai_compat(
                     "arguments": tc.function.arguments or "",
                 }
             messages.append({
-                "role": "assistant", "content": None,
+                "role": "assistant", "content": text or None,
                 "tool_calls": [
                     {"id": tc["id"], "type": "function",
                      "function": {"name": tc["name"], "arguments": tc["arguments"]}}
@@ -4038,13 +4236,17 @@ def _stream_codex(
                     {
                         "model": model,
                         "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
-                        "instructions": _with_tools_note(system_prompt or config.get_system_prompt(), True),
+                        "instructions": _with_local_file_tools_note(
+                            _with_tools_note(system_prompt or config.get_system_prompt(), True),
+                            allowed_tools,
+                        ),
                         "tools": tools,
                         "store": False,
                     },
                     provider="chatgpt",
                     model=model,
                     allowed_tools=allowed_tools,
+                    user_intent=text,
                 )
                 return
             except Exception as exc:
@@ -4190,13 +4392,19 @@ def _run_anthropic_tool_loop(
                 pinned_tools=pinned_tools,
             ),
         )
+        response_text_blocks: list[str] = []
         for block in response.content:
             if getattr(block, "type", "") == "text":
                 text = getattr(block, "text", "")
                 if text:
-                    yield text
+                    response_text_blocks.append(text)
         if response.stop_reason != "tool_use":
+            for text in response_text_blocks:
+                yield text
             return
+        response_progress = "".join(response_text_blocks)
+        if response_progress:
+            yield _progress_chunk(response_progress)
         final = response
         messages.append({"role": "assistant", "content": response.content})
 
@@ -4239,6 +4447,8 @@ def _stream_anthropic(
 
     system = _with_screenshot_note(system_prompt or config.get_system_prompt(), allow_screenshot_tool)
     system = _with_tools_note(system, use_tools)
+    if use_tools:
+        system = _with_local_file_tools_note(system, allowed_tools)
     system = _with_memory_search_note(system, allowed_tools if use_tools else None)
     system = _with_memory_save_note(system, allowed_tools if use_tools else None)
     if memory_context:
@@ -4379,6 +4589,9 @@ def _stream_anthropic(
         return
 
     # A tool was called -” execute it and do followup round(s) non-streaming.
+    first_round_progress = "".join(first_round_text)
+    if first_round_progress:
+        yield _progress_chunk(first_round_progress)
     yield from _run_anthropic_tool_loop(
         client,
         messages,
@@ -4738,6 +4951,8 @@ def _stream_single_history_route(
             if use_tools
             else []
         )
+        if chat_tools:
+            system = _with_local_file_tools_note(_with_tools_note(system, True), allowed_tools)
         # Prompt caching: cache the frozen system prompt and the stable history
         # prefix so replayed turns (incl. screenshots) bill at ~0.1x on follow-ups.
         system = _anthropic_cached_system(system)
@@ -4796,6 +5011,7 @@ def _stream_single_history_route(
                 )
                 try:
                     instructions = _with_tools_note(system_msg, True)
+                    instructions = _with_local_file_tools_note(instructions, allowed_tools)
                     instructions = _with_memory_search_note(instructions, allowed_tools)
                     instructions = _with_memory_save_note(instructions, allowed_tools)
                     yield from _run_responses_tool_loop(
@@ -4810,6 +5026,7 @@ def _stream_single_history_route(
                         provider="chatgpt",
                         model=model,
                         allowed_tools=allowed_tools,
+                        user_intent=full_input,
                     )
                     return
                 except Exception as exc:

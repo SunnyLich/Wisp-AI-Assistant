@@ -433,6 +433,190 @@ class BuiltinModelToolsTests(unittest.TestCase):
             config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
             llm.set_live_file_access_mode(None)
 
+    def test_codex_tool_prompt_names_allowed_local_file_root(self):
+        """Verify file-tool prompts tell the model which local folder is allowed."""
+        old_roots = getattr(config, "TOOL_FILE_ROOTS", [])
+        old_blocked = getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])
+        llm.set_live_file_access_mode("ask")
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config.TOOL_FILE_ROOTS = [str(root)]
+                config.TOOL_FILE_BLOCKED_GLOBS = []
+
+                class Responses:
+                    def __init__(self):
+                        self.calls = []
+
+                    def create(self, **kwargs):
+                        self.calls.append(kwargs)
+                        return SimpleNamespace(id="resp_1", output_text="ok", output=[])
+
+                responses = Responses()
+                client = SimpleNamespace(responses=responses)
+
+                text = "".join(
+                    llm._stream_codex(
+                        "update hello_world.py",
+                        "gpt-test",
+                        client,
+                        use_tools=True,
+                        allowed_tools=["create_file", "edit_file", "write_file", "read_file"],
+                        pinned_tools=["create_file", "edit_file", "write_file", "read_file"],
+                    )
+                )
+
+                self.assertEqual(text, "ok")
+                instructions = responses.calls[0]["instructions"]
+                self.assertIn("Local file access is available", instructions)
+                self.assertIn(str(root), instructions)
+                self.assertIn("complete the requested operation", instructions)
+                self.assertIn("reading a file is not a substitute", instructions)
+        finally:
+            config.TOOL_FILE_ROOTS = old_roots
+            config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+            llm.set_live_file_access_mode(None)
+
+    def test_codex_tool_loop_continues_when_file_edit_stops_after_read(self):
+        """Verify mutating file requests do not stop after only listing/reading."""
+        old_roots = getattr(config, "TOOL_FILE_ROOTS", [])
+        old_blocked = getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])
+        llm.set_live_file_access_mode("auto")
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target = root / "hello_world.py"
+                target.write_text('print("Hello, world!")\n', encoding="utf-8")
+                config.TOOL_FILE_ROOTS = [str(root)]
+                config.TOOL_FILE_BLOCKED_GLOBS = []
+
+                first = SimpleNamespace(
+                    id="resp_1",
+                    output_text="",
+                    output=[
+                        SimpleNamespace(
+                            type="function_call",
+                            call_id="call_1",
+                            name="read_file",
+                            arguments='{"path":"hello_world.py"}',
+                        )
+                    ],
+                )
+                premature = SimpleNamespace(
+                    id="resp_2",
+                    output_text='hello_world.py contains:\n\nprint("Hello, world!")',
+                    output=[],
+                )
+                edit = SimpleNamespace(
+                    id="resp_3",
+                    output_text="",
+                    output=[
+                        SimpleNamespace(
+                            type="function_call",
+                            call_id="call_2",
+                            name="edit_file",
+                            arguments=(
+                                '{"path":"hello_world.py",'
+                                '"old":"print(\\"Hello, world!\\")\\n",'
+                                '"new":"# Say hello\\nprint(\\"Hello, world!\\")\\n"}'
+                            ),
+                        )
+                    ],
+                )
+                final = SimpleNamespace(id="resp_4", output_text="Updated hello_world.py.", output=[])
+
+                class Responses:
+                    def __init__(self):
+                        self.calls = []
+
+                    def create(self, **kwargs):
+                        self.calls.append(kwargs)
+                        if len(self.calls) == 1:
+                            return first
+                        if len(self.calls) == 2:
+                            return premature
+                        if len(self.calls) == 3:
+                            assert "only gathered file context" in str(kwargs.get("input"))
+                            return edit
+                        return final
+
+                responses = Responses()
+                client = SimpleNamespace(responses=responses)
+
+                text = "".join(
+                    llm._stream_codex(
+                        "add a comment to hello_world.py",
+                        "gpt-test",
+                        client,
+                        use_tools=True,
+                        allowed_tools=["read_file", "edit_file", "write_file"],
+                        pinned_tools=["read_file", "edit_file", "write_file"],
+                    )
+                )
+
+                self.assertEqual(text, "Updated hello_world.py.")
+                self.assertEqual(target.read_text(encoding="utf-8"), '# Say hello\nprint("Hello, world!")\n')
+                self.assertEqual(len(responses.calls), 4)
+                self.assertIn("previous_response_id", responses.calls[2])
+        finally:
+            config.TOOL_FILE_ROOTS = old_roots
+            config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+            llm.set_live_file_access_mode(None)
+
+    def test_codex_tool_loop_marks_pre_tool_text_as_progress(self):
+        """Verify Responses pre-tool text streams as progress narration."""
+        old_roots = getattr(config, "TOOL_FILE_ROOTS", [])
+        old_blocked = getattr(config, "TOOL_FILE_BLOCKED_GLOBS", [])
+        llm.set_live_file_access_mode("auto")
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config.TOOL_FILE_ROOTS = [str(root)]
+                config.TOOL_FILE_BLOCKED_GLOBS = []
+
+                first = SimpleNamespace(
+                    id="resp_1",
+                    output_text="Checking the file first.",
+                    output=[
+                        SimpleNamespace(
+                            type="function_call",
+                            call_id="call_1",
+                            name="create_file",
+                            arguments='{"path":"note.txt","content":"hello"}',
+                        )
+                    ],
+                )
+                final = SimpleNamespace(id="resp_2", output_text="Created note.txt.", output=[])
+
+                class Responses:
+                    def __init__(self):
+                        self.calls = []
+
+                    def create(self, **kwargs):
+                        self.calls.append(kwargs)
+                        return first if len(self.calls) == 1 else final
+
+                client = SimpleNamespace(responses=Responses())
+
+                chunks = list(
+                    llm._stream_codex(
+                        "create note.txt",
+                        "gpt-test",
+                        client,
+                        use_tools=True,
+                        allowed_tools=["create_file"],
+                        pinned_tools=["create_file"],
+                    )
+                )
+
+                self.assertEqual(chunks, ["Checking the file first.", "Created note.txt."])
+                self.assertEqual(getattr(chunks[0], "kind", ""), "progress")
+                self.assertEqual((root / "note.txt").read_text(encoding="utf-8"), "hello")
+        finally:
+            config.TOOL_FILE_ROOTS = old_roots
+            config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+            llm.set_live_file_access_mode(None)
+
     def test_codex_responses_tool_loop_falls_back_when_tool_output_loses_state(self):
         """Verify tool output fallback handles routes that do not retain prior calls."""
         old_roots = getattr(config, "TOOL_FILE_ROOTS", [])

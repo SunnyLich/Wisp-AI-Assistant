@@ -109,6 +109,33 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
     }
 
 
+def test_chat_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch):
+    """Verify chat progress narration streams live but is excluded from final text."""
+    class ProgressChunk(str):
+        """String-like progress chunk."""
+        kind = "progress"
+
+    def fake_stream(*_args, **_kwargs):
+        """Emit progress then final answer."""
+        yield ProgressChunk("Checking the file first.")
+        yield "Done."
+
+    monkeypatch.setattr(handlers, "_stream_chat_reply", fake_stream)
+    events, ctx = record_ctx()
+
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[{"role": "user", "content": "edit file"}],
+        memory_context="(none)",
+    )
+
+    assert result["text"] == "Done."
+    assert _chunks(events) == ["Checking the file first.", "Done."]
+    progress = [data for event, data in events if event == "reply.chunk" and data.get("is_progress")]
+    assert progress == [{"text": "Checking the file first.", "is_progress": True}]
+    assert [data for event, data in events if event == "reply.done"] == [{"text": "Done."}]
+
+
 def test_chat_memory_disabled_skips_retrieval(record_ctx, monkeypatch):
     """Verify chat memory disabled skips retrieval behavior."""
     from core.memory_store import store
@@ -130,6 +157,28 @@ def test_chat_memory_disabled_skips_retrieval(record_ctx, monkeypatch):
 
     assert result["text"].startswith("[fake-chat]")
     assert "".join(_chunks(events)) == result["text"]
+
+
+def test_chat_reloads_config_before_live_file_tools(record_ctx, monkeypatch):
+    """Verify chat refreshes TOOL_FILE_ROOTS before live local-file tools run."""
+    import config
+
+    reloads = []
+    monkeypatch.setattr(config, "reload", lambda: reloads.append(True))
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[{"role": "user", "content": "create hello.py"}],
+        memory_enabled=False,
+        use_tools=True,
+        allowed_tools=["create_file"],
+        file_access_mode="ask",
+    )
+
+    assert result["text"].startswith("[fake-chat]")
+    assert "".join(_chunks(events)) == result["text"]
+    assert reloads == [True]
 
 
 def test_chat_precancelled_yields_empty(record_ctx):

@@ -147,3 +147,30 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
         row.deleteLater()
         window.close()
         app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_final_text_replaces_partial_stream_before_persist():
+    """Verify final chat text replaces an incomplete streamed draft."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [{"messages": [{"role": "user", "content": "hi"}]}]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    try:
+        window._current_ai_text = "first part"
+        window._current_ai_reply_text = "first part"
+        window._current_ai_segments = [("first part", False)]
+        window._current_ai_parser = None
+
+        window._on_final_text("first part plus second part")
+        window._on_finished()
+
+        assert conversations[0]["messages"][-1] == {
+            "role": "assistant",
+            "content": "first part plus second part",
+        }
+    finally:
+        window.close()
+        app.processEvents()

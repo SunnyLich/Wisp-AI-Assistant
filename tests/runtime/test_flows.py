@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import tempfile
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -319,6 +321,47 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == "hello"
     assert ui.calls_for("ui.context.summary")
     assert ui.calls_for("ui.context.clear")
+
+
+def test_query_bubble_splits_exposed_thought_segments():
+    """Verify speech bubble receives exposed model thought segments separately."""
+    def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        reply = "<thought>checking files</thought>Created it."
+        on_event("reply.chunk", {"text": reply[:13]}, 1)
+        on_event("reply.chunk", {"text": reply[13:]}, 1)
+        on_event("reply.done", {"text": reply}, 1)
+        return {"text": reply}
+
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": stream})
+    with caller_config([{"paste_back": False, "context_ambient": True}]):
+        flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "create a file"})
+
+    chunks = [call["params"] for call in ui.calls_for("ui.reply.chunk")]
+    assert "".join(chunk["text"] for chunk in chunks if chunk["is_thought"]) == "checking files"
+    assert "".join(chunk["text"] for chunk in chunks if not chunk["is_thought"]) == "Created it."
+
+
+def test_query_bubble_replaces_partial_stream_with_final_text():
+    """Verify final query text replaces incomplete streamed bubble text."""
+    def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        """Emit an incomplete stream and a complete final answer."""
+        on_event("reply.chunk", {"text": "draft only"}, 1)
+        on_event("reply.done", {"text": "final answer"}, 1)
+        return {"text": "final answer"}
+
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": stream})
+    with caller_config([{"paste_back": False, "context_ambient": True}]):
+        flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "answer"})
+
+    assert len(ui.calls_for("ui.reply.reset")) >= 2
+    assert ui.calls_for("ui.reply.chunk")[-1]["params"]["text"] == "final answer"
+    assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == "final answer"
 
 
 def test_add_context_shows_panel_badge_not_bubble():
@@ -872,6 +915,126 @@ def test_no_tts_reply_done_lets_wpm_reveal_drain():
     done_calls = ui.calls_for("ui.reply.done")
     assert done_calls
     assert all(call["params"] == {"flush": False} for call in done_calls)
+
+
+def test_tts_speaks_completed_segments_before_full_reply_done():
+    """Verify TTS starts after the first stable segment, before final reply.done."""
+    first = "This is the first completed spoken part with enough detail to start audio now."
+    second = "This is the second completed spoken part."
+    first_synth_started = threading.Event()
+
+    def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        """Emit one completed segment, wait for TTS, then finish."""
+        on_event("reply.chunk", {"text": first + " "}, 1)
+        assert first_synth_started.wait(2.0), "first segment should synthesize before reply.done"
+        on_event("reply.chunk", {"text": second}, 1)
+        on_event("reply.done", {"text": f"{first} {second}"}, 1)
+        return {"text": f"{first} {second}"}
+
+    def wait_for_audio_calls(audio: FakeWorker, count: int) -> None:
+        """Wait until the background TTS queue drains."""
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            if len(audio.calls_for("audio.play_file")) >= count:
+                return
+            time.sleep(0.01)
+        raise AssertionError(f"expected {count} audio.play_file calls")
+
+    def synth(params: dict[str, Any]) -> dict[str, Any]:
+        """Return a fake WAV path for a TTS segment."""
+        if params["text"] == first:
+            first_synth_started.set()
+        return {"path": f"{params['text'][:8]}.wav", "word_timestamps": {"words": [], "start_ms": []}}
+
+    brain = FakeWorker(stream_handlers={"brain.query": stream})
+    audio = FakeWorker(
+        handlers={
+            "audio.tts.synthesize": synth,
+            "audio.play_file": lambda _params: {"played": True, "stopped": False},
+        }
+    )
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    with caller_config(rows):
+        config.TTS_PROVIDER = "cartesia"
+        _flow, _native, ui, _brain, audio = make_flow(native=native, brain=brain, audio=audio)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit("ui.intent.chosen", {"custom": "tell me"})
+        wait_for_audio_calls(audio, 2)
+
+    synth_texts = [call["params"]["text"] for call in audio.calls_for("audio.tts.synthesize")]
+    assert synth_texts == [first, second]
+    assert len(audio.calls_for("audio.play_file")) == 2
+    assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == f"{first} {second}"
+
+
+def test_tts_speaks_short_progress_before_final_answer():
+    """Verify short progress narration speaks during tool waits."""
+    progress = "Checking the file first."
+    final = "Done."
+    progress_synth_started = threading.Event()
+
+    def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        """Emit short progress, wait for TTS, then answer."""
+        on_event("reply.chunk", {"text": progress, "is_progress": True}, 1)
+        assert progress_synth_started.wait(2.0), "progress should synthesize before final answer"
+        on_event("reply.chunk", {"text": final}, 1)
+        on_event("reply.done", {"text": final}, 1)
+        return {"text": final}
+
+    def synth(params: dict[str, Any]) -> dict[str, Any]:
+        """Return a fake WAV path for a TTS segment."""
+        if params["text"] == progress:
+            progress_synth_started.set()
+        return {"path": f"{params['text'][:8]}.wav", "word_timestamps": {"words": [], "start_ms": []}}
+
+    brain = FakeWorker(stream_handlers={"brain.query": stream})
+    audio = FakeWorker(
+        handlers={
+            "audio.tts.synthesize": synth,
+            "audio.play_file": lambda _params: {"played": True, "stopped": False},
+        }
+    )
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    with caller_config(rows):
+        config.TTS_PROVIDER = "cartesia"
+        _flow, _native, ui, _brain, audio = make_flow(native=native, brain=brain, audio=audio)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit("ui.intent.chosen", {"custom": "edit"})
+        deadline = time.monotonic() + 2.0
+        while len(audio.calls_for("audio.play_file")) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    synth_texts = [call["params"]["text"] for call in audio.calls_for("audio.tts.synthesize")]
+    assert synth_texts == [progress, final]
+    assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == final
 
 
 def test_model_screenshot_mode_precaptures_through_native_worker():
@@ -1585,7 +1748,9 @@ def test_chat_request_streams_through_brain_chat():
 
     assert brain.last_call("brain.chat")["params"]["messages"][0]["content"] == "hi"
     assert [c["params"]["text"] for c in ui.calls_for("ui.chat.chunk")] == ["ch", "at reply"]
-    assert ui.last_call("ui.chat.done")["params"]["request_id"] == "chat-1"
+    done_params = ui.last_call("ui.chat.done")["params"]
+    assert done_params["request_id"] == "chat-1"
+    assert done_params["text"] == "chat reply"
 
 
 def test_chat_request_enables_ask_file_tools_when_caller_files_are_off():

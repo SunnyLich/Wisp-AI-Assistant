@@ -96,6 +96,7 @@ def _truncate_segments_for_display(
 class _StreamSignals(QObject):
     """Model stream signals."""
     chunk     = Signal(str)
+    final     = Signal(str)
     finished  = Signal()
 
 
@@ -360,7 +361,7 @@ class ChatWindow(QWidget):
                            conversations. Each item is a dict with keys
                            ``"messages"`` (list of role/content turns) and
                            ``"context"`` (ambient context string).
-            send_fn:       Callable(messages: list) -> Generator[str]
+            send_fn:       Callable yielding text chunks and optional final text events.
             auto_message:  If set, automatically sent when the window opens.
             projects:      List of {"id", "name"} dicts for the project selector.
             active_project_id: Project new conversations are filed under.
@@ -400,6 +401,7 @@ class ChatWindow(QWidget):
 
         self._signals = _StreamSignals()
         self._signals.chunk.connect(self._on_chunk)
+        self._signals.final.connect(self._on_final_text)
         self._signals.finished.connect(self._on_finished)
 
         self.setWindowTitle(t("Chat"))
@@ -1124,8 +1126,11 @@ class ChatWindow(QWidget):
         def _stream():
             """Stream the chat window workflow."""
             try:
-                for chunk in self._send_fn(messages):
-                    self._signals.chunk.emit(chunk)
+                for item in self._send_fn(messages):
+                    if isinstance(item, dict) and item.get("type") == "final":
+                        self._signals.final.emit(str(item.get("text") or ""))
+                    else:
+                        self._signals.chunk.emit(str(item or ""))
             finally:
                 self._signals.finished.emit()
 
@@ -1140,6 +1145,30 @@ class ChatWindow(QWidget):
             _merge_display_segments(self._current_ai_segments, text, is_thought)
             if not is_thought:
                 self._current_ai_reply_text += text
+        if self._current_ai_label:
+            self._current_ai_label.setHtml(
+                _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
+            )
+        self._scroll_bottom()
+
+    def _on_final_text(self, text: str):
+        """Replace the streamed draft with the final assistant text."""
+        if not text or text == self._current_ai_text:
+            return
+        self._current_ai_text = text
+        self._current_ai_reply_text = ""
+        self._current_ai_segments = []
+        self._current_ai_parser = ThoughtStreamParser()
+        for segment, is_thought in self._current_ai_parser.feed(text):
+            _merge_display_segments(self._current_ai_segments, segment, is_thought)
+            if not is_thought:
+                self._current_ai_reply_text += segment
+        flushed = self._current_ai_parser.finish()
+        self._current_ai_segments = merge_segment_iterables(self._current_ai_segments, flushed)
+        for segment, is_thought in flushed:
+            if not is_thought:
+                self._current_ai_reply_text += segment
+        self._current_ai_parser = None
         if self._current_ai_label:
             self._current_ai_label.setHtml(
                 _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))

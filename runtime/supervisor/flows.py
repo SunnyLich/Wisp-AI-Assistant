@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import itertools
 import logging
+import queue
 import sys
 import threading
 import time
@@ -18,6 +19,8 @@ from runtime.supervisor import tool_modes
 
 log = logging.getLogger("wisp.runtime.flows")
 _INTERACTIVE_LLM_TIMEOUT_SECONDS = 120.0
+_TTS_SEGMENT_MIN_CHARS = 60
+_TTS_SEGMENT_MAX_CHARS = 520
 _BROWSER_APP_NAMES = {
     "browser",
     "chrome",
@@ -80,6 +83,64 @@ class PendingInvocation:
     context_ready: threading.Event = field(default_factory=threading.Event)
 
 
+class _TtsSegmentBuffer:
+    """Collect streamed reply text into stable TTS-sized segments."""
+
+    def __init__(
+        self,
+        *,
+        min_chars: int = _TTS_SEGMENT_MIN_CHARS,
+        max_chars: int = _TTS_SEGMENT_MAX_CHARS,
+    ) -> None:
+        self._buffer = ""
+        self._min_chars = min_chars
+        self._max_chars = max_chars
+
+    def feed(self, text: str) -> list[str]:
+        """Add text and return completed speakable segments."""
+        if not text:
+            return []
+        self._buffer += text
+        segments: list[str] = []
+        while True:
+            boundary = self._boundary()
+            if boundary is None:
+                break
+            segment = self._buffer[:boundary].strip()
+            self._buffer = self._buffer[boundary:].lstrip()
+            if segment:
+                segments.append(segment)
+        return segments
+
+    def finish(self) -> list[str]:
+        """Return any remaining text as the final segment."""
+        segment = self._buffer.strip()
+        self._buffer = ""
+        return [segment] if segment else []
+
+    def _boundary(self) -> int | None:
+        """Find the next stable sentence/paragraph/length boundary."""
+        text = self._buffer
+        paragraph_at = text.find("\n\n")
+        if paragraph_at >= self._min_chars // 2:
+            return paragraph_at + 2
+        for idx, char in enumerate(text):
+            if char not in ".!?":
+                continue
+            boundary = idx + 1
+            if boundary < self._min_chars:
+                continue
+            if boundary == len(text) or text[boundary].isspace():
+                return boundary
+        if len(text) >= self._max_chars:
+            split_at = max(
+                text.rfind(" ", self._min_chars, self._max_chars),
+                text.rfind("\n", self._min_chars, self._max_chars),
+            )
+            return split_at if split_at > 0 else self._max_chars
+        return None
+
+
 class FlowController:
     """Wire native/UI events into brain/audio/native product workflows."""
 
@@ -114,6 +175,11 @@ class FlowController:
         self._drop_context_items: list[dict[str, Any]] = []
         self._last_reply = ""
         self._active_agent_stream_id: Any = None
+        self._reply_thought_parser = None
+        self._tts_lock = threading.RLock()
+        self._tts_generation = 0
+        self._tts_queue: "queue.Queue[str | None] | None" = None
+        self._tts_sequence_active = False
         self._config_mtime = self._current_config_mtime()
 
     # -- lifecycle -----------------------------------------------------
@@ -370,17 +436,75 @@ class FlowController:
 
     def _on_audio_playback_done(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle audio playback done events."""
+        if self._tts_sequence_is_active():
+            return
         self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
         self._set_idle()
 
-    def _on_reply_chunk(self, data: dict[str, Any], _req_id: Any = None) -> None:
+    def _on_reply_chunk(self, data: dict[str, Any], _req_id: Any = None) -> list[tuple[str, bool, bool]]:
         """Handle reply chunk events."""
         text = str((data or {}).get("text") or "")
-        if text:
+        if not text:
+            return []
+        is_progress = bool((data or {}).get("is_progress"))
+        parser = self._reply_thought_parser
+        if parser is None:
+            self._safe_call(
+                self.ui,
+                "ui.reply.chunk",
+                {"text": text, "is_progress": is_progress},
+                timeout=30.0,
+            )
+            return [(text, False, is_progress)]
+        segments = list(parser.feed(text))
+        for segment, is_thought in segments:
+            if segment:
+                self._safe_call(
+                    self.ui,
+                    "ui.reply.chunk",
+                    {
+                        "text": segment,
+                        "is_thought": bool(is_thought),
+                        "is_progress": is_progress,
+                    },
+                    timeout=30.0,
+                )
+        return [(segment, bool(is_thought), is_progress) for segment, is_thought in segments if segment]
+
+    def _replace_reply_text(self, text: str) -> None:
+        """Replace streamed reply chunks with the final assistant text."""
+        if not text:
+            return
+        self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
+        try:
+            from core.assistant_text import ThoughtStreamParser
+
+            parser = ThoughtStreamParser()
+        except Exception:
             self._safe_call(self.ui, "ui.reply.chunk", {"text": text}, timeout=30.0)
+            return
+        for segment, is_thought in list(parser.feed(text)) + list(parser.finish()):
+            if segment:
+                self._safe_call(
+                    self.ui,
+                    "ui.reply.chunk",
+                    {"text": segment, "is_thought": bool(is_thought)},
+                    timeout=30.0,
+                )
 
     def _on_reply_done(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle reply done events."""
+        parser = self._reply_thought_parser
+        if parser is not None:
+            for segment, is_thought in parser.finish():
+                if segment:
+                    self._safe_call(
+                        self.ui,
+                        "ui.reply.chunk",
+                        {"text": segment, "is_thought": bool(is_thought)},
+                        timeout=30.0,
+                    )
+            self._reply_thought_parser = None
         text = str((data or {}).get("text") or "")
         if text:
             self._last_reply = text
@@ -763,12 +887,24 @@ class FlowController:
                 self._safe_call(
                     self.ui,
                     "ui.chat.chunk",
-                    {"request_id": request_id, "text": str((payload or {}).get("text") or "")},
+                    {
+                        "request_id": request_id,
+                        "text": str((payload or {}).get("text") or ""),
+                        "is_progress": bool((payload or {}).get("is_progress")),
+                    },
                     timeout=30.0,
                 )
             elif event == "reply.done":
                 done_seen = True
-                self._safe_call(self.ui, "ui.chat.done", {"request_id": request_id}, timeout=30.0)
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.done",
+                    {
+                        "request_id": request_id,
+                        "text": str((payload or {}).get("text") or ""),
+                    },
+                    timeout=30.0,
+                )
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
 
@@ -808,7 +944,12 @@ class FlowController:
                         {"request_id": request_id, "text": text},
                         timeout=30.0,
                     )
-                self._safe_call(self.ui, "ui.chat.done", {"request_id": request_id}, timeout=30.0)
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.done",
+                    {"request_id": request_id, "text": text},
+                    timeout=30.0,
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception("chat request failed")
             self._safe_call(
@@ -1245,6 +1386,14 @@ class FlowController:
 
         done_seen = False
         first_chunk_seen = False
+        streamed_reply_parts: list[str] = []
+        tts_segmenter = _TtsSegmentBuffer() if self._tts_enabled() else None
+        try:
+            from core.assistant_text import ThoughtStreamParser
+
+            self._reply_thought_parser = ThoughtStreamParser()
+        except Exception:
+            self._reply_thought_parser = None
 
         def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
             """Handle event events."""
@@ -1253,7 +1402,14 @@ class FlowController:
                 if not first_chunk_seen:
                     first_chunk_seen = True
                     log.info("query first reply chunk after %.2fs", time.monotonic() - query_started)
-                self._on_reply_chunk(payload)
+                if not bool((payload or {}).get("is_progress")):
+                    streamed_reply_parts.append(str((payload or {}).get("text") or ""))
+                for segment, is_thought, is_progress in self._on_reply_chunk(payload):
+                    if tts_segmenter is not None and is_progress and not is_thought:
+                        self._queue_tts_segment(gen, segment)
+                    elif tts_segmenter is not None and not is_thought:
+                        for tts_segment in tts_segmenter.feed(segment):
+                            self._queue_tts_segment(gen, tts_segment)
             elif event == "reply.done":
                 done_seen = True
                 text_done = str((payload or {}).get("text") or "")
@@ -1287,13 +1443,34 @@ class FlowController:
             )
         except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
             log.exception("brain query failed after %.2fs", time.monotonic() - query_started)
+            self._reply_thought_parser = None
             self._notice(f"LLM request failed: {self._friendly_error(exc)}")
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             self._set_idle()
             return
         log.info("query brain call finished after %.2fs", time.monotonic() - query_started)
+        parser = self._reply_thought_parser
+        if parser is not None:
+            for segment, is_thought in parser.finish():
+                if segment:
+                    self._safe_call(
+                        self.ui,
+                        "ui.reply.chunk",
+                        {"text": segment, "is_thought": bool(is_thought)},
+                        timeout=30.0,
+                    )
+                    if tts_segmenter is not None and not is_thought:
+                        for tts_segment in tts_segmenter.feed(segment):
+                            self._queue_tts_segment(gen, tts_segment)
+            self._reply_thought_parser = None
         text = str((result or {}).get("text") or "")
         self._last_reply = text
+        if text and "".join(streamed_reply_parts) != text:
+            self._replace_reply_text(text)
+        if tts_segmenter is not None:
+            for tts_segment in tts_segmenter.finish():
+                self._queue_tts_segment(gen, tts_segment)
+            self._finish_tts_sequence(gen)
         if text:
             self._safe_call(
                 self.ui,
@@ -1307,7 +1484,11 @@ class FlowController:
                 timeout=30.0,
             )
         if self._is_current(gen) and text and self._tts_enabled():
-            self._speak_text(text)
+            if not self._tts_sequence_is_active():
+                self._speak_text(text, generation=gen)
+        elif text and "".join(streamed_reply_parts) != text:
+            self._safe_call(self.ui, "ui.reply.done", {"flush": False}, timeout=30.0)
+            self._set_idle()
         elif not done_seen:
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             self._set_idle()
@@ -2532,12 +2713,74 @@ class FlowController:
 
         return str(getattr(config, "TTS_PROVIDER", "none")).strip().lower() != "none"
 
-    def _speak_text(self, text: str) -> None:
+    def _tts_sequence_is_active(self) -> bool:
+        """Return whether a segmented TTS queue owns playback state."""
+        with self._tts_lock:
+            return self._tts_sequence_active
+
+    def _ensure_tts_sequence(self, generation: int) -> "queue.Queue[str | None]":
+        """Create or return the segmented TTS queue for this generation."""
+        with self._tts_lock:
+            if self._tts_queue is not None and self._tts_generation == generation:
+                return self._tts_queue
+            q: "queue.Queue[str | None]" = queue.Queue()
+            self._tts_generation = generation
+            self._tts_queue = q
+            self._tts_sequence_active = True
+            threading.Thread(target=self._tts_sequence_worker, args=(generation, q), daemon=True).start()
+            return q
+
+    def _queue_tts_segment(self, generation: int, text: str) -> None:
+        """Queue one completed reply segment for TTS playback."""
+        segment = " ".join((text or "").split())
+        if not segment or not self._is_current(generation):
+            return
+        self._ensure_tts_sequence(generation).put(segment)
+
+    def _finish_tts_sequence(self, generation: int) -> None:
+        """Close the segmented TTS queue for this generation."""
+        with self._tts_lock:
+            q = self._tts_queue if self._tts_generation == generation else None
+        if q is not None:
+            q.put(None)
+
+    def _tts_sequence_worker(self, generation: int, q: "queue.Queue[str | None]") -> None:
+        """Synthesize and play queued TTS segments sequentially."""
+        try:
+            while self._is_current(generation):
+                segment = q.get()
+                if segment is None:
+                    break
+                if not self._is_current(generation):
+                    break
+                played = self._speak_text(segment, generation=generation, wait_for_playback=True)
+                if not played or not self._is_current(generation):
+                    break
+        finally:
+            with self._tts_lock:
+                if self._tts_queue is q:
+                    self._tts_queue = None
+                    self._tts_sequence_active = False
+            if self._is_current(generation):
+                self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+                self._set_idle()
+
+    def _speak_text(
+        self,
+        text: str,
+        *,
+        generation: int | None = None,
+        wait_for_playback: bool = False,
+    ) -> bool:
         """Handle speak text for flow controller."""
+        if generation is not None and not self._is_current(generation):
+            return False
         try:
             result = self.audio.call("audio.tts.synthesize", {"text": text}, timeout=180.0)
             path = result.get("path") if isinstance(result, dict) else ""
             if path:
+                if generation is not None and not self._is_current(generation):
+                    return False
                 self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
                 # Buffer Cartesia word timestamps in the bubble *before* playback
                 # starts. start_word_reveal â€” fired by the audio.playback.started
@@ -2547,21 +2790,31 @@ class FlowController:
                 # anchor the reveal to synth-completion (before audio is audible)
                 # and the playback-started reveal would then cancel it.
                 wts = result.get("word_timestamps") if isinstance(result, dict) else None
-                if isinstance(wts, dict) and wts.get("words"):
+                if not wait_for_playback and isinstance(wts, dict) and wts.get("words"):
                     self._safe_call(
                         self.ui,
                         "ui.reply.schedule_words",
                         {"words": wts.get("words"), "start_ms": wts.get("start_ms")},
                         timeout=30.0,
                     )
-                self.audio.call("audio.play_file", {"path": path}, wait=False)
+                if wait_for_playback:
+                    play_result = self.audio.call("audio.play_file", {"path": path}, timeout=180.0)
+                    if isinstance(play_result, dict) and play_result.get("stopped"):
+                        return False
+                else:
+                    self.audio.call("audio.play_file", {"path": path}, wait=False)
+                return True
             else:
-                self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
-                self._set_idle()
+                if not wait_for_playback:
+                    self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+                    self._set_idle()
+                return False
         except Exception:
             log.exception("audio playback failed")
-            self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
-            self._set_idle()
+            if not wait_for_playback:
+                self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+                self._set_idle()
+            return False
 
 
 def json_safe_dumps(value: Any) -> str:
