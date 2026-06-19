@@ -65,6 +65,7 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
         pinned_tools=None,
         ctx=None,
         file_access_mode="",
+        file_context=None,
     ):
         """Verify fake stream behavior."""
         captured["messages"] = messages
@@ -74,6 +75,7 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
         captured["pinned_tools"] = pinned_tools
         captured["ctx"] = ctx
         captured["file_access_mode"] = file_access_mode
+        captured["file_context"] = file_context
         yield "ok"
 
     monkeypatch.setattr(handlers, "_stream_chat_reply", fake_stream)
@@ -106,6 +108,7 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
         "pinned_tools": ["read_file"],
         "ctx": ctx,
         "file_access_mode": "read",
+        "file_context": [],
     }
 
 

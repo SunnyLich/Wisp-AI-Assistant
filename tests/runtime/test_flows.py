@@ -1753,6 +1753,69 @@ def test_chat_request_streams_through_brain_chat():
     assert done_params["text"] == "chat reply"
 
 
+def test_chat_request_forwards_file_context_metadata():
+    """Verify chat request forwards display-hidden file metadata to the UI."""
+    file_context = [
+        {
+            "tool": "create_file",
+            "path": r"C:\repo\model_files\hello_world.py",
+            "relative_path": "hello_world.py",
+            "ok": True,
+        }
+    ]
+
+    def chat_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        """Emit a final reply with local-file metadata."""
+        on_event("reply.done", {"text": "done", "file_context": file_context}, 1)
+        return {"text": "done", "file_context": file_context}
+
+    brain = FakeWorker(stream_handlers={"brain.chat": chat_stream})
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "create"}]})
+
+    done_params = ui.last_call("ui.chat.done")["params"]
+    assert done_params["text"] == "done"
+    assert done_params["file_context"] == file_context
+
+
+def test_chat_request_reuses_conversation_tool_context():
+    """Verify switched conversations keep their stored tool grants."""
+    rows = [
+        {
+            "file_access": "off",
+            "tools": {},
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+        }
+    ]
+    tool_context = {
+        "allowed_tools": ["read_file", "edit_file"],
+        "pinned_tools": ["read_file", "edit_file"],
+        "file_access_mode": "ask",
+    }
+    brain = FakeWorker(stream_handlers={"brain.chat": query_stream("chat reply")})
+
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+        ui.emit(
+            "ui.chat.request",
+            {
+                "request_id": "chat-1",
+                "messages": [{"role": "user", "content": "edit again"}],
+                "tool_context": tool_context,
+            },
+        )
+
+    params = brain.last_call("brain.chat")["params"]
+    assert params["allowed_tools"] == ["read_file", "edit_file"]
+    assert params["pinned_tools"] == ["read_file", "edit_file"]
+    assert params["file_access_mode"] == "ask"
+    assert ui.last_call("ui.chat.done")["params"]["tool_context"] == tool_context
+
+
 def test_chat_request_enables_ask_file_tools_when_caller_files_are_off():
     """Verify chat can create files even when hotkey file access is off."""
     rows = [
@@ -1848,6 +1911,60 @@ def test_icon_summon_routes_to_first_caller_like_default_hotkey():
 
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
     assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
+
+
+def test_hotkey_followup_injects_active_chat_file_context():
+    """Verify prior file metadata is replayed as hidden context for hotkey follow-ups."""
+    path = r"C:\repo\model_files\hello_world.py"
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "context_memory_mode": "off",
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    ui = FakeWorker(
+        {
+            "ui.chat.active_history": lambda _params: {
+                "history": [{"role": "user", "content": "create a file"}],
+                "project_id": None,
+                "context": "Original ambient context",
+                "file_context": [
+                    {
+                        "tool": "create_file",
+                        "path": path,
+                        "relative_path": "hello_world.py",
+                        "ok": True,
+                    }
+                ],
+                "tool_context": {
+                    "allowed_tools": ["read_file", "edit_file"],
+                    "pinned_tools": ["read_file", "edit_file"],
+                    "file_access_mode": "ask",
+                },
+            }
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(native=native, ui=ui, brain=brain)
+        _flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "edit that file"})
+
+    query = brain.last_call("brain.query")["params"]
+    assert path in query["ambient_text"]
+    assert "Original ambient context" in query["ambient_text"]
+    assert "Conversation Context" in query["ambient_text"]
+    assert "Conversation File Context" in query["ambient_text"]
+    assert query["allowed_tools"] == ["read_file", "edit_file"]
+    assert query["pinned_tools"] == ["read_file", "edit_file"]
+    assert query["file_access_mode"] == "ask"
 
 
 def test_caller_memory_modes_map_to_injected_or_model_decided_access():

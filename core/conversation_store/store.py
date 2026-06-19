@@ -172,6 +172,8 @@ def _clean_conversation(conv: dict) -> dict:
         "pinned": bool(conv.get("pinned")),
         "messages": conv.get("messages", []),
         "context": conv.get("context", ""),
+        "file_context": conv.get("file_context", []),
+        "tool_context": conv.get("tool_context", {}),
         "created_at": conv.get("created_at") or _now_iso(),
         "updated_at": _now_iso(),
     }

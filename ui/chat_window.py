@@ -12,6 +12,7 @@ import re
 import threading
 import uuid
 import config
+from datetime import datetime, timezone
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QTextEdit, QPushButton, QFrame, QApplication, QTextBrowser,
@@ -50,8 +51,156 @@ _SEL_BG     = "rgba(160,160,255,18)"
 _REVERT_DELAY_MS = 3000   # how long bold words stay highlighted after TTS finishes
 _CHAT_RENDER_CHAR_LIMIT = 24_000
 _CONTEXT_TOOLTIP_CHAR_LIMIT = 4_000
+_ATTACHMENT_CONTEXT_CHAR_LIMIT = 40_000
 _SIDEBAR_MENU_W = 32
 _SIDEBAR_FADE_W = 34
+
+
+def _now_iso() -> str:
+    """Return current UTC time for conversation metadata."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    """Parse stored ISO timestamps and normalize them to local time."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone()
+
+
+def _format_conversation_datetime(value: str | None) -> str:
+    """Format a conversation timestamp for display only."""
+    dt = _parse_iso_datetime(value)
+    if dt is None:
+        return ""
+    hour = dt.strftime("%I").lstrip("0") or "0"
+    return f"{dt.strftime('%b')} {dt.day}, {dt.year} {hour}:{dt.strftime('%M %p')}"
+
+
+def _touch_conversation(conv: dict, *, now: str | None = None) -> str:
+    """Ensure created_at exists and update updated_at."""
+    stamp = now or _now_iso()
+    conv.setdefault("created_at", stamp)
+    conv["updated_at"] = stamp
+    return stamp
+
+
+def _chat_model_messages(messages: list[dict]) -> list[dict[str, str]]:
+    """Return only role/content turns for the model."""
+    turns: list[dict[str, str]] = []
+    for msg in messages:
+        role = str(msg.get("role") or "").strip()
+        content = msg.get("content")
+        if role in {"system", "user", "assistant"} and isinstance(content, str) and content.strip():
+            turn: dict[str, str] = {"role": role, "content": content}
+            image = msg.get("image_base64")
+            if role == "user" and image:
+                turn["image_base64"] = str(image)
+            turns.append(turn)
+    return turns
+
+
+def _normalized_file_context(items: list) -> list[dict]:
+    """Normalize persisted local-file tool metadata."""
+    out: list[dict] = []
+    for raw in items or []:
+        if not isinstance(raw, dict):
+            continue
+        item = {
+            "tool": str(raw.get("tool") or ""),
+            "path": str(raw.get("path") or ""),
+            "relative_path": str(raw.get("relative_path") or ""),
+            "root": str(raw.get("root") or ""),
+            "ok": bool(raw.get("ok")),
+            "message": str(raw.get("message") or ""),
+        }
+        if item["tool"] and item["path"] and item not in out:
+            out.append(item)
+    return out[-20:]
+
+
+def _merge_file_context(conv: dict, items: list) -> None:
+    """Merge local-file metadata into a conversation."""
+    merged = _normalized_file_context(list(conv.get("file_context") or []) + list(items or []))
+    if merged:
+        conv["file_context"] = merged
+
+
+def _normalized_tool_context(raw: dict) -> dict:
+    """Normalize persisted tool policy metadata."""
+    if not isinstance(raw, dict):
+        return {}
+
+    def _str_list(value) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        out: list[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if text and text not in out:
+                out.append(text)
+        return out
+
+    mode = str(raw.get("file_access_mode") or "").strip().lower()
+    if mode not in {"off", "read", "ask", "auto"}:
+        mode = ""
+    ctx = {
+        "allowed_tools": _str_list(raw.get("allowed_tools")),
+        "pinned_tools": _str_list(raw.get("pinned_tools")),
+        "file_access_mode": mode,
+    }
+    if not ctx["allowed_tools"] and not ctx["pinned_tools"] and not ctx["file_access_mode"]:
+        return {}
+    return ctx
+
+
+def _merge_tool_context(conv: dict, raw: dict) -> None:
+    """Merge tool policy metadata into a conversation."""
+    ctx = _normalized_tool_context(raw)
+    if ctx:
+        conv["tool_context"] = ctx
+
+
+def _append_context_block(existing: str, title: str, body: str) -> str:
+    """Append a labelled context block while keeping separator formatting stable."""
+    text = str(body or "").strip()
+    if not text:
+        return str(existing or "")
+    block = f"[{title}]\n{text}"
+    current = str(existing or "").strip()
+    return f"{current}\n\n---\n{block}" if current else block
+
+
+def _file_context_text(items: list) -> str:
+    """Build hidden follow-up context for recent local-file tools."""
+    normalized = _normalized_file_context(items)
+    if not normalized:
+        return ""
+    lines = [
+        "Recent local file tool context for this conversation.",
+        "Use these exact paths when the user refers to 'that file' or a prior file.",
+    ]
+    for item in normalized[-8:]:
+        status = "ok" if item.get("ok") else "failed"
+        path = item.get("path") or item.get("relative_path")
+        rel = item.get("relative_path") or ""
+        label = f"{item.get('tool')} ({status}): {path}"
+        if rel and rel != path:
+            label += f" [relative: {rel}]"
+        message = str(item.get("message") or "").strip()
+        if message:
+            label += f" - {message}"
+        lines.append(f"- {label}")
+    return "\n".join(lines)
 
 
 def _truncate_for_display(text: str, limit: int, label: str = "display") -> str:
@@ -97,6 +246,7 @@ class _StreamSignals(QObject):
     """Model stream signals."""
     chunk     = Signal(str)
     final     = Signal(str)
+    metadata  = Signal(object)
     finished  = Signal()
 
 
@@ -140,10 +290,11 @@ class _MessageTextView(QTextBrowser):
 class _ConversationTitleButton(QPushButton):
     """Paints a sidebar title with a right-edge fade under the overlaid menu."""
 
-    def __init__(self, title: str, *, active: bool, latest: bool) -> None:
+    def __init__(self, title: str, subtitle: str = "", *, active: bool, latest: bool) -> None:
         """Initialize the conversation title button instance."""
         super().__init__("")
         self._title = title
+        self._subtitle = subtitle
         self._active = active
         self._latest = latest
         self.setCheckable(True)
@@ -173,19 +324,32 @@ class _ConversationTitleButton(QPushButton):
             painter.fillRect(rect, bg)
 
         text_rect = rect.adjusted(10, 0, -(_SIDEBAR_MENU_W + 10), 0)
-        font = QFont("Segoe UI", 9)
-        painter.setFont(font)
+        title_font = QFont("Segoe UI", 9)
+        subtitle_font = QFont("Segoe UI", 8)
+        painter.setFont(title_font)
         color = QColor(_ACCENT if self._latest else _TEXT)
         painter.setPen(QPen(color))
 
-        metrics = QFontMetrics(font)
+        metrics = QFontMetrics(title_font)
         available = max(0, text_rect.width() - _SIDEBAR_FADE_W)
         title = metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, available)
+        title_rect = text_rect.adjusted(0, 4 if self._subtitle else 0, 0, -18 if self._subtitle else 0)
         painter.drawText(
-            text_rect,
+            title_rect,
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             title,
         )
+        if self._subtitle:
+            painter.setFont(subtitle_font)
+            painter.setPen(QPen(QColor(_HINT)))
+            sub_metrics = QFontMetrics(subtitle_font)
+            subtitle = sub_metrics.elidedText(self._subtitle, Qt.TextElideMode.ElideRight, available)
+            subtitle_rect = text_rect.adjusted(0, 24, 0, -2)
+            painter.drawText(
+                subtitle_rect,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                subtitle,
+            )
 
         if metrics.horizontalAdvance(self._title) > available:
             fade_left = max(text_rect.left(), text_rect.right() - _SIDEBAR_FADE_W)
@@ -392,7 +556,14 @@ class ChatWindow(QWidget):
         self._current_ai_reply_text = ""
         self._current_ai_segments: list[tuple[str, bool]] = []
         self._current_ai_parser: ThoughtStreamParser | None = None
+        self._current_file_context: list[dict] = []
+        self._current_tool_context: dict = {}
+        self._pending_attachment_context = ""
+        self._pending_attachment_image_b64: str | None = None
+        self._pending_attachment_labels: list[str] = []
+        self._attachment_label: QLabel | None = None
         self._conversation_menu: QMenu | None = None
+        self.setAcceptDrops(True)
         if active_idx is not None and 0 <= active_idx < len(conversations):
             self._active_idx = active_idx
         else:
@@ -402,6 +573,7 @@ class ChatWindow(QWidget):
         self._signals = _StreamSignals()
         self._signals.chunk.connect(self._on_chunk)
         self._signals.final.connect(self._on_final_text)
+        self._signals.metadata.connect(self._on_metadata)
         self._signals.finished.connect(self._on_finished)
 
         self.setWindowTitle(t("Chat"))
@@ -419,8 +591,11 @@ class ChatWindow(QWidget):
 
         if start_new:
             QTimer.singleShot(0, lambda: self.start_new_conversation(auto_message=auto_message))
-        elif auto_message and conversations:
-            QTimer.singleShot(120, lambda: self._send(auto_message))
+        elif conversations:
+            if self._on_select and 0 <= self._active_idx < len(self._conversations):
+                self._on_select(self._active_idx)
+            if auto_message:
+                QTimer.singleShot(120, lambda: self._send(auto_message))
 
     # ------------------------------------------------------------------ Build
 
@@ -600,15 +775,21 @@ class ChatWindow(QWidget):
         prefix = f"[{t('image')}] " if has_image else ""
         return prefix + str(raw).strip().replace("\n", " ")
 
+    def _conversation_timestamp(self, conv: dict) -> str:
+        """Return display timestamp for a conversation."""
+        return _format_conversation_datetime(conv.get("updated_at") or conv.get("created_at"))
+
     def _make_sidebar_row(self, idx: int, conv: dict) -> tuple[QWidget, QPushButton]:
         """Create sidebar row."""
         title = self._conversation_title(idx, conv)
         if conv.get("pinned"):
             title = "📌 " + title
+        subtitle = self._conversation_timestamp(conv)
         is_latest = (idx == len(self._conversations) - 1)
         is_active = (idx == self._active_idx)
 
-        btn = _ConversationTitleButton(title, active=is_active, latest=is_latest)
+        btn = _ConversationTitleButton(title, subtitle, active=is_active, latest=is_latest)
+        btn.setToolTip("\n".join(part for part in (title, subtitle) if part))
         btn.clicked.connect(lambda _checked, ix=idx: self._switch(ix))
 
         menu_btn = QPushButton("⋮")
@@ -669,6 +850,7 @@ class ChatWindow(QWidget):
             return
         conv = self._conversations[idx]
         conv["pinned"] = not conv.get("pinned")
+        _touch_conversation(conv)
         self._rebuild_sidebar()
         self._persist()
 
@@ -684,6 +866,7 @@ class ChatWindow(QWidget):
         if not ok:
             return
         conv["title_override"] = name.strip()
+        _touch_conversation(conv)
         self._rebuild_sidebar()
         self._persist()
 
@@ -692,6 +875,7 @@ class ChatWindow(QWidget):
         if not (0 <= idx < len(self._conversations)):
             return
         self._conversations[idx]["project_id"] = project_id
+        _touch_conversation(self._conversations[idx])
         self._rebuild_sidebar()
         self._persist()
 
@@ -845,6 +1029,7 @@ class ChatWindow(QWidget):
             "messages": [],
             "context": "",
         }
+        _touch_conversation(conv)
         self._conversations.append(conv)
 
         if was_empty and self._has_placeholder:
@@ -927,9 +1112,14 @@ class ChatWindow(QWidget):
         layout.setSpacing(10)
         layout.addStretch()
 
+        stamp = self._conversation_time_label(conv)
         hint = self._context_hint(conv.get("context", ""))
+        insert_at = 0
+        if stamp is not None:
+            layout.insertWidget(insert_at, stamp)
+            insert_at += 1
         if hint is not None:
-            layout.insertWidget(0, hint)  # sits above the first message
+            layout.insertWidget(insert_at, hint)  # sits above the first message
 
         last_ai: _MessageTextView | None = None
         for msg in conv["messages"]:
@@ -977,15 +1167,47 @@ class ChatWindow(QWidget):
         )
         return lbl
 
+    def _conversation_time_label(self, conv: dict) -> QLabel | None:
+        """Small display-only timestamp for a conversation page."""
+        created = _format_conversation_datetime(conv.get("created_at"))
+        updated = _format_conversation_datetime(conv.get("updated_at"))
+        if not created and not updated:
+            return None
+        text = created or updated
+        if created and updated and updated != created:
+            text = f"{created} · updated {updated}"
+        lbl = QLabel(html.escape(text))
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        lbl.setStyleSheet(
+            f"color: {_HINT}; font-size: 8pt; padding: 0 4px 2px 4px;"
+            " background: transparent;"
+        )
+        return lbl
+
     def _make_input_area(self) -> QWidget:
         """Create input area."""
         frame = QWidget()
         frame.setStyleSheet(f"background: {_TITLE_BG}; border-top: 1px solid {_BORDER};")
-        h = QHBoxLayout(frame)
-        h.setContentsMargins(10, 8, 10, 8)
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(10, 8, 10, 8)
+        outer.setSpacing(6)
+
+        self._attachment_label = QLabel("")
+        self._attachment_label.setWordWrap(True)
+        self._attachment_label.setVisible(False)
+        self._attachment_label.setStyleSheet(
+            f"QLabel {{ color: {_HINT}; background: rgba(160,160,255,12);"
+            f" border: 1px solid {_BORDER}; border-radius: 6px; padding: 4px 7px;"
+            " font-size: 8pt; }}"
+        )
+        outer.addWidget(self._attachment_label)
+
+        h = QHBoxLayout()
+        h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(8)
 
         self._input = QTextEdit()
+        self._input.setAcceptDrops(False)
         self._input.setFixedHeight(62)
         self._input.setPlaceholderText(t("Message... (Enter to send, Shift+Enter for newline)"))
         self._input.setStyleSheet(
@@ -1005,6 +1227,7 @@ class ChatWindow(QWidget):
         self._send_btn.clicked.connect(self._on_send_clicked)
         h.addWidget(self._input)
         h.addWidget(self._send_btn)
+        outer.addLayout(h)
         return frame
 
     # ------------------------------------------------------------------ Bubbles
@@ -1084,11 +1307,116 @@ class ChatWindow(QWidget):
                 scroll.verticalScrollBar().maximum()
             ))
 
+    # ------------------------------------------------------------------ Drops
+
+    def dragEnterEvent(self, event):  # noqa: N802
+        """Accept file/text/image drops as pending message attachments."""
+        mime = event.mimeData()
+        if mime and (mime.hasUrls() or mime.hasText() or mime.hasImage()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event):  # noqa: N802
+        """Attach dropped files, text, or images to the next chat message."""
+        if self._add_attachments_from_mime(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+    def _add_attachments_from_mime(self, mime) -> bool:
+        """Convert dropped MIME data into next-message context/image attachments."""
+        try:
+            from ui.drop_zone import process_drop_mime
+            raw_items = process_drop_mime(mime)
+        except Exception:
+            raw_items = []
+        return self._add_attachment_items(raw_items)
+
+    def _add_attachment_items(self, raw_items: list[tuple[str, str, str]]) -> bool:
+        """Attach normalized drop-zone items to the next outgoing chat turn."""
+        if not raw_items:
+            return False
+        image_labels: list[str] = []
+        context_items: list[tuple[str, str, str]] = []
+        fallback_lines: list[str] = []
+        for name, content, item_type in raw_items:
+            label = str(name or "Attachment")
+            kind = str(item_type or "text")
+            if kind == "image" and self._pending_attachment_image_b64 is None:
+                self._pending_attachment_image_b64 = str(content or "")
+                image_labels.append(label)
+            elif kind == "image":
+                fallback_lines.append(f"[Attached image: {label}]")
+            else:
+                context_items.append((label, str(content or ""), kind))
+
+        context = self._attachment_context_from_items(context_items)
+        parts = [part for part in (self._pending_attachment_context, context, "\n".join(fallback_lines)) if part.strip()]
+        self._pending_attachment_context = "\n\n".join(parts)
+        if len(self._pending_attachment_context) > _ATTACHMENT_CONTEXT_CHAR_LIMIT:
+            self._pending_attachment_context = (
+                self._pending_attachment_context[:_ATTACHMENT_CONTEXT_CHAR_LIMIT].rstrip()
+                + "\n[attached context truncated]"
+            )
+
+        labels = image_labels + [name for name, _content, _kind in context_items]
+        for label in labels:
+            if label and label not in self._pending_attachment_labels:
+                self._pending_attachment_labels.append(label)
+        self._refresh_attachment_label()
+        return bool(labels or fallback_lines)
+
+    def _attachment_context_from_items(self, items: list[tuple[str, str, str]]) -> str:
+        """Render dropped text/document items as model-visible context."""
+        if not items:
+            return ""
+        try:
+            from core.query_pipeline import ContextInputs, build_context
+            built = build_context(ContextInputs(intent_prompt="", drop_items=items))
+            return str(built.ambient_ctx or "").strip()
+        except Exception:
+            lines = []
+            for name, content, _kind in items:
+                text = str(content or "").strip()
+                if text:
+                    lines.append(f"[{name}]\n{text}")
+            return "\n\n".join(lines)
+
+    def _refresh_attachment_label(self) -> None:
+        """Update the pending attachment chip above the composer."""
+        if self._attachment_label is None:
+            return
+        if not self._pending_attachment_labels:
+            self._attachment_label.setVisible(False)
+            self._attachment_label.setText("")
+            self._attachment_label.setToolTip("")
+            return
+        names = ", ".join(self._pending_attachment_labels[:4])
+        if len(self._pending_attachment_labels) > 4:
+            names += f", +{len(self._pending_attachment_labels) - 4}"
+        self._attachment_label.setText(f"{t('Attached')} · {html.escape(names)}")
+        self._attachment_label.setToolTip("\n".join(self._pending_attachment_labels))
+        self._attachment_label.setVisible(True)
+
+    def _consume_pending_attachments(self) -> tuple[str, str | None, list[str]]:
+        """Return and clear pending context/image attachments."""
+        context = self._pending_attachment_context
+        image = self._pending_attachment_image_b64
+        labels = list(self._pending_attachment_labels)
+        self._pending_attachment_context = ""
+        self._pending_attachment_image_b64 = None
+        self._pending_attachment_labels = []
+        self._refresh_attachment_label()
+        return context, image, labels
+
     # ------------------------------------------------------------------ Sending
 
     def _on_send_clicked(self):
         """Handle send clicked events."""
         text = self._input.toPlainText().strip()
+        if not text and self._pending_attachment_labels:
+            text = t("Please review the attached file.")
         if text and not self._streaming:
             self._input.clear()
             self._send(text)
@@ -1102,16 +1430,26 @@ class ChatWindow(QWidget):
         self._new_chat_btn.setEnabled(False)
 
         conv = self._conversations[self._active_idx]
+        attachment_context, attachment_image, attachment_labels = self._consume_pending_attachments()
+        if attachment_context:
+            label = ", ".join(attachment_labels) if attachment_labels else t("Attachments")
+            conv["context"] = _append_context_block(conv.get("context", ""), f"{t('Attached')} · {label}", attachment_context)
+        now = _touch_conversation(conv)
 
         layout = self._active_layout()
         if layout:
-            self._bubble(layout, text, "user")
-        conv["messages"].append({"role": "user", "content": text})
+            self._bubble(layout, text, "user", attachment_image)
+        user_message = {"role": "user", "content": text, "created_at": now}
+        if attachment_image:
+            user_message["image_base64"] = attachment_image
+        conv["messages"].append(user_message)
 
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
         self._current_ai_parser = ThoughtStreamParser()
+        self._current_file_context = []
+        self._current_tool_context = {}
         self._current_ai_label = self._bubble(layout, "...", "assistant") if layout else None
         self._scroll_bottom()
 
@@ -1121,7 +1459,10 @@ class ChatWindow(QWidget):
         sys_content = config.get_system_prompt()
         if ctx:
             sys_content += f"\n\n---\n{ctx}"
-        messages = [{"role": "system", "content": sys_content}] + conv["messages"]
+        file_ctx = _file_context_text(conv.get("file_context") or [])
+        if file_ctx:
+            sys_content += f"\n\n---\n{file_ctx}"
+        messages = [{"role": "system", "content": sys_content}] + _chat_model_messages(conv["messages"])
 
         def _stream():
             """Stream the chat window workflow."""
@@ -1129,6 +1470,8 @@ class ChatWindow(QWidget):
                 for item in self._send_fn(messages):
                     if isinstance(item, dict) and item.get("type") == "final":
                         self._signals.final.emit(str(item.get("text") or ""))
+                    elif isinstance(item, dict) and item.get("type") == "metadata":
+                        self._signals.metadata.emit(item)
                     else:
                         self._signals.chunk.emit(str(item or ""))
             finally:
@@ -1175,6 +1518,12 @@ class ChatWindow(QWidget):
             )
         self._scroll_bottom()
 
+    def _on_metadata(self, item: object):
+        """Capture display-hidden metadata returned with the reply."""
+        if isinstance(item, dict):
+            self._current_file_context = _normalized_file_context(item.get("file_context") or [])
+            self._current_tool_context = _normalized_tool_context(item.get("tool_context") or {})
+
     def _on_finished(self):
         """Handle finished events."""
         if self._current_ai_parser is not None:
@@ -1188,10 +1537,14 @@ class ChatWindow(QWidget):
                     _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
                 )
         if self._current_ai_reply_text and self._conversations and 0 <= self._active_idx < len(self._conversations):
-            message = {"role": "assistant", "content": self._current_ai_reply_text}
+            conv = self._conversations[self._active_idx]
+            stamp = _touch_conversation(conv)
+            message = {"role": "assistant", "content": self._current_ai_reply_text, "created_at": stamp}
             if self._current_ai_text != self._current_ai_reply_text:
                 message["display_content"] = self._current_ai_text
-            self._conversations[self._active_idx]["messages"].append(message)
+            conv["messages"].append(message)
+            _merge_file_context(conv, self._current_file_context)
+            _merge_tool_context(conv, self._current_tool_context)
             if self._persist_fn:
                 try:
                     self._persist_fn()
@@ -1202,6 +1555,8 @@ class ChatWindow(QWidget):
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
         self._current_ai_parser = None
+        self._current_file_context = []
+        self._current_tool_context = {}
         self._streaming = False
         self._send_btn.setEnabled(True)
         self._new_chat_btn.setEnabled(True)

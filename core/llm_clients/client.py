@@ -377,9 +377,23 @@ def set_live_file_approval_callback(callback: Callable[[dict], bool] | None) -> 
     _LIVE_TOOL_CONTEXT.file_approval_callback = callback
 
 
+def set_live_file_event_callback(callback: Callable[[dict], None] | None) -> None:
+    """Set the metadata callback for local-file tool use in this request."""
+    if callback is None:
+        if hasattr(_LIVE_TOOL_CONTEXT, "file_event_callback"):
+            delattr(_LIVE_TOOL_CONTEXT, "file_event_callback")
+        return
+    _LIVE_TOOL_CONTEXT.file_event_callback = callback
+
+
 def _effective_live_file_approval_callback() -> Callable[[dict], bool] | None:
     """Return the live request approval callback, falling back to the global hook."""
     return getattr(_LIVE_TOOL_CONTEXT, "file_approval_callback", None) or _FILE_EDIT_APPROVAL_CALLBACK
+
+
+def _effective_live_file_event_callback() -> Callable[[dict], None] | None:
+    """Return the live request file metadata callback."""
+    return getattr(_LIVE_TOOL_CONTEXT, "file_event_callback", None)
 
 
 def _execute_list_files(inputs: dict) -> str:
@@ -389,6 +403,7 @@ def _execute_list_files(inputs: dict) -> str:
         inputs or {},
         access_mode=_effective_live_file_access_mode(["list_files"]),
         approval_callback=_effective_live_file_approval_callback(),
+        event_callback=_effective_live_file_event_callback(),
     )
 
 
@@ -399,6 +414,7 @@ def _execute_read_file(inputs: dict) -> str:
         inputs or {},
         access_mode=_effective_live_file_access_mode(["read_file"]),
         approval_callback=_effective_live_file_approval_callback(),
+        event_callback=_effective_live_file_event_callback(),
     )
 
 
@@ -409,6 +425,7 @@ def _execute_edit_file(inputs: dict) -> str:
         inputs or {},
         access_mode=_effective_live_file_access_mode(["edit_file"]),
         approval_callback=_effective_live_file_approval_callback(),
+        event_callback=_effective_live_file_event_callback(),
     )
 
 
@@ -419,6 +436,7 @@ def _execute_create_file(inputs: dict) -> str:
         inputs or {},
         access_mode=_effective_live_file_access_mode(["create_file"]),
         approval_callback=_effective_live_file_approval_callback(),
+        event_callback=_effective_live_file_event_callback(),
     )
 
 
@@ -429,6 +447,7 @@ def _execute_write_file(inputs: dict) -> str:
         inputs or {},
         access_mode=_effective_live_file_access_mode(["write_file"]),
         approval_callback=_effective_live_file_approval_callback(),
+        event_callback=_effective_live_file_event_callback(),
     )
 
 
@@ -1228,6 +1247,7 @@ def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None
             inputs or {},
             access_mode=_effective_live_file_access_mode(allowed_tools),
             approval_callback=_effective_live_file_approval_callback(),
+            event_callback=_effective_live_file_event_callback(),
         )
     return _TOOL_REGISTRY.execute(name, inputs)
 

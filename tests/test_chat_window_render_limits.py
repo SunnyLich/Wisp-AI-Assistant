@@ -9,6 +9,9 @@ import pytest
 from ui.chat_window import (
     ChatWindow,
     _CHAT_RENDER_CHAR_LIMIT,
+    _chat_model_messages,
+    _file_context_text,
+    _format_conversation_datetime,
     _truncate_for_display,
     _truncate_segments_for_display,
 )
@@ -37,6 +40,40 @@ def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
     assert result[0] == ("thought:" + "a" * 16, True)
     assert result[1][1] is False
     assert "chat display truncated" in result[1][0]
+
+
+def test_conversation_datetime_formats_for_history_display():
+    """Verify conversation timestamps are display metadata."""
+    assert _format_conversation_datetime("2026-06-19T15:52:16+00:00")
+
+
+def test_chat_model_messages_excludes_timestamp_metadata():
+    """Verify model payload only carries role/content and screenshots."""
+    messages = [
+        {"role": "user", "content": "hi", "created_at": "2026-06-19T15:52:16+00:00"},
+        {"role": "assistant", "content": "hello", "updated_at": "2026-06-19T15:52:17+00:00"},
+    ]
+
+    assert _chat_model_messages(messages) == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+
+
+def test_file_context_text_mentions_exact_prior_path():
+    """Verify file metadata can resolve later 'that file' references."""
+    text = _file_context_text([
+        {
+            "tool": "create_file",
+            "path": r"C:\repo\model_files\hello_world.py",
+            "relative_path": "hello_world.py",
+            "ok": True,
+            "message": "Created hello_world.py.",
+        }
+    ])
+
+    assert r"C:\repo\model_files\hello_world.py" in text
+    assert "that file" in text
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -120,6 +157,51 @@ def test_chat_sidebar_options_button_stays_visible_for_long_titles():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_sidebar_shows_conversation_timestamp():
+    """Verify history rows include conversation date/time metadata."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "updated_at": "2026-06-19T15:52:16+00:00",
+        }
+    ]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    try:
+        row, title_btn = window._make_sidebar_row(0, conversations[0])
+
+        assert title_btn._subtitle
+        assert title_btn._subtitle in title_btn.toolTip()
+    finally:
+        row.deleteLater()
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_window_reports_initial_active_conversation():
+    """Verify opening chat retargets follow-up prompts to the shown conversation."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    selected = []
+    conversations = [
+        {"messages": [{"role": "user", "content": "old"}]},
+        {"messages": [{"role": "user", "content": "new"}]},
+    ]
+    window = ChatWindow(conversations, lambda _messages: iter(()), active_idx=0, on_select=selected.append)
+    try:
+        assert selected == [0]
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
     """Verify chat sidebar options menu anchors to button behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -170,7 +252,115 @@ def test_chat_final_text_replaces_partial_stream_before_persist():
         assert conversations[0]["messages"][-1] == {
             "role": "assistant",
             "content": "first part plus second part",
+            "created_at": conversations[0]["messages"][-1]["created_at"],
         }
+        assert conversations[0]["updated_at"]
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_followup_injects_hidden_file_context():
+    """Verify file metadata is sent as hidden system context, not message turns."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    captured = []
+    conversations = [
+        {
+            "messages": [{"role": "user", "content": "add a comment"}],
+            "file_context": [
+                {
+                    "tool": "create_file",
+                    "path": r"C:\repo\model_files\hello_world.py",
+                    "relative_path": "hello_world.py",
+                    "ok": True,
+                }
+            ],
+        }
+    ]
+
+    def send_fn(messages):
+        captured.append(messages)
+        yield "ok"
+
+    window = ChatWindow(conversations, send_fn)
+    try:
+        window._send("edit that file")
+        for _ in range(20):
+            app.processEvents()
+            if captured:
+                break
+
+        assert captured
+        assert r"C:\repo\model_files\hello_world.py" in captured[0][0]["content"]
+        assert all("file_context" not in message for message in captured[0])
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_window_persists_returned_tool_context():
+    """Verify returned tool policy metadata is stored with the conversation."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [{"messages": [{"role": "user", "content": "hi"}]}]
+    tool_context = {
+        "allowed_tools": ["read_file", "edit_file"],
+        "pinned_tools": ["read_file", "edit_file"],
+        "file_access_mode": "ask",
+    }
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    try:
+        window._current_ai_text = "done"
+        window._current_ai_reply_text = "done"
+        window._on_metadata({"tool_context": tool_context})
+        window._on_finished()
+
+        assert conversations[0]["tool_context"] == tool_context
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_chat_window_drop_attachments_feed_next_message_context_and_image():
+    """Verify dropped files/images attach to the next outgoing chat message."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    captured = []
+    conversations = [{"messages": []}]
+
+    def send_fn(messages):
+        captured.append(messages)
+        yield "ok"
+
+    window = ChatWindow(conversations, send_fn)
+    try:
+        added = window._add_attachment_items([
+            ("notes.txt", "remember this text", "text"),
+            ("shot.png", "IMAGEB64", "image"),
+        ])
+        assert added is True
+
+        window._send("use the attachment")
+        for _ in range(20):
+            app.processEvents()
+            if captured:
+                break
+
+        assert captured
+        assert "remember this text" in captured[0][0]["content"]
+        assert captured[0][-1]["image_base64"] == "IMAGEB64"
+        assert conversations[0]["messages"][0]["image_base64"] == "IMAGEB64"
+        assert "remember this text" in conversations[0]["context"]
     finally:
         window.close()
         app.processEvents()

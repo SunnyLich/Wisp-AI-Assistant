@@ -105,6 +105,29 @@ def _runtime_output_dir() -> Path:
     return out
 
 
+def _record_file_context(events: list[dict[str, Any]]) -> Callable[[dict], None]:
+    """Return a callback that stores compact local-file tool metadata."""
+    def record(event: dict) -> None:
+        """Record one local-file tool event."""
+        if not isinstance(event, dict):
+            return
+        item = {
+            "tool": str(event.get("tool") or ""),
+            "path": str(event.get("path") or ""),
+            "relative_path": str(event.get("relative_path") or ""),
+            "root": str(event.get("root") or ""),
+            "ok": bool(event.get("ok")),
+            "message": str(event.get("message") or ""),
+        }
+        if not item["tool"] or not item["path"]:
+            return
+        if item not in events:
+            events.append(item)
+        del events[:-20]
+
+    return record
+
+
 # ---------------------------------------------------------------------------
 # Offline / deterministic seams (tests + dev smoke; OFF in production).
 #
@@ -1322,6 +1345,7 @@ def brain_query(
         memory_context = _redact_text(memory_context)
 
     parts: list[str] = []
+    file_context: list[dict[str, Any]] = []
     for chunk in _stream_query_reply(
         built,
         memory_context,
@@ -1333,6 +1357,7 @@ def brain_query(
         history=history,
         ctx=ctx,
         file_access_mode=file_access_mode,
+        file_context=file_context,
     ):
         if ctx.cancelled:
             break
@@ -1343,9 +1368,12 @@ def brain_query(
         ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress})
 
     full = "".join(parts)
-    ctx.emit("reply.done", {"text": full})
+    done_payload: dict[str, Any] = {"text": full}
+    if file_context:
+        done_payload["file_context"] = file_context
+    ctx.emit("reply.done", done_payload)
     _notify_addon_after_response(full)
-    return {"text": full}
+    return done_payload
 
 
 def _redact_text(text: str | None) -> str:
@@ -1452,6 +1480,7 @@ def _stream_query_reply(
     history: list[dict] | None = None,
     ctx: StreamContext | None = None,
     file_access_mode: str = "",
+    file_context: list[dict[str, Any]] | None = None,
 ) -> Iterator[str]:
     """Token stream for ``brain.query``: real provider, or deterministic offline.
 
@@ -1474,6 +1503,7 @@ def _stream_query_reply(
 
     llm_client.set_live_file_access_mode(file_access_mode or None)
     llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
+    llm_client.set_live_file_event_callback(_record_file_context(file_context) if file_context is not None else None)
     try:
         yield from llm_client.stream_response(
             built.user_message,
@@ -1490,6 +1520,7 @@ def _stream_query_reply(
     finally:
         llm_client.set_live_file_access_mode(None)
         llm_client.set_live_file_approval_callback(None)
+        llm_client.set_live_file_event_callback(None)
 
 
 @handler("brain.rewrite", streaming=True)
@@ -1580,6 +1611,7 @@ def brain_chat(
             _log(f"chat memory retrieval skipped: {type(exc).__name__}: {exc}")
 
     parts: list[str] = []
+    file_context: list[dict[str, Any]] = []
     for chunk in _stream_chat_reply(
         turns,
         memory_context,
@@ -1588,6 +1620,7 @@ def brain_chat(
         pinned_tools=pinned_tools,
         ctx=ctx,
         file_access_mode=file_access_mode,
+        file_context=file_context,
     ):
         if ctx.cancelled:
             break
@@ -1598,8 +1631,11 @@ def brain_chat(
         ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress})
 
     full = "".join(parts)
-    ctx.emit("reply.done", {"text": full})
-    return {"text": full}
+    done_payload: dict[str, Any] = {"text": full}
+    if file_context:
+        done_payload["file_context"] = file_context
+    ctx.emit("reply.done", done_payload)
+    return done_payload
 
 
 def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -1637,6 +1673,7 @@ def _stream_chat_reply(
     pinned_tools: list[str] | None = None,
     ctx: StreamContext | None = None,
     file_access_mode: str = "",
+    file_context: list[dict[str, Any]] | None = None,
 ) -> Iterator[str]:
     """Stream chat reply."""
     if _offline_brain():
@@ -1650,6 +1687,7 @@ def _stream_chat_reply(
 
     llm_client.set_live_file_access_mode(file_access_mode or None)
     llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
+    llm_client.set_live_file_event_callback(_record_file_context(file_context) if file_context is not None else None)
     try:
         yield from llm_client.stream_response_with_history(
             messages,
@@ -1661,6 +1699,7 @@ def _stream_chat_reply(
     finally:
         llm_client.set_live_file_access_mode(None)
         llm_client.set_live_file_approval_callback(None)
+        llm_client.set_live_file_event_callback(None)
 
 
 @handler("brain.memory.add")

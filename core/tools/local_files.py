@@ -17,6 +17,7 @@ WRITE_FILE_TOOLS = {"create_file", "edit_file", "write_file"}
 FILE_ACCESS_MODES = ("off", "read", "ask", "auto")
 
 ApprovalCallback = Callable[[dict], bool]
+FileEventCallback = Callable[[dict], None]
 
 
 def normalize_file_access_mode(value, default: str = "off") -> str:
@@ -86,6 +87,7 @@ def execute_live_file_tool(
     *,
     access_mode: str,
     approval_callback: ApprovalCallback | None = None,
+    event_callback: FileEventCallback | None = None,
 ) -> str:
     """Execute a local-file model tool with per-caller access controls."""
     mode = normalize_file_access_mode(access_mode)
@@ -117,7 +119,23 @@ def execute_live_file_tool(
                 "file_edit": mutation_mode,
             },
         )
-        return _format_result(_dispatch_tool(toolbox, name, inputs or {}, rel_path))
+        result = _dispatch_tool(toolbox, name, inputs or {}, rel_path)
+        if event_callback is not None:
+            try:
+                resolved = workspace.resolve(rel_path or ".")
+                event_callback(
+                    {
+                        "tool": name,
+                        "path": str(resolved),
+                        "relative_path": str(workspace.relative(rel_path or ".")),
+                        "root": str(workspace.root),
+                        "ok": bool(result.ok),
+                        "message": str(result.message or ""),
+                    }
+                )
+            except Exception:
+                pass
+        return _format_result(result)
     except Exception as exc:  # noqa: BLE001 - model tools should fail in-band
         return f"Local file tool failed: {exc}"
 

@@ -38,6 +38,80 @@ def test_transcript_preview_is_replaced_by_first_reply_chunk():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_final_only_reply_starts_visible_at_beginning():
+    """Verify all-at-once replies show the beginning before reveal advances."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    config.BUBBLE_LINES = 2
+    bubble = SpeechBubble()
+    text = (
+        "I don't have the previous file-operation details in this chat, so I can't safely make a change yet. "
+        "Please resend the requested change and the target file path under: "
+        r"`C:\Users\sunny\Documents\GitHub-CodeBase\Python-AI-assistant-overlay\model_files`"
+    )
+
+    try:
+        bubble.append_chunk(text)
+
+        visible = " ".join(bubble._lines)
+        assert "previous file-operation" in visible
+        assert "model_files" not in visible
+    finally:
+        config.BUBBLE_LINES = old_lines
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_multi_chunk_reply_follows_latest_text_before_audio():
+    """Verify streamed chunks show the latest arrived text before audio tracking."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    config.BUBBLE_LINES = 1
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("one two three four five ")
+        assert bubble._lines == ["one two three four five"]
+
+        bubble.append_chunk("six seven eight nine ten eleven")
+
+        visible = " ".join(bubble._lines)
+        assert "eleven" in visible
+        assert "one two" not in visible
+    finally:
+        config.BUBBLE_LINES = old_lines
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_windows_paths_are_breakable_bubble_units():
+    """Verify path-like words can wrap instead of clipping as one giant word."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from ui.bubble import SpeechBubble
+
+    units = SpeechBubble._wrap_units(
+        r"C:\Users\sunny\Documents\GitHub-CodeBase\Python-AI-assistant-overlay\model_files"
+    )
+
+    assert len(units) > 1
+    assert any(unit.endswith("\\") for unit in units)
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_manual_scroll_snaps_back_to_highlight_while_speaking():
     """Verify manual bubble scroll returns to the highlighted word during speech."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

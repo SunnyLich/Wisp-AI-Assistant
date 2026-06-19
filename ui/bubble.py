@@ -80,6 +80,7 @@ class SpeechBubble(QWidget):
         self._dot_count = 1
         self._last_chunk_ended_with_space = True  # guards mid-word chunk merging
         self._manual_scroll_start: int | None = None
+        self._reply_chunk_count = 0
 
         # Read-position mode (syncs highlighting to audio playback speed)
         self._reveal_mode = False
@@ -407,6 +408,7 @@ class SpeechBubble(QWidget):
             self._full_text = ""
             self._revealed_count = 0
             self._manual_scroll_start = None
+            self._reply_chunk_count = 0
             self._lines = []
             self._all_line_segments = []
             self._line_segments = []
@@ -420,6 +422,7 @@ class SpeechBubble(QWidget):
             self.raise_()
             self.update()
             return
+        self._reply_chunk_count += 1
         new_words = chunk.split()
         if new_words:
             # If this chunk starts mid-word (no leading space) and the previous
@@ -497,6 +500,7 @@ class SpeechBubble(QWidget):
         self._timestamp_mode = False
         self._audio_started = False
         self._last_chunk_ended_with_space = True
+        self._reply_chunk_count = 0
         self._speed_boosting = False
         self._highlight_generation += 1
         self._pending_words = []
@@ -537,6 +541,7 @@ class SpeechBubble(QWidget):
         self._thinking = False
         self._transcript_preview = False
         self._manual_scroll_start = None
+        self._reply_chunk_count = 0
         self._thought_text = ""
         self._pending_words = text.split()
         self._revealed_count = len(self._pending_words)
@@ -673,7 +678,7 @@ class SpeechBubble(QWidget):
         if not lines:
             return 0
         if self._revealed_count <= 0:
-            return max(0, len(lines) - visible_lines)
+            return 0
 
         reply_indexes = [
             reply_idx
@@ -703,13 +708,24 @@ class SpeechBubble(QWidget):
             if self._manual_scroll_start is None or not self._bubble_scroll_enabled():
                 if not self._bubble_scroll_enabled():
                     self._manual_scroll_start = None
-                start_line = self._highlight_start_line(lines)
+                if self._should_follow_latest_stream_text(lines):
+                    start_line = max_start
+                else:
+                    start_line = self._highlight_start_line(lines)
             else:
                 start_line = max(0, min(max_start, self._manual_scroll_start))
                 self._manual_scroll_start = start_line
             visible = lines[start_line:start_line + visible_lines]
         self._line_segments = visible
         self._lines = [self._join_units(line) for line in visible]
+
+    def _should_follow_latest_stream_text(self, lines: list) -> bool:
+        """Follow newly arrived streamed text until audio/read tracking takes over."""
+        if self._audio_started or self._timestamp_mode or self._manual_scroll_start is not None:
+            return False
+        if self._reply_chunk_count <= 1:
+            return False
+        return len(lines) > self._visible_line_count()
 
     def _schedule_scroll_snap(self) -> None:
         """Schedule snap-back after manual wheel scrolling."""
@@ -763,14 +779,25 @@ class SpeechBubble(QWidget):
         for ch in word:
             if cls._is_cjk(ch):
                 if run:
-                    units.append(run)
+                    units.extend(cls._latin_wrap_units(run))
                     run = ""
                 units.append(ch)
+            elif ch in "\\/":
+                run += ch
+                units.extend(cls._latin_wrap_units(run))
+                run = ""
             else:
                 run += ch
         if run:
-            units.append(run)
+            units.extend(cls._latin_wrap_units(run))
         return units or [word]
+
+    @staticmethod
+    def _latin_wrap_units(text: str) -> list[str]:
+        """Keep ordinary words intact, but make long paths breakable."""
+        if len(text) <= 28:
+            return [text]
+        return [text[i:i + 28] for i in range(0, len(text), 28)]
 
     @staticmethod
     def _join_units(line) -> str:

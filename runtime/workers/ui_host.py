@@ -1914,11 +1914,16 @@ class QtProtocolHost:
         self._ensure_bubble().show_transcript(text)
         return {"shown": bool((text or "").strip()), "text": text}
 
-    def _reply_chunk(self, text: str = "", is_thought: bool = False) -> dict[str, Any]:
+    def _reply_chunk(
+        self,
+        text: str = "",
+        is_thought: bool = False,
+        is_progress: bool = False,
+    ) -> dict[str, Any]:
         """Handle reply chunk for qt protocol host."""
         bubble = self._ensure_bubble()
         bubble.append_chunk(text, is_thought=is_thought)
-        return {"appended": len(text or "")}
+        return {"appended": len(text or ""), "is_progress": bool(is_progress)}
 
     def _reply_done(self, flush: bool = True) -> dict[str, Any]:
         """Finish the reply bubble.
@@ -2047,19 +2052,35 @@ class QtProtocolHost:
         from core.conversation_store import store as conversation_store
         idx = self._active_conversation_idx
         history: list[dict] = []
+        context = ""
         if idx is not None and 0 <= idx < len(self._all_conversations):
             conv = self._all_conversations[idx]
             project = conv.get("project_id") or conversation_store.GENERAL_PROJECT_ID
+            file_context = list(conv.get("file_context") or [])
+            tool_context = self._normalized_tool_context(conv.get("tool_context") or {})
+            context = str(conv.get("context") or "")
             history = [
-                {"role": m.get("role"), "content": m.get("content")}
+                {
+                    "role": m.get("role"),
+                    "content": m.get("content"),
+                    **({"image_base64": m.get("image_base64")} if m.get("image_base64") else {}),
+                }
                 for m in conv.get("messages", [])
                 if m.get("role") in ("user", "assistant")
                 and isinstance(m.get("content"), str) and m.get("content").strip()
             ]
         else:
             project = self._active_project_id
+            file_context = []
+            tool_context = {}
         memory_project = None if project == conversation_store.GENERAL_PROJECT_ID else project
-        return {"history": history, "project_id": memory_project}
+        return {
+            "history": history,
+            "project_id": memory_project,
+            "context": context,
+            "file_context": file_context,
+            "tool_context": tool_context,
+        }
 
     def _make_chat_send_fn(self):
         """Create chat send fn."""
@@ -2070,7 +2091,15 @@ class QtProtocolHost:
             streamed_text = ""
             with self._chat_streams_lock:
                 self._chat_streams[request_id] = stream
-            self.emit("ui.chat.request", {"request_id": request_id, "messages": messages})
+            payload = {"request_id": request_id, "messages": messages}
+            idx = self._active_conversation_idx
+            if idx is not None and 0 <= idx < len(self._all_conversations):
+                tool_context = self._normalized_tool_context(
+                    self._all_conversations[idx].get("tool_context") or {}
+                )
+                if tool_context:
+                    payload["tool_context"] = tool_context
+            self.emit("ui.chat.request", payload)
             try:
                 while True:
                     kind, payload = stream.get()
@@ -2083,10 +2112,20 @@ class QtProtocolHost:
                         yield chunk
                     elif kind == "done":
                         final_text = ""
+                        file_context = []
+                        tool_context = {}
                         if isinstance(payload, dict):
                             final_text = str(payload.get("text") or "")
+                            file_context = list(payload.get("file_context") or [])
+                            tool_context = self._normalized_tool_context(payload.get("tool_context") or {})
                         elif payload is not None:
                             final_text = str(payload)
+                        if file_context or tool_context:
+                            yield {
+                                "type": "metadata",
+                                "file_context": file_context,
+                                "tool_context": tool_context,
+                            }
                         if final_text and final_text != streamed_text:
                             yield {"type": "final", "text": final_text}
                         return
@@ -2110,11 +2149,26 @@ class QtProtocolHost:
             stream.put(("chunk", {"text": text, "is_progress": bool(is_progress)}))
         return {"queued": stream is not None}
 
-    def _chat_done(self, request_id: str = "", text: str = "") -> dict[str, Any]:
+    def _chat_done(
+        self,
+        request_id: str = "",
+        text: str = "",
+        file_context: list | None = None,
+        tool_context: dict | None = None,
+    ) -> dict[str, Any]:
         """Handle chat done for qt protocol host."""
         stream = self._chat_stream(request_id)
         if stream is not None:
-            stream.put(("done", {"text": text}))
+            stream.put(
+                (
+                    "done",
+                    {
+                        "text": text,
+                        "file_context": list(file_context or []),
+                        "tool_context": self._normalized_tool_context(tool_context or {}),
+                    },
+                )
+            )
         return {"queued": stream is not None}
 
     def _chat_error(self, request_id: str = "", error: str = "") -> dict[str, Any]:
@@ -2156,19 +2210,28 @@ class QtProtocolHost:
         assistant: str = "",
         context: str = "",
         image_base64: str | None = None,
+        file_context: list | None = None,
+        tool_context: dict | None = None,
     ) -> dict[str, Any]:
         """Handle chat add conversation for qt protocol host."""
         import uuid as _uuid
-        user_msg: dict[str, Any] = {"role": "user", "content": user}
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        user_msg: dict[str, Any] = {"role": "user", "content": user, "created_at": now}
         if image_base64:
             user_msg["image_base64"] = image_base64
-        assistant_msg = {"role": "assistant", "content": assistant}
+        assistant_msg = {"role": "assistant", "content": assistant, "created_at": now}
 
         idx = self._active_conversation_idx
         if idx is not None and 0 <= idx < len(self._all_conversations):
             # Continue the active conversation (the one selected in the chat window).
             conv = self._all_conversations[idx]
+            conv.setdefault("created_at", now)
+            conv["updated_at"] = now
             conv.setdefault("messages", []).extend([user_msg, assistant_msg])
+            self._merge_file_context(conv, file_context or [])
+            self._merge_tool_context(conv, tool_context or {})
             self._persist_conversations()
             if self._chat is not None:
                 self._chat.sync_conversation(idx)
@@ -2181,6 +2244,10 @@ class QtProtocolHost:
                 "project_id": self._active_project_id,
                 "messages": [user_msg, assistant_msg],
                 "context": context or "",
+                "created_at": now,
+                "updated_at": now,
+                "file_context": self._normalized_file_context(file_context or []),
+                "tool_context": self._normalized_tool_context(tool_context or {}),
             }
         )
         self._active_conversation_idx = len(self._all_conversations) - 1
@@ -2188,6 +2255,65 @@ class QtProtocolHost:
         if self._chat is not None:
             self._chat.ingest_new_conversations()
         return {"count": len(self._all_conversations), "continued": False}
+
+    @staticmethod
+    def _normalized_file_context(items: list) -> list[dict[str, Any]]:
+        """Return compact persisted local-file metadata."""
+        out: list[dict[str, Any]] = []
+        for raw in items or []:
+            if not isinstance(raw, dict):
+                continue
+            item = {
+                "tool": str(raw.get("tool") or ""),
+                "path": str(raw.get("path") or ""),
+                "relative_path": str(raw.get("relative_path") or ""),
+                "root": str(raw.get("root") or ""),
+                "ok": bool(raw.get("ok")),
+                "message": str(raw.get("message") or ""),
+            }
+            if item["tool"] and item["path"] and item not in out:
+                out.append(item)
+        return out[-20:]
+
+    def _merge_file_context(self, conv: dict, items: list) -> None:
+        """Merge local-file metadata into a conversation."""
+        merged = self._normalized_file_context(list(conv.get("file_context") or []) + list(items or []))
+        if merged:
+            conv["file_context"] = merged
+
+    @staticmethod
+    def _normalized_tool_context(raw: dict) -> dict[str, Any]:
+        """Return compact persisted tool policy metadata."""
+        if not isinstance(raw, dict):
+            return {}
+
+        def _str_list(value: Any) -> list[str]:
+            if not isinstance(value, list):
+                return []
+            out: list[str] = []
+            for item in value:
+                text = str(item or "").strip()
+                if text and text not in out:
+                    out.append(text)
+            return out
+
+        mode = str(raw.get("file_access_mode") or "").strip().lower()
+        if mode not in {"off", "read", "ask", "auto"}:
+            mode = ""
+        ctx = {
+            "allowed_tools": _str_list(raw.get("allowed_tools")),
+            "pinned_tools": _str_list(raw.get("pinned_tools")),
+            "file_access_mode": mode,
+        }
+        if not ctx["allowed_tools"] and not ctx["pinned_tools"] and not ctx["file_access_mode"]:
+            return {}
+        return ctx
+
+    def _merge_tool_context(self, conv: dict, raw: dict) -> None:
+        """Persist the latest tool policy for a conversation."""
+        ctx = self._normalized_tool_context(raw)
+        if ctx:
+            conv["tool_context"] = ctx
 
     def _chat_ingest(self) -> dict[str, Any]:
         """Handle chat ingest for qt protocol host."""

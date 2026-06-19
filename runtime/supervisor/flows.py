@@ -39,6 +39,68 @@ _BROWSER_APP_NAMES = {
 }
 
 
+def _file_context_text(items: list | None) -> str:
+    """Build hidden follow-up context for recent local-file tools."""
+    normalized: list[dict[str, Any]] = []
+    for raw in items or []:
+        if not isinstance(raw, dict):
+            continue
+        item = {
+            "tool": str(raw.get("tool") or ""),
+            "path": str(raw.get("path") or ""),
+            "relative_path": str(raw.get("relative_path") or ""),
+            "ok": bool(raw.get("ok")),
+            "message": str(raw.get("message") or ""),
+        }
+        if item["tool"] and item["path"] and item not in normalized:
+            normalized.append(item)
+    if not normalized:
+        return ""
+    lines = [
+        "[Conversation File Context]",
+        "Recent local file tool context for this conversation. Use these exact paths when the user refers to a prior file.",
+    ]
+    for item in normalized[-8:]:
+        status = "ok" if item.get("ok") else "failed"
+        label = f"{item.get('tool')} ({status}): {item.get('path')}"
+        rel = item.get("relative_path") or ""
+        if rel and rel != item.get("path"):
+            label += f" [relative: {rel}]"
+        message = str(item.get("message") or "").strip()
+        if message:
+            label += f" - {message}"
+        lines.append(f"- {label}")
+    return "\n".join(lines)
+
+
+def _normalized_tool_context(raw: Any) -> dict[str, Any]:
+    """Normalize persisted conversation tool grants."""
+    if not isinstance(raw, dict):
+        return {}
+
+    def _str_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        out: list[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if text and text not in out:
+                out.append(text)
+        return out
+
+    mode = str(raw.get("file_access_mode") or "").strip().lower()
+    if mode not in {"off", "read", "ask", "auto"}:
+        mode = ""
+    ctx = {
+        "allowed_tools": _str_list(raw.get("allowed_tools")),
+        "pinned_tools": _str_list(raw.get("pinned_tools")),
+        "file_access_mode": mode,
+    }
+    if not ctx["allowed_tools"] and not ctx["pinned_tools"] and not ctx["file_access_mode"]:
+        return {}
+    return ctx
+
+
 class WorkerLike(Protocol):
     """Model worker like."""
     def call(
@@ -902,6 +964,8 @@ class FlowController:
                     {
                         "request_id": request_id,
                         "text": str((payload or {}).get("text") or ""),
+                        "file_context": list((payload or {}).get("file_context") or []),
+                        "tool_context": tool_context,
                     },
                     timeout=30.0,
                 )
@@ -914,6 +978,16 @@ class FlowController:
             caller_idx = 0
         caller = self._caller(caller_idx)
         allowed_tools, pinned_tools, file_access_mode = self._chat_tool_policy(caller)
+        stored_tool_context = _normalized_tool_context(data.get("tool_context"))
+        if stored_tool_context:
+            allowed_tools = list(stored_tool_context.get("allowed_tools") or allowed_tools)
+            pinned_tools = list(stored_tool_context.get("pinned_tools") or pinned_tools)
+            file_access_mode = str(stored_tool_context.get("file_access_mode") or file_access_mode)
+        tool_context = {
+            "allowed_tools": list(allowed_tools),
+            "pinned_tools": list(pinned_tools),
+            "file_access_mode": file_access_mode,
+        }
         chat_params: dict[str, Any] = {
             "messages": messages,
             "use_tools": bool(allowed_tools),
@@ -947,7 +1021,12 @@ class FlowController:
                 self._safe_call(
                     self.ui,
                     "ui.chat.done",
-                    {"request_id": request_id, "text": text},
+                    {
+                        "request_id": request_id,
+                        "text": text,
+                        "file_context": list((result or {}).get("file_context") or []),
+                        "tool_context": tool_context,
+                    },
                     timeout=30.0,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -1428,6 +1507,21 @@ class FlowController:
             if isinstance(hist, dict):
                 if hist.get("history"):
                     params["history"] = hist["history"]
+                prior_context = str(hist.get("context") or "").strip()
+                if prior_context:
+                    base = str(params.get("ambient_text") or "")
+                    block = f"[Conversation Context]\n{prior_context}"
+                    params["ambient_text"] = (base + "\n\n" + block).strip() if base else block
+                file_ctx = _file_context_text(list(hist.get("file_context") or []))
+                if file_ctx:
+                    base = str(params.get("ambient_text") or "")
+                    params["ambient_text"] = (base + "\n\n" + file_ctx).strip() if base else file_ctx
+                tool_ctx = _normalized_tool_context(hist.get("tool_context"))
+                if tool_ctx:
+                    params["allowed_tools"] = list(tool_ctx.get("allowed_tools") or params.get("allowed_tools") or [])
+                    params["pinned_tools"] = list(tool_ctx.get("pinned_tools") or params.get("pinned_tools") or [])
+                    params["file_access_mode"] = str(tool_ctx.get("file_access_mode") or params.get("file_access_mode") or "")
+                    params["use_tools"] = bool(params.get("allowed_tools"))
                 # Scope memory (retrieval + saves) to the conversation's project.
                 params["memory_project"] = hist.get("project_id")
         except Exception:
@@ -1464,6 +1558,7 @@ class FlowController:
                             self._queue_tts_segment(gen, tts_segment)
             self._reply_thought_parser = None
         text = str((result or {}).get("text") or "")
+        file_context = list((result or {}).get("file_context") or [])
         self._last_reply = text
         if text and "".join(streamed_reply_parts) != text:
             self._replace_reply_text(text)
@@ -1472,6 +1567,13 @@ class FlowController:
                 self._queue_tts_segment(gen, tts_segment)
             self._finish_tts_sequence(gen)
         if text:
+            tool_context = _normalized_tool_context(
+                {
+                    "allowed_tools": params.get("allowed_tools") or [],
+                    "pinned_tools": params.get("pinned_tools") or [],
+                    "file_access_mode": params.get("file_access_mode") or "",
+                }
+            )
             self._safe_call(
                 self.ui,
                 "ui.chat.add_conversation",
@@ -1480,6 +1582,8 @@ class FlowController:
                     "assistant": text,
                     "context": chat_context,
                     "image_base64": pending.screenshot_b64,
+                    "file_context": file_context,
+                    "tool_context": tool_context,
                 },
                 timeout=30.0,
             )

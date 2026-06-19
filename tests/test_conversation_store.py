@@ -81,6 +81,47 @@ def test_pin_and_rename_round_trip(tmp_path, monkeypatch):
     assert loaded[0]["title_override"] == "My pinned chat"
 
 
+def test_file_context_round_trip(tmp_path, monkeypatch):
+    """Verify local file tool metadata persists with conversations."""
+    _isolate(tmp_path, monkeypatch)
+    file_context = [
+        {
+            "tool": "create_file",
+            "path": r"C:\repo\model_files\hello_world.py",
+            "relative_path": "hello_world.py",
+            "root": r"C:\repo\model_files",
+            "ok": True,
+            "message": "Created hello_world.py.",
+        }
+    ]
+    store.save_conversations([
+        {
+            "messages": [{"role": "user", "content": "create a file"}],
+            "file_context": file_context,
+        },
+    ])
+
+    assert store.load_conversations()[0]["file_context"] == file_context
+
+
+def test_tool_context_round_trip(tmp_path, monkeypatch):
+    """Verify conversation tool policy metadata persists."""
+    _isolate(tmp_path, monkeypatch)
+    tool_context = {
+        "allowed_tools": ["read_file", "edit_file"],
+        "pinned_tools": ["read_file", "edit_file"],
+        "file_access_mode": "ask",
+    }
+    store.save_conversations([
+        {
+            "messages": [{"role": "user", "content": "edit a file"}],
+            "tool_context": tool_context,
+        },
+    ])
+
+    assert store.load_conversations()[0]["tool_context"] == tool_context
+
+
 def test_deleting_project_reassigns_conversations(tmp_path, monkeypatch):
     """Verify deleting project reassigns conversations behavior."""
     _isolate(tmp_path, monkeypatch)

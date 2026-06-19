@@ -99,6 +99,7 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         history=None,
         ctx=None,
         file_access_mode="",
+        file_context=None,
     ):
         """Verify fake stream behavior."""
         captured["use_tools"] = use_tools
@@ -109,6 +110,7 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         captured["history"] = history
         captured["ctx"] = ctx
         captured["file_access_mode"] = file_access_mode
+        captured["file_context"] = file_context
         yield "ok"
 
     monkeypatch.setattr(handlers, "_stream_query_reply", fake_stream)
@@ -136,6 +138,7 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         "history": None,
         "ctx": ctx,
         "file_access_mode": "ask",
+        "file_context": [],
     }
 
 
