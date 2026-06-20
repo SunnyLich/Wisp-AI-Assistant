@@ -1267,6 +1267,9 @@ class SettingsDialog(QDialog):
             title_lbl.setObjectName("sectionHeader")
             self._register_warning_header(section_key, title_lbl, base_text=section_title, uppercase=True)
             apply_btn = QPushButton(t("Apply to all"))
+            apply_btn.setToolTip(
+                "Copy this section's provider/model rows into the other model sections."
+            )
             apply_btn.clicked.connect(
                 lambda checked, sk=section_key: self._apply_model_section_to_all(sk)
             )
@@ -1974,6 +1977,7 @@ class SettingsDialog(QDialog):
         self._fields["TTS_PROVIDER"] = self._combo(
             ["cartesia", "elevenlabs", "openai", "openai_compatible", "none"]
         )
+        tts_provider_tip = "Choose which service speaks assistant replies. None disables generated voice output."
         self._fields["TTS_PROVIDER"].currentIndexChanged.connect(
             lambda *_: self._update_tts_provider_fields()
         )
@@ -1981,7 +1985,7 @@ class SettingsDialog(QDialog):
         pf = _expanding_form_layout(pf_w)
         pf.setContentsMargins(0, 0, 0, 0)
         pf.setSpacing(8)
-        pf.addRow("TTS Provider", self._fields["TTS_PROVIDER"])
+        pf.addRow(_tooltip_label("TTS Provider", tts_provider_tip), self._fields["TTS_PROVIDER"])
         provider_cv.addWidget(pf_w)
         outer.addWidget(provider_card)
 
@@ -2002,7 +2006,7 @@ class SettingsDialog(QDialog):
         for label, model, translation_key in _STT_MODEL_OPTIONS:
             stt_model.addItem(label, model)
             stt_model.setItemData(stt_model.count() - 1, translation_key, 0x0100 + 1)
-        stt_model.setToolTip(
+        stt_model_tip = (
             "Local faster-whisper model. small is a good first upgrade for Chinese; "
             "medium/large-v3 are heavier."
         )
@@ -2011,13 +2015,13 @@ class SettingsDialog(QDialog):
         stt_compute = _NoScrollCombo()
         for label, value in _STT_COMPUTE_OPTIONS:
             stt_compute.addItem(label, value)
-        stt_compute.setToolTip("Whisper compute precision. Keep int8 for CPU unless you know you need another mode.")
+        stt_compute_tip = "Whisper compute precision. Keep int8 for CPU unless you know you need another mode."
         self._fields["STT_COMPUTE_TYPE"] = stt_compute
 
         stt_language = _NoScrollCombo()
         for label, value in _STT_LANGUAGE_OPTIONS:
             stt_language.addItem(label, value)
-        stt_language.setToolTip(
+        stt_language_tip = (
             "Recognition language for hold-to-talk. Auto-detect is useful if you switch languages often."
         )
         self._fields["STT_LANGUAGE"] = stt_language
@@ -2029,7 +2033,7 @@ class SettingsDialog(QDialog):
         stt_beam = _NoScrollCombo()
         for label, value in _STT_BEAM_OPTIONS:
             stt_beam.addItem(label, value)
-        stt_beam.setToolTip(
+        stt_beam_tip = (
             "Decoding beam width. 5 (Whisper's default) is noticeably more accurate than greedy (1) "
             "for a small speed cost; raise it for tricky audio."
         )
@@ -2038,7 +2042,7 @@ class SettingsDialog(QDialog):
         stt_device = _NoScrollCombo()
         for label, value in _STT_DEVICE_OPTIONS:
             stt_device.addItem(label, value)
-        stt_device.setToolTip(
+        stt_device_tip = (
             "Where Whisper runs. GPU (CUDA) is much faster, especially for large-v3, but needs an "
             "NVIDIA GPU with CUDA installed. Auto uses the GPU when present and falls back to CPU."
         )
@@ -2048,11 +2052,11 @@ class SettingsDialog(QDialog):
         stt_f = _expanding_form_layout(stt_fw)
         stt_f.setContentsMargins(0, 0, 0, 0)
         stt_f.setSpacing(8)
-        stt_f.addRow(t("Whisper model"), self._fields["STT_MODEL"])
-        stt_f.addRow(t("Device"), self._fields["STT_DEVICE"])
-        stt_f.addRow(t("Compute type"), self._fields["STT_COMPUTE_TYPE"])
-        stt_f.addRow(t("Speech language"), self._fields["STT_LANGUAGE"])
-        stt_f.addRow(t("Beam size"), self._fields["STT_BEAM_SIZE"])
+        stt_f.addRow(_tooltip_label("Whisper model", stt_model_tip), self._fields["STT_MODEL"])
+        stt_f.addRow(_tooltip_label("Device", stt_device_tip), self._fields["STT_DEVICE"])
+        stt_f.addRow(_tooltip_label("Compute type", stt_compute_tip), self._fields["STT_COMPUTE_TYPE"])
+        stt_f.addRow(_tooltip_label("Speech language", stt_language_tip), self._fields["STT_LANGUAGE"])
+        stt_f.addRow(_tooltip_label("Beam size", stt_beam_tip), self._fields["STT_BEAM_SIZE"])
         stt_cv.addWidget(stt_fw)
 
         # Backend readout. Avoid importing core.stt while building Settings:
@@ -2093,26 +2097,35 @@ class SettingsDialog(QDialog):
         self._fields["CARTESIA_API_KEY"].setPlaceholderText("Stored in OS keychain")
         self._fields["CARTESIA_VOICE_ID"] = QLineEdit()
         self._fields["CARTESIA_VOICE_ID"].setPlaceholderText("e.g. a0e99841-438c-4a64-b679-ae501e7d6091")
+        cartesia_voice_tip = "The Cartesia voice identifier to use for speech. Copy it from your Cartesia voices page."
         self._fields["ELEVENLABS_API_KEY"] = self._password()
         self._fields["ELEVENLABS_API_KEY"].setPlaceholderText("Stored in OS keychain")
         self._fields["ELEVENLABS_VOICE_ID"] = QLineEdit()
         self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText("blank = account default voice")
+        eleven_voice_tip = "Leave blank for the account default voice, or paste a specific ElevenLabs voice ID."
         self._fields["ELEVENLABS_MODEL"] = QLineEdit()
         self._fields["ELEVENLABS_MODEL"].setPlaceholderText("e.g. eleven_turbo_v2_5")
+        eleven_model_tip = "ElevenLabs speech model name. Use the provider default unless you need a specific model."
         self._fields["OPENAI_TTS_VOICE"] = QLineEdit()
         self._fields["OPENAI_TTS_VOICE"].setPlaceholderText("alloy, echo, fable, onyx, nova, shimmer…")
+        openai_voice_tip = "OpenAI voice name for spoken replies."
         self._fields["OPENAI_TTS_MODEL"] = QLineEdit()
         self._fields["OPENAI_TTS_MODEL"].setPlaceholderText("e.g. gpt-4o-mini-tts or tts-1")
+        openai_model_tip = "OpenAI text-to-speech model. Newer models sound better; tts-1 is a fast fallback."
         self._fields["TTS_CUSTOM_BASE_URL"] = QLineEdit()
         self._fields["TTS_CUSTOM_BASE_URL"].setPlaceholderText("e.g. http://localhost:8880/v1")
+        custom_tts_base_tip = "Base URL for an OpenAI-compatible speech server, ending at the API root such as /v1."
         self._fields["TTS_CUSTOM_API_KEY"] = self._password()
         self._fields["TTS_CUSTOM_API_KEY"].setPlaceholderText("Stored in OS keychain (blank if not needed)")
         self._fields["TTS_CUSTOM_VOICE"] = QLineEdit()
         self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText("server-specific voice name")
+        custom_tts_voice_tip = "Voice name or ID expected by your custom speech server."
         self._fields["TTS_CUSTOM_MODEL"] = QLineEdit()
         self._fields["TTS_CUSTOM_MODEL"].setPlaceholderText("server-specific model name")
+        custom_tts_model_tip = "Model name expected by your custom speech server."
         self._fields["TTS_CUSTOM_SAMPLE_RATE"] = QLineEdit()
         self._fields["TTS_CUSTOM_SAMPLE_RATE"].setPlaceholderText("e.g. 24000")
+        custom_tts_rate_tip = "Output sample rate in Hz. Match the rate your speech server returns, commonly 24000."
 
         # Cartesia group
         cartesia_w = QWidget()
@@ -2120,7 +2133,7 @@ class SettingsDialog(QDialog):
         cf.setContentsMargins(0, 0, 0, 0)
         cf.setSpacing(8)
         cf.addRow(_link_label("Cartesia API key", "https://play.cartesia.ai/keys"), self._fields["CARTESIA_API_KEY"])
-        cf.addRow(t("Cartesia Voice ID"), self._fields["CARTESIA_VOICE_ID"])
+        cf.addRow(_tooltip_label("Cartesia Voice ID", cartesia_voice_tip), self._fields["CARTESIA_VOICE_ID"])
 
         # ElevenLabs group
         eleven_w = QWidget()
@@ -2128,8 +2141,8 @@ class SettingsDialog(QDialog):
         ef.setContentsMargins(0, 0, 0, 0)
         ef.setSpacing(8)
         ef.addRow(_link_label("ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys"), self._fields["ELEVENLABS_API_KEY"])
-        ef.addRow(t("ElevenLabs Voice ID"), self._fields["ELEVENLABS_VOICE_ID"])
-        ef.addRow(t("ElevenLabs Model"), self._fields["ELEVENLABS_MODEL"])
+        ef.addRow(_tooltip_label("ElevenLabs Voice ID", eleven_voice_tip), self._fields["ELEVENLABS_VOICE_ID"])
+        ef.addRow(_tooltip_label("ElevenLabs Model", eleven_model_tip), self._fields["ELEVENLABS_MODEL"])
 
         # OpenAI group (reuses the OpenAI key from the Models tab)
         openai_w = QWidget()
@@ -2141,8 +2154,8 @@ class SettingsDialog(QDialog):
         )
         openai_note.setWordWrap(True)
         of.addRow(openai_note)
-        of.addRow(t("OpenAI Voice"), self._fields["OPENAI_TTS_VOICE"])
-        of.addRow(t("OpenAI Model"), self._fields["OPENAI_TTS_MODEL"])
+        of.addRow(_tooltip_label("OpenAI Voice", openai_voice_tip), self._fields["OPENAI_TTS_VOICE"])
+        of.addRow(_tooltip_label("OpenAI Model", openai_model_tip), self._fields["OPENAI_TTS_MODEL"])
 
         # OpenAI-compatible (custom endpoint) group
         custom_w = QWidget()
@@ -2154,11 +2167,14 @@ class SettingsDialog(QDialog):
         )
         custom_note.setWordWrap(True)
         cuf.addRow(custom_note)
-        cuf.addRow(t("Base URL"), self._fields["TTS_CUSTOM_BASE_URL"])
+        cuf.addRow(_tooltip_label("Base URL", custom_tts_base_tip), self._fields["TTS_CUSTOM_BASE_URL"])
         cuf.addRow(t("API key"), self._fields["TTS_CUSTOM_API_KEY"])
-        cuf.addRow(t("Voice"), self._fields["TTS_CUSTOM_VOICE"])
-        cuf.addRow(t("Model"), self._fields["TTS_CUSTOM_MODEL"])
-        cuf.addRow(t("Output sample rate (Hz)"), self._fields["TTS_CUSTOM_SAMPLE_RATE"])
+        cuf.addRow(_tooltip_label("Voice", custom_tts_voice_tip), self._fields["TTS_CUSTOM_VOICE"])
+        cuf.addRow(_tooltip_label("Model", custom_tts_model_tip), self._fields["TTS_CUSTOM_MODEL"])
+        cuf.addRow(
+            _tooltip_label("Output sample rate (Hz)", custom_tts_rate_tip),
+            self._fields["TTS_CUSTOM_SAMPLE_RATE"],
+        )
 
         for gw in (cartesia_w, eleven_w, openai_w, custom_w):
             keys_cv.addWidget(gw)
@@ -2325,7 +2341,7 @@ class SettingsDialog(QDialog):
         dictate_mode = _NoScrollCombo()
         for label, value in _DICTATE_MODE_OPTIONS:
             dictate_mode.addItem(label, value)
-        dictate_mode.setToolTip(
+        dictate_mode_tip = (
             "Raw pastes exactly what Whisper heard (fast, fully local). LLM cleanup runs the "
             "transcript through your configured model for punctuation/filler cleanup before pasting."
         )
@@ -2334,7 +2350,7 @@ class SettingsDialog(QDialog):
         dictate_f = _expanding_form_layout(dictate_form)
         dictate_f.setContentsMargins(0, 0, 0, 0)
         dictate_f.setSpacing(8)
-        dictate_f.addRow(t("Dictated text"), self._fields["DICTATE_MODE"])
+        dictate_f.addRow(_tooltip_label("Dictated text", dictate_mode_tip), self._fields["DICTATE_MODE"])
         dictate_cv.addWidget(dictate_form)
         outer_layout.addWidget(dictate_card)
 
@@ -2348,23 +2364,19 @@ class SettingsDialog(QDialog):
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setFixedWidth(120)
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("1234567")
-        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setToolTip(
-            t("Ordered keys for toggling App, Browser/Web, Selection, Clipboard, Screenshot, Memory, and Files in the intent overlay.")
-        )
+        intent_keys_tip = "Ordered keys for toggling App, Browser/Web, Selection, Clipboard, Screenshot, Memory, and Files in the intent overlay."
         self._fields["INTENT_OVERLAY_TIMEOUT_MS"] = QLineEdit()
         self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setFixedWidth(90)
         self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setPlaceholderText("60000")
-        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setToolTip(
-            t("How long the intent overlay stays open before closing itself. Use 0 to keep it open until you choose or cancel.")
-        )
+        intent_timeout_tip = "How long the intent overlay stays open before closing itself. Use 0 to keep it open until you choose or cancel."
         context_key_row = QWidget()
         context_key_h = QHBoxLayout(context_key_row)
         context_key_h.setContentsMargins(0, 2, 0, 2)
         context_key_h.setSpacing(10)
         context_key_h.addSpacing(128)
-        context_key_h.addWidget(QLabel(t("Intent context keys:")))
+        context_key_h.addWidget(_tooltip_label("Intent context keys:", intent_keys_tip))
         context_key_h.addWidget(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"])
-        context_key_h.addWidget(QLabel(t("Timeout ms:")))
+        context_key_h.addWidget(_tooltip_label("Timeout ms:", intent_timeout_tip))
         context_key_h.addWidget(self._fields["INTENT_OVERLAY_TIMEOUT_MS"])
         context_key_h.addStretch()
         self._keybinds_layout.addWidget(context_key_row)
@@ -2433,68 +2445,70 @@ class SettingsDialog(QDialog):
         context_h.setContentsMargins(0, 0, 0, 0)
         context_h.setHorizontalSpacing(8)
         context_h.setVerticalSpacing(4)
-        ambient_cb = QCheckBox("Ambient")
-        ambient_cb.setChecked(context_ambient)
-        docs_combo = _context_mode_combo(context_documents_mode, allow_auto=True)
-        docs_combo.setToolTip(
+        ambient_tip = "Include nearby app/window context that Wisp can capture automatically."
+        docs_tip = (
             "Open documents:\n"
             "Off — do not include document text.\n"
             "On — read supported open documents before sending the prompt.\n"
             "Let model decide — expose an open-document tool during the answer."
         )
-        browser_combo = _context_mode_combo(context_browser_mode, allow_auto=True)
-        browser_combo.setToolTip(
+        browser_tip = (
             "Browser/Web:\n"
             "Off — no web/browser tools.\n"
             "On — read the current browser page before sending the prompt.\n"
             "Let model decide — expose web search and browser page fetch tools."
         )
-        github_combo = _context_mode_combo(context_github_mode, allow_auto=True)
-        github_combo.setToolTip(
+        github_tip = (
             "Git/GitHub:\n"
             "Off — no git or GitHub tools.\n"
             "On — read local git status and diff before sending the prompt.\n"
             "Let model decide — expose git status/diff and GitHub repo/issue tools."
         )
-        memory_combo = _context_mode_combo(context_memory_mode, allow_auto=True, on_value="on")
-        memory_combo.setProperty("legacy_auto_means_on", True)
-        memory_combo.setToolTip(
+        memory_tip = (
             "Memory:\n"
             "Off — do not use stored facts for this caller.\n"
             "On — fetch relevant stored facts before sending the prompt.\n"
             "Let model decide — expose a memory search tool during the answer."
         )
-        screenshot_combo = _context_mode_combo(context_screenshot, allow_auto=True)
-        screenshot_combo.setToolTip(
+        screenshot_tip = (
             "Screenshot of your screen:\n"
             "• Off — never capture.\n"
             "• On — capture at hotkey time and send it with the query.\n"
             "• Let model decide — expose a screenshot tool during the answer."
         )
-        file_combo = _NoScrollCombo()
-        for label, value in _FILE_ACCESS_OPTIONS:
-            file_combo.addItem(t(label), value)
-        file_combo.setToolTip(
+        file_tip = (
             "Local files:\n"
             "Off - do not expose file tools.\n"
             "Read only - allow listing and reading configured folders.\n"
             "Ask before writing - show a diff before edits or creates.\n"
             "Write automatically - apply edits without asking."
         )
+        ambient_cb = QCheckBox("Ambient")
+        ambient_cb.setChecked(context_ambient)
+        ambient_cb.setToolTip(ambient_tip)
+        docs_combo = _context_mode_combo(context_documents_mode, allow_auto=True)
+        browser_combo = _context_mode_combo(context_browser_mode, allow_auto=True)
+        github_combo = _context_mode_combo(context_github_mode, allow_auto=True)
+        memory_combo = _context_mode_combo(context_memory_mode, allow_auto=True, on_value="on")
+        memory_combo.setProperty("legacy_auto_means_on", True)
+        screenshot_combo = _context_mode_combo(context_screenshot, allow_auto=True)
+        file_combo = _NoScrollCombo()
+        for label, value in _FILE_ACCESS_OPTIONS:
+            file_combo.addItem(t(label), value)
         _set(file_combo, normalize_file_access_mode(file_access))
         context_h.addWidget(QLabel(t("Context:")), 0, 0)
         context_h.addWidget(ambient_cb, 0, 1)
-        context_h.addWidget(QLabel(t("Screenshot:")), 0, 2)
+        context_h.addWidget(_tooltip_label("Screenshot:", screenshot_tip), 0, 2)
         context_h.addWidget(screenshot_combo, 0, 3)
-        context_h.addWidget(QLabel(t("Open docs:")), 0, 4)
+        context_h.addWidget(_tooltip_label("Open docs:", docs_tip), 0, 4)
         context_h.addWidget(docs_combo, 0, 5)
-        context_h.addWidget(QLabel(t("Git/GitHub:")), 1, 0)
+        context_h.addWidget(_tooltip_label("Git/GitHub:", github_tip), 1, 0)
         context_h.addWidget(github_combo, 1, 1)
-        context_h.addWidget(QLabel(t("Browser/Web:")), 1, 2)
+        context_h.addWidget(_tooltip_label("Browser/Web:", browser_tip), 1, 2)
         context_h.addWidget(browser_combo, 1, 3)
-        context_h.addWidget(QLabel(t("Memory:")), 1, 4)
+        context_h.addWidget(_tooltip_label("Memory:", memory_tip), 1, 4)
         context_h.addWidget(memory_combo, 1, 5)
-        context_h.addWidget(QLabel(t("Local files:")), 2, 0)
+        context_h.addWidget(_tooltip_label("Local files:", file_tip), 2, 0)
         context_h.addWidget(file_combo, 2, 1)
         context_h.setColumnStretch(6, 1)
         controls = {
@@ -2585,7 +2599,12 @@ class SettingsDialog(QDialog):
         hotkey_edit.setPlaceholderText("Hotkey...")
         hdr_h.addWidget(hotkey_edit)
 
-        hdr_h.addWidget(QLabel("Name:"))
+        hdr_h.addWidget(
+            _tooltip_label(
+                "Name:",
+                "Short name shown for this caller hotkey in settings and tool access dialogs.",
+            )
+        )
         label_edit = QLineEdit(label)
         label_edit.setFixedWidth(110)
         label_edit.setPlaceholderText("Label")
@@ -2593,6 +2612,9 @@ class SettingsDialog(QDialog):
 
         paste_cb = QCheckBox("Paste result back")
         paste_cb.setChecked(paste_back)
+        paste_cb.setToolTip(
+            "When enabled, Wisp pastes the final answer into the focused app instead of only showing it."
+        )
         hdr_h.addWidget(paste_cb)
 
         hdr_h.addStretch()
@@ -2623,6 +2645,10 @@ class SettingsDialog(QDialog):
         int_hdr_h.setSpacing(6)
         for txt, w in [("Key", 40), ("Label", 130), ("Prompt", 0)]:
             lbl = QLabel(f"<small><b>{t(txt)}</b></small>")
+            if txt == "Prompt":
+                lbl.setToolTip(
+                    "Instruction sent with this intent. The user's selected text or context is added separately."
+                )
             if w:
                 lbl.setFixedWidth(w)
             else:
@@ -2809,8 +2835,9 @@ class SettingsDialog(QDialog):
 
         mem_topk = QLineEdit(self._env.get("MEMORY_TOP_K", "3"))
         mem_topk.setPlaceholderText("number of facts to retrieve per query")
+        mem_topk_tip = "Maximum number of stored facts to add to each model request. Higher values add more context."
         self._fields["MEMORY_TOP_K"] = mem_topk
-        f.addRow("Retrieval top-k:", mem_topk)
+        f.addRow(_tooltip_label("Retrieval top-k:", mem_topk_tip), mem_topk)
 
         cfg_cv.addWidget(fw)
         return cfg_card
@@ -2938,33 +2965,45 @@ class SettingsDialog(QDialog):
         theme_combo.addItem(t("Light"), "light")
         theme_combo.addItem(t("Dark"), "dark")
         self._fields["THEME_MODE"] = theme_combo
+        theme_tip = "System follows your OS theme. Light and Dark use Wisp's saved color templates."
         self._fields["TRUST_PRIVACY_MODE"] = QCheckBox(t("Trust/privacy mode"))
         self._fields["TRUST_PRIVACY_MODE"].setToolTip(
             t("Default on. Redacts sensitive text patterns from context before model requests.")
         )
         self._fields["ICON_AUTO_HIDE"] = QCheckBox(t("Auto-hide icon (only visible when active)"))
+        self._fields["ICON_AUTO_HIDE"].setToolTip(
+            "Hide the floating icon when Wisp is idle, then show it again while listening or responding."
+        )
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox(t("Auto-elaborate when opening chat"))
+        self._fields["CHAT_AUTO_ELABORATE"].setToolTip(
+            "Automatically send the elaborate prompt when you open chat from a short bubble response."
+        )
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
         self._fields["CHAT_ELABORATE_PROMPT"].setPlaceholderText(t("e.g. Please elaborate on that."))
+        elaborate_prompt_tip = "Prompt used when Auto-elaborate asks the model to expand the latest short response."
         app_language = _NoScrollCombo()
         for label, value in LANGUAGE_OPTIONS:
             app_language.addItem(t(label), value)
-        app_language.setToolTip(t("Language used for the app's menus, dialogs, and controls."))
+        app_language_tip = "Language used for the app's menus, dialogs, and controls."
         self._fields["APP_LANGUAGE"] = app_language
         assistant_language = _NoScrollCombo()
         for label, value in _ASSISTANT_LANGUAGE_OPTIONS:
             assistant_language.addItem(t(label), value)
-        assistant_language.setToolTip(
-            t("Preferred response language. System default leaves the prompt unchanged.")
-        )
+        assistant_language_tip = "Preferred response language. System default leaves the prompt unchanged."
         self._fields["ASSISTANT_LANGUAGE"] = assistant_language
 
         self._fields["ICON_SIZE"] = QLineEdit()
         self._fields["ICON_SIZE"].setPlaceholderText(t("e.g. 80"))
+        icon_size_tip = "Floating icon diameter in pixels."
         self._fields["BUBBLE_WIDTH"] = QLineEdit()
         self._fields["BUBBLE_WIDTH"].setPlaceholderText(t("e.g. 340"))
+        bubble_width_tip = "Maximum width of the floating response bubble in pixels."
         self._fields["BUBBLE_LINES"] = QLineEdit()
         self._fields["BUBBLE_LINES"].setPlaceholderText(t("e.g. 3"))
+        bubble_lines_tip = "How many lines of response text the bubble shows before scrolling."
+        self._fields["BUBBLE_FONT_SIZE"] = QLineEdit()
+        self._fields["BUBBLE_FONT_SIZE"].setPlaceholderText(t("e.g. 10"))
+        bubble_font_size_tip = "Point size for response text inside the floating bubble."
         self._fields["BUBBLE_SCROLL_ENABLED"] = QCheckBox(t("Wheel-scroll text bubble"))
         self._fields["BUBBLE_SCROLL_ENABLED"].setToolTip(
             t("Let the mouse wheel scroll the bubble text while the pointer is over it.")
@@ -2981,33 +3020,31 @@ class SettingsDialog(QDialog):
         _bubble_text_color_row = self._color_field("BUBBLE_TEXT_COLOR",     "e.g. #e6e6e6")
         _read_word_color_row   = self._color_field("BUBBLE_READ_WORD_COLOR", "e.g. #4da3ff")
 
-        for _key in ("THEME_BG", "THEME_SURFACE", "THEME_TEXT", "THEME_ACCENT"):
-            self._fields[_key].setToolTip(
-                t(
-                    "Colors for the theme selected above. Light and Dark each keep their\n"
-                    "own set — switching Theme swaps these to that mode's colors.\n"
-                    "Cards, borders and buttons are shaded automatically from these four."
-                )
-            )
+        theme_color_tip = (
+            "Colors for the theme selected above. Light and Dark each keep their\n"
+            "own set — switching Theme swaps these to that mode's colors.\n"
+            "Cards, borders and buttons are shaded automatically from these four."
+        )
         # Repaint the swatches/values whenever the user switches Theme mode, so the
         # four pickers always show the template for the currently selected mode.
         theme_combo.currentIndexChanged.connect(self._on_theme_mode_changed)
 
-        f.addRow(t("Theme"), self._fields["THEME_MODE"])
-        f.addRow(t("Background color"), _bg_row)
-        f.addRow(t("Surface color"), _surface_row)
-        f.addRow(t("Text color"), _text_row)
-        f.addRow(t("Accent color"), _accent_row)
+        f.addRow(_tooltip_label("Theme", theme_tip), self._fields["THEME_MODE"])
+        f.addRow(_tooltip_label("Background color", theme_color_tip), _bg_row)
+        f.addRow(_tooltip_label("Surface color", theme_color_tip), _surface_row)
+        f.addRow(_tooltip_label("Text color", theme_color_tip), _text_row)
+        f.addRow(_tooltip_label("Accent color", theme_color_tip), _accent_row)
         f.addRow("", self._fields["TRUST_PRIVACY_MODE"])
         f.addRow("", self._fields["ICON_AUTO_HIDE"])
         f.addRow("", self._fields["CHAT_AUTO_ELABORATE"])
-        f.addRow(t("Elaborate prompt"), self._fields["CHAT_ELABORATE_PROMPT"])
-        f.addRow(t("App language"), self._fields["APP_LANGUAGE"])
-        f.addRow(t("Assistant language"), self._fields["ASSISTANT_LANGUAGE"])
+        f.addRow(_tooltip_label("Elaborate prompt", elaborate_prompt_tip), self._fields["CHAT_ELABORATE_PROMPT"])
+        f.addRow(_tooltip_label("App language", app_language_tip), self._fields["APP_LANGUAGE"])
+        f.addRow(_tooltip_label("Assistant language", assistant_language_tip), self._fields["ASSISTANT_LANGUAGE"])
         f.addRow(_sep(), _sep())
-        f.addRow(t("Icon size (px)"), self._fields["ICON_SIZE"])
-        f.addRow(t("Text bubble width (px)"), self._fields["BUBBLE_WIDTH"])
-        f.addRow(t("Text bubble lines"), self._fields["BUBBLE_LINES"])
+        f.addRow(_tooltip_label("Icon size (px)", icon_size_tip), self._fields["ICON_SIZE"])
+        f.addRow(_tooltip_label("Text bubble width (px)", bubble_width_tip), self._fields["BUBBLE_WIDTH"])
+        f.addRow(_tooltip_label("Text bubble lines", bubble_lines_tip), self._fields["BUBBLE_LINES"])
+        f.addRow(_tooltip_label("Text bubble font size (pt)", bubble_font_size_tip), self._fields["BUBBLE_FONT_SIZE"])
         f.addRow("", self._fields["BUBBLE_SCROLL_ENABLED"])
         f.addRow("", self._fields["BUBBLE_SCROLL_SNAP_ENABLED"])
         f.addRow(t("Text bubble color"), _bubble_color_row)
@@ -3042,13 +3079,22 @@ class SettingsDialog(QDialog):
         context_f.setContentsMargins(0, 0, 0, 0)
         self._fields["CONTEXT_BROWSER_MAX_CHARS"] = QLineEdit()
         self._fields["CONTEXT_BROWSER_MAX_CHARS"].setPlaceholderText("e.g. 8000")
+        browser_chars_tip = "Maximum characters Wisp reads from a browser page when browser context is on."
         self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"] = QLineEdit()
         self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"].setPlaceholderText("e.g. 12000")
+        ambient_doc_chars_tip = "Maximum characters read automatically from open documents before the model answers."
         self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"] = QLineEdit()
         self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"].setPlaceholderText("e.g. 12000")
-        context_f.addRow("Browser fetch chars", self._fields["CONTEXT_BROWSER_MAX_CHARS"])
-        context_f.addRow("Auto document fetch chars", self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"])
-        context_f.addRow("Tool document fetch chars", self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"])
+        tool_doc_chars_tip = "Maximum characters returned when the model chooses to fetch document text with a tool."
+        context_f.addRow(_tooltip_label("Browser fetch chars", browser_chars_tip), self._fields["CONTEXT_BROWSER_MAX_CHARS"])
+        context_f.addRow(
+            _tooltip_label("Auto document fetch chars", ambient_doc_chars_tip),
+            self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"],
+        )
+        context_f.addRow(
+            _tooltip_label("Tool document fetch chars", tool_doc_chars_tip),
+            self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"],
+        )
         context_cv.addWidget(context_fw)
         outer.addWidget(context_card)
 
@@ -3069,14 +3115,16 @@ class SettingsDialog(QDialog):
         self._fields["TOOL_FILE_ROOTS"].setPlaceholderText(
             "One folder per line. Leave empty to turn local file access off."
         )
+        file_roots_tip = "Folders that file tools are allowed to inspect. Paths outside this list are refused."
         self._fields["TOOL_FILE_ROOTS"].setFixedHeight(72)
         self._fields["TOOL_FILE_BLOCKED_GLOBS"] = QTextEdit()
         self._fields["TOOL_FILE_BLOCKED_GLOBS"].setPlaceholderText(
             "One private pattern per line. Matching files are always refused."
         )
+        blocked_globs_tip = "Glob patterns to block even inside allowed folders, such as secrets or private notes."
         self._fields["TOOL_FILE_BLOCKED_GLOBS"].setFixedHeight(92)
-        local_file_f.addRow("Folders the model may use", self._fields["TOOL_FILE_ROOTS"])
-        local_file_f.addRow("Private file patterns", self._fields["TOOL_FILE_BLOCKED_GLOBS"])
+        local_file_f.addRow(_tooltip_label("Folders the model may use", file_roots_tip), self._fields["TOOL_FILE_ROOTS"])
+        local_file_f.addRow(_tooltip_label("Private file patterns", blocked_globs_tip), self._fields["TOOL_FILE_BLOCKED_GLOBS"])
         local_file_cv.addWidget(local_file_fw)
         outer.addWidget(local_file_card)
 
@@ -3089,10 +3137,15 @@ class SettingsDialog(QDialog):
         memory_f.setContentsMargins(0, 0, 0, 0)
         self._fields["MEMORY_CONSOLIDATION_INTERVAL"] = QLineEdit()
         self._fields["MEMORY_CONSOLIDATION_INTERVAL"].setPlaceholderText("minutes between consolidations")
+        consolidation_tip = "How often Wisp compresses recent conversation into longer-term memory."
         self._fields["MEMORY_STM_TOKEN_BUDGET"] = QLineEdit()
         self._fields["MEMORY_STM_TOKEN_BUDGET"].setPlaceholderText("tokens before STM compression kicks in")
-        memory_f.addRow("Consolidation interval (min)", self._fields["MEMORY_CONSOLIDATION_INTERVAL"])
-        memory_f.addRow("STM token budget", self._fields["MEMORY_STM_TOKEN_BUDGET"])
+        stm_budget_tip = "Approximate short-term memory size before recent conversation is summarized."
+        memory_f.addRow(
+            _tooltip_label("Consolidation interval (min)", consolidation_tip),
+            self._fields["MEMORY_CONSOLIDATION_INTERVAL"],
+        )
+        memory_f.addRow(_tooltip_label("STM token budget", stm_budget_tip), self._fields["MEMORY_STM_TOKEN_BUDGET"])
         memory_cv.addWidget(memory_fw)
         outer.addWidget(memory_card)
 
@@ -3103,28 +3156,34 @@ class SettingsDialog(QDialog):
         timing_f.setContentsMargins(0, 0, 0, 0)
         self._fields["BUBBLE_REVEAL_WPM"] = QLineEdit()
         self._fields["BUBBLE_REVEAL_WPM"].setPlaceholderText("e.g. 170")
+        reveal_wpm_tip = "Words per minute used to reveal text while generated speech is playing."
         self._fields["BUBBLE_HOLD_REVEAL_WPM"] = QLineEdit()
         self._fields["BUBBLE_HOLD_REVEAL_WPM"].setPlaceholderText("e.g. 480")
+        hold_reveal_wpm_tip = "Words per minute used when showing text without generated speech."
         self._fields["BUBBLE_HIDE_DELAY_S"] = QLineEdit()
         self._fields["BUBBLE_HIDE_DELAY_S"].setPlaceholderText("e.g. 3.5")
-        self._fields["BUBBLE_HIDE_DELAY_S"].setToolTip(
-            "How long the text bubble stays on screen after the last word, in seconds."
-        )
+        bubble_hide_tip = "How long the text bubble stays on screen after the last word, in seconds."
         self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"] = QLineEdit()
         self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"].setPlaceholderText("e.g. 2.5")
-        self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"].setToolTip(
-            "How long to wait after wheel scrolling before returning to the highlighted word."
-        )
+        bubble_snap_tip = "How long to wait after wheel scrolling before returning to the highlighted word."
         self._fields["TTS_PLAYBACK_RATE"] = QLineEdit()
         self._fields["TTS_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.0")
+        tts_rate_tip = "Speech playback multiplier. 1.0 is normal speed; larger values speak faster."
         self._fields["TTS_HOLD_PLAYBACK_RATE"] = QLineEdit()
         self._fields["TTS_HOLD_PLAYBACK_RATE"].setPlaceholderText("e.g. 1.35")
-        timing_f.addRow("Text bubble speed (WPM)", self._fields["BUBBLE_REVEAL_WPM"])
-        timing_f.addRow("Text bubble hold speed (WPM)", self._fields["BUBBLE_HOLD_REVEAL_WPM"])
-        timing_f.addRow("Text bubble display time (s)", self._fields["BUBBLE_HIDE_DELAY_S"])
-        timing_f.addRow("Bubble scroll snap delay (s)", self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"])
-        timing_f.addRow("TTS speed", self._fields["TTS_PLAYBACK_RATE"])
-        timing_f.addRow("TTS hold speed", self._fields["TTS_HOLD_PLAYBACK_RATE"])
+        tts_hold_rate_tip = "Playback multiplier for hold-to-talk replies, where a faster response can feel more immediate."
+        timing_f.addRow(_tooltip_label("Text bubble speed (WPM)", reveal_wpm_tip), self._fields["BUBBLE_REVEAL_WPM"])
+        timing_f.addRow(
+            _tooltip_label("Text bubble hold speed (WPM)", hold_reveal_wpm_tip),
+            self._fields["BUBBLE_HOLD_REVEAL_WPM"],
+        )
+        timing_f.addRow(_tooltip_label("Text bubble display time (s)", bubble_hide_tip), self._fields["BUBBLE_HIDE_DELAY_S"])
+        timing_f.addRow(
+            _tooltip_label("Bubble scroll snap delay (s)", bubble_snap_tip),
+            self._fields["BUBBLE_SCROLL_SNAP_DELAY_S"],
+        )
+        timing_f.addRow(_tooltip_label("TTS speed", tts_rate_tip), self._fields["TTS_PLAYBACK_RATE"])
+        timing_f.addRow(_tooltip_label("TTS hold speed", tts_hold_rate_tip), self._fields["TTS_HOLD_PLAYBACK_RATE"])
         timing_cv.addWidget(timing_fw)
         outer.addWidget(timing_card)
 
@@ -3894,6 +3953,7 @@ class SettingsDialog(QDialog):
         _set(self._fields["ICON_SIZE"],    self._env.get("ICON_SIZE", self._env.get("DOLL_SIZE", str(cfg.ICON_SIZE))))
         _set(self._fields["BUBBLE_WIDTH"], self._env.get("BUBBLE_WIDTH", str(cfg.BUBBLE_WIDTH)))
         _set(self._fields["BUBBLE_LINES"], self._env.get("BUBBLE_LINES", str(cfg.BUBBLE_LINES)))
+        _set(self._fields["BUBBLE_FONT_SIZE"], self._env.get("BUBBLE_FONT_SIZE", str(cfg.BUBBLE_FONT_SIZE)))
         self._fields["BUBBLE_SCROLL_ENABLED"].setChecked(  # type: ignore
             self._env.get(
                 "BUBBLE_SCROLL_ENABLED",
@@ -4532,7 +4592,8 @@ class SettingsDialog(QDialog):
                 "THEME_LIGHT_BG", "THEME_LIGHT_SURFACE", "THEME_LIGHT_TEXT", "THEME_LIGHT_ACCENT",
                 "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT", "APP_LANGUAGE", "ASSISTANT_LANGUAGE",
                 "ICON_SIZE", "DOLL_SIZE", "ICON_BACKSTOP_MS", "DOLL_ICON_BACKSTOP_MS",
-                "BUBBLE_WIDTH", "BUBBLE_LINES", "BUBBLE_COLOR", "BUBBLE_TEXT_COLOR",
+                "BUBBLE_WIDTH", "BUBBLE_LINES", "BUBBLE_FONT_SIZE",
+                "BUBBLE_COLOR", "BUBBLE_TEXT_COLOR",
                 "BUBBLE_READ_WORD_COLOR", "BUBBLE_SCROLL_ENABLED", "BUBBLE_SCROLL_SNAP_ENABLED",
             },
             "Advanced": {
@@ -4892,6 +4953,7 @@ class SettingsDialog(QDialog):
             "ICON_SIZE":    _get(self._fields["ICON_SIZE"]),
             "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
             "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
+            "BUBBLE_FONT_SIZE": _get(self._fields["BUBBLE_FONT_SIZE"]),
             "BUBBLE_SCROLL_ENABLED": str(self._fields["BUBBLE_SCROLL_ENABLED"].isChecked()),  # type: ignore
             "BUBBLE_SCROLL_SNAP_ENABLED": str(self._fields["BUBBLE_SCROLL_SNAP_ENABLED"].isChecked()),  # type: ignore
             "BUBBLE_COLOR": _get(self._fields["BUBBLE_COLOR"]),
@@ -5235,6 +5297,13 @@ def _desc_label(title: str, description: str) -> QLabel:
     lbl = QLabel(t(description))
     lbl.setWordWrap(True)
     lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
+    return lbl
+
+
+def _tooltip_label(text: str, tooltip: str) -> QLabel:
+    """Build a translated form/grid label that owns a settings tooltip."""
+    lbl = QLabel(t(text))
+    lbl.setToolTip(tooltip)
     return lbl
 
 

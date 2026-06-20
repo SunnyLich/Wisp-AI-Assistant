@@ -335,6 +335,8 @@ def _context_not_anchored_to_messages(context: str, messages: list) -> str:
 
 def _context_mode(value: object, default: str = "off") -> str:
     mode = str(value or default or "off").strip().lower()
+    if mode == "on":
+        return "auto"
     return mode if mode in {"off", "auto", "model"} else default
 
 
@@ -1683,8 +1685,6 @@ class ChatWindow(QWidget):
         if self._on_context_preview is None or not (0 <= self._active_idx < len(self._conversations)):
             return
         policy = _ensure_conversation_context_policy(self._conversations[self._active_idx])
-        if not any(_policy_state(policy, source) != "off" for source in self._context_controls):
-            return
         self._context_preview_id = str(uuid.uuid4())
         self._on_context_preview(
             {
@@ -1701,9 +1701,6 @@ class ChatWindow(QWidget):
         by_id = {str(item.get("id") or ""): item for item in context_items or [] if isinstance(item, dict)}
         for source, chip in self._context_controls.items():
             state = str(chip.property("context_state") or "off")
-            if state == "off":
-                self._set_context_chip_display(chip, source, state, "0 tok", "")
-                continue
             item = by_id.get(source)
             if item is None:
                 continue

@@ -2231,6 +2231,10 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Lignes de bulle</translation>
     </message>
     <message>
+      <source>Text bubble font size (pt)</source>
+      <translation>Taille de police de bulle (pt)</translation>
+    </message>
+    <message>
       <source>Text bubble speed (WPM)</source>
       <translation>Vitesse de bulle (MPM)</translation>
     </message>
@@ -2719,4 +2723,143 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>p. ex. 3</translation>
     </message>
   <message><source>These folders are the only places the model can list or read files. Each keybind chooses whether local files are off, read-only, ask-before-write, or automatic.</source><translation>Ces dossiers sont les seuls endroits où le modèle peut lister ou lire des fichiers. Chaque raccourci choisit si les fichiers locaux sont désactivés, en lecture seule, soumis à confirmation avant écriture ou automatiques.</translation></message><message><source>Read only</source><translation>Lecture seule</translation></message><message><source>Local files:</source><translation>Fichiers locaux :</translation></message><message><source>No extra tools found. Enable addons that add model tools.</source><translation>Aucun outil supplémentaire trouvé. Activez des addons qui ajoutent des outils pour le modèle.</translation></message></context>
+  <context>
+    <name>Wisp</name>
+    <message>
+      <source>Copy this section's provider/model rows into the other model sections.</source>
+      <translation>Copie les lignes fournisseur/modèle de cette section vers les autres sections de modèle.</translation>
+    </message>
+    <message>
+      <source>Choose which service speaks assistant replies. None disables generated voice output.</source>
+      <translation>Choisissez le service qui prononce les réponses de l’assistant. Aucun désactive la voix générée.</translation>
+    </message>
+    <message>
+      <source>The Cartesia voice identifier to use for speech. Copy it from your Cartesia voices page.</source>
+      <translation>Identifiant de voix Cartesia à utiliser pour la parole. Copiez-le depuis votre page de voix Cartesia.</translation>
+    </message>
+    <message>
+      <source>Leave blank for the account default voice, or paste a specific ElevenLabs voice ID.</source>
+      <translation>Laissez vide pour utiliser la voix par défaut du compte, ou collez un ID de voix ElevenLabs précis.</translation>
+    </message>
+    <message>
+      <source>ElevenLabs speech model name. Use the provider default unless you need a specific model.</source>
+      <translation>Nom du modèle vocal ElevenLabs. Utilisez la valeur par défaut du fournisseur sauf si vous avez besoin d’un modèle précis.</translation>
+    </message>
+    <message>
+      <source>OpenAI voice name for spoken replies.</source>
+      <translation>Nom de voix OpenAI pour les réponses parlées.</translation>
+    </message>
+    <message>
+      <source>OpenAI text-to-speech model. Newer models sound better; tts-1 is a fast fallback.</source>
+      <translation>Modèle de synthèse vocale OpenAI. Les modèles récents sonnent mieux ; tts-1 est une option rapide de secours.</translation>
+    </message>
+    <message>
+      <source>Base URL for an OpenAI-compatible speech server, ending at the API root such as /v1.</source>
+      <translation>URL de base d’un serveur vocal compatible OpenAI, terminée par la racine d’API comme /v1.</translation>
+    </message>
+    <message>
+      <source>Voice name or ID expected by your custom speech server.</source>
+      <translation>Nom ou ID de voix attendu par votre serveur vocal personnalisé.</translation>
+    </message>
+    <message>
+      <source>Model name expected by your custom speech server.</source>
+      <translation>Nom de modèle attendu par votre serveur vocal personnalisé.</translation>
+    </message>
+    <message>
+      <source>Output sample rate in Hz. Match the rate your speech server returns, commonly 24000.</source>
+      <translation>Fréquence d’échantillonnage de sortie en Hz. Utilisez celle renvoyée par votre serveur vocal, souvent 24000.</translation>
+    </message>
+    <message>
+      <source>Include nearby app/window context that Wisp can capture automatically.</source>
+      <translation>Inclut le contexte proche de l’application ou de la fenêtre que Wisp peut capturer automatiquement.</translation>
+    </message>
+    <message>
+      <source>Short name shown for this caller hotkey in settings and tool access dialogs.</source>
+      <translation>Nom court affiché pour ce raccourci d’appel dans les paramètres et les fenêtres d’accès aux outils.</translation>
+    </message>
+    <message>
+      <source>When enabled, Wisp pastes the final answer into the focused app instead of only showing it.</source>
+      <translation>Quand l’option est activée, Wisp colle la réponse finale dans l’application active au lieu de seulement l’afficher.</translation>
+    </message>
+    <message>
+      <source>Instruction sent with this intent. The user's selected text or context is added separately.</source>
+      <translation>Instruction envoyée avec cette intention. Le texte sélectionné ou le contexte de l’utilisateur est ajouté séparément.</translation>
+    </message>
+    <message>
+      <source>Maximum number of stored facts to add to each model request. Higher values add more context.</source>
+      <translation>Nombre maximal de faits mémorisés à ajouter à chaque requête du modèle. Des valeurs plus élevées ajoutent plus de contexte.</translation>
+    </message>
+    <message>
+      <source>System follows your OS theme. Light and Dark use Wisp's saved color templates.</source>
+      <translation>Système suit le thème de votre OS. Clair et Sombre utilisent les modèles de couleurs enregistrés de Wisp.</translation>
+    </message>
+    <message>
+      <source>Hide the floating icon when Wisp is idle, then show it again while listening or responding.</source>
+      <translation>Masque l’icône flottante quand Wisp est inactif, puis l’affiche de nouveau pendant l’écoute ou la réponse.</translation>
+    </message>
+    <message>
+      <source>Automatically send the elaborate prompt when you open chat from a short bubble response.</source>
+      <translation>Envoie automatiquement le prompt de développement lorsque vous ouvrez le chat depuis une courte réponse en bulle.</translation>
+    </message>
+    <message>
+      <source>Prompt used when Auto-elaborate asks the model to expand the latest short response.</source>
+      <translation>Prompt utilisé quand le développement automatique demande au modèle d’étoffer la dernière réponse courte.</translation>
+    </message>
+    <message>
+      <source>Floating icon diameter in pixels.</source>
+      <translation>Diamètre de l’icône flottante en pixels.</translation>
+    </message>
+    <message>
+      <source>Maximum width of the floating response bubble in pixels.</source>
+      <translation>Largeur maximale de la bulle flottante de réponse en pixels.</translation>
+    </message>
+    <message>
+      <source>How many lines of response text the bubble shows before scrolling.</source>
+      <translation>Nombre de lignes de réponse affichées par la bulle avant le défilement.</translation>
+    </message>
+    <message>
+      <source>Maximum characters Wisp reads from a browser page when browser context is on.</source>
+      <translation>Nombre maximal de caractères que Wisp lit depuis une page du navigateur lorsque le contexte navigateur est activé.</translation>
+    </message>
+    <message>
+      <source>Maximum characters read automatically from open documents before the model answers.</source>
+      <translation>Nombre maximal de caractères lus automatiquement depuis les documents ouverts avant que le modèle réponde.</translation>
+    </message>
+    <message>
+      <source>Maximum characters returned when the model chooses to fetch document text with a tool.</source>
+      <translation>Nombre maximal de caractères renvoyés lorsque le modèle choisit de récupérer le texte d’un document avec un outil.</translation>
+    </message>
+    <message>
+      <source>Folders that file tools are allowed to inspect. Paths outside this list are refused.</source>
+      <translation>Dossiers que les outils de fichiers peuvent inspecter. Les chemins hors de cette liste sont refusés.</translation>
+    </message>
+    <message>
+      <source>Glob patterns to block even inside allowed folders, such as secrets or private notes.</source>
+      <translation>Motifs glob à bloquer même dans les dossiers autorisés, comme des secrets ou des notes privées.</translation>
+    </message>
+    <message>
+      <source>How often Wisp compresses recent conversation into longer-term memory.</source>
+      <translation>Fréquence à laquelle Wisp compresse la conversation récente dans la mémoire à plus long terme.</translation>
+    </message>
+    <message>
+      <source>Approximate short-term memory size before recent conversation is summarized.</source>
+      <translation>Taille approximative de la mémoire à court terme avant le résumé de la conversation récente.</translation>
+    </message>
+    <message>
+      <source>Words per minute used to reveal text while generated speech is playing.</source>
+      <translation>Mots par minute utilisés pour révéler le texte pendant la lecture de la voix générée.</translation>
+    </message>
+    <message>
+      <source>Words per minute used when showing text without generated speech.</source>
+      <translation>Mots par minute utilisés pour afficher le texte sans voix générée.</translation>
+    </message>
+    <message>
+      <source>Speech playback multiplier. 1.0 is normal speed; larger values speak faster.</source>
+      <translation>Multiplicateur de lecture vocale. 1.0 est la vitesse normale ; les valeurs plus élevées parlent plus vite.</translation>
+    </message>
+    <message>
+      <source>Playback multiplier for hold-to-talk replies, where a faster response can feel more immediate.</source>
+      <translation>Multiplicateur de lecture pour les réponses maintenir-pour-parler, où une réponse plus rapide peut sembler plus immédiate.</translation>
+    </message>
+  </context>
 </TS>

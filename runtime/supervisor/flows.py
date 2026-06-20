@@ -2825,12 +2825,8 @@ class FlowController:
         """Return the warning text shown when hovering a context warning sign."""
         if deferred:
             return deferred_warning or "This context may be fetched or used after you send the prompt, so this token cost is not known yet."
-        if not available:
-            return "This context source is enabled, but nothing was available when the hotkey was pressed."
         if tokens >= 1500:
             return "This context source is large and may cost noticeable input tokens."
-        if tokens >= 900:
-            return "This context source is moderately large for a short request."
         return ""
 
     def _intent_context_items(self, pending: PendingInvocation | None) -> list[dict[str, Any]]:

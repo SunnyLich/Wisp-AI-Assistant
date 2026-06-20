@@ -9,7 +9,7 @@ Press the matching key to pick, Escape to cancel.
 from __future__ import annotations
 import os
 import sys
-from PySide6.QtWidgets import QWidget, QApplication, QLineEdit, QMenu, QToolTip
+from PySide6.QtWidgets import QWidget, QApplication, QInputDialog, QLineEdit, QMenu, QToolTip
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QRect
 from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath, QFontMetrics
 import config
@@ -163,6 +163,7 @@ _CTX_AUTO   = QColor(224, 176, 62, 230)
 _CTX_TEXT   = QColor(244, 245, 250, 235)
 _CTX_SUB    = QColor(190, 192, 205, 190)
 _WARN       = QColor(246, 197, 76, 245)
+_NEW_PROJECT_SENTINEL = "__new_project__"
 
 
 def _qcolor(value: str | None, fallback: QColor | str, alpha: int | None = None) -> QColor:
@@ -255,6 +256,8 @@ class IntentOverlay(QWidget):
         target_hwnd: int = 0,
         context_items: list[dict] | None = None,
         conversation_options: list[dict] | None = None,
+        project_options: list[dict] | None = None,
+        active_project_id: str | None = None,
         parent=None,
     ):
         """Initialize the intent overlay instance."""
@@ -283,15 +286,23 @@ class IntentOverlay(QWidget):
             next_item.setdefault("default_state", next_item.get("state", "off"))
             next_item.setdefault("touched", False)
             self._context_items.append(next_item)
+        self._project_options = self._normalize_project_options(project_options or [])
+        self._project_id = active_project_id or self._default_project_id()
+        if not any(item.get("id") == self._project_id for item in self._project_options):
+            self._project_id = self._default_project_id()
+        self._new_project_name = ""
+        self._project_dialog_open = False
         self._conversation_options = self._normalize_conversation_options(conversation_options or [])
         selected = next(
-            (item for item in self._conversation_options if item.get("selected")),
+            (item for item in self._filtered_conversation_options() if item.get("selected")),
             None,
         )
         self._conversation_mode = "continue" if selected is not None else "new"
         self._conversation_index = int(selected["index"]) if selected is not None else None
+        self._project_rect = QRect()
         self._conversation_mode_rect = QRect()
         self._conversation_list_rect = QRect()
+        self._project_menu: QMenu | None = None
         self._conversation_menu: QMenu | None = None
         self._warning_rects: list[tuple[QRect, str]] = []
         self._last_warning_idx: int | None = None
@@ -443,9 +454,31 @@ class IntentOverlay(QWidget):
                     "title": title,
                     "subtitle": subtitle,
                     "selected": bool(raw.get("selected")),
+                    "project_id": str(raw.get("project_id") or "general"),
                 }
             )
         return normalized
+
+    @staticmethod
+    def _normalize_project_options(options: list[dict]) -> list[dict]:
+        """Return compact project options for the overlay selector."""
+        normalized: list[dict] = []
+        seen: set[str] = set()
+        for raw in options or []:
+            if not isinstance(raw, dict):
+                continue
+            project_id = str(raw.get("id") or "").strip()
+            if not project_id or project_id in seen:
+                continue
+            name = " ".join(str(raw.get("name") or "").split()).strip() or t("Project")
+            normalized.append({"id": project_id, "name": name})
+            seen.add(project_id)
+        if not normalized:
+            normalized.append({"id": "general", "name": t("General")})
+        return normalized
+
+    def _default_project_id(self) -> str:
+        return str(self._project_options[0].get("id") or "general") if self._project_options else "general"
 
     @property
     def _show_conversation_selector(self) -> bool:
@@ -457,10 +490,36 @@ class IntentOverlay(QWidget):
             return {"mode": "continue", "index": int(self._conversation_index)}
         return {"mode": "new"}
 
+    def project_choice(self) -> dict:
+        """Return the selected project for this prompt."""
+        if self._project_id == _NEW_PROJECT_SENTINEL:
+            return {"mode": "new_project", "name": self._new_project_name}
+        return {"mode": "existing", "project_id": self._project_id}
+
+    def _selected_project_option(self) -> dict | None:
+        for option in self._project_options:
+            if str(option.get("id") or "") == str(self._project_id):
+                return option
+        return None
+
+    def _selected_project_name(self) -> str:
+        if self._project_id == _NEW_PROJECT_SENTINEL:
+            return self._new_project_name or t("New project")
+        option = self._selected_project_option()
+        return str(option.get("name") or t("Project")) if option else t("Project")
+
+    def _filtered_conversation_options(self) -> list[dict]:
+        project_id = str(self._project_id or "")
+        return [
+            option
+            for option in self._conversation_options
+            if not project_id or str(option.get("project_id") or "") == project_id
+        ]
+
     def _selected_conversation_option(self) -> dict | None:
         if self._conversation_index is None:
             return None
-        for option in self._conversation_options:
+        for option in self._filtered_conversation_options():
             if int(option.get("index", -1)) == int(self._conversation_index):
                 return option
         return None
@@ -468,7 +527,7 @@ class IntentOverlay(QWidget):
     def _selected_conversation_title(self) -> str:
         option = self._selected_conversation_option()
         if option is None:
-            return t("Latest conversation") if self._conversation_options else t("No history yet")
+            return t("Latest conversation") if self._filtered_conversation_options() else t("No history yet")
         return str(option.get("title") or t("Conversation"))
 
     def update_context_items(self, items: list[dict]) -> None:
@@ -601,16 +660,17 @@ class IntentOverlay(QWidget):
         value_font: QFont,
         palette: dict[str, QColor],
     ) -> None:
-        """Paint the chat continuation selector row."""
+        """Paint the project and chat selector row."""
         top = y + _CONV_TOP
-        mode_rect = QRect(_PAD_H, top, 164, 28)
-        list_rect = QRect(mode_rect.right() + 6, top, _W - _PAD_H - mode_rect.right() - 6, 28)
-        self._conversation_mode_rect = mode_rect
-        self._conversation_list_rect = list_rect
+        project_rect = QRect(_PAD_H, top, 244, 28)
+        chat_rect = QRect(project_rect.right() + 6, top, _W - _PAD_H - project_rect.right() - 6, 28)
+        self._project_rect = project_rect
+        self._conversation_mode_rect = QRect()
+        self._conversation_list_rect = chat_rect
 
         for rect, active in (
-            (mode_rect, self._conversation_mode == "continue"),
-            (list_rect, self._conversation_mode == "continue" and self._conversation_index is not None),
+            (project_rect, self._project_id != self._default_project_id()),
+            (chat_rect, self._conversation_mode == "continue"),
         ):
             path = QPainterPath()
             path.addRoundedRect(rect, 7, 7)
@@ -620,26 +680,31 @@ class IntentOverlay(QWidget):
             p.setPen(QPen(palette["border"], 1))
             p.drawPath(path)
 
-        mode_text = t("Continuing conversation") if self._conversation_mode == "continue" else t("New conversation")
         p.setFont(label_font)
         p.setPen(QPen(palette["ctx_text"]))
-        p.drawText(mode_rect.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, mode_text)
+        project_value = f"{t('Project')}  {self._selected_project_name()}  ▾"
+        project_value = QFontMetrics(label_font).elidedText(
+            project_value,
+            Qt.TextElideMode.ElideRight,
+            max(20, project_rect.width() - 14),
+        )
+        p.drawText(project_rect.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, project_value)
 
-        value = (
+        conversation_count = len(self._filtered_conversation_options())
+        chat_value = (
             self._selected_conversation_title()
             if self._conversation_mode == "continue"
-            else t("Start a new chat")
+            else t("New chat")
         )
-        if self._conversation_mode == "continue" and self._conversation_options:
-            value += "  ▾"
+        chat_value = f"{t('Chat')}  {chat_value}  ▾" if conversation_count else f"{t('Chat')}  {chat_value}"
         p.setFont(value_font)
         p.setPen(QPen(palette["ctx_sub"] if self._conversation_mode == "new" else palette["ctx_text"]))
-        elided = QFontMetrics(value_font).elidedText(
-            value,
+        chat_value = QFontMetrics(value_font).elidedText(
+            chat_value,
             Qt.TextElideMode.ElideRight,
-            max(20, list_rect.width() - 14),
+            max(20, chat_rect.width() - 14),
         )
-        p.drawText(list_rect.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided)
+        p.drawText(chat_rect.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, chat_value)
 
     def _paint_context_items(
         self,
@@ -753,26 +818,76 @@ class IntentOverlay(QWidget):
         """Swap between continuing the selected chat and starting fresh."""
         if self._conversation_mode == "continue":
             self._conversation_mode = "new"
-        elif self._conversation_options:
+        elif self._filtered_conversation_options():
             self._conversation_mode = "continue"
             if self._conversation_index is None:
-                self._conversation_index = int(self._conversation_options[0]["index"])
+                self._conversation_index = int(self._filtered_conversation_options()[0]["index"])
         else:
             self._conversation_mode = "new"
         self.update()
         return True
 
-    def _show_conversation_menu(self) -> None:
-        """Open the chat history selector menu."""
-        if not self._conversation_options:
-            return
-        menu = QMenu(self)
-        menu.setStyleSheet(
+    def _menu_style(self) -> str:
+        return (
             "QMenu { background: rgba(22,22,32,248); color: #eeeef8; border: 1px solid rgba(255,255,255,30); }"
             "QMenu::item:selected { background: rgba(160,160,255,34); }"
         )
+
+    def _show_project_menu(self) -> None:
+        """Open the project selector menu."""
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_style())
+        current = str(self._project_id or "")
+        for option in self._project_options:
+            project_id = str(option.get("id") or "")
+            name = str(option.get("name") or t("Project"))
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(project_id == current)
+            action.triggered.connect(
+                lambda _checked=False, project_id=project_id: self._set_project_choice(project_id)
+            )
+        menu.addSeparator()
+        menu.addAction(t("+ New project..."), self._create_project_interactive)
+        self._project_menu = menu
+        menu.aboutToHide.connect(lambda: setattr(self, "_project_menu", None))
+        menu.popup(self.mapToGlobal(self._project_rect.bottomLeft()))
+
+    def _set_project_choice(self, project_id: str) -> None:
+        self._project_id = str(project_id or self._default_project_id())
+        self._new_project_name = ""
+        self._conversation_mode = "new"
+        self._conversation_index = None
+        self.update()
+
+    def _create_project_interactive(self) -> None:
+        self._project_dialog_open = True
+        try:
+            name, ok = QInputDialog.getText(self, t("New project"), t("Project name:"))
+        finally:
+            self._project_dialog_open = False
+        name = " ".join(str(name or "").split()).strip()
+        if not ok or not name:
+            return
+        self._project_id = _NEW_PROJECT_SENTINEL
+        self._new_project_name = name
+        self._conversation_mode = "new"
+        self._conversation_index = None
+        self.update()
+
+    def _show_conversation_menu(self) -> None:
+        """Open the chat history selector menu."""
+        options = self._filtered_conversation_options()
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_style())
+        new_action = menu.addAction(t("New chat"))
+        new_action.setCheckable(True)
+        new_action.setChecked(self._conversation_mode == "new")
+        new_action.triggered.connect(lambda _checked=False: self._set_conversation_new())
+        if options:
+            menu.addSeparator()
         current = self._conversation_index
-        for option in self._conversation_options:
+        for option in options:
             idx = int(option["index"])
             title = str(option.get("title") or t("Conversation"))
             subtitle = str(option.get("subtitle") or "")
@@ -785,6 +900,11 @@ class IntentOverlay(QWidget):
         menu.aboutToHide.connect(lambda: setattr(self, "_conversation_menu", None))
         menu.popup(self.mapToGlobal(self._conversation_list_rect.bottomLeft()))
 
+    def _set_conversation_new(self) -> None:
+        self._conversation_mode = "new"
+        self._conversation_index = None
+        self.update()
+
     def _set_conversation_choice(self, idx: int) -> None:
         self._conversation_mode = "continue"
         self._conversation_index = int(idx)
@@ -794,13 +914,10 @@ class IntentOverlay(QWidget):
         """Handle clicks in the continuation selector."""
         if not self._show_conversation_selector:
             return False
-        if self._conversation_mode_rect.contains(pos):
-            return self._toggle_conversation_mode()
+        if self._project_rect.contains(pos):
+            self._show_project_menu()
+            return True
         if self._conversation_list_rect.contains(pos):
-            if self._conversation_mode == "new" and self._conversation_options:
-                self._conversation_mode = "continue"
-                if self._conversation_index is None:
-                    self._conversation_index = int(self._conversation_options[0]["index"])
             self._show_conversation_menu()
             self.update()
             return True
@@ -986,6 +1103,10 @@ class IntentOverlay(QWidget):
         if self._handled or not self.isVisible():
             return
         if self._conversation_menu is not None and self._conversation_menu.isVisible():
+            return
+        if self._project_menu is not None and self._project_menu.isVisible():
+            return
+        if self._project_dialog_open:
             return
         focus = QApplication.focusWidget()
         if focus is not None and (focus is self or self.isAncestorOf(focus)):

@@ -118,6 +118,40 @@ def test_windows_paths_are_breakable_bubble_units():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_font_size_applies_without_changing_width():
+    """Verify bubble text size can change independently from bubble width."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_font_size = getattr(config, "BUBBLE_FONT_SIZE", 10)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_FONT_SIZE = 10
+    config.BUBBLE_WIDTH = 420
+    bubble = SpeechBubble()
+
+    try:
+        original_line_h = bubble._line_h
+        assert bubble._font.pointSize() == 10
+
+        config.BUBBLE_FONT_SIZE = 16
+        bubble.apply_config()
+
+        assert bubble._font.pointSize() == 16
+        assert bubble._bold_font.pointSize() == 16
+        assert bubble._line_h > original_line_h
+        assert bubble._bubble_w == 420
+    finally:
+        config.BUBBLE_FONT_SIZE = old_font_size
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_manual_scroll_snaps_back_to_highlight_while_speaking():
     """Verify manual bubble scroll returns to the highlighted word during speech."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

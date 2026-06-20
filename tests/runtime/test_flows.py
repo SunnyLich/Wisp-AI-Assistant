@@ -2349,6 +2349,105 @@ def test_chat_context_preview_updates_token_estimates_before_send():
     }
 
 
+def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
+    """Verify legacy chat Browser/Web on mode refreshes token estimates."""
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda _params: {
+                "selected_text": "",
+                "clipboard_text": "",
+                "active_app": {"name": "Browser", "pid": 42, "bundle_id": "com.browser"},
+                "browser_url": "https://example.test/page",
+                "browser_hwnd": 777,
+            },
+            "native.context.browser_content": lambda params: {
+                "url": params.get("url"),
+                "content": "Browser page text for a legacy on chat policy.",
+            },
+        }
+    )
+    _flow, native, ui, _brain, _audio = make_flow(native=native)
+
+    ui.emit(
+        "ui.chat.context_preview",
+        {
+            "preview_id": "preview-legacy-on",
+            "context_policy": {
+                "context_ambient": False,
+                "context_documents_mode": "off",
+                "context_browser_mode": "on",
+                "context_github_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "context_clipboard": False,
+                "file_access": "off",
+                "tools": {},
+            },
+        },
+    )
+
+    calls = ui.calls_for("ui.chat.context_preview")
+    assert len(calls) == 2
+    first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
+    assert first_browser["state"] == "on"
+    assert first_browser["tokens"] == "? tok"
+    updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
+    assert updated_browser["state"] == "on"
+    assert updated_browser["tokens"].startswith("~")
+    assert updated_browser["warning"] == ""
+    assert native.last_call("native.context.browser_content")["params"] == {
+        "url": "https://example.test/page",
+        "hwnd": 777,
+        "app": "",
+    }
+
+
+def test_chat_context_preview_estimates_off_context_sources_without_capture():
+    """Verify chat previews off context costs without changing send policy."""
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda _params: {
+                "selected_text": "selected chat text",
+                "clipboard_text": "clipboard chat text",
+                "active_app": {"name": "Preview App", "pid": 42, "bundle_id": "com.preview"},
+                "screen_size": {"width": 1920, "height": 1080},
+            },
+        }
+    )
+    _flow, native, ui, _brain, _audio = make_flow(native=native)
+
+    ui.emit(
+        "ui.chat.context_preview",
+        {
+            "preview_id": "preview-all-off",
+            "context_policy": {
+                "context_ambient": False,
+                "context_documents_mode": "off",
+                "context_browser_mode": "off",
+                "context_github_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "context_clipboard": False,
+                "file_access": "off",
+                "tools": {},
+            },
+        },
+    )
+
+    calls = ui.calls_for("ui.chat.context_preview")
+    assert len(calls) == 1
+    chips = {
+        item["id"]: item
+        for item in calls[0]["params"]["context_items"]
+    }
+    assert chips["screenshot"]["state"] == "off"
+    assert chips["screenshot"]["tokens"] == "~1.1k tok"
+    assert chips["selection"]["tokens"].startswith("~")
+    assert chips["clipboard"]["tokens"].startswith("~")
+    assert chips["ambient"]["tokens"].startswith("~")
+    assert not native.calls_for("native.capture.fullscreen")
+
+
 def test_chat_request_forwards_file_context_metadata():
     """Verify chat request forwards display-hidden file metadata to the UI."""
     file_context = [

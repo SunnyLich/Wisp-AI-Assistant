@@ -59,6 +59,7 @@ class UiSettings:
     assistant_language: str
     bubble_width: int
     bubble_lines: int
+    bubble_font_size: int
     icon_size: int
     bubble_hide_delay_ms: int
     bubble_scroll_enabled: bool
@@ -143,6 +144,7 @@ class AppSettings:
                 assistant_language=str(values.get("ASSISTANT_LANGUAGE", "")),
                 bubble_width=int(values.get("BUBBLE_WIDTH", 0)),
                 bubble_lines=int(values.get("BUBBLE_LINES", 0)),
+                bubble_font_size=int(values.get("BUBBLE_FONT_SIZE", 0)),
                 icon_size=int(values.get("ICON_SIZE", 0)),
                 bubble_hide_delay_ms=int(values.get("BUBBLE_HIDE_DELAY_MS", 0)),
                 bubble_scroll_enabled=_copy_bool(values.get("BUBBLE_SCROLL_ENABLED"), True),

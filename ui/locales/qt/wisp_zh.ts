@@ -2231,6 +2231,10 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>文本气泡行数</translation>
     </message>
     <message>
+      <source>Text bubble font size (pt)</source>
+      <translation>文本气泡字体大小（点）</translation>
+    </message>
+    <message>
       <source>Text bubble speed (WPM)</source>
       <translation>文本气泡速度（词/分钟）</translation>
     </message>
@@ -2719,4 +2723,143 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>例如：3</translation>
     </message>
   <message><source>These folders are the only places the model can list or read files. Each keybind chooses whether local files are off, read-only, ask-before-write, or automatic.</source><translation>这些文件夹是模型唯一可以列出或读取文件的位置。每个快捷键都可以选择本地文件为关闭、只读、写入前询问或自动写入。</translation></message><message><source>Read only</source><translation>只读</translation></message><message><source>Local files:</source><translation>本地文件：</translation></message><message><source>No extra tools found. Enable addons that add model tools.</source><translation>没有找到额外工具。请启用会添加模型工具的扩展。</translation></message></context>
+  <context>
+    <name>Wisp</name>
+    <message>
+      <source>Copy this section's provider/model rows into the other model sections.</source>
+      <translation>将此部分的提供商/模型行复制到其他模型部分。</translation>
+    </message>
+    <message>
+      <source>Choose which service speaks assistant replies. None disables generated voice output.</source>
+      <translation>选择哪个服务朗读助手回复。选择无会禁用生成的语音输出。</translation>
+    </message>
+    <message>
+      <source>The Cartesia voice identifier to use for speech. Copy it from your Cartesia voices page.</source>
+      <translation>用于语音的 Cartesia 声音标识符。请从你的 Cartesia voices 页面复制。</translation>
+    </message>
+    <message>
+      <source>Leave blank for the account default voice, or paste a specific ElevenLabs voice ID.</source>
+      <translation>留空则使用账号默认声音，或粘贴特定的 ElevenLabs 声音 ID。</translation>
+    </message>
+    <message>
+      <source>ElevenLabs speech model name. Use the provider default unless you need a specific model.</source>
+      <translation>ElevenLabs 语音模型名称。除非需要特定模型，否则使用提供商默认值。</translation>
+    </message>
+    <message>
+      <source>OpenAI voice name for spoken replies.</source>
+      <translation>用于语音回复的 OpenAI 声音名称。</translation>
+    </message>
+    <message>
+      <source>OpenAI text-to-speech model. Newer models sound better; tts-1 is a fast fallback.</source>
+      <translation>OpenAI 文本转语音模型。较新的模型音质更好；tts-1 是快速备用选项。</translation>
+    </message>
+    <message>
+      <source>Base URL for an OpenAI-compatible speech server, ending at the API root such as /v1.</source>
+      <translation>OpenAI 兼容语音服务器的基础 URL，应以 API 根路径结尾，例如 /v1。</translation>
+    </message>
+    <message>
+      <source>Voice name or ID expected by your custom speech server.</source>
+      <translation>自定义语音服务器所需的声音名称或 ID。</translation>
+    </message>
+    <message>
+      <source>Model name expected by your custom speech server.</source>
+      <translation>自定义语音服务器所需的模型名称。</translation>
+    </message>
+    <message>
+      <source>Output sample rate in Hz. Match the rate your speech server returns, commonly 24000.</source>
+      <translation>输出采样率，单位 Hz。应与你的语音服务器返回的采样率一致，常见为 24000。</translation>
+    </message>
+    <message>
+      <source>Include nearby app/window context that Wisp can capture automatically.</source>
+      <translation>包含 Wisp 可自动捕获的附近应用或窗口上下文。</translation>
+    </message>
+    <message>
+      <source>Short name shown for this caller hotkey in settings and tool access dialogs.</source>
+      <translation>此调用快捷键在设置和工具访问对话框中显示的短名称。</translation>
+    </message>
+    <message>
+      <source>When enabled, Wisp pastes the final answer into the focused app instead of only showing it.</source>
+      <translation>启用后，Wisp 会把最终答案粘贴到当前聚焦的应用中，而不只是显示出来。</translation>
+    </message>
+    <message>
+      <source>Instruction sent with this intent. The user's selected text or context is added separately.</source>
+      <translation>随此意图发送的指令。用户选择的文本或上下文会另行添加。</translation>
+    </message>
+    <message>
+      <source>Maximum number of stored facts to add to each model request. Higher values add more context.</source>
+      <translation>每次模型请求最多添加的已存储事实数量。数值越高，上下文越多。</translation>
+    </message>
+    <message>
+      <source>System follows your OS theme. Light and Dark use Wisp's saved color templates.</source>
+      <translation>系统会跟随操作系统主题。浅色和深色使用 Wisp 保存的颜色模板。</translation>
+    </message>
+    <message>
+      <source>Hide the floating icon when Wisp is idle, then show it again while listening or responding.</source>
+      <translation>Wisp 空闲时隐藏浮动图标，在聆听或回复时再次显示。</translation>
+    </message>
+    <message>
+      <source>Automatically send the elaborate prompt when you open chat from a short bubble response.</source>
+      <translation>当你从简短气泡回复打开聊天时，自动发送展开提示词。</translation>
+    </message>
+    <message>
+      <source>Prompt used when Auto-elaborate asks the model to expand the latest short response.</source>
+      <translation>自动展开要求模型扩展最近简短回复时使用的提示词。</translation>
+    </message>
+    <message>
+      <source>Floating icon diameter in pixels.</source>
+      <translation>浮动图标直径，单位为像素。</translation>
+    </message>
+    <message>
+      <source>Maximum width of the floating response bubble in pixels.</source>
+      <translation>浮动回复气泡的最大宽度，单位为像素。</translation>
+    </message>
+    <message>
+      <source>How many lines of response text the bubble shows before scrolling.</source>
+      <translation>气泡在滚动前显示的回复文本行数。</translation>
+    </message>
+    <message>
+      <source>Maximum characters Wisp reads from a browser page when browser context is on.</source>
+      <translation>浏览器上下文开启时，Wisp 从浏览器页面读取的最大字符数。</translation>
+    </message>
+    <message>
+      <source>Maximum characters read automatically from open documents before the model answers.</source>
+      <translation>模型回答前，从打开的文档自动读取的最大字符数。</translation>
+    </message>
+    <message>
+      <source>Maximum characters returned when the model chooses to fetch document text with a tool.</source>
+      <translation>当模型选择用工具获取文档文本时返回的最大字符数。</translation>
+    </message>
+    <message>
+      <source>Folders that file tools are allowed to inspect. Paths outside this list are refused.</source>
+      <translation>文件工具允许检查的文件夹。此列表外的路径会被拒绝。</translation>
+    </message>
+    <message>
+      <source>Glob patterns to block even inside allowed folders, such as secrets or private notes.</source>
+      <translation>即使位于允许的文件夹内也要阻止的 glob 模式，例如密钥或私人笔记。</translation>
+    </message>
+    <message>
+      <source>How often Wisp compresses recent conversation into longer-term memory.</source>
+      <translation>Wisp 将最近对话压缩为较长期记忆的频率。</translation>
+    </message>
+    <message>
+      <source>Approximate short-term memory size before recent conversation is summarized.</source>
+      <translation>最近对话被总结前的近似短期记忆大小。</translation>
+    </message>
+    <message>
+      <source>Words per minute used to reveal text while generated speech is playing.</source>
+      <translation>播放生成语音时用于显示文本的每分钟词数。</translation>
+    </message>
+    <message>
+      <source>Words per minute used when showing text without generated speech.</source>
+      <translation>不播放生成语音时用于显示文本的每分钟词数。</translation>
+    </message>
+    <message>
+      <source>Speech playback multiplier. 1.0 is normal speed; larger values speak faster.</source>
+      <translation>语音播放倍速。1.0 为正常速度；数值越大语速越快。</translation>
+    </message>
+    <message>
+      <source>Playback multiplier for hold-to-talk replies, where a faster response can feel more immediate.</source>
+      <translation>按住说话回复的播放倍速，较快的回复会感觉更即时。</translation>
+    </message>
+  </context>
 </TS>

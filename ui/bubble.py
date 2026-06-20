@@ -21,7 +21,7 @@ _LINE_GAP     = 5
 _TAIL_W       = 12
 _TAIL_H       = 14
 _RADIUS       = 10
-_FONT_SIZE    = 10
+_DEFAULT_FONT_SIZE = 10
 _ICON_W       = 80
 _ICON_H       = 80
 _ICON_MARGIN  = 20
@@ -61,13 +61,13 @@ class SpeechBubble(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
 
-        self._font = QFont("Segoe UI", _FONT_SIZE)
-        self._bold_font = QFont("Segoe UI", _FONT_SIZE)
-        self._bold_font.setBold(True)
+        self._font = QFont("Segoe UI", _DEFAULT_FONT_SIZE)
+        self._bold_font = QFont("Segoe UI", _DEFAULT_FONT_SIZE)
         self._fm = QFontMetrics(self._font)
         self._bold_fm = QFontMetrics(self._bold_font)
-        self._space_w = self._fm.horizontalAdvance(" ")
-        self._line_h = self._fm.height() + _LINE_GAP
+        self._space_w = 0
+        self._line_h = 0
+        self._apply_font()
         self._bubble_color = _color(config.BUBBLE_COLOR, QColor(28, 28, 36, 220))
         self._text_color = _color(config.BUBBLE_TEXT_COLOR, QColor(230, 230, 230))
         self._read_word_color = _color(config.BUBBLE_READ_WORD_COLOR, QColor(77, 163, 255))
@@ -182,6 +182,7 @@ class SpeechBubble(QWidget):
 
     def apply_config(self):
         """Apply live bubble size/line/speed settings after config.reload()."""
+        self._apply_font()
         self._bubble_w = config.BUBBLE_WIDTH
         self._text_w = self._bubble_w - _PAD * 2 - _CLOSE_SIZE
         self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
@@ -197,6 +198,21 @@ class SpeechBubble(QWidget):
         if self._full_text:
             self._rewrap()
         self.update()
+
+    def _apply_font(self) -> None:
+        """Refresh fonts and metrics from the current bubble text-size setting."""
+        try:
+            raw_size = int(getattr(config, "BUBBLE_FONT_SIZE", _DEFAULT_FONT_SIZE))
+        except (TypeError, ValueError):
+            raw_size = _DEFAULT_FONT_SIZE
+        size = max(6, min(raw_size, 32))
+        self._font = QFont("Segoe UI", size)
+        self._bold_font = QFont("Segoe UI", size)
+        self._bold_font.setBold(True)
+        self._fm = QFontMetrics(self._font)
+        self._bold_fm = QFontMetrics(self._bold_font)
+        self._space_w = self._fm.horizontalAdvance(" ")
+        self._line_h = self._fm.height() + _LINE_GAP
 
     def hideEvent(self, event):  # noqa: N802
         """Hide event."""

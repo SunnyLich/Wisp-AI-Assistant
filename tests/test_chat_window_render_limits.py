@@ -360,6 +360,109 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
 
 
 @pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_context_policy_normalizes_legacy_on_modes():
+    """Verify persisted on modes stay enabled in chat context chips."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = ""
+    conversations = [
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "context_policy": {
+                "context_ambient": True,
+                "context_documents_mode": "on",
+                "context_browser_mode": "on",
+                "context_github_mode": "off",
+                "context_memory_mode": "on",
+                "context_screenshot": "on",
+                "context_clipboard": False,
+                "file_access": "off",
+                "tools": {},
+            },
+        }
+    ]
+    preview_requests = []
+    window = ChatWindow(conversations, lambda _messages: iter(()), on_context_preview=preview_requests.append)
+
+    try:
+        assert window._context_controls["ambient"].property("context_state") == "on"
+        assert window._context_controls["browser"].property("context_state") == "on"
+        assert window._context_controls["screenshot"].property("context_state") == "on"
+        assert window._context_controls["browser"].property("context_tokens") == "on send"
+
+        window.request_context_preview()
+
+        assert preview_requests
+        assert preview_requests[-1]["context_policy"]["context_documents_mode"] == "auto"
+        assert preview_requests[-1]["context_policy"]["context_browser_mode"] == "auto"
+        assert preview_requests[-1]["context_policy"]["context_screenshot"] == "auto"
+    finally:
+        config.APP_LANGUAGE = old_language
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_context_preview_updates_off_chips():
+    """Verify chat shows context estimates even before a source is enabled."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = ""
+    conversations = [
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "context_policy": {
+                "context_ambient": False,
+                "context_documents_mode": "off",
+                "context_browser_mode": "off",
+                "context_github_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "context_clipboard": False,
+                "file_access": "off",
+                "tools": {},
+            },
+        }
+    ]
+    preview_requests = []
+    window = ChatWindow(conversations, lambda _messages: iter(()), on_context_preview=preview_requests.append)
+
+    try:
+        screenshot_chip = window._context_controls["screenshot"]
+        selection_chip = window._context_controls["selection"]
+        assert screenshot_chip.property("context_state") == "off"
+        assert screenshot_chip.property("context_tokens") == "0 tok"
+        assert preview_requests
+
+        window.update_context_preview(
+            preview_requests[-1]["preview_id"],
+            [
+                {"id": "screenshot", "tokens": "~1.1k tok", "warning": ""},
+                {"id": "selection", "tokens": "~9 tok", "warning": ""},
+            ],
+        )
+
+        assert screenshot_chip.property("context_state") == "off"
+        assert screenshot_chip.property("context_tokens") == "~1.1k tok"
+        assert selection_chip.property("context_state") == "off"
+        assert selection_chip.property("context_tokens") == "~9 tok"
+    finally:
+        config.APP_LANGUAGE = old_language
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
 def test_chat_window_reports_initial_active_conversation():
     """Verify opening chat retargets follow-up prompts to the shown conversation."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

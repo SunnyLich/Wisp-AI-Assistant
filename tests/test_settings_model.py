@@ -50,6 +50,7 @@ def test_get_settings_returns_typed_snapshot():
                 "CALLER_1_LABEL": "Typed",
                 "VOICE_CONTEXT_MEMORY_MODE": "model",
                 "BUBBLE_WIDTH": "420",
+                "BUBBLE_FONT_SIZE": "14",
                 "BUBBLE_SCROLL_ENABLED": "false",
                 "BUBBLE_SCROLL_SNAP_DELAY_MS": "1800",
                 "TRUST_PRIVACY_MODE": "true",
@@ -64,6 +65,7 @@ def test_get_settings_returns_typed_snapshot():
         assert settings.llm.provider == "anthropic"
         assert settings.llm.model == "claude-test"
         assert settings.ui.bubble_width == 420
+        assert settings.ui.bubble_font_size == 14
         assert settings.ui.bubble_scroll_enabled is False
         assert settings.ui.bubble_scroll_snap_delay_ms == 1800
         assert settings.privacy.trust_privacy_mode is True

@@ -15,6 +15,7 @@ class ConfigEnvTests(unittest.TestCase):
         """Verify reload parses icon size and bool aliases behavior."""
         previous = {
             "ICON_SIZE": config.ICON_SIZE,
+            "BUBBLE_FONT_SIZE": config.BUBBLE_FONT_SIZE,
             "DARK_MODE": config.DARK_MODE,
             "ICON_AUTO_HIDE": config.ICON_AUTO_HIDE,
             "SNIP_CONTEXT_DOCUMENTS": config.SNIP_CONTEXT_DOCUMENTS,
@@ -24,6 +25,7 @@ class ConfigEnvTests(unittest.TestCase):
                 os.environ,
                 {
                     "ICON_SIZE": "96",
+                    "BUBBLE_FONT_SIZE": "14",
                     "DARK_MODE": "true",
                     "ICON_AUTO_HIDE": "yes",
                     "SNIP_CONTEXT_DOCUMENTS": "off",
@@ -33,6 +35,7 @@ class ConfigEnvTests(unittest.TestCase):
                 config.reload()
 
             self.assertEqual(config.ICON_SIZE, 96)
+            self.assertEqual(config.BUBBLE_FONT_SIZE, 14)
             self.assertTrue(config.DARK_MODE)
             self.assertTrue(config.ICON_AUTO_HIDE)
             self.assertFalse(config.SNIP_CONTEXT_DOCUMENTS)

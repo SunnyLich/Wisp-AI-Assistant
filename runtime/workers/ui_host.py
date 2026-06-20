@@ -1828,9 +1828,13 @@ class QtProtocolHost:
             target_hwnd=target_hwnd,
             context_items=context_items,
             conversation_options=self._intent_conversation_options(),
+            project_options=self._intent_project_options(),
+            active_project_id=self._intent_active_project_id(),
         )
         def _chosen(intent: str, custom: str) -> None:
             overlay = self._intent
+            project_choice = overlay.project_choice() if overlay else {"mode": "existing", "project_id": self._active_project_id}
+            applied_project = self._apply_intent_project_choice(project_choice)
             conversation_choice = overlay.conversation_choice() if overlay else {"mode": "new"}
             applied_choice = self._apply_intent_conversation_choice(conversation_choice)
             self.emit(
@@ -1840,6 +1844,7 @@ class QtProtocolHost:
                     "intent": intent,
                     "custom": custom,
                     "context_choices": overlay.context_choices() if overlay else [],
+                    "project_choice": applied_project,
                     "conversation_choice": applied_choice,
                 },
             )
@@ -2129,10 +2134,31 @@ class QtProtocolHost:
             return ""
         return raw.replace("T", " ").split("+", 1)[0].split(".", 1)[0]
 
+    def _intent_project_options(self) -> list[dict[str, Any]]:
+        """Return project options for the intent overlay selector."""
+        from core.conversation_store import store as conversation_store
+
+        return conversation_store.load_projects()
+
+    def _intent_active_project_id(self) -> str:
+        """Return the project that should be selected when the intent overlay opens."""
+        from core.conversation_store import store as conversation_store
+
+        idx = self._active_conversation_idx
+        if isinstance(idx, int) and 0 <= idx < len(self._all_conversations):
+            return self._all_conversations[idx].get("project_id") or conversation_store.GENERAL_PROJECT_ID
+        return self._active_project_id or conversation_store.GENERAL_PROJECT_ID
+
     def _intent_conversation_options(self, limit: int = 12) -> list[dict[str, Any]]:
-        """Return latest-first chat history options for the intent overlay."""
+        """Return latest-first chat history options for the intent overlay.
+
+        Keep ``limit`` per project so switching projects in the picker does not
+        hide older project conversations behind newer chats from other projects.
+        """
         if not self._all_conversations:
             return []
+        from core.conversation_store import store as conversation_store
+
         selected_idx = (
             self._active_conversation_idx
             if isinstance(self._active_conversation_idx, int)
@@ -2141,28 +2167,56 @@ class QtProtocolHost:
         )
         options: list[dict[str, Any]] = []
         seen: set[int] = set()
+        counts_by_project: dict[str, int] = {}
         for idx in range(len(self._all_conversations) - 1, -1, -1):
+            project_id = self._all_conversations[idx].get("project_id") or conversation_store.GENERAL_PROJECT_ID
+            if counts_by_project.get(project_id, 0) >= limit:
+                continue
             options.append(
                 {
                     "index": idx,
                     "title": self._chat_notice_title(idx, limit=72) or t("Conversation"),
                     "subtitle": self._chat_conversation_subtitle(idx),
+                    "project_id": project_id,
                     "selected": selected_idx is not None and idx == selected_idx,
                 }
             )
             seen.add(idx)
-            if len(options) >= limit:
-                break
+            counts_by_project[project_id] = counts_by_project.get(project_id, 0) + 1
         if selected_idx is not None and selected_idx not in seen:
             options.append(
                 {
                     "index": selected_idx,
                     "title": self._chat_notice_title(selected_idx, limit=72) or t("Conversation"),
                     "subtitle": self._chat_conversation_subtitle(selected_idx),
+                    "project_id": self._all_conversations[selected_idx].get("project_id") or conversation_store.GENERAL_PROJECT_ID,
                     "selected": True,
                 }
             )
         return options
+
+    def _apply_intent_project_choice(self, choice: dict[str, Any] | None) -> dict[str, Any]:
+        """Apply the intent overlay's project selection before prompting."""
+        from core.conversation_store import store as conversation_store
+
+        choice = choice or {}
+        mode = str(choice.get("mode") or "").strip().lower()
+        if mode == "new_project":
+            name = str(choice.get("name") or "").strip()
+            project = self._create_project(name) if name else None
+            project_id = (
+                str(project.get("id") or "")
+                if isinstance(project, dict)
+                else conversation_store.GENERAL_PROJECT_ID
+            )
+            self._set_active_project(project_id)
+            return {"mode": "existing", "project_id": project_id}
+        project_id = str(choice.get("project_id") or "").strip() or conversation_store.GENERAL_PROJECT_ID
+        valid = {str(project.get("id") or "") for project in conversation_store.load_projects()}
+        if project_id not in valid:
+            project_id = conversation_store.GENERAL_PROJECT_ID
+        self._set_active_project(project_id)
+        return {"mode": "existing", "project_id": project_id}
 
     def _apply_intent_conversation_choice(self, choice: dict[str, Any] | None) -> dict[str, Any]:
         """Apply the intent overlay's new/continue selection before prompting."""
@@ -2546,6 +2600,8 @@ class QtProtocolHost:
 
         def _mode(value: Any, default: str = "off") -> str:
             mode = str(value or default or "off").strip().lower()
+            if mode == "on":
+                return "auto"
             return mode if mode in {"off", "auto", "model"} else default
 
         tools = raw.get("tools")

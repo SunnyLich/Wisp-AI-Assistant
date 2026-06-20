@@ -17,6 +17,8 @@ def context_mode(caller: dict[str, Any], name: str) -> str:
         if mode in {"off", "on", "model"}:
             return mode
         return "on"
+    if mode == "on":
+        return "auto"
     if mode in {"off", "auto", "model"}:
         return mode
     if name == "documents":

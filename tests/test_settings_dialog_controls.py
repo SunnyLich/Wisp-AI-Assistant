@@ -613,6 +613,7 @@ def test_app_settings_surface_translates_to_traditional_chinese():
             "Icon size (px)",
             "Text bubble width (px)",
             "Text bubble lines",
+            "Text bubble font size (pt)",
         ):
             assert not any(fragment in text for text in visible_texts)
 
@@ -882,6 +883,7 @@ def test_reset_page_key_mapping_is_scoped():
         "CALLER_1_HOTKEY": "ctrl+q",
         "CALLER_2_CONTEXT_MEMORY_MODE": "model",
         "BUBBLE_WIDTH": "420",
+        "BUBBLE_FONT_SIZE": "14",
         "BUBBLE_SCROLL_ENABLED": "False",
         "BUBBLE_SCROLL_SNAP_DELAY_MS": "2200",
         "MEMORY_TOP_K": "7",
@@ -899,6 +901,7 @@ def test_reset_page_key_mapping_is_scoped():
         "HOTKEY_SNIP",
     }
     assert "BUBBLE_WIDTH" in SettingsDialog._reset_env_keys_for_page("App", env)
+    assert "BUBBLE_FONT_SIZE" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "BUBBLE_SCROLL_ENABLED" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "BUBBLE_SCROLL_SNAP_DELAY_MS" in SettingsDialog._reset_env_keys_for_page("Advanced", env)
     assert "APP_LANGUAGE" in SettingsDialog._reset_env_keys_for_page("App", env)

@@ -354,6 +354,42 @@ def test_intent_overlay_defaults_to_new_when_history_has_no_active_selection():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_project_choice_filters_conversations():
+    """Verify project selection scopes the intent overlay chat list."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        project_options=[
+            {"id": "general", "name": "General"},
+            {"id": "proj-1", "name": "Personal OS"},
+        ],
+        active_project_id="proj-1",
+        conversation_options=[
+            {"index": 2, "title": "Project chat", "project_id": "proj-1", "selected": True},
+            {"index": 1, "title": "General chat", "project_id": "general"},
+        ],
+    )
+    try:
+        assert overlay.project_choice() == {"mode": "existing", "project_id": "proj-1"}
+        assert overlay.conversation_choice() == {"mode": "continue", "index": 2}
+        assert [item["index"] for item in overlay._filtered_conversation_options()] == [2]
+
+        overlay._set_project_choice("general")
+
+        assert overlay.project_choice() == {"mode": "existing", "project_id": "general"}
+        assert overlay.conversation_choice() == {"mode": "new"}
+        assert [item["index"] for item in overlay._filtered_conversation_options()] == [1]
+    finally:
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_dedupes_raw_and_qt_context_key(monkeypatch):
     """Verify a Windows raw-hook context key is not immediately toggled again by Qt."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

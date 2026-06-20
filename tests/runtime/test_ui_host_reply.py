@@ -206,19 +206,55 @@ def test_intent_conversation_options_start_new_until_chat_is_active() -> None:
     host = QtProtocolHost.__new__(QtProtocolHost)
     host._active_conversation_idx = None
     host._all_conversations = [
-        {"messages": [{"role": "user", "content": "old chat"}]},
-        {"messages": [{"role": "user", "content": "latest chat"}]},
+        {"messages": [{"role": "user", "content": "old chat"}], "project_id": "general"},
+        {"messages": [{"role": "user", "content": "latest chat"}], "project_id": "proj-1"},
     ]
 
     options = host._intent_conversation_options()
 
     assert [option["index"] for option in options[:2]] == [1, 0]
+    assert options[0]["project_id"] == "proj-1"
     assert not any(option["selected"] for option in options)
 
     host._active_conversation_idx = 0
     selected_options = host._intent_conversation_options()
 
     assert [option for option in selected_options if option["selected"]][0]["index"] == 0
+
+
+def test_apply_intent_project_choice_sets_active_or_creates_project(monkeypatch) -> None:
+    """Verify intent overlay project choice updates the active project."""
+    from core.conversation_store import store as conversation_store
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    applied = []
+    host._active_project_id = "general"
+    host._apply_memory_project = lambda: applied.append(host._active_project_id)  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        conversation_store,
+        "load_projects",
+        lambda: [
+            {"id": "general", "name": "General"},
+            {"id": "proj-1", "name": "Personal OS"},
+        ],
+    )
+    monkeypatch.setattr(
+        conversation_store,
+        "add_project",
+        lambda name: {"id": "proj-new", "name": name},
+    )
+
+    existing = host._apply_intent_project_choice({"mode": "existing", "project_id": "proj-1"})
+
+    assert existing == {"mode": "existing", "project_id": "proj-1"}
+    assert host._active_project_id == "proj-1"
+
+    created = host._apply_intent_project_choice({"mode": "new_project", "name": "New Work"})
+
+    assert created == {"mode": "existing", "project_id": "proj-new"}
+    assert host._active_project_id == "proj-new"
+    assert applied[-2:] == ["proj-1", "proj-new"]
 
 
 def test_chat_stream_preserves_structured_thought_chunks() -> None:
