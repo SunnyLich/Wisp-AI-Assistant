@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import queue
+import sys
 import tempfile
 import threading
 import time
@@ -667,6 +668,130 @@ def test_browser_app_captured_at_hotkey_time_fetches_text_via_applescript():
     assert "Page text via Safari" in ambient
 
 
+def test_macos_begin_caller_captures_safari_before_intent_overlay(monkeypatch):
+    """macOS path: capture the browser target before the picker steals focus."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "off",
+            "context_browser_mode": "auto",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    order: list[str] = []
+
+    def snapshot_handler(params: dict[str, Any]) -> dict[str, Any]:
+        order.append("snapshot")
+        return {
+            "platform": "darwin",
+            "selected_text": "",
+            "clipboard_text": "",
+            "active_app": {"name": "Safari", "pid": 42, "bundle_id": "com.apple.Safari"},
+            "browser_app": "Safari" if params.get("include_browser_url") else "",
+        }
+
+    def show_intent(_params: dict[str, Any]) -> dict[str, Any]:
+        order.append("show")
+        return {"shown": True}
+
+    native = FakeWorker(
+        {
+            "native.context.snapshot": snapshot_handler,
+            "native.context.browser_content": lambda params: {
+                "url": "https://example.test/safari",
+                "content": f"Deferred page text via {params.get('app')}",
+            },
+        }
+    )
+    ui = FakeWorker({"ui.show_intent": show_intent})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("ok")})
+    with caller_config(rows):
+        _flow, native, ui, brain, _audio = make_flow(native=native, ui=ui, brain=brain)
+        _flow.begin_caller(0)
+        first_browser_chip = next(
+            item
+            for item in ui.last_call("ui.show_intent")["params"]["context_items"]
+            if item["id"] == "browser"
+        )
+        updated_browser_chip = next(
+            item
+            for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
+            if item["id"] == "browser"
+        )
+        ui.emit("ui.intent.chosen", {"custom": "What is this page?"})
+
+    assert order[:2] == ["snapshot", "show"]
+    assert len(native.calls_for("native.context.snapshot")) == 1
+    assert first_browser_chip["tokens"] == "? tok"
+    assert updated_browser_chip["tokens"].startswith("~")
+    assert native.last_call("native.context.browser_content")["params"] == {
+        "url": "",
+        "hwnd": 0,
+        "app": "Safari",
+    }
+    ambient = brain.last_call("brain.query")["params"]["ambient_text"]
+    assert "Active app: Safari" in ambient
+    assert "https://example.test/safari" in ambient
+    assert "Deferred page text via Safari" in ambient
+
+
+def test_macos_intent_enabled_browser_uses_pre_picker_safari(monkeypatch):
+    """Browser/Web can be turned on per prompt after Safari lost focus."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda params: {
+                "platform": "darwin",
+                "selected_text": "",
+                "clipboard_text": "",
+                "active_app": {"name": "Safari", "pid": 42, "bundle_id": "com.apple.Safari"},
+                "browser_app": "Safari" if params.get("include_browser_url") else "",
+            },
+            "native.context.browser_content": lambda params: {
+                "url": "https://example.test/enabled",
+                "content": f"Enabled page text via {params.get('app')}",
+            },
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("ok")})
+    with caller_config(rows):
+        _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        _flow.begin_caller(0)
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "custom": "Use this page",
+                "context_choices": [{"id": "browser", "state": "on"}],
+            },
+        )
+
+    assert native.last_call("native.context.browser_content")["params"] == {
+        "url": "",
+        "hwnd": 0,
+        "app": "Safari",
+    }
+    ambient = brain.last_call("brain.query")["params"]["ambient_text"]
+    assert "https://example.test/enabled" in ambient
+    assert "Enabled page text via Safari" in ambient
+
+
 def test_intent_enabled_browser_fetches_from_hotkey_time_target_when_setting_off():
     """Verify a per-prompt Browser/Web toggle can use the original foreground tab."""
     rows = [
@@ -1070,6 +1195,57 @@ def test_active_document_request_prefers_captured_macos_window_title():
         "window_id": 0,
     }
     assert brain.last_call("brain.query")["params"]["active_document_text"] == "TXT BODY"
+
+
+def test_active_document_request_prefers_document_window_over_active_app():
+    """Verify App/Docs uses the captured document window, not active app."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "auto",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda _params: {
+                "selected_text": "",
+                "clipboard_text": "",
+                "active_app": {
+                    "name": "python",
+                    "pid": 999,
+                    "bundle_id": "",
+                },
+                "document_window": {
+                    "title": "Notes.txt",
+                    "process_name": "TextEdit",
+                    "pid": 202,
+                    "window_id": 0,
+                },
+            }
+        }
+    )
+    brain = FakeWorker(
+        handlers={"brain.context.active_document": lambda _params: {"text": "TXT BODY"}},
+        stream_handlers={"brain.query": query_stream("ok")},
+    )
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        _flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "Read the txt"})
+
+    params = brain.last_call("brain.context.active_document")["params"]
+    assert params["active_window"] == {
+        "title": "Notes.txt",
+        "process_name": "TextEdit",
+        "pid": 202,
+        "window_id": 0,
+    }
 
 
 def test_no_tts_reply_done_lets_wpm_reveal_drain():

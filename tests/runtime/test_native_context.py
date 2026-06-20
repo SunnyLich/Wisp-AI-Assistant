@@ -88,6 +88,44 @@ def test_context_snapshot_reads_background_browser_when_foreground_is_document(m
     assert snapshot["debug"]["browser_window"]["process_name"] == "chrome.exe"
 
 
+def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
+    """Verify macOS snapshots collect front document and browser independently."""
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(native_host, "IS_MAC", True)
+    monkeypatch.setattr(context_fetcher, "_IS_WIN", False)
+    monkeypatch.setattr(context_fetcher, "_IS_MAC", True)
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "TextEdit", "pid": 101, "bundle_id": "com.apple.TextEdit"},
+    )
+    monkeypatch.setattr(native_host, "selected_text", lambda: "")
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
+
+    rows = [
+        {"process_name": "TextEdit", "pid": 101, "frontmost": True, "title": "Notes.txt"},
+        {"process_name": "Safari", "pid": 303, "frontmost": False, "title": "Example Page"},
+    ]
+    monkeypatch.setattr("core.platform.macos_native.list_document_windows", lambda: rows)
+    monkeypatch.setattr(context_fetcher, "_mac_browser_url", lambda _app: "https://example.test/page")
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False,
+        include_selection=False,
+        include_browser_url=True,
+    )
+
+    assert snapshot["document_window"] == {
+        "title": "Notes.txt",
+        "process_name": "TextEdit",
+        "pid": 101,
+        "window_id": 0,
+    }
+    assert snapshot["browser_app"] == "Safari"
+    assert snapshot["browser_url"] == "https://example.test/page"
+    assert snapshot["debug"]["browser_window"]["process_name"] == "Safari"
+
+
 def test_linux_active_app_includes_real_process_name(monkeypatch):
     """Verify linux active app includes real process name behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", False)

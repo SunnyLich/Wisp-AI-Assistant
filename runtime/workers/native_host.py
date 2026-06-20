@@ -543,6 +543,33 @@ def _active_app() -> dict[str, Any]:
         return {}
 
 
+def _frontmost_document_window() -> dict[str, Any]:
+    """Return the frontmost document/window independently of browser context."""
+    if not IS_MAC:
+        return {}
+    try:
+        from core.platform import macos_native
+
+        rows = macos_native.list_document_windows()
+        rows.sort(key=lambda row: (not bool(row.get("frontmost")), str(row.get("title") or "")))
+        for row in rows:
+            if not bool(row.get("frontmost")):
+                continue
+            title = str(row.get("title") or "").strip()
+            process_name = str(row.get("process_name") or "").strip()
+            if not title or not process_name:
+                continue
+            return {
+                "title": title,
+                "process_name": process_name,
+                "pid": int(row.get("pid") or 0),
+                "window_id": 0,
+            }
+    except Exception:
+        return {}
+    return {}
+
+
 def _clipboard_text_primary() -> str | None:
     """Handle clipboard text primary for runtime workers native host."""
     if IS_MAC:
@@ -637,10 +664,12 @@ def context_snapshot(
     """Handle context snapshot for runtime workers native host."""
     t0 = time.monotonic()
     active = _active_app()
+    document_window = _frontmost_document_window() if IS_MAC else {}
     t_app = time.monotonic()
     snapshot = {
         "platform": sys.platform,
         "active_app": active,
+        "document_window": document_window,
         "selected_text": "",
         "clipboard_text": "",
         "browser_url": "",
@@ -713,25 +742,21 @@ def context_snapshot(
                 if win.hwnd:
                     snapshot["browser_hwnd"] = int(win.hwnd or 0)
             elif IS_MAC:
-                # macOS: the browser is the frontmost app at hotkey time. Grab its
-                # active tab URL now and remember which browser it was; the page
-                # text is read later via browser_app, since osascript reads the
-                # named app's front window without needing focus (no read-by-handle).
-                from core.context_fetcher import _BROWSER_PROCS_MAC, _mac_browser_url
+                # macOS: Browser/Web is independent from the active app/document.
+                # Ask visible browser apps for their own front tab so a document
+                # foreground can still provide browser context.
+                from core.context_fetcher import get_browser_window_for_context
 
-                app_name = str(active.get("name") or "")
-                if app_name.lower() in _BROWSER_PROCS_MAC:
-                    url = _mac_browser_url(app_name)
-                    snapshot["browser_app"] = app_name
-                    if url:
-                        snapshot["browser_url"] = url
-                    snapshot["debug"]["browser_window"] = {
-                        "title": "",
-                        "process_name": app_name,
-                        "pid": int(active.get("pid") or 0),
-                        "hwnd": 0,
-                        "url": url,
-                    }
+                win = get_browser_window_for_context(0)
+                snapshot["browser_app"] = getattr(win, "process_name", "") or ""
+                snapshot["browser_url"] = getattr(win, "url", "") or ""
+                snapshot["debug"]["browser_window"] = {
+                    "title": getattr(win, "title", ""),
+                    "process_name": getattr(win, "process_name", ""),
+                    "pid": getattr(win, "pid", 0),
+                    "hwnd": getattr(win, "hwnd", 0),
+                    "url": getattr(win, "url", ""),
+                }
         except Exception as exc:  # noqa: BLE001 - browser context should not block the picker
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s
@@ -756,7 +781,17 @@ def context_browser_content(url: str = "", hwnd: int = 0, app: str = "") -> dict
     try:
         from core.context_fetcher import WindowInfo, _browser_content
 
-        win = WindowInfo(url=str(url or ""), hwnd=int(hwnd or 0), process_name=str(app or ""))
+        browser_url = str(url or "")
+        browser_app = str(app or "")
+        if IS_MAC and browser_app and not browser_url:
+            try:
+                from core.context_fetcher import _mac_browser_url
+
+                browser_url = _mac_browser_url(browser_app)
+            except Exception:
+                browser_url = ""
+
+        win = WindowInfo(url=browser_url, hwnd=int(hwnd or 0), process_name=browser_app)
         content = _browser_content(win)
         return {"url": win.url, "content": content or "", "hwnd": int(hwnd or 0)}
     except Exception as exc:  # noqa: BLE001 - browser context should not block answering

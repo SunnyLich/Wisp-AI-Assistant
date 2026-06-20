@@ -815,18 +815,45 @@ def get_browser_window_for_context(preferred_hwnd: int = 0) -> WindowInfo:
         return _find_visible_browser_window_win()
 
     if _IS_MAC:
-        active = _fetch_active_window()
-        if (active.process_name or "").lower() in _BROWSER_PROCS:
-            if not active.url:
-                active.url = _mac_browser_url(active.process_name)
-            return active
-        return WindowInfo()
+        return _find_visible_browser_window_macos()
 
     # Linux
     active = _fetch_active_window()
     if (active.process_name or "").lower() in _BROWSER_PROCS:
         return active
     return WindowInfo()
+
+
+def _find_visible_browser_window_macos() -> WindowInfo:
+    """Return a visible macOS browser window without requiring browser focus."""
+    if not _IS_MAC:
+        return WindowInfo()
+    try:
+        from core.platform import macos_native
+
+        rows = macos_native.list_document_windows()
+    except Exception:
+        rows = []
+
+    candidates: list[WindowInfo] = []
+    seen: set[str] = set()
+    for row in sorted(rows, key=lambda item: (not bool(item.get("frontmost")), str(item.get("title") or ""))):
+        process_name = str(row.get("process_name") or "").strip()
+        if process_name.lower() not in _BROWSER_PROCS_MAC:
+            continue
+        if process_name.lower() in seen:
+            continue
+        seen.add(process_name.lower())
+        win = WindowInfo(
+            title=str(row.get("title") or "").strip(),
+            process_name=process_name,
+            pid=int(row.get("pid") or 0),
+        )
+        win.url = _mac_browser_url(process_name)
+        candidates.append(win)
+        if win.url:
+            return win
+    return candidates[0] if candidates else WindowInfo()
 
 
 def _find_visible_browser_window_win() -> WindowInfo:

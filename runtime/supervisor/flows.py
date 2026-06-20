@@ -704,16 +704,27 @@ class FlowController:
         # Silence any in-progress speech, but don't block the picker waiting for
         # it â€” audio.stop just flips a flag in the audio worker.
         self._fire(self.audio, "audio.stop")
+        initial_context: dict[str, Any] = {}
+        if sys.platform == "darwin":
+            try:
+                initial_context = self._context_snapshot(
+                    caller,
+                    include_browser=False,
+                    preview_context_sources=True,
+                )
+            except Exception:
+                log.exception("macOS pre-picker context snapshot failed")
+                initial_context = {}
         pending = PendingInvocation(
             caller_idx=caller_idx,
             caller=caller,
-            context={},
+            context=initial_context,
         )
         with self._lock:
             self._pending = pending
-        # Show the picker before native context capture. Active-window,
-        # selection, clipboard, and screenshot capture can take noticeable time;
-        # the chips are refreshed as that context arrives.
+        # Show the picker before native context capture on platforms that can
+        # recover the original target later. macOS pre-captures above because
+        # Safari/Chrome lose their frontmost status once this overlay appears.
         self._fire(
             self.ui,
             "ui.show_intent",
@@ -2176,11 +2187,13 @@ class FlowController:
             if not self._is_current(generation):
                 return
             t_ctx0 = time.monotonic()
-            context = self._context_snapshot(
-                pending.caller,
-                include_browser=False,
-                preview_context_sources=True,
-            )
+            context = pending.context if isinstance(pending.context, dict) and pending.context else {}
+            if not context:
+                context = self._context_snapshot(
+                    pending.caller,
+                    include_browser=False,
+                    preview_context_sources=True,
+                )
             t_ctx = time.monotonic()
             if not self._is_current(generation):
                 return
@@ -2223,6 +2236,14 @@ class FlowController:
 
     def _active_document_window(self, context: dict[str, Any]) -> dict[str, Any]:
         """Build the active-window payload used by active document extraction."""
+        document_window = context.get("document_window") if isinstance(context.get("document_window"), dict) else {}
+        if document_window:
+            return {
+                "title": document_window.get("title") or "",
+                "process_name": document_window.get("process_name") or "",
+                "pid": document_window.get("pid") or 0,
+                "window_id": document_window.get("window_id") or 0,
+            }
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
         debug = context.get("debug") if isinstance(context.get("debug"), dict) else {}
         window_debug = debug.get("window") if isinstance(debug.get("window"), dict) else {}
@@ -2274,6 +2295,7 @@ class FlowController:
                 },
                 timeout=30.0,
             ) or {}
+            browser_url = str(result.get("url") or browser_url).strip()
             browser_content = str(result.get("content") or "").strip()
             log.info(
                 "browser context by captured hwnd url=%r hwnd=%s chars=%d error=%r",
@@ -2731,6 +2753,7 @@ class FlowController:
         caller = pending.caller if pending else {}
         context = pending.context if pending else {}
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
+        document_window = context.get("document_window") if isinstance(context.get("document_window"), dict) else {}
         active_document_text = str(context.get("active_document_text") or "")
         active_text = " ".join(
             str(part)
@@ -2738,6 +2761,8 @@ class FlowController:
                 active_app.get("name"),
                 active_app.get("process_name"),
                 active_app.get("title"),
+                document_window.get("process_name"),
+                document_window.get("title"),
                 active_document_text,
             )
             if part

@@ -70,6 +70,22 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
         self.assertEqual(win.process_name, "TextEdit")
         self.assertEqual(win.pid, 101)
 
+    def test_browser_window_scan_finds_background_safari(self):
+        """Verify Browser/Web scans visible browsers even when a document is frontmost."""
+        rows = [
+            {"process_name": "TextEdit", "pid": 101, "frontmost": True, "title": "Notes.txt"},
+            {"process_name": "Safari", "pid": 303, "frontmost": False, "title": "Example Page"},
+        ]
+
+        with patch("core.platform.macos_native.list_document_windows", return_value=rows), \
+             patch.object(self.cf, "_mac_browser_url", return_value="https://example.test/page"):
+            win = self.cf.get_browser_window_for_context()
+
+        self.assertEqual(win.process_name, "Safari")
+        self.assertEqual(win.pid, 303)
+        self.assertEqual(win.title, "Example Page")
+        self.assertEqual(win.url, "https://example.test/page")
+
     def test_plain_textedit_title_resolves_open_file_from_lsof(self):
         """Verify plain textedit title resolves open file from lsof behavior."""
         win = self.cf.WindowInfo(title="Notes.txt", process_name="TextEdit", pid=101)
