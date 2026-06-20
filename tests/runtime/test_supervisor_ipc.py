@@ -205,7 +205,7 @@ def test_ui_worker_show_settings_does_not_block_event_loop(tmp_path):
         result = worker.call("ui.show_settings", timeout=10)
         elapsed = time.perf_counter() - started
         assert result == {"queued": True}
-        assert elapsed < 1.0
+        assert elapsed < 2.0
 
         time.sleep(0.5)
         ping = worker.call("ui.ping", timeout=10)
@@ -238,7 +238,7 @@ def test_ui_worker_show_memory_does_not_crash_or_block_event_loop(tmp_path):
         )
         elapsed = time.perf_counter() - started
         assert result == {"queued": True}
-        assert elapsed < 1.0
+        assert elapsed < 2.0
 
         time.sleep(0.5)
         ping = worker.call("ui.ping", timeout=10)

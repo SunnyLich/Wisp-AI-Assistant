@@ -48,7 +48,9 @@ def test_final_only_reply_starts_visible_at_beginning():
 
     app = QApplication.instance() or QApplication(sys.argv)
     old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
     config.BUBBLE_LINES = 2
+    config.BUBBLE_WIDTH = 520
     bubble = SpeechBubble()
     text = (
         "I don't have the previous file-operation details in this chat, so I can't safely make a change yet. "
@@ -64,6 +66,7 @@ def test_final_only_reply_starts_visible_at_beginning():
         assert "model_files" not in visible
     finally:
         config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
         bubble.deleteLater()
         app.processEvents()
 
@@ -79,7 +82,9 @@ def test_multi_chunk_reply_follows_latest_text_before_audio():
 
     app = QApplication.instance() or QApplication(sys.argv)
     old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
     config.BUBBLE_LINES = 1
+    config.BUBBLE_WIDTH = 520
     bubble = SpeechBubble()
 
     try:
@@ -93,6 +98,7 @@ def test_multi_chunk_reply_follows_latest_text_before_audio():
         assert "one two" not in visible
     finally:
         config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
         bubble.deleteLater()
         app.processEvents()
 

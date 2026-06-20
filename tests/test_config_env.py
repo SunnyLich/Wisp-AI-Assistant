@@ -109,6 +109,84 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_assistant_language_localizes_default_caller_intents(self):
+        """Built-in caller intents follow the assistant language setting."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "CALLER_ROWS": [dict(row) for row in config.CALLER_ROWS],
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in list(os.environ):
+                    if key == "ASSISTANT_LANGUAGE" or key.startswith("CALLER_"):
+                        os.environ.pop(key, None)
+                os.environ["ASSISTANT_LANGUAGE"] = "Chinese"
+                config.reload()
+
+            self.assertEqual(config.CALLER_ROWS[0]["intents"][0]["label"], "这是什么？")
+            self.assertEqual(config.CALLER_ROWS[0]["intents"][1]["label"], "简单解释")
+            self.assertEqual(config.CALLER_ROWS[1]["intents"][0]["label"], "修正语法")
+            self.assertIn("中文", config.CALLER_ROWS[0]["intents"][0]["prompt"])
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_assistant_language_localizes_saved_english_default_intents(self):
+        """Saved old English defaults are still treated as built-in templates."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "CALLER_ROWS": [dict(row) for row in config.CALLER_ROWS],
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in list(os.environ):
+                    if key == "ASSISTANT_LANGUAGE" or key.startswith("CALLER_"):
+                        os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "Chinese",
+                    "CALLER_COUNT": "2",
+                    "CALLER_1_INTENT_COUNT": "3",
+                    "CALLER_1_INTENT_1_LABEL": "What is this?",
+                    "CALLER_1_INTENT_1_PROMPT": "What is this? Give me a clear, plain-English explanation in 2-3 sentences.",
+                    "CALLER_2_INTENT_COUNT": "3",
+                    "CALLER_2_INTENT_1_LABEL": "Fix grammar",
+                    "CALLER_2_INTENT_1_PROMPT": "Fix the grammar and spelling of the following text. Output ONLY the corrected text.",
+                })
+                config.reload()
+
+            self.assertEqual(config.CALLER_ROWS[0]["intents"][0]["label"], "这是什么？")
+            self.assertEqual(config.CALLER_ROWS[1]["intents"][0]["label"], "修正语法")
+            self.assertIn("修正", config.CALLER_ROWS[1]["intents"][0]["prompt"])
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_assistant_language_preserves_custom_caller_intent_prompt(self):
+        """Custom caller prompt text should not be overwritten by templates."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "CALLER_ROWS": [dict(row) for row in config.CALLER_ROWS],
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in list(os.environ):
+                    if key == "ASSISTANT_LANGUAGE" or key.startswith("CALLER_"):
+                        os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "Chinese",
+                    "CALLER_COUNT": "2",
+                    "CALLER_2_INTENT_COUNT": "3",
+                    "CALLER_2_INTENT_2_LABEL": "Simplify",
+                    "CALLER_2_INTENT_2_PROMPT": "Use my exact house style.",
+                })
+                config.reload()
+
+            self.assertEqual(config.CALLER_ROWS[1]["intents"][1]["label"], "简化表达")
+            self.assertEqual(config.CALLER_ROWS[1]["intents"][1]["prompt"], "Use my exact house style.")
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_app_language_loads_from_env(self):
         """Verify app language loads from env behavior."""
         previous = {"APP_LANGUAGE": config.APP_LANGUAGE}

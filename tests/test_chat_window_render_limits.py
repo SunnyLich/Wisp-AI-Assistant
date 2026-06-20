@@ -281,7 +281,11 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QPushButton
 
+    import config
+
     app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = ""
     conversations = [
         {
             "messages": [{"role": "user", "content": "hello"}],
@@ -298,7 +302,8 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
             },
         }
     ]
-    window = ChatWindow(conversations, lambda _messages: iter(()))
+    preview_requests = []
+    window = ChatWindow(conversations, lambda _messages: iter(()), on_context_preview=preview_requests.append)
     captured = []
 
     def fake_popup(self, pos):
@@ -336,6 +341,12 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
         assert conversations[0]["context_policy"]["context_browser_mode"] == "auto"
         assert browser_chip.property("context_state") == "on"
         assert browser_chip.property("context_tokens") == "on send"
+        assert preview_requests
+        window.update_context_preview(
+            preview_requests[-1]["preview_id"],
+            [{"id": "browser", "tokens": "~12 tok", "warning": ""}],
+        )
+        assert browser_chip.property("context_tokens") == "~12 tok"
         assert "Token estimate" in browser_chip.toolTip()
 
         window._set_context_policy_state("browser", "auto")
@@ -343,6 +354,7 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
         assert "\nauto\n" in browser_chip.text()
         assert "Let model decide" not in browser_chip.text()
     finally:
+        config.APP_LANGUAGE = old_language
         window.close()
         app.processEvents()
 
@@ -626,8 +638,9 @@ def test_chat_rewind_current_chat_requires_confirmation(monkeypatch):
 def test_chat_window_drop_attachments_feed_next_message_context_and_image(tmp_path, monkeypatch):
     """Verify dropped files/images attach to the next outgoing chat message."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from core.conversation_store import store as conversation_store
     from PySide6.QtWidgets import QApplication, QLabel
+
+    from core.conversation_store import store as conversation_store
 
     chats = tmp_path / "chats"
     monkeypatch.setattr(conversation_store, "CHATS_DIR", chats)

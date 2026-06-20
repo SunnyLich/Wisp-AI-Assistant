@@ -3742,11 +3742,17 @@ class SettingsDialog(QDialog):
             for j in range(intent_count):
                 m = j + 1
                 di = cr["intents"][j] if j < len(cr.get("intents", [])) else {}
-                intents.append({
+                intent = {
                     "key":    self._env.get(f"CALLER_{n}_INTENT_{m}_KEY",    di.get("key", "")),
                     "label":  self._env.get(f"CALLER_{n}_INTENT_{m}_LABEL",  di.get("label", "")),
                     "prompt": self._env.get(f"CALLER_{n}_INTENT_{m}_PROMPT", di.get("prompt", "")),
-                })
+                }
+                intents.append(cfg.localize_intent_if_default(
+                    i,
+                    j,
+                    intent,
+                    self._env.get("ASSISTANT_LANGUAGE", getattr(cfg, "ASSISTANT_LANGUAGE", "")),
+                ))
             legacy_documents = self._env.get(
                 f"CALLER_{n}_CONTEXT_DOCUMENTS",
                 str(cr.get("context_documents", True)),
@@ -4798,6 +4804,8 @@ class SettingsDialog(QDialog):
         settings are still written to .env so the user never loses everything just
         because one API key could not reach the OS keychain.
         """
+        import config as cfg
+
         self._save_api_keys_to_keychain()
 
         def _section_vals(sk):
@@ -4953,9 +4961,22 @@ class SettingsDialog(QDialog):
             vals[f"CALLER_{n}_INTENT_COUNT"]  = str(len(blk["intent_rows"]))
             for j, row in enumerate(blk["intent_rows"]):
                 m = j + 1
-                vals[f"CALLER_{n}_INTENT_{m}_KEY"]    = _get(row["key"])
-                vals[f"CALLER_{n}_INTENT_{m}_LABEL"]  = _get(row["label"])
-                vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = _get(row["prompt"])
+                intent = cfg.localize_intent_if_default(
+                    i,
+                    j,
+                    {
+                        "key": _get(row["key"]),
+                        "label": _get(row["label"]),
+                        "prompt": _get(row["prompt"]),
+                    },
+                    vals.get("ASSISTANT_LANGUAGE", ""),
+                )
+                row["key"].setText(str(intent.get("key", "")))
+                row["label"].setText(str(intent.get("label", "")))
+                row["prompt"].setPlainText(str(intent.get("prompt", "")))
+                vals[f"CALLER_{n}_INTENT_{m}_KEY"]    = str(intent.get("key", ""))
+                vals[f"CALLER_{n}_INTENT_{m}_LABEL"]  = str(intent.get("label", ""))
+                vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = str(intent.get("prompt", ""))
         # The Chat model is combined with the Main LLM, so purge any stale
         # CHAT_LLM_* keys a previous version may have written.
         vals.update(self._preset_values_to_persist(vals))

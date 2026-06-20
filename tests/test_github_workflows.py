@@ -1,7 +1,6 @@
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -24,7 +23,20 @@ class GitHubWorkflowTests(unittest.TestCase):
             if "actions/setup-python" not in text:
                 continue
             with self.subTest(workflow=workflow.name):
-                self.assertIn('python-version-file: ".python-version"', text)
+                if workflow.name == "ci.yml":
+                    self.assertIn('python-version: "3.12"', text)
+                    self.assertNotIn('python-version-file: ".python-version"', text)
+                else:
+                    self.assertIn('python-version-file: ".python-version"', text)
+
+    def test_workflows_use_node24_actions(self) -> None:
+        workflow_dir = ROOT / ".github" / "workflows"
+        workflow_text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml")))
+
+        self.assertIn("actions/checkout@v7", workflow_text)
+        self.assertIn("actions/setup-python@v6", workflow_text)
+        self.assertNotIn("actions/checkout@v4", workflow_text)
+        self.assertNotIn("actions/setup-python@v5", workflow_text)
 
 
 if __name__ == "__main__":

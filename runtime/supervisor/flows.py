@@ -328,6 +328,7 @@ class FlowController:
         self.ui.on_event("ui.context.dropped", self._on_context_dropped)
         self.ui.on_event("ui.context.remove", self._on_context_remove)
         self.ui.on_event("ui.chat.request", self._on_chat_request)
+        self.ui.on_event("ui.chat.context_preview", self._on_chat_context_preview)
         self.ui.on_event("ui.memory.open_requested", self._on_memory_open_requested)
         self.ui.on_event("ui.memory.add", self._on_memory_add)
         self.ui.on_event("ui.memory.update", self._on_memory_update)
@@ -468,6 +469,10 @@ class FlowController:
     def _on_chat_request(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle chat request events."""
         self._schedule(self.chat_request, data or {})
+
+    def _on_chat_context_preview(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle chat context preview events."""
+        self._schedule(self.chat_context_preview, data or {})
 
     def _on_memory_open_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle memory open requested events."""
@@ -1157,6 +1162,56 @@ class FlowController:
                 self.ui,
                 "ui.chat.error",
                 {"request_id": request_id, "error": f"{type(exc).__name__}: {exc}"},
+                timeout=30.0,
+            )
+
+    def chat_context_preview(self, data: dict[str, Any]) -> None:
+        """Refresh chat-window context chip token estimates before send."""
+        self._reload_supervisor_config_if_changed()
+        preview_id = str(data.get("preview_id") or "")
+        if not preview_id:
+            return
+        try:
+            caller_idx = int(data.get("caller_idx", 0) or 0)
+        except (TypeError, ValueError):
+            caller_idx = 0
+        caller = _normalized_context_policy(data.get("context_policy")) or self._caller(caller_idx) or _all_context_off_policy()
+        try:
+            context = self._context_snapshot(
+                caller,
+                include_browser=False,
+                preview_context_sources=True,
+            )
+        except Exception:
+            log.exception("chat context preview snapshot failed")
+            context = {}
+        pending = PendingInvocation(caller_idx=caller_idx, caller=caller, context=context)
+        self._safe_call(
+            self.ui,
+            "ui.chat.context_preview",
+            {"preview_id": preview_id, "context_items": self._intent_context_items(pending)},
+            timeout=30.0,
+        )
+        changed = False
+        if self._effective_document_mode(caller) in {"auto", "model"} and not context.get("active_document_text"):
+            text = self._fetch_active_document_text(context)
+            if text:
+                context["active_document_text"] = text
+                changed = True
+        if self._context_mode(caller, "browser") == "auto" and not context.get("browser_content"):
+            browser = self._fetch_browser_content_for_context(context)
+            if browser.get("browser_url") and not context.get("browser_url"):
+                context["browser_url"] = browser["browser_url"]
+                changed = True
+            if browser.get("browser_content"):
+                context["browser_content"] = browser["browser_content"]
+                changed = True
+        if changed:
+            pending.context = context
+            self._safe_call(
+                self.ui,
+                "ui.chat.context_preview",
+                {"preview_id": preview_id, "context_items": self._intent_context_items(pending)},
                 timeout=30.0,
             )
 
@@ -2328,14 +2383,15 @@ class FlowController:
             return
         changed = False
         context = pending.context if isinstance(pending.context, dict) else {}
-        if self._context_mode(pending.caller, "documents") in {"auto", "model"} and not context.get("active_document_text"):
+        if not context.get("active_document_text"):
             text = self._fetch_active_document_text(context)
             if not self._is_current(generation):
                 return
             if text:
                 context["active_document_text"] = text
                 changed = True
-        if self._context_mode(pending.caller, "browser") == "auto" and not context.get("browser_content"):
+        browser_available = bool(context.get("browser_url") or context.get("browser_hwnd") or context.get("browser_app"))
+        if browser_available and not context.get("browser_content"):
             browser = self._fetch_browser_content_for_context(context)
             if not self._is_current(generation):
                 return
@@ -2379,7 +2435,7 @@ class FlowController:
         pinned_tools = self._pinned_model_tools(caller)
         frontload_tools = self._frontloaded_model_tools(caller)
         memory_mode = self._context_mode(caller, "memory")
-        documents_mode = self._context_mode(caller, "documents")
+        documents_mode = self._effective_document_mode(caller)
         include_active_document = documents_mode == "auto"
         active_document_text = str(context.get("active_document_text") or "") if include_active_document else ""
         if include_active_document:
@@ -2522,6 +2578,13 @@ class FlowController:
         """Handle context mode for flow controller."""
         return tool_modes.context_mode(caller, name)
 
+    def _effective_document_mode(self, caller: dict[str, Any]) -> str:
+        """Treat enabled App context as active document context."""
+        mode = self._context_mode(caller, "documents")
+        if mode == "off" and bool(caller.get("context_ambient", False)):
+            return "auto"
+        return mode
+
     def _allowed_model_tools(self, caller: dict[str, Any]) -> list[str]:
         """Handle allowed model tools for flow controller."""
         return tool_modes.allowed_model_tools(caller)
@@ -2558,7 +2621,7 @@ class FlowController:
 
     def _chat_context_text(self, caller: dict[str, Any]) -> str:
         """Fetch frontloaded chat context selected in the chat controls."""
-        wants_documents = self._context_mode(caller, "documents") == "auto"
+        wants_documents = self._effective_document_mode(caller) == "auto"
         wants_browser = self._context_mode(caller, "browser") == "auto"
         wants_clipboard = bool(caller.get("context_clipboard"))
         wants_ambient = bool(caller.get("context_ambient"))
@@ -2686,9 +2749,8 @@ class FlowController:
         return None
 
     @classmethod
-    def _image_token_label(cls, data: str | None) -> str:
-        """Return a rough token estimate for image input."""
-        size = cls._image_size_from_b64(data)
+    def _image_size_token_label(cls, size: tuple[int, int] | None) -> str:
+        """Return a rough token estimate for an image of known dimensions."""
         if not size:
             return cls._deferred_token_label()
         width, height = size
@@ -2706,6 +2768,24 @@ class FlowController:
         if tokens >= 1000:
             return f"~{tokens / 1000:.1f}k tok"
         return f"~{tokens} tok"
+
+    @classmethod
+    def _image_token_label(cls, data: str | None) -> str:
+        """Return a rough token estimate for image input."""
+        return cls._image_size_token_label(cls._image_size_from_b64(data))
+
+    @classmethod
+    def _screen_token_label(cls, context: dict[str, Any]) -> str:
+        """Return screenshot token estimate from screen metadata."""
+        raw = context.get("screen_size") if isinstance(context, dict) else {}
+        if not isinstance(raw, dict):
+            return cls._deferred_token_label()
+        try:
+            width = int(raw.get("width") or 0)
+            height = int(raw.get("height") or 0)
+        except (TypeError, ValueError):
+            return cls._deferred_token_label()
+        return cls._image_size_token_label((width, height))
 
     def _intent_context_keys(self) -> str:
         """Return seven unique overlay-local context toggle keys."""
@@ -2774,7 +2854,7 @@ class FlowController:
             if part
         )
         app_available = bool(active_text)
-        document_state = self._mode_to_context_state(self._context_mode(caller, "documents"))
+        document_state = self._mode_to_context_state(self._effective_document_mode(caller))
         app_on = bool(caller.get("context_ambient", True)) and app_available
         app_state = "on" if app_on or (document_state == "on" and app_available) else ("auto" if document_state == "auto" and app_available else "off")
         app_deferred = app_state != "off" and document_state in {"on", "auto"} and app_available and not active_document_text
@@ -2803,6 +2883,11 @@ class FlowController:
         screenshot_mode = str(caller.get("context_screenshot") or "off").strip().lower()
         screenshot_preview = (pending.screenshot_b64 or pending.screenshot_tool_b64) if pending else None
         has_screenshot = bool(screenshot_preview)
+        screenshot_tokens = (
+            self._image_token_label(screenshot_preview)
+            if has_screenshot
+            else self._screen_token_label(context)
+        )
 
         return [
             {
@@ -2852,8 +2937,8 @@ class FlowController:
                 "key": keys[4],
                 "label": "Screenshot",
                 "state": "on" if pending and pending.screenshot_b64 else ("auto" if screenshot_mode == "model" else "off"),
-                "tokens": self._image_token_label(screenshot_preview) if has_screenshot else (self._deferred_token_label() if screenshot_mode == "model" else "0 tok"),
-                "warning": "Screenshot image cost is not known until it is sent or the model requests it." if has_screenshot or screenshot_mode == "model" else "",
+                "tokens": screenshot_tokens,
+                "warning": "",
             },
             {
                 "id": "memory",
@@ -2868,8 +2953,8 @@ class FlowController:
                 "key": keys[6],
                 "label": "Files",
                 "state": self._file_access_to_context_state(file_mode),
-                "tokens": self._deferred_token_label() if file_mode != "off" else "0 tok",
-                "warning": "File context depends on which file tools are used; writes still follow the local file access setting and may require approval." if file_mode in {"ask", "write"} else ("File context depends on which file tools are used." if file_mode != "off" else ""),
+                "tokens": "",
+                "warning": "",
             },
         ]
 

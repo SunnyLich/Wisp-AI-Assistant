@@ -1,8 +1,9 @@
 """Tool execution facade for scoped agent tasks."""
 from __future__ import annotations
 
-from typing import Sequence
 import subprocess
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from core.agent.runtime import (
@@ -159,9 +160,16 @@ class AgentToolbox:
             no_repo = self._not_git_repo_result(clean_args)
             if no_repo is not None:
                 return no_repo
+        display_args = list(clean_args)
+        exec_args = list(clean_args)
+        if exec_args[0].lower() in {"python", "py"}:
+            exec_args[0] = sys.executable
+        elif exec_args[0].lower() in {"pytest", "ruff", "mypy"}:
+            exec_args = [sys.executable, "-m", *exec_args]
+
         try:
             completed = subprocess.run(
-                clean_args,
+                exec_args,
                 cwd=str(self.workspace.root),
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
@@ -186,7 +194,7 @@ class AgentToolbox:
         return self._result(
             "run_command",
             completed.returncode == 0,
-            f"exit {completed.returncode}: {' '.join(clean_args)}",
+            f"exit {completed.returncode}: {' '.join(display_args)}",
             data,
         )
 

@@ -1663,6 +1663,8 @@ class QtProtocolHost:
             return self._chat_done(**params)
         if method == "ui.chat.error":
             return self._chat_error(**params)
+        if method == "ui.chat.context_preview":
+            return self._chat_context_preview(**params)
         if method == "ui.chat.add_conversation":
             return self._chat_add_conversation(**params)
         if method == "ui.chat.active_history":
@@ -2588,6 +2590,7 @@ class QtProtocolHost:
                 self._chat.start_new_conversation()
             self._chat.raise_()
             self._chat.activateWindow()
+            self._chat.request_context_preview()
             return {"shown": True, "reused": True}
         start_new = force_new or not self._all_conversations
         from core.conversation_store import store as conversation_store
@@ -2602,12 +2605,24 @@ class QtProtocolHost:
             persist_fn=self._persist_conversations,
             active_idx=self._active_conversation_idx,
             on_select=self._set_active_conversation,
+            on_context_preview=lambda payload: self.emit("ui.chat.context_preview", payload),
         )
         self._chat.destroyed.connect(lambda: setattr(self, "_chat", None))
         self._chat.show()
         self._chat.raise_()
         self._chat.activateWindow()
         return {"shown": True, "reused": False}
+
+    def _chat_context_preview(
+        self,
+        preview_id: str = "",
+        context_items: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Refresh chat context chip token estimates."""
+        if self._chat is None:
+            return {"updated": False, "reason": "no_chat"}
+        self._chat.update_context_preview(str(preview_id or ""), context_items or [])
+        return {"updated": True}
 
     def _show_settings(self) -> dict[str, Any]:
         """Show settings."""

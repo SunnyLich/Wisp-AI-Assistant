@@ -716,6 +716,7 @@ class ChatWindow(QWidget):
         persist_fn=None,
         active_idx: int | None = None,
         on_select=None,
+        on_context_preview=None,
     ):
         """
         Args:
@@ -736,6 +737,8 @@ class ChatWindow(QWidget):
                            hotkey/voice prompts currently continue).
             on_select:     Callable(idx) invoked when the user selects or starts a
                            conversation, so the app can retarget hotkey prompts.
+            on_context_preview: Callable(payload) invoked to refresh token
+                           estimates for visible context controls.
         """
         super().__init__()
         self._conversations = conversations  # live reference -” NOT a copy
@@ -744,6 +747,7 @@ class ChatWindow(QWidget):
                 _ensure_conversation_metadata(conv)
         self._send_fn = send_fn
         self._on_select = on_select
+        self._on_context_preview = on_context_preview
         self._projects = list(projects or [])
         if not any(p.get("id") == _GENERAL_PROJECT_ID for p in self._projects):
             self._projects.insert(0, {"id": _GENERAL_PROJECT_ID, "name": t("General")})
@@ -772,6 +776,7 @@ class ChatWindow(QWidget):
         self._context_control_tokens: dict[str, str] = {}
         self._context_control_warnings: dict[str, str] = {}
         self._context_controls_updating = False
+        self._context_preview_id = ""
         self._conversation_menu: QMenu | None = None
         self.setAcceptDrops(True)
         if active_idx is not None and 0 <= active_idx < len(conversations):
@@ -804,6 +809,7 @@ class ChatWindow(QWidget):
         elif conversations:
             if self._on_select and 0 <= self._active_idx < len(self._conversations):
                 self._on_select(self._active_idx)
+            QTimer.singleShot(0, self.request_context_preview)
             if auto_message:
                 QTimer.singleShot(120, lambda: self._send(auto_message))
 
@@ -1172,6 +1178,7 @@ class ChatWindow(QWidget):
         if self._on_select and 0 <= idx < len(self._conversations):
             self._on_select(idx)
         self._refresh_context_controls()
+        self.request_context_preview()
 
     def _update_selected_conversation_notice(self, idx: int) -> None:
         """Show which conversation the composer will continue."""
@@ -1637,22 +1644,29 @@ class ChatWindow(QWidget):
         """Return (token label, warning) for one chat context/tool chip."""
         if state == "off":
             return "0 tok", ""
-        if source == "files":
-            return _deferred_token_label(), t("File context depends on which file tools are used.")
         if source == "memory":
             return _deferred_token_label(), t("Memory tokens are estimated after the prompt is known.")
-        if source == "screenshot":
-            return _deferred_token_label(), t("Screenshot image cost is not known until it is sent or requested.")
         if source in {"ambient", "browser", "selection", "clipboard"}:
             return _deferred_token_label(), t("This context is fetched when you send the message, so this token cost is not known yet.")
         return _deferred_token_label(), ""
 
     def _update_context_chip(self, chip: QPushButton, source: str, state: str) -> None:
         """Paint one compact context chip from its current state."""
+        tokens, warning = self._context_token_metadata(source, state)
+        self._set_context_chip_display(chip, source, state, tokens, warning)
+
+    def _set_context_chip_display(
+        self,
+        chip: QPushButton,
+        source: str,
+        state: str,
+        tokens: str,
+        warning: str,
+    ) -> None:
+        """Paint one context chip using supplied token metadata."""
         key = self._context_control_keys.get(source, "")
         label = self._context_control_labels.get(source, source)
         state_label = self._state_label_for_context_source(source, state)
-        tokens, warning = self._context_token_metadata(source, state)
         self._context_control_tokens[source] = tokens
         self._context_control_warnings[source] = warning
         chip.setText(f"{key} {label}\n{state_label}\n{tokens}")
@@ -1663,6 +1677,39 @@ class ChatWindow(QWidget):
         chip.setProperty("context_state", state)
         chip.setProperty("context_tokens", tokens)
         chip.setStyleSheet(self._context_chip_style(state))
+
+    def request_context_preview(self) -> None:
+        """Ask the supervisor to refresh visible context token estimates."""
+        if self._on_context_preview is None or not (0 <= self._active_idx < len(self._conversations)):
+            return
+        policy = _ensure_conversation_context_policy(self._conversations[self._active_idx])
+        if not any(_policy_state(policy, source) != "off" for source in self._context_controls):
+            return
+        self._context_preview_id = str(uuid.uuid4())
+        self._on_context_preview(
+            {
+                "preview_id": self._context_preview_id,
+                "caller_idx": 0,
+                "context_policy": deepcopy(policy),
+            }
+        )
+
+    def update_context_preview(self, preview_id: str, context_items: list[dict]) -> None:
+        """Apply supervisor-provided token estimates to chat context chips."""
+        if preview_id != self._context_preview_id:
+            return
+        by_id = {str(item.get("id") or ""): item for item in context_items or [] if isinstance(item, dict)}
+        for source, chip in self._context_controls.items():
+            state = str(chip.property("context_state") or "off")
+            if state == "off":
+                self._set_context_chip_display(chip, source, state, "0 tok", "")
+                continue
+            item = by_id.get(source)
+            if item is None:
+                continue
+            tokens = str(item.get("tokens") or _deferred_token_label())
+            warning = str(item.get("warning") or "")
+            self._set_context_chip_display(chip, source, state, tokens, warning)
 
     def _show_context_policy_menu(self, source: str) -> None:
         """Open a small state list for one context chip."""
@@ -1700,6 +1747,7 @@ class ChatWindow(QWidget):
         _touch_conversation(conv)
         self._update_context_chip(chip, source, _policy_state(conv["context_policy"], source))
         self._persist()
+        self.request_context_preview()
 
     # ------------------------------------------------------------------ Bubbles
 

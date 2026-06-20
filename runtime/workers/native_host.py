@@ -654,6 +654,33 @@ def selected_text() -> str:
         return ""
 
 
+def _screen_size() -> dict[str, int]:
+    """Return primary-screen dimensions without capturing pixels."""
+    if IS_WIN:
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            width = int(user32.GetSystemMetrics(0))
+            height = int(user32.GetSystemMetrics(1))
+            if width > 0 and height > 0:
+                return {"width": width, "height": height}
+        except Exception:
+            pass
+    try:
+        import mss
+
+        with mss.mss() as sct:
+            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+            width = int(monitor.get("width") or 0)
+            height = int(monitor.get("height") or 0)
+            if width > 0 and height > 0:
+                return {"width": width, "height": height}
+    except Exception:
+        pass
+    return {"width": 0, "height": 0}
+
+
 def context_snapshot(
     include_clipboard: bool = True,
     include_selection: bool = True,
@@ -676,6 +703,7 @@ def context_snapshot(
         "browser_hwnd": 0,
         "browser_app": "",
         "browser_content": "",
+        "screen_size": _screen_size(),
         "focus_token": 0,
         "captured_at": time.time(),
         "debug": {

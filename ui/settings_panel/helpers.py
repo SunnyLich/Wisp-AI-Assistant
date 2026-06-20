@@ -1,7 +1,10 @@
 """Pure helper functions for settings UI values."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QToolTip, QWidget
+try:
+    from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QToolTip, QWidget
+except ModuleNotFoundError:  # pragma: no cover - exercised by collection without Qt installed
+    QComboBox = QFormLayout = QLabel = QToolTip = QWidget = None  # type: ignore[assignment]
 
 
 def parse_fallback_rows(raw: str) -> list[tuple[str, str]]:
@@ -17,42 +20,60 @@ def parse_fallback_rows(raw: str) -> list[tuple[str, str]]:
     return rows
 
 
-class NoScrollCombo(QComboBox):
-    """QComboBox that keeps passive wheel scrolling on the settings page."""
+if QComboBox is not None:
 
-    def wheelEvent(self, event):  # noqa: N802 - Qt override
-        """Handle wheel event for no scroll combo."""
-        if self.view().isVisible():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
+    class NoScrollCombo(QComboBox):
+        """QComboBox that keeps passive wheel scrolling on the settings page."""
+
+        def wheelEvent(self, event):  # noqa: N802 - Qt override
+            """Handle wheel event for no scroll combo."""
+            if self.view().isVisible():
+                super().wheelEvent(event)
+            else:
+                event.ignore()
 
 
-class WarningHeaderLabel(QLabel):
-    """Header label that keeps warning help visible while hovered."""
+    class WarningHeaderLabel(QLabel):
+        """Header label that keeps warning help visible while hovered."""
 
-    def __init__(self, text: str = "") -> None:
-        """Initialize the warning header label instance."""
-        super().__init__(text)
-        self.setMouseTracking(True)
+        def __init__(self, text: str = "") -> None:
+            """Initialize the warning header label instance."""
+            super().__init__(text)
+            self.setMouseTracking(True)
 
-    def enterEvent(self, event):  # noqa: N802 - Qt override
-        """Handle enter event for warning header label."""
-        tip = self.toolTip()
-        if tip:
-            QToolTip.showText(
-                self.mapToGlobal(self.rect().bottomLeft()),
-                tip,
-                self,
-                self.rect(),
-                2_147_000_000,
-            )
-        super().enterEvent(event)
+        def enterEvent(self, event):  # noqa: N802 - Qt override
+            """Handle enter event for warning header label."""
+            tip = self.toolTip()
+            if tip:
+                QToolTip.showText(
+                    self.mapToGlobal(self.rect().bottomLeft()),
+                    tip,
+                    self,
+                    self.rect(),
+                    2_147_000_000,
+                )
+            super().enterEvent(event)
 
-    def leaveEvent(self, event):  # noqa: N802 - Qt override
-        """Handle leave event for warning header label."""
-        QToolTip.hideText()
-        super().leaveEvent(event)
+        def leaveEvent(self, event):  # noqa: N802 - Qt override
+            """Handle leave event for warning header label."""
+            QToolTip.hideText()
+            super().leaveEvent(event)
+
+else:
+
+    class NoScrollCombo:  # type: ignore[no-redef]
+        """Placeholder used when Qt is not installed."""
+
+        def __init__(self, *args, **kwargs) -> None:
+            """Initialize placeholder."""
+            raise RuntimeError("PySide6 is required for settings UI widgets.")
+
+    class WarningHeaderLabel:  # type: ignore[no-redef]
+        """Placeholder used when Qt is not installed."""
+
+        def __init__(self, *args, **kwargs) -> None:
+            """Initialize placeholder."""
+            raise RuntimeError("PySide6 is required for settings UI widgets.")
 
 
 def context_mode_combo(
@@ -62,6 +83,8 @@ def context_mode_combo(
     on_value: str = "auto",
 ) -> NoScrollCombo:
     """Handle context mode combo for UI settings panel helpers."""
+    if QComboBox is None:
+        raise RuntimeError("PySide6 is required for settings UI widgets.")
     combo = NoScrollCombo()
     combo.addItem("Off", "off")
     if allow_auto:
@@ -77,6 +100,8 @@ def context_mode_combo(
 
 def expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
     """Handle expanding form layout for UI settings panel helpers."""
+    if QFormLayout is None:
+        raise RuntimeError("PySide6 is required for settings UI widgets.")
     form = QFormLayout(parent)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     return form

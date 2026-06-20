@@ -237,7 +237,43 @@ def test_intent_context_uses_unknown_tokens_for_deferred_sources():
     assert chips["clipboard"]["tokens"] != "? tok"
     assert chips["screenshot"]["tokens"] == "? tok"
     assert chips["memory"]["tokens"] == "? tok"
-    assert chips["files"]["tokens"] == "? tok"
+    assert chips["files"]["tokens"] == ""
+    assert chips["files"]["warning"] == ""
+
+
+def test_intent_screenshot_estimates_from_screen_size_without_capture():
+    """Verify screenshot chip estimates opt-in cost from screen dimensions."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "file_access": "off",
+        }
+    ]
+
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        result = context_handler(selected="")(_params)
+        result["screen_size"] = {"width": 1920, "height": 1080}
+        return result
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    with caller_config(rows):
+        _flow, native, ui, _brain, _audio = make_flow(native=native)
+        _flow.begin_caller(0)
+
+    screenshot_chip = next(
+        item
+        for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
+        if item["id"] == "screenshot"
+    )
+    assert screenshot_chip["state"] == "off"
+    assert screenshot_chip["tokens"] == "~1.1k tok"
+    assert screenshot_chip["warning"] == ""
+    assert not native.calls_for("native.capture.fullscreen")
 
 
 def test_begin_caller_reloads_supervisor_config_when_env_changed(monkeypatch):
@@ -877,7 +913,7 @@ def test_intent_enabled_browser_fetches_from_hotkey_time_target_when_setting_off
             if item["id"] == "browser"
         )
         assert browser_chip["state"] == "off"
-        assert browser_chip["tokens"] == "? tok"
+        assert browser_chip["tokens"].startswith("~")
         ui.emit(
             "ui.intent.chosen",
             {
@@ -890,6 +926,7 @@ def test_intent_enabled_browser_fetches_from_hotkey_time_target_when_setting_off
     assert snapshot_params["include_browser_url"] is True
     assert snapshot_params["include_browser_content"] is False
     assert len(native.calls_for("native.context.snapshot")) == 1
+    assert len(native.calls_for("native.context.browser_content")) == 1
     assert native.last_call("native.context.browser_content")["params"] == {
         "url": "https://example.test/off-by-default",
         "hwnd": 777,
@@ -990,6 +1027,43 @@ def test_intent_enabled_app_fetches_active_document_when_setting_off():
     assert query["active_document_text"] == "DOC TEXT"
     assert query["include_active_document"] is False
     assert {"label": "App", "type": "file"} in ui.last_call("ui.context.summary")["params"]["items"]
+
+
+def test_intent_app_on_estimates_and_sends_active_document_when_documents_off():
+    """Verify an enabled App chip includes active document text in its estimate."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(
+        handlers={"brain.context.active_document": lambda _params: {"text": "notepad body " * 40}},
+        stream_handlers={"brain.query": query_stream("ok")},
+    )
+    with caller_config(rows):
+        _flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        _flow.begin_caller(0)
+        app_chip = next(
+            item
+            for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
+            if item["id"] == "ambient"
+        )
+        assert app_chip["state"] == "on"
+        assert app_chip["tokens"].startswith("~")
+        assert app_chip["tokens"] != "~4 tok"
+        ui.emit("ui.intent.chosen", {"custom": "Use the open notepad"})
+
+    query = brain.last_call("brain.query")["params"]
+    assert "notepad body" in query["active_document_text"]
+    assert query["include_active_document"] is False
 
 
 def test_context_priority_marks_browser_when_browser_was_active():
@@ -2222,6 +2296,57 @@ def test_chat_request_streams_through_brain_chat():
     done_params = ui.last_call("ui.chat.done")["params"]
     assert done_params["request_id"] == "chat-1"
     assert done_params["text"] == "chat reply"
+
+
+def test_chat_context_preview_updates_token_estimates_before_send():
+    """Verify chat context preview refreshes visible context token estimates."""
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda _params: {
+                "selected_text": "selected chat text",
+                "clipboard_text": "",
+                "active_app": {"name": "Browser", "pid": 42, "bundle_id": "com.browser"},
+                "browser_url": "https://example.test/page",
+                "browser_hwnd": 777,
+            },
+            "native.context.browser_content": lambda params: {
+                "url": params.get("url"),
+                "content": "Browser page text for a chat preview.",
+            },
+        }
+    )
+    _flow, native, ui, _brain, _audio = make_flow(native=native)
+
+    ui.emit(
+        "ui.chat.context_preview",
+        {
+            "preview_id": "preview-1",
+            "context_policy": {
+                "context_ambient": False,
+                "context_documents_mode": "off",
+                "context_browser_mode": "auto",
+                "context_github_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "context_clipboard": False,
+                "file_access": "off",
+                "tools": {},
+            },
+        },
+    )
+
+    calls = ui.calls_for("ui.chat.context_preview")
+    assert len(calls) == 2
+    first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
+    assert first_browser["tokens"] == "? tok"
+    updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
+    assert updated_browser["tokens"].startswith("~")
+    assert updated_browser["warning"] == ""
+    assert native.last_call("native.context.browser_content")["params"] == {
+        "url": "https://example.test/page",
+        "hwnd": 777,
+        "app": "",
+    }
 
 
 def test_chat_request_forwards_file_context_metadata():
