@@ -348,12 +348,21 @@ class IntentOverlay(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._cancel)
-        timeout_ms = max(
+        self._overlay_timeout_ms = max(
             0,
             int(getattr(config, "INTENT_OVERLAY_TIMEOUT_MS", _AUTO_CLOSE_MS) or 0),
         )
-        if timeout_ms:
-            self._timer.start(timeout_ms)
+        self._restart_timer()
+
+    def _restart_timer(self) -> None:
+        """Restart the auto-close countdown after a user interaction."""
+        if self._custom_mode or self._handled or self._overlay_timeout_ms <= 0:
+            return
+        self._timer.start(self._overlay_timeout_ms)
+
+    def _note_interaction(self) -> None:
+        """Record active use of the overlay so it does not close mid-change."""
+        self._restart_timer()
 
     def _debug(self, message: str) -> None:
         """Handle debug for intent overlay."""
@@ -664,14 +673,23 @@ class IntentOverlay(QWidget):
         top = y + _CONV_TOP
         project_rect = QRect(_PAD_H, top, 244, 28)
         chat_rect = QRect(project_rect.right() + 6, top, _W - _PAD_H - project_rect.right() - 6, 28)
+        mode_w = min(116, max(92, chat_rect.width() // 3))
         self._project_rect = project_rect
-        self._conversation_mode_rect = QRect()
-        self._conversation_list_rect = chat_rect
+        self._conversation_mode_rect = QRect(chat_rect.x(), chat_rect.y(), mode_w, chat_rect.height())
+        self._conversation_list_rect = QRect(
+            self._conversation_mode_rect.right() + 5,
+            chat_rect.y(),
+            max(0, chat_rect.right() - self._conversation_mode_rect.right() - 4),
+            chat_rect.height(),
+        )
 
         for rect, active in (
             (project_rect, self._project_id != self._default_project_id()),
-            (chat_rect, self._conversation_mode == "continue"),
+            (self._conversation_mode_rect, self._conversation_mode == "continue"),
+            (self._conversation_list_rect, self._conversation_mode == "continue"),
         ):
+            if rect.width() <= 0:
+                continue
             path = QPainterPath()
             path.addRoundedRect(rect, 7, 7)
             bg = QColor(palette["badge_hl"] if active else palette["badge_bg"])
@@ -691,20 +709,38 @@ class IntentOverlay(QWidget):
         p.drawText(project_rect.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, project_value)
 
         conversation_count = len(self._filtered_conversation_options())
+        mode_value = t("Continue") if self._conversation_mode == "continue" else t("New chat")
+        p.setFont(value_font)
+        p.setPen(QPen(palette["ctx_text"] if self._conversation_mode == "continue" else palette["ctx_sub"]))
+        mode_value = QFontMetrics(value_font).elidedText(
+            mode_value,
+            Qt.TextElideMode.ElideRight,
+            max(20, self._conversation_mode_rect.width() - 14),
+        )
+        p.drawText(
+            self._conversation_mode_rect.adjusted(8, 0, -8, 0),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter,
+            mode_value,
+        )
+
         chat_value = (
             self._selected_conversation_title()
             if self._conversation_mode == "continue"
-            else t("New chat")
+            else t("Choose conversation")
         )
-        chat_value = f"{t('Chat')}  {chat_value}  ▾" if conversation_count else f"{t('Chat')}  {chat_value}"
-        p.setFont(value_font)
+        if self._conversation_mode == "continue" and conversation_count:
+            chat_value = f"{chat_value}  ▾"
         p.setPen(QPen(palette["ctx_sub"] if self._conversation_mode == "new" else palette["ctx_text"]))
         chat_value = QFontMetrics(value_font).elidedText(
             chat_value,
             Qt.TextElideMode.ElideRight,
-            max(20, chat_rect.width() - 14),
+            max(20, self._conversation_list_rect.width() - 14),
         )
-        p.drawText(chat_rect.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, chat_value)
+        p.drawText(
+            self._conversation_list_rect.adjusted(8, 0, -8, 0),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            chat_value,
+        )
 
     def _paint_context_items(
         self,
@@ -797,6 +833,7 @@ class IntentOverlay(QWidget):
         else:
             item["state"] = "off"
         item["touched"] = True
+        self._note_interaction()
         self.update()
 
     def _context_item_at(self, pos: QPoint) -> dict | None:
@@ -824,6 +861,7 @@ class IntentOverlay(QWidget):
                 self._conversation_index = int(self._filtered_conversation_options()[0]["index"])
         else:
             self._conversation_mode = "new"
+        self._note_interaction()
         self.update()
         return True
 
@@ -835,6 +873,8 @@ class IntentOverlay(QWidget):
 
     def _show_project_menu(self) -> None:
         """Open the project selector menu."""
+        self._note_interaction()
+        self._timer.stop()
         menu = QMenu(self)
         menu.setStyleSheet(self._menu_style())
         current = str(self._project_id or "")
@@ -850,7 +890,10 @@ class IntentOverlay(QWidget):
         menu.addSeparator()
         menu.addAction(t("+ New project..."), self._create_project_interactive)
         self._project_menu = menu
-        menu.aboutToHide.connect(lambda: setattr(self, "_project_menu", None))
+        def _menu_closed() -> None:
+            setattr(self, "_project_menu", None)
+            self._restart_timer()
+        menu.aboutToHide.connect(_menu_closed)
         menu.popup(self.mapToGlobal(self._project_rect.bottomLeft()))
 
     def _set_project_choice(self, project_id: str) -> None:
@@ -858,6 +901,7 @@ class IntentOverlay(QWidget):
         self._new_project_name = ""
         self._conversation_mode = "new"
         self._conversation_index = None
+        self._note_interaction()
         self.update()
 
     def _create_project_interactive(self) -> None:
@@ -873,19 +917,16 @@ class IntentOverlay(QWidget):
         self._new_project_name = name
         self._conversation_mode = "new"
         self._conversation_index = None
+        self._note_interaction()
         self.update()
 
     def _show_conversation_menu(self) -> None:
         """Open the chat history selector menu."""
+        self._note_interaction()
+        self._timer.stop()
         options = self._filtered_conversation_options()
         menu = QMenu(self)
         menu.setStyleSheet(self._menu_style())
-        new_action = menu.addAction(t("New chat"))
-        new_action.setCheckable(True)
-        new_action.setChecked(self._conversation_mode == "new")
-        new_action.triggered.connect(lambda _checked=False: self._set_conversation_new())
-        if options:
-            menu.addSeparator()
         current = self._conversation_index
         for option in options:
             idx = int(option["index"])
@@ -893,21 +934,27 @@ class IntentOverlay(QWidget):
             subtitle = str(option.get("subtitle") or "")
             label = title if not subtitle else f"{title}  ·  {subtitle}"
             action = menu.addAction(label)
+            action.setData(idx)
             action.setCheckable(True)
             action.setChecked(idx == current and self._conversation_mode == "continue")
             action.triggered.connect(lambda _checked=False, idx=idx: self._set_conversation_choice(idx))
         self._conversation_menu = menu
-        menu.aboutToHide.connect(lambda: setattr(self, "_conversation_menu", None))
+        def _menu_closed() -> None:
+            setattr(self, "_conversation_menu", None)
+            self._restart_timer()
+        menu.aboutToHide.connect(_menu_closed)
         menu.popup(self.mapToGlobal(self._conversation_list_rect.bottomLeft()))
 
     def _set_conversation_new(self) -> None:
         self._conversation_mode = "new"
         self._conversation_index = None
+        self._note_interaction()
         self.update()
 
     def _set_conversation_choice(self, idx: int) -> None:
         self._conversation_mode = "continue"
         self._conversation_index = int(idx)
+        self._note_interaction()
         self.update()
 
     def _handle_conversation_click(self, pos: QPoint) -> bool:
@@ -917,9 +964,15 @@ class IntentOverlay(QWidget):
         if self._project_rect.contains(pos):
             self._show_project_menu()
             return True
+        if self._conversation_mode_rect.contains(pos):
+            self._toggle_conversation_mode()
+            return True
         if self._conversation_list_rect.contains(pos):
-            self._show_conversation_menu()
-            self.update()
+            if self._conversation_mode == "continue" and self._filtered_conversation_options():
+                self._show_conversation_menu()
+                self.update()
+            else:
+                self._note_interaction()
             return True
         return False
 

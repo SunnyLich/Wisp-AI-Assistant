@@ -348,6 +348,97 @@ def test_intent_overlay_conversation_choice_toggles_new_and_continue():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_conversation_row_is_split_mode_and_list(monkeypatch):
+    """Verify left chat segment toggles mode and right segment opens history."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    popups: list[list[object]] = []
+
+    def fake_popup(self, _pos):
+        """Capture menu entries without showing a native popup."""
+        popups.append([action.data() for action in self.actions()])
+        return None
+
+    monkeypatch.setattr(QMenu, "popup", fake_popup)
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        conversation_options=[
+            {"index": 1, "title": "Latest chat"},
+            {"index": 0, "title": "Older chat"},
+        ],
+    )
+    try:
+        overlay.show()
+        app.processEvents()
+        overlay.repaint()
+        app.processEvents()
+
+        assert overlay.conversation_choice() == {"mode": "new"}
+        assert not overlay._conversation_mode_rect.isNull()
+        assert not overlay._conversation_list_rect.isNull()
+
+        QTest.mouseClick(
+            overlay,
+            Qt.MouseButton.LeftButton,
+            pos=overlay._conversation_list_rect.center(),
+        )
+        app.processEvents()
+        assert popups == []
+        assert overlay.conversation_choice() == {"mode": "new"}
+
+        QTest.mouseClick(
+            overlay,
+            Qt.MouseButton.LeftButton,
+            pos=overlay._conversation_mode_rect.center(),
+        )
+        app.processEvents()
+        assert overlay.conversation_choice() == {"mode": "continue", "index": 1}
+
+        QTest.mouseClick(
+            overlay,
+            Qt.MouseButton.LeftButton,
+            pos=overlay._conversation_list_rect.center(),
+        )
+        app.processEvents()
+        assert popups[-1] == [1, 0]
+    finally:
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_changes_restart_timeout_countdown(monkeypatch):
+    """Verify context and conversation changes restart the overlay timeout."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    restarts: list[bool] = []
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        context_items=[{"id": "browser", "key": "2", "label": "Browser", "state": "off"}],
+        conversation_options=[{"index": 1, "title": "Latest chat"}],
+    )
+    monkeypatch.setattr(overlay, "_restart_timer", lambda: restarts.append(True))
+    try:
+        assert overlay._cycle_context_key("2") is True
+        overlay._toggle_conversation_mode()
+
+        assert len(restarts) == 2
+    finally:
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_defaults_to_new_when_history_has_no_active_selection():
     """Verify loaded history does not imply continuation on app start."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
