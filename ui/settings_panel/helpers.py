@@ -3,7 +3,7 @@ from __future__ import annotations
 
 try:
     from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QToolTip, QWidget
-except ModuleNotFoundError:  # pragma: no cover - exercised by collection without Qt installed
+except ImportError:  # pragma: no cover - exercised by collection without loadable Qt libraries
     QComboBox = QFormLayout = QLabel = QToolTip = QWidget = None  # type: ignore[assignment]
 
 

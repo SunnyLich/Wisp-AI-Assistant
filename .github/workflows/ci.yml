@@ -61,7 +61,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libportaudio2 libsndfile1
+          sudo apt-get install -y libegl1 libportaudio2 libsndfile1
 
       - name: Install dependencies
         run: |

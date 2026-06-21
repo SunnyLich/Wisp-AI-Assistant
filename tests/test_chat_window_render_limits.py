@@ -1,30 +1,35 @@
 """Tests for test chat window render limits."""
 
 import base64
-import importlib.util
 import os
 import sys
 import time
 
 import pytest
 
-PYSIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
-pytestmark = pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-if PYSIDE6_AVAILABLE:
-    from ui.chat_window import (
-        _CHAT_RENDER_CHAR_LIMIT,
-        ChatWindow,
-        _chat_model_messages,
-        _context_not_anchored_to_messages,
-        _file_context_text,
-        _format_conversation_datetime,
-        _latest_tool_context_from_messages,
-        _merge_file_context_from_messages,
-        _message_timestamp_text,
-        _truncate_for_display,
-        _truncate_segments_for_display,
-    )
+try:
+    from PySide6 import QtCore, QtGui, QtWidgets  # noqa: F401
+except ImportError as exc:
+    PYSIDE6_AVAILABLE = False
+    pytest.skip(f"PySide6 Qt libraries unavailable: {exc}", allow_module_level=True)
+else:
+    PYSIDE6_AVAILABLE = True
+
+from ui.chat_window import (
+    _CHAT_RENDER_CHAR_LIMIT,
+    ChatWindow,
+    _chat_model_messages,
+    _context_not_anchored_to_messages,
+    _file_context_text,
+    _format_conversation_datetime,
+    _latest_tool_context_from_messages,
+    _merge_file_context_from_messages,
+    _message_timestamp_text,
+    _truncate_for_display,
+    _truncate_segments_for_display,
+)
 
 
 def test_truncate_for_display_caps_large_text():

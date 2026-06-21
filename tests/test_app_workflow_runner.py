@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from scripts import run_app_workflow_tests
 
 
@@ -40,6 +42,53 @@ def test_pytest_command_enables_startup_faulthandler():
 
     assert cmd[:4] == ["/venv/bin/python", "-X", "faulthandler", "-m"]
     assert cmd[4:] == ["pytest", "-q"]
+
+
+def test_workflow_runner_points_to_product_ux_plan():
+    """The workflow entrypoint keeps the assistant UX plan visible."""
+    assert run_app_workflow_tests.PRODUCT_UX_PLAN == "docs/ASSISTANT_UX_FEATURE_PLAN.md"
+    assert "tests/test_app_user_workflows.py" in run_app_workflow_tests.WORKFLOW_TESTS
+
+
+def test_pytest_preflight_reports_missing_project_venv(tmp_path, monkeypatch):
+    """Missing pytest is explained as setup/venv work, not a raw import crash."""
+    monkeypatch.setattr(
+        run_app_workflow_tests.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="ModuleNotFoundError: pytest"),
+    )
+
+    message = run_app_workflow_tests._pytest_preflight_message("/usr/bin/python3", tmp_path, {})
+
+    assert "No project virtualenv was found" in message
+    assert "setup_dev" in message
+    assert "ModuleNotFoundError: pytest" in message
+
+
+def test_pytest_preflight_reports_incomplete_project_venv(tmp_path, monkeypatch):
+    """An existing .venv without pytest gets a precise setup hint."""
+    venv_python = tmp_path / ".venv" / (
+        "Scripts/python.exe" if run_app_workflow_tests.os.name == "nt" else "bin/python"
+    )
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        run_app_workflow_tests.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="No module named pytest"),
+    )
+
+    message = run_app_workflow_tests._pytest_preflight_message(str(venv_python), tmp_path, {})
+
+    assert "pytest is not installed" in message
+    assert "setup_dev" in message
+
+
+def test_setup_command_points_at_platform_dev_setup(tmp_path):
+    """The auto-setup command uses the repo's setup_dev entrypoint."""
+    cmd = run_app_workflow_tests._setup_command_args(tmp_path)
+
+    assert any("setup_dev" in part for part in cmd)
 
 
 def test_exit_status_describes_native_crash_codes():

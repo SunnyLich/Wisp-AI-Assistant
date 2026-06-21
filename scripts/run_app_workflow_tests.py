@@ -30,6 +30,7 @@ WORKFLOW_TESTS = (
     "tests/test_real_gpt55_integration.py",
     "tests/test_real_host_native_smoke.py",
 )
+PRODUCT_UX_PLAN = "docs/ASSISTANT_UX_FEATURE_PLAN.md"
 APP_ARCHITECTURE_TESTS = (
     "tests/runtime/test_supervisor_ipc.py",
 )
@@ -75,6 +76,64 @@ def _preferred_python(root: Path) -> str:
     if candidate.exists():
         return str(candidate)
     return sys.executable
+
+
+def _setup_command() -> str:
+    """Return the platform setup command for a missing/incomplete test venv."""
+    if os.name == "nt":
+        return r".\scripts\setup_dev.ps1"
+    return "bash scripts/setup_dev.sh"
+
+
+def _setup_command_args(root: Path) -> list[str]:
+    """Return a subprocess command that provisions the developer environment."""
+    if os.name == "nt":
+        return [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(root / "scripts" / "setup_dev.ps1"),
+        ]
+    return ["bash", str(root / "scripts" / "setup_dev.sh")]
+
+
+def _pytest_preflight_message(python: str, root: Path, env: dict[str, str]) -> str:
+    """Return a user-facing error when the selected Python cannot import pytest."""
+    try:
+        proc = subprocess.run(
+            [python, "-c", "import pytest"],
+            cwd=root,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - preflight should explain any launch failure
+        proc = None
+        detail = f"{type(exc).__name__}: {exc}"
+    else:
+        if proc.returncode == 0:
+            return ""
+        detail = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+
+    venv_python = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if not venv_python.exists():
+        reason = "No project virtualenv was found at .venv."
+    elif Path(python) == venv_python:
+        reason = "The project .venv exists, but pytest is not installed in it."
+    else:
+        reason = "The runner fell back to the current Python because the project .venv was not usable."
+    return (
+        "pytest is not available for the Python selected by the workflow runner.\n"
+        f"Selected Python: {python}\n"
+        f"{reason}\n"
+        f"Import error: {detail}\n\n"
+        f"Run setup first:\n  {_setup_command()}\n\n"
+        "Then rerun the workflow tests."
+    )
 
 
 def _normalize_pytest_args(raw: list[str]) -> list[str]:
@@ -362,6 +421,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Stop macOS isolated --all-tests at the first failing test file.",
     )
     parser.add_argument(
+        "--no-auto-setup",
+        action="store_true",
+        help="Do not run scripts/setup_dev.* automatically when pytest is missing.",
+    )
+    parser.add_argument(
         "pytest_args",
         nargs=argparse.REMAINDER,
         help="Extra pytest arguments, optionally after --.",
@@ -387,9 +451,55 @@ def main(argv: list[str] | None = None) -> int:
         f"started={_dt.datetime.now().isoformat(timespec='seconds')}",
         f"cwd={root}",
         f"python={python}",
+        f"product_ux_plan={PRODUCT_UX_PLAN}",
         f"args={' '.join(argv if argv is not None else sys.argv[1:])}",
         "",
     ]
+    preflight_message = _pytest_preflight_message(python, root, env)
+    if preflight_message and not args.no_auto_setup:
+        print("pytest is not available; running developer setup first.", flush=True)
+        setup_status, setup_log = _run_logged(
+            "setup-dev",
+            _setup_command_args(root),
+            root=root,
+            env=base_env,
+            log_dir=log_dir,
+        )
+        summary_lines.extend(
+            [
+                f"setup-dev.exit_code={_describe_exit_status(setup_status)}",
+                f"setup-dev.log={setup_log}",
+            ]
+        )
+        if setup_status == 0:
+            python = _preferred_python(root)
+            summary_lines[3] = f"python={python}"
+            preflight_message = _pytest_preflight_message(python, root, env)
+        else:
+            preflight_message = (
+                "Developer setup failed, so pytest is still unavailable.\n"
+                f"Setup log: {setup_log}\n\n"
+                f"Original pytest preflight:\n{preflight_message}"
+            )
+
+    if preflight_message:
+        preflight_log = log_dir / "pytest-preflight.log"
+        preflight_log.write_text(preflight_message + "\n", encoding="utf-8")
+        summary_lines.extend(
+            [
+                "pytest-preflight.exit_code=1",
+                f"pytest-preflight.log={preflight_log}",
+                "final_exit_code=1",
+                f"failure_log={preflight_log}",
+            ]
+        )
+        _write_failure_pointer(root, preflight_log)
+        summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+        print(preflight_message, flush=True)
+        print("Summary:", summary_path, flush=True)
+        print("Failure log:", preflight_log, flush=True)
+        return 1
+
     isolate_all_tests = args.all_tests and sys.platform == "darwin" and not args.single_process
     if args.all_tests:
         if isolate_all_tests:
