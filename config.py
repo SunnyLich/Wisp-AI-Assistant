@@ -559,8 +559,8 @@ def _load_config() -> None:
     CEREBRAS_API_KEY  = secret_store.get_secret("CEREBRAS_API_KEY")
 
     # --- LLM ---
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "chatgpt")    # groq | openai | anthropic | google | chatgpt | copilot
-    LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-5.4")
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")    # groq | openai | anthropic | google | chatgpt | copilot
+    LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-5.5")
     LLM_FALLBACKS = os.getenv("LLM_FALLBACKS", "")
 
     # --- Chat / elaborate LLM: combined with the Main LLM. ---

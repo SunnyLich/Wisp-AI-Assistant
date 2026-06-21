@@ -198,6 +198,36 @@ def test_unknown_method_errors():
         s.shutdown()
 
 
+def test_expected_provider_error_logs_without_traceback(capsys):
+    """Provider/user-state failures should not fill worker stderr with traces."""
+    from wisp_brain import host
+
+    exc = RuntimeError(
+        "All query model routes failed. Tried chatgpt/gpt-5.5: "
+        "Error code: 429 - {'error': {'type': 'usage_limit_reached'}}"
+    )
+    host._log_handler_error("brain.query", exc)
+
+    captured = capsys.readouterr()
+    assert "[brain] brain.query failed: RuntimeError:" in captured.err
+    assert "usage_limit_reached" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_unexpected_handler_error_still_logs_traceback(capsys):
+    """Unexpected code failures should keep a traceback for debugging."""
+    from wisp_brain import host
+
+    try:
+        raise ValueError("boom")
+    except Exception as exc:  # noqa: BLE001 - exercising traceback logging
+        host._log_handler_error("brain.query", exc)
+
+    captured = capsys.readouterr()
+    assert "Traceback" in captured.err
+    assert "ValueError: boom" in captured.err
+
+
 def _run_directly() -> int:
     """Verify run directly behavior."""
     tests = [
@@ -224,5 +254,4 @@ def _run_directly() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_run_directly())
-
 

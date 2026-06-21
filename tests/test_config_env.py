@@ -343,7 +343,7 @@ class ConfigEnvTests(unittest.TestCase):
                 env_file.write_text("", encoding="utf-8")
                 config.reload()
                 self.assertNotIn("LLM_PROVIDER", os.environ)
-                self.assertEqual(config.LLM_PROVIDER, "chatgpt")
+                self.assertEqual(config.LLM_PROVIDER, "openai")
         finally:
             config._ENV_FILE = old_env_file
             config._LOADED_DOTENV_KEYS = old_loaded_keys

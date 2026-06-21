@@ -565,16 +565,16 @@ Let model decide — expose web search and browser page fetch tools.</source>
       <translation>聊天模型</translation>
     </message>
     <message>
-      <source>Chat model uses a subscription login. You may need to sign in again after restart. For fewer login issues, use an API-key provider.</source>
-      <translation>聊天模型使用訂閱登入。重新啟動後你可能需要重新登入。想減少登入問題，請使用 API 密鑰提供者。</translation>
+      <source>Chat model uses a subscription/OAuth login, not API-key billing. You may need to sign in again after restart. For fewer login issues, use an API-key provider such as OpenAI API.</source>
+      <translation>聊天模型使用訂閱/OAuth 登入，而不是 API 密鑰計費。重新啟動後你可能需要重新登入。想減少登入問題，請使用 OpenAI API 之類的 API 密鑰提供者。</translation>
     </message>
     <message>
-      <source>ChatGPT Pro / Plus</source>
-      <translation>ChatGPT Pro / Plus</translation>
+      <source>ChatGPT Plus/Pro subscription login</source>
+      <translation>ChatGPT Plus/Pro 訂閱登入</translation>
     </message>
     <message>
-      <source>ChatGPT cannot use live context tools here. Use On to attach context up front, or choose another Chat model for Let model decide.</source>
-      <translation>ChatGPT 在這裡無法使用即時上下文工具。請用「開啟」預先附加上下文，或為「讓模型決定」選擇其他聊天模型。</translation>
+      <source>ChatGPT Plus/Pro (OAuth subscription) cannot use live context tools here. Use On to attach context up front, or choose an API-key Chat model for Let model decide.</source>
+      <translation>ChatGPT Plus/Pro（OAuth 訂閱）在這裡無法使用即時上下文工具。請用「開啟」預先附加上下文，或為「讓模型決定」選擇 API 密鑰聊天模型。</translation>
     </message>
     <message>
       <source>Checking status...</source>
@@ -637,12 +637,12 @@ Let model decide — expose web search and browser page fetch tools.</source>
       <translation>關閉</translation>
     </message>
     <message>
-      <source>Codex (ChatGPT subscription)</source>
-      <translation>Codex（ChatGPT 訂閱）</translation>
+      <source>ChatGPT Plus/Pro (OAuth subscription)</source>
+      <translation>ChatGPT Plus/Pro（OAuth 訂閱）</translation>
     </message>
     <message>
-      <source>Codex (ChatGPT subscription) [OAuth]</source>
-      <translation>Codex（ChatGPT 訂閱）[OAuth]</translation>
+      <source>OpenAI API (API key billing)</source>
+      <translation>OpenAI API（API 密鑰計費）</translation>
     </message>
     <message>
       <source>Colors for the theme selected above. Light and Dark each keep their
@@ -1143,8 +1143,8 @@ Let model decide — expose git status/diff and GitHub repo/issue tools.</source
       <translation>圖像模型</translation>
     </message>
     <message>
-      <source>Image model uses a subscription login. You may need to sign in again after restart. For fewer login issues, use an API-key provider.</source>
-      <translation>圖像模型使用訂閱登入。重新啟動後你可能需要重新登入。想減少登入問題，請使用 API 密鑰提供者。</translation>
+      <source>Image model uses a subscription/OAuth login, not API-key billing. You may need to sign in again after restart. For fewer login issues, use an API-key provider such as OpenAI API.</source>
+      <translation>影像模型使用訂閱/OAuth 登入，而不是 API 密鑰計費。重新啟動後你可能需要重新登入。想減少登入問題，請使用 OpenAI API 之類的 API 密鑰提供者。</translation>
     </message>
     <message>
       <source>Implementation</source>

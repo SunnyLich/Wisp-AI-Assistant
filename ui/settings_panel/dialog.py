@@ -1104,7 +1104,7 @@ class SettingsDialog(QDialog):
         # ── AUTHENTICATION card ───────────────────────────────────────────
         auth_card, auth_cv = self._card("Authentication")
 
-        chatgpt_hdr = QLabel("ChatGPT Pro / Plus")
+        chatgpt_hdr = QLabel("ChatGPT Plus/Pro subscription login")
         chatgpt_hdr.setStyleSheet("font-weight: 600;")
         auth_cv.addWidget(chatgpt_hdr)
         self._chatgpt_status_lbl = QLabel()
@@ -1408,8 +1408,8 @@ class SettingsDialog(QDialog):
             display = f"{label} ({alias})" if alias else label
             options.append((display, provider))
         # OAuth/keychain providers — always available regardless of API key rows
-        options.append((t(_PROVIDER_LABELS.get("chatgpt", "Codex (ChatGPT)") + " [OAuth]"), "chatgpt"))
-        options.append((t(_PROVIDER_LABELS.get("copilot", "GitHub Copilot") + " [OAuth]"), "copilot"))
+        options.append((t(_PROVIDER_LABELS.get("chatgpt", "ChatGPT Plus/Pro (OAuth subscription)")), "chatgpt"))
+        options.append((t(_PROVIDER_LABELS.get("copilot", "GitHub Copilot") + " (OAuth/keychain)"), "copilot"))
         options.append((t(_PROVIDER_LABELS.get("custom", "Custom (OpenAI-compatible)")), "custom"))
         return options
 
@@ -5101,7 +5101,7 @@ _PROVIDER_KEY_NAMES: dict[str, str] = {
 
 _MODEL_HINTS: dict[str, str] = {
     "groq":       "e.g. llama3-8b-8192",
-    "openai":     "e.g. gpt-4o",
+    "openai":     "e.g. gpt-5.5",
     "anthropic":  "e.g. claude-sonnet-4-5",
     "google":     "e.g. gemini-2.5-flash",
     "chatgpt":    "gpt-5.5  |  gpt-5.4  |  gpt-5.4-mini  |  gpt-5.3-codex",
@@ -5126,6 +5126,8 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "gemma2-9b-it",
     ],
     "openai": [
+        "gpt-5.5",
+        "gpt-5.4",
         "gpt-4o",
         "gpt-4o-mini",
         "gpt-4.1",
@@ -5207,10 +5209,10 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
 
 _PROVIDER_LABELS: dict[str, str] = {
     "groq":       "Groq",
-    "openai":     "OpenAI",
+    "openai":     "OpenAI API (API key billing)",
     "anthropic":  "Anthropic",
     "google":     "Google AI Studio",
-    "chatgpt":    "Codex (ChatGPT subscription)",
+    "chatgpt":    "ChatGPT Plus/Pro (OAuth subscription)",
     "copilot":    "GitHub Copilot",
     "deepseek":   "DeepSeek",
     "openrouter": "OpenRouter",
@@ -5222,7 +5224,6 @@ _PROVIDER_LABELS: dict[str, str] = {
     "custom":     "Custom (OpenAI-compatible)",
     "cartesia":   "Cartesia",
     "elevenlabs": "ElevenLabs",
-    "openai":     "OpenAI",
     "openai_compatible": "OpenAI-compatible (custom)",
     "none":       "None",
 }

@@ -984,8 +984,9 @@ def tool_capability_warnings(tools_enabled: bool, *, llm_provider: str) -> list[
         return []
     if (llm_provider or "").strip().lower() == "chatgpt":
         return [
-            "ChatGPT cannot use live context tools here. Use On to attach context "
-            "up front, or choose another Chat model for Let model decide."
+            "ChatGPT Plus/Pro (OAuth subscription) cannot use live context tools here. "
+            "Use On to attach context up front, or choose an API-key Chat model "
+            "for Let model decide."
         ]
     return []
 
@@ -1008,13 +1009,15 @@ def subscription_auth_warnings(
     warnings: list[str] = []
     if (vision_provider or "").strip().lower() in _SUBSCRIPTION_AUTH_PROVIDERS:
         warnings.append(
-            "Image model uses a subscription login. You may need to sign in again "
-            "after restart. For fewer login issues, use an API-key provider."
+            "Image model uses a subscription/OAuth login, not API-key billing. "
+            "You may need to sign in again after restart. For fewer login issues, "
+            "use an API-key provider such as OpenAI API."
         )
     if (llm_provider or "").strip().lower() in _SUBSCRIPTION_AUTH_PROVIDERS:
         warnings.append(
-            "Chat model uses a subscription login. You may need to sign in again "
-            "after restart. For fewer login issues, use an API-key provider."
+            "Chat model uses a subscription/OAuth login, not API-key billing. "
+            "You may need to sign in again after restart. For fewer login issues, "
+            "use an API-key provider such as OpenAI API."
         )
     return warnings
 

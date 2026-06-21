@@ -64,17 +64,35 @@ _SIDEBAR_BG = "#13131a"
 _TITLE_BG   = "#16161f"
 _USER_BG    = "#3a3a5c"
 _AI_BG      = "#26263a"
-_BORDER     = "rgba(255,255,255,20)"
+_BORDER     = "#14ffffff"
 _TEXT       = "#e6e6e6"
 _HINT       = "#888888"
 _ACCENT     = "#a0a0ff"
-_SEL_BG     = "rgba(160,160,255,18)"
+_SEL_BG     = "#12a0a0ff"
+_ACCENT_BG_10 = "#0aa0a0ff"
+_ACCENT_BG_12 = "#0ca0a0ff"
+_ACCENT_BG_18 = "#12a0a0ff"
+_ACCENT_BG_28 = "#1ca0a0ff"
+_ACCENT_BG_32 = "#20a0a0ff"
+_ACCENT_BG_46 = "#2ea0a0ff"
+_ACCENT_BG_60 = "#3ca0a0ff"
+_WHITE_BG_8 = "#08ffffff"
+_WHITE_BG_10 = "#0affffff"
+_WHITE_BG_12 = "#0cffffff"
 _REVERT_DELAY_MS = 3000   # how long bold words stay highlighted after TTS finishes
 _CHAT_RENDER_CHAR_LIMIT = 24_000
 _CONTEXT_TOOLTIP_CHAR_LIMIT = 4_000
 _ATTACHMENT_CONTEXT_CHAR_LIMIT = 40_000
 _SIDEBAR_MENU_W = 32
 _SIDEBAR_FADE_W = 34
+
+
+def _ui_font(point_size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    """Return a platform-default UI font with the requested size and weight."""
+    font = QFont()
+    font.setPointSize(point_size)
+    font.setWeight(weight)
+    return font
 
 
 def _estimate_context_tokens(text: str) -> int:
@@ -618,8 +636,8 @@ class _ConversationTitleButton(QPushButton):
             painter.fillRect(rect, bg)
 
         text_rect = rect.adjusted(10, 0, -(_SIDEBAR_MENU_W + 10), 0)
-        title_font = QFont("Segoe UI", 9)
-        subtitle_font = QFont("Segoe UI", 8)
+        title_font = _ui_font(9)
+        subtitle_font = _ui_font(8)
         painter.setFont(title_font)
         color = QColor(_ACCENT if self._latest else _TEXT)
         painter.setPen(QPen(color))
@@ -825,7 +843,7 @@ class ChatWindow(QWidget):
         root.addWidget(self._make_title_bar())
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
-        splitter.setStyleSheet("QSplitter::handle { background: rgba(255,255,255,20); }")
+        splitter.setStyleSheet(f"QSplitter::handle {{ background: {_BORDER}; }}")
         splitter.addWidget(self._make_sidebar())
         splitter.addWidget(self._make_right_panel())
         splitter.setStretchFactor(0, 0)
@@ -841,16 +859,16 @@ class ChatWindow(QWidget):
         h = QHBoxLayout(bar)
         h.setContentsMargins(14, 0, 8, 0)
         title = QLabel(t("Chat"))
-        title.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        title.setFont(_ui_font(10, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT}; background: transparent;")
         new_chat = QPushButton(t("New"))
         new_chat.setFixedSize(52, 26)
         new_chat.setToolTip(t("Start a new conversation (Ctrl+N)"))
         new_chat.setStyleSheet(
-            f"QPushButton {{ background: rgba(160,160,255,18); color: {_ACCENT};"
+            f"QPushButton {{ background: {_ACCENT_BG_18}; color: {_ACCENT};"
             f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 9pt; }}"
-            "QPushButton:hover { background: rgba(160,160,255,28); }"
-            "QPushButton:disabled { color: #666; border-color: rgba(255,255,255,10); }"
+            f"QPushButton:hover {{ background: {_ACCENT_BG_28}; }}"
+            f"QPushButton:disabled {{ color: #666; border-color: {_WHITE_BG_10}; }}"
         )
         new_chat.clicked.connect(self.start_new_conversation)
         self._new_chat_btn = new_chat
@@ -869,7 +887,7 @@ class ChatWindow(QWidget):
         combo.setMinimumWidth(120)
         combo.setToolTip(t("Project for new chats (memory is scoped per project)"))
         combo.setStyleSheet(
-            f"QComboBox {{ background: rgba(160,160,255,12); color: {_TEXT};"
+            f"QComboBox {{ background: {_ACCENT_BG_12}; color: {_TEXT};"
             f" border: 1px solid {_BORDER}; border-radius: 6px; padding: 2px 8px;"
             " font-size: 9pt; }"
             f" QComboBox QAbstractItemView {{ background: {_TITLE_BG}; color: {_TEXT};"
@@ -1017,9 +1035,9 @@ class ChatWindow(QWidget):
         menu_btn.setAccessibleName(t("Conversation options"))
         menu_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
-            " font-family: 'Segoe UI Symbol', 'Segoe UI'; font-size: 16pt;"
+            " font-size: 16pt;"
             " font-weight: 700; padding: 0; margin: 0; }"
-            f"QPushButton:hover {{ background: rgba(255,255,255,12); color: {_TEXT}; }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_12}; color: {_TEXT}; }}"
         )
         menu_btn.clicked.connect(
             lambda _checked, ix=idx, button=menu_btn: self._open_conversation_menu(ix, button)
@@ -1155,7 +1173,7 @@ class ChatWindow(QWidget):
         return (
             f"QPushButton {{ background: {bg}; color: {c}; border: none;"
             f" text-align: left; padding: 6px 10px; font-size: 9pt; }}"
-            f"QPushButton:hover {{ background: rgba(255,255,255,10); }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_10}; }}"
             f"QPushButton:checked {{ background: {_SEL_BG}; }}"
         )
 
@@ -1236,7 +1254,7 @@ class ChatWindow(QWidget):
         self._past_notice = QLabel(t("  Selected conversation"))
         self._past_notice.setFixedHeight(26)
         self._past_notice.setStyleSheet(
-            f"background: rgba(160,160,255,10); color: {_HINT};"
+            f"background: {_ACCENT_BG_10}; color: {_HINT};"
             f" font-size: 8pt; border-top: 1px solid {_BORDER};"
         )
         self._past_notice.setVisible(False)
@@ -1407,7 +1425,7 @@ class ChatWindow(QWidget):
         )
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lbl.setStyleSheet(
-            f"QLabel {{ background: rgba(160,160,255,12); color: {_HINT};"
+            f"QLabel {{ background: {_ACCENT_BG_12}; color: {_HINT};"
             f" font-size: 8pt; border: 1px solid {_BORDER}; border-radius: 6px;"
             f" padding: 5px 9px; }}"
         )
@@ -1445,7 +1463,7 @@ class ChatWindow(QWidget):
         )
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lbl.setStyleSheet(
-            f"QLabel {{ background: rgba(160,160,255,10); color: {_HINT};"
+            f"QLabel {{ background: {_ACCENT_BG_10}; color: {_HINT};"
             f" font-size: 8pt; border: 1px solid {_BORDER}; border-radius: 6px;"
             f" padding: 4px 8px; margin-left: 4px; margin-right: 4px; }}"
         )
@@ -1482,7 +1500,7 @@ class ChatWindow(QWidget):
         self._attachment_label.setWordWrap(True)
         self._attachment_label.setVisible(False)
         self._attachment_label.setStyleSheet(
-            f"QLabel {{ color: {_HINT}; background: rgba(160,160,255,12);"
+            f"QLabel {{ color: {_HINT}; background: {_ACCENT_BG_12};"
             f" border: 1px solid {_BORDER}; border-radius: 6px; padding: 4px 7px;"
             " font-size: 8pt; }}"
         )
@@ -1497,7 +1515,7 @@ class ChatWindow(QWidget):
         self._input.setFixedHeight(62)
         self._input.setPlaceholderText(t("Message... (Enter to send, Shift+Enter for newline)"))
         self._input.setStyleSheet(
-            f"QTextEdit {{ background: rgba(255,255,255,8); border: 1px solid {_BORDER};"
+            f"QTextEdit {{ background: {_WHITE_BG_8}; border: 1px solid {_BORDER};"
             f" border-radius: 6px; color: {_TEXT}; padding: 6px 8px; font-size: 10pt; }}"
         )
         self._input.installEventFilter(self)
@@ -1509,11 +1527,12 @@ class ChatWindow(QWidget):
         self._attach_btn.setToolTip(t("Add files or images as context"))
         self._attach_btn.setAccessibleName(t("Add files or images as context"))
         self._attach_btn.setStyleSheet(
-            f"QPushButton {{ background: rgba(160,160,255,18); color: {_ACCENT};"
+            f"QPushButton {{ background: {_ACCENT_BG_18}; color: {_ACCENT};"
             f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 18pt;"
-            " font-weight: 400; padding: 0 0 3px 0; }}"
-            "QPushButton:hover { background: rgba(160,160,255,32); }"
-            "QPushButton:disabled { color: #666; border-color: rgba(255,255,255,10); }"
+            " font-weight: normal; padding-left: 0; padding-top: 0;"
+            " padding-right: 0; padding-bottom: 3px; }}"
+            f"QPushButton:hover {{ background: {_ACCENT_BG_32}; }}"
+            f"QPushButton:disabled {{ color: #666; border-color: {_WHITE_BG_10}; }}"
         )
         self._attach_btn.clicked.connect(self._choose_attachments)
 
@@ -1633,13 +1652,13 @@ class ChatWindow(QWidget):
             "read": _ACCENT,
             "ask": "#d1b15f",
         }.get(state, _ACCENT)
-        alpha = "32" if state == "off" else "46"
+        background = _ACCENT_BG_32 if state == "off" else _ACCENT_BG_46
         return (
-            f"QPushButton {{ background: rgba(160,160,255,{alpha}); color: {_TEXT};"
-            f" border: 1px solid {color}; border-radius: 7px; padding: 3px 5px;"
+            f"QPushButton {{ background: {background}; color: {_TEXT};"
+            f" border: 1px solid {color}; border-radius: 7px;"
+            " padding-left: 5px; padding-top: 3px; padding-right: 5px; padding-bottom: 3px;"
             " font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: rgba(160,160,255,60); border-color: {_ACCENT}; }}"
-            "QPushButton::menu-indicator { image: none; width: 0; }"
+            f"QPushButton:hover {{ background: {_ACCENT_BG_60}; border-color: {_ACCENT}; }}"
         )
 
     def _context_token_metadata(self, source: str, state: str) -> tuple[str, str]:
@@ -1765,7 +1784,7 @@ class ChatWindow(QWidget):
         lbl = _MessageTextView(
             f"QTextBrowser {{ background: {bg}; color: {_TEXT}; border-radius: 8px;"
             f" padding: 8px 11px; font-size: 10pt; border: none; }}"
-            f"QTextBrowser::selection {{ background: rgba(160,160,255,60); color: {_TEXT}; }}"
+            f"QTextBrowser::selection {{ background: {_ACCENT_BG_60}; color: {_TEXT}; }}"
         )
         if role == "assistant":
             lbl.setHtml(_assistant_text_to_html(display_text))
@@ -1810,7 +1829,7 @@ class ChatWindow(QWidget):
             menu_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
                 " font-size: 9pt; font-weight: 700; padding: 0; margin: 0; }"
-                f"QPushButton:hover {{ background: rgba(255,255,255,12); color: {_TEXT}; }}"
+                f"QPushButton:hover {{ background: {_WHITE_BG_12}; color: {_TEXT}; }}"
             )
             menu_btn.clicked.connect(
                 lambda _checked=False, button=menu_btn, ci=conversation_index, mi=message_index: self._open_message_menu(

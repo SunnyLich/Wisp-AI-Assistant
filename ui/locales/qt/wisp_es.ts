@@ -565,16 +565,16 @@ Dejar decidir al modelo — expone búsqueda web y herramientas para obtener pá
       <translation>Modelo de chat</translation>
     </message>
     <message>
-      <source>Chat model uses a subscription login. You may need to sign in again after restart. For fewer login issues, use an API-key provider.</source>
-      <translation>El modelo de chat usa un inicio de sesión de suscripción. Puede que tengas que iniciar sesión otra vez después de reiniciar. Para menos problemas de inicio de sesión, usa un proveedor con clave API.</translation>
+      <source>Chat model uses a subscription/OAuth login, not API-key billing. You may need to sign in again after restart. For fewer login issues, use an API-key provider such as OpenAI API.</source>
+      <translation>El modelo de chat usa inicio de sesión por suscripción/OAuth, no facturación por clave API. Puede que tengas que iniciar sesión otra vez después de reiniciar. Para menos problemas de inicio de sesión, usa un proveedor con clave API como OpenAI API.</translation>
     </message>
     <message>
-      <source>ChatGPT Pro / Plus</source>
-      <translation>ChatGPT Pro / Plus</translation>
+      <source>ChatGPT Plus/Pro subscription login</source>
+      <translation>Inicio de sesión de suscripción ChatGPT Plus/Pro</translation>
     </message>
     <message>
-      <source>ChatGPT cannot use live context tools here. Use On to attach context up front, or choose another Chat model for Let model decide.</source>
-      <translation>ChatGPT no puede usar herramientas de contexto en vivo aquí. Usa Activado para adjuntar contexto al inicio, o elige otro modelo de chat para Dejar que el modelo decida.</translation>
+      <source>ChatGPT Plus/Pro (OAuth subscription) cannot use live context tools here. Use On to attach context up front, or choose an API-key Chat model for Let model decide.</source>
+      <translation>ChatGPT Plus/Pro (suscripción OAuth) no puede usar herramientas de contexto en vivo aquí. Usa Activado para adjuntar contexto al inicio, o elige un modelo de chat con clave API para Dejar que el modelo decida.</translation>
     </message>
     <message>
       <source>Checking status...</source>
@@ -637,12 +637,12 @@ Dejar decidir al modelo — expone búsqueda web y herramientas para obtener pá
       <translation>Cerrar</translation>
     </message>
     <message>
-      <source>Codex (ChatGPT subscription)</source>
-      <translation>Codex (suscripción de ChatGPT)</translation>
+      <source>ChatGPT Plus/Pro (OAuth subscription)</source>
+      <translation>ChatGPT Plus/Pro (suscripción OAuth)</translation>
     </message>
     <message>
-      <source>Codex (ChatGPT subscription) [OAuth]</source>
-      <translation>Codex (suscripción de ChatGPT) [OAuth]</translation>
+      <source>OpenAI API (API key billing)</source>
+      <translation>OpenAI API (facturación por clave API)</translation>
     </message>
     <message>
       <source>Colors for the theme selected above. Light and Dark each keep their
@@ -1143,8 +1143,8 @@ Dejar decidir al modelo — expone estado/diff de git y herramientas de reposito
       <translation>Modelo de imagen</translation>
     </message>
     <message>
-      <source>Image model uses a subscription login. You may need to sign in again after restart. For fewer login issues, use an API-key provider.</source>
-      <translation>El modelo de imagen usa un inicio de sesión de suscripción. Puede que tengas que iniciar sesión otra vez después de reiniciar. Para menos problemas de inicio de sesión, usa un proveedor con clave API.</translation>
+      <source>Image model uses a subscription/OAuth login, not API-key billing. You may need to sign in again after restart. For fewer login issues, use an API-key provider such as OpenAI API.</source>
+      <translation>El modelo de imagen usa inicio de sesión por suscripción/OAuth, no facturación por clave API. Puede que tengas que iniciar sesión otra vez después de reiniciar. Para menos problemas de inicio de sesión, usa un proveedor con clave API como OpenAI API.</translation>
     </message>
     <message>
       <source>Implementation</source>

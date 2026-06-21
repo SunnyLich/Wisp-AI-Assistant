@@ -565,16 +565,16 @@ Laisser le modèle décider — expose la recherche web et les outils de lecture
       <translation>Modèle de chat</translation>
     </message>
     <message>
-      <source>Chat model uses a subscription login. You may need to sign in again after restart. For fewer login issues, use an API-key provider.</source>
-      <translation>Le modèle de chat utilise une connexion par abonnement. Vous devrez peut-être vous reconnecter après un redémarrage. Pour éviter ces problèmes, utilisez un fournisseur avec clé API.</translation>
+      <source>Chat model uses a subscription/OAuth login, not API-key billing. You may need to sign in again after restart. For fewer login issues, use an API-key provider such as OpenAI API.</source>
+      <translation>Le modèle de chat utilise une connexion par abonnement/OAuth, pas la facturation par clé API. Vous devrez peut-être vous reconnecter après un redémarrage. Pour éviter ces problèmes, utilisez un fournisseur avec clé API comme OpenAI API.</translation>
     </message>
     <message>
-      <source>ChatGPT Pro / Plus</source>
-      <translation>ChatGPT Pro / Plus</translation>
+      <source>ChatGPT Plus/Pro subscription login</source>
+      <translation>Connexion d’abonnement ChatGPT Plus/Pro</translation>
     </message>
     <message>
-      <source>ChatGPT cannot use live context tools here. Use On to attach context up front, or choose another Chat model for Let model decide.</source>
-      <translation>ChatGPT ne peut pas utiliser les outils de contexte en direct ici. Utilisez Activé pour joindre le contexte au départ, ou choisissez un autre modèle de chat pour Laisser le modèle décider.</translation>
+      <source>ChatGPT Plus/Pro (OAuth subscription) cannot use live context tools here. Use On to attach context up front, or choose an API-key Chat model for Let model decide.</source>
+      <translation>ChatGPT Plus/Pro (abonnement OAuth) ne peut pas utiliser les outils de contexte en direct ici. Utilisez Activé pour joindre le contexte au départ, ou choisissez un modèle de chat avec clé API pour Laisser le modèle décider.</translation>
     </message>
     <message>
       <source>Checking status...</source>
@@ -637,12 +637,12 @@ Laisser le modèle décider — expose la recherche web et les outils de lecture
       <translation>Fermer</translation>
     </message>
     <message>
-      <source>Codex (ChatGPT subscription)</source>
-      <translation>Codex (abonnement ChatGPT)</translation>
+      <source>ChatGPT Plus/Pro (OAuth subscription)</source>
+      <translation>ChatGPT Plus/Pro (abonnement OAuth)</translation>
     </message>
     <message>
-      <source>Codex (ChatGPT subscription) [OAuth]</source>
-      <translation>Codex (abonnement ChatGPT) [OAuth]</translation>
+      <source>OpenAI API (API key billing)</source>
+      <translation>OpenAI API (facturation par clé API)</translation>
     </message>
     <message>
       <source>Colors for the theme selected above. Light and Dark each keep their
@@ -1143,8 +1143,8 @@ Laisser le modèle décider — expose le statut/diff git et les outils dépôt/
       <translation>Modèle d’image</translation>
     </message>
     <message>
-      <source>Image model uses a subscription login. You may need to sign in again after restart. For fewer login issues, use an API-key provider.</source>
-      <translation>Le modèle d’image utilise une connexion par abonnement. Vous devrez peut-être vous reconnecter après un redémarrage. Pour éviter ces problèmes, utilisez un fournisseur avec clé API.</translation>
+      <source>Image model uses a subscription/OAuth login, not API-key billing. You may need to sign in again after restart. For fewer login issues, use an API-key provider such as OpenAI API.</source>
+      <translation>Le modèle d’image utilise une connexion par abonnement/OAuth, pas la facturation par clé API. Vous devrez peut-être vous reconnecter après un redémarrage. Pour éviter ces problèmes, utilisez un fournisseur avec clé API comme OpenAI API.</translation>
     </message>
     <message>
       <source>Implementation</source>

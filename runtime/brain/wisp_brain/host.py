@@ -28,6 +28,40 @@ from pathlib import Path
 from typing import Any
 
 
+_EXPECTED_USER_ERROR_MARKERS = (
+    "all query model routes failed",
+    "all chat model routes failed",
+    "all rewrite model routes failed",
+    "all vision model routes failed",
+    "usage_limit_reached",
+    "usage limit",
+    "rate limit",
+    "rate_limit",
+    "quota",
+)
+
+
+def _is_expected_user_error(exc: Exception) -> bool:
+    """Return true for provider/user-state failures that should not spam stderr."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status == 429:
+        return True
+    type_name = type(exc).__name__.lower()
+    if "ratelimit" in type_name:
+        return True
+    text = str(exc).lower()
+    return any(marker in text for marker in _EXPECTED_USER_ERROR_MARKERS)
+
+
+def _log_handler_error(method: Any, exc: Exception) -> None:
+    """Log expected provider failures compactly, but keep tracebacks for bugs."""
+    if _is_expected_user_error(exc):
+        print(f"[brain] {method} failed: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        return
+    import traceback
+    traceback.print_exc()
+
+
 def _bootstrap_path() -> None:
     """Make ``core`` (repo root) and ``wisp_brain`` (runtime/brain) importable
     regardless of cwd, so the brain worker runs the same whether launched in-repo for
@@ -114,8 +148,7 @@ def _main() -> int:
                 result = fn(**params)
             respond(req_id, True, result=result)
         except Exception as exc:  # noqa: BLE001 -- reported to host + stderr
-            import traceback
-            traceback.print_exc()
+            _log_handler_error(method, exc)
             respond(req_id, False, error=f"{type(exc).__name__}: {exc}")
 
     while True:
@@ -152,5 +185,4 @@ def _main() -> int:
 
 if __name__ == "__main__":
     sys.exit(_main())
-
 
