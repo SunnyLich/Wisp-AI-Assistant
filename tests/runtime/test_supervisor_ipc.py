@@ -8,13 +8,74 @@ import time
 
 import pytest
 
-from runtime.supervisor.ipc import WorkerClient, WorkerError, WorkerSpec
+from runtime.supervisor.ipc import WorkerClient, WorkerError, WorkerSpec, WispSupervisor, default_specs
+
+
+pytestmark = pytest.mark.workflow
 
 
 def _worker(module: str, role: str, name: str | None = None, env: dict[str, str] | None = None) -> WorkerClient:
     """Verify worker behavior."""
     merged_env = {"WISP_BRAIN_FAKE_LLM": "1", **(env or {})}
     return WorkerClient(WorkerSpec(name or role, module, role, env=merged_env))
+
+
+def _app_supervisor(tmp_path) -> WispSupervisor:
+    """Create the same worker process set the app supervisor starts."""
+    specs = default_specs()
+    for name, spec in specs.items():
+        spec.env = {
+            **spec.env,
+            "WISP_BRAIN_FAKE_LLM": "1",
+            "WISP_RUN_LOG_DIR": str(tmp_path),
+        }
+        if name == "ui":
+            spec.env["QT_QPA_PLATFORM"] = "offscreen"
+            spec.env["WISP_UI_FREEZE_THRESHOLD_SECONDS"] = "2.5"
+            spec.env["WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS"] = "0.25"
+    return WispSupervisor(specs)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path):
+    """The app architecture starts UI/native/brain/audio as separate workers."""
+    supervisor = _app_supervisor(tmp_path)
+    try:
+        results = supervisor.start_all()
+
+        assert set(results) == {"native", "ui", "brain", "audio"}
+        pids = {result["pid"] for result in results.values()}
+        assert len(pids) == len(results)
+        for name, result in results.items():
+            assert result["pong"] is True
+            assert result["role"] == name
+            assert result["boundary"]["ok"] is True
+            assert result["boundary"]["forbidden_loaded"] == []
+
+        assert supervisor.call("ui", "ui.show_chat", {"new": True}, timeout=30) == {
+            "shown": True,
+            "reused": False,
+        }
+        assert supervisor.call("ui", "ui.show_settings", timeout=10) == {"queued": True}
+
+        events = []
+        reply = supervisor.workers["brain"].call_with_events(
+            "brain.query",
+            {
+                "intent_prompt": "architecture smoke prompt",
+                "ambient_text": "architecture smoke context",
+                "memory_enabled": False,
+            },
+            timeout=30,
+            on_event=lambda event, data, req_id: events.append((event, data, req_id)),
+        )
+        assert "[fake-llm]" in reply["text"]
+        assert "architecture smoke prompt" in reply["text"]
+        assert any(event == "reply.chunk" for event, _data, _req_id in events)
+
+        assert not list(tmp_path.glob("ui_freeze_*.log"))
+    finally:
+        supervisor.shutdown()
 
 
 def test_native_worker_ping_and_boundary_status():

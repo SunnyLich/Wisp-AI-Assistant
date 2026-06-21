@@ -30,6 +30,9 @@ WORKFLOW_TESTS = (
     "tests/test_real_gpt55_integration.py",
     "tests/test_real_host_native_smoke.py",
 )
+APP_ARCHITECTURE_TESTS = (
+    "tests/runtime/test_supervisor_ipc.py",
+)
 REAL_HOST_TESTS = ("tests/test_real_host_native_smoke.py",)
 LOG_ROOT_NAME = "build_logs"
 LATEST_LOG_POINTER = "latest_app_workflow_tests.txt"
@@ -260,6 +263,29 @@ def _run_all_tests_isolated(
     return 0, aggregate_log
 
 
+def _run_pytest_phase(
+    name: str,
+    cmd: list[str],
+    *,
+    root: Path,
+    env: dict[str, str],
+    log_dir: Path,
+    summary_lines: list[str],
+) -> tuple[int, Path]:
+    """Run one pytest phase and apply strict runtime log diagnostics."""
+    status, log_path = _run_logged(name, cmd, root=root, env=env, log_dir=log_dir)
+    issues = _append_log_issues(summary_lines, name, log_path)
+    if status == 0 and issues:
+        status = 1
+    summary_lines.extend(
+        [
+            f"{name}.exit_code={_describe_exit_status(status)}",
+            f"{name}.log={log_path}",
+        ]
+    )
+    return status, log_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the Wisp app user-workflow test suite.",
@@ -332,12 +358,38 @@ def main(argv: list[str] | None = None) -> int:
     else:
         marker = "workflow and not real_host" if real_host else "workflow"
         print(
-            "Mode: workflow suite only "
-            f"({len(WORKFLOW_TESTS)} entry files; use --all-tests for the full pytest suite).",
+            "Mode: app workflow suite "
+            f"({len(APP_ARCHITECTURE_TESTS)} app-architecture file + "
+            f"{len(WORKFLOW_TESTS)} workflow entry files; use --all-tests for the full pytest suite).",
             flush=True,
         )
-        extra = _with_default_basetemp(extra, root)
-        cmd = _pytest_cmd(python, "-m", marker, *WORKFLOW_TESTS, *extra)
+        app_arch_extra = _with_named_basetemp(extra, root, f"app_architecture_{os.getpid()}")
+        app_arch_cmd = _pytest_cmd(
+            python,
+            "-m",
+            "workflow and not real_host",
+            *APP_ARCHITECTURE_TESTS,
+            *app_arch_extra,
+        )
+        status, main_log = _run_pytest_phase(
+            "pytest-app-architecture",
+            app_arch_cmd,
+            root=root,
+            env=env,
+            log_dir=log_dir,
+            summary_lines=summary_lines,
+        )
+        if status != 0:
+            summary_lines.append(f"final_exit_code={_describe_exit_status(status)}")
+            summary_lines.append(f"failure_log={main_log}")
+            _write_failure_pointer(root, main_log)
+            summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+            print("Summary:", summary_path, flush=True)
+            print("Failure log:", main_log, flush=True)
+            _print_failure_tail(main_log)
+            return status
+        workflow_extra = _with_named_basetemp(extra, root, f"workflow_{os.getpid()}")
+        cmd = _pytest_cmd(python, "-m", marker, *WORKFLOW_TESTS, *workflow_extra)
     if args.real_gpt55:
         print("Real GPT 5.5 workflow test enabled; this may spend tokens.", flush=True)
     if real_host:
@@ -360,16 +412,14 @@ def main(argv: list[str] | None = None) -> int:
             summary_lines=summary_lines,
         )
     else:
-        status, main_log = _run_logged("pytest-main", cmd, root=root, env=env, log_dir=log_dir)
-        main_issues = _append_log_issues(summary_lines, "pytest-main", main_log)
-        if status == 0 and main_issues:
-            status = 1
-    summary_lines.extend(
-        [
-            f"pytest-main.exit_code={_describe_exit_status(status)}",
-            f"pytest-main.log={main_log}",
-        ]
-    )
+        status, main_log = _run_pytest_phase(
+            "pytest-main",
+            cmd,
+            root=root,
+            env=env,
+            log_dir=log_dir,
+            summary_lines=summary_lines,
+        )
     if status != 0 or not real_host:
         summary_lines.append(f"final_exit_code={_describe_exit_status(status)}")
         if status != 0:

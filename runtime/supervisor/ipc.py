@@ -396,7 +396,7 @@ class WispSupervisor:
         }
         results: dict[str, Any] = {}
         for name, worker in self.workers.items():
-            results[name] = worker.call("ping", {"value": name}, timeout=startup_timeouts.get(name, 30.0))
+            results[name] = worker.call(f"{name}.ping", {"value": name}, timeout=startup_timeouts.get(name, 30.0))
         return results
 
     def call(self, worker: str, method: str, params: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:
