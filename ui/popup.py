@@ -52,7 +52,7 @@ class TextPopup(QWidget):
         label.setFont(QFont("Segoe UI", 10))
         label.setStyleSheet(
             "color: #1a1a1a;"
-            "background: rgba(255,255,255,220);"
+            "background: #dcffffff;"
             "border-radius: 10px;"
             "padding: 8px;"
         )

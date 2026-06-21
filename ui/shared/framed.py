@@ -50,8 +50,8 @@ QPushButton[winbtn] {{
     border-radius: 6px;
     margin: 0px 1px;
 }}
-QPushButton[winbtn]:hover {{ background: rgba(127, 127, 127, 0.20); }}
-QPushButton[winbtn]:pressed {{ background: rgba(127, 127, 127, 0.32); }}
+QPushButton[winbtn]:hover {{ background: #337f7f7f; }}
+QPushButton[winbtn]:pressed {{ background: #527f7f7f; }}
 QPushButton[winbtn="close"]:hover {{ background: #e81123; }}
 QPushButton[winbtn="close"]:pressed {{ background: #c50f1f; }}
 """

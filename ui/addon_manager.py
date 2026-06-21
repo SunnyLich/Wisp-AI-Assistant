@@ -130,7 +130,7 @@ class AddonManagerDialog(QDialog):
         card.setObjectName("addonCard")
         card.setStyleSheet("""
             QFrame#addonCard {
-                border: 1px solid rgba(128,128,128,0.25);
+                border: 1px solid #40808080;
                 border-radius: 8px;
                 padding: 2px;
             }

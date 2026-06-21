@@ -584,8 +584,8 @@ class SettingsDialog(QDialog):
         )
         reset_btn.setStyleSheet(
             "QPushButton { border: 1.5px solid #c0392b; color: #c0392b; }"
-            "QPushButton:hover { background: rgba(192,57,43,0.10); }"
-            "QPushButton:pressed { background: rgba(192,57,43,0.20); }"
+            "QPushButton:hover { background: #1ac0392b; }"
+            "QPushButton:pressed { background: #33c0392b; }"
         )
         reset_btn.clicked.connect(self._reset_all)
         btn_row.addWidget(reset_btn)
@@ -2885,7 +2885,7 @@ class SettingsDialog(QDialog):
                 if not first:
                     sep = QFrame()
                     sep.setFrameShape(QFrame.Shape.HLine)
-                    sep.setStyleSheet("max-height: 1px; background: rgba(128,128,128,0.25); margin: 2px 0;")
+                    sep.setStyleSheet("max-height: 1px; background: #40808080; margin: 2px 0;")
                     cv.addWidget(sep)
                 first = False
 
@@ -3324,7 +3324,7 @@ class SettingsDialog(QDialog):
             c = _parse(edit.text())
             if c.isValid():
                 swatch.setStyleSheet(
-                    f"QPushButton {{ background: rgba({c.red()},{c.green()},{c.blue()},{c.alpha()});"
+                    f"QPushButton {{ background: #{c.alpha():02x}{c.red():02x}{c.green():02x}{c.blue():02x};"
                     f" border: 1px solid #666; border-radius: 4px; padding: 0px; }}"
                 )
             else:
@@ -5254,7 +5254,7 @@ def _sep(visible: bool = False) -> QFrame:
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
     line.setStyleSheet(
-        "color: #e5e5ea; margin: 2px 0;" if visible else "color: rgba(0,0,0,0);"
+        "color: #e5e5ea; margin: 2px 0;" if visible else "color: #00000000;"
     )
     return line
 

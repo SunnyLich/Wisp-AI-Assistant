@@ -1845,6 +1845,19 @@ def test_ui_accessibility_layout_and_model_popup_workflow(qapp, monkeypatch: pyt
         agent.deleteLater()
 
 
+def test_qt_widget_stylesheets_avoid_rgba_parse_warnings_workflow():
+    """Qt widget stylesheets use #AARRGGBB colors that parse reliably on macOS."""
+    root = Path(__file__).resolve().parents[1]
+    offenders: list[str] = []
+    for path in sorted((root / "ui").rglob("*.py")):
+        if path.name == "chat_rendering.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "rgba(" in text:
+            offenders.append(str(path.relative_to(root)))
+    assert offenders == []
+
+
 def test_agent_permission_notice_and_bubble_notice_workflow(qapp, tmp_path: Path):
     """Approval and notice plumbing makes tool/file permission states visible."""
     from core.agent.task_spec import agent_task_spec_from_dict

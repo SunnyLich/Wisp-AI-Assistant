@@ -232,8 +232,8 @@ class AddedContextToast(QWidget):
         lbl = QLabel(t("Added as context!"), self)
         lbl.setFont(QFont("Segoe UI", 9))
         lbl.setStyleSheet(
-            "color: rgba(220,220,255,230);"
-            "background: rgba(35,35,58,195);"
+            "color: #e6dcdcff;"
+            "background: #c323233a;"
             "border-radius: 8px;"
             "padding: 4px 10px;"
         )
