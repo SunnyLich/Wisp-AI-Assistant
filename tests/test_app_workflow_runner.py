@@ -121,9 +121,15 @@ def test_isolated_all_tests_continues_after_failing_files(tmp_path, monkeypatch)
     assert failure_log.name.endswith("tests_test_b_py.log")
     aggregate = (log_dir / "pytest-main.log").read_text(encoding="utf-8")
     assert "failed_file_count=2" in aggregate
+    assert "error_log_count=2" in aggregate
+    assert "error_log.1=" in aggregate
+    assert "error_log.2=" in aggregate
     assert "tests_test_b_py" in aggregate
     assert "tests_test_c_py" in aggregate
     assert "pytest-main.failed_file_count=2" in summary_lines
+    assert "pytest-main.error_log_count=2" in summary_lines
+    assert any(line.startswith("pytest-main.error_log.1=") for line in summary_lines)
+    assert any(line.startswith("pytest-main.error_log.2=") for line in summary_lines)
 
 
 def test_isolated_all_tests_fail_fast_stops_at_first_failure(tmp_path, monkeypatch):
@@ -146,16 +152,24 @@ def test_isolated_all_tests_fail_fast_stops_at_first_failure(tmp_path, monkeypat
 
     monkeypatch.setattr(run_app_workflow_tests, "_run_logged", fake_run_logged)
 
+    summary_lines: list[str] = []
     status, failure_log = run_app_workflow_tests._run_all_tests_isolated(
         python="/venv/bin/python",
         root=tmp_path,
         env={},
         log_dir=log_dir,
         extra=["-q"],
-        summary_lines=[],
+        summary_lines=summary_lines,
         fail_fast=True,
     )
 
     assert status == 1
     assert len(calls) == 2
     assert failure_log.name.endswith("tests_test_b_py.log")
+    aggregate = (log_dir / "pytest-main.log").read_text(encoding="utf-8")
+    assert "failed_file_count=1" in aggregate
+    assert "error_log_count=1" in aggregate
+    assert "error_log.1=" in aggregate
+    assert "pytest-main.failed_file_count=1" in summary_lines
+    assert "pytest-main.error_log_count=1" in summary_lines
+    assert any(line.startswith("pytest-main.error_log.1=") for line in summary_lines)

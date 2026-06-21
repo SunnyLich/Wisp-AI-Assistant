@@ -260,6 +260,18 @@ def _run_all_tests_isolated(
         if status != 0:
             failures.append((run_name, status, log_path))
             if fail_fast:
+                aggregate_lines.append("failed_file_count=1")
+                aggregate_lines.append(f"failed_file={run_name}")
+                aggregate_lines.append(f"failed_file_exit_code={_describe_exit_status(status)}")
+                aggregate_lines.append(f"failed_file_log={log_path}")
+                aggregate_lines.append("error_log_count=1")
+                aggregate_lines.append(f"error_log.1={log_path}")
+                summary_lines.append("pytest-main.failed_file_count=1")
+                summary_lines.append(f"pytest-main.failed_file={run_name}")
+                summary_lines.append(f"pytest-main.failed_file_exit_code={_describe_exit_status(status)}")
+                summary_lines.append(f"pytest-main.failed_file_log={log_path}")
+                summary_lines.append("pytest-main.error_log_count=1")
+                summary_lines.append(f"pytest-main.error_log.1={log_path}")
                 aggregate_lines.append(f"failure_log={log_path}")
                 aggregate_lines.append(f"exit_code={status}")
                 aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
@@ -267,21 +279,27 @@ def _run_all_tests_isolated(
     if failures:
         _first_name, first_status, first_log = failures[0]
         aggregate_lines.append(f"failed_file_count={len(failures)}")
+        aggregate_lines.append(f"error_log_count={len(failures)}")
         summary_lines.append(f"pytest-main.failed_file_count={len(failures)}")
-        for name, status, log_path in failures:
+        summary_lines.append(f"pytest-main.error_log_count={len(failures)}")
+        for index, (name, status, log_path) in enumerate(failures, start=1):
             aggregate_lines.append(f"failed_file={name}")
             aggregate_lines.append(f"failed_file_exit_code={_describe_exit_status(status)}")
             aggregate_lines.append(f"failed_file_log={log_path}")
+            aggregate_lines.append(f"error_log.{index}={log_path}")
             summary_lines.append(f"pytest-main.failed_file={name}")
             summary_lines.append(f"pytest-main.failed_file_exit_code={_describe_exit_status(status)}")
             summary_lines.append(f"pytest-main.failed_file_log={log_path}")
+            summary_lines.append(f"pytest-main.error_log.{index}={log_path}")
         aggregate_lines.append(f"failure_log={first_log}")
         aggregate_lines.append(f"exit_code={first_status}")
         aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
         return first_status, first_log
     aggregate_lines.append("failed_file_count=0")
+    aggregate_lines.append("error_log_count=0")
     aggregate_lines.append("exit_code=0")
     summary_lines.append("pytest-main.failed_file_count=0")
+    summary_lines.append("pytest-main.error_log_count=0")
     aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
     return 0, aggregate_log
 
