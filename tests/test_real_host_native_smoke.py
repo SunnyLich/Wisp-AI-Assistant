@@ -82,17 +82,29 @@ def test_real_host_clipboard_and_context_snapshot_roundtrip():
     marker = f"wisp-real-host-clipboard-{uuid.uuid4()}"
     try:
         assert native_host.clipboard_set(marker)["ok"] is True
-        time.sleep(0.1)
-        assert native_host.clipboard_get()["text"] == marker
+        deadline = time.monotonic() + 2.0
+        snapshot = {}
+        while time.monotonic() < deadline:
+            if native_host.clipboard_get()["text"] != marker:
+                native_host.clipboard_set(marker)
+                time.sleep(0.1)
+                continue
+            snapshot = native_host.context_snapshot(
+                include_clipboard=True,
+                include_selection=False,
+                include_browser_content=False,
+                include_browser_url=False,
+            )
+            if snapshot.get("clipboard_text") == marker:
+                break
+            native_host.clipboard_set(marker)
+            time.sleep(0.1)
 
-        snapshot = native_host.context_snapshot(
-            include_clipboard=True,
-            include_selection=False,
-            include_browser_content=False,
-            include_browser_url=False,
-        )
         assert snapshot["platform"]
-        assert snapshot["clipboard_text"] == marker
+        assert snapshot["clipboard_text"] == marker, (
+            "real clipboard changed while context_snapshot was reading it; "
+            f"got {snapshot.get('clipboard_text', '')[:240]!r}"
+        )
         assert isinstance(snapshot["active_app"], dict)
         assert set(snapshot["screen_size"]) == {"width", "height"}
     finally:
@@ -187,7 +199,7 @@ def test_real_host_interactive_hotkey_backend_starts_and_stops():
 
     started = native_host.hotkeys_start(addon_hotkeys=[])
     try:
-        assert started.get("ok") is True
+        assert started.get("started") is True
     finally:
         stopped = native_host.hotkeys_stop()
-        assert stopped.get("ok") is True
+        assert stopped.get("stopped") is True
