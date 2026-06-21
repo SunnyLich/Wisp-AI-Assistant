@@ -58,15 +58,16 @@ def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path):
             assert result["boundary"]["ok"] is True
             assert result["boundary"]["forbidden_loaded"] == []
 
-        assert supervisor.call("ui", "ui.show_chat", {"new": True}, timeout=30) == {
-            "shown": True,
-            "reused": False,
-        }
+        assert supervisor.call("ui", "ui.ping", timeout=10)["pong"] is True
         if not _is_macos_offscreen_qt():
             # The real macOS app uses the Cocoa backend. The headless offscreen
-            # backend can exit when multiple top-level UI surfaces are opened in
-            # one worker, which is a test harness limitation rather than the app
-            # architecture contract this smoke test is meant to cover.
+            # backend can exit when top-level UI surfaces are opened, which is a
+            # test harness limitation rather than the app architecture contract
+            # this smoke test is meant to cover.
+            assert supervisor.call("ui", "ui.show_chat", {"new": True}, timeout=30) == {
+                "shown": True,
+                "reused": False,
+            }
             assert supervisor.call("ui", "ui.show_settings", timeout=10) == {"queued": True}
         assert supervisor.call("ui", "ui.ping", timeout=10)["pong"] is True
 
