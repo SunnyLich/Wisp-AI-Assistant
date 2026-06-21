@@ -84,3 +84,78 @@ def test_named_basetemp_is_per_subprocess(tmp_path):
     assert run_app_workflow_tests._with_named_basetemp(
         ["--basetemp", "custom"], tmp_path, "tests/foo.py"
     ) == ["--basetemp", "custom"]
+
+
+def test_isolated_all_tests_continues_after_failing_files(tmp_path, monkeypatch):
+    """macOS isolated mode reports every failing file instead of stopping early."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        run_app_workflow_tests,
+        "_all_test_files",
+        lambda _root: ["tests/test_a.py", "tests/test_b.py", "tests/test_c.py"],
+    )
+
+    def fake_run_logged(name, _cmd, *, root, env, log_dir):
+        calls.append(name)
+        log_path = log_dir / f"{run_app_workflow_tests._safe_name(name)}.log"
+        log_path.write_text("pytest output\n", encoding="utf-8")
+        return (1 if name.endswith("test_b.py") or name.endswith("test_c.py") else 0), log_path
+
+    monkeypatch.setattr(run_app_workflow_tests, "_run_logged", fake_run_logged)
+
+    summary_lines: list[str] = []
+    status, failure_log = run_app_workflow_tests._run_all_tests_isolated(
+        python="/venv/bin/python",
+        root=tmp_path,
+        env={},
+        log_dir=log_dir,
+        extra=["-q"],
+        summary_lines=summary_lines,
+    )
+
+    assert status == 1
+    assert len(calls) == 3
+    assert failure_log.name.endswith("tests_test_b_py.log")
+    aggregate = (log_dir / "pytest-main.log").read_text(encoding="utf-8")
+    assert "failed_file_count=2" in aggregate
+    assert "tests_test_b_py" in aggregate
+    assert "tests_test_c_py" in aggregate
+    assert "pytest-main.failed_file_count=2" in summary_lines
+
+
+def test_isolated_all_tests_fail_fast_stops_at_first_failure(tmp_path, monkeypatch):
+    """The explicit fail-fast option preserves the old stop-at-first-file behavior."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        run_app_workflow_tests,
+        "_all_test_files",
+        lambda _root: ["tests/test_a.py", "tests/test_b.py", "tests/test_c.py"],
+    )
+
+    def fake_run_logged(name, _cmd, *, root, env, log_dir):
+        calls.append(name)
+        log_path = log_dir / f"{run_app_workflow_tests._safe_name(name)}.log"
+        log_path.write_text("pytest output\n", encoding="utf-8")
+        return (1 if name.endswith("test_b.py") else 0), log_path
+
+    monkeypatch.setattr(run_app_workflow_tests, "_run_logged", fake_run_logged)
+
+    status, failure_log = run_app_workflow_tests._run_all_tests_isolated(
+        python="/venv/bin/python",
+        root=tmp_path,
+        env={},
+        log_dir=log_dir,
+        extra=["-q"],
+        summary_lines=[],
+        fail_fast=True,
+    )
+
+    assert status == 1
+    assert len(calls) == 2
+    assert failure_log.name.endswith("tests_test_b_py.log")

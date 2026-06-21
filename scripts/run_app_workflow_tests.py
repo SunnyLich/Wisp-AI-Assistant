@@ -222,18 +222,22 @@ def _run_all_tests_isolated(
     log_dir: Path,
     extra: list[str],
     summary_lines: list[str],
+    fail_fast: bool = False,
 ) -> tuple[int, Path]:
     """Run every test file in a separate process to isolate native crashes."""
     test_files = _all_test_files(root)
     aggregate_log = log_dir / "pytest-main.log"
+    failures: list[tuple[str, int, Path]] = []
     aggregate_lines = [
         "name=pytest-main",
         f"cwd={root}",
         "mode=isolated-per-file",
+        f"fail_fast={str(bool(fail_fast)).lower()}",
         f"test_file_count={len(test_files)}",
         "",
     ]
     summary_lines.append(f"pytest-main.isolated_files={len(test_files)}")
+    summary_lines.append(f"pytest-main.fail_fast={str(bool(fail_fast)).lower()}")
     for index, test_file in enumerate(test_files, start=1):
         print(f"Isolated pytest file {index}/{len(test_files)}: {test_file}", flush=True)
         run_name = f"pytest-main-{index:03d}-{test_file}"
@@ -254,11 +258,30 @@ def _run_all_tests_isolated(
         summary_lines.append(f"{run_name}.exit_code={_describe_exit_status(status)}")
         summary_lines.append(f"{run_name}.log={log_path}")
         if status != 0:
-            aggregate_lines.append(f"failure_log={log_path}")
-            aggregate_lines.append(f"exit_code={status}")
-            aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
-            return status, log_path
+            failures.append((run_name, status, log_path))
+            if fail_fast:
+                aggregate_lines.append(f"failure_log={log_path}")
+                aggregate_lines.append(f"exit_code={status}")
+                aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
+                return status, log_path
+    if failures:
+        _first_name, first_status, first_log = failures[0]
+        aggregate_lines.append(f"failed_file_count={len(failures)}")
+        summary_lines.append(f"pytest-main.failed_file_count={len(failures)}")
+        for name, status, log_path in failures:
+            aggregate_lines.append(f"failed_file={name}")
+            aggregate_lines.append(f"failed_file_exit_code={_describe_exit_status(status)}")
+            aggregate_lines.append(f"failed_file_log={log_path}")
+            summary_lines.append(f"pytest-main.failed_file={name}")
+            summary_lines.append(f"pytest-main.failed_file_exit_code={_describe_exit_status(status)}")
+            summary_lines.append(f"pytest-main.failed_file_log={log_path}")
+        aggregate_lines.append(f"failure_log={first_log}")
+        aggregate_lines.append(f"exit_code={first_status}")
+        aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
+        return first_status, first_log
+    aggregate_lines.append("failed_file_count=0")
     aggregate_lines.append("exit_code=0")
+    summary_lines.append("pytest-main.failed_file_count=0")
     aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
     return 0, aggregate_log
 
@@ -316,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Run --all-tests in one pytest process instead of macOS-safe per-file subprocesses.",
     )
     parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop macOS isolated --all-tests at the first failing test file.",
+    )
+    parser.add_argument(
         "pytest_args",
         nargs=argparse.REMAINDER,
         help="Extra pytest arguments, optionally after --.",
@@ -348,9 +376,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.all_tests:
         if isolate_all_tests:
             print(
-                "Mode: full pytest suite (--all-tests, isolated per test file on macOS).",
+                "Mode: full pytest suite (--all-tests, isolated per test file on macOS, continuing after failures).",
                 flush=True,
             )
+            if args.fail_fast:
+                print("Fail-fast enabled; stopping at the first failing test file.", flush=True)
         else:
             print("Mode: full pytest suite (--all-tests).", flush=True)
             extra = _with_default_basetemp(extra, root)
@@ -410,6 +440,7 @@ def main(argv: list[str] | None = None) -> int:
             log_dir=log_dir,
             extra=extra,
             summary_lines=summary_lines,
+            fail_fast=args.fail_fast,
         )
     else:
         status, main_log = _run_pytest_phase(
