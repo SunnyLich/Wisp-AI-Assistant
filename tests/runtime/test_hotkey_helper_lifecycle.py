@@ -107,6 +107,7 @@ def test_native_hotkey_stop_forgets_backend_when_stop_fails(monkeypatch):
 
     result = native_host.hotkeys_stop()
 
+    assert result["ok"] is False
     assert result["stopped"] is False
     assert "still busy" in result["error"]
     assert native_host._hotkeys is None
@@ -139,6 +140,7 @@ def test_native_hotkey_reload_reloads_config_and_replaces_backend(monkeypatch):
 
     result = native_host.hotkeys_reload(addon_hotkeys=[{"hotkey": "ctrl+alt+h"}])
 
+    assert result["ok"] is True
     assert result["started"] is True
     assert result["reloaded"] is True
     assert calls == ["reload-config", "stop-old", "start-new:[{'hotkey': 'ctrl+alt+h'}]"]

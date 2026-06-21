@@ -199,7 +199,9 @@ def test_real_host_interactive_hotkey_backend_starts_and_stops():
 
     started = native_host.hotkeys_start(addon_hotkeys=[])
     try:
+        assert started.get("ok") is True
         assert started.get("started") is True
     finally:
         stopped = native_host.hotkeys_stop()
+        assert stopped.get("ok") is True
         assert stopped.get("stopped") is True

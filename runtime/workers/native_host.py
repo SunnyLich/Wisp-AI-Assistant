@@ -220,6 +220,13 @@ def _event(name: str, data: Any = None) -> None:
         _emit(name, data, None)
 
 
+def _with_ok(result: dict[str, Any], success_key: str) -> dict[str, Any]:
+    """Add the common native success flag while preserving specific fields."""
+    out = dict(result or {})
+    out["ok"] = bool(out.get(success_key))
+    return out
+
+
 def _ax_trusted() -> bool | None:
     """Handle ax trusted for runtime workers native host."""
     if not IS_MAC:
@@ -670,7 +677,7 @@ def _screen_size() -> dict[str, int]:
     try:
         import mss
 
-        with mss.mss() as sct:
+        with mss.MSS() as sct:
             monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
             width = int(monitor.get("width") or 0)
             height = int(monitor.get("height") or 0)
@@ -1214,16 +1221,16 @@ def _stop_current_hotkeys() -> dict[str, Any]:
         helper = _hotkeys
         _hotkeys = None
     if helper is None:
-        return {"stopped": True}
+        return _with_ok({"stopped": True}, "stopped")
     try:
         helper.stop()
-        return {"stopped": True}
+        return _with_ok({"stopped": True}, "stopped")
     except Exception as exc:  # noqa: BLE001 - never keep stale live bindings referenced
         print(f"[native] hotkey stop failed: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
-        return {
+        return _with_ok({
             "stopped": False,
             "error": f"{type(exc).__name__}: {exc}",
-        }
+        }, "stopped")
 
 
 def hotkeys_start(addon_hotkeys: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -1236,17 +1243,17 @@ def hotkeys_start(addon_hotkeys: list[dict[str, Any]] | None = None) -> dict[str
     global _hotkeys
     with _hotkeys_lock:
         if _hotkeys is not None:
-            return {"started": True, "backend": "existing"}
+            return _with_ok({"started": True, "backend": "existing"}, "started")
         helper = _HotkeyHelper() if IS_MAC else _DirectHotkeys()
         result = helper.start(addon_hotkeys=addon_hotkeys or [])
         if result.get("started"):
             _hotkeys = helper
-            return result
+            return _with_ok(result, "started")
         try:
             helper.stop()
         finally:
             _hotkeys = None
-        return result
+        return _with_ok(result, "started")
 
 
 def hotkeys_stop() -> dict[str, Any]:
@@ -1266,6 +1273,7 @@ def hotkeys_reload(addon_hotkeys: list[dict[str, Any]] | None = None) -> dict[st
     }
     if not stop_result.get("stopped"):
         result["stop_error"] = stop_result.get("error") or "hotkey stop failed"
+        result["ok"] = False
     return result
 
 
