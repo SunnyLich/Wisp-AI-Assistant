@@ -1623,8 +1623,9 @@ def test_auto_screenshot_mode_captures_even_with_selected_text():
     assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
 
 
-def test_caller_overlay_listens_before_context_and_model_screenshot_capture():
+def test_caller_overlay_listens_before_context_and_model_screenshot_capture(monkeypatch):
     """Verify caller overlay listens before slow context and screenshot capture."""
+    monkeypatch.setattr(sys, "platform", "linux")
     image_bytes = b"target screen"
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(image_bytes)
@@ -1671,8 +1672,9 @@ def test_caller_overlay_listens_before_context_and_model_screenshot_capture():
     assert flow._pending.screenshot_tool_b64 == base64.b64encode(image_bytes).decode("ascii")
 
 
-def test_intent_cancel_stops_context_collection_before_screenshot_capture():
+def test_intent_cancel_stops_context_collection_before_screenshot_capture(monkeypatch):
     """Verify Escape cancellation prevents follow-up capture work."""
+    monkeypatch.setattr(sys, "platform", "linux")
     order: list[str] = []
     rows = [
         {
