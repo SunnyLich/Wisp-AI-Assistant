@@ -237,7 +237,7 @@ def _default_context_items() -> list[dict]:
             "state": "off",
             "default_state": "off",
             "touched": False,
-            "tokens": "" if source == "files" else "0 tok",
+            "tokens": "" if source == "files" else "? tok",
             "warning": "",
         }
         for idx, (source, label) in enumerate(labels)

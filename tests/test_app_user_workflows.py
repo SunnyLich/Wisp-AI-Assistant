@@ -273,7 +273,7 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
         {"id": "ambient", "key": "1", "label": "App", "state": "on", "tokens": "~4 tok"},
         {"id": "browser", "key": "2", "label": "Browser/Web", "state": "on", "tokens": "~8 tok"},
         {"id": "selection", "key": "3", "label": "Selection", "state": "on", "tokens": "~5 tok"},
-        {"id": "clipboard", "key": "4", "label": "Clipboard", "state": "off", "tokens": "0 tok"},
+        {"id": "clipboard", "key": "4", "label": "Clipboard", "state": "off", "tokens": "? tok"},
         {"id": "screenshot", "key": "5", "label": "Screenshot", "state": "auto", "tokens": screenshot_tokens},
         {"id": "memory", "key": "6", "label": "Memory", "state": "auto", "tokens": "? tok"},
         {"id": "files", "key": "7", "label": "Files", "state": "auto", "tokens": ""},

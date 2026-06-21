@@ -121,7 +121,7 @@ def _token_label(text: str) -> str:
 
 
 def _deferred_token_label() -> str:
-    return t("on send")
+    return "? tok"
 
 
 def _is_concrete_token_label(value: str) -> bool:
@@ -1669,6 +1669,8 @@ class ChatWindow(QWidget):
     def _context_token_metadata(self, source: str, state: str) -> tuple[str, str]:
         """Return (token label, warning) for one chat context/tool chip."""
         if state == "off":
+            if source in {"ambient", "browser", "selection", "clipboard", "screenshot"}:
+                return _deferred_token_label(), ""
             return "0 tok", ""
         if source == "memory":
             return _deferred_token_label(), t("Memory tokens are estimated after the prompt is known.")

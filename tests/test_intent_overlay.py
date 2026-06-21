@@ -240,6 +240,26 @@ def test_intent_overlay_context_palette_uses_theme_settings():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_fallback_context_tokens_are_unknown():
+    """Verify fallback context chips do not pretend unknown estimates are zero."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    overlay = intent_overlay.IntentOverlay(context_items=None)
+    try:
+        choices = {item["id"]: item for item in overlay.context_choices()}
+        assert choices["browser"]["tokens"] == "? tok"
+        assert choices["screenshot"]["tokens"] == "? tok"
+        assert choices["files"]["tokens"] == ""
+    finally:
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_cycles_context_chip(monkeypatch):
     """Verify numeric context chips cycle independently of intent rows."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

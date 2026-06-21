@@ -328,7 +328,7 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
         browser_chip = window._context_controls["browser"]
         assert browser_chip.objectName() == "chatContextChip_browser"
         assert browser_chip.text().count("\n") == 2
-        assert browser_chip.property("context_tokens") == "0 tok"
+        assert browser_chip.property("context_tokens") == "? tok"
         assert window._context_controls["selection"].property("context_state") == "off"
 
         window._show_context_policy_menu("browser")
@@ -340,7 +340,7 @@ def test_chat_context_policy_controls_are_compact_menu_chips(monkeypatch):
 
         assert conversations[0]["context_policy"]["context_browser_mode"] == "auto"
         assert browser_chip.property("context_state") == "on"
-        assert browser_chip.property("context_tokens") == "on send"
+        assert browser_chip.property("context_tokens") == "? tok"
         assert preview_requests
         window.update_context_preview(
             preview_requests[-1]["preview_id"],
@@ -393,7 +393,7 @@ def test_chat_context_policy_normalizes_legacy_on_modes():
         assert window._context_controls["ambient"].property("context_state") == "on"
         assert window._context_controls["browser"].property("context_state") == "on"
         assert window._context_controls["screenshot"].property("context_state") == "on"
-        assert window._context_controls["browser"].property("context_tokens") == "on send"
+        assert window._context_controls["browser"].property("context_tokens") == "? tok"
 
         window.request_context_preview()
 
@@ -443,7 +443,7 @@ def test_chat_context_preview_updates_off_chips():
         screenshot_chip = window._context_controls["screenshot"]
         selection_chip = window._context_controls["selection"]
         assert screenshot_chip.property("context_state") == "off"
-        assert screenshot_chip.property("context_tokens") == "0 tok"
+        assert screenshot_chip.property("context_tokens") == "? tok"
         assert preview_requests
 
         window.update_context_preview(
