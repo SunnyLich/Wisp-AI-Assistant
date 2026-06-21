@@ -124,6 +124,12 @@ def _deferred_token_label() -> str:
     return t("on send")
 
 
+def _is_concrete_token_label(value: str) -> bool:
+    """Return True for a real estimate that should survive preview refreshes."""
+    text = str(value or "").strip()
+    return bool(text) and text not in {"0 tok", _deferred_token_label()}
+
+
 def _now_iso() -> str:
     """Return current UTC time for conversation metadata."""
     return datetime.now(timezone.utc).isoformat()
@@ -1673,6 +1679,10 @@ class ChatWindow(QWidget):
     def _update_context_chip(self, chip: QPushButton, source: str, state: str) -> None:
         """Paint one compact context chip from its current state."""
         tokens, warning = self._context_token_metadata(source, state)
+        previous_tokens = self._context_control_tokens.get(source, "")
+        if _is_concrete_token_label(previous_tokens) and not _is_concrete_token_label(tokens):
+            tokens = previous_tokens
+            warning = self._context_control_warnings.get(source, warning)
         self._set_context_chip_display(chip, source, state, tokens, warning)
 
     def _set_context_chip_display(

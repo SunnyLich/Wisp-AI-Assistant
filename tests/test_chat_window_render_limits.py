@@ -449,11 +449,18 @@ def test_chat_context_preview_updates_off_chips():
         window.update_context_preview(
             preview_requests[-1]["preview_id"],
             [
+                {"id": "browser", "tokens": "~12 tok", "warning": ""},
                 {"id": "screenshot", "tokens": "~1.1k tok", "warning": ""},
                 {"id": "selection", "tokens": "~9 tok", "warning": ""},
             ],
         )
 
+        browser_chip = window._context_controls["browser"]
+        assert browser_chip.property("context_state") == "off"
+        assert browser_chip.property("context_tokens") == "~12 tok"
+        window._set_context_policy_state("browser", "on")
+        assert browser_chip.property("context_state") == "on"
+        assert browser_chip.property("context_tokens") == "~12 tok"
         assert screenshot_chip.property("context_state") == "off"
         assert screenshot_chip.property("context_tokens") == "~1.1k tok"
         assert selection_chip.property("context_state") == "off"

@@ -2404,6 +2404,50 @@ def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
     }
 
 
+def test_chat_context_preview_keeps_requested_browser_on_while_detecting():
+    """Browser/Web stays visibly enabled while the fallback browser scan runs."""
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda params: {
+                "selected_text": "",
+                "clipboard_text": "",
+                "active_app": {"name": "Wisp", "pid": 42, "bundle_id": "app.wisp"},
+                "browser_url": "",
+                "browser_hwnd": 0,
+                "browser_content": "Detected browser page" if params.get("include_browser_content") else "",
+            },
+        }
+    )
+    _flow, native, ui, _brain, _audio = make_flow(native=native)
+
+    ui.emit(
+        "ui.chat.context_preview",
+        {
+            "preview_id": "preview-browser-detecting",
+            "context_policy": {
+                "context_ambient": False,
+                "context_documents_mode": "off",
+                "context_browser_mode": "auto",
+                "context_github_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "context_clipboard": False,
+                "file_access": "off",
+                "tools": {},
+            },
+        },
+    )
+
+    calls = ui.calls_for("ui.chat.context_preview")
+    assert len(calls) == 2
+    first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
+    assert first_browser["state"] == "on"
+    assert first_browser["tokens"] == "? tok"
+    updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
+    assert updated_browser["state"] == "on"
+    assert updated_browser["tokens"].startswith("~")
+
+
 def test_chat_context_preview_estimates_off_context_sources_without_capture():
     """Verify chat previews off context costs without changing send policy."""
     native = FakeWorker(

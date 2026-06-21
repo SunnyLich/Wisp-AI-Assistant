@@ -2870,7 +2870,8 @@ class FlowController:
         )
         browser_state = self._mode_to_context_state(self._context_mode(caller, "browser"))
         browser_tokens = self._estimate_context_tokens(browser_text)
-        browser_deferred = browser_available and not context.get("browser_content")
+        browser_requested = browser_state != "off"
+        browser_deferred = browser_requested and not context.get("browser_content")
 
         selected_text = str(context.get("selected_text") or "")
         clipboard_text = str(context.get("clipboard_text") or "")
@@ -2903,12 +2904,12 @@ class FlowController:
                 "id": "browser",
                 "key": keys[1],
                 "label": "Browser/Web",
-                "state": browser_state if browser_available else "off",
+                "state": browser_state if browser_requested else "off",
                 "tokens": self._deferred_token_label() if browser_deferred else self._token_label(browser_text),
                 "warning": self._context_warning(
                     browser_tokens,
                     available=browser_available,
-                    deferred=browser_deferred and browser_state != "off",
+                    deferred=browser_deferred,
                     deferred_warning="Browser page text may be fetched after you send the prompt, so this token cost is not known yet.",
                 ) if browser_state != "off" else "",
             },
