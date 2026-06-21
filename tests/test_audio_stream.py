@@ -189,13 +189,15 @@ class FillerPrecacheTests(unittest.TestCase):
     def test_prewarm_decodes_wavs_into_memory(self):
         """Verify prewarm decodes wavs into memory behavior."""
         fake_clip = (np.zeros(4, dtype=np.float32), 44100)
+        fake_sf = mock.Mock()
+        fake_sf.read.return_value = fake_clip
         with mock.patch.dict(audio.macos_safety.os.environ, {"WISP_MACOS_ENABLE_AUDIO": "1"}), \
+             mock.patch.object(audio, "_load_soundfile_if_allowed", return_value=fake_sf), \
              mock.patch.object(audio.os.path, "isdir", side_effect=lambda path: path == config.FILLER_AUDIO_DIR), \
-             mock.patch.object(audio.os, "listdir", return_value=["a.wav", "b.txt", "c.WAV"]), \
-             mock.patch.object(audio.sf, "read", return_value=fake_clip) as read:
+             mock.patch.object(audio.os, "listdir", return_value=["a.wav", "b.txt", "c.WAV"]):
             audio.prewarm_filler()
         # Only the two .wav files are decoded; the .txt is ignored.
-        self.assertEqual(read.call_count, 2)
+        self.assertEqual(fake_sf.read.call_count, 2)
         self.assertEqual(len(audio._filler_clips), 2)
         self.assertTrue(audio._filler_loaded)
 
