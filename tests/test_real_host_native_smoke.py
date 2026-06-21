@@ -44,6 +44,29 @@ def _pump_until(app, predicate, *, timeout: float = 2.0) -> None:
     assert predicate()
 
 
+def _focus_real_qt_widget(app, widget, *, timeout: float = 3.0) -> bool:
+    """Try to make a real Qt widget the focused keyboard target."""
+    if sys.platform == "darwin":
+        from core.platform_utils import activate_self
+
+        activate_self()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        widget.show()
+        widget.raise_()
+        widget.activateWindow()
+        window_handle = widget.windowHandle()
+        if window_handle is not None:
+            window_handle.requestActivate()
+        widget.setFocus()
+        app.processEvents()
+        if widget.hasFocus():
+            return True
+        time.sleep(0.05)
+    app.processEvents()
+    return bool(widget.hasFocus())
+
+
 def test_real_host_macos_permission_snapshot_is_ready_for_native_checks():
     """macOS privacy grants are visible before tests depend on native APIs."""
     if sys.platform != "darwin":
@@ -175,10 +198,15 @@ def test_real_host_interactive_paste_shortcut_targets_focused_qt_field():
     try:
         assert native_host.clipboard_set(marker)["ok"] is True
         edit.show()
-        edit.raise_()
-        edit.activateWindow()
-        edit.setFocus()
-        _pump_until(app, edit.hasFocus, timeout=3.0)
+        if not _focus_real_qt_widget(app, edit, timeout=5.0):
+            if sys.platform == "darwin":
+                pytest.skip(
+                    "macOS did not grant keyboard focus to the pytest Qt test window. "
+                    "This usually means the launcher is running in a remote/off-console "
+                    "session or another app is retaining focus; paste injection cannot "
+                    "be verified on this host session."
+                )
+            pytest.fail("real host test window did not receive keyboard focus")
 
         send_keys(PASTE_COMBO)
         _pump_until(app, lambda: marker in edit.toPlainText(), timeout=3.0)
