@@ -1838,8 +1838,6 @@ def test_ui_accessibility_layout_and_model_popup_workflow(qapp, monkeypatch: pyt
 
 def test_agent_permission_notice_and_bubble_notice_workflow(qapp, tmp_path: Path):
     """Approval and notice plumbing makes tool/file permission states visible."""
-    from PySide6.QtCore import QEventLoop, QTimer
-
     from core.agent.task_spec import agent_task_spec_from_dict
     from ui.agent.task_window import AgentRunWindow
     from ui.bubble import SpeechBubble
@@ -1866,10 +1864,7 @@ def test_agent_permission_notice_and_bubble_notice_workflow(qapp, tmp_path: Path
 
         bubble.show_notice("Browser permission denied.", timeout_ms=20)
         assert "Browser permission denied." in bubble._full_text
-        loop = QEventLoop()
-        QTimer.singleShot(40, loop.quit)
-        loop.exec()
-        assert not bubble.isVisible()
+        _pump_until(qapp, lambda: not bubble.isVisible(), timeout=1.0)
     finally:
         window.deleteLater()
         bubble.deleteLater()

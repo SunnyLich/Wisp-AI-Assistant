@@ -272,6 +272,39 @@ Required behavior:
 - Keep the token budget low enough for routine manual runs.
 - Stay opt-in so normal `pytest` does not spend money.
 
+### Real Host Native Smoke Tests
+
+Some native behavior cannot be proven by fake adapters or offscreen Qt. Add an
+opt-in host suite that runs on the real desktop and touches the actual OS APIs.
+
+Real-host test file:
+
+- `tests/test_real_host_native_smoke.py`
+
+Run commands:
+
+- Safe real-host smoke:
+  `python scripts/run_app_workflow_tests.py --real-host -- -q -s`
+- Interactive real-host smoke:
+  `python scripts/run_app_workflow_tests.py --real-host-interactive -- -q -s`
+
+Required behavior:
+
+- Use the project `.venv` automatically.
+- Run real-host tests in a separate pytest process from offscreen Qt tests, so
+  Qt can attach to the real platform plugin.
+- Round-trip the real clipboard and verify the same text reaches
+  `native_host.context_snapshot`.
+- Capture real screen pixels through `core.capture`.
+- Verify Qt can attach to the real desktop and that tray availability is
+  reported.
+- Keep keyboard/paste and global hotkey registration behind
+  `--real-host-interactive`, because those tests focus a test window and
+  synthesize input.
+- Restore clipboard content after tests.
+- Allow platform-specific host limitations to be explicit, e.g.
+  `WISP_REAL_HOST_ALLOW_NO_TRAY=1` on Linux desktops without a tray.
+
 ### `test_intent_overlay_context_chips_drive_query_request`
 
 This is the first intent-overlay context test. It must start from the user entry
