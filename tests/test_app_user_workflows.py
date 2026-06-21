@@ -1862,17 +1862,32 @@ def test_chat_context_chip_stylesheets_use_plain_rgb_colors_workflow(qapp):
     """Chat context chips use conservative colors accepted by Qt on every OS."""
     import re
 
-    from ui.chat_window import ChatWindow
+    from PySide6.QtCore import qInstallMessageHandler
 
-    window = ChatWindow([{"messages": [], "context_policy": {}}], lambda _messages: iter(()))
+    from ui.chat_window import ChatWindow
+    from ui.shared.theme import apply_app_theme
+
+    qt_messages: list[str] = []
+
+    def _qt_message_handler(_mode, _context, message):
+        qt_messages.append(str(message))
+
+    previous_handler = qInstallMessageHandler(_qt_message_handler)
+    window = None
     try:
+        apply_app_theme(qapp)
+        window = ChatWindow([{"messages": [], "context_policy": {}}], lambda _messages: iter(()))
+        qapp.processEvents()
         for chip in window._context_controls.values():
             style = chip.styleSheet()
             assert "rgba(" not in style
             assert not re.search(r"#[0-9a-fA-F]{8}\b", style)
+        assert not any("Could not parse stylesheet" in message for message in qt_messages)
     finally:
-        window.close()
-        window.deleteLater()
+        qInstallMessageHandler(previous_handler)
+        if window is not None:
+            window.close()
+            window.deleteLater()
         qapp.processEvents()
 
 

@@ -1481,8 +1481,8 @@ class ChatWindow(QWidget):
         lbl = QLabel(html.escape(text))
         lbl.setTextFormat(Qt.TextFormat.RichText)
         lbl.setStyleSheet(
-            f"color: {_HINT}; font-size: 8pt; padding: 0 4px 2px 4px;"
-            " background: transparent;"
+            f"color: {_HINT}; font-size: 8pt; padding: 2px;"
+            " background-color: transparent;"
         )
         return lbl
 
@@ -1500,9 +1500,9 @@ class ChatWindow(QWidget):
         self._attachment_label.setWordWrap(True)
         self._attachment_label.setVisible(False)
         self._attachment_label.setStyleSheet(
-            f"QLabel {{ color: {_HINT}; background: {_ACCENT_BG_12};"
-            f" border: 1px solid {_BORDER}; border-radius: 6px; padding: 4px 7px;"
-            " font-size: 8pt; }}"
+            f"QLabel {{ color: {_HINT}; background-color: {_ACCENT_BG_12};"
+            f" border: 1px solid {_BORDER}; border-radius: 6px; padding: 4px;"
+            " font-size: 8pt; }"
         )
         outer.addWidget(self._attachment_label)
 
@@ -1527,12 +1527,11 @@ class ChatWindow(QWidget):
         self._attach_btn.setToolTip(t("Add files or images as context"))
         self._attach_btn.setAccessibleName(t("Add files or images as context"))
         self._attach_btn.setStyleSheet(
-            f"QPushButton {{ background: {_ACCENT_BG_18}; color: {_ACCENT};"
+            f"QPushButton {{ background-color: {_ACCENT_BG_18}; color: {_ACCENT};"
             f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 18pt;"
-            " font-weight: normal; padding-left: 0; padding-top: 0;"
-            " padding-right: 0; padding-bottom: 3px; }}"
-            f"QPushButton:hover {{ background: {_ACCENT_BG_32}; }}"
-            f"QPushButton:disabled {{ color: #666; border-color: {_WHITE_BG_10}; }}"
+            " padding: 0px; }"
+            f"\nQPushButton:hover {{ background-color: {_ACCENT_BG_32}; }}"
+            f"\nQPushButton:disabled {{ color: #666666; border: 1px solid {_WHITE_BG_10}; }}"
         )
         self._attach_btn.clicked.connect(self._choose_attachments)
 
@@ -1555,7 +1554,7 @@ class ChatWindow(QWidget):
         """Create per-conversation context/tool controls above the chat input."""
         frame = QWidget()
         frame.setStyleSheet(
-            "QWidget { background: transparent; }"
+            "QWidget { background-color: transparent; }"
             "QPushButton { text-align: center; }"
         )
         outer = QHBoxLayout(frame)
@@ -1654,11 +1653,11 @@ class ChatWindow(QWidget):
         }.get(state, _ACCENT)
         background = _ACCENT_BG_32 if state == "off" else _ACCENT_BG_46
         return (
-            f"QPushButton {{ background: {background}; color: {_TEXT};"
+            f"QPushButton {{ background-color: {background}; color: {_TEXT};"
             f" border: 1px solid {color}; border-radius: 7px;"
-            " padding-left: 5px; padding-top: 3px; padding-right: 5px; padding-bottom: 3px;"
-            " font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {_ACCENT_BG_60}; border-color: {_ACCENT}; }}"
+            " padding: 3px;"
+            " font-size: 8pt; }"
+            f"\nQPushButton:hover {{ background-color: {_ACCENT_BG_60}; border: 1px solid {_ACCENT}; }}"
         )
 
     def _context_token_metadata(self, source: str, state: str) -> tuple[str, str]:
