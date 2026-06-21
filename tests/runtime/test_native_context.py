@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from core import context_fetcher
 from runtime.workers import native_host
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_win_context_window_skips_wisp_foreground(monkeypatch):
     """Verify win context window skips wisp foreground behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", True)
@@ -18,6 +21,7 @@ def test_win_context_window_skips_wisp_foreground(monkeypatch):
     assert native_host._win_context_window_id(111) == 777
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
     """Verify context snapshot reads browser url from corrected window behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", True)
@@ -57,6 +61,7 @@ def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
     assert snapshot["browser_hwnd"] == 777
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_context_snapshot_reads_background_browser_when_foreground_is_document(monkeypatch):
     """Verify context snapshot reads background browser when foreground is document behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", True)
@@ -94,6 +99,7 @@ def test_context_snapshot_reads_background_browser_when_foreground_is_document(m
     assert snapshot["debug"]["browser_window"]["process_name"] == "chrome.exe"
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS native context behavior is tested on macOS")
 def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
     """Verify macOS snapshots collect front document and browser independently."""
     monkeypatch.setattr(native_host, "IS_WIN", False)
@@ -132,6 +138,7 @@ def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
     assert snapshot["debug"]["browser_window"]["process_name"] == "Safari"
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux native context behavior is tested on Linux")
 def test_linux_active_app_includes_real_process_name(monkeypatch):
     """Verify linux active app includes real process name behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", False)
