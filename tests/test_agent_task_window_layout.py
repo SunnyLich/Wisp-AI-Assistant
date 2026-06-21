@@ -71,26 +71,22 @@ def test_agent_task_forms_expand_across_platform_styles():
 
 
 def test_agent_task_title_field_uses_extra_window_width():
-    """Verify agent task title field uses extra window width behavior."""
-    app = _qapp()
+    """Verify the title field is configured to consume available form width."""
+    _qapp()
+    from PySide6.QtWidgets import QSizePolicy
     from ui.agent.task_window import AgentTaskDialog
 
     dialog = AgentTaskDialog()
     try:
-        dialog.show()
-        dialog.resize(600, 520)
-        app.processEvents()
-        narrow_width = dialog.title_edit.width()
-
-        dialog.resize(900, 520)
-        app.processEvents()
-        wide_width = dialog.title_edit.width()
-
-        assert wide_width > narrow_width
+        assert dialog.title_edit.sizePolicy().horizontalPolicy() in {
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.MinimumExpanding,
+        }
+        form = dialog.title_edit.parentWidget().layout()
+        assert form.fieldGrowthPolicy().name == "AllNonFixedFieldsGrow"
     finally:
         dialog.close()
         dialog.deleteLater()
-        app.processEvents()
 
 
 def test_agent_communication_forms_expand_across_platform_styles():

@@ -33,6 +33,13 @@ REAL_HOST_TESTS = ("tests/test_real_host_native_smoke.py",)
 LOG_ROOT_NAME = "build_logs"
 LATEST_LOG_POINTER = "latest_app_workflow_tests.txt"
 LATEST_FAILURE_POINTER = "latest_app_workflow_tests_failure.txt"
+STRICT_LOG_PATTERNS = (
+    "Could not parse stylesheet",
+    "Fatal Python error",
+    "Segmentation fault",
+    "Abort trap",
+    "SIGTRAP",
+)
 
 
 def _repo_root() -> Path:
@@ -120,6 +127,31 @@ def _run_logged(name: str, cmd: list[str], *, root: Path, env: dict[str, str], l
     return status, log_path
 
 
+def _strict_log_issues(log_path: Path) -> list[str]:
+    """Return serious runtime diagnostics that should fail a workflow run."""
+    issues: list[str] = []
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"could not read log for strict scan: {exc}"]
+    for pattern in STRICT_LOG_PATTERNS:
+        if pattern in text:
+            issues.append(pattern)
+    return issues
+
+
+def _append_log_issues(summary_lines: list[str], name: str, log_path: Path) -> list[str]:
+    issues = _strict_log_issues(log_path)
+    if issues:
+        summary_lines.append(f"{name}.strict_log_issues={', '.join(issues)}")
+        print(
+            f"Strict log scan failed for {name}: {', '.join(issues)}",
+            flush=True,
+        )
+        _write_failure_pointer(_repo_root(), log_path)
+    return issues
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the Wisp app user-workflow test suite.",
@@ -165,9 +197,15 @@ def main(argv: list[str] | None = None) -> int:
     extra = _with_cache_disabled(_with_default_basetemp(_normalize_pytest_args(args.pytest_args), root))
     python = _preferred_python(root)
     if args.all_tests:
+        print("Mode: full pytest suite (--all-tests).", flush=True)
         cmd = [python, "-m", "pytest", *extra]
     else:
         marker = "workflow and not real_host" if real_host else "workflow"
+        print(
+            "Mode: workflow suite only "
+            f"({len(WORKFLOW_TESTS)} entry files; use --all-tests for the full pytest suite).",
+            flush=True,
+        )
         cmd = [python, "-m", "pytest", "-m", marker, *WORKFLOW_TESTS, *extra]
 
     summary_lines = [
@@ -191,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.real_host_interactive:
         print("Interactive real host tests enabled; keep the machine idle while keyboard/paste checks run.", flush=True)
     status, main_log = _run_logged("pytest-main", cmd, root=root, env=env, log_dir=log_dir)
+    main_issues = _append_log_issues(summary_lines, "pytest-main", main_log)
+    if status == 0 and main_issues:
+        status = 1
     summary_lines.extend(
         [
             f"pytest-main.exit_code={status}",
@@ -218,6 +259,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     host_cmd = [python, "-m", "pytest", "-m", "real_host", *REAL_HOST_TESTS, *host_extra]
     host_status, host_log = _run_logged("pytest-real-host", host_cmd, root=root, env=host_env, log_dir=log_dir)
+    host_issues = _append_log_issues(summary_lines, "pytest-real-host", host_log)
+    if host_status == 0 and host_issues:
+        host_status = 1
     summary_lines.extend(
         [
             f"pytest-real-host.exit_code={host_status}",

@@ -677,7 +677,8 @@ def _screen_size() -> dict[str, int]:
     try:
         import mss
 
-        with mss.MSS() as sct:
+        mss_factory = getattr(mss, "MSS", mss.mss)
+        with mss_factory() as sct:
             monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
             width = int(monitor.get("width") or 0)
             height = int(monitor.get("height") or 0)

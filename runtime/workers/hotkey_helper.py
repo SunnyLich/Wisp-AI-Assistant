@@ -537,18 +537,23 @@ def main() -> int:
     def request_stop(_signum=None, _frame=None) -> None:
         """Handle request stop for runtime workers hotkey helper."""
         stop.set()
+        try:
+            sys.stdin.close()
+        except Exception:
+            pass
 
     for sig_name in ("SIGINT", "SIGTERM"):
         sig = getattr(signal, sig_name, None)
         if sig is not None:
             signal.signal(sig, request_stop)
 
-    threading.Thread(
+    parent_watch = threading.Thread(
         target=_stop_on_parent_pipe_close,
         args=(stop,),
-        daemon=True,
+        daemon=False,
         name="hotkey-helper-parent-watch",
-    ).start()
+    )
+    parent_watch.start()
 
     try:
         import config
@@ -631,6 +636,13 @@ def main() -> int:
             }
         )
         return 1
+    finally:
+        stop.set()
+        try:
+            sys.stdin.close()
+        except Exception:
+            pass
+        parent_watch.join(timeout=1.0)
 
 
 if __name__ == "__main__":

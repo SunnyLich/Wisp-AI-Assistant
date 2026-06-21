@@ -176,7 +176,8 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
         """Handle grab for capture."""
         import mss
 
-        with mss.MSS() as sct:
+        mss_factory = getattr(mss, "MSS", mss.mss)
+        with mss_factory() as sct:
             monitor = region if region else sct.monitors[1]  # monitors[1] = primary
             raw = sct.grab(monitor)
             return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")

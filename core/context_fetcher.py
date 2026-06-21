@@ -1822,7 +1822,8 @@ def _capture_screen_to_file() -> str:
 
         def _grab() -> None:
             """Handle grab for local."""
-            with mss.MSS() as sct:
+            mss_factory = getattr(mss, "MSS", mss.mss)
+            with mss_factory() as sct:
                 monitor = sct.monitors[1]  # primary monitor
                 raw = sct.grab(monitor)
                 mss.tools.to_png(raw.rgb, raw.size, output=out_path)
