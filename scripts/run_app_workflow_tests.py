@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -40,6 +41,7 @@ STRICT_LOG_PATTERNS = (
     "Abort trap",
     "SIGTRAP",
 )
+FAILURE_TAIL_LINES = 80
 
 
 def _repo_root() -> Path:
@@ -127,6 +129,44 @@ def _run_logged(name: str, cmd: list[str], *, root: Path, env: dict[str, str], l
     return status, log_path
 
 
+def _pytest_cmd(python: str, *args: str) -> list[str]:
+    """Build a pytest command with startup faulthandler enabled."""
+    return [python, "-X", "faulthandler", "-m", "pytest", *args]
+
+
+def _describe_exit_status(status: int) -> str:
+    """Return a human-readable process exit status."""
+    if status == 0:
+        return "0"
+    signum = -status if status < 0 else status
+    if signum in {getattr(signal, "SIGSEGV", object()), 11}:
+        return f"{status} (native crash: SIGSEGV/segmentation fault)"
+    if signum in {getattr(signal, "SIGABRT", object()), 6}:
+        return f"{status} (native abort: SIGABRT)"
+    if signum in {getattr(signal, "SIGTRAP", object()), 5}:
+        return f"{status} (native trap: SIGTRAP)"
+    return str(status)
+
+
+def _log_tail(log_path: Path, *, max_lines: int = FAILURE_TAIL_LINES) -> str:
+    """Return the last lines of a log file for terminal failure output."""
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        return f"(could not read log tail: {exc})"
+    return "\n".join(lines[-max_lines:])
+
+
+def _print_failure_tail(log_path: Path) -> None:
+    """Print a compact failure tail so users do not need to open summary.txt."""
+    print(f"Last {FAILURE_TAIL_LINES} log lines:", flush=True)
+    tail = _log_tail(log_path)
+    if tail:
+        print(tail, flush=True)
+    else:
+        print("(log is empty)", flush=True)
+
+
 def _strict_log_issues(log_path: Path) -> list[str]:
     """Return serious runtime diagnostics that should fail a workflow run."""
     issues: list[str] = []
@@ -190,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     base_env = os.environ.copy()
     real_host = args.real_host or args.real_host_interactive
     env = base_env.copy()
+    env.setdefault("PYTHONFAULTHANDLER", "1")
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     if args.real_gpt55:
         env["WISP_RUN_REAL_GPT55_TESTS"] = "1"
@@ -198,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     python = _preferred_python(root)
     if args.all_tests:
         print("Mode: full pytest suite (--all-tests).", flush=True)
-        cmd = [python, "-m", "pytest", *extra]
+        cmd = _pytest_cmd(python, *extra)
     else:
         marker = "workflow and not real_host" if real_host else "workflow"
         print(
@@ -206,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
             f"({len(WORKFLOW_TESTS)} entry files; use --all-tests for the full pytest suite).",
             flush=True,
         )
-        cmd = [python, "-m", "pytest", "-m", marker, *WORKFLOW_TESTS, *extra]
+        cmd = _pytest_cmd(python, "-m", marker, *WORKFLOW_TESTS, *extra)
 
     summary_lines = [
         "Wisp app workflow test run",
@@ -234,12 +275,12 @@ def main(argv: list[str] | None = None) -> int:
         status = 1
     summary_lines.extend(
         [
-            f"pytest-main.exit_code={status}",
+            f"pytest-main.exit_code={_describe_exit_status(status)}",
             f"pytest-main.log={main_log}",
         ]
     )
     if status != 0 or not real_host:
-        summary_lines.append(f"final_exit_code={status}")
+        summary_lines.append(f"final_exit_code={_describe_exit_status(status)}")
         if status != 0:
             summary_lines.append(f"failure_log={main_log}")
             _write_failure_pointer(root, main_log)
@@ -247,9 +288,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Summary:", summary_path, flush=True)
         if status != 0:
             print("Failure log:", main_log, flush=True)
+            _print_failure_tail(main_log)
         return status
 
     host_env = base_env.copy()
+    host_env.setdefault("PYTHONFAULTHANDLER", "1")
     host_env.pop("QT_QPA_PLATFORM", None)
     host_env["WISP_RUN_REAL_HOST_TESTS"] = "1"
     if args.real_host_interactive:
@@ -257,16 +300,16 @@ def main(argv: list[str] | None = None) -> int:
     host_extra = _with_cache_disabled(
         _with_default_basetemp(_normalize_pytest_args(args.pytest_args), root)
     )
-    host_cmd = [python, "-m", "pytest", "-m", "real_host", *REAL_HOST_TESTS, *host_extra]
+    host_cmd = _pytest_cmd(python, "-m", "real_host", *REAL_HOST_TESTS, *host_extra)
     host_status, host_log = _run_logged("pytest-real-host", host_cmd, root=root, env=host_env, log_dir=log_dir)
     host_issues = _append_log_issues(summary_lines, "pytest-real-host", host_log)
     if host_status == 0 and host_issues:
         host_status = 1
     summary_lines.extend(
         [
-            f"pytest-real-host.exit_code={host_status}",
+            f"pytest-real-host.exit_code={_describe_exit_status(host_status)}",
             f"pytest-real-host.log={host_log}",
-            f"final_exit_code={host_status}",
+            f"final_exit_code={_describe_exit_status(host_status)}",
         ]
     )
     if host_status != 0:
@@ -276,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     print("Summary:", summary_path, flush=True)
     if host_status != 0:
         print("Failure log:", host_log, flush=True)
+        _print_failure_tail(host_log)
     return host_status
 
 

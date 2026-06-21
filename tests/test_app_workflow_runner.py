@@ -32,3 +32,28 @@ def test_strict_log_scan_allows_expected_workflow_noise(tmp_path):
     )
 
     assert run_app_workflow_tests._strict_log_issues(log) == []
+
+
+def test_pytest_command_enables_startup_faulthandler():
+    """Pytest is launched with faulthandler before test imports run."""
+    cmd = run_app_workflow_tests._pytest_cmd("/venv/bin/python", "-q")
+
+    assert cmd[:4] == ["/venv/bin/python", "-X", "faulthandler", "-m"]
+    assert cmd[4:] == ["pytest", "-q"]
+
+
+def test_exit_status_describes_native_crash_codes():
+    """Native crash exit codes are translated in summaries."""
+    assert "SIGSEGV" in run_app_workflow_tests._describe_exit_status(11)
+    assert "SIGSEGV" in run_app_workflow_tests._describe_exit_status(-11)
+    assert "SIGABRT" in run_app_workflow_tests._describe_exit_status(6)
+
+
+def test_log_tail_returns_last_lines(tmp_path):
+    """Failure output includes the useful end of the pytest log."""
+    log = tmp_path / "pytest.log"
+    log.write_text("\n".join(f"line {i}" for i in range(100)), encoding="utf-8")
+
+    tail = run_app_workflow_tests._log_tail(log, max_lines=3)
+
+    assert tail == "line 97\nline 98\nline 99"
