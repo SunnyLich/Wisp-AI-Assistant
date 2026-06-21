@@ -12,6 +12,15 @@ class LlmFallbackTests(unittest.TestCase):
     def setUp(self):
         """Verify set up behavior."""
         llm._route_capabilities.clear()
+        self._env_patch = patch.dict(
+            llm.macos_safety.os.environ,
+            {
+                "WISP_MACOS_OPENAI_COMPAT_STREAMING": "1",
+                "WISP_MACOS_ENABLE_OPENAI_TOOLS": "1",
+            },
+        )
+        self._env_patch.start()
+        self.addCleanup(self._env_patch.stop)
 
     def test_route_candidates_dedupes_primary_and_fallbacks(self):
         """Verify route candidates dedupes primary and fallbacks behavior."""
@@ -1488,8 +1497,8 @@ class LlmFallbackTests(unittest.TestCase):
             """Client for fake client communication."""
             messages = FakeMessages()
 
-        fake_anthropic = type("FakeAnthropicModule", (), {"Anthropic": lambda self=None, api_key=None: FakeClient()})()
-        with patch("core.llm_clients.client._check_route_config_with_credentials"), patch.dict("sys.modules", {"anthropic": fake_anthropic}):
+        with patch("core.llm_clients.client._check_route_config_with_credentials"), \
+             patch.object(llm.sdk_clients, "anthropic_client", return_value=FakeClient()):
             ok, message = llm.test_route_connection(
                 "anthropic",
                 "claude-sonnet-4-5",

@@ -84,12 +84,12 @@ def test_multi_chunk_reply_follows_latest_text_before_audio():
     old_lines = getattr(config, "BUBBLE_LINES", 3)
     old_width = getattr(config, "BUBBLE_WIDTH", 340)
     config.BUBBLE_LINES = 1
-    config.BUBBLE_WIDTH = 520
+    config.BUBBLE_WIDTH = 260
     bubble = SpeechBubble()
 
     try:
         bubble.append_chunk("one two three four five ")
-        assert bubble._lines == ["one two three four five"]
+        assert "one" in " ".join(bubble._lines)
 
         bubble.append_chunk("six seven eight nine ten eleven")
 

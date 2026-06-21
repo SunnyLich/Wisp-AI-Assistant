@@ -1,9 +1,12 @@
 """Windows hotkey backend regression tests."""
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows hotkey backend is tested on Windows")
 def test_win32_stop_waits_for_message_pump_to_unregister(monkeypatch):
     """Verify stop waits for the pump thread so replacement keybinds can register."""
     import core.hotkeys as hotkeys

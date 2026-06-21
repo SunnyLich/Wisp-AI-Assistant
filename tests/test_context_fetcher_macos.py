@@ -29,7 +29,13 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
             {"process_name": "Finder", "pid": 202, "frontmost": False, "title": "Downloads"},
         ]
 
-        with patch("core.platform.macos_native.list_document_windows", return_value=rows):
+        def fake_process(pid: int):
+            """Return a process name matching the fake macOS window owner."""
+            names = {101: "TextEdit", 202: "Finder"}
+            return types.SimpleNamespace(name=lambda: names.get(pid, ""))
+
+        with patch("core.platform.macos_native.list_document_windows", return_value=rows), \
+             patch("psutil.Process", side_effect=fake_process):
             wins = self.cf._enumerate_open_doc_windows()
 
         self.assertEqual(len(wins), 1)

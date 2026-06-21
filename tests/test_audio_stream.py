@@ -62,6 +62,7 @@ class AudioStreamTests(unittest.TestCase):
         self._patches = [
             mock.patch.object(config, "TTS_PROVIDER", "cartesia"),
             mock.patch.object(config, "TTS_PLAYBACK_RATE", 1.0),
+            mock.patch.dict(audio.macos_safety.os.environ, {"WISP_MACOS_ENABLE_AUDIO": "1"}),
         ]
         for p in self._patches:
             p.start()
@@ -188,7 +189,8 @@ class FillerPrecacheTests(unittest.TestCase):
     def test_prewarm_decodes_wavs_into_memory(self):
         """Verify prewarm decodes wavs into memory behavior."""
         fake_clip = (np.zeros(4, dtype=np.float32), 44100)
-        with mock.patch.object(audio.os.path, "isdir", side_effect=lambda path: path == config.FILLER_AUDIO_DIR), \
+        with mock.patch.dict(audio.macos_safety.os.environ, {"WISP_MACOS_ENABLE_AUDIO": "1"}), \
+             mock.patch.object(audio.os.path, "isdir", side_effect=lambda path: path == config.FILLER_AUDIO_DIR), \
              mock.patch.object(audio.os, "listdir", return_value=["a.wav", "b.txt", "c.WAV"]), \
              mock.patch.object(audio.sf, "read", return_value=fake_clip) as read:
             audio.prewarm_filler()
@@ -213,7 +215,8 @@ class FillerPrecacheTests(unittest.TestCase):
                 self._target(*self._args)
 
         played = []
-        with mock.patch.object(audio.threading, "Thread", SyncThread), \
+        with mock.patch.dict(audio.macos_safety.os.environ, {"WISP_MACOS_ENABLE_AUDIO": "1"}), \
+             mock.patch.object(audio.threading, "Thread", SyncThread), \
              mock.patch.object(audio.sd, "play", side_effect=lambda *a, **k: played.append(a)), \
              mock.patch.object(audio.sd, "wait"), \
              mock.patch.object(audio.sf, "read", side_effect=AssertionError("disk read on hotkey path")):
