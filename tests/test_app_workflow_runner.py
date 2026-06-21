@@ -57,3 +57,30 @@ def test_log_tail_returns_last_lines(tmp_path):
     tail = run_app_workflow_tests._log_tail(log, max_lines=3)
 
     assert tail == "line 97\nline 98\nline 99"
+
+
+def test_all_test_files_returns_sorted_test_modules(tmp_path):
+    """Isolated all-tests mode discovers test files deterministically."""
+    tests_dir = tmp_path / "tests"
+    nested = tests_dir / "runtime"
+    nested.mkdir(parents=True)
+    (tests_dir / "test_b.py").write_text("", encoding="utf-8")
+    (tests_dir / "helper.py").write_text("", encoding="utf-8")
+    (nested / "test_a.py").write_text("", encoding="utf-8")
+
+    assert run_app_workflow_tests._all_test_files(tmp_path) == [
+        "tests/runtime/test_a.py",
+        "tests/test_b.py",
+    ]
+
+
+def test_named_basetemp_is_per_subprocess(tmp_path):
+    """Isolated subprocesses get separate temp roots unless one is supplied."""
+    args = run_app_workflow_tests._with_named_basetemp(["-q"], tmp_path, "tests/foo.py")
+
+    assert args[:1] == ["-q"]
+    assert args[-2] == "--basetemp"
+    assert args[-1].endswith("tests_foo_py")
+    assert run_app_workflow_tests._with_named_basetemp(
+        ["--basetemp", "custom"], tmp_path, "tests/foo.py"
+    ) == ["--basetemp", "custom"]

@@ -95,6 +95,25 @@ def _with_cache_disabled(args: list[str]) -> list[str]:
     return ["-p", "no:cacheprovider", *args]
 
 
+def _with_named_basetemp(args: list[str], root: Path, name: str) -> list[str]:
+    """Add a stable per-subprocess basetemp unless the caller supplied one."""
+    if any(arg == "--basetemp" or arg.startswith("--basetemp=") for arg in args):
+        return args
+    basetemp = root / ".tmp_pytest" / _safe_name(name)
+    basetemp.parent.mkdir(parents=True, exist_ok=True)
+    return [*args, "--basetemp", str(basetemp)]
+
+
+def _all_test_files(root: Path) -> list[str]:
+    """Return pytest test files for isolated full-suite execution."""
+    test_root = root / "tests"
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in test_root.rglob("test*.py")
+        if path.is_file()
+    )
+
+
 def _write_failure_pointer(root: Path, log_path: Path) -> None:
     log_root = root / LOG_ROOT_NAME
     log_root.mkdir(parents=True, exist_ok=True)
@@ -192,6 +211,55 @@ def _append_log_issues(summary_lines: list[str], name: str, log_path: Path) -> l
     return issues
 
 
+def _run_all_tests_isolated(
+    *,
+    python: str,
+    root: Path,
+    env: dict[str, str],
+    log_dir: Path,
+    extra: list[str],
+    summary_lines: list[str],
+) -> tuple[int, Path]:
+    """Run every test file in a separate process to isolate native crashes."""
+    test_files = _all_test_files(root)
+    aggregate_log = log_dir / "pytest-main.log"
+    aggregate_lines = [
+        "name=pytest-main",
+        f"cwd={root}",
+        "mode=isolated-per-file",
+        f"test_file_count={len(test_files)}",
+        "",
+    ]
+    summary_lines.append(f"pytest-main.isolated_files={len(test_files)}")
+    for index, test_file in enumerate(test_files, start=1):
+        print(f"Isolated pytest file {index}/{len(test_files)}: {test_file}", flush=True)
+        run_name = f"pytest-main-{index:03d}-{test_file}"
+        per_extra = _with_named_basetemp(
+            extra,
+            root,
+            f"app_workflows_{os.getpid()}_{index:03d}_{test_file}",
+        )
+        cmd = _pytest_cmd(python, test_file, *per_extra)
+        status, log_path = _run_logged(run_name, cmd, root=root, env=env, log_dir=log_dir)
+        issues = _append_log_issues(summary_lines, run_name, log_path)
+        if status == 0 and issues:
+            status = 1
+        aggregate_lines.append(
+            f"{run_name}.exit_code={_describe_exit_status(status)}"
+        )
+        aggregate_lines.append(f"{run_name}.log={log_path}")
+        summary_lines.append(f"{run_name}.exit_code={_describe_exit_status(status)}")
+        summary_lines.append(f"{run_name}.log={log_path}")
+        if status != 0:
+            aggregate_lines.append(f"failure_log={log_path}")
+            aggregate_lines.append(f"exit_code={status}")
+            aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
+            return status, log_path
+    aggregate_lines.append("exit_code=0")
+    aggregate_log.write_text("\n".join(aggregate_lines) + "\n", encoding="utf-8")
+    return 0, aggregate_log
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the Wisp app user-workflow test suite.",
@@ -217,6 +285,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Run the full pytest suite instead of only workflow-marked tests.",
     )
     parser.add_argument(
+        "--single-process",
+        action="store_true",
+        help="Run --all-tests in one pytest process instead of macOS-safe per-file subprocesses.",
+    )
+    parser.add_argument(
         "pytest_args",
         nargs=argparse.REMAINDER,
         help="Extra pytest arguments, optionally after --.",
@@ -235,20 +308,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.real_gpt55:
         env["WISP_RUN_REAL_GPT55_TESTS"] = "1"
 
-    extra = _with_cache_disabled(_with_default_basetemp(_normalize_pytest_args(args.pytest_args), root))
+    extra = _with_cache_disabled(_normalize_pytest_args(args.pytest_args))
     python = _preferred_python(root)
-    if args.all_tests:
-        print("Mode: full pytest suite (--all-tests).", flush=True)
-        cmd = _pytest_cmd(python, *extra)
-    else:
-        marker = "workflow and not real_host" if real_host else "workflow"
-        print(
-            "Mode: workflow suite only "
-            f"({len(WORKFLOW_TESTS)} entry files; use --all-tests for the full pytest suite).",
-            flush=True,
-        )
-        cmd = _pytest_cmd(python, "-m", marker, *WORKFLOW_TESTS, *extra)
-
     summary_lines = [
         "Wisp app workflow test run",
         f"started={_dt.datetime.now().isoformat(timespec='seconds')}",
@@ -257,6 +318,26 @@ def main(argv: list[str] | None = None) -> int:
         f"args={' '.join(argv if argv is not None else sys.argv[1:])}",
         "",
     ]
+    isolate_all_tests = args.all_tests and sys.platform == "darwin" and not args.single_process
+    if args.all_tests:
+        if isolate_all_tests:
+            print(
+                "Mode: full pytest suite (--all-tests, isolated per test file on macOS).",
+                flush=True,
+            )
+        else:
+            print("Mode: full pytest suite (--all-tests).", flush=True)
+            extra = _with_default_basetemp(extra, root)
+            cmd = _pytest_cmd(python, *extra)
+    else:
+        marker = "workflow and not real_host" if real_host else "workflow"
+        print(
+            "Mode: workflow suite only "
+            f"({len(WORKFLOW_TESTS)} entry files; use --all-tests for the full pytest suite).",
+            flush=True,
+        )
+        extra = _with_default_basetemp(extra, root)
+        cmd = _pytest_cmd(python, "-m", marker, *WORKFLOW_TESTS, *extra)
     if args.real_gpt55:
         print("Real GPT 5.5 workflow test enabled; this may spend tokens.", flush=True)
     if real_host:
@@ -269,10 +350,20 @@ def main(argv: list[str] | None = None) -> int:
             )
     if args.real_host_interactive:
         print("Interactive real host tests enabled; keep the machine idle while keyboard/paste checks run.", flush=True)
-    status, main_log = _run_logged("pytest-main", cmd, root=root, env=env, log_dir=log_dir)
-    main_issues = _append_log_issues(summary_lines, "pytest-main", main_log)
-    if status == 0 and main_issues:
-        status = 1
+    if isolate_all_tests:
+        status, main_log = _run_all_tests_isolated(
+            python=python,
+            root=root,
+            env=env,
+            log_dir=log_dir,
+            extra=extra,
+            summary_lines=summary_lines,
+        )
+    else:
+        status, main_log = _run_logged("pytest-main", cmd, root=root, env=env, log_dir=log_dir)
+        main_issues = _append_log_issues(summary_lines, "pytest-main", main_log)
+        if status == 0 and main_issues:
+            status = 1
     summary_lines.extend(
         [
             f"pytest-main.exit_code={_describe_exit_status(status)}",

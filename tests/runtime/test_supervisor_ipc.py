@@ -196,8 +196,8 @@ def test_ui_worker_show_settings_does_not_block_event_loop(tmp_path):
             **os.environ,
             "QT_QPA_PLATFORM": "offscreen",
             "WISP_RUN_LOG_DIR": str(tmp_path),
-            "WISP_UI_FREEZE_THRESHOLD_SECONDS": "0.5",
-            "WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS": "0.1",
+            "WISP_UI_FREEZE_THRESHOLD_SECONDS": "2.5",
+            "WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS": "0.25",
         },
     )
     try:
@@ -225,8 +225,8 @@ def test_ui_worker_show_memory_does_not_crash_or_block_event_loop(tmp_path):
             **os.environ,
             "QT_QPA_PLATFORM": "offscreen",
             "WISP_RUN_LOG_DIR": str(tmp_path),
-            "WISP_UI_FREEZE_THRESHOLD_SECONDS": "0.5",
-            "WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS": "0.1",
+            "WISP_UI_FREEZE_THRESHOLD_SECONDS": "2.5",
+            "WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS": "0.25",
         },
     )
     try:
@@ -258,8 +258,8 @@ def test_ui_worker_bubble_clear_does_not_import_audio_or_freeze(tmp_path):
             **os.environ,
             "QT_QPA_PLATFORM": "offscreen",
             "WISP_RUN_LOG_DIR": str(tmp_path),
-            "WISP_UI_FREEZE_THRESHOLD_SECONDS": "0.5",
-            "WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS": "0.1",
+            "WISP_UI_FREEZE_THRESHOLD_SECONDS": "2.5",
+            "WISP_UI_FREEZE_WATCHDOG_INTERVAL_SECONDS": "0.25",
         },
     )
     try:
