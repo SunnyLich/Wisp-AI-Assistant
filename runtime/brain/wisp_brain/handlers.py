@@ -1134,6 +1134,7 @@ def brain_llm_test(
     route_name: str = "LLM",
     image: bool = False,
     custom_base_url: str = "",
+    include_fallbacks: bool = True,
 ) -> dict[str, Any]:
     """Validate a configured LLM route and its fallback chain for Settings."""
     selected_provider = provider.strip().lower()
@@ -1141,7 +1142,11 @@ def brain_llm_test(
     label = route_name.strip() or "LLM"
     from core.llm_clients.routes import route_candidates
 
-    routes = route_candidates(selected_provider, selected_model, fallbacks)
+    routes = route_candidates(
+        selected_provider,
+        selected_model,
+        fallbacks if include_fallbacks else "",
+    )
     if not routes:
         return {
             "ok": False,

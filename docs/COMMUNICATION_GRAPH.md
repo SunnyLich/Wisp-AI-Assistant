@@ -41,7 +41,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Config["config.py\n.env and typed settings"]
+    Config["config.py\n.env, typed settings, localized intents"]
     Paths["core.system.paths\ncanonical data paths"]
     SecretStore["core.secret_store\nkeychain/env secret access"]
     LLM["core.llm_clients\nmodel routing and streaming"]
@@ -52,7 +52,7 @@ flowchart TB
     Agent["core.agent\nscoped background tasks"]
     Context["core.context_fetcher / core.capture\nambient context and screenshots"]
     Audio["core.audio / core.tts / core.stt\nplayback, speech, transcription"]
-    UI["ui.*\nQt widgets and dialogs"]
+    UI["ui.*\nQt widgets, settings, status dialogs"]
 
     Config --> Paths
     Config --> SecretStore
@@ -122,6 +122,30 @@ flowchart LR
     AgentCore --> LLMCore
 ```
 
+## Settings And Health Flow
+
+```mermaid
+sequenceDiagram
+    participant Settings as ui.settings_panel.dialog
+    participant Supervisor as FlowController
+    participant Setup as core.setup_check
+    participant UI as wisp-ui
+    participant Brain as wisp-brain
+    participant Audio as wisp-audio
+    participant Native as wisp-native
+
+    Settings->>Supervisor: ui.health.requested(source=settings)
+    Supervisor->>Setup: run_setup_check()
+    Setup-->>Supervisor: static setup rows
+    Supervisor-->>UI: ui.health.show(title="Setup check")
+
+    UI->>Supervisor: ui.health.requested()
+    Supervisor->>Brain: brain.llm.test(include_fallbacks=false)
+    Supervisor->>Audio: audio.stt.is_ready / TTS probe when enabled
+    Supervisor->>Native: permissions and screenshot probes
+    Supervisor-->>UI: ui.health.show(title="Health Status")
+```
+
 ## Boundary Rules
 
 - UI work belongs in `wisp-ui` and `ui/`.
@@ -131,3 +155,5 @@ flowchart LR
   `wisp-brain` and `core/`.
 - The supervisor coordinates flow and lifecycle, but should avoid owning heavy
   domain logic.
+- Settings setup checks should stay static and fast; live probes belong to the
+  general health-status path.

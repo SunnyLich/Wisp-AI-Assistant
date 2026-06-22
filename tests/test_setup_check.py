@@ -33,3 +33,25 @@ def test_setup_check_reports_core_readiness(monkeypatch):
     assert by_name["Speech to text"]["status"] == "pass"
     assert by_name["Hotkeys"]["status"] == "pass"
     assert by_name["Privacy redaction"]["status"] == "pass"
+
+
+def test_setup_check_treats_unconfigured_stt_as_optional(monkeypatch):
+    """Missing STT settings should not warn when voice/dictation are unused."""
+    import config
+
+    monkeypatch.setattr(config, "reload", lambda: None)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config, "LLM_MODEL", "llama-test", raising=False)
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setattr(config, "STT_MODEL", "", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_SNIP", "ctrl+alt+q", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_VOICE", "", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_ADD_CONTEXT", "", raising=False)
+    monkeypatch.setattr(config, "CALLER_ROWS", [], raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+
+    rows = setup_check.run_setup_check()
+    by_name = {row["name"]: row for row in rows}
+
+    assert by_name["Speech to text"]["status"] == "pass"
+    assert "voice and dictation can stay off" in by_name["Speech to text"]["message"]

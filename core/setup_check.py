@@ -77,9 +77,13 @@ def run_setup_check() -> list[dict[str, str]]:
     rows.append(
         {
             "name": "Speech to text",
-            "status": _status(bool(stt_model)),
-            "message": f"STT model configured: {stt_model or 'missing'}.",
-            "recommendation": "" if stt_model else recommendation_for("stt speech transcribe"),
+            "status": "pass",
+            "message": (
+                f"STT model configured: {stt_model}."
+                if stt_model
+                else "STT is not configured; voice and dictation can stay off."
+            ),
+            "recommendation": "",
         }
     )
 

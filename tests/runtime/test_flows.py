@@ -2401,12 +2401,57 @@ def test_health_status_request_collects_live_rows_and_warns(monkeypatch):
     flow._last_privacy_report = {"count": 1, "categories": {"email": 1}}
     ui.emit("ui.health.requested", {})
 
+    llm_params = brain.last_call("brain.llm.test")["params"]
+    assert llm_params["include_fallbacks"] is False
+
     rows = ui.last_call("ui.health.show")["params"]["rows"]
     names = {row["name"] for row in rows}
-    assert {"Config", "UI worker", "Brain worker", "Audio worker", "Native worker", "LLM", "STT", "TTS", "Screenshot capture", "Privacy"} <= names
-    assert any(row["name"] == "STT" and row["status"] == "warn" for row in rows)
+    assert {
+        "Config",
+        "UI worker",
+        "Brain worker",
+        "Audio worker",
+        "Native worker",
+        "LLM",
+        "STT",
+        "TTS",
+        "Screenshot capture",
+        "Privacy",
+    } <= names
+    assert len(ui.calls_for("ui.health.show")) == 1
+    assert any(row["name"] == "STT" and row["status"] == "ok" for row in rows)
+    assert any(row["name"] == "TTS" and row["status"] == "ok" for row in rows)
     assert any(row["name"] == "Screenshot capture" and row["status"] == "fail" for row in rows)
     assert "Health issue:" in ui.last_call("ui.reply.notice")["params"]["text"]
+
+
+@pytest.mark.workflow
+def test_settings_setup_check_uses_fast_static_rows(monkeypatch):
+    """Settings setup check avoids live probes so the dialog appears promptly."""
+    import core.setup_check as setup_check
+
+    static_rows = [
+        {
+            "name": "Config",
+            "status": "ok",
+            "message": "Static config check passed.",
+            "recommendation": "",
+        }
+    ]
+    monkeypatch.setattr(setup_check, "run_setup_check", lambda: static_rows)
+
+    ui = FakeWorker({"ui.health.show": lambda _params: {"queued": True}})
+    brain = FakeWorker({"brain.llm.test": lambda _params: {"ok": True}})
+    audio = FakeWorker({"audio.stt.is_ready": lambda _params: {"ready": False}})
+    native = FakeWorker({"native.permissions.snapshot": lambda _params: {}})
+
+    _flow, _native, ui, brain, audio = make_flow(native=native, ui=ui, brain=brain, audio=audio)
+    ui.emit("ui.health.requested", {"source": "settings"})
+
+    assert ui.last_call("ui.health.show")["params"]["rows"] == static_rows
+    assert ui.last_call("ui.health.show")["params"]["title"] == "Setup check"
+    assert not brain.calls_for("brain.llm.test")
+    assert not audio.calls_for("audio.stt.is_ready")
 
 
 def test_off_tool_override_beats_context_dropdown():

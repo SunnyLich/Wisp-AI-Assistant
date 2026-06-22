@@ -4,9 +4,8 @@ This document is the practical entry point for working on Wisp. The root
 `README.md` explains the product; this file explains how the codebase is put
 together, how to run it locally, and where to look when changing behavior.
 
-For a guided visual walkthrough, open `docs/factory_tour/index.html`. It treats
-the app like a factory tour, with tabs for each runtime floor and links into the
-source files.
+For the current architecture map, start with `docs/OVERVIEW.md`, then use
+`docs/COMMUNICATION_GRAPH.md` for process and feature-flow diagrams.
 
 ## Quick Setup
 
@@ -49,7 +48,8 @@ to keep full runtime logs during local debugging.
   It starts isolated worker processes, installs logging/crash diagnostics, and
   wires product flows through `FlowController`.
 - `config.py` loads `.env`, resolves secrets, builds typed settings snapshots,
-  and preserves compatibility module globals for older callers.
+  localizes default caller intents by assistant language, and preserves
+  compatibility module globals for older callers.
 
 ## Code Map
 
@@ -83,7 +83,7 @@ Workers communicate with newline-delimited JSON over stdin/stdout. The
 supervisor assigns request ids, matches responses, forwards scoped stream
 events, captures stderr, and shuts workers down together.
 
-See `docs/factory_tour/index.html` for a visual factory tour, and
+See `docs/OVERVIEW.md` for the compact ownership map and
 `docs/COMMUNICATION_GRAPH.md` for diagrams of the process graph and common
 feature flows.
 
@@ -101,6 +101,15 @@ feature flows.
   handlers; query-time retrieval happens in brain/core memory code.
 - Addons: brain discovers enabled addons, starts addon host processes, applies
   hooks/tools/actions, and reports addon-manager state back to UI.
+- Settings setup check: Settings asks the supervisor for `ui.health.requested`
+  with `source=settings`; the supervisor returns the lightweight
+  `core.setup_check.run_setup_check()` rows without live provider/audio probes.
+- Health status: tray/menu diagnostics collect live worker, LLM, STT/TTS,
+  screenshot, and privacy rows. The LLM probe checks the primary route only;
+  fallback chains remain part of normal request routing.
+- Agent tasks: UI task/history/approval events flow through the supervisor to
+  `wisp-brain`, where `core.agent.runner` owns execution and scoped workspace
+  access.
 
 ## Configuration And Data
 
@@ -110,6 +119,9 @@ feature flows.
 - `build_logs/` stores runtime logs and worker stderr logs during local runs.
 - Secrets are loaded through `core.secret_store` and provider-specific auth
   helpers under `core/auth/`.
+- App UI language and assistant response language are separate settings.
+  `ASSISTANT_LANGUAGE=Chinese (Traditional)` uses Traditional Chinese default
+  intent labels/prompts and adds Traditional Chinese response guidance.
 
 ## Tests And Checks
 
@@ -160,6 +172,9 @@ bash scripts/run_macos_tests.command
 - UI freeze reports are emitted by the UI worker watchdog when the Qt event loop
   or IPC pump stalls.
 - Worker stderr is captured by the supervisor and surfaced in timeout errors.
+- Settings Apply reloads config, resets model/TTS clients, refreshes theme and
+  translations, then shows non-fatal capability warnings in a non-blocking
+  dialog after dirty state has been cleared.
 
 ## Change Guidelines
 

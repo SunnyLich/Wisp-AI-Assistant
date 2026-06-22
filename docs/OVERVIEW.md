@@ -11,7 +11,8 @@ OS work, audio, and brain/model work into isolated worker processes.
   hotkeys, context buffering, memory, intent flow, chat windows, and voice/snip
   interactions.
 - `config.py` loads runtime configuration from `.env` and keychain-backed
-  secrets.
+  secrets, builds typed settings snapshots, and localizes default caller
+  intents from the assistant language setting.
 - `core/` contains service and integration code: LLM routing, audio, TTS/STT,
   capture, context fetching, memory, auth, tool discovery, and agent execution.
 - `core/system/` defines canonical paths, platform setup, and environment-file
@@ -25,7 +26,8 @@ OS work, audio, and brain/model work into isolated worker processes.
 - `core/memory_store/` contains memory storage and explicit memory-command
   parsing.
 - `ui/` contains Qt widgets and dialogs: the icon overlay, chat window,
-  settings, intent picker, snip overlay, memory viewer, and agent task UI.
+  settings, intent picker, snip overlay, memory viewer, setup/status dialogs,
+  and agent task UI.
 - `ui/agent/`, `ui/settings_panel/`, and `ui/shared/` group the largest UI
   domains and shared widget helpers.
 - Compatibility modules should stay thin. New runtime work belongs under
@@ -43,8 +45,8 @@ OS work, audio, and brain/model work into isolated worker processes.
 
 Addons belong in the shared Python runtime layer: Python packages under
 `addons/<id>/` with an `addon.toml` manifest. Each enabled addon runs in its own
-Python host process and communicates with Wisp over JSON IPC. Both Windows and
-macOS discover the same addon metadata, hooks, tray actions, settings, and
+Python host process and communicates with Wisp over JSON IPC. Windows, macOS,
+and Linux discover the same addon metadata, hooks, tray actions, settings, and
 model-callable tools from that shared layer.
 
 The old `core.addon_manager` import path remains as a compatibility facade for
@@ -63,6 +65,24 @@ callers and older addon code, but new work should use addon naming and
    routes where enabled.
 5. Reply chunks feed the overlay/chat UI and TTS stream while memory receives
    the completed exchange.
+
+## Settings, Health, And Localization
+
+- Settings setup checks call `core.setup_check.run_setup_check()` through the
+  supervisor with `source=settings`. This path is intentionally lightweight and
+  does not import provider SDKs, audio stacks, or STT.
+- Tray/menu health status collects live worker, LLM, STT/TTS, screenshot, and
+  privacy rows. The LLM health probe checks the primary route only; fallback
+  chains are still used by normal model requests.
+- `TTS_PROVIDER=none` and an empty STT model are valid text-only configurations;
+  setup/status rows should explain that voice and dictation can remain off.
+- `APP_LANGUAGE` controls UI translations. `ASSISTANT_LANGUAGE` controls model
+  response guidance and localizes built-in caller intents when the defaults have
+  not been customized. Traditional Chinese is available as
+  `Chinese (Traditional)`.
+- Settings Apply reloads config, resets route/TTS clients, refreshes theme and
+  translations, and shows non-fatal capability warnings after the saved state is
+  no longer dirty.
 
 ## Quality Notes
 

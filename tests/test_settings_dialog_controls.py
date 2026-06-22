@@ -282,7 +282,7 @@ def test_app_tab_exposes_assistant_language_setting():
             dialog._fields["ASSISTANT_LANGUAGE"].itemData(i)
             for i in range(dialog._fields["ASSISTANT_LANGUAGE"].count())
         }
-        assert {"", "match_user", "English", "Chinese", "Spanish"} <= values
+        assert {"", "match_user", "English", "Chinese", "Chinese (Traditional)", "Spanish"} <= values
     finally:
         config.APP_LANGUAGE = old_language
         i18n.set_language(app=app)
@@ -1349,6 +1349,72 @@ def test_settings_dirty_marker_enables_apply_after_change():
         app_index = dialog._tab_base_names.index("App")
         assert dialog._tabs.tabText(app_index).endswith("*")
         assert dialog._fields["CHAT_ELABORATE_PROMPT"].property("dirty") is True
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_apply_clears_dirty_before_showing_save_warning(monkeypatch):
+    """Successful Apply should clear dirty state before non-fatal warnings appear."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+
+    import config
+    from core import filler_bake, tts
+    from core.llm_clients import client as llm_client
+    from ui.settings_panel import dialog as settings_dialog
+    from ui.settings_panel.dialog import SettingsDialog, _get, _set
+    from ui.shared import theme
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        apply_btn = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert apply_btn is not None
+
+        combo = dialog._fields["ASSISTANT_LANGUAGE"]
+        new_language = "Chinese (Traditional)" if _get(combo) != "Chinese (Traditional)" else "English"
+        _set(combo, new_language)
+        app.processEvents()
+        assert apply_btn.isEnabled()
+
+        def fake_save():
+            row = dialog._caller_blocks[0]["intent_rows"][0]
+            row["label"].setText("\u9019\u662f\u4ec0\u9ebc\uff1f")
+            row["prompt"].setText("\u9019\u662f\u4ec0\u9ebc\uff1f\u8acb\u7528\u7e41\u9ad4\u4e2d\u6587\u89e3\u91cb\u3002")
+            dialog._last_save_warnings = ["Non-fatal model capability warning."]
+            return True
+
+        opened = []
+
+        def fake_open(message_box):
+            opened.append({
+                "dirty_keys": set(dialog._dirty_keys),
+                "apply_enabled": apply_btn.isEnabled(),
+                "status": dialog._status_lbl.text(),
+                "text": message_box.text(),
+            })
+
+        dialog._do_save = fake_save
+        monkeypatch.setattr(config, "reload", lambda: None)
+        monkeypatch.setattr(llm_client, "reset_clients", lambda: None)
+        monkeypatch.setattr(tts, "reset_connections", lambda: None)
+        monkeypatch.setattr(theme, "apply_app_theme", lambda: None)
+        monkeypatch.setattr(filler_bake, "bake_in_background", lambda: None)
+        monkeypatch.setattr(settings_dialog, "_read_env", lambda: {"ASSISTANT_LANGUAGE": new_language})
+        monkeypatch.setattr(QMessageBox, "open", fake_open)
+
+        assert dialog._apply_settings() is True
+        app.processEvents()
+
+        assert opened
+        assert opened[0]["dirty_keys"] == set()
+        assert opened[0]["apply_enabled"] is False
+        assert not opened[0]["status"].startswith("Unsaved changes")
+        assert dialog._dirty_keys == set()
+        assert apply_btn.isEnabled() is False
     finally:
         dialog.deleteLater()
         app.processEvents()

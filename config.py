@@ -151,6 +151,18 @@ _CALLER_INTENT_TEMPLATES: dict[str, list[list[dict[str, str]]]] = {
             {"key": "d", "label": "优化语气", "hint": "让表达更清楚、更专业", "prompt": "请把下面的文字改写得更专业、更清楚、更顺畅。只输出改写后的文字。"},
         ],
     ],
+    "Chinese (Traditional)": [
+        [
+            {"key": "w", "label": "這是什麼？", "hint": "用簡單中文快速說明", "prompt": "這是什麼？請用清楚、易懂的繁體中文，用 2-3 句話解釋。"},
+            {"key": "a", "label": "簡單解釋", "hint": "像講給新手一樣，不用術語", "prompt": "請盡可能簡單地解釋。假設我完全沒有相關技術背景。"},
+            {"key": "d", "label": "怎麼修？", "hint": "除錯、修復或改寫", "prompt": "我該怎麼修復這個問題？請用繁體中文回答：1，先用一句話說明這是什麼錯誤；2，給出我現在可以照做的簡潔步驟。"},
+        ],
+        [
+            {"key": "w", "label": "修正語法", "hint": "修正錯字和語法", "prompt": "請修正下面文字的語法和拼寫。只輸出修正後的文字。"},
+            {"key": "a", "label": "簡化表達", "hint": "讓文字更容易讀", "prompt": "請把下面的文字改寫得更簡單易懂，適合一般讀者。只輸出改寫後的文字。"},
+            {"key": "d", "label": "優化語氣", "hint": "讓表達更清楚、更專業", "prompt": "請把下面的文字改寫得更專業、更清楚、更順暢。只輸出改寫後的文字。"},
+        ],
+    ],
     "Spanish": [
         [
             {"key": "w", "label": "¿Qué es esto?", "hint": "Explicación rápida y clara", "prompt": "¿Qué es esto? Explícalo en español claro y sencillo en 2-3 frases."},
@@ -358,6 +370,14 @@ def _intent_template_language(language: str | None) -> str:
         "zh": "Chinese",
         "zh-cn": "Chinese",
         "zh-hans": "Chinese",
+        "chinese (traditional)": "Chinese (Traditional)",
+        "traditional chinese": "Chinese (Traditional)",
+        "zh-hant": "Chinese (Traditional)",
+        "zh_hant": "Chinese (Traditional)",
+        "zh-tw": "Chinese (Traditional)",
+        "zh_tw": "Chinese (Traditional)",
+        "zh-hk": "Chinese (Traditional)",
+        "zh_hk": "Chinese (Traditional)",
         "spanish": "Spanish",
         "es": "Spanish",
         "french": "French",
@@ -1161,6 +1181,8 @@ def _assistant_language_instruction(language: str) -> str:
         return ""
     if language == "match_user":
         return "Respond in the same language as the user's latest request unless they ask otherwise."
+    if _intent_template_language(language) == "Chinese (Traditional)":
+        return "Respond in Traditional Chinese unless the user explicitly asks for another language."
     return f"Respond in {language} unless the user explicitly asks for another language."
 
 

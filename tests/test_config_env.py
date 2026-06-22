@@ -164,6 +164,39 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_assistant_language_localizes_traditional_chinese_default_intents(self):
+        """Traditional Chinese gets its own caller templates for built-in intents."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "CALLER_ROWS": [dict(row) for row in config.CALLER_ROWS],
+            "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in list(os.environ):
+                    if key == "ASSISTANT_LANGUAGE" or key.startswith("CALLER_"):
+                        os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "Chinese (Traditional)",
+                    "SYSTEM_PROMPT_UTILITY": "Base prompt.",
+                    "CALLER_COUNT": "2",
+                    "CALLER_1_INTENT_COUNT": "3",
+                    "CALLER_1_INTENT_1_LABEL": "What is this?",
+                    "CALLER_1_INTENT_1_PROMPT": "What is this? Give me a clear, plain-English explanation in 2-3 sentences.",
+                    "CALLER_2_INTENT_COUNT": "3",
+                    "CALLER_2_INTENT_1_LABEL": "Fix grammar",
+                    "CALLER_2_INTENT_1_PROMPT": "Fix the grammar and spelling of the following text. Output ONLY the corrected text.",
+                })
+                config.reload()
+
+            self.assertEqual(config.CALLER_ROWS[0]["intents"][0]["label"], "\u9019\u662f\u4ec0\u9ebc\uff1f")
+            self.assertIn("\u7e41\u9ad4\u4e2d\u6587", config.CALLER_ROWS[0]["intents"][0]["prompt"])
+            self.assertEqual(config.CALLER_ROWS[1]["intents"][0]["label"], "\u4fee\u6b63\u8a9e\u6cd5")
+            self.assertIn("Respond in Traditional Chinese", config.get_system_prompt())
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_assistant_language_preserves_custom_caller_intent_prompt(self):
         """Custom caller prompt text should not be overwritten by templates."""
         previous = {

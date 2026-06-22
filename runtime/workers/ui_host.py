@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -34,6 +35,13 @@ _CONTEXT_SOURCE_LABELS = {
     "Context",
 }
 
+_STATUS_LABELS = {
+    "pass": "PASS",
+    "ok": "OK",
+    "warn": "WARN",
+    "fail": "FAIL",
+}
+
 
 def _context_display_label(label: str) -> str:
     """Translate built-in context source labels while preserving user labels."""
@@ -55,6 +63,38 @@ def _mac_status_text(status: str) -> str:
         if text.startswith(prefix):
             return t(prefix) + text[len(prefix):]
     return t(text)
+
+
+def _status_label(status: str) -> str:
+    """Translate setup/health status labels."""
+    return t(_STATUS_LABELS.get(str(status or "").strip().lower(), "WARN"))
+
+
+def _translate_health_text(text: str) -> str:
+    """Translate health rows, including dynamic provider/model values."""
+    value = str(text or "")
+    if "\n" in value:
+        return "\n".join(_translate_health_text(part) for part in value.splitlines())
+
+    dynamic_patterns: tuple[tuple[str, str], ...] = (
+        (r"^LLM route configured: (?P<route>.+)\.$", "LLM route configured: {route}."),
+        (r"^LLM route incomplete: (?P<route>.+)\.$", "LLM route incomplete: {route}."),
+        (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),
+        (r"^STT model configured: (?P<model>.+)\.$", "STT model configured: {model}."),
+        (r"^(?P<count>\d+) hotkeys configured\.$", "{count} hotkeys configured."),
+        (r"^(?P<label>.+) worker responded\.$", "{label} worker responded."),
+        (r"^(?P<label>.+) worker did not respond\.$", "{label} worker did not respond."),
+        (r"^Accessibility permission: (?P<value>.+)\.$", "Accessibility permission: {value}."),
+        (r"^Screen recording permission: (?P<value>.+)\.$", "Screen recording permission: {value}."),
+        (r"^Microphone permission: (?P<value>.+)\.$", "Microphone permission: {value}."),
+        (r"^TTS synthesis responded with (?P<provider>.+)\.$", "TTS synthesis responded with {provider}."),
+        (r"^LLM test failed: (?P<message>.+)$", "LLM test failed: {message}"),
+    )
+    for pattern, template in dynamic_patterns:
+        match = re.match(pattern, value)
+        if match:
+            return t(template).format(**match.groupdict())
+    return t(value)
 
 
 def _ui_log_dir() -> Path:
@@ -1471,6 +1511,7 @@ class QtProtocolHost:
         self._addons_dialog = None
         self._addon_settings_dialogs: dict[str, Any] = {}
         self._addon_log_dialogs: dict[str, Any] = {}
+        self._status_dialogs: list[Any] = []
         self._agent_run_dialog: MacAgentRunDialog | None = None
         self._agent_history_dialog: MacAgentHistoryDialog | None = None
         from core.conversation_store import store as conversation_store
@@ -2738,25 +2779,43 @@ class QtProtocolHost:
         """Format health/privacy rows for a compact QMessageBox."""
         lines: list[str] = []
         for row in rows or []:
-            status = str(row.get("status") or "warn").upper()
-            name = t(str(row.get("name") or "Check"))
-            message = t(str(row.get("message") or ""))
-            recommendation = t(str(row.get("recommendation") or ""))
+            status = _status_label(str(row.get("status") or "warn"))
+            name = _translate_health_text(str(row.get("name") or "Check"))
+            message = _translate_health_text(str(row.get("message") or ""))
+            recommendation = _translate_health_text(str(row.get("recommendation") or ""))
             block = f"{status} - {name}\n{message}"
             if recommendation:
                 block += f"\n{recommendation}"
             lines.append(block)
         return "\n\n".join(lines) or t("No status details available.")
 
+    def _show_status_dialog(self, title: str, body: str) -> None:
+        """Show a non-blocking status dialog and keep it alive until closed."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QMessageBox
+
+        box = QMessageBox()
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        box.setWindowTitle(t(title))
+        box.setText(body)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        self._status_dialogs.append(box)
+
+        def _forget(_result: int, b=box) -> None:
+            if b in self._status_dialogs:
+                self._status_dialogs.remove(b)
+
+        box.finished.connect(_forget)
+        box.open()
+
     def _health_show(self, rows: list[dict[str, Any]] | None = None, title: str = "") -> dict[str, Any]:
         """Show live setup/health rows in a dismissible window."""
         from PySide6.QtCore import QTimer
-        from PySide6.QtWidgets import QMessageBox
 
         body = self._format_status_rows(rows)
 
         def _open() -> None:
-            QMessageBox.information(None, t(title or "Health Status"), body)
+            self._show_status_dialog(title or "Health Status", body)
 
         QTimer.singleShot(0, _open)
         return {"queued": True, "count": len(rows or [])}
@@ -2764,7 +2823,6 @@ class QtProtocolHost:
     def _privacy_report(self, report: dict[str, Any] | None = None, title: str = "") -> dict[str, Any]:
         """Show privacy redaction details using only safe previews."""
         from PySide6.QtCore import QTimer
-        from PySide6.QtWidgets import QMessageBox
 
         report = report or {}
         count = int(report.get("count") or 0)
@@ -2780,7 +2838,7 @@ class QtProtocolHost:
         body = "\n".join(lines)
 
         def _open() -> None:
-            QMessageBox.information(None, t(title or "Privacy Report"), body)
+            self._show_status_dialog(title or "Privacy Report", body)
 
         QTimer.singleShot(0, _open)
         return {"queued": True, "count": count}

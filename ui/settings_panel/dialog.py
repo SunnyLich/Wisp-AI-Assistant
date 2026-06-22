@@ -10,6 +10,7 @@ import os
 import sys
 import logging
 import threading
+import re
 from contextlib import contextmanager
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
@@ -40,6 +41,12 @@ ENV_PATH = settings_env.ENV_PATH
 _settings_log = logging.getLogger("wisp.settings")
 _settings_dialog: "SettingsDialog | None" = None
 _settings_open_pending = False
+_SETUP_CHECK_STATUS_LABELS = {
+    "pass": "PASS",
+    "ok": "OK",
+    "warn": "WARN",
+    "fail": "FAIL",
+}
 
 
 # Sentinel data value for the "Custom / enter manually…" model combo entry.
@@ -51,6 +58,7 @@ _ASSISTANT_LANGUAGE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Match user language", "match_user"),
     ("English", "English"),
     ("Chinese", "Chinese"),
+    ("Chinese (Traditional)", "Chinese (Traditional)"),
     ("Spanish", "Spanish"),
     ("French", "French"),
     ("German", "German"),
@@ -263,6 +271,7 @@ class SettingsDialog(QDialog):
         self._chat_elaborate_prompt_label: QLabel | None = None
         self._fallback_rows: dict = {}
         self._loading_values = False
+        self._saving_settings = False
         self._dirty_refresh_scheduled = False
         self._dirty_baseline: dict[str, str] = {}
         self._dirty_keys: set[str] = set()
@@ -276,6 +285,8 @@ class SettingsDialog(QDialog):
         self._pending_status_results_lock = threading.Lock()
         self._running_test_tokens: set[tuple[str, int]] = set()
         self._latest_test_token: dict[str, int] = {}
+        self._last_save_warnings: list[str] = []
+        self._open_warning_boxes: list[QMessageBox] = []
         self._status_refresh_token = 0
         self._status_refresh_running = False
         self._tabs = None
@@ -639,10 +650,10 @@ class SettingsDialog(QDialog):
             ]
         lines = []
         for row in rows:
-            status = str(row.get("status") or "warn").upper()
-            name = t(str(row.get("name") or "Check"))
-            message = t(str(row.get("message") or ""))
-            recommendation = t(str(row.get("recommendation") or ""))
+            status = t(_SETUP_CHECK_STATUS_LABELS.get(str(row.get("status") or "warn").lower(), "WARN"))
+            name = _translate_status_message(str(row.get("name") or "Check"))
+            message = _translate_status_message(str(row.get("message") or ""))
+            recommendation = _translate_status_message(str(row.get("recommendation") or ""))
             block = f"{status} - {name}\n{message}"
             if recommendation:
                 block += f"\n{recommendation}"
@@ -805,12 +816,17 @@ class SettingsDialog(QDialog):
 
     def _reset_dirty_baseline(self) -> None:
         """Reset dirty baseline."""
+        self._dirty_refresh_scheduled = False
         self._dirty_baseline = self._snapshot_settings()
         self._refresh_dirty_state()
 
     def _schedule_dirty_refresh(self) -> None:
         """Schedule dirty refresh."""
-        if getattr(self, "_loading_values", False) or getattr(self, "_disposing", False):
+        if (
+            getattr(self, "_loading_values", False)
+            or getattr(self, "_saving_settings", False)
+            or getattr(self, "_disposing", False)
+        ):
             return
         if not hasattr(self, "_dirty_baseline"):
             return
@@ -4568,37 +4584,68 @@ class SettingsDialog(QDialog):
         """Save settings and apply changes live. Returns True on success."""
         old_env = dict(self._env)
         stt_changed = self._stt_fields_changed(old_env)
-        if self._do_save():
-            import config
-            from core.llm_clients import client as _llm
-            from core import tts as _tts
-            from ui.shared.theme import apply_app_theme
-            config.reload()
-            _llm.reset_clients()
-            _tts.reset_connections()
-            if stt_changed:
-                self._reset_stt_model_in_background()
-            apply_app_theme()
-            self._apply_dialog_theme()
-            localize_widget_tree(self)
-            # Silently (re)bake voice-matched filler clips for the now-current
-            # TTS settings. No-ops when the cache already matches the voice id
-            # or when TTS is disabled. Background thread so Apply stays snappy
-            # and the user is never prompted.
-            try:
-                from core import filler_bake
-                filler_bake.bake_in_background()
-            except Exception:
-                pass
-            if self._on_apply:
-                self._on_apply()
-            self._env = _read_env()
-            self._active_preset_slug = self._env.get(_SETTINGS_PRESET_KEY, "")
-            self._refresh_capability_warning_markers()
-            self._refresh_search_index()
-            self._reset_dirty_baseline()
+        saved = False
+        self._last_save_warnings = []
+        self._saving_settings = True
+        try:
+            saved = self._do_save()
+            if saved:
+                import config
+                from core.llm_clients import client as _llm
+                from core import tts as _tts
+                from ui.shared.theme import apply_app_theme
+                config.reload()
+                _llm.reset_clients()
+                _tts.reset_connections()
+                if stt_changed:
+                    self._reset_stt_model_in_background()
+                apply_app_theme()
+                self._apply_dialog_theme()
+                localize_widget_tree(self)
+                # Silently (re)bake voice-matched filler clips for the now-current
+                # TTS settings. No-ops when the cache already matches the voice id
+                # or when TTS is disabled. Background thread so Apply stays snappy
+                # and the user is never prompted.
+                try:
+                    from core import filler_bake
+                    filler_bake.bake_in_background()
+                except Exception:
+                    pass
+                if self._on_apply:
+                    self._on_apply()
+                self._env = _read_env()
+                self._active_preset_slug = self._env.get(_SETTINGS_PRESET_KEY, "")
+                self._refresh_capability_warning_markers()
+                self._refresh_search_index()
+                self._reset_dirty_baseline()
+        finally:
+            self._saving_settings = False
+        if saved:
+            self._show_save_warnings()
             return True
+        self._refresh_dirty_state()
         return False
+
+    def _show_save_warnings(self) -> None:
+        """Show non-fatal save warnings without blocking Apply/Confirm."""
+        warnings = list(getattr(self, "_last_save_warnings", []))
+        self._last_save_warnings = []
+        if not warnings:
+            return
+        translated_warnings = [t(warning) for warning in warnings]
+        box = QMessageBox(self)
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(t("Heads up"))
+        box.setText(t("Your settings were saved, but:") + "\n\n• " + "\n\n• ".join(translated_warnings))
+        self._open_warning_boxes.append(box)
+
+        def _forget_box(_result: int, *, message_box=box) -> None:
+            if message_box in self._open_warning_boxes:
+                self._open_warning_boxes.remove(message_box)
+
+        box.finished.connect(_forget_box)
+        box.open()
 
     def _apply(self):
         """Save settings and keep the dialog open."""
@@ -5107,12 +5154,7 @@ class SettingsDialog(QDialog):
         warnings, warnings_by_target = self._capability_warnings_for_values(vals)
         self._set_warning_markers(warnings_by_target)
         if warnings:
-            translated_warnings = [t(warning) for warning in warnings]
-            QMessageBox.warning(
-                self,
-                t("Heads up"),
-                t("Your settings were saved, but:") + "\n\n• " + "\n\n• ".join(translated_warnings),
-            )
+            self._last_save_warnings = list(warnings)
         return True
 
 
@@ -5389,6 +5431,17 @@ def _translate_status_message(message: str) -> str:
     text = str(message or "")
     if "\n" in text:
         return "\n".join(_translate_status_message(part) for part in text.splitlines())
+    dynamic_patterns: tuple[tuple[str, str], ...] = (
+        (r"^LLM route configured: (?P<route>.+)\.$", "LLM route configured: {route}."),
+        (r"^LLM route incomplete: (?P<route>.+)\.$", "LLM route incomplete: {route}."),
+        (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),
+        (r"^STT model configured: (?P<model>.+)\.$", "STT model configured: {model}."),
+        (r"^(?P<count>\d+) hotkeys configured\.$", "{count} hotkeys configured."),
+    )
+    for pattern, template in dynamic_patterns:
+        match = re.match(pattern, text)
+        if match:
+            return t(template).format(**match.groupdict())
     for prefix in (
         "Error reading status: ",
         "Keychain error: ",

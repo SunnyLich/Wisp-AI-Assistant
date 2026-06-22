@@ -1137,6 +1137,7 @@ class FlowController:
                 "model": getattr(config, "LLM_MODEL", ""),
                 "fallbacks": getattr(config, "LLM_FALLBACKS", ""),
                 "route_name": "LLM",
+                "include_fallbacks": False,
             },
             timeout=20.0,
         )
@@ -1156,9 +1157,13 @@ class FlowController:
         message = str((result or {}).get("message") or (result or {}).get("backend") or "") if isinstance(result, dict) else ""
         return self._health_row(
             "STT",
-            "ok" if ready else "warn",
-            message or ("Speech recognition is ready." if ready else "Speech recognition is not ready yet."),
-            "" if ready else "Recommendation: open Settings, confirm the STT model, then try recording once.",
+            "ok",
+            message or (
+                "Speech recognition is ready."
+                if ready
+                else "Speech recognition will warm up on first voice or dictation use."
+            ),
+            "",
         )
 
     def _tts_health_row(self) -> dict[str, str]:
@@ -1166,7 +1171,7 @@ class FlowController:
 
         provider = str(getattr(config, "TTS_PROVIDER", "none") or "none").strip().lower()
         if provider in {"", "none"}:
-            return self._health_row("TTS", "warn", "TTS is disabled.", "Recommendation: choose a TTS provider in Settings to hear replies.")
+            return self._health_row("TTS", "ok", "TTS is off; replies will stay text-only.")
         result = self._safe_call(self.audio, "audio.tts.synthesize", {"text": "Wisp setup check."}, timeout=30.0)
         ok = isinstance(result, dict) and bool(result.get("path"))
         message = str((result or {}).get("provider") or provider) if isinstance(result, dict) else provider
@@ -1255,9 +1260,15 @@ class FlowController:
         rows.extend(self._privacy_health_rows())
         return rows
 
-    def _on_health_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
-        rows = self._collect_health_rows()
-        self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Health Status"}, timeout=30.0)
+    def _on_health_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        from core.setup_check import run_setup_check
+
+        if isinstance(data, dict) and data.get("source") == "settings":
+            rows = list(run_setup_check())
+            self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Setup check"}, timeout=5.0)
+        else:
+            rows = self._collect_health_rows()
+            self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Health Status"}, timeout=5.0)
         warnings = [row for row in rows if row.get("status") in {"warn", "fail"}]
         if warnings:
             first = warnings[0]

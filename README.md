@@ -61,6 +61,7 @@ Click the icon at any time to open a full chat window for deeper conversations w
 - **Remembers you** â€” a local JSON memory store keeps facts across sessions; relevant ones surface automatically on every query
 - **Bring your own model** â€” Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, Ollama, GitHub Copilot, and more
 - **Addons** â€” extend Wisp with query hooks, tray actions, settings, and model-callable tools; each addon runs in its own process
+- **Settings that explain themselves** - setup checks, health status, privacy reports, model capability warnings, and translated status text are available from the app
 - **Feels instant** â€” filler audio plays in milliseconds to mask the LLM round-trip; the real answer usually arrives before the filler finishes
 - **Stays out of the way** â€” icon auto-hides when idle, pops up on hotkey, disappears after the answer fades out
 
@@ -194,7 +195,7 @@ TOOL_LLM_MODEL=                    # optional: override the model only when tool
 ### TTS
 
 ```env
-TTS_PROVIDER=cartesia              # cartesia | elevenlabs | none
+TTS_PROVIDER=cartesia              # cartesia | elevenlabs | openai | openai_compatible | none
 CARTESIA_API_KEY=...
 TTS_PLAYBACK_RATE=1.0
 ```
@@ -207,7 +208,8 @@ CALLER_2_HOTKEY=ctrl+shift+q       # intent picker (rewrite & paste)
 HOTKEY_ADD_CONTEXT=alt+q           # append selection to context buffer
 HOTKEY_CLEAR_CONTEXT=alt+w         # clear context buffer
 HOTKEY_SNIP=ctrl+alt+q             # screen region selector
-HOTKEY_VOICE=f9                    # push-to-talk
+HOTKEY_VOICE=f9                    # hold-to-talk voice query
+HOTKEY_DICTATE=                    # optional hold-to-type dictation hotkey
 ```
 
 ### UI
@@ -217,7 +219,13 @@ ICON_SIZE=80
 ICON_AUTO_HIDE=false               # hide icon when idle; show on hotkey
 BUBBLE_WIDTH=340
 BUBBLE_LINES=3
+APP_LANGUAGE=                      # blank = system; en | zh | zh-Hant | es | fr
+ASSISTANT_LANGUAGE=match_user      # blank | match_user | English | Chinese | Chinese (Traditional) | Spanish | French
 ```
+
+`APP_LANGUAGE` changes Wisp's UI language. `ASSISTANT_LANGUAGE` guides model
+replies and also localizes the built-in intent presets when they are still at
+their defaults.
 
 ### Memory
 
@@ -246,6 +254,19 @@ CALLER_2_LABEL=Rewrite
 CALLER_2_CONTEXT_DOCUMENTS=false
 CALLER_2_PASTE_BACK=true           # auto-paste result back into the active app
 ```
+
+### Setup and health checks
+
+The Settings window can run a lightweight setup check without importing provider
+SDKs, audio, or STT stacks. It checks the configured LLM route, optional TTS/STT
+settings, hotkeys, and privacy redaction. Text-only setups are valid:
+`TTS_PROVIDER=none` is treated as OK, and leaving STT unconfigured only means
+voice and dictation stay off.
+
+The tray/menu health status uses live worker probes for UI, native, audio, brain,
+LLM, screenshot capture, and privacy state. LLM health checks probe the primary
+route so a temporary fallback outage does not hide the state of the route you
+actually selected.
 
 ---
 
@@ -293,7 +314,11 @@ On every query, the top-k relevant facts are selected with project scope plus le
 
 ## Agent framework
 
-`core/agent/` is an experimental background task runner for bigger jobs â€” think multi-step automations rather than quick lookups. Each task runs in a sandboxed workspace, logs every step auditably, and asks for approval before mutating files. Still early; not yet wired into the main UI.
+`core/agent/` powers background tasks for bigger jobs - think multi-step
+automations rather than quick lookups. Agent task, run, history, cancellation,
+approval, and live-meeting UI flows are wired through the supervisor and brain
+worker. Each task runs in a scoped workspace, logs every step auditably, and asks
+for approval before mutating files.
 
 ---
 
@@ -319,8 +344,8 @@ Start with [addons/README.md](addons/README.md) and the reference
 | Windows 11 | Full support |
 | Windows 10 | Supported |
 | Linux (X11) | Functional; no native tray integration |
-| Linux (Wayland) | In progress |
-| macOS | Shared Qt UI parity in progress; platform-specific backend paths live under `core/platform*` |
+| Linux (Wayland) | Limited; use X11 for the full hotkey/screenshot path |
+| macOS | Shared Qt supervisor build with native/audio work isolated in workers |
 
 ---
 
@@ -332,8 +357,8 @@ PRs and issues are welcome. Adding a new LLM provider is intentionally easy â�
 
 ## Developer docs
 
-- [Factory tour](docs/factory_tour/index.html) is the guided visual walkthrough
-  of Wisp as a factory, with tabs for each floor and links into the source.
+- [Overview](docs/OVERVIEW.md) maps the current supervisor-first runtime and
+  ownership boundaries.
 - [Developer README](docs/DEVELOPER_README.md) covers setup, runtime entrypoints, architecture ownership, checks, and debugging notes.
 - [Communication graph](docs/COMMUNICATION_GRAPH.md) shows how the supervisor, workers, core services, UI, addons, memory, chat, and agent code interact.
 - [Documentation plan](docs/DOCUMENTATION_PLAN.md) records the source documentation sweep and verification expectations.

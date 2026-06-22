@@ -272,7 +272,7 @@
     </message>
     <message>
       <source>Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.</source>
-      <translation>Añade una fila por cada proveedor que quieras usar. El alias es opcional; es útil cuando tienes varias claves para el mismo proveedor. Los endpoints personalizados se configuran abajo.</translation>
+      <translation>Agrega una fila por cada proveedor que quieras usar. El alias es opcional y sirve cuando tienes varias claves para el mismo proveedor. Los endpoints personalizados se configuran abajo.</translation>
     </message>
     <message>
       <source>Add a short instruction, correction, or context update.</source>
@@ -400,7 +400,7 @@
     </message>
     <message>
       <source>Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.</source>
-      <translation>Cualquier endpoint compatible con OpenAI, incluidos Ollama y LM Studio. Selecciona Custom en una fila de modelo después de configurar la URL base.</translation>
+      <translation>Cualquier endpoint compatible con OpenAI, incluidos Ollama y LM Studio. Selecciona Personalizado en una fila de modelo despues de configurar la URL base.</translation>
     </message>
     <message>
       <source>App</source>
@@ -818,7 +818,7 @@ Tarjetas, bordes y botones se sombrean automáticamente a partir de estos cuatro
     </message>
     <message>
       <source>Custom / enter manually…</source>
-      <translation>Personalizado / introducir manualmente…</translation>
+      <translation>Personalizado / introducir manualmente...</translation>
     </message>
     <message>
       <source>Custom API key</source>
@@ -834,7 +834,7 @@ Tarjetas, bordes y botones se sombrean automáticamente a partir de estos cuatro
     </message>
     <message>
       <source>Custom provider key stored in OS keychain</source>
-      <translation>Clave del proveedor personalizado guardada en el llavero del sistema</translation>
+      <translation>Clave del proveedor personalizado guardada en el llavero del SO</translation>
     </message>
     <message>
       <source>DICTATION (HOLD TO TYPE)</source>
@@ -2912,6 +2912,218 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
     <message>
       <source>Playback multiplier for hold-to-talk replies, where a faster response can feel more immediate.</source>
       <translation>Multiplicador de reproducción para respuestas de mantener pulsado para hablar, donde una respuesta más rápida puede sentirse más inmediata.</translation>
+    </message>
+    <message>
+      <source>PASS</source>
+      <translation>APROBADO</translation>
+    </message>
+    <message>
+      <source>WARN</source>
+      <translation>AVISO</translation>
+    </message>
+    <message>
+      <source>FAIL</source>
+      <translation>ERROR</translation>
+    </message>
+    <message>
+      <source>Bubble scroll snap delay (s)</source>
+      <translation>Retardo para reajustar el desplazamiento de la burbuja (s)</translation>
+    </message>
+    <message>
+      <source>LLM provider</source>
+      <translation>Proveedor LLM</translation>
+    </message>
+    <message>
+      <source>Speech to text</source>
+      <translation>Voz a texto</translation>
+    </message>
+    <message>
+      <source>Hotkeys</source>
+      <translation>Atajos</translation>
+    </message>
+    <message>
+      <source>Privacy redaction</source>
+      <translation>Ocultacion de privacidad</translation>
+    </message>
+    <message>
+      <source>UI worker</source>
+      <translation>Proceso de UI</translation>
+    </message>
+    <message>
+      <source>Brain worker</source>
+      <translation>Proceso de cerebro</translation>
+    </message>
+    <message>
+      <source>Audio worker</source>
+      <translation>Proceso de audio</translation>
+    </message>
+    <message>
+      <source>Native worker</source>
+      <translation>Proceso nativo</translation>
+    </message>
+    <message>
+      <source>LLM</source>
+      <translation>LLM</translation>
+    </message>
+    <message>
+      <source>STT</source>
+      <translation>STT</translation>
+    </message>
+    <message>
+      <source>TTS</source>
+      <translation>TTS</translation>
+    </message>
+    <message>
+      <source>Privacy</source>
+      <translation>Privacidad</translation>
+    </message>
+    <message>
+      <source>Context capture</source>
+      <translation>Captura de contexto</translation>
+    </message>
+    <message>
+      <source>Screenshot capture</source>
+      <translation>Captura de pantalla</translation>
+    </message>
+    <message>
+      <source>Microphone</source>
+      <translation>Microfono</translation>
+    </message>
+    <message>
+      <source>LLM route configured: {route}.</source>
+      <translation>Ruta LLM configurada: {route}.</translation>
+    </message>
+    <message>
+      <source>LLM route incomplete: {route}.</source>
+      <translation>Ruta LLM incompleta: {route}.</translation>
+    </message>
+    <message>
+      <source>TTS is off.</source>
+      <translation>TTS esta desactivado.</translation>
+    </message>
+    <message>
+      <source>TTS provider configured: {provider}.</source>
+      <translation>Proveedor TTS configurado: {provider}.</translation>
+    </message>
+    <message>
+      <source>STT model configured: {model}.</source>
+      <translation>Modelo STT configurado: {model}.</translation>
+    </message>
+    <message>
+      <source>STT is not configured; voice and dictation can stay off.</source>
+      <translation>STT no esta configurado; voz y dictado pueden permanecer desactivados.</translation>
+    </message>
+    <message>
+      <source>{count} hotkeys configured.</source>
+      <translation>{count} atajos configurados.</translation>
+    </message>
+    <message>
+      <source>Privacy redaction is on.</source>
+      <translation>La ocultacion de privacidad esta activada.</translation>
+    </message>
+    <message>
+      <source>Privacy redaction is off.</source>
+      <translation>La ocultaci?n de privacidad est? desactivada.</translation>
+    </message>
+    <message>
+      <source>{label} worker responded.</source>
+      <translation>El proceso {label} respondio.</translation>
+    </message>
+    <message>
+      <source>{label} worker did not respond.</source>
+      <translation>El proceso {label} no respondio.</translation>
+    </message>
+    <message>
+      <source>LLM route responded.</source>
+      <translation>La ruta LLM respondi?.</translation>
+    </message>
+    <message>
+      <source>LLM route test did not respond.</source>
+      <translation>La prueba de ruta LLM no respondio.</translation>
+    </message>
+    <message>
+      <source>LLM test failed: {message}</source>
+      <translation>Fallo la prueba LLM: {message}</translation>
+    </message>
+    <message>
+      <source>Speech recognition is ready.</source>
+      <translation>El reconocimiento de voz esta listo.</translation>
+    </message>
+    <message>
+      <source>Speech recognition will warm up on first voice or dictation use.</source>
+      <translation>El reconocimiento de voz se preparar? en el primer uso de voz o dictado.</translation>
+    </message>
+    <message>
+      <source>TTS is off; replies will stay text-only.</source>
+      <translation>TTS esta desactivado; las respuestas seran solo texto.</translation>
+    </message>
+    <message>
+      <source>TTS synthesis responded with {provider}.</source>
+      <translation>La s?ntesis TTS respondi? con {provider}.</translation>
+    </message>
+    <message>
+      <source>TTS synthesis did not return audio.</source>
+      <translation>La sintesis TTS no devolvio audio.</translation>
+    </message>
+    <message>
+      <source>Native permission check did not respond.</source>
+      <translation>La comprobacion de permisos nativos no respondio.</translation>
+    </message>
+    <message>
+      <source>Accessibility permission: {value}.</source>
+      <translation>Permiso de accesibilidad: {value}.</translation>
+    </message>
+    <message>
+      <source>Screen recording permission: {value}.</source>
+      <translation>Permiso de grabacion de pantalla: {value}.</translation>
+    </message>
+    <message>
+      <source>Microphone permission: {value}.</source>
+      <translation>Permiso de microfono: {value}.</translation>
+    </message>
+    <message>
+      <source>No privacy redactions in the latest request.</source>
+      <translation>No hubo ocultaciones de privacidad en la solicitud mas reciente.</translation>
+    </message>
+    <message>
+      <source>Recommendation: check the LLM provider, model, API key, or fallback settings.</source>
+      <translation>Recomendaci?n: revisa el proveedor LLM, el modelo, la clave API o los ajustes de respaldo.</translation>
+    </message>
+    <message>
+      <source>Recommendation: restart Wisp and try the setup check again.</source>
+      <translation>Recomendaci?n: reinicia Wisp y vuelve a ejecutar la comprobaci?n de configuraci?n.</translation>
+    </message>
+    <message>
+      <source>Recommendation: restart Wisp and try Health Status again.</source>
+      <translation>Recomendaci?n: reinicia Wisp y vuelve a probar Estado de salud.</translation>
+    </message>
+    <message>
+      <source>Recommendation: check the TTS provider, voice, and API key in Settings.</source>
+      <translation>Recomendaci?n: revisa el proveedor TTS, la voz y la clave API en Configuraci?n.</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Accessibility/Input Monitoring permissions for Wisp.</source>
+      <translation>Recomendaci?n: concede permisos de Accesibilidad/Monitorizaci?n de entrada a Wisp.</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Screen Recording permission for Wisp.</source>
+      <translation>Recomendaci?n: concede permiso de Grabaci?n de pantalla a Wisp.</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Microphone permission for Wisp.</source>
+      <translation>Recomendaci?n: concede permiso de Micr?fono a Wisp.</translation>
+    </message>
+    <message>
+      <source>Recommendation: open the privacy report to review safe redacted previews.</source>
+      <translation>Recomendaci?n: abre el informe de privacidad para revisar vistas previas ocultadas seguras.</translation>
+    </message>
+    <message>
+      <source>Recommendation: turn on Trust/privacy mode before sending sensitive context.</source>
+      <translation>Recomendaci?n: activa el modo de confianza/privacidad antes de enviar contexto sensible.</translation>
+    </message>
+    <message>
+      <source>Custom</source>
+      <translation>Personalizado</translation>
     </message>
   </context>
 </TS>

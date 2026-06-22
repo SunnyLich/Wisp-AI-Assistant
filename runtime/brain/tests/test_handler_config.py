@@ -263,6 +263,40 @@ def test_llm_test_forwards_fallback_chain_to_client(monkeypatch):
     ]
 
 
+def test_llm_test_can_skip_fallback_chain(monkeypatch):
+    """Health checks can probe only the primary route instead of OAuth fallbacks."""
+    calls = []
+    fake_client = types.ModuleType("core.llm_clients.client")
+
+    def fake_test_route_connection(provider, model, route_name, *, image=False, custom_base_url=None):
+        """Verify fake route connection behavior."""
+        calls.append((provider, model, route_name, image, custom_base_url))
+        return True, f"{route_name} route OK: {provider} / {model}"
+
+    fake_client.test_route_connection = fake_test_route_connection
+    monkeypatch.setitem(sys.modules, "core.llm_clients.client", fake_client)
+
+    result = handlers.HANDLERS["brain.llm.test"](
+        provider="openai",
+        model="gpt-5.4",
+        fallbacks="chatgpt:gpt-5.5\ncopilot:gpt-5.3-codex",
+        route_name="LLM",
+        include_fallbacks=False,
+    )
+
+    assert result["ok"] is True
+    assert result["routes"] == [
+        {
+            "label": "Primary",
+            "ok": True,
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "message": "LLM route OK: openai / gpt-5.4",
+        }
+    ]
+    assert calls == [("openai", "gpt-5.4", "LLM", False, None)]
+
+
 def test_llm_test_scopes_custom_base_url_to_custom_provider(monkeypatch):
     """Verify llm test scopes custom base url to custom provider behavior."""
     calls = []

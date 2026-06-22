@@ -204,7 +204,7 @@
     </message>
     <message>
       <source>Custom prompt</source>
-      <translation>Invite personnalisée</translation>
+      <translation>Prompt personnalise</translation>
     </message>
     <message>
       <source>ESC to cancel</source>
@@ -272,7 +272,7 @@
     </message>
     <message>
       <source>Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.</source>
-      <translation>Ajoutez une ligne pour chaque fournisseur à utiliser. L’alias est facultatif; il est utile si vous avez plusieurs clés pour le même fournisseur. Les points de terminaison personnalisés se configurent ci-dessous.</translation>
+      <translation>Ajoutez une ligne pour chaque fournisseur a utiliser. L'alias est facultatif et utile si vous avez plusieurs cles pour le meme fournisseur. Les endpoints personnalises se configurent ci-dessous.</translation>
     </message>
     <message>
       <source>Add a short instruction, correction, or context update.</source>
@@ -400,7 +400,7 @@
     </message>
     <message>
       <source>Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.</source>
-      <translation>Tout point de terminaison compatible avec OpenAI, y compris Ollama et LM Studio. Sélectionnez Custom dans une ligne de modèle après avoir défini l’URL de base.</translation>
+      <translation>Tout endpoint compatible avec OpenAI, y compris Ollama et LM Studio. Selectionnez Personnalise dans une ligne de modele apres avoir defini l'URL de base.</translation>
     </message>
     <message>
       <source>App</source>
@@ -810,31 +810,31 @@ Cartes, bordures et boutons sont ombrés automatiquement à partir de ces quatre
     </message>
     <message>
       <source>Custom (OpenAI-compatible)</source>
-      <translation>Personnalisé (compatible OpenAI)</translation>
+      <translation>Personnalise (compatible OpenAI)</translation>
     </message>
     <message>
       <source>Custom / enter manually?</source>
-      <translation>Personnalis? / saisir manuellement?</translation>
+      <translation>Personnalise / saisir manuellement ?</translation>
     </message>
     <message>
       <source>Custom / enter manually…</source>
-      <translation>Personnalisé / saisir manuellement…</translation>
+      <translation>Personnalise / saisir manuellement...</translation>
     </message>
     <message>
       <source>Custom API key</source>
-      <translation>Clé API personnalisée</translation>
+      <translation>Cle API personnalisee</translation>
     </message>
     <message>
       <source>Custom Provider</source>
-      <translation>Fournisseur personnalisé</translation>
+      <translation>Fournisseur personnalise</translation>
     </message>
     <message>
       <source>Custom provider</source>
-      <translation>Fournisseur personnalisé</translation>
+      <translation>Fournisseur personnalise</translation>
     </message>
     <message>
       <source>Custom provider key stored in OS keychain</source>
-      <translation>Clé du fournisseur personnalisé stockée dans le trousseau du système</translation>
+      <translation>Cle du fournisseur personnalise enregistree dans le trousseau du systeme</translation>
     </message>
     <message>
       <source>DICTATION (HOLD TO TYPE)</source>
@@ -2912,6 +2912,218 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
     <message>
       <source>Playback multiplier for hold-to-talk replies, where a faster response can feel more immediate.</source>
       <translation>Multiplicateur de lecture pour les réponses maintenir-pour-parler, où une réponse plus rapide peut sembler plus immédiate.</translation>
+    </message>
+    <message>
+      <source>PASS</source>
+      <translation>REUSSI</translation>
+    </message>
+    <message>
+      <source>WARN</source>
+      <translation>AVERTISSEMENT</translation>
+    </message>
+    <message>
+      <source>FAIL</source>
+      <translation>ECHEC</translation>
+    </message>
+    <message>
+      <source>Bubble scroll snap delay (s)</source>
+      <translation>Delai de recentrage du defilement de la bulle (s)</translation>
+    </message>
+    <message>
+      <source>LLM provider</source>
+      <translation>Fournisseur LLM</translation>
+    </message>
+    <message>
+      <source>Speech to text</source>
+      <translation>Transcription vocale</translation>
+    </message>
+    <message>
+      <source>Hotkeys</source>
+      <translation>Raccourcis</translation>
+    </message>
+    <message>
+      <source>Privacy redaction</source>
+      <translation>Masquage de confidentialite</translation>
+    </message>
+    <message>
+      <source>UI worker</source>
+      <translation>Processus UI</translation>
+    </message>
+    <message>
+      <source>Brain worker</source>
+      <translation>Processus cerveau</translation>
+    </message>
+    <message>
+      <source>Audio worker</source>
+      <translation>Processus audio</translation>
+    </message>
+    <message>
+      <source>Native worker</source>
+      <translation>Processus natif</translation>
+    </message>
+    <message>
+      <source>LLM</source>
+      <translation>LLM</translation>
+    </message>
+    <message>
+      <source>STT</source>
+      <translation>STT</translation>
+    </message>
+    <message>
+      <source>TTS</source>
+      <translation>TTS</translation>
+    </message>
+    <message>
+      <source>Privacy</source>
+      <translation>Confidentialit?</translation>
+    </message>
+    <message>
+      <source>Context capture</source>
+      <translation>Capture du contexte</translation>
+    </message>
+    <message>
+      <source>Screenshot capture</source>
+      <translation>Capture d'ecran</translation>
+    </message>
+    <message>
+      <source>Microphone</source>
+      <translation>Microphone</translation>
+    </message>
+    <message>
+      <source>LLM route configured: {route}.</source>
+      <translation>Route LLM configuree : {route}.</translation>
+    </message>
+    <message>
+      <source>LLM route incomplete: {route}.</source>
+      <translation>Route LLM incompl?te : {route}.</translation>
+    </message>
+    <message>
+      <source>TTS is off.</source>
+      <translation>Le TTS est desactive.</translation>
+    </message>
+    <message>
+      <source>TTS provider configured: {provider}.</source>
+      <translation>Fournisseur TTS configur? : {provider}.</translation>
+    </message>
+    <message>
+      <source>STT model configured: {model}.</source>
+      <translation>Modele STT configure : {model}.</translation>
+    </message>
+    <message>
+      <source>STT is not configured; voice and dictation can stay off.</source>
+      <translation>Le STT n'est pas configure ; la voix et la dictee peuvent rester desactivees.</translation>
+    </message>
+    <message>
+      <source>{count} hotkeys configured.</source>
+      <translation>{count} raccourcis configures.</translation>
+    </message>
+    <message>
+      <source>Privacy redaction is on.</source>
+      <translation>Le masquage de confidentialite est active.</translation>
+    </message>
+    <message>
+      <source>Privacy redaction is off.</source>
+      <translation>Le masquage de confidentialit? est d?sactiv?.</translation>
+    </message>
+    <message>
+      <source>{label} worker responded.</source>
+      <translation>Le processus {label} a repondu.</translation>
+    </message>
+    <message>
+      <source>{label} worker did not respond.</source>
+      <translation>Le processus {label} n'a pas repondu.</translation>
+    </message>
+    <message>
+      <source>LLM route responded.</source>
+      <translation>La route LLM a r?pondu.</translation>
+    </message>
+    <message>
+      <source>LLM route test did not respond.</source>
+      <translation>Le test de route LLM n'a pas repondu.</translation>
+    </message>
+    <message>
+      <source>LLM test failed: {message}</source>
+      <translation>Echec du test LLM : {message}</translation>
+    </message>
+    <message>
+      <source>Speech recognition is ready.</source>
+      <translation>La reconnaissance vocale est prete.</translation>
+    </message>
+    <message>
+      <source>Speech recognition will warm up on first voice or dictation use.</source>
+      <translation>La reconnaissance vocale se pr?parera lors de la premi?re utilisation de la voix ou de la dict?e.</translation>
+    </message>
+    <message>
+      <source>TTS is off; replies will stay text-only.</source>
+      <translation>Le TTS est desactive ; les reponses resteront en texte seul.</translation>
+    </message>
+    <message>
+      <source>TTS synthesis responded with {provider}.</source>
+      <translation>La synth?se TTS a r?pondu avec {provider}.</translation>
+    </message>
+    <message>
+      <source>TTS synthesis did not return audio.</source>
+      <translation>La synthese TTS n'a renvoye aucun audio.</translation>
+    </message>
+    <message>
+      <source>Native permission check did not respond.</source>
+      <translation>La verification des permissions natives n'a pas repondu.</translation>
+    </message>
+    <message>
+      <source>Accessibility permission: {value}.</source>
+      <translation>Permission d'accessibilite : {value}.</translation>
+    </message>
+    <message>
+      <source>Screen recording permission: {value}.</source>
+      <translation>Permission d'enregistrement de l'ecran : {value}.</translation>
+    </message>
+    <message>
+      <source>Microphone permission: {value}.</source>
+      <translation>Permission microphone : {value}.</translation>
+    </message>
+    <message>
+      <source>No privacy redactions in the latest request.</source>
+      <translation>Aucun masquage de confidentialite dans la derniere requete.</translation>
+    </message>
+    <message>
+      <source>Recommendation: check the LLM provider, model, API key, or fallback settings.</source>
+      <translation>Recommandation : v?rifiez le fournisseur LLM, le mod?le, la cl? API ou les param?tres de secours.</translation>
+    </message>
+    <message>
+      <source>Recommendation: restart Wisp and try the setup check again.</source>
+      <translation>Recommandation : red?marrez Wisp puis relancez la v?rification de configuration.</translation>
+    </message>
+    <message>
+      <source>Recommendation: restart Wisp and try Health Status again.</source>
+      <translation>Recommandation : red?marrez Wisp puis r?essayez ?tat de sant?.</translation>
+    </message>
+    <message>
+      <source>Recommendation: check the TTS provider, voice, and API key in Settings.</source>
+      <translation>Recommandation : v?rifiez le fournisseur TTS, la voix et la cl? API dans les param?tres.</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Accessibility/Input Monitoring permissions for Wisp.</source>
+      <translation>Recommandation : autorisez les permissions Accessibilit?/Surveillance de saisie pour Wisp.</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Screen Recording permission for Wisp.</source>
+      <translation>Recommandation : autorisez la permission d?enregistrement de l??cran pour Wisp.</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Microphone permission for Wisp.</source>
+      <translation>Recommandation : autorisez la permission microphone pour Wisp.</translation>
+    </message>
+    <message>
+      <source>Recommendation: open the privacy report to review safe redacted previews.</source>
+      <translation>Recommandation : ouvrez le rapport de confidentialit? pour v?rifier les aper?us masqu?s s?rs.</translation>
+    </message>
+    <message>
+      <source>Recommendation: turn on Trust/privacy mode before sending sensitive context.</source>
+      <translation>Recommandation : activez le mode confiance/confidentialit? avant d?envoyer un contexte sensible.</translation>
+    </message>
+    <message>
+      <source>Custom</source>
+      <translation>Personnalise</translation>
     </message>
   </context>
 </TS>

@@ -272,7 +272,7 @@
     </message>
     <message>
       <source>Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.</source>
-      <translation>为每个要使用的提供者添加一行。别名可选，当同一提供者有多个密钥时很有用。自定义端点在下方配置。</translation>
+      <translation>为每个要使用的提供者添加一行。别名是可选的，当同一提供者有多个密钥时很有用。自定义端点在下方配置。</translation>
     </message>
     <message>
       <source>Add a short instruction, correction, or context update.</source>
@@ -400,7 +400,7 @@
     </message>
     <message>
       <source>Any OpenAI-compatible endpoint, including Ollama and LM Studio. Select Custom in a model row below after setting the base URL.</source>
-      <translation>任何兼容 OpenAI 的端点，包括 Ollama 和 LM Studio。设置基础 URL 后，在下方模型行中选择 Custom。</translation>
+      <translation>任何兼容 OpenAI 的端点，包括 Ollama 和 LM Studio。设置基础 URL 后，在下方模型行中选择自定义。</translation>
     </message>
     <message>
       <source>App</source>
@@ -826,7 +826,7 @@ Cards, borders and buttons are shaded automatically from these four.</source>
     </message>
     <message>
       <source>Custom Provider</source>
-      <translation>自定义提供商</translation>
+      <translation>自定义提供者</translation>
     </message>
     <message>
       <source>Custom provider</source>
@@ -834,7 +834,7 @@ Cards, borders and buttons are shaded automatically from these four.</source>
     </message>
     <message>
       <source>Custom provider key stored in OS keychain</source>
-      <translation>自定义提供商密钥已存入系统钥匙串</translation>
+      <translation>自定义提供者密钥已存储在 OS 密钥串中</translation>
     </message>
     <message>
       <source>DICTATION (HOLD TO TYPE)</source>
@@ -2912,6 +2912,218 @@ Let model decide — expose an open-document tool during the answer.</source>
     <message>
       <source>Playback multiplier for hold-to-talk replies, where a faster response can feel more immediate.</source>
       <translation>按住说话回复的播放倍速，较快的回复会感觉更即时。</translation>
+    </message>
+    <message>
+      <source>PASS</source>
+      <translation>通过</translation>
+    </message>
+    <message>
+      <source>WARN</source>
+      <translation>警告</translation>
+    </message>
+    <message>
+      <source>FAIL</source>
+      <translation>失败</translation>
+    </message>
+    <message>
+      <source>Bubble scroll snap delay (s)</source>
+      <translation>气泡滚动复位延迟（秒）</translation>
+    </message>
+    <message>
+      <source>LLM provider</source>
+      <translation>LLM 提供者</translation>
+    </message>
+    <message>
+      <source>Speech to text</source>
+      <translation>语音转文字</translation>
+    </message>
+    <message>
+      <source>Hotkeys</source>
+      <translation>快捷键</translation>
+    </message>
+    <message>
+      <source>Privacy redaction</source>
+      <translation>隐私遮蔽</translation>
+    </message>
+    <message>
+      <source>UI worker</source>
+      <translation>UI 工作进程</translation>
+    </message>
+    <message>
+      <source>Brain worker</source>
+      <translation>大脑工作进程</translation>
+    </message>
+    <message>
+      <source>Audio worker</source>
+      <translation>音频工作进程</translation>
+    </message>
+    <message>
+      <source>Native worker</source>
+      <translation>原生工作进程</translation>
+    </message>
+    <message>
+      <source>LLM</source>
+      <translation>LLM</translation>
+    </message>
+    <message>
+      <source>STT</source>
+      <translation>STT</translation>
+    </message>
+    <message>
+      <source>TTS</source>
+      <translation>TTS</translation>
+    </message>
+    <message>
+      <source>Privacy</source>
+      <translation>隐私</translation>
+    </message>
+    <message>
+      <source>Context capture</source>
+      <translation>上下文捕获</translation>
+    </message>
+    <message>
+      <source>Screenshot capture</source>
+      <translation>截图捕获</translation>
+    </message>
+    <message>
+      <source>Microphone</source>
+      <translation>麦克风</translation>
+    </message>
+    <message>
+      <source>LLM route configured: {route}.</source>
+      <translation>LLM 路由已配置：{route}。</translation>
+    </message>
+    <message>
+      <source>LLM route incomplete: {route}.</source>
+      <translation>LLM 路由未完整配置：{route}。</translation>
+    </message>
+    <message>
+      <source>TTS is off.</source>
+      <translation>TTS 已关闭。</translation>
+    </message>
+    <message>
+      <source>TTS provider configured: {provider}.</source>
+      <translation>TTS 提供者已配置：{provider}。</translation>
+    </message>
+    <message>
+      <source>STT model configured: {model}.</source>
+      <translation>STT 模型已配置：{model}。</translation>
+    </message>
+    <message>
+      <source>STT is not configured; voice and dictation can stay off.</source>
+      <translation>STT 未配置；语音和听写可以保持关闭。</translation>
+    </message>
+    <message>
+      <source>{count} hotkeys configured.</source>
+      <translation>已配置 {count} 个快捷键。</translation>
+    </message>
+    <message>
+      <source>Privacy redaction is on.</source>
+      <translation>隐私遮蔽已开启。</translation>
+    </message>
+    <message>
+      <source>Privacy redaction is off.</source>
+      <translation>隐私遮蔽已关闭。</translation>
+    </message>
+    <message>
+      <source>{label} worker responded.</source>
+      <translation>{label} 工作进程已响应。</translation>
+    </message>
+    <message>
+      <source>{label} worker did not respond.</source>
+      <translation>{label} 工作进程未响应。</translation>
+    </message>
+    <message>
+      <source>LLM route responded.</source>
+      <translation>LLM 路由已响应。</translation>
+    </message>
+    <message>
+      <source>LLM route test did not respond.</source>
+      <translation>LLM 路由测试未响应。</translation>
+    </message>
+    <message>
+      <source>LLM test failed: {message}</source>
+      <translation>LLM 测试失败：{message}</translation>
+    </message>
+    <message>
+      <source>Speech recognition is ready.</source>
+      <translation>语音识别已就绪。</translation>
+    </message>
+    <message>
+      <source>Speech recognition will warm up on first voice or dictation use.</source>
+      <translation>语音识别会在首次使用语音或听写时预热。</translation>
+    </message>
+    <message>
+      <source>TTS is off; replies will stay text-only.</source>
+      <translation>TTS 已关闭；回复将只显示文字。</translation>
+    </message>
+    <message>
+      <source>TTS synthesis responded with {provider}.</source>
+      <translation>TTS 合成已响应：{provider}。</translation>
+    </message>
+    <message>
+      <source>TTS synthesis did not return audio.</source>
+      <translation>TTS 合成没有返回音频。</translation>
+    </message>
+    <message>
+      <source>Native permission check did not respond.</source>
+      <translation>原生权限检查未响应。</translation>
+    </message>
+    <message>
+      <source>Accessibility permission: {value}.</source>
+      <translation>辅助功能权限：{value}。</translation>
+    </message>
+    <message>
+      <source>Screen recording permission: {value}.</source>
+      <translation>屏幕录制权限：{value}。</translation>
+    </message>
+    <message>
+      <source>Microphone permission: {value}.</source>
+      <translation>麦克风权限：{value}。</translation>
+    </message>
+    <message>
+      <source>No privacy redactions in the latest request.</source>
+      <translation>最近一次请求没有隐私遮蔽。</translation>
+    </message>
+    <message>
+      <source>Recommendation: check the LLM provider, model, API key, or fallback settings.</source>
+      <translation>建议：检查 LLM 提供者、模型、API 密钥或备用设置。</translation>
+    </message>
+    <message>
+      <source>Recommendation: restart Wisp and try the setup check again.</source>
+      <translation>建议：重启 Wisp 后再试一次设置检查。</translation>
+    </message>
+    <message>
+      <source>Recommendation: restart Wisp and try Health Status again.</source>
+      <translation>建议：重启 Wisp 后再试一次健康状态。</translation>
+    </message>
+    <message>
+      <source>Recommendation: check the TTS provider, voice, and API key in Settings.</source>
+      <translation>建议：在设置中检查 TTS 提供者、声音和 API 密钥。</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Accessibility/Input Monitoring permissions for Wisp.</source>
+      <translation>建议：允许 Wisp 的辅助功能/输入监控权限。</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Screen Recording permission for Wisp.</source>
+      <translation>建议：允许 Wisp 的屏幕录制权限。</translation>
+    </message>
+    <message>
+      <source>Recommendation: allow Microphone permission for Wisp.</source>
+      <translation>建议：允许 Wisp 的麦克风权限。</translation>
+    </message>
+    <message>
+      <source>Recommendation: open the privacy report to review safe redacted previews.</source>
+      <translation>建议：打开隐私报告查看安全的遮蔽预览。</translation>
+    </message>
+    <message>
+      <source>Recommendation: turn on Trust/privacy mode before sending sensitive context.</source>
+      <translation>建议：发送敏感上下文前开启信任/隐私模式。</translation>
+    </message>
+    <message>
+      <source>Custom</source>
+      <translation>自定义</translation>
     </message>
   </context>
 </TS>

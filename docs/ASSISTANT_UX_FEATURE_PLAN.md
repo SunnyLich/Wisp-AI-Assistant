@@ -3,6 +3,28 @@
 This plan covers the next user-trust and recoverability work for Wisp. It is
 intentionally scoped to features 1, 2, 3, 6, 7, and 8 from the product notes.
 
+## Current Build Status
+
+Implemented in the current build:
+
+- Settings exposes a lightweight setup check that avoids importing provider
+  SDKs, audio stacks, or STT.
+- The tray/menu health status path runs live worker, LLM, audio, native,
+  screenshot, and privacy probes.
+- Voice and dictation can show transcript candidates when confirmation is
+  enabled.
+- Privacy reports show redaction counts and safe category summaries.
+- Error recommendations are shared by setup/status surfaces.
+- Setup, health, privacy, voice, and warning strings are covered by the Qt
+  locale catalogs, including Traditional Chinese.
+
+Still planned:
+
+- A fuller first-run calibration wizard with persisted completion state.
+- Shared context preview chips for intent overlay and chat.
+- Optional richer STT alternatives beyond the current cheap transcript cleanup
+  candidates.
+
 ## Goals
 
 - Make setup confidence visible instead of implicit.
@@ -18,17 +40,19 @@ intentionally scoped to features 1, 2, 3, 6, 7, and 8 from the product notes.
 
 Entry point:
 
-- Add a Settings button in a diagnostics/setup section, such as "Run setup
-  check".
-- The button opens a reusable calibration wizard, not a one-time-only dialog.
-- Store completion state with a setting such as `WISP_SETUP_COMPLETED=true` so
-  Wisp can suggest the check once while still keeping it available.
+- Settings exposes a reusable setup-check entry point.
+- Current build: the entry point opens a lightweight setup/status dialog.
+- Future calibration work can add a fuller wizard and store completion state
+  with a setting such as `WISP_SETUP_COMPLETED=true` so Wisp can suggest the
+  check once while still keeping it available.
 
 Checks:
 
-- LLM provider and model can answer a cheap test request.
-- TTS provider can synthesize and play a short sample.
-- STT can hear microphone input and return a transcript.
+- Current setup check verifies the configured LLM route, optional TTS/STT
+  configuration, hotkeys, and privacy redaction without live SDK/audio imports.
+- Health status separately probes whether the LLM primary route responds.
+- Health status checks whether STT is ready or will warm up on first use.
+- Health status checks TTS only when a TTS provider is enabled.
 - Global hotkeys are registered.
 - Context capture permissions work.
 - Screenshot/snip permissions work.
@@ -36,8 +60,7 @@ Checks:
 Tests:
 
 - Settings exposes the setup check button without importing audio/STT stacks.
-- Calibration reports pass, fail, and skipped states with recommendations.
-- Settings Apply/reload preserves setup-completed state.
+- Setup check reports pass, fail, and optional-off states with recommendations.
 - New labels and statuses are present in every locale file.
 
 ## 2. Status and Health Panel
@@ -217,12 +240,9 @@ Tests:
 
 ## Implementation Order
 
-1. Error recommendations.
-2. Health panel and right-click menu entry.
-3. Setup check button and calibration wizard in Settings.
-4. Shared context preview for intent overlay and chat window.
-5. Privacy detection and censoring report.
-6. Voice transcript correction popup.
+1. Shared context preview for intent overlay and chat window.
+2. Full first-run calibration wizard and setup-completed state.
+3. Optional richer STT alternative generation for transcript correction.
 
 ## Workflow Test Gate
 
