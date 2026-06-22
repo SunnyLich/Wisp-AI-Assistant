@@ -305,6 +305,7 @@ class FlowController:
         self._context_buffer: list[str] = []
         self._drop_context_items: list[dict[str, Any]] = []
         self._last_reply = ""
+        self._last_privacy_report: dict[str, Any] = {}
         self._active_agent_stream_id: Any = None
         self._reply_thought_parser = None
         self._tts_lock = threading.RLock()
@@ -350,6 +351,7 @@ class FlowController:
         self.ui.on_event("ui.agent.history.retry", self._on_agent_history_retry)
         self.ui.on_event("ui.agent.history.continue", self._on_agent_history_continue)
         self.ui.on_event("ui.settings.applied", self._on_settings_applied)
+        self.ui.on_event("ui.health.requested", self._on_health_requested)
         self.ui.on_event("ui.bubble.speed", self._on_bubble_speed)
         self.ui.on_event("ui.bubble.stop", self._on_bubble_stop)
         self.brain.on_event("reply.chunk", self._on_reply_chunk)
@@ -914,6 +916,11 @@ class FlowController:
                 self._fire(self.ui, "ui.reply.reset")
                 self._set_idle()
                 return
+            text = self._confirm_voice_transcript(text, purpose="voice")
+            if not text:
+                self._fire(self.ui, "ui.reply.reset")
+                self._set_idle()
+                return
             pending = PendingInvocation(
                 caller_idx=0,
                 caller=self._voice_caller(),
@@ -973,6 +980,10 @@ class FlowController:
             if not text:
                 self._set_idle()
                 return
+            text = self._confirm_voice_transcript(text, purpose="dictation")
+            if not text:
+                self._set_idle()
+                return
             import config
             if str(getattr(config, "DICTATE_MODE", "raw")).lower() == "llm":
                 text = self._dictation_cleanup(text)
@@ -1001,6 +1012,45 @@ class FlowController:
         except Exception:  # noqa: BLE001 â€” never block a paste on cleanup
             log.exception("dictation LLM cleanup failed; pasting raw transcript")
             return text
+
+    @staticmethod
+    def _voice_transcript_candidates(text: str) -> list[str]:
+        """Return cheap transcript candidates without rerunning STT."""
+        raw = " ".join(str(text or "").split())
+        if not raw:
+            return []
+        candidates = [raw]
+        polished = raw[:1].upper() + raw[1:]
+        if polished and polished[-1] not in ".!?":
+            polished += "."
+        if polished not in candidates:
+            candidates.append(polished)
+        command_like = raw.rstrip(".!?")
+        if command_like.lower().startswith(("can you ", "please ")):
+            command_like = command_like[:1].upper() + command_like[1:]
+            if command_like not in candidates:
+                candidates.append(command_like)
+        return candidates[:3]
+
+    def _confirm_voice_transcript(self, text: str, *, purpose: str) -> str:
+        """Optionally ask the user to choose/edit the transcript before use."""
+        import config
+
+        if not bool(getattr(config, "VOICE_TRANSCRIPT_CONFIRM", False)):
+            return text
+        result = self._safe_call(
+            self.ui,
+            "ui.voice.candidates",
+            {
+                "text": text,
+                "candidates": self._voice_transcript_candidates(text),
+                "purpose": purpose,
+            },
+            timeout=300.0,
+        ) or {}
+        if not isinstance(result, dict) or not result.get("accepted"):
+            return ""
+        return str(result.get("text") or "").strip()
 
     def _paste_dictation(self, text: str) -> None:
         """Paste dictation."""
@@ -1050,6 +1100,176 @@ class FlowController:
         ) or {}
         if isinstance(result, dict) and not result.get("started"):
             self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
+
+    def _health_row(
+        self,
+        name: str,
+        status: str,
+        message: str,
+        recommendation: str = "",
+    ) -> dict[str, str]:
+        """Build one setup/health report row."""
+        return {
+            "name": name,
+            "status": status if status in {"ok", "warn", "fail"} else "warn",
+            "message": message,
+            "recommendation": recommendation,
+        }
+
+    def _worker_ping_row(self, worker: WorkerLike, label: str) -> dict[str, str]:
+        result = self._safe_call(worker, "ping", timeout=5.0)
+        ok = isinstance(result, dict) and bool(result.get("pong"))
+        return self._health_row(
+            f"{label} worker",
+            "ok" if ok else "fail",
+            f"{label} worker responded." if ok else f"{label} worker did not respond.",
+            "" if ok else "Recommendation: restart Wisp and try the setup check again.",
+        )
+
+    def _llm_health_row(self) -> dict[str, str]:
+        import config
+
+        result = self._safe_call(
+            self.brain,
+            "brain.llm.test",
+            {
+                "provider": getattr(config, "LLM_PROVIDER", ""),
+                "model": getattr(config, "LLM_MODEL", ""),
+                "fallbacks": getattr(config, "LLM_FALLBACKS", ""),
+                "route_name": "LLM",
+            },
+            timeout=20.0,
+        )
+        if isinstance(result, dict) and result.get("ok"):
+            return self._health_row("LLM", "ok", str(result.get("message") or "LLM route responded."))
+        message = str(result.get("message") or "LLM route test did not respond.") if isinstance(result, dict) else "LLM route test did not respond."
+        return self._health_row(
+            "LLM",
+            "fail",
+            message,
+            "Recommendation: check the LLM provider, model, API key, or fallback settings.",
+        )
+
+    def _stt_health_row(self) -> dict[str, str]:
+        result = self._safe_call(self.audio, "audio.stt.is_ready", timeout=8.0)
+        ready = bool(result.get("ready")) if isinstance(result, dict) else False
+        message = str((result or {}).get("message") or (result or {}).get("backend") or "") if isinstance(result, dict) else ""
+        return self._health_row(
+            "STT",
+            "ok" if ready else "warn",
+            message or ("Speech recognition is ready." if ready else "Speech recognition is not ready yet."),
+            "" if ready else "Recommendation: open Settings, confirm the STT model, then try recording once.",
+        )
+
+    def _tts_health_row(self) -> dict[str, str]:
+        import config
+
+        provider = str(getattr(config, "TTS_PROVIDER", "none") or "none").strip().lower()
+        if provider in {"", "none"}:
+            return self._health_row("TTS", "warn", "TTS is disabled.", "Recommendation: choose a TTS provider in Settings to hear replies.")
+        result = self._safe_call(self.audio, "audio.tts.synthesize", {"text": "Wisp setup check."}, timeout=30.0)
+        ok = isinstance(result, dict) and bool(result.get("path"))
+        message = str((result or {}).get("provider") or provider) if isinstance(result, dict) else provider
+        return self._health_row(
+            "TTS",
+            "ok" if ok else "fail",
+            f"TTS synthesis responded with {message}." if ok else "TTS synthesis did not return audio.",
+            "" if ok else "Recommendation: check the TTS provider, voice, and API key in Settings.",
+        )
+
+    def _native_permission_rows(self) -> list[dict[str, str]]:
+        result = self._safe_call(self.native, "native.permissions.snapshot", timeout=8.0)
+        if not isinstance(result, dict):
+            return [
+                self._health_row(
+                    "Native permissions",
+                    "fail",
+                    "Native permission check did not respond.",
+                    "Recommendation: restart Wisp and try Health Status again.",
+                )
+            ]
+
+        def _permission_status(value: Any) -> str:
+            if value in {True, "authorized"}:
+                return "ok"
+            if value is False or value in {"denied", "restricted"}:
+                return "fail"
+            return "warn"
+
+        accessibility = result.get("accessibility")
+        screen = result.get("screen_recording")
+        microphone = result.get("microphone")
+        return [
+            self._health_row(
+                "Context capture",
+                _permission_status(accessibility),
+                f"Accessibility permission: {accessibility}.",
+                "" if accessibility in {True, None} else "Recommendation: allow Accessibility/Input Monitoring permissions for Wisp.",
+            ),
+            self._health_row(
+                "Screenshot capture",
+                _permission_status(screen),
+                f"Screen recording permission: {screen}.",
+                "" if screen in {True, None} else "Recommendation: allow Screen Recording permission for Wisp.",
+            ),
+            self._health_row(
+                "Microphone",
+                _permission_status(microphone),
+                f"Microphone permission: {microphone}.",
+                "" if microphone in {"authorized", "unavailable"} else "Recommendation: allow Microphone permission for Wisp.",
+            ),
+        ]
+
+    def _privacy_health_rows(self) -> list[dict[str, str]]:
+        report = self._last_privacy_report if isinstance(self._last_privacy_report, dict) else {}
+        count = int(report.get("count") or 0)
+        if not count:
+            return [self._health_row("Privacy", "ok", "No privacy redactions in the latest request.")]
+        categories = report.get("categories") if isinstance(report.get("categories"), dict) else {}
+        summary = ", ".join(f"{key}: {value}" for key, value in sorted(categories.items())) or f"{count} item(s)"
+        return [
+            self._health_row(
+                "Privacy",
+                "warn",
+                f"Latest request detected and censored {count} item(s): {summary}.",
+                "Recommendation: open the privacy report to review safe redacted previews.",
+            )
+        ]
+
+    def _collect_health_rows(self) -> list[dict[str, str]]:
+        from core.setup_check import run_setup_check
+
+        rows = list(run_setup_check())
+        rows.extend(
+            [
+                self._worker_ping_row(self.ui, "UI"),
+                self._worker_ping_row(self.brain, "Brain"),
+                self._worker_ping_row(self.audio, "Audio"),
+                self._worker_ping_row(self.native, "Native"),
+                self._llm_health_row(),
+                self._stt_health_row(),
+                self._tts_health_row(),
+            ]
+        )
+        rows.extend(self._native_permission_rows())
+        rows.extend(self._privacy_health_rows())
+        return rows
+
+    def _on_health_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        rows = self._collect_health_rows()
+        self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Health Status"}, timeout=30.0)
+        warnings = [row for row in rows if row.get("status") in {"warn", "fail"}]
+        if warnings:
+            first = warnings[0]
+            self._safe_call(
+                self.ui,
+                "ui.reply.notice",
+                {
+                    "text": f"Health issue: {first.get('name')}: {first.get('message')}",
+                    "timeout_ms": 8000,
+                },
+                timeout=30.0,
+            )
 
     def chat_request(self, data: dict[str, Any]) -> None:
         """Handle chat request for flow controller."""
@@ -1738,6 +1958,8 @@ class FlowController:
             self._reply_thought_parser = None
         text = str((result or {}).get("text") or "")
         file_context = list((result or {}).get("file_context") or [])
+        privacy_report = (result or {}).get("privacy_report") if isinstance(result, dict) else None
+        self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
         self._last_reply = text
         bubble_cancelled = self._reply_bubble_cancelled(gen)
         if text and not bubble_cancelled and "".join(streamed_reply_parts) != text:
@@ -1766,6 +1988,20 @@ class FlowController:
                     "tool_context": tool_context,
                     "context_policy": context_policy,
                 },
+                timeout=30.0,
+            )
+        privacy_count = int((privacy_report or {}).get("count") or 0) if isinstance(privacy_report, dict) else 0
+        if privacy_count:
+            self._safe_call(
+                self.ui,
+                "ui.context.summary",
+                {"items": [{"label": f"Privacy: {privacy_count} redacted", "type": "privacy"}]},
+                timeout=30.0,
+            )
+            self._safe_call(
+                self.ui,
+                "ui.privacy.report",
+                {"report": privacy_report, "title": "Privacy Report"},
                 timeout=30.0,
             )
         if bubble_cancelled:
@@ -2027,7 +2263,9 @@ class FlowController:
 
     def _notice(self, text: str) -> None:
         """Handle notice for flow controller."""
-        self._safe_call(self.ui, "ui.reply.notice", {"text": text}, timeout=30.0)
+        from core.error_recommendations import format_error
+
+        self._safe_call(self.ui, "ui.reply.notice", {"text": format_error(text)}, timeout=30.0)
 
     def _handle_live_file_approval_request(self, payload: Any) -> None:
         """Ask the UI to approve a live model file edit, then answer the brain."""
@@ -2066,8 +2304,11 @@ class FlowController:
         text = str(exc).strip() or type(exc).__name__
         for prefix in ("ValueError: ", "RuntimeError: "):
             if text.startswith(prefix):
-                return text[len(prefix):].strip()
-        return text
+                text = text[len(prefix):].strip()
+                break
+        from core.error_recommendations import format_error
+
+        return format_error(text)
 
     def _caller(self, caller_idx: int) -> dict[str, Any]:
         """Handle caller for flow controller."""
@@ -2075,7 +2316,7 @@ class FlowController:
 
         rows = getattr(config, "CALLER_ROWS", [])
         if 0 <= caller_idx < len(rows):
-            return dict(rows[caller_idx])
+            return config.effective_caller(dict(rows[caller_idx]))
         return {}
 
     def _voice_caller(self) -> dict[str, Any]:
@@ -2084,7 +2325,7 @@ class FlowController:
 
         voice = getattr(config, "VOICE_CALLER", None)
         if isinstance(voice, dict) and voice:
-            return dict(voice)
+            return config.effective_caller(dict(voice))
         return self._caller(0)
 
     @staticmethod
@@ -2829,6 +3070,30 @@ class FlowController:
             return "This context source is large and may cost noticeable input tokens."
         return ""
 
+    @staticmethod
+    def _redaction_count(text: str) -> int:
+        """Return detected sensitive item count for preview-only privacy badges."""
+        if not str(text or "").strip():
+            return 0
+        try:
+            import config
+            if not bool(getattr(config, "TRUST_PRIVACY_MODE", True)):
+                return 0
+            from core.privacy_redaction import redact_with_report
+
+            _redacted, report = redact_with_report(str(text), source="preview")
+            return int(report.get("count") or 0)
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _with_privacy_warning(warning: str, redactions: int) -> str:
+        """Append detected-and-censored privacy detail to a context warning."""
+        if redactions <= 0:
+            return warning
+        privacy = f"Privacy: {redactions} item{'s' if redactions != 1 else ''} detected and censored."
+        return f"{warning}\n\n{privacy}" if warning else privacy
+
     def _intent_context_items(self, pending: PendingInvocation | None) -> list[dict[str, Any]]:
         """Build context preview chips for the intent overlay."""
         keys = self._intent_context_keys()
@@ -2885,6 +3150,10 @@ class FlowController:
             if has_screenshot
             else self._screen_token_label(context)
         )
+        app_redactions = self._redaction_count(active_text)
+        browser_redactions = self._redaction_count(browser_text)
+        selected_redactions = self._redaction_count(selected_text)
+        clipboard_redactions = self._redaction_count(clipboard_text)
 
         return [
             {
@@ -2893,12 +3162,16 @@ class FlowController:
                 "label": "App",
                 "state": app_state,
                 "tokens": self._deferred_token_label() if app_deferred else self._token_label(active_text),
-                "warning": self._context_warning(
-                    self._estimate_context_tokens(active_text),
-                    available=app_available,
-                    deferred=app_deferred,
-                    deferred_warning="Active app or document context may be fetched after you send the prompt, so this token cost is not known yet.",
-                ) if app_state != "off" else "",
+                "privacy_count": app_redactions,
+                "warning": self._with_privacy_warning(
+                    self._context_warning(
+                        self._estimate_context_tokens(active_text),
+                        available=app_available,
+                        deferred=app_deferred,
+                        deferred_warning="Active app or document context may be fetched after you send the prompt, so this token cost is not known yet.",
+                    ) if app_state != "off" else "",
+                    app_redactions,
+                ),
             },
             {
                 "id": "browser",
@@ -2906,12 +3179,16 @@ class FlowController:
                 "label": "Browser/Web",
                 "state": browser_state if browser_requested else "off",
                 "tokens": self._deferred_token_label() if browser_deferred else self._token_label(browser_text),
-                "warning": self._context_warning(
-                    browser_tokens,
-                    available=browser_available,
-                    deferred=browser_deferred,
-                    deferred_warning="Browser page text may be fetched after you send the prompt, so this token cost is not known yet.",
-                ) if browser_state != "off" else "",
+                "privacy_count": browser_redactions,
+                "warning": self._with_privacy_warning(
+                    self._context_warning(
+                        browser_tokens,
+                        available=browser_available,
+                        deferred=browser_deferred,
+                        deferred_warning="Browser page text may be fetched after you send the prompt, so this token cost is not known yet.",
+                    ) if browser_state != "off" else "",
+                    browser_redactions,
+                ),
             },
             {
                 "id": "selection",
@@ -2919,7 +3196,14 @@ class FlowController:
                 "label": "Selection",
                 "state": "on" if selected_text else "off",
                 "tokens": self._token_label(selected_text),
-                "warning": self._context_warning(self._estimate_context_tokens(selected_text), available=bool(selected_text)) if selected_text else "",
+                "privacy_count": selected_redactions,
+                "warning": self._with_privacy_warning(
+                    self._context_warning(
+                        self._estimate_context_tokens(selected_text),
+                        available=bool(selected_text),
+                    ) if selected_text else "",
+                    selected_redactions,
+                ),
             },
             {
                 "id": "clipboard",
@@ -2927,7 +3211,14 @@ class FlowController:
                 "label": "Clipboard",
                 "state": "on" if caller.get("context_clipboard") and clipboard_text else "off",
                 "tokens": self._token_label(clipboard_text),
-                "warning": self._context_warning(self._estimate_context_tokens(clipboard_text), available=bool(clipboard_text)) if caller.get("context_clipboard") else "",
+                "privacy_count": clipboard_redactions,
+                "warning": self._with_privacy_warning(
+                    self._context_warning(
+                        self._estimate_context_tokens(clipboard_text),
+                        available=bool(clipboard_text),
+                    ) if caller.get("context_clipboard") else "",
+                    clipboard_redactions,
+                ),
             },
             {
                 "id": "screenshot",

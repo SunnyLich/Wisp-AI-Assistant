@@ -52,6 +52,7 @@ class OverlaySignals(QObject):
     show_addon_manager    = Signal()        # tray "Addon Manager" clicked
     show_agent_task        = Signal()        # tray "Start agent task" clicked
     show_agent_history     = Signal()        # tray "Agent task history" clicked
+    show_health_status     = Signal()        # tray/settings health report requested
     context_items_dropped  = Signal(object)  # list[(name, content, type)] from drag-drop
     add_context_item       = Signal(str, str) # (name, type) add one removable badge (hotkey/voice add)
     show_context_summary   = Signal(object)  # list[(name, type)] of context sent with a prompt
@@ -248,6 +249,8 @@ class IconOverlay(QMainWindow):
         menu.aboutToShow.connect(self._sync_icon_toggle_text)
         memory_action = QAction(t("Memory"), self)
         memory_action.triggered.connect(self.signals.show_memory_viewer.emit)
+        health_action = QAction(t("Health Status"), self)
+        health_action.triggered.connect(self.signals.show_health_status.emit)
         settings_action = QAction(t("Settings"), self)
         settings_action.triggered.connect(self._open_settings)
         quit_action = QAction(t("Quit"), self)
@@ -256,6 +259,7 @@ class IconOverlay(QMainWindow):
         menu.addAction(self._icon_toggle_action)
         menu.addSeparator()
         menu.addAction(memory_action)
+        menu.addAction(health_action)
         addon_manager_action = QAction(t("Addon Manager"), self)
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
             addon_manager_action.triggered.connect(self.signals.show_addon_manager.emit)
@@ -370,7 +374,12 @@ class IconOverlay(QMainWindow):
         """Open settings."""
         from ui.settings_panel.dialog import open_settings
         QTimer.singleShot(
-            0, lambda: open_settings(parent=self, on_apply=self.signals.settings_applied.emit)
+            0,
+            lambda: open_settings(
+                parent=self,
+                on_apply=self.signals.settings_applied.emit,
+                on_setup_check=self.signals.show_health_status.emit,
+            ),
         )
 
     def _open_addon_manager(self):

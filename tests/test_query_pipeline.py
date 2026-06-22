@@ -3,6 +3,8 @@
 import threading
 import unittest
 
+import pytest
+
 from core.query_pipeline import (
     ContextInputs,
     GenerationCounter,
@@ -148,6 +150,7 @@ class BuildContextTests(unittest.TestCase):
             "---\n[Active document]\nACTIVE",
         )
 
+    @pytest.mark.workflow
     def test_privacy_mode_redacts_sensitive_text_by_default(self):
         """Verify privacy mode redacts sensitive text by default behavior."""
         out = _build(
@@ -162,6 +165,28 @@ class BuildContextTests(unittest.TestCase):
         self.assertNotIn("sk-proj-", out.ambient_ctx)
         self.assertNotIn("supersecret", out.ambient_ctx)
 
+    @pytest.mark.workflow
+    def test_privacy_mode_reports_detected_and_censored_items(self):
+        """Verify privacy mode records safe redaction report metadata."""
+        out = _build(
+            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            clipboard_text="Bearer abcdefghijklmnopqrstuvwxyz1234567890",
+            active_document_text="password=supersecret",
+        )
+
+        self.assertEqual(out.privacy_report["count"], 3)
+        self.assertEqual(out.privacy_report["categories"]["api_key"], 1)
+        self.assertEqual(out.privacy_report["categories"]["bearer_token"], 1)
+        self.assertEqual(out.privacy_report["categories"]["credential"], 1)
+        self.assertEqual(out.privacy_report["sources"]["selection"], 1)
+        self.assertEqual(out.privacy_report["sources"]["clipboard"], 1)
+        self.assertEqual(out.privacy_report["sources"]["active_document"], 1)
+        rendered = repr(out.privacy_report)
+        self.assertIn("sk-...7890", rendered)
+        self.assertNotIn("supersecret", rendered)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz1234567890", rendered)
+
+    @pytest.mark.workflow
     def test_privacy_mode_can_be_disabled_for_context_building(self):
         """Verify privacy mode can be disabled for context building behavior."""
         out = _build(
@@ -170,6 +195,7 @@ class BuildContextTests(unittest.TestCase):
         )
 
         self.assertIn("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", out.ambient_ctx)
+        self.assertEqual(out.privacy_report["count"], 0)
 
 
 class GenerationCounterTests(unittest.TestCase):

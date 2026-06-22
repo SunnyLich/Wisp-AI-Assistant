@@ -140,9 +140,9 @@ _REDACT_PATTERNS: list[tuple[re.Pattern, str]] = [
 
 def _redact(text: str) -> str:
     """Remove sensitive patterns from *text* before it is written to disk."""
-    for pattern, replacement in _REDACT_PATTERNS:
-        text = pattern.sub(replacement, text)
-    return text
+    from core.privacy_redaction import redact_text
+
+    return redact_text(text)
 
 
 # ---------------------------------------------------------------------------

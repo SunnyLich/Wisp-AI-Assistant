@@ -47,7 +47,17 @@ def test_pytest_command_enables_startup_faulthandler():
 def test_workflow_runner_points_to_product_ux_plan():
     """The workflow entrypoint keeps the assistant UX plan visible."""
     assert run_app_workflow_tests.PRODUCT_UX_PLAN == "docs/ASSISTANT_UX_FEATURE_PLAN.md"
-    assert "tests/test_app_user_workflows.py" in run_app_workflow_tests.WORKFLOW_TESTS
+    expected = {
+        "tests/test_app_user_workflows.py",
+        "tests/runtime/test_flows.py",
+        "tests/test_error_recommendations.py",
+        "tests/test_i18n_catalog_sources.py",
+        "tests/test_overlay_bubble_visibility.py",
+        "tests/test_query_pipeline.py",
+        "tests/test_settings_dialog_controls.py",
+        "tests/test_setup_check.py",
+    }
+    assert expected <= set(run_app_workflow_tests.WORKFLOW_TESTS)
 
 
 def test_pytest_preflight_reports_missing_project_venv(tmp_path, monkeypatch):

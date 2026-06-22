@@ -1647,6 +1647,12 @@ class QtProtocolHost:
             return self._reply_notice(**params)
         if method == "ui.reply.transcript":
             return self._reply_transcript(**params)
+        if method == "ui.voice.candidates":
+            return self._voice_candidates(**params)
+        if method == "ui.health.show":
+            return self._health_show(**params)
+        if method == "ui.privacy.report":
+            return self._privacy_report(**params)
         if method == "ui.reply.chunk":
             return self._reply_chunk(**params)
         if method == "ui.reply.done":
@@ -1757,6 +1763,9 @@ class QtProtocolHost:
             )
             self._overlay_signals.show_agent_history.connect(
                 lambda: self.emit("ui.agent.history_requested", {})
+            )
+            self._overlay_signals.show_health_status.connect(
+                lambda: self.emit("ui.health.requested", {})
             )
             self._overlay_signals.context_items_dropped.connect(self._context_items_dropped)
             self._overlay_signals.remove_dropped_item.connect(
@@ -1967,6 +1976,32 @@ class QtProtocolHost:
         """Handle reply transcript for qt protocol host."""
         self._ensure_bubble().show_transcript(text)
         return {"shown": bool((text or "").strip()), "text": text}
+
+    def _voice_candidates(
+        self,
+        text: str = "",
+        candidates: list | None = None,
+        purpose: str = "voice",
+    ) -> dict[str, Any]:
+        """Ask the user to accept/edit a voice transcript candidate."""
+        from PySide6.QtWidgets import QInputDialog
+
+        choices = [str(item).strip() for item in (candidates or []) if str(item).strip()]
+        if not choices and str(text or "").strip():
+            choices = [str(text).strip()]
+        if not choices:
+            return {"accepted": False, "text": ""}
+        parent = self._ensure_overlay()
+        title = "Dictation transcript" if purpose == "dictation" else "Voice transcript"
+        chosen, accepted = QInputDialog.getItem(
+            parent,
+            title,
+            "Choose or edit the transcript:",
+            choices,
+            0,
+            True,
+        )
+        return {"accepted": bool(accepted), "text": str(chosen or "").strip()}
 
     def _reply_chunk(
         self,
@@ -2688,12 +2723,67 @@ class QtProtocolHost:
         def _open() -> None:
             """Open the Settings dialog on the Qt thread."""
             try:
-                open_settings(parent=None, on_apply=self._settings_applied)
+                open_settings(
+                    parent=None,
+                    on_apply=self._settings_applied,
+                    on_setup_check=lambda: self.emit("ui.health.requested", {"source": "settings"}),
+                )
             except Exception:
                 traceback.print_exc()
 
         QTimer.singleShot(0, _open)
         return {"queued": True}
+
+    def _format_status_rows(self, rows: list[dict[str, Any]] | None) -> str:
+        """Format health/privacy rows for a compact QMessageBox."""
+        lines: list[str] = []
+        for row in rows or []:
+            status = str(row.get("status") or "warn").upper()
+            name = t(str(row.get("name") or "Check"))
+            message = t(str(row.get("message") or ""))
+            recommendation = t(str(row.get("recommendation") or ""))
+            block = f"{status} - {name}\n{message}"
+            if recommendation:
+                block += f"\n{recommendation}"
+            lines.append(block)
+        return "\n\n".join(lines) or t("No status details available.")
+
+    def _health_show(self, rows: list[dict[str, Any]] | None = None, title: str = "") -> dict[str, Any]:
+        """Show live setup/health rows in a dismissible window."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QMessageBox
+
+        body = self._format_status_rows(rows)
+
+        def _open() -> None:
+            QMessageBox.information(None, t(title or "Health Status"), body)
+
+        QTimer.singleShot(0, _open)
+        return {"queued": True, "count": len(rows or [])}
+
+    def _privacy_report(self, report: dict[str, Any] | None = None, title: str = "") -> dict[str, Any]:
+        """Show privacy redaction details using only safe previews."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QMessageBox
+
+        report = report or {}
+        count = int(report.get("count") or 0)
+        items = [item for item in (report.get("items") or []) if isinstance(item, dict)]
+        lines = [t("Privacy redaction report"), f"{count} {t('item(s) detected and censored.')}"]
+        for item in items[:8]:
+            category = t(str(item.get("category") or "Sensitive data"))
+            source = t(str(item.get("source") or "Context"))
+            preview = str(item.get("preview") or item.get("replacement") or "[redacted]")
+            lines.append(f"{category} - {source}: {preview}")
+        if count > len(items[:8]):
+            lines.append(t("Additional redactions were hidden from this compact report."))
+        body = "\n".join(lines)
+
+        def _open() -> None:
+            QMessageBox.information(None, t(title or "Privacy Report"), body)
+
+        QTimer.singleShot(0, _open)
+        return {"queued": True, "count": count}
 
     def _show_memory(self, facts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Show memory."""

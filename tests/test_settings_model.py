@@ -75,6 +75,98 @@ def test_get_settings_returns_typed_snapshot():
         _restore_config_globals(previous_config)
 
 
+def test_active_profile_overrides_model_and_budgets():
+    """Verify active profile owns model choices and budget settings."""
+    previous_config = _snapshot_config_globals()
+    try:
+        with patch("config.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "LLM_PROVIDER": "openai",
+                "LLM_MODEL": "base-model",
+                "PROFILE_COUNT": "1",
+                "PROFILE_1_ID": "deep-work",
+                "PROFILE_1_LABEL": "Deep Work",
+                "PROFILE_1_LLM_PROVIDER": "anthropic",
+                "PROFILE_1_LLM_MODEL": "claude-profile",
+                "PROFILE_1_CONTEXT_BROWSER_MAX_CHARS": "22222",
+                "PROFILE_1_CONTEXT_TOOL_DOCUMENT_MAX_CHARS": "77777",
+                "PROFILE_1_TOOL_TURN_MAX_CALLS": "6",
+                "PROFILE_1_TOOL_TURN_MAX_RESULT_CHARS": "33333",
+                "PROFILE_1_TOOL_TURN_MAX_TOTAL_CHARS": "99999",
+                "PROFILE_1_CONTEXT_BROWSER_MODE": "model",
+                "CALLER_COUNT": "1",
+                "SETTINGS_PROFILE": "deep-work",
+            },
+            clear=True,
+        ):
+            config.reload()
+
+        settings = config.get_settings()
+
+        assert config.ACTIVE_PROFILE == "deep-work"
+        assert config.LLM_PROVIDER == "anthropic"
+        assert config.LLM_MODEL == "claude-profile"
+        assert config.CONTEXT_BROWSER_MAX_CHARS == 22222
+        assert config.CONTEXT_TOOL_DOCUMENT_MAX_CHARS == 77777
+        assert config.TOOL_TURN_MAX_CALLS == 6
+        assert settings.active_profile == "deep-work"
+        assert settings.llm.provider == "anthropic"
+        assert settings.tool_turn.max_total_chars == 99999
+        assert config.CALLER_ROWS[0]["context_browser_mode"] == "model"
+    finally:
+        _restore_config_globals(previous_config)
+
+
+def test_caller_can_select_profile_without_changing_active_profile():
+    """Verify per-caller profile selection applies context defaults."""
+    previous_config = _snapshot_config_globals()
+    try:
+        with patch("config.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "PROFILE_COUNT": "1",
+                "PROFILE_1_ID": "coding-lite",
+                "PROFILE_1_LABEL": "Coding Lite",
+                "PROFILE_1_CONTEXT_DOCUMENTS_MODE": "model",
+                "PROFILE_1_CONTEXT_BROWSER_MODE": "model",
+                "PROFILE_1_CONTEXT_MEMORY_MODE": "off",
+                "PROFILE_1_FILE_ACCESS": "read",
+                "CALLER_COUNT": "1",
+                "CALLER_1_PROFILE": "coding-lite",
+            },
+            clear=True,
+        ):
+            config.reload()
+
+        row = config.CALLER_ROWS[0]
+
+        assert config.ACTIVE_PROFILE == "default"
+        assert row["profile"] == "coding-lite"
+        assert row["context_documents_mode"] == "model"
+        assert row["context_browser_mode"] == "model"
+        assert row["context_memory_mode"] == "off"
+        assert row["file_access"] == "read"
+    finally:
+        _restore_config_globals(previous_config)
+
+
+def test_default_profile_preserves_legacy_second_caller_defaults():
+    """Verify default profile does not accidentally enable rewrite context."""
+    previous_config = _snapshot_config_globals()
+    try:
+        with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=True):
+            config.reload()
+
+        row = config.CALLER_ROWS[1]
+
+        assert config.ACTIVE_PROFILE == "default"
+        assert row["context_documents_mode"] == "off"
+        assert row["context_memory_mode"] == "off"
+    finally:
+        _restore_config_globals(previous_config)
+
+
 def test_trust_privacy_mode_can_be_disabled():
     """Verify trust privacy mode can be disabled behavior."""
     previous_config = _snapshot_config_globals()

@@ -15,6 +15,58 @@
       <translation>Préréglages...</translation>
     </message>
     <message>
+      <source>Run setup check</source>
+      <translation>Lancer la verification de configuration</translation>
+    </message>
+    <message>
+      <source>Check provider, speech, hotkey, and privacy readiness.</source>
+      <translation>Verifie le fournisseur, la voix, les raccourcis et la confidentialite.</translation>
+    </message>
+    <message>
+      <source>Setup check</source>
+      <translation>Verification de configuration</translation>
+    </message>
+    <message>
+      <source>Health Status</source>
+      <translation>Etat de sante</translation>
+    </message>
+    <message>
+      <source>Voice transcript</source>
+      <translation>Transcription vocale</translation>
+    </message>
+    <message>
+      <source>Dictation transcript</source>
+      <translation>Transcription de dictee</translation>
+    </message>
+    <message>
+      <source>Choose or edit the transcript:</source>
+      <translation>Choisissez ou modifiez la transcription :</translation>
+    </message>
+    <message>
+      <source>No status details available.</source>
+      <translation>Aucun detail d'etat disponible.</translation>
+    </message>
+    <message>
+      <source>Privacy Report</source>
+      <translation>Rapport de confidentialite</translation>
+    </message>
+    <message>
+      <source>Privacy redaction report</source>
+      <translation>Rapport de masquage de confidentialite</translation>
+    </message>
+    <message>
+      <source>item(s) detected and censored.</source>
+      <translation>element(s) detectes et masques.</translation>
+    </message>
+    <message>
+      <source>Sensitive data</source>
+      <translation>Donnees sensibles</translation>
+    </message>
+    <message>
+      <source>Additional redactions were hidden from this compact report.</source>
+      <translation>Des masquages supplementaires sont caches dans ce rapport compact.</translation>
+    </message>
+    <message>
       <source>Apply a starter configuration for common Wisp setups. Review changes before Apply.</source>
       <translation>Applique une configuration de départ pour les usages courants de Wisp. Vérifiez les changements avant d’appliquer.</translation>
     </message>

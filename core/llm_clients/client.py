@@ -410,6 +410,46 @@ def _effective_live_file_event_callback() -> Callable[[dict], None] | None:
     return getattr(_LIVE_TOOL_CONTEXT, "file_event_callback", None)
 
 
+def _tool_turn_budget():
+    """Return active profile tool budgets with conservative fallbacks."""
+    try:
+        return config.get_settings().tool_turn
+    except Exception:
+        from core.settings_model import ToolTurnBudgets
+
+        return ToolTurnBudgets(max_calls=3, max_result_chars=50000, max_total_chars=90000)
+
+
+def _clip_tool_result_for_turn(result: str, spent_chars: int) -> tuple[str, int]:
+    """Clip a text tool result to active per-result and per-turn budgets."""
+    budget = _tool_turn_budget()
+    text = str(result or "")
+    per_result = max(1, int(budget.max_result_chars or 1))
+    total = max(1, int(budget.max_total_chars or 1))
+    remaining = max(0, total - max(0, spent_chars))
+    limit = min(per_result, remaining)
+    if limit <= 0:
+        return (
+            "[tool result omitted: this reply's tool-result budget is exhausted. "
+            "Ask for a narrower source, page range, or search term.]",
+            spent_chars,
+        )
+    if len(text) <= limit:
+        return text, spent_chars + len(text)
+    clipped = text[:limit].rstrip()
+    clipped += (
+        "\n[truncated: ask for a narrower source, page range, or search term "
+        "to inspect more of this result.]"
+    )
+    return clipped, spent_chars + limit
+
+
+def _tool_call_limit_reached(call_count: int) -> bool:
+    """Return whether this turn has used its model tool-call budget."""
+    budget = _tool_turn_budget()
+    return call_count >= max(0, int(budget.max_calls or 0))
+
+
 def _execute_list_files(inputs: dict) -> str:
     """List text-accessible files within a configured local-file root."""
     return execute_live_file_tool(
@@ -2363,6 +2403,8 @@ def _run_responses_tool_loop(
         model=model,
     )
     _update_route_capabilities(provider, model, supports_tools=True)
+    tool_call_count = 0
+    tool_result_chars = 0
     for _round in range(max_rounds):
         calls = _response_function_calls(response)
         if not calls:
@@ -2410,7 +2452,15 @@ def _run_responses_tool_loop(
             except Exception:
                 inputs = {}
             executed_tools.append(call["name"])
-            result = _execute_model_tool(call["name"], inputs, allowed_tools=allowed_tools)
+            if _tool_call_limit_reached(tool_call_count):
+                result = (
+                    "Tool call skipped: this reply's tool-call budget is exhausted. "
+                    "Ask for a narrower request or run a deeper profile."
+                )
+            else:
+                tool_call_count += 1
+                result = _execute_model_tool(call["name"], inputs, allowed_tools=allowed_tools)
+                result, tool_result_chars = _clip_tool_result_for_turn(result, tool_result_chars)
             tool_outputs.append({
                 "type": "function_call_output",
                 "call_id": call["call_id"],
@@ -4137,6 +4187,8 @@ def _stream_openai_compat(
     vision_mode = False
     executed_tools: list[str] = []
     mutation_continuation_sent = False
+    tool_call_count = 0
+    tool_result_chars = 0
     for _round in range(3):
         pending_image_b64: str | None = None
         for tc in tool_calls_acc.values():
@@ -4144,6 +4196,17 @@ def _stream_openai_compat(
                 inputs = _json.loads(tc["arguments"] or "{}")
             except Exception:
                 inputs = {}
+            if _tool_call_limit_reached(tool_call_count):
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": (
+                        "Tool call skipped: this reply's tool-call budget is exhausted. "
+                        "Ask for a narrower request or run a deeper profile."
+                    ),
+                })
+                continue
+            tool_call_count += 1
             if tc["name"] == "capture_screen":
                 # OpenAI tool messages can't carry an image, so acknowledge the
                 # call with text and deliver the screenshot as a user message
@@ -4160,6 +4223,7 @@ def _stream_openai_compat(
             else:
                 executed_tools.append(tc["name"])
                 result = _execute_model_tool(tc["name"], inputs, allowed_tools=allowed_tools)
+                result, tool_result_chars = _clip_tool_result_for_turn(result, tool_result_chars)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
         if pending_image_b64:
@@ -4420,11 +4484,25 @@ def _run_anthropic_tool_loop(
     messages.append({"role": "assistant", "content": first_response.content})
     final = first_response
     current_model = model
+    tool_call_count = 0
+    tool_result_chars = 0
     for _round in range(3):
         tool_results = []
         for block in final.content:
             if getattr(block, "type", "") != "tool_use":
                 continue
+            if _tool_call_limit_reached(tool_call_count):
+                content = (
+                    "Tool call skipped: this reply's tool-call budget is exhausted. "
+                    "Ask for a narrower request or run a deeper profile."
+                )
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": content,
+                })
+                continue
+            tool_call_count += 1
             if block.name == "capture_screen":
                 # Return the screenshot as an image block; upgrade the loop to a
                 # vision-capable model for the rounds that follow.
@@ -4445,6 +4523,7 @@ def _run_anthropic_tool_loop(
                 _log_context("tool: capture_screen", "<screenshot>" if b64 else "<failed>")
             else:
                 content = _execute_model_tool(block.name, block.input or {}, allowed_tools=allowed_tools)
+                content, tool_result_chars = _clip_tool_result_for_turn(content, tool_result_chars)
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,

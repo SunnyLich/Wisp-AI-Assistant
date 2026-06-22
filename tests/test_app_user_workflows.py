@@ -256,7 +256,9 @@ def test_brain_query_workflow_assembles_context_and_redacts_secrets(
     assert "[REDACTED_CREDENTIAL]" in text
     assert "supersecret" not in text
     assert any(event == "reply.chunk" for event, _data in events)
-    assert ("reply.done", {"text": text}) in events
+    assert any(event == "reply.done" and data.get("text") == text for event, data in events)
+    done = next(data for event, data in events if event == "reply.done")
+    assert done["privacy_report"]["count"] >= 1
 
 
 def test_stream_cancel_stops_query_and_returns_partial_result(

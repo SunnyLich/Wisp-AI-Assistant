@@ -235,10 +235,11 @@ def _write_env(vals: dict[str, str], remove_keys: set[str] | None = None):
 
 class SettingsDialog(QDialog):
     """Qt dialog for settings dialog."""
-    def __init__(self, parent=None, on_apply=None):
+    def __init__(self, parent=None, on_apply=None, on_setup_check=None):
         """Initialize the settings dialog instance."""
         super().__init__(parent)
         self._on_apply = on_apply  # callable() fired after a successful apply
+        self._on_setup_check = on_setup_check
         self._disposing = False
         self.setWindowTitle("Settings")
         self.setMinimumWidth(480)
@@ -542,6 +543,11 @@ class SettingsDialog(QDialog):
         preset_btn.setToolTip(t("Apply a starter configuration for common Wisp setups. Review changes before Apply."))
         preset_btn.setMenu(self._build_presets_menu(preset_btn))
         top_row.addWidget(preset_btn)
+        setup_btn = QPushButton(t("Run setup check"))
+        setup_btn.setObjectName("settingsSetupCheckButton")
+        setup_btn.setToolTip(t("Check provider, speech, hotkey, and privacy readiness."))
+        setup_btn.clicked.connect(self._run_setup_check)
+        top_row.addWidget(setup_btn)
         root.addLayout(top_row)
 
         self._search_status_lbl = QLabel()
@@ -612,6 +618,36 @@ class SettingsDialog(QDialog):
             action.setToolTip(t(_PRESET_DESCRIPTIONS[slug]))
             action.triggered.connect(lambda _checked=False, preset=slug: self._apply_preset(preset))
         return menu
+
+    def _run_setup_check(self) -> None:
+        """Run lightweight setup checks and show a reusable report."""
+        if callable(self._on_setup_check):
+            self._on_setup_check()
+            return
+        try:
+            from core.setup_check import run_setup_check
+
+            rows = run_setup_check()
+        except Exception as exc:  # noqa: BLE001 - setup check must not crash settings
+            rows = [
+                {
+                    "name": t("Setup check"),
+                    "status": "fail",
+                    "message": f"{type(exc).__name__}: {exc}",
+                    "recommendation": t("Recommendation: close Settings, reopen it, and try again."),
+                }
+            ]
+        lines = []
+        for row in rows:
+            status = str(row.get("status") or "warn").upper()
+            name = t(str(row.get("name") or "Check"))
+            message = t(str(row.get("message") or ""))
+            recommendation = t(str(row.get("recommendation") or ""))
+            block = f"{status} - {name}\n{message}"
+            if recommendation:
+                block += f"\n{recommendation}"
+            lines.append(block)
+        QMessageBox.information(self, t("Setup check"), "\n\n".join(lines))
 
     @staticmethod
     def _preset_slug(raw: str) -> str:
@@ -5393,7 +5429,7 @@ def _clear_settings_dialog(_obj=None) -> None:
         _settings_dialog = None
 
 
-def _open_settings_now(parent=None, on_apply=None):
+def _open_settings_now(parent=None, on_apply=None, on_setup_check=None):
     """Open settings now."""
     global _settings_dialog, _settings_open_pending
     _settings_open_pending = False
@@ -5411,10 +5447,15 @@ def _open_settings_now(parent=None, on_apply=None):
         _settings_dialog = None
 
     if _settings_dialog is None:
-        _settings_dialog = SettingsDialog(dialog_parent, on_apply=on_apply)
+        _settings_dialog = SettingsDialog(
+            dialog_parent,
+            on_apply=on_apply,
+            on_setup_check=on_setup_check,
+        )
         _settings_dialog.destroyed.connect(_clear_settings_dialog)
     else:
         _settings_dialog._on_apply = on_apply
+        _settings_dialog._on_setup_check = on_setup_check
 
     if _settings_dialog.isMinimized():
         _settings_dialog.showNormal()
@@ -5423,10 +5464,17 @@ def _open_settings_now(parent=None, on_apply=None):
     _settings_dialog.activateWindow()
 
 
-def open_settings(parent=None, on_apply=None):
+def open_settings(parent=None, on_apply=None, on_setup_check=None):
     """Open settings."""
     global _settings_open_pending
     if _settings_open_pending:
         return
     _settings_open_pending = True
-    QTimer.singleShot(50, lambda: _open_settings_now(parent=parent, on_apply=on_apply))
+    QTimer.singleShot(
+        50,
+        lambda: _open_settings_now(
+            parent=parent,
+            on_apply=on_apply,
+            on_setup_check=on_setup_check,
+        ),
+    )

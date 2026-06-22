@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import pytest
 import config
 from runtime.supervisor.flows import FlowController
 
@@ -2214,6 +2215,54 @@ def test_dictation_does_not_show_recording_ui_when_recorder_reports_false():
     assert not any(call["params"].get("state") == "listening" for call in ui.calls_for("ui.overlay.state"))
 
 
+@pytest.mark.workflow
+def test_voice_transcript_confirmation_uses_accepted_candidate(monkeypatch):
+    """Voice confirmation edits the transcript before the assistant query fires."""
+    monkeypatch.setattr(config, "VOICE_TRANSCRIPT_CONFIRM", True, raising=False)
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "raw voice prompt"}})
+    ui = FakeWorker({"ui.voice.candidates": lambda params: {"accepted": True, "text": "edited voice prompt"}})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("reply")})
+    with voice_config(
+        {
+            "context_ambient": False,
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "tools": {},
+        }
+    ):
+        _flow, _native, _ui, brain, _audio = make_flow(native=native, ui=ui, brain=brain, audio=audio)
+        native.emit("native.hotkey", {"kind": "voice_start"})
+        native.emit("native.hotkey", {"kind": "voice_stop"})
+
+    candidate_call = ui.last_call("ui.voice.candidates")["params"]
+    assert candidate_call["candidates"][0] == "raw voice prompt"
+    assert brain.last_call("brain.query")["params"]["intent_prompt"] == "edited voice prompt"
+
+
+@pytest.mark.workflow
+def test_dictation_transcript_confirmation_cancel_skips_paste(monkeypatch):
+    """Cancelling dictation confirmation leaves the focused field unchanged."""
+    monkeypatch.setattr(config, "VOICE_TRANSCRIPT_CONFIRM", True, raising=False)
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected="", pid=777, focus_token=9),
+            "native.paste_text": lambda _params: {"ok": True},
+        }
+    )
+    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "raw dictation"}})
+    ui = FakeWorker({"ui.voice.candidates": lambda _params: {"accepted": False, "text": ""}})
+    _flow, native, _ui, _brain, _audio = make_flow(native=native, ui=ui, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_stop"})
+
+    assert ui.calls_for("ui.voice.candidates")
+    assert not native.calls_for("native.paste_text")
+
+
 def test_caller_tool_overrides_reach_brain_query():
     """Verify caller tool overrides reach brain query behavior."""
     rows = [
@@ -2242,6 +2291,118 @@ def test_caller_tool_overrides_reach_brain_query():
     assert set(query["allowed_tools"]) == {"my_tool", "other_tool"}
     assert query["pinned_tools"] == ["my_tool"]
     assert query["use_tools"] is True
+
+
+@pytest.mark.workflow
+def test_query_privacy_report_surfaces_redacted_summary_badge_and_report():
+    """A brain privacy report becomes a visible badge plus report payload."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "tools": {},
+        }
+    ]
+
+    report = {
+        "count": 2,
+        "categories": {"email": 1, "api_key": 1},
+        "items": [
+            {"category": "email", "source": "Selection", "preview": "[email redacted]"},
+            {"category": "api_key", "source": "Clipboard", "preview": "[api key redacted]"},
+        ],
+    }
+
+    def query_with_privacy(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event("reply.done", {"text": "ok", "privacy_report": report}, 1)
+        return {"text": "ok", "privacy_report": report}
+
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": query_with_privacy})
+    with caller_config(rows):
+        _flow, native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit("ui.intent.chosen", {"custom": "go"})
+
+    summaries = ui.calls_for("ui.context.summary")
+    assert any(
+        item.get("label") == "Privacy: 2 redacted"
+        for call in summaries
+        for item in call["params"].get("items", [])
+    )
+    privacy = ui.last_call("ui.privacy.report")["params"]
+    assert privacy["report"]["count"] == 2
+    assert privacy["report"]["items"][0]["preview"] == "[email redacted]"
+
+
+@pytest.mark.workflow
+def test_health_status_request_collects_live_rows_and_warns(monkeypatch):
+    """Health Status routes through the supervisor and combines worker checks."""
+    import core.setup_check as setup_check
+
+    monkeypatch.setattr(
+        setup_check,
+        "run_setup_check",
+        lambda: [
+            {
+                "name": "Config",
+                "status": "ok",
+                "message": "Static config check passed.",
+                "recommendation": "",
+            }
+        ],
+    )
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "openai", raising=False)
+    monkeypatch.setattr(config, "LLM_MODEL", "gpt-test", raising=False)
+    monkeypatch.setattr(config, "LLM_FALLBACKS", "", raising=False)
+
+    ui = FakeWorker(
+        {
+            "ping": lambda _params: {"pong": True},
+            "ui.health.show": lambda _params: {"queued": True},
+            "ui.reply.notice": lambda _params: {"queued": True},
+        }
+    )
+    brain = FakeWorker(
+        {
+            "ping": lambda _params: {"pong": True},
+            "brain.llm.test": lambda _params: {"ok": True, "message": "LLM OK"},
+        }
+    )
+    audio = FakeWorker(
+        {
+            "ping": lambda _params: {"pong": True},
+            "audio.stt.is_ready": lambda _params: {"ready": False, "message": "STT warming up"},
+        }
+    )
+    native = FakeWorker(
+        {
+            "ping": lambda _params: {"pong": True},
+            "native.permissions.snapshot": lambda _params: {
+                "accessibility": True,
+                "screen_recording": False,
+                "microphone": "authorized",
+            },
+        }
+    )
+
+    flow, _native, ui, _brain, _audio = make_flow(native=native, ui=ui, brain=brain, audio=audio)
+    flow._last_privacy_report = {"count": 1, "categories": {"email": 1}}
+    ui.emit("ui.health.requested", {})
+
+    rows = ui.last_call("ui.health.show")["params"]["rows"]
+    names = {row["name"] for row in rows}
+    assert {"Config", "UI worker", "Brain worker", "Audio worker", "Native worker", "LLM", "STT", "TTS", "Screenshot capture", "Privacy"} <= names
+    assert any(row["name"] == "STT" and row["status"] == "warn" for row in rows)
+    assert any(row["name"] == "Screenshot capture" and row["status"] == "fail" for row in rows)
+    assert "Health issue:" in ui.last_call("ui.reply.notice")["params"]["text"]
 
 
 def test_off_tool_override_beats_context_dropdown():
@@ -2453,8 +2614,8 @@ def test_chat_context_preview_estimates_off_context_sources_without_capture():
     native = FakeWorker(
         {
             "native.context.snapshot": lambda _params: {
-                "selected_text": "selected chat text",
-                "clipboard_text": "clipboard chat text",
+                "selected_text": "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+                "clipboard_text": "password=supersecret",
                 "active_app": {"name": "Preview App", "pid": 42, "bundle_id": "com.preview"},
                 "screen_size": {"width": 1920, "height": 1080},
             },
@@ -2490,6 +2651,9 @@ def test_chat_context_preview_estimates_off_context_sources_without_capture():
     assert chips["screenshot"]["tokens"] == "~1.1k tok"
     assert chips["selection"]["tokens"].startswith("~")
     assert chips["clipboard"]["tokens"].startswith("~")
+    assert chips["selection"]["privacy_count"] == 1
+    assert "detected and censored" in chips["selection"]["warning"]
+    assert chips["clipboard"]["privacy_count"] == 1
     assert chips["ambient"]["tokens"].startswith("~")
     assert not native.calls_for("native.capture.fullscreen")
 

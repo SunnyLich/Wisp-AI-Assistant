@@ -15,6 +15,58 @@
       <translation>Preajustes...</translation>
     </message>
     <message>
+      <source>Run setup check</source>
+      <translation>Ejecutar comprobacion de configuracion</translation>
+    </message>
+    <message>
+      <source>Check provider, speech, hotkey, and privacy readiness.</source>
+      <translation>Comprueba proveedor, voz, atajos y privacidad.</translation>
+    </message>
+    <message>
+      <source>Setup check</source>
+      <translation>Comprobacion de configuracion</translation>
+    </message>
+    <message>
+      <source>Health Status</source>
+      <translation>Estado de salud</translation>
+    </message>
+    <message>
+      <source>Voice transcript</source>
+      <translation>Transcripcion de voz</translation>
+    </message>
+    <message>
+      <source>Dictation transcript</source>
+      <translation>Transcripcion de dictado</translation>
+    </message>
+    <message>
+      <source>Choose or edit the transcript:</source>
+      <translation>Elige o edita la transcripcion:</translation>
+    </message>
+    <message>
+      <source>No status details available.</source>
+      <translation>No hay detalles de estado disponibles.</translation>
+    </message>
+    <message>
+      <source>Privacy Report</source>
+      <translation>Informe de privacidad</translation>
+    </message>
+    <message>
+      <source>Privacy redaction report</source>
+      <translation>Informe de censura de privacidad</translation>
+    </message>
+    <message>
+      <source>item(s) detected and censored.</source>
+      <translation>elemento(s) detectados y censurados.</translation>
+    </message>
+    <message>
+      <source>Sensitive data</source>
+      <translation>Datos sensibles</translation>
+    </message>
+    <message>
+      <source>Additional redactions were hidden from this compact report.</source>
+      <translation>Se ocultaron censuras adicionales en este informe compacto.</translation>
+    </message>
+    <message>
       <source>Apply a starter configuration for common Wisp setups. Review changes before Apply.</source>
       <translation>Aplica una configuración inicial para usos comunes de Wisp. Revisa los cambios antes de aplicar.</translation>
     </message>

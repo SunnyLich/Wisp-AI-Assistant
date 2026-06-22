@@ -65,6 +65,7 @@ class BuiltContext:
     user_message: str
     ambient_ctx: str
     screenshot_b64: str | None
+    privacy_report: dict = field(default_factory=dict)
 
 
 def _context_sources(ambient_text: str, all_contexts: list[str], active_document_text: str) -> set[str]:
@@ -104,6 +105,21 @@ def _redact_if_enabled(text: str | None, enabled: bool) -> str:
     return _redact(str(text))
 
 
+def _redact_with_report_if_enabled(
+    text: str | None,
+    enabled: bool,
+    source: str,
+) -> tuple[str, dict]:
+    """Apply privacy redaction and keep a detected/censored report."""
+    if not text:
+        return "", {"source": source, "count": 0, "items": [], "categories": {}}
+    if not enabled:
+        return str(text), {"source": source, "count": 0, "items": [], "categories": {}}
+    from core.privacy_redaction import redact_with_report
+
+    return redact_with_report(str(text), source=source)
+
+
 def build_context(
     inp: ContextInputs,
     *,
@@ -127,9 +143,14 @@ def build_context(
 
     screenshot_b64 = inp.screenshot_b64
     privacy_enabled = bool(inp.trust_privacy_mode)
-    context_items: list[str] = [
-        _redact_if_enabled(item, privacy_enabled) for item in inp.buffered_items
-    ]
+    reports: list[dict] = []
+    context_items: list[str] = []
+    for item in inp.buffered_items:
+        redacted, report = _redact_with_report_if_enabled(
+            item, privacy_enabled, "buffered_context"
+        )
+        context_items.append(redacted)
+        reports.append(report)
 
     for name, content, item_type in inp.drop_items:
         if item_type == "image" and screenshot_b64 is None:
@@ -137,18 +158,35 @@ def build_context(
         elif item_type == "document_path":
             doc_text = read_document_file(content)
             if doc_text:
-                context_items.append(
-                    _redact_if_enabled(f"[{name}]\n{doc_text}", privacy_enabled)
+                redacted, report = _redact_with_report_if_enabled(
+                    f"[{name}]\n{doc_text}", privacy_enabled, f"document:{name}"
                 )
+                context_items.append(redacted)
+                reports.append(report)
         else:
-            context_items.append(_redact_if_enabled(content, privacy_enabled))
+            redacted, report = _redact_with_report_if_enabled(
+                content, privacy_enabled, f"dropped:{name}"
+            )
+            context_items.append(redacted)
+            reports.append(report)
 
     if inp.clipboard_text:
-        context_items.append(_redact_if_enabled(inp.clipboard_text, privacy_enabled))
+        redacted, report = _redact_with_report_if_enabled(
+            inp.clipboard_text, privacy_enabled, "clipboard"
+        )
+        context_items.append(redacted)
+        reports.append(report)
 
-    selected = _redact_if_enabled(inp.selected, privacy_enabled)
-    ambient_text = _redact_if_enabled(inp.ambient_text, privacy_enabled)
-    active_document_text = _redact_if_enabled(inp.active_document_text, privacy_enabled)
+    selected, selected_report = _redact_with_report_if_enabled(
+        inp.selected, privacy_enabled, "selection"
+    )
+    ambient_text, ambient_report = _redact_with_report_if_enabled(
+        inp.ambient_text, privacy_enabled, "ambient"
+    )
+    active_document_text, document_report = _redact_with_report_if_enabled(
+        inp.active_document_text, privacy_enabled, "active_document"
+    )
+    reports.extend([selected_report, ambient_report, document_report])
 
     all_contexts = context_items + ([selected] if selected else [])
     sources = _context_sources(ambient_text, all_contexts, active_document_text)
@@ -171,8 +209,15 @@ def build_context(
         if part
     )
 
+    user_message, prompt_report = _redact_with_report_if_enabled(
+        inp.intent_prompt, privacy_enabled, "prompt"
+    )
+    reports.append(prompt_report)
+    from core.privacy_redaction import merge_reports
+
     return BuiltContext(
-        user_message=_redact_if_enabled(inp.intent_prompt, privacy_enabled),
+        user_message=user_message,
         ambient_ctx=ambient_ctx,
         screenshot_b64=screenshot_b64,
+        privacy_report=merge_reports(*reports),
     )

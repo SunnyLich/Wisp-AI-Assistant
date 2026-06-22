@@ -27,6 +27,13 @@ from pathlib import Path
 
 WORKFLOW_TESTS = (
     "tests/test_app_user_workflows.py",
+    "tests/runtime/test_flows.py",
+    "tests/test_error_recommendations.py",
+    "tests/test_i18n_catalog_sources.py",
+    "tests/test_overlay_bubble_visibility.py",
+    "tests/test_query_pipeline.py",
+    "tests/test_settings_dialog_controls.py",
+    "tests/test_setup_check.py",
     "tests/test_real_gpt55_integration.py",
     "tests/test_real_host_native_smoke.py",
 )

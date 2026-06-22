@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import config
+from core.settings_model import ToolTurnBudgets
 from core.llm_clients import client as llm
 from core.llm_clients import prompt_guidance
 
@@ -52,6 +53,26 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("web_search", names)
         self.assertIn("get_context", names)
         self.assertTrue(self._GIT_TOOLS.isdisjoint(names))
+
+    def test_tool_result_budget_clips_large_outputs(self):
+        """Verify active profile tool-result budgets cap returned text."""
+        settings = SimpleNamespace(
+            tool_turn=ToolTurnBudgets(
+                max_calls=3,
+                max_result_chars=10,
+                max_total_chars=12,
+            )
+        )
+
+        with patch.object(llm.config, "get_settings", return_value=settings):
+            first, spent = llm._clip_tool_result_for_turn("abcdefghijklmno", 0)
+            second, spent = llm._clip_tool_result_for_turn("uvwxyz", spent)
+
+        self.assertTrue(first.startswith("abcdefghij"))
+        self.assertIn("truncated", first)
+        self.assertTrue(second.startswith("uv"))
+        self.assertIn("truncated", second)
+        self.assertEqual(spent, 12)
 
     def test_retrieve_website_is_browser_scoped(self):
         """Verify retrieve_website follows explicit Browser/Web tool grants."""

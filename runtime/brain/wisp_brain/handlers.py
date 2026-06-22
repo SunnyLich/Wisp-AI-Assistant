@@ -1388,6 +1388,9 @@ def brain_query(
     done_payload: dict[str, Any] = {"text": full}
     if file_context:
         done_payload["file_context"] = file_context
+    privacy_report = getattr(built, "privacy_report", None)
+    if isinstance(privacy_report, dict) and privacy_report.get("count"):
+        done_payload["privacy_report"] = privacy_report
     ctx.emit("reply.done", done_payload)
     _notify_addon_after_response(full)
     return done_payload
@@ -1409,6 +1412,7 @@ def _redact_built_context(built: Any) -> Any:
             user_message=_redact_text(getattr(built, "user_message", "")),
             ambient_ctx=_redact_text(getattr(built, "ambient_ctx", "")),
             screenshot_b64=getattr(built, "screenshot_b64", None),
+            privacy_report=getattr(built, "privacy_report", {}),
         )
     except Exception as exc:  # noqa: BLE001 - privacy pass should not block answering
         _log(f"privacy redaction skipped: {type(exc).__name__}: {exc}")
@@ -1431,6 +1435,7 @@ def _apply_frontloaded_tools(built: Any, frontload_tools: list[str] | None) -> A
             user_message=getattr(built, "user_message", ""),
             ambient_ctx=ambient_ctx,
             screenshot_b64=getattr(built, "screenshot_b64", None),
+            privacy_report=getattr(built, "privacy_report", {}),
         )
     except Exception as exc:  # noqa: BLE001 - injected context should not block answering
         _log(f"frontloaded tools skipped: {type(exc).__name__}: {exc}")
@@ -1453,6 +1458,7 @@ def _apply_addon_before_query(built: Any) -> Any:
             user_message=user_message,
             ambient_ctx=ambient_ctx,
             screenshot_b64=getattr(built, "screenshot_b64", None),
+            privacy_report=getattr(built, "privacy_report", {}),
         )
     except Exception as exc:  # noqa: BLE001 - addon hooks should not block answering
         _log(f"addon before_query skipped: {type(exc).__name__}: {exc}")

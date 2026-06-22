@@ -64,6 +64,31 @@ def test_settings_memory_tab_does_not_show_stored_facts():
         app.processEvents()
 
 
+@pytest.mark.workflow
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_exposes_setup_check_button():
+    """Verify Settings exposes the reusable setup check entry point."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    calls = []
+    dialog = SettingsDialog(on_setup_check=lambda: calls.append("setup"))
+    try:
+        button = dialog.findChild(QPushButton, "settingsSetupCheckButton")
+        assert button is not None
+        assert button.text() == t("Run setup check")
+        button.click()
+        assert calls == ["setup"]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_exposes_stt_settings():
     """Verify tts voice tab exposes stt settings behavior."""
@@ -744,10 +769,11 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
         """Qt dialog for fake dialog."""
         created = []
 
-        def __init__(self, parent=None, on_apply=None) -> None:
+        def __init__(self, parent=None, on_apply=None, on_setup_check=None) -> None:
             """Initialize the fake dialog instance."""
             self.parent = parent
             self._on_apply = on_apply
+            self._on_setup_check = on_setup_check
             self._disposing = False
             self.visible = True
             self.deleted = False
@@ -790,9 +816,9 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
     old.visible = False
     new_dialogs = []
 
-    def make_dialog(parent=None, on_apply=None):
+    def make_dialog(parent=None, on_apply=None, on_setup_check=None):
         """Verify make dialog behavior."""
-        dialog = FakeDialog(parent=parent, on_apply=on_apply)
+        dialog = FakeDialog(parent=parent, on_apply=on_apply, on_setup_check=on_setup_check)
         new_dialogs.append(dialog)
         return dialog
 

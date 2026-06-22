@@ -11,7 +11,13 @@ from core.system.env_utils import (
 from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
 from core.system.paths import USER_FILLER_AUDIO_DIR as DEFAULT_USER_FILLER_AUDIO_DIR
 from core.system.paths import REPO_ROOT, MODEL_FILE_ACCESS_DIR, MODEL_TOOLS_DIR
-from core.settings_model import AppSettings
+from core.settings_model import (
+    AppSettings,
+    ContextBudgets,
+    ModelSettings,
+    ProfileSettings,
+    ToolTurnBudgets,
+)
 
 _ENV_FILE = REPO_ROOT / ".env"
 _LOADED_DOTENV_KEYS: set[str] = set()
@@ -233,6 +239,111 @@ _CALLER_INTENT_TEMPLATES: dict[str, list[list[dict[str, str]]]] = {
 
 _CALLER_TEMPLATE_FIELDS = ("label", "hint", "prompt")
 
+_PROFILE_DEFAULTS: list[dict] = [
+    {
+        "id": "default",
+        "label": "Default",
+        "context": {
+            "documents": "auto",
+            "browser": "off",
+            "github": "off",
+            "memory": "on",
+            "screenshot": "off",
+            "file_access": "off",
+        },
+        "tool": {
+            "max_calls": 3,
+            "max_result_chars": 50000,
+            "max_total_chars": 90000,
+        },
+    },
+    {
+        "id": "fast",
+        "label": "Fast",
+        "context": {
+            "documents": "off",
+            "browser": "off",
+            "github": "off",
+            "memory": "on",
+            "screenshot": "off",
+            "file_access": "off",
+        },
+        "tool": {
+            "max_calls": 1,
+            "max_result_chars": 12000,
+            "max_total_chars": 16000,
+        },
+    },
+    {
+        "id": "balanced",
+        "label": "Balanced",
+        "context": {
+            "documents": "auto",
+            "browser": "auto",
+            "github": "off",
+            "memory": "on",
+            "screenshot": "off",
+            "file_access": "off",
+        },
+        "tool": {
+            "max_calls": 3,
+            "max_result_chars": 50000,
+            "max_total_chars": 90000,
+        },
+    },
+    {
+        "id": "deep",
+        "label": "Deep",
+        "context": {
+            "documents": "model",
+            "browser": "model",
+            "github": "model",
+            "memory": "model",
+            "screenshot": "model",
+            "file_access": "read",
+        },
+        "tool": {
+            "max_calls": 6,
+            "max_result_chars": 80000,
+            "max_total_chars": 180000,
+        },
+    },
+    {
+        "id": "private",
+        "label": "Private",
+        "context": {
+            "documents": "off",
+            "browser": "off",
+            "github": "off",
+            "memory": "off",
+            "screenshot": "off",
+            "file_access": "off",
+        },
+        "tool": {
+            "max_calls": 1,
+            "max_result_chars": 8000,
+            "max_total_chars": 12000,
+        },
+    },
+    {
+        "id": "coding",
+        "label": "Coding",
+        "context": {
+            "documents": "model",
+            "browser": "model",
+            "github": "model",
+            "memory": "on",
+            "screenshot": "off",
+            "file_access": "read",
+        },
+        "tool": {
+            "max_calls": 5,
+            "max_result_chars": 80000,
+            "max_total_chars": 160000,
+        },
+    },
+]
+
 
 def _intent_template_language(language: str | None) -> str:
     """Return the intent-template language for the assistant language setting."""
@@ -369,6 +480,175 @@ def _file_access_default_from_tool_overrides(tools: dict[str, str]) -> str:
     return "off"
 
 
+def _profile_id(value: str | None, default: str = "default") -> str:
+    """Normalize a profile id for env/config use."""
+    import re
+
+    text = str(value or default or "default").strip().lower()
+    text = re.sub(r"[^a-z0-9_-]+", "-", text).strip("-")
+    return text or default
+
+
+def _profile_from_template(template: dict, prefix: str | None = None) -> ProfileSettings:
+    """Build a profile from a default template plus optional PROFILE_N_* overrides."""
+    raw_id = os.getenv(f"{prefix}_ID") if prefix else str(template.get("id") or "default")
+    profile_id = _profile_id(raw_id)
+    label = (os.getenv(f"{prefix}_LABEL") if prefix else None) or str(
+        template.get("label") or profile_id.title()
+    )
+    context_defaults = dict(template.get("context") or {})
+    tool_defaults = dict(template.get("tool") or {})
+
+    def env(name: str, default: str = "") -> str:
+        return os.getenv(f"{prefix}_{name}", default) if prefix else default
+
+    llm_provider = env("LLM_PROVIDER", LLM_PROVIDER)
+    llm_model = env("LLM_MODEL", LLM_MODEL)
+    llm_fallbacks = env("LLM_FALLBACKS", LLM_FALLBACKS)
+    chat_provider = env("CHAT_LLM_PROVIDER", llm_provider)
+    chat_model = env("CHAT_LLM_MODEL", llm_model)
+    chat_fallbacks = env("CHAT_LLM_FALLBACKS", llm_fallbacks)
+    vision_provider = env("VISION_LLM_PROVIDER", VISION_LLM_PROVIDER)
+    vision_model = env("VISION_LLM_MODEL", VISION_LLM_MODEL)
+    vision_fallbacks = env("VISION_LLM_FALLBACKS", VISION_LLM_FALLBACKS)
+    memory_provider = env("MEMORY_LLM_PROVIDER", os.getenv("MEMORY_LLM_PROVIDER", llm_provider))
+    memory_model = env("MEMORY_LLM_MODEL", os.getenv("MEMORY_LLM_MODEL", llm_model))
+    memory_fallbacks = env("MEMORY_LLM_FALLBACKS", os.getenv("MEMORY_LLM_FALLBACKS", ""))
+
+    documents_mode = _context_mode(
+        env("CONTEXT_DOCUMENTS_MODE", str(context_defaults.get("documents") or "auto")),
+        "auto",
+    )
+    browser_mode = _context_mode(
+        env("CONTEXT_BROWSER_MODE", str(context_defaults.get("browser") or "off")),
+        "off",
+    )
+    github_mode = _context_mode(
+        env("CONTEXT_GITHUB_MODE", str(context_defaults.get("github") or "off")),
+        "off",
+    )
+    memory_mode = _memory_context_mode(
+        env("CONTEXT_MEMORY_MODE", str(context_defaults.get("memory") or "on")),
+        "on",
+    )
+    screenshot_mode = env_screenshot_mode(
+        f"{prefix}_CONTEXT_SCREENSHOT" if prefix else "__WISP_PROFILE_CONTEXT_SCREENSHOT__",
+        str(context_defaults.get("screenshot") or "off"),
+    )
+    file_access = env_file_access_mode(
+        f"{prefix}_FILE_ACCESS" if prefix else "__WISP_PROFILE_FILE_ACCESS__",
+        str(context_defaults.get("file_access") or "off"),
+    )
+
+    context = ContextBudgets(
+        browser_max_chars=env_int(
+            f"{prefix}_CONTEXT_BROWSER_MAX_CHARS" if prefix else "__WISP_PROFILE_BROWSER_CHARS__",
+            CONTEXT_BROWSER_MAX_CHARS,
+        ),
+        ambient_document_max_chars=env_int(
+            f"{prefix}_CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS" if prefix else "__WISP_PROFILE_AMBIENT_DOC_CHARS__",
+            CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS,
+        ),
+        tool_document_max_chars=env_int(
+            f"{prefix}_CONTEXT_TOOL_DOCUMENT_MAX_CHARS" if prefix else "__WISP_PROFILE_TOOL_DOC_CHARS__",
+            CONTEXT_TOOL_DOCUMENT_MAX_CHARS,
+        ),
+    )
+    tools = ToolTurnBudgets(
+        max_calls=env_int(
+            f"{prefix}_TOOL_TURN_MAX_CALLS" if prefix else "__WISP_PROFILE_TOOL_CALLS__",
+            int(tool_defaults.get("max_calls") or TOOL_TURN_MAX_CALLS),
+        ),
+        max_result_chars=env_int(
+            f"{prefix}_TOOL_TURN_MAX_RESULT_CHARS" if prefix else "__WISP_PROFILE_TOOL_RESULT_CHARS__",
+            int(tool_defaults.get("max_result_chars") or TOOL_TURN_MAX_RESULT_CHARS),
+        ),
+        max_total_chars=env_int(
+            f"{prefix}_TOOL_TURN_MAX_TOTAL_CHARS" if prefix else "__WISP_PROFILE_TOOL_TOTAL_CHARS__",
+            int(tool_defaults.get("max_total_chars") or TOOL_TURN_MAX_TOTAL_CHARS),
+        ),
+    )
+    return ProfileSettings(
+        profile_id=profile_id,
+        label=label,
+        llm=ModelSettings(llm_provider, llm_model, llm_fallbacks),
+        chat_llm=ModelSettings(chat_provider, chat_model, chat_fallbacks),
+        vision_llm=ModelSettings(vision_provider, vision_model, vision_fallbacks),
+        memory_llm=ModelSettings(memory_provider, memory_model, memory_fallbacks),
+        context=context,
+        tools=tools,
+        caller_defaults={
+            "context_documents_mode": documents_mode,
+            "context_browser_mode": browser_mode,
+            "context_github_mode": github_mode,
+            "context_memory_mode": memory_mode,
+            "context_screenshot": screenshot_mode,
+            "file_access": file_access,
+        },
+    )
+
+
+def _load_profiles() -> list[ProfileSettings]:
+    """Load built-in and optional env-defined profiles."""
+    profiles = [_profile_from_template(template) for template in _PROFILE_DEFAULTS]
+    by_id = {profile.profile_id: idx for idx, profile in enumerate(profiles)}
+    count = env_int("PROFILE_COUNT", 0)
+    for i in range(count):
+        profile = _profile_from_template({}, prefix=f"PROFILE_{i + 1}")
+        idx = by_id.get(profile.profile_id)
+        if idx is None:
+            by_id[profile.profile_id] = len(profiles)
+            profiles.append(profile)
+        else:
+            profiles[idx] = profile
+    return profiles
+
+
+def _profile_map() -> dict[str, ProfileSettings]:
+    """Return currently loaded profiles by id."""
+    return {profile.profile_id: profile for profile in globals().get("PROFILES", [])}
+
+
+def resolve_profile(profile_id: str | None = None) -> ProfileSettings:
+    """Return a profile by id, falling back to the active/default profile."""
+    profiles = _profile_map()
+    active = _profile_id(str(globals().get("ACTIVE_PROFILE", "default") or "default"))
+    requested = _profile_id(profile_id, active)
+    if requested in profiles:
+        return profiles[requested]
+    if active in profiles:
+        return profiles[active]
+    if "default" in profiles:
+        return profiles["default"]
+    return next(iter(profiles.values()))
+
+
+def effective_caller(caller: dict | None) -> dict:
+    """Overlay a caller on top of its selected profile defaults."""
+    row = dict(caller or {})
+    try:
+        profile = resolve_profile(str(row.get("profile") or ""))
+    except Exception:
+        return row
+    defaults = dict(profile.caller_defaults)
+    merged = {
+        "profile": profile.profile_id,
+        "context_documents_mode": defaults.get("context_documents_mode", "auto"),
+        "context_browser_mode": defaults.get("context_browser_mode", "off"),
+        "context_github_mode": defaults.get("context_github_mode", "off"),
+        "context_memory_mode": defaults.get("context_memory_mode", "on"),
+        "context_screenshot": defaults.get("context_screenshot", "off"),
+        "file_access": defaults.get("file_access", "off"),
+    }
+    merged.update(row)
+    return merged
+
+
+def tool_turn_budget(profile_id: str | None = None) -> ToolTurnBudgets:
+    """Return per-turn tool limits for a profile."""
+    return resolve_profile(profile_id).tools
+
+
 # The static tool sentence older builds baked into the default system prompt
 # (and therefore into saved .env prompts). Stripped on load — see
 # SYSTEM_PROMPT_UTILITY in _load_config().
@@ -399,13 +679,31 @@ _VOICE_DEFAULTS: dict = {
 def _load_voice_caller() -> dict:
     """Read VOICE_CONTEXT_* env vars into a caller-shaped row for push-to-talk."""
     d = _VOICE_DEFAULTS
-    documents_mode = _context_mode(
-        os.getenv("VOICE_CONTEXT_DOCUMENTS_MODE"), str(d["context_documents_mode"])
+    profile_env = os.getenv("VOICE_PROFILE")
+    profile_id = _profile_id(profile_env, ACTIVE_PROFILE)
+    profile_defaults = (
+        dict(resolve_profile(profile_id).caller_defaults)
+        if profile_env or ACTIVE_PROFILE != "default"
+        else {}
     )
-    browser_mode = _context_mode(os.getenv("VOICE_CONTEXT_BROWSER_MODE"), str(d["context_browser_mode"]))
-    github_mode = _context_mode(os.getenv("VOICE_CONTEXT_GITHUB_MODE"), str(d["context_github_mode"]))
-    memory_mode = _memory_context_mode(os.getenv("VOICE_CONTEXT_MEMORY_MODE"), str(d["context_memory_mode"]))
+    documents_mode = _context_mode(
+        os.getenv("VOICE_CONTEXT_DOCUMENTS_MODE"),
+        str(profile_defaults.get("context_documents_mode") or d["context_documents_mode"]),
+    )
+    browser_mode = _context_mode(
+        os.getenv("VOICE_CONTEXT_BROWSER_MODE"),
+        str(profile_defaults.get("context_browser_mode") or d["context_browser_mode"]),
+    )
+    github_mode = _context_mode(
+        os.getenv("VOICE_CONTEXT_GITHUB_MODE"),
+        str(profile_defaults.get("context_github_mode") or d["context_github_mode"]),
+    )
+    memory_mode = _memory_context_mode(
+        os.getenv("VOICE_CONTEXT_MEMORY_MODE"),
+        str(profile_defaults.get("context_memory_mode") or d["context_memory_mode"]),
+    )
     return {
+        "profile": profile_id,
         "hotkey": os.getenv("HOTKEY_VOICE", "f9"),
         "label": d["label"],
         "paste_back": False,
@@ -417,8 +715,14 @@ def _load_voice_caller() -> dict:
         "context_browser_mode": browser_mode,
         "context_github_mode": github_mode,
         "context_memory_mode": memory_mode,
-        "context_screenshot": env_screenshot_mode("VOICE_CONTEXT_SCREENSHOT", str(d["context_screenshot"])),
-        "file_access": env_file_access_mode("VOICE_FILE_ACCESS", str(d.get("file_access") or "off")),
+        "context_screenshot": env_screenshot_mode(
+            "VOICE_CONTEXT_SCREENSHOT",
+            str(profile_defaults.get("context_screenshot") or d["context_screenshot"]),
+        ),
+        "file_access": env_file_access_mode(
+            "VOICE_FILE_ACCESS",
+            str(profile_defaults.get("file_access") or d.get("file_access") or "off"),
+        ),
         "tools": parse_tool_modes(os.getenv("VOICE_TOOLS")),
     }
 
@@ -430,6 +734,13 @@ def _load_caller_rows() -> list[dict]:
     for i in range(count):
         n = i + 1
         default = _CALLER_DEFAULTS[i] if i < len(_CALLER_DEFAULTS) else {}
+        profile_env = os.getenv(f"CALLER_{n}_PROFILE")
+        profile_id = _profile_id(profile_env, ACTIVE_PROFILE)
+        profile_defaults = (
+            dict(resolve_profile(profile_id).caller_defaults)
+            if profile_env or ACTIVE_PROFILE != "default"
+            else {}
+        )
         intent_count = env_int(f"CALLER_{n}_INTENT_COUNT", len(default.get("intents", [])))
         intents = []
         for j in range(intent_count):
@@ -443,29 +754,63 @@ def _load_caller_rows() -> list[dict]:
                 "prompt": os.getenv(f"CALLER_{n}_INTENT_{m}_PROMPT", d_intent.get("prompt", "")),
             }
             intents.append(localize_intent_if_default(i, j, intent, os.getenv("ASSISTANT_LANGUAGE", "")))
+        profile_documents_mode = str(
+            profile_defaults.get("context_documents_mode")
+            or default.get("context_documents_mode")
+            or "auto"
+        )
+        profile_browser_mode = str(
+            profile_defaults.get("context_browser_mode")
+            or default.get("context_browser_mode")
+            or "off"
+        )
+        profile_github_mode = str(
+            profile_defaults.get("context_github_mode")
+            or default.get("context_github_mode")
+            or "off"
+        )
+        profile_memory_mode = str(
+            profile_defaults.get("context_memory_mode")
+            or default.get("context_memory_mode")
+            or "on"
+        )
+        legacy_documents_key = f"CALLER_{n}_CONTEXT_DOCUMENTS"
+        legacy_tools_key = f"CALLER_{n}_CONTEXT_TOOLS"
         legacy_documents = env_bool(
-            f"CALLER_{n}_CONTEXT_DOCUMENTS",
-            bool(default.get("context_documents", True)),
+            legacy_documents_key,
+            profile_documents_mode == "auto",
         )
         legacy_tools = env_bool(
-            f"CALLER_{n}_CONTEXT_TOOLS",
-            bool(default.get("context_tools", False)),
+            legacy_tools_key,
+            any(
+                mode == "model"
+                for mode in (
+                    profile_documents_mode,
+                    profile_browser_mode,
+                    profile_github_mode,
+                    profile_memory_mode,
+                )
+            ),
         )
-        default_documents_mode = "auto" if legacy_documents else ("model" if legacy_tools else "off")
+        if os.getenv(legacy_documents_key) is not None or os.getenv(legacy_tools_key) is not None:
+            default_documents_mode = "auto" if legacy_documents else ("model" if legacy_tools else "off")
+        else:
+            default_documents_mode = profile_documents_mode
         documents_mode = _context_mode(
             os.getenv(f"CALLER_{n}_CONTEXT_DOCUMENTS_MODE"),
             str(default_documents_mode),
         )
-        browser_default = "model" if legacy_tools else str(default.get("context_browser_mode") or "off")
-        github_default = "model" if legacy_tools else str(default.get("context_github_mode") or "off")
+        browser_default = "model" if os.getenv(legacy_tools_key) is not None and legacy_tools else profile_browser_mode
+        github_default = "model" if os.getenv(legacy_tools_key) is not None and legacy_tools else profile_github_mode
         browser_mode = _context_mode(os.getenv(f"CALLER_{n}_CONTEXT_BROWSER_MODE"), browser_default)
         github_mode = _context_mode(os.getenv(f"CALLER_{n}_CONTEXT_GITHUB_MODE"), github_default)
         memory_mode = _memory_context_mode(
             os.getenv(f"CALLER_{n}_CONTEXT_MEMORY_MODE"),
-            str(default.get("context_memory_mode") or "on"),
+            profile_memory_mode,
         )
         tools = parse_tool_modes(os.getenv(f"CALLER_{n}_TOOLS"))
         rows.append({
+            "profile":    profile_id,
             "hotkey":     os.getenv(f"CALLER_{n}_HOTKEY",     default.get("hotkey", "")),
             "label":      os.getenv(f"CALLER_{n}_LABEL",      default.get("label", "")),
             "paste_back": env_bool(f"CALLER_{n}_PASTE_BACK", bool(default.get("paste_back", False))),
@@ -478,11 +823,18 @@ def _load_caller_rows() -> list[dict]:
             "context_browser_mode": browser_mode,
             "context_github_mode": github_mode,
             "context_memory_mode": memory_mode,
-            "context_screenshot": env_screenshot_mode(f"CALLER_{n}_CONTEXT_SCREENSHOT", default.get("context_screenshot", "off")),
+            "context_screenshot": env_screenshot_mode(
+                f"CALLER_{n}_CONTEXT_SCREENSHOT",
+                str(profile_defaults.get("context_screenshot") or default.get("context_screenshot", "off")),
+            ),
             "context_clipboard": env_bool(f"CALLER_{n}_CONTEXT_CLIPBOARD", bool(default.get("context_clipboard", False))),
             "file_access": env_file_access_mode(
                 f"CALLER_{n}_FILE_ACCESS",
-                str(default.get("file_access") or _file_access_default_from_tool_overrides(tools)),
+                str(
+                    profile_defaults.get("file_access")
+                    or default.get("file_access")
+                    or _file_access_default_from_tool_overrides(tools)
+                ),
             ),
             "tools":      tools,
             "intents":    intents,
@@ -512,6 +864,7 @@ def _load_config() -> None:
     global LLM_PROVIDER, LLM_MODEL, LLM_FALLBACKS
     global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, TOOL_LLM_MODEL
     global VISION_LLM_PROVIDER, VISION_LLM_MODEL, VISION_LLM_FALLBACKS
+    global ACTIVE_PROFILE, PROFILES
     global TTS_PROVIDER, CARTESIA_VOICE_ID
     global ELEVENLABS_VOICE_ID, ELEVENLABS_MODEL
     global OPENAI_TTS_VOICE, OPENAI_TTS_MODEL
@@ -524,11 +877,13 @@ def _load_config() -> None:
     global GITHUB_DEFAULT_CLIENT_ID, GITHUB_CLIENT_ID, GITHUB_OAUTH_SCOPES
     global COPILOT_CLI_URL, COPILOT_CLI_PATH
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP, HOTKEY_VOICE, HOTKEY_DICTATE, DICTATE_MODE
+    global VOICE_TRANSCRIPT_CONFIRM
     global INTENT_CONTEXT_TOGGLE_KEYS, INTENT_OVERLAY_TIMEOUT_MS
     global SNIP_CONTEXT_AMBIENT, SNIP_CONTEXT_DOCUMENTS, SNIP_CONTEXT_TOOLS
     global STT_MODEL, STT_COMPUTE_TYPE, STT_LANGUAGE, STT_BEAM_SIZE, STT_DEVICE
     global CALLER_ROWS, VOICE_CALLER
     global CONTEXT_BROWSER_MAX_CHARS, CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS, CONTEXT_TOOL_DOCUMENT_MAX_CHARS
+    global TOOL_TURN_MAX_CALLS, TOOL_TURN_MAX_RESULT_CHARS, TOOL_TURN_MAX_TOTAL_CHARS
     global TOOL_PLUGIN_DIR, TOOL_GIT_ROOT, TOOL_FILE_ROOTS, TOOL_FILE_MODE, TOOL_FILE_BLOCKED_GLOBS
     global BUBBLE_WIDTH, BUBBLE_LINES, BUBBLE_FONT_SIZE
     global BUBBLE_COLOR, BUBBLE_TEXT_COLOR, BUBBLE_READ_WORD_COLOR
@@ -636,6 +991,7 @@ def _load_config() -> None:
     # transcript verbatim; "llm" runs it through the LLM for punctuation/cleanup.
     HOTKEY_DICTATE       = os.getenv("HOTKEY_DICTATE",       "")
     DICTATE_MODE         = os.getenv("DICTATE_MODE",         "raw")
+    VOICE_TRANSCRIPT_CONFIRM = env_bool("VOICE_TRANSCRIPT_CONFIRM", False)
     INTENT_CONTEXT_TOGGLE_KEYS = _intent_context_toggle_keys(
         os.getenv("INTENT_CONTEXT_TOGGLE_KEYS", "1234567")
     )
@@ -648,6 +1004,14 @@ def _load_config() -> None:
     SNIP_CONTEXT_DOCUMENTS = env_bool("SNIP_CONTEXT_DOCUMENTS", False)
     SNIP_CONTEXT_TOOLS     = env_bool("SNIP_CONTEXT_TOOLS",     False)
 
+    # --- Context and tool budgets ---
+    CONTEXT_BROWSER_MAX_CHARS          = env_int("CONTEXT_BROWSER_MAX_CHARS",          12000)
+    CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS = env_int("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", 8000)
+    CONTEXT_TOOL_DOCUMENT_MAX_CHARS    = env_int("CONTEXT_TOOL_DOCUMENT_MAX_CHARS",    50000)
+    TOOL_TURN_MAX_CALLS                = env_int("TOOL_TURN_MAX_CALLS",                3)
+    TOOL_TURN_MAX_RESULT_CHARS         = env_int("TOOL_TURN_MAX_RESULT_CHARS",         50000)
+    TOOL_TURN_MAX_TOTAL_CHARS          = env_int("TOOL_TURN_MAX_TOTAL_CHARS",          90000)
+
     # --- STT ---
     STT_MODEL        = os.getenv("STT_MODEL",        "base")
     STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")
@@ -659,6 +1023,34 @@ def _load_config() -> None:
     # more accurate than greedy (1); clamp to a sane range so a bad .env value
     # can't wedge the decoder.
     STT_BEAM_SIZE    = max(1, min(env_int("STT_BEAM_SIZE", 5), 10))
+
+    # --- Profiles ---
+    new_profiles = _load_profiles()
+    if "PROFILES" in globals():
+        PROFILES.clear()
+        PROFILES.extend(new_profiles)
+    else:
+        PROFILES = new_profiles
+    requested_profile = _profile_id(
+        os.getenv("SETTINGS_PROFILE", os.getenv("ACTIVE_PROFILE", "default"))
+    )
+    active_profile = resolve_profile(requested_profile)
+    ACTIVE_PROFILE = active_profile.profile_id
+    LLM_PROVIDER = active_profile.llm.provider
+    LLM_MODEL = active_profile.llm.model
+    LLM_FALLBACKS = active_profile.llm.fallbacks
+    CHAT_LLM_PROVIDER = active_profile.chat_llm.provider
+    CHAT_LLM_MODEL = active_profile.chat_llm.model
+    CHAT_LLM_FALLBACKS = active_profile.chat_llm.fallbacks
+    VISION_LLM_PROVIDER = active_profile.vision_llm.provider
+    VISION_LLM_MODEL = active_profile.vision_llm.model
+    VISION_LLM_FALLBACKS = active_profile.vision_llm.fallbacks
+    CONTEXT_BROWSER_MAX_CHARS = active_profile.context.browser_max_chars
+    CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS = active_profile.context.ambient_document_max_chars
+    CONTEXT_TOOL_DOCUMENT_MAX_CHARS = active_profile.context.tool_document_max_chars
+    TOOL_TURN_MAX_CALLS = active_profile.tools.max_calls
+    TOOL_TURN_MAX_RESULT_CHARS = active_profile.tools.max_result_chars
+    TOOL_TURN_MAX_TOTAL_CHARS = active_profile.tools.max_total_chars
 
     # --- Caller rows ---
     new_rows = _load_caller_rows()
@@ -676,10 +1068,6 @@ def _load_config() -> None:
     else:
         VOICE_CALLER = new_voice
 
-    # --- Context budgets ---
-    CONTEXT_BROWSER_MAX_CHARS          = env_int("CONTEXT_BROWSER_MAX_CHARS",          12000)
-    CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS = env_int("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", 8000)
-    CONTEXT_TOOL_DOCUMENT_MAX_CHARS    = env_int("CONTEXT_TOOL_DOCUMENT_MAX_CHARS",    50000)
     TOOL_PLUGIN_DIR = os.getenv("TOOL_PLUGIN_DIR", str(MODEL_TOOLS_DIR))
     TOOL_GIT_ROOT   = os.getenv("TOOL_GIT_ROOT", BASE_DIR)
     TOOL_FILE_ROOTS = _env_list("TOOL_FILE_ROOTS", default=_default_tool_file_roots())
@@ -710,9 +1098,9 @@ def _load_config() -> None:
     TTS_HOLD_PLAYBACK_RATE = env_float("TTS_HOLD_PLAYBACK_RATE", 1.35)
 
     # --- Memory ---
-    MEMORY_LLM_PROVIDER             = os.getenv("MEMORY_LLM_PROVIDER",             LLM_PROVIDER)
-    MEMORY_LLM_MODEL                = os.getenv("MEMORY_LLM_MODEL",                LLM_MODEL)
-    MEMORY_LLM_FALLBACKS            = os.getenv("MEMORY_LLM_FALLBACKS",            "")
+    MEMORY_LLM_PROVIDER             = active_profile.memory_llm.provider
+    MEMORY_LLM_MODEL                = active_profile.memory_llm.model
+    MEMORY_LLM_FALLBACKS            = active_profile.memory_llm.fallbacks
     MEMORY_AUTO_CONSOLIDATE         = env_bool("MEMORY_AUTO_CONSOLIDATE", False)
     MEMORY_CONSOLIDATION_INTERVAL   = env_int("MEMORY_CONSOLIDATION_INTERVAL", 15)
     MEMORY_TOP_K                    = env_int("MEMORY_TOP_K", 3)

@@ -15,6 +15,58 @@
       <translation>預設...</translation>
     </message>
     <message>
+      <source>Run setup check</source>
+      <translation>執行設定檢查</translation>
+    </message>
+    <message>
+      <source>Check provider, speech, hotkey, and privacy readiness.</source>
+      <translation>檢查供應商、語音、快捷鍵和隱私狀態。</translation>
+    </message>
+    <message>
+      <source>Setup check</source>
+      <translation>設定檢查</translation>
+    </message>
+    <message>
+      <source>Health Status</source>
+      <translation>健康狀態</translation>
+    </message>
+    <message>
+      <source>Voice transcript</source>
+      <translation>語音轉錄</translation>
+    </message>
+    <message>
+      <source>Dictation transcript</source>
+      <translation>聽寫轉錄</translation>
+    </message>
+    <message>
+      <source>Choose or edit the transcript:</source>
+      <translation>選擇或編輯轉錄：</translation>
+    </message>
+    <message>
+      <source>No status details available.</source>
+      <translation>沒有可用的狀態詳情。</translation>
+    </message>
+    <message>
+      <source>Privacy Report</source>
+      <translation>隱私報告</translation>
+    </message>
+    <message>
+      <source>Privacy redaction report</source>
+      <translation>隱私遮蔽報告</translation>
+    </message>
+    <message>
+      <source>item(s) detected and censored.</source>
+      <translation>項已偵測並遮蔽。</translation>
+    </message>
+    <message>
+      <source>Sensitive data</source>
+      <translation>敏感資料</translation>
+    </message>
+    <message>
+      <source>Additional redactions were hidden from this compact report.</source>
+      <translation>更多遮蔽內容已從此簡要報告中隱藏。</translation>
+    </message>
+    <message>
       <source>Apply a starter configuration for common Wisp setups. Review changes before Apply.</source>
       <translation>套用常見 Wisp 配置的起始設定。套用前請檢查變更。</translation>
     </message>

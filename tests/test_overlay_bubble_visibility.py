@@ -37,3 +37,27 @@ def test_bubble_chunk_restores_hidden_icon(monkeypatch):
         overlay._icon_label.close()
         overlay.close()
         app.processEvents()
+
+
+@pytest.mark.workflow
+def test_tray_menu_exposes_health_status(monkeypatch):
+    """Verify the right-click tray menu exposes Health Status."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.i18n import t
+    from ui.overlay import IconOverlay, OverlaySignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(IconOverlay, "_pin_overlay_windows", lambda self: None)
+    signals = OverlaySignals()
+    overlay = IconOverlay(signals)
+
+    try:
+        labels = {action.text() for action in overlay._tray_menu.actions()}
+        assert t("Health Status") in labels
+    finally:
+        overlay._bubble.clear()
+        overlay._icon_label.close()
+        overlay.close()
+        app.processEvents()

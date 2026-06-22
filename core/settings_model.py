@@ -53,6 +53,28 @@ class ContextBudgets:
 
 
 @dataclass(frozen=True)
+class ToolTurnBudgets:
+    """Per-turn limits for model-called tools."""
+    max_calls: int
+    max_result_chars: int
+    max_total_chars: int
+
+
+@dataclass(frozen=True)
+class ProfileSettings:
+    """Behavior settings owned by a named profile."""
+    profile_id: str
+    label: str
+    llm: ModelSettings
+    chat_llm: ModelSettings
+    vision_llm: ModelSettings
+    memory_llm: ModelSettings
+    context: ContextBudgets
+    tools: ToolTurnBudgets
+    caller_defaults: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class UiSettings:
     """Store ui settings configuration data."""
     app_language: str
@@ -107,12 +129,15 @@ class AppSettings:
     llm: ModelSettings
     chat_llm: ModelSettings
     vision_llm: ModelSettings
+    active_profile: str
+    profiles: tuple[ProfileSettings, ...]
     ui: UiSettings
     audio: AudioSettings
     memory: MemorySettings
     privacy: PrivacySettings
     callers: CallerSettings
     context: ContextBudgets
+    tool_turn: ToolTurnBudgets
     tool_plugin_dir: str
     tool_git_root: str
     tool_file_roots: tuple[str, ...]
@@ -123,6 +148,12 @@ class AppSettings:
     @classmethod
     def from_config(cls, values: dict[str, Any]) -> AppSettings:
         """Handle from config for app settings."""
+        profiles_raw = values.get("PROFILES")
+        profiles: tuple[ProfileSettings, ...] = ()
+        if isinstance(profiles_raw, list):
+            profiles = tuple(
+                item for item in profiles_raw if isinstance(item, ProfileSettings)
+            )
         return cls(
             llm=ModelSettings(
                 provider=str(values.get("LLM_PROVIDER", "")),
@@ -139,6 +170,8 @@ class AppSettings:
                 model=str(values.get("VISION_LLM_MODEL", "")),
                 fallbacks=str(values.get("VISION_LLM_FALLBACKS", "")),
             ),
+            active_profile=str(values.get("ACTIVE_PROFILE", "")),
+            profiles=profiles,
             ui=UiSettings(
                 app_language=str(values.get("APP_LANGUAGE", "")),
                 assistant_language=str(values.get("ASSISTANT_LANGUAGE", "")),
@@ -181,6 +214,11 @@ class AppSettings:
                 browser_max_chars=int(values.get("CONTEXT_BROWSER_MAX_CHARS", 0)),
                 ambient_document_max_chars=int(values.get("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", 0)),
                 tool_document_max_chars=int(values.get("CONTEXT_TOOL_DOCUMENT_MAX_CHARS", 0)),
+            ),
+            tool_turn=ToolTurnBudgets(
+                max_calls=int(values.get("TOOL_TURN_MAX_CALLS", 0)),
+                max_result_chars=int(values.get("TOOL_TURN_MAX_RESULT_CHARS", 0)),
+                max_total_chars=int(values.get("TOOL_TURN_MAX_TOTAL_CHARS", 0)),
             ),
             tool_plugin_dir=str(values.get("TOOL_PLUGIN_DIR", "")),
             tool_git_root=str(values.get("TOOL_GIT_ROOT", "")),

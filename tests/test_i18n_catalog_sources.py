@@ -3,6 +3,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 QT_DIR = ROOT / "ui" / "locales" / "qt"
@@ -110,3 +112,27 @@ def test_context_badge_sources_have_catalog_translations() -> None:
         catalog = _translations(language)
         for source, translation in pairs.items():
             assert catalog[source] == translation
+
+
+@pytest.mark.workflow
+def test_setup_health_voice_sources_have_catalog_translations() -> None:
+    """Verify new setup, health, and voice confirmation strings are localized."""
+    required = {
+        "Run setup check",
+        "Check provider, speech, hotkey, and privacy readiness.",
+        "Setup check",
+        "Health Status",
+        "Voice transcript",
+        "Dictation transcript",
+        "Choose or edit the transcript:",
+        "No status details available.",
+        "Privacy Report",
+        "Privacy redaction report",
+        "item(s) detected and censored.",
+        "Sensitive data",
+        "Additional redactions were hidden from this compact report.",
+    }
+    for language in LANGUAGES:
+        catalog = _translations(language)
+        for source in required:
+            assert catalog.get(source), f"{language}: {source}"
