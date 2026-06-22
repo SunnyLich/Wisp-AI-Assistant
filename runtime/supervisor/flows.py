@@ -2306,9 +2306,7 @@ class FlowController:
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
                 break
-        from core.error_recommendations import format_error
-
-        return format_error(text)
+        return text
 
     def _caller(self, caller_idx: int) -> dict[str, Any]:
         """Handle caller for flow controller."""

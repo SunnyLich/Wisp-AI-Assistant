@@ -353,6 +353,8 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
             "context_ambient": True,
             "context_documents": True,
             "context_tools": True,
+            "context_browser_mode": "model",
+            "context_github_mode": "model",
             "context_screenshot": "off",
             "context_clipboard": True,
         }
@@ -1782,7 +1784,8 @@ def test_query_failure_reports_notice_and_returns_idle():
         ui.emit("ui.intent.chosen", {"custom": "Explain this"})
 
     assert ui.last_call("ui.reply.notice")["params"]["text"] == (
-        "LLM request failed: LLM route uses 'google', but its API key is not configured."
+        "LLM request failed: LLM route uses 'google', but its API key is not configured.\n\n"
+        "Recommendation: add or refresh the provider API key in Settings, then run Setup Check."
     )
     assert ui.calls_for("ui.reply.done")
     assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
@@ -1930,7 +1933,8 @@ def test_rewrite_failure_reports_notice_and_returns_idle():
         ui.emit("ui.intent.chosen", {"custom": "Fix grammar"})
 
     assert ui.last_call("ui.reply.notice")["params"]["text"] == (
-        "Rewrite failed: LLM route uses 'google', but its API key is not configured."
+        "Rewrite failed: LLM route uses 'google', but its API key is not configured.\n\n"
+        "Recommendation: add or refresh the provider API key in Settings, then run Setup Check."
     )
     assert ui.calls_for("ui.reply.done")
     assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"

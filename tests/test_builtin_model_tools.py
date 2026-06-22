@@ -510,7 +510,8 @@ class BuiltinModelToolsTests(unittest.TestCase):
                 self.assertEqual(text, "ok")
                 instructions = responses.calls[0]["instructions"]
                 self.assertIn("Local file access is available", instructions)
-                self.assertIn(str(root), instructions)
+                for configured_root in llm.configured_file_roots():
+                    self.assertIn(str(configured_root), instructions)
                 self.assertIn("complete the requested operation", instructions)
                 self.assertIn("reading a file is not a substitute", instructions)
         finally:

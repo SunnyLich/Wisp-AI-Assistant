@@ -313,6 +313,7 @@ class IntentOverlay(QWidget):
         h = _PAD_V * 2 + conversation_h + context_h + _ROW_H * n_rows + 26   # 26px ESC hint
         self._normal_h = h
         self.setFixedSize(_W, h)
+        self._layout_conversation_selector(_PAD_V)
         self._target_hwnd = target_hwnd
         self._screen_geometry = self._resolve_screen_geometry()
 
@@ -670,18 +671,8 @@ class IntentOverlay(QWidget):
         palette: dict[str, QColor],
     ) -> None:
         """Paint the project and chat selector row."""
-        top = y + _CONV_TOP
-        project_rect = QRect(_PAD_H, top, 244, 28)
-        chat_rect = QRect(project_rect.right() + 6, top, _W - _PAD_H - project_rect.right() - 6, 28)
-        mode_w = min(116, max(92, chat_rect.width() // 3))
-        self._project_rect = project_rect
-        self._conversation_mode_rect = QRect(chat_rect.x(), chat_rect.y(), mode_w, chat_rect.height())
-        self._conversation_list_rect = QRect(
-            self._conversation_mode_rect.right() + 5,
-            chat_rect.y(),
-            max(0, chat_rect.right() - self._conversation_mode_rect.right() - 4),
-            chat_rect.height(),
-        )
+        self._layout_conversation_selector(y)
+        project_rect = self._project_rect
 
         for rect, active in (
             (project_rect, self._project_id != self._default_project_id()),
@@ -740,6 +731,26 @@ class IntentOverlay(QWidget):
             self._conversation_list_rect.adjusted(8, 0, -8, 0),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             chat_value,
+        )
+
+    def _layout_conversation_selector(self, y: int) -> None:
+        """Update selector hit rects independently of paint delivery."""
+        if not self._show_conversation_selector:
+            self._project_rect = QRect()
+            self._conversation_mode_rect = QRect()
+            self._conversation_list_rect = QRect()
+            return
+        top = y + _CONV_TOP
+        project_rect = QRect(_PAD_H, top, 244, 28)
+        chat_rect = QRect(project_rect.right() + 6, top, _W - _PAD_H - project_rect.right() - 6, 28)
+        mode_w = min(116, max(92, chat_rect.width() // 3))
+        self._project_rect = project_rect
+        self._conversation_mode_rect = QRect(chat_rect.x(), chat_rect.y(), mode_w, chat_rect.height())
+        self._conversation_list_rect = QRect(
+            self._conversation_mode_rect.right() + 5,
+            chat_rect.y(),
+            max(0, chat_rect.right() - self._conversation_mode_rect.right() - 4),
+            chat_rect.height(),
         )
 
     def _paint_context_items(
