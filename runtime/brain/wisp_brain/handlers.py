@@ -36,6 +36,8 @@ STREAMING: set[str] = set()
 _STT_MODEL = None
 _AGENT_APPROVALS: dict[str, dict[str, Any]] = {}
 _AGENT_APPROVALS_LOCK = threading.Lock()
+_AGENT_RUN_CONTROLS: dict[Any, Any] = {}
+_AGENT_RUN_CONTROLS_LOCK = threading.Lock()
 _LIVE_FILE_APPROVALS: dict[str, dict[str, Any]] = {}
 _LIVE_FILE_APPROVALS_LOCK = threading.Lock()
 _LIVE_FILE_TOOL_NAMES = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
@@ -1995,6 +1997,7 @@ def _agent_approval_callback(ctx: StreamContext) -> Callable[[dict], bool]:
     """Handle agent approval callback for runtime brain wisp brain handlers."""
     def request_approval(request: dict) -> bool:
         """Handle request approval for runtime brain wisp brain handlers."""
+        action = str(request.get("action") or "approval")
         approval_id = uuid.uuid4().hex
         event = threading.Event()
         state: dict[str, Any] = {"event": event, "approved": False}
@@ -2003,11 +2006,13 @@ def _agent_approval_callback(ctx: StreamContext) -> Callable[[dict], bool]:
 
         payload = dict(request)
         payload["approval_id"] = approval_id
+        ctx.emit("agent.log", {"line": f"waiting for user approval: {action}"})
         ctx.emit("agent.approval.request", payload)
 
         try:
             while not event.wait(0.1):
                 if ctx.cancelled:
+                    ctx.emit("agent.log", {"line": f"approval cancelled: {action}"})
                     return False
             return bool(state["approved"])
         finally:
@@ -2079,6 +2084,36 @@ def brain_live_file_approval_respond(approval_id: str = "", approved: bool = Fal
     if isinstance(event, threading.Event):
         event.set()
     return {"ok": True, "approved": bool(approved)}
+
+
+@handler("brain.agent.control")
+def brain_agent_control(
+    target: Any = None,
+    action: str = "",
+    target_agent: str = "ALL",
+    message: str = "",
+    permission_modes: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Control one running agent task."""
+    with _AGENT_RUN_CONTROLS_LOCK:
+        control = _AGENT_RUN_CONTROLS.get(target)
+    if control is None:
+        return {"ok": False, "message": "agent run is no longer active"}
+
+    verb = str(action or "").strip().lower()
+    if verb == "pause":
+        control.pause_after_turn()
+        return {"ok": True, "paused": True}
+    if verb == "resume":
+        control.resume()
+        return {"ok": True, "paused": False}
+    if verb == "nudge":
+        control.add_nudge(str(target_agent or "ALL"), str(message or ""))
+        return {"ok": True}
+    if verb == "permissions":
+        control.update_permission_modes(permission_modes or {})
+        return {"ok": True}
+    return {"ok": False, "message": f"unknown agent control action: {action}"}
 
 
 @handler("brain.agent.history.list")
@@ -2266,6 +2301,8 @@ def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None =
     task_spec = agent_task_spec_from_dict(spec)
     _save_agent_last_task_spec(asdict(task_spec), log_root)
     control = AgentRunControl()
+    with _AGENT_RUN_CONTROLS_LOCK:
+        _AGENT_RUN_CONTROLS[ctx.req_id] = control
 
     # Bridge cooperative cancel: the host cancels the stream (brain.cancel) ->
     # ctx.cancelled flips -> propagate into the agent's own cancel token so the
@@ -2302,6 +2339,8 @@ def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None =
         run_dir = runner.run(task_spec, on_log, on_trace)
     finally:
         stop_watch.set()
+        with _AGENT_RUN_CONTROLS_LOCK:
+            _AGENT_RUN_CONTROLS.pop(ctx.req_id, None)
 
     run_dir = Path(run_dir)
     final_text = ""

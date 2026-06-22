@@ -81,6 +81,8 @@ class AgentRunControl:
         self._resume.set()
         self._nudge_lock = threading.Lock()
         self._nudges: list[dict[str, str]] = []
+        self._permission_lock = threading.Lock()
+        self._permission_updates: list[dict[str, str]] = []
 
     def cancel(self) -> None:
         """Signal the run to cancel by setting the cancelled flag."""
@@ -135,6 +137,25 @@ class AgentRunControl:
             nudges = list(self._nudges)
             self._nudges.clear()
         return nudges
+
+    def update_permission_modes(self, modes: dict[str, str]) -> None:
+        """Queue permission-mode changes for the next agent turn."""
+        cleaned = {
+            str(key): str(value).strip().lower()
+            for key, value in (modes or {}).items()
+            if str(key).strip()
+        }
+        if not cleaned:
+            return
+        with self._permission_lock:
+            self._permission_updates.append(cleaned)
+
+    def drain_permission_updates(self) -> list[dict[str, str]]:
+        """Return queued permission updates."""
+        with self._permission_lock:
+            updates = list(self._permission_updates)
+            self._permission_updates.clear()
+        return updates
 
 
 class FileLeaseRegistry:

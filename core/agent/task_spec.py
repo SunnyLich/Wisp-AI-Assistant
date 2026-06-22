@@ -5,20 +5,28 @@ import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-
-ROLE_RESPONSIBILITIES = {
-    "Coordinator": "Break down the task, assign work, merge decisions, arbitrate conflicts, and decide when the group is done.",
-    "Planner": "Turn the objective into a concrete plan, identify risks and dependencies, and hand clear next steps to the right agent.",
-    "Implementer": "Make the code changes inside the selected scope, keep edits focused, run relevant checks, and report risks or blockers.",
-    "Reviewer": "Inspect proposed changes, call out defects or missing tests, request fixes when needed, and approve completion when no Coordinator exists.",
-    "Tester": "Design and run focused verification, reproduce failures, report exact commands and results, and confirm fixes.",
-    "Researcher": "Gather read-only context before implementation: inspect files, docs, logs, APIs, and constraints, then brief the team with findings and recommendations.",
-}
-
-
-def role_responsibility(role: str) -> str:
-    """Handle role responsibility for agent task spec."""
-    return ROLE_RESPONSIBILITIES.get(role.strip(), "")
+from core.agent.preset_i18n import (
+    AGENT_NAME_LABELS,
+    AGENT_ROLE_LABELS,
+    AGENT_TEMPLATE_DEFAULTS,
+    COMMUNICATION_PHASE_LABELS,
+    COMMUNICATION_TEMPLATES,
+    ROLE_RESPONSIBILITIES,
+    ROLE_RESPONSIBILITY_TEMPLATES,
+    agent_name_label,
+    agent_template_language,
+    canonical_agent_name,
+    canonical_agent_role,
+    canonical_communication_phase,
+    default_agent_specs,
+    default_communication_specs,
+    default_generic_agent_name,
+    is_role_template,
+    localize_agent_spec_if_default,
+    localize_communication_spec_if_default,
+    role_label,
+    role_responsibility,
+)
 
 
 def _int_or(value, default: int) -> int:  # noqa: ANN001
@@ -33,13 +41,6 @@ def _int_or(value, default: int) -> int:  # noqa: ANN001
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def is_role_template(text: str) -> bool:
-    """Return whether role template is true."""
-    normalized = " ".join(text.split())
-    return any(" ".join(value.split()) == normalized for value in ROLE_RESPONSIBILITIES.values())
-
 
 @dataclass(frozen=True)
 class AgentRoleSpec:

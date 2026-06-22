@@ -6,6 +6,7 @@ Positioned to the left of the icon, tail points right toward it.
 Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
+from collections.abc import Callable
 from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtCore import Qt, QTimer, QElapsedTimer, QRect
 from PySide6.QtGui import (
@@ -28,6 +29,9 @@ _ICON_MARGIN  = 20
 _HIDE_DELAY    = 3_500   # fallback ms after finish() before hiding
 _CLOSE_SIZE    = 18
 _CLOSE_MARGIN  = 6
+_ACTION_H      = 26
+_ACTION_GAP    = 8
+_ACTION_ROW_H  = 36
 
 
 def _color(value: str, fallback: QColor) -> QColor:
@@ -141,6 +145,10 @@ class SpeechBubble(QWidget):
         self._dragged = False             # True once the press moved past the click threshold
         self._close_hover = False
         self._close_pressed = False
+        self._notice_actions: list[tuple[str, Callable[[], None]]] = []
+        self._action_rects: list[QRect] = []
+        self._action_hover = -1
+        self._action_pressed = -1
         self._companion_callback = None   # called with new QPoint after each drag move
         self._hide_callback = None        # called when this widget hides (for icon sync)
         self._speed_callback = None       # called with True while hold-to-speed is active
@@ -230,6 +238,12 @@ class SpeechBubble(QWidget):
     def mousePressEvent(self, event):
         """Handle mouse press event for speech bubble."""
         if event.button() == Qt.MouseButton.LeftButton:
+            action_idx = self._action_index_at(event.position().toPoint())
+            if action_idx >= 0:
+                self._action_pressed = action_idx
+                event.accept()
+                self.update()
+                return
             if self._close_rect().contains(event.position().toPoint()):
                 self._close_pressed = True
                 event.accept()
@@ -244,6 +258,10 @@ class SpeechBubble(QWidget):
 
     def mouseMoveEvent(self, event):
         """Handle mouse move event for speech bubble."""
+        action_hover = self._action_index_at(event.position().toPoint())
+        if action_hover != self._action_hover:
+            self._action_hover = action_hover
+            self.update()
         hovering_close = self._close_rect().contains(event.position().toPoint())
         if hovering_close != self._close_hover:
             self._close_hover = hovering_close
@@ -265,6 +283,17 @@ class SpeechBubble(QWidget):
     def mouseReleaseEvent(self, event):
         """Handle mouse release event for speech bubble."""
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._action_pressed >= 0:
+                action_idx = self._action_pressed
+                should_trigger = action_idx == self._action_index_at(event.position().toPoint())
+                self._action_pressed = -1
+                if should_trigger and action_idx < len(self._notice_actions):
+                    callback = self._notice_actions[action_idx][1]
+                    self.clear()
+                    callback()
+                event.accept()
+                self.update()
+                return
             if self._close_pressed:
                 should_stop = self._close_rect().contains(event.position().toPoint())
                 self._close_pressed = False
@@ -292,6 +321,7 @@ class SpeechBubble(QWidget):
     def leaveEvent(self, event):  # noqa: N802
         """Clear hover state when the pointer leaves the bubble."""
         self._close_hover = False
+        self._action_hover = -1
         self.update()
         super().leaveEvent(event)
 
@@ -568,11 +598,19 @@ class SpeechBubble(QWidget):
         self._lines = []
         self._all_line_segments = []
         self._line_segments = []
+        self._clear_notice_actions()
+        self._restore_base_size()
         self.hide()
 
-    def show_notice(self, text: str, *, timeout_ms: int = 12000):
+    def show_notice(
+        self,
+        text: str,
+        *,
+        timeout_ms: int = 12000,
+        actions: list[tuple[str, Callable[[], None]]] | None = None,
+    ):
         """Show a compact non-streaming notice next to the icon."""
-        self._show_static_text(text, timeout_ms=timeout_ms)
+        self._show_static_text(text, timeout_ms=timeout_ms, actions=actions)
 
     def show_transcript(self, text: str):
         """Show what push-to-talk transcription heard before the answer starts."""
@@ -582,7 +620,13 @@ class SpeechBubble(QWidget):
         self._show_static_text(f"{t('Heard')}: {text}", timeout_ms=0)
         self._transcript_preview = True
 
-    def _show_static_text(self, text: str, *, timeout_ms: int = 12000):
+    def _show_static_text(
+        self,
+        text: str,
+        *,
+        timeout_ms: int = 12000,
+        actions: list[tuple[str, Callable[[], None]]] | None = None,
+    ):
         """Show static text."""
         self._hide_timer.stop()
         self._dot_timer.stop()
@@ -597,9 +641,17 @@ class SpeechBubble(QWidget):
         self._manual_scroll_start = None
         self._reply_chunk_count = 0
         self._thought_text = ""
+        self._notice_actions = list(actions or [])
+        self._action_hover = -1
+        self._action_pressed = -1
+        if self._notice_actions:
+            self._set_notice_action_size()
+        else:
+            self._restore_base_size()
         self._pending_words = text.split()
         self._revealed_count = len(self._pending_words)
         self._full_text = " ".join(self._pending_words)
+        self._layout_action_buttons()
         self._rewrap()
         self.show()
         self.raise_()
@@ -629,6 +681,48 @@ class SpeechBubble(QWidget):
             _CLOSE_SIZE,
             _CLOSE_SIZE,
         )
+
+    def _action_index_at(self, point) -> int:
+        """Return the notice action index under point, or -1."""
+        for idx, rect in enumerate(self._action_rects):
+            if rect.contains(point):
+                return idx
+        return -1
+
+    def _clear_notice_actions(self) -> None:
+        """Clear action buttons from a static notice."""
+        self._notice_actions = []
+        self._action_rects = []
+        self._action_hover = -1
+        self._action_pressed = -1
+
+    def _base_bubble_h(self) -> int:
+        """Return the configured bubble body height without notice actions."""
+        return _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
+
+    def _restore_base_size(self) -> None:
+        """Restore normal speech-bubble dimensions."""
+        self._bubble_h = self._base_bubble_h()
+        self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+
+    def _set_notice_action_size(self) -> None:
+        """Make room for notice action buttons."""
+        self._bubble_h = self._base_bubble_h() + _ACTION_ROW_H
+        self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+
+    def _layout_action_buttons(self) -> None:
+        """Lay out static notice action buttons."""
+        self._action_rects = []
+        if not self._notice_actions:
+            return
+        labels = [label for label, _callback in self._notice_actions]
+        widths = [max(70, self._fm.horizontalAdvance(label) + 24) for label in labels]
+        total_w = sum(widths) + _ACTION_GAP * max(0, len(widths) - 1)
+        x = max(_PAD, self._bubble_w - _PAD - total_w)
+        y = self._bubble_h - _PAD - _ACTION_H
+        for width in widths:
+            self._action_rects.append(QRect(x, y, width, _ACTION_H))
+            x += width + _ACTION_GAP
 
     def _current_reveal_wpm(self) -> int:
         """Handle current reveal wpm for speech bubble."""
@@ -783,8 +877,13 @@ class SpeechBubble(QWidget):
         self._lines = [self._join_units(line) for line in visible]
 
     def _should_follow_latest_stream_text(self, lines: list) -> bool:
-        """Follow newly arrived streamed text until audio/read tracking takes over."""
-        if self._audio_started or self._timestamp_mode or self._manual_scroll_start is not None:
+        """Follow streamed text only until a read-position highlight exists."""
+        if (
+            self._audio_started
+            or self._timestamp_mode
+            or self._revealed_count > 0
+            or self._manual_scroll_start is not None
+        ):
             return False
         if self._reply_chunk_count <= 1:
             return False
@@ -971,5 +1070,26 @@ class SpeechBubble(QWidget):
                     x += word_w
                 p.setFont(self._font)
                 y += self._line_h
+
+            if self._notice_actions:
+                p.setFont(self._font)
+                for idx, (label, _callback) in enumerate(self._notice_actions):
+                    if idx >= len(self._action_rects):
+                        continue
+                    rect = self._action_rects[idx]
+                    pressed = idx == self._action_pressed
+                    hovered = idx == self._action_hover
+                    bg = QColor(77, 163, 255, 230 if not pressed else 255)
+                    if hovered and not pressed:
+                        bg = QColor(99, 179, 255, 240)
+                    p.setBrush(QBrush(bg))
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.drawRoundedRect(rect, 6, 6)
+                    p.setPen(QPen(QColor(255, 255, 255)))
+                    p.drawText(
+                        rect,
+                        Qt.AlignmentFlag.AlignCenter,
+                        label,
+                    )
 
         p.end()

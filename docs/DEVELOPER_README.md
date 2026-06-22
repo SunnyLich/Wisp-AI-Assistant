@@ -104,9 +104,6 @@ feature flows.
 - Settings setup check: Settings asks the supervisor for `ui.health.requested`
   with `source=settings`; the supervisor returns the lightweight
   `core.setup_check.run_setup_check()` rows without live provider/audio probes.
-- Health status: tray/menu diagnostics collect live worker, LLM, STT/TTS,
-  screenshot, and privacy rows. The LLM probe checks the primary route only;
-  fallback chains remain part of normal request routing.
 - Agent tasks: UI task/history/approval events flow through the supervisor to
   `wisp-brain`, where `core.agent.runner` owns execution and scoped workspace
   access.

@@ -39,6 +39,7 @@ from core.system.paths import AGENT_RUNS_DIR
 
 from core.agent.artifacts import AgentRunArtifactsMixin
 from core.agent.response import AgentResponseMixin
+from core.agent.task_spec import canonical_agent_name, canonical_agent_role, canonical_communication_phase
 from core.agent.toolbox import AgentToolbox
 from core.agent.workspace import ScopedWorkspace
 
@@ -223,11 +224,13 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
 
         for turn_idx in range(max_turns):
             self._control.raise_if_cancelled()
+            self._apply_permission_updates(spec, tools, log)
             self._apply_manual_nudges(messages, log)
             if self._control.is_pause_requested():
                 log("agent run paused after turn; waiting for resume")
                 self._control.wait_if_paused()
                 log("agent run resumed")
+                self._apply_permission_updates(spec, tools, log)
                 self._apply_manual_nudges(messages, log)
             agent = current_agent
             agent_name = agent["name"]
@@ -329,6 +332,24 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             final = str(parsed.get("final") or "").strip()
             calls = parsed.get("tool_calls") or []
             if final and not calls:
+                deferred_agent = self._deferred_final_handoff_agent(final, agent, agents, turns)
+                if deferred_agent is not None and turn_idx + 1 < max_turns:
+                    log(
+                        f"completion deferred: {agent_name} final response looked like a handoff; "
+                        f"routing to {deferred_agent['name']}"
+                    )
+                    self._append_agent_history(agent_states, agent_name, "Deferred final as handoff: " + final)
+                    turn["routing"] = {
+                        "status": "deferred_final_handoff",
+                        "next_agent": deferred_agent["name"],
+                        "reason": "The final response described waiting for another agent instead of task completion.",
+                    }
+                    self._ensure_handoff_message(messages, turn, agent, deferred_agent, {
+                        "status": "deferred_final_handoff",
+                        "reason": final,
+                    }, [], log)
+                    current_agent = deferred_agent
+                    continue
                 pending_review_agent = self._pending_review_agent(agent, agents, task_state)
                 if pending_review_agent is not None:
                     log(
@@ -558,8 +579,8 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         streaks[agent_name] = (signature, count)
         if count < 3:
             return None
-        names = {agent["name"].lower(): agent for agent in agents}
-        role_names = {agent["role"].lower(): agent for agent in agents}
+        names = AgentTaskRunner._agent_name_index(agents)
+        role_names = AgentTaskRunner._agent_role_index(agents)
         active = names.get(agent_name.lower()) or agents[0]
         target = role_names.get("coordinator")
         if target is None or target.get("name") == agent_name:
@@ -568,26 +589,105 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         streaks.pop(agent_name, None)
         return target
 
-    @staticmethod
-    def _completion_authority_agent(active_agent: dict, agents: list[dict]) -> dict | None:
+    @classmethod
+    def _completion_authority_agent(cls, active_agent: dict, agents: list[dict]) -> dict | None:
         """Handle completion authority agent for agent task runner."""
         active_name = str(active_agent.get("name") or "")
-        active_role = str(active_agent.get("role") or "").lower()
-        coordinator = next((agent for agent in agents if str(agent.get("role") or "").lower() == "coordinator"), None)
+        active_role = canonical_agent_role(str(active_agent.get("role") or "")).lower()
+        coordinator = next((agent for agent in agents if cls._is_role(agent, "coordinator")), None)
         if coordinator is not None and coordinator.get("name") != active_name:
             return coordinator
-        reviewer = next((agent for agent in agents if str(agent.get("role") or "").lower() == "reviewer"), None)
+        reviewer = next((agent for agent in agents if cls._is_role(agent, "reviewer")), None)
         if coordinator is None and reviewer is not None and reviewer.get("name") != active_name and active_role != "reviewer":
             return reviewer
         return None
 
+    @classmethod
+    def _deferred_final_handoff_agent(
+        cls,
+        final: str,
+        active_agent: dict,
+        agents: list[dict],
+        turns: list[dict],
+    ) -> dict | None:
+        """Return a worker when an early coordinator final is really a handoff."""
+        if len(agents) < 2 or not cls._is_role(active_agent, "coordinator"):
+            return None
+        main_turns = [turn for turn in turns if turn.get("phase") != "read_only_briefing"]
+        if len(main_turns) > 1 or not cls._looks_like_waiting_final(final):
+            return None
+        for agent in agents:
+            if agent is active_agent:
+                continue
+            if cls._is_role(agent, "implementer") or cls._is_role(agent, "builder") or cls._is_role(agent, "developer"):
+                return agent
+        target = cls._next_round_robin_agent(active_agent, agents)
+        return None if target is active_agent else target
+
+    @staticmethod
+    def _looks_like_waiting_final(final: str) -> bool:
+        """Return whether a final report appears to be a non-terminal wait/handoff."""
+        text = str(final or "")
+        lowered = text.lower()
+        english_markers = (
+            "await",
+            "waiting",
+            "wait for",
+            "handoff",
+            "hand off",
+            "handed off",
+            "delegate",
+            "delegated",
+            "assign",
+            "assigned",
+            "route to",
+            "waiting on",
+        )
+        localized_markers = (
+            "等待",
+            "等候",
+            "待",
+            "交給",
+            "交付",
+            "移交",
+            "指派",
+            "分派",
+        )
+        return any(marker in lowered for marker in english_markers) or any(marker in text for marker in localized_markers)
+
     @staticmethod
     def _is_role(agent: dict | None, role_name: str) -> bool:
         """Return whether role is true."""
-        role = str((agent or {}).get("role") or "").lower()
-        name = str((agent or {}).get("name") or "").lower()
+        role = canonical_agent_role(str((agent or {}).get("role") or "")).lower()
+        name = canonical_agent_name(str((agent or {}).get("name") or "")).lower()
         expected = role_name.lower()
         return role == expected or name == expected
+
+    @staticmethod
+    def _agent_name_index(agents: list[dict]) -> dict[str, dict]:
+        """Index agents by both literal and canonical built-in names."""
+        names: dict[str, dict] = {}
+        for agent in agents:
+            raw = str(agent.get("name") or "").strip().lower()
+            canonical = canonical_agent_name(str(agent.get("name") or "")).lower()
+            if raw:
+                names[raw] = agent
+            if canonical:
+                names.setdefault(canonical, agent)
+        return names
+
+    @staticmethod
+    def _agent_role_index(agents: list[dict]) -> dict[str, dict]:
+        """Index agents by both literal and canonical built-in roles."""
+        roles: dict[str, dict] = {}
+        for agent in agents:
+            raw = str(agent.get("role") or "").strip().lower()
+            canonical = canonical_agent_role(str(agent.get("role") or "")).lower()
+            if raw:
+                roles[raw] = agent
+            if canonical:
+                roles.setdefault(canonical, agent)
+        return roles
 
     @classmethod
     def _pending_review_agent(cls, active_agent: dict, agents: list[dict], task_state: dict | None) -> dict | None:
@@ -741,6 +841,43 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             "file_delete": str(getattr(spec, "file_delete_permission_mode", "") or "").strip().lower(),
         }
 
+    def _apply_permission_updates(self, spec: AgentTaskLike, tools: AgentToolbox, log: LogCallback) -> None:
+        """Apply live permission-mode updates at a safe turn boundary."""
+        updates = self._control.drain_permission_updates()
+        if not updates:
+            return
+        mode_attrs = {
+            "shell": ("shell_permission_mode", "allow_shell"),
+            "network": ("network_permission_mode", "allow_network"),
+            "git": ("git_permission_mode", "allow_git"),
+            "file_create": ("file_create_permission_mode", "allow_file_create"),
+            "file_edit": ("file_edit_permission_mode", "allow_file_edit"),
+            "file_delete": ("file_delete_permission_mode", "allow_file_delete"),
+        }
+        permission_attrs = {
+            "shell": "allow_shell",
+            "network": "allow_network",
+            "git": "allow_git",
+            "file_create": "allow_file_create",
+            "file_edit": "allow_file_edit",
+            "file_delete": "allow_file_delete",
+        }
+        for update in updates:
+            changed: list[str] = []
+            for category, mode in update.items():
+                if category not in mode_attrs:
+                    continue
+                mode_attr, spec_allow_attr = mode_attrs[category]
+                normalized = str(mode or "").strip().lower()
+                enabled = normalized not in {"never", "never permit", "deny"}
+                object.__setattr__(spec, mode_attr, normalized)
+                object.__setattr__(spec, spec_allow_attr, enabled)
+                object.__setattr__(tools.permissions, permission_attrs[category], enabled)
+                tools._permission_modes[category] = normalized
+                changed.append(f"{category}={normalized}")
+            if changed:
+                log("permissions updated: " + ", ".join(changed))
+
     @staticmethod
     def _tool_results_for_prompt(results: list[dict], spec: AgentTaskLike | None = None) -> str:
         """Handle tool results for prompt for agent task runner."""
@@ -794,6 +931,12 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             items.append(value)
 
     @staticmethod
+    def _remove_matching(items: list, needle: str) -> None:
+        """Remove stale task-state notes that contain needle."""
+        lowered = needle.lower()
+        items[:] = [item for item in items if lowered not in str(item).lower()]
+
+    @staticmethod
     def _command_from_tool_args(args: dict) -> list[str] | None:
         """Handle command from tool args for agent task runner."""
         command_args = args.get("args")
@@ -839,6 +982,12 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         if len(args) >= 3 and args[1] == "-m" and args[2] in {"ruff", "mypy", "pytest", "unittest"}:
             return args[2]
         return None
+
+    @staticmethod
+    def _is_git_init_command(command_args: Sequence[str] | None) -> bool:
+        """Return whether a command is git init."""
+        args = [str(part).lower() for part in (command_args or [])]
+        return args == ["git", "init"]
 
     @staticmethod
     def _command_from_result_message(message: str) -> list[str] | None:
@@ -897,23 +1046,32 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             tool = str(result.get("tool") or "")
             message = str(result.get("message") or "")
             data = result.get("data")
-            if tool in {"read_file", "create_file", "write_file", "patch_file", "delete_file", "create_file_base64", "write_file_base64"}:
+            if tool in {"read_file", "create_file", "edit_file", "write_file", "patch_file", "delete_file", "create_file_base64", "write_file_base64"}:
                 path = str(message or "")
                 if tool == "read_file":
                     path = message
                 elif isinstance(data, dict):
                     path = str(data.get("path") or message)
                 cls._add_unique(task_state["relevant_files"], path)
-            if tool in {"git_status", "git_diff"} or (tool == "run_command" and "git " in message.lower()):
+            if tool in {"git_init", "git_status", "git_diff", "git_add", "git_commit"} or (tool == "run_command" and "git " in message.lower()):
                 if "not a git repository" in message.lower() or (
                     isinstance(data, dict)
                     and "not a git repository" in (str(data.get("stderr") or "") + str(data.get("stdout") or "")).lower()
                 ):
                     task_state["git_available"] = False
-                    task_state["git_reason"] = "not a git repository"
-                    task_state["disabled_tools"]["git"] = "not a git repository"
-                    cls._add_unique(task_state["known_issues"], "git unavailable: not a git repository")
-                    log("shared task state: git marked unavailable (not a git repository)")
+                    task_state["git_reason"] = "not a git repository yet; use git_init before git status, add, diff, or commit"
+                    task_state["disabled_tools"].pop("git", None)
+                    cls._add_unique(task_state["known_issues"], "git repository is not initialized; use git_init if Git history is needed")
+                    task_state["next_step"] = "use git_init if the scoped folder should become a repository"
+                    log("shared task state: git repo not initialized; git_init remains available")
+                if tool == "git_init" and result.get("ok", False):
+                    task_state["git_available"] = True
+                    task_state["git_reason"] = ""
+                    task_state["disabled_tools"].pop("git", None)
+                    cls._remove_matching(task_state["known_issues"], "git repository is not initialized")
+                    cls._remove_matching(task_state["known_issues"], "git unavailable")
+                    task_state["next_step"] = "git repository is initialized; continue with scoped git status, add, diff, or commit only if needed"
+                    log("shared task state: git repo initialized; stale not-initialized warning cleared")
             if tool == "run_command":
                 command_args = None
                 exit_code = None
@@ -931,9 +1089,26 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                         task_state["tests"][key] = f"failed ({exit_code if exit_code is not None else 'unknown exit'})"
                         cls._add_unique(task_state["known_issues"], f"{key} failed")
                 command_tool = cls._command_tool_name(command_args)
-                if command_tool and not result.get("ok", False) and cls._is_unavailable_message(message, data):
+                if (
+                    command_tool
+                    and not result.get("ok", False)
+                    and cls._is_unavailable_message(message, data)
+                    and not (
+                        command_tool == "git"
+                        and task_state.get("git_available") is False
+                        and "git_init" in str(task_state.get("git_reason") or "")
+                    )
+                ):
                     task_state["disabled_tools"][command_tool] = message or "unavailable"
                     cls._add_unique(task_state["known_issues"], f"{command_tool} unavailable")
+                if command_tool == "git" and result.get("ok", False) and cls._is_git_init_command(command_args):
+                    task_state["git_available"] = True
+                    task_state["git_reason"] = ""
+                    task_state["disabled_tools"].pop("git", None)
+                    cls._remove_matching(task_state["known_issues"], "git repository is not initialized")
+                    cls._remove_matching(task_state["known_issues"], "git unavailable")
+                    task_state["next_step"] = "git repository is initialized; continue with scoped git status, add, diff, or commit only if needed"
+                    log("shared task state: git repo initialized; stale not-initialized warning cleared")
 
     @staticmethod
     def _compact_tool_result_data(
@@ -1292,17 +1467,22 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         task_state: dict | None = None,
     ) -> list[str]:
         """Handle allowed tool names for agent task runner."""
-        role = str((active_agent or {}).get("role") or "").lower()
-        name = str((active_agent or {}).get("name") or "").lower()
+        role = canonical_agent_role(str((active_agent or {}).get("role") or "")).lower()
+        name = canonical_agent_name(str((active_agent or {}).get("name") or "")).lower()
         is_coordinator = role == "coordinator" or name == "coordinator"
         is_reviewer = role == "reviewer" or name == "reviewer"
         is_implementer = role in {"implementer", "builder", "developer"} or name in {"builder", "developer"}
         tools = ["list_files", "send_message"] if is_coordinator else ["list_files", "read_file", "send_message"]
         git_disabled = isinstance(task_state, dict) and task_state.get("git_available") is False
-        if AgentTaskRunner._capability_enabled(spec, "allow_git", "git_permission_mode") and not git_disabled and not is_coordinator:
-            tools.extend(["git_status", "git_diff"])
+        git_enabled = AgentTaskRunner._capability_enabled(spec, "allow_git", "git_permission_mode")
         if read_only_phase:
+            if git_enabled and not git_disabled and not is_coordinator:
+                tools.extend(["git_status", "git_diff"])
             return tools
+        if git_enabled and not is_coordinator:
+            tools.append("git_init")
+            if not git_disabled:
+                tools.extend(["git_status", "git_diff", "git_add", "git_commit"])
         if is_coordinator:
             return tools
         if is_reviewer:
@@ -1310,11 +1490,9 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 tools.append("run_command")
             return tools
         if AgentTaskRunner._capability_enabled(spec, "allow_file_edit", "file_edit_permission_mode"):
-            tools.append("patch_file")
+            tools.append("edit_file")
         if AgentTaskRunner._capability_enabled(spec, "allow_file_create", "file_create_permission_mode"):
             tools.extend(["create_file", "create_file_base64"])
-        if AgentTaskRunner._capability_enabled(spec, "allow_file_create", "file_create_permission_mode") or AgentTaskRunner._capability_enabled(spec, "allow_file_edit", "file_edit_permission_mode"):
-            tools.extend(["write_file", "write_file_base64"])
         if AgentTaskRunner._capability_enabled(spec, "allow_file_delete", "file_delete_permission_mode"):
             tools.append("delete_file")
         if AgentTaskRunner._capability_enabled(spec, "allow_shell", "shell_permission_mode") and (active_agent is None or is_implementer):
@@ -1335,15 +1513,19 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         references = {
             "list_files": '- list_files args: {"limit": 300}',
             "read_file": '- read_file args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"}',
+            "edit_file": '- edit_file args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES", "old": "exact text already read", "new": "replacement text"}',
             "patch_file": '- patch_file args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES", "old": "exact text already read", "new": "replacement text"}',
             "create_file": '- create_file args: {"path": "new_concrete_filename.py", "content": "file content with escaped \\n"}',
             "write_file": '- write_file args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES_OR_NEW_FILE", "content": "file content with escaped \\n"}',
             "create_file_base64": '- create_file_base64 args: {"path": "new_concrete_filename.py", "content_base64": "short base64 encoded content"}',
             "write_file_base64": '- write_file_base64 args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES_OR_NEW_FILE", "content_base64": "short base64 encoded content"}',
             "delete_file": '- delete_file args: {"path": "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"}',
-            "run_command": '- run_command args: {"args": ["python", "-m", "py_compile", "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"], "timeout_seconds": 30}',
+            "run_command": '- run_command args: {"args": ["python", "-m", "py_compile", "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"], "timeout_seconds": 30}; Git examples when enabled: {"args": ["git", "init"]}, {"args": ["git", "add", "ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"]}, {"args": ["git", "commit", "-m", "message"]}',
+            "git_init": "- git_init args: {}",
             "git_status": "- git_status args: {}",
             "git_diff": "- git_diff args: {}",
+            "git_add": '- git_add args: {"paths": ["ACTUAL_RELATIVE_FILE_PATH_FROM_VISIBLE_FILES"]}',
+            "git_commit": '- git_commit args: {"message": "short commit message"}',
             "send_message": '- send_message args: {"to": "Agent name or ALL", "message": "short message for another agent"}',
         }
         return "\n".join(references[name] for name in tool_names if name in references)
@@ -1352,20 +1534,59 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
     def _tool_guidance_text(tool_names: list[str]) -> str:
         """Handle tool guidance text for agent task runner."""
         guidance: list[str] = []
-        if "patch_file" in tool_names:
-            guidance.append("Prefer patch_file over write_file for edits. Only patch exact text you have read. ")
-        if any(name in tool_names for name in ("create_file", "write_file")):
-            guidance.append("For text files, use escaped \\n sequences in create_file or write_file content. ")
-        if any(name in tool_names for name in ("create_file_base64", "write_file_base64")):
+        if "edit_file" in tool_names:
+            guidance.append("Use edit_file for existing files: replace one exact text block you have read. ")
+        if "create_file" in tool_names:
+            guidance.append("Use create_file only for new files; for content strings, escape newlines as \\n. ")
+        if "create_file_base64" in tool_names:
             guidance.append(
-                "Use base64 file tools only when the encoded content is short enough to fit comfortably "
+                "Use base64 create tools only when the encoded content is short enough to fit comfortably "
                 "in one response and will not risk truncation. "
             )
-        if any(name in tool_names for name in ("create_file", "write_file", "patch_file", "create_file_base64", "write_file_base64")):
+        if any(name in tool_names for name in ("create_file", "edit_file", "create_file_base64")):
             guidance.append("Use at most one file-writing tool call per turn, then verify in a later turn if needed. ")
         else:
-            guidance.append("File-writing tools are not available in this task or phase. ")
+            guidance.append(
+                "File-writing tools are not available in this task phase or active-agent role; "
+                "this is a phase limit, not an approval denial or broken tool. Do not report phase-limited "
+                "tools as unusable. "
+            )
+        if any(name in tool_names for name in ("git_init", "git_add", "git_commit")):
+            guidance.append(
+                "Use git_init when the scoped project is not yet a repository, git_add for scoped changed paths, "
+                "and git_commit with a concise message. Destructive Git commands are not available. "
+            )
+        if "run_command" in tool_names:
+            guidance.append(
+                "When Git is enabled, run_command may initialize and commit the scoped project with git init, "
+                "git add scoped paths, and git commit -m; destructive Git commands are not available. "
+            )
         return "".join(guidance)
+
+    @staticmethod
+    def _tool_permission_guidance_text(spec: AgentTaskLike, tool_names: list[str]) -> str:
+        """Explain ask-permission tool modes so the model still calls available tools."""
+        mode_fields = {
+            "file_create": ("file_create_permission_mode", {"create_file", "create_file_base64"}),
+            "file_edit": ("file_edit_permission_mode", {"edit_file"}),
+            "file_delete": ("file_delete_permission_mode", {"delete_file"}),
+            "shell": ("shell_permission_mode", {"run_command"}),
+            "git": ("git_permission_mode", {"git_init", "git_status", "git_diff", "git_add", "git_commit"}),
+        }
+        ask_tools: list[str] = []
+        available = set(tool_names)
+        for _category, (field, names) in mode_fields.items():
+            mode = str(getattr(spec, field, "") or "").strip().lower()
+            if mode in {"ask", "ask permission", "ask for permission"}:
+                ask_tools.extend(sorted(available & names))
+        if not ask_tools:
+            return ""
+        return (
+            "Permission note: these tools are available but require user approval before execution: "
+            + ", ".join(dict.fromkeys(ask_tools))
+            + ". Call them normally when needed; the app will pause and show the user an approve/decline prompt. "
+            "Do not treat ask-permission tools as unavailable. "
+        )
 
     def _build_agent_prompt(
         self,
@@ -1425,12 +1646,14 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             phase_rules = (
                 "Parallel read-only briefing phase: inspect, reason, and communicate only. "
                 f"Allowed tool_calls in this phase are: {read_only_tools}. "
-                "Do not request file-writing tools or run_command. "
+                "Do not request file-writing tools or run_command, and do not report them as unusable; "
+                "they are intentionally withheld during this read-only phase. "
                 "Return status=continue and final=null.\n\n"
             )
         allowed_tools = self._allowed_tool_names(spec, read_only_phase=read_only_phase, active_agent=active_agent, task_state=task_state)
         tool_reference = self._tool_reference_text(allowed_tools)
         tool_guidance = self._tool_guidance_text(allowed_tools)
+        permission_guidance = self._tool_permission_guidance_text(spec, allowed_tools)
         shared_state_text = self._task_state_prompt_text(task_state)
         if compact:
             return self._build_agent_delta_prompt(
@@ -1471,10 +1694,13 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             "For run_command, args.command strings such as \"python -m pytest\" are accepted "
             "and normalized to args arrays by the framework, but prefer args arrays when possible. "
             "Only request commands listed under Allowed verification commands. Never ask another "
-            "agent to install packages or missing tools; if a tool is unavailable, record it as skipped.\n\n"
+            "agent to install packages or missing tools; if a command backend is genuinely unavailable "
+            "after a tool call, record that backend as skipped. Do not call tools unusable merely because "
+            "they are absent from this phase's Available tools list.\n\n"
             "When finished, return JSON with an empty tool_calls list and a final "
             "Markdown report in the final field. "
             + tool_guidance
+            + permission_guidance
             + "Use verification commands when allowed. "
             "Every string must be valid JSON: escape quotes, backslashes, tabs, and "
             "newlines; never place raw line breaks inside quoted strings. "
@@ -1580,6 +1806,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         )
         allowed_tools = ", ".join(allowed_tool_names)
         tool_guidance = self._tool_guidance_text(allowed_tool_names)
+        permission_guidance = self._tool_permission_guidance_text(spec, allowed_tool_names)
         agents = self._normalise_agents(spec)
         roster = ", ".join(f"{agent['name']} ({agent['role']})" for agent in agents)
         return (
@@ -1591,7 +1818,9 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             f"Tools: {allowed_tools}. "
             "Use real relative paths, never placeholders. "
             + tool_guidance
-            + "No large file content. Use only allowed verification commands; do not assign package installation or unavailable tools. "
+            + permission_guidance
+            + "No large file content. Use only allowed verification commands; do not assign package installation or genuinely unavailable command backends. "
+            "Tools absent from this phase's tool list are phase-limited, not broken or unapproved. "
             "If handing off, send_message to the next agent with objective, files, and expected output.\n\n"
             f"Title: {spec.title}\n"
             f"Active agent: {active_agent['name']} ({active_agent['role']})\n"
@@ -1825,7 +2054,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         for comm in getattr(spec, "communications", []) or []:
             source = self._field_value(comm, "from_agent")
             target = self._field_value(comm, "to_agent")
-            phase = self._field_value(comm, "phase").lower()
+            phase = canonical_communication_phase(self._field_value(comm, "phase")).lower()
             trigger = self._field_value(comm, "trigger").lower()
             message = self._field_value(comm, "message")
             if not source or not target or not message:
@@ -1859,8 +2088,8 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         log: LogCallback,
     ) -> dict:
         """Handle select next agent for agent task runner."""
-        names = {agent["name"].lower(): agent for agent in agents}
-        role_names = {agent["role"].lower(): agent for agent in agents}
+        names = self._agent_name_index(agents)
+        role_names = self._agent_role_index(agents)
         active_name = active_agent["name"]
         status = str(parsed.get("status") or "").strip().lower()
         requested = str(parsed.get("next_agent") or "").strip()
@@ -1870,9 +2099,17 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         def by_name_or_role(value: str) -> dict | None:
             """Handle by name or role for agent task runner."""
             key = value.strip().lower()
+            canonical_name = canonical_agent_name(value).lower()
+            canonical_role = canonical_agent_role(value).lower()
             if key in {"self", "same", "me", active_agent["name"].lower()}:
                 return active_agent
-            return names.get(key) or role_names.get(key) or self._agent_alias_match(key, names, role_names)
+            return (
+                names.get(key)
+                or names.get(canonical_name)
+                or role_names.get(key)
+                or role_names.get(canonical_role)
+                or self._agent_alias_match(key, names, role_names)
+            )
 
         requested_agent = by_name_or_role(requested) if requested else None
         requested_is_handoff = requested_agent is not None and requested_agent["name"] != active_name
@@ -1913,7 +2150,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             failed_results = [result for result in tool_results if not result.get("ok", True)]
             if failed_results:
                 selected = active_agent
-            elif any(result.get("tool") in {"create_file", "write_file", "patch_file", "create_file_base64", "write_file_base64"} for result in tool_results):
+            elif any(result.get("tool") in {"create_file", "edit_file", "write_file", "patch_file", "create_file_base64", "write_file_base64"} for result in tool_results):
                 selected = active_agent
             else:
                 selected = self._next_round_robin_agent(active_agent, agents)
@@ -1962,7 +2199,15 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             if not target or target.upper() == "ALL":
                 continue
             key = target.lower()
-            agent = names.get(key) or role_names.get(key) or cls._agent_alias_match(key, names, role_names)
+            canonical_name = canonical_agent_name(target).lower()
+            canonical_role = canonical_agent_role(target).lower()
+            agent = (
+                names.get(key)
+                or names.get(canonical_name)
+                or role_names.get(key)
+                or role_names.get(canonical_role)
+                or cls._agent_alias_match(key, names, role_names)
+            )
             if agent is not None:
                 return agent
         return None
@@ -2017,6 +2262,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             return ToolResult(tool or "invalid", False, f"Tool is not allowed during read-only briefing: {tool}")
         if active_agent is not None and spec is not None:
             allowed_tools = set(self._allowed_tool_names(spec, read_only_phase=read_only, active_agent=active_agent, task_state=task_state))
+            allowed_tools.update(self._legacy_compatible_tool_names(spec, read_only_phase=read_only, active_agent=active_agent))
             if tool not in allowed_tools:
                 role = str(active_agent.get("role") or active_agent.get("name") or "agent")
                 return ToolResult(tool or "invalid", False, f"Tool is not allowed for {role}: {tool}")
@@ -2097,8 +2343,8 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         task_state: dict | None,
     ) -> ToolResult | None:
         """Handle impossible assignment error for agent task runner."""
-        role = str((active_agent or {}).get("role") or "").lower()
-        name = str((active_agent or {}).get("name") or "").lower()
+        role = canonical_agent_role(str((active_agent or {}).get("role") or "")).lower()
+        name = canonical_agent_name(str((active_agent or {}).get("name") or "")).lower()
         if role != "coordinator" and name != "coordinator":
             return None
         lowered = message.lower()
@@ -2152,10 +2398,35 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         return tool in {"list_files", "read_file", "git_status", "git_diff", "send_message"}
 
     @staticmethod
+    def _legacy_compatible_tool_names(
+        spec: AgentTaskLike,
+        *,
+        read_only_phase: bool,
+        active_agent: dict | None,
+    ) -> set[str]:
+        """Return old write tools accepted for compatibility but not advertised."""
+        if read_only_phase:
+            return set()
+        role = canonical_agent_role(str((active_agent or {}).get("role") or "")).lower()
+        name = canonical_agent_name(str((active_agent or {}).get("name") or "")).lower()
+        is_implementer = role in {"implementer", "builder", "developer"} or name in {"builder", "developer"}
+        if active_agent is not None and not is_implementer:
+            return set()
+        tools: set[str] = set()
+        can_edit = AgentTaskRunner._capability_enabled(spec, "allow_file_edit", "file_edit_permission_mode")
+        can_create = AgentTaskRunner._capability_enabled(spec, "allow_file_create", "file_create_permission_mode")
+        if can_edit:
+            tools.add("patch_file")
+        if can_create or can_edit:
+            tools.update({"write_file", "write_file_base64"})
+        return tools
+
+    @staticmethod
     def _is_mutating_agent_tool(tool: str) -> bool:
         """Return whether mutating agent tool is true."""
         return tool in {
             "create_file",
+            "edit_file",
             "write_file",
             "patch_file",
             "delete_file",
@@ -2168,14 +2439,19 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         disabled_tools = task_state.get("disabled_tools") if isinstance(task_state, dict) else {}
         if not isinstance(disabled_tools, dict):
             disabled_tools = {}
-        if tool in {"git_status", "git_diff"} and task_state.get("git_available") is False:
-            reason = str(task_state.get("git_reason") or disabled_tools.get("git") or "git unavailable")
-            return ToolResult(tool, False, f"Tool permanently disabled: {reason}")
+        if tool in {"git_status", "git_diff", "git_add", "git_commit"} and task_state.get("git_available") is False:
+            reason = str(task_state.get("git_reason") or "git repository is not initialized")
+            return ToolResult(tool, False, f"{reason}; call git_init first if Git history is needed")
         if tool != "run_command":
             return None
         command_args = self._command_from_tool_args(args)
         command_tool = self._command_tool_name(command_args)
+        if command_tool == "git" and task_state.get("git_available") is False and not self._is_git_init_command(command_args):
+            reason = str(task_state.get("git_reason") or "git repository is not initialized")
+            return ToolResult("run_command", False, f"{reason}; call git_init first if Git history is needed")
         if command_tool in disabled_tools:
+            if command_tool == "git" and self._is_git_init_command(command_args):
+                return None
             return ToolResult("run_command", False, f"Tool permanently disabled: {command_tool}: {disabled_tools[command_tool]}")
         key = self._verification_key(command_args)
         passed = task_state.get("verification_passed")
@@ -2214,6 +2490,8 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 return tools.read_file(str(args["path"]), max_chars=int(args.get("max_chars", 20_000)))
             if tool == "create_file":
                 return tools.create_file(str(args["path"]), str(args.get("content", "")))
+            if tool == "edit_file":
+                return tools.edit_file(str(args["path"]), str(args["old"]), str(args.get("new", "")))
             if tool == "write_file":
                 return tools.write_file(str(args["path"]), str(args.get("content", "")))
             if tool == "create_file_base64":
@@ -2250,6 +2528,19 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
                 return tools.git_status()
             if tool == "git_diff":
                 return tools.git_diff()
+            if tool == "git_init":
+                return tools.git_init()
+            if tool == "git_add":
+                paths = args.get("paths")
+                if paths is None:
+                    paths = [args.get("path", "")]
+                if isinstance(paths, str):
+                    paths = [paths]
+                if not isinstance(paths, Sequence) or isinstance(paths, (bytes, bytearray)):
+                    return ToolResult("git_add", False, "schema_error: git_add needs args.paths as a list of scoped paths.")
+                return tools.git_add([str(path) for path in paths])
+            if tool == "git_commit":
+                return tools.git_commit(str(args.get("message") or ""))
             return ToolResult(tool or "invalid", False, f"Unknown tool: {tool!r}")
         except Exception as exc:
             return ToolResult(tool or "invalid", False, str(exc))
@@ -2260,17 +2551,25 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
         if tool not in {
             "read_file",
             "create_file",
+            "edit_file",
             "write_file",
             "patch_file",
             "delete_file",
             "create_file_base64",
             "write_file_base64",
+            "git_add",
         }:
             return None
-        path = str(args.get("path") or "").strip()
-        if not path:
+        raw_paths = args.get("paths") if tool == "git_add" else None
+        if raw_paths is None:
+            raw_paths = [args.get("path", "")]
+        if isinstance(raw_paths, str):
+            raw_paths = [raw_paths]
+        if not isinstance(raw_paths, Sequence) or isinstance(raw_paths, (bytes, bytearray)):
+            return f"{tool} requires scoped path values from list_files."
+        paths = [str(path).strip() for path in raw_paths if str(path).strip()]
+        if not paths:
             return f"{tool} requires args.path with an actual relative file path from list_files."
-        normalized = path.replace("\\", "/").strip("'\"")
         placeholders = {
             "path",
             "<path>",
@@ -2279,13 +2578,20 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             "relative/path.py",
             "/path/to/file",
         }
-        if normalized not in placeholders:
-            return None
-        try:
-            exists = tools.workspace.resolve(path).exists()
-        except Exception:
-            exists = False
-        if exists:
+        path = ""
+        for candidate in paths:
+            normalized = candidate.replace("\\", "/").strip("'\"")
+            if normalized not in placeholders:
+                continue
+            path = candidate
+            try:
+                exists = tools.workspace.resolve(candidate).exists()
+            except Exception:
+                exists = False
+            if exists:
+                continue
+            break
+        else:
             return None
         return (
             f"{tool} received placeholder path {path!r}. Use the actual relative filename from list_files "

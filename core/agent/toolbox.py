@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import fnmatch
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -37,11 +39,6 @@ class AgentToolbox:
         (("cargo", "test"), ("Cargo.toml",)),
         (("go", "test"), ("go.mod",)),
     )
-    _GIT_COMMAND_ALLOWLIST: tuple[tuple[str, ...], ...] = (
-        ("git", "status"),
-        ("git", "diff"),
-    )
-
     def __init__(
         self,
         workspace: ScopedWorkspace,
@@ -110,6 +107,10 @@ class AgentToolbox:
         )
         return self._result("write_file", True, self.workspace.relative(path))
 
+    def edit_file(self, path: str, old: str, new: str) -> ToolResult:
+        """Edit a file by replacing one exact text block."""
+        return self.patch_file(path, old, new, action_name="edit_file")
+
     def patch_file(self, path: str, old: str, new: str, *, action_name: str = "patch_file") -> ToolResult:
         """Handle patch file for agent toolbox."""
         resolved = self.workspace.resolve(path)
@@ -136,7 +137,7 @@ class AgentToolbox:
             new,
             edit=self.permissions.allow_file_edit,
         )
-        return self._result("patch_file", True, f"{self.workspace.relative(path)} patched", {"replacements": count})
+        return self._result(action_name, True, f"{self.workspace.relative(path)} patched", {"replacements": count})
 
     def delete_file(self, path: str) -> ToolResult:
         """Delete file."""
@@ -149,23 +150,33 @@ class AgentToolbox:
         clean_args = [str(arg) for arg in args if str(arg)]
         if not clean_args:
             raise ValueError("Command cannot be empty.")
-        if not self.permissions.allow_shell and not self._is_read_only_git_command(clean_args):
+        is_git_command = self._is_git_command(clean_args)
+        if not self.permissions.allow_shell and not (self.permissions.allow_git and is_git_command):
             raise PermissionDenied("Shell commands are disabled for this task.")
         if not self._is_command_allowed(clean_args):
             raise PermissionDenied(f"Command is not allowlisted: {' '.join(clean_args)}")
-        if not self._is_read_only_git_command(clean_args):
-            self._approve("run_command", {"args": clean_args})
-        else:
-            self._approve("git", {"args": clean_args})
+        if self.permissions.allow_git and is_git_command:
             no_repo = self._not_git_repo_result(clean_args)
+            if no_repo is not None and self._is_read_only_git_command(clean_args):
+                return no_repo
+            self._approve("git", {"args": clean_args})
             if no_repo is not None:
                 return no_repo
+        else:
+            self._approve("run_command", {"args": clean_args})
         display_args = list(clean_args)
         exec_args = list(clean_args)
         if exec_args[0].lower() in {"python", "py"}:
             exec_args[0] = sys.executable
         elif exec_args[0].lower() in {"pytest", "ruff", "mypy"}:
             exec_args = [sys.executable, "-m", *exec_args]
+        env = None
+        if self._is_git_commit_command(clean_args):
+            env = os.environ.copy()
+            env.setdefault("GIT_AUTHOR_NAME", "Wisp Agent")
+            env.setdefault("GIT_AUTHOR_EMAIL", "wisp-agent@example.invalid")
+            env.setdefault("GIT_COMMITTER_NAME", env["GIT_AUTHOR_NAME"])
+            env.setdefault("GIT_COMMITTER_EMAIL", env["GIT_AUTHOR_EMAIL"])
 
         try:
             completed = subprocess.run(
@@ -176,6 +187,7 @@ class AgentToolbox:
                 text=True,
                 timeout=timeout_seconds,
                 shell=False,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             command = " ".join(clean_args)
@@ -201,9 +213,9 @@ class AgentToolbox:
     def _is_command_allowed(self, args: list[str]) -> bool:
         """Return whether command allowed is true."""
         allowed = list(self._BASE_COMMAND_ALLOWLIST)
-        if self.permissions.allow_git:
-            allowed.extend(self._GIT_COMMAND_ALLOWLIST)
         lowered = [arg.lower() for arg in args]
+        if self.permissions.allow_git and self._is_git_command_allowed(args):
+            return True
         for prefix in allowed:
             if lowered[: len(prefix)] == list(prefix):
                 return True
@@ -242,21 +254,45 @@ class AgentToolbox:
             commands.append(["go", "test", "./..."])
         return [cmd for cmd in commands if self._is_command_allowed(cmd)]
 
+    def git_init(self) -> ToolResult:
+        """Initialize a Git repository in the scoped workspace."""
+        if not self.permissions.allow_git:
+            raise PermissionDenied("Git is disabled for this task.")
+        return self._retag_result(self.run_command(["git", "init"], timeout_seconds=10), "git_init")
+
     def git_status(self) -> ToolResult:
         """Handle git status for agent toolbox."""
         if not self.permissions.allow_git:
             raise PermissionDenied("Git is disabled for this task.")
-        return self.run_command(["git", "status", "--short"], timeout_seconds=5)
+        return self._retag_result(self.run_command(["git", "status", "--short"], timeout_seconds=5), "git_status")
 
     def git_diff(self) -> ToolResult:
         """Handle git diff for agent toolbox."""
         if not self.permissions.allow_git:
             raise PermissionDenied("Git is disabled for this task.")
-        return self.run_command(["git", "diff", "--", "."], timeout_seconds=5)
+        return self._retag_result(self.run_command(["git", "diff", "--", "."], timeout_seconds=5), "git_diff")
+
+    def git_add(self, paths: Sequence[str]) -> ToolResult:
+        """Stage scoped paths in Git."""
+        if not self.permissions.allow_git:
+            raise PermissionDenied("Git is disabled for this task.")
+        clean_paths = [str(path) for path in paths if str(path)]
+        return self._retag_result(self.run_command(["git", "add", *clean_paths], timeout_seconds=10), "git_add")
+
+    def git_commit(self, message: str) -> ToolResult:
+        """Create a Git commit with a simple message."""
+        if not self.permissions.allow_git:
+            raise PermissionDenied("Git is disabled for this task.")
+        return self._retag_result(self.run_command(["git", "commit", "-m", str(message or "")], timeout_seconds=20), "git_commit")
+
+    @staticmethod
+    def _retag_result(result: ToolResult, tool: str) -> ToolResult:
+        """Return a command result under a dedicated tool name."""
+        return ToolResult(tool=tool, ok=result.ok, message=result.message, data=result.data)
 
     def _not_git_repo_result(self, args: list[str]) -> ToolResult | None:
         """Handle not git repo result for agent toolbox."""
-        if not self._is_read_only_git_command(args):
+        if not self._is_git_command(args) or self._is_git_init_command(args):
             return None
         if self._find_git_root() is not None:
             return None
@@ -282,6 +318,84 @@ class AgentToolbox:
         """Return whether read only git command is true."""
         lowered = [arg.lower() for arg in args]
         return lowered[:2] in (["git", "status"], ["git", "diff"])
+
+    @staticmethod
+    def _is_git_command(args: list[str]) -> bool:
+        """Return whether args describe a git command."""
+        return bool(args) and args[0].lower() == "git"
+
+    @staticmethod
+    def _is_git_init_command(args: list[str]) -> bool:
+        """Return whether args are a scoped git init command."""
+        lowered = [arg.lower() for arg in args]
+        return lowered == ["git", "init"]
+
+    @staticmethod
+    def _is_git_commit_command(args: list[str]) -> bool:
+        """Return whether args are a scoped git commit command."""
+        lowered = [arg.lower() for arg in args]
+        return len(lowered) >= 2 and lowered[:2] == ["git", "commit"]
+
+    def _is_git_command_allowed(self, args: list[str]) -> bool:
+        """Allow safe Git lifecycle commands within the scoped workspace."""
+        if not self._is_git_command(args) or len(args) < 2:
+            return False
+        lowered = [arg.lower() for arg in args]
+        verb = lowered[1]
+        if verb == "init":
+            return lowered == ["git", "init"]
+        if verb == "status":
+            return all(arg in {"git", "status", "--short", "--porcelain", "-s"} for arg in lowered)
+        if verb == "diff":
+            return len(args) == 2 or lowered[2:] == ["--", "."]
+        if verb == "add":
+            return self._is_git_add_allowed(args[2:])
+        if verb == "commit":
+            return self._is_git_commit_allowed(args[2:])
+        return False
+
+    def _is_git_add_allowed(self, pathspecs: list[str]) -> bool:
+        """Allow git add only for scoped paths."""
+        if not pathspecs:
+            return False
+        paths = [arg for arg in pathspecs if arg != "--"]
+        if not paths:
+            return False
+        for path in paths:
+            if path.startswith("-") or path.startswith(":"):
+                return False
+            if path == ".":
+                if self._has_blocked_files():
+                    return False
+                continue
+            try:
+                self.workspace.resolve(path)
+            except Exception:
+                return False
+        return True
+
+    @staticmethod
+    def _is_git_commit_allowed(args: list[str]) -> bool:
+        """Allow simple message-based commits."""
+        if len(args) != 2 or args[0] not in {"-m", "--message"}:
+            return False
+        return bool(args[1].strip())
+
+    def _has_blocked_files(self) -> bool:
+        """Return whether git add . would include files blocked from agent access."""
+        blocked = getattr(self.workspace, "blocked_globs", [])
+        if not blocked:
+            return False
+        for path in self.workspace.root.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                rel = str(path.resolve().relative_to(self.workspace.root)).replace("\\", "/")
+            except ValueError:
+                continue
+            if any(fnmatch.fnmatch(rel, pattern) for pattern in blocked):
+                return True
+        return False
 
     def _approve(self, action: str, details: dict) -> None:
         """Handle approve for agent toolbox."""

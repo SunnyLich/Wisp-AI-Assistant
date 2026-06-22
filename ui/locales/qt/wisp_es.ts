@@ -251,6 +251,10 @@
       <translation>AJUSTES DE LA APP</translation>
     </message>
     <message>
+      <source>App Settings</source>
+      <translation>Ajustes de la app</translation>
+    </message>
+    <message>
       <source>Accent color</source>
       <translation>Color de acento</translation>
     </message>
@@ -697,6 +701,10 @@ Dejar decidir al modelo — expone búsqueda web y herramientas para obtener pá
       <translation>OpenAI API (facturación por clave API)</translation>
     </message>
     <message>
+      <source>OpenAI API</source>
+      <translation>OpenAI API</translation>
+    </message>
+    <message>
       <source>Colors for the theme selected above. Light and Dark each keep their
 own set — switching Theme swaps these to that mode's colors.
 Cards, borders and buttons are shaded automatically from these four.</source>
@@ -747,6 +755,14 @@ Tarjetas, bordes y botones se sombrean automáticamente a partir de estos cuatro
     <message>
       <source>Context:</source>
       <translation>Contexto:</translation>
+    </message>
+    <message>
+      <source>Intent context keys:</source>
+      <translation>Teclas de contexto de intención:</translation>
+    </message>
+    <message>
+      <source>Timeout ms:</source>
+      <translation>Tiempo de espera (ms):</translation>
     </message>
     <message>
       <source>Continue</source>
@@ -839,6 +855,10 @@ Tarjetas, bordes y botones se sombrean automáticamente a partir de estos cuatro
     <message>
       <source>DICTATION (HOLD TO TYPE)</source>
       <translation>DICTADO (MANTÉN PULSADO PARA ESCRIBIR)</translation>
+    </message>
+    <message>
+      <source>Dictation (hold to type)</source>
+      <translation>Dictado (mantén pulsado para escribir)</translation>
     </message>
     <message>
       <source>Dark</source>
@@ -1351,6 +1371,10 @@ Dejar decidir al modelo — expone estado/diff de git y herramientas de reposito
       <translation>AJUSTES DE MEMORIA</translation>
     </message>
     <message>
+      <source>Memory Settings</source>
+      <translation>Ajustes de memoria</translation>
+    </message>
+    <message>
       <source>Main model</source>
       <translation>Modelo principal</translation>
     </message>
@@ -1533,6 +1557,26 @@ Di "remember that ...", "note that ..." o "keep in mind ..." para guardar un hec
     <message>
       <source>None</source>
       <translation>Ninguna</translation>
+    </message>
+    <message>
+      <source>unavailable</source>
+      <translation>No disponible</translation>
+    </message>
+    <message>
+      <source>authorized</source>
+      <translation>Autorizado</translation>
+    </message>
+    <message>
+      <source>denied</source>
+      <translation>Denegado</translation>
+    </message>
+    <message>
+      <source>not_determined</source>
+      <translation>Sin determinar</translation>
+    </message>
+    <message>
+      <source>restricted</source>
+      <translation>Restringido</translation>
     </message>
     <message>
       <source>Not configured</source>
@@ -3120,6 +3164,194 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
     <message>
       <source>Recommendation: turn on Trust/privacy mode before sending sensitive context.</source>
       <translation>Recomendaci?n: activa el modo de confianza/privacidad antes de enviar contexto sensible.</translation>
+    </message>
+    <message>
+      <source>LLM route uses {provider} but you are not logged in.</source>
+      <translation>La ruta LLM usa {provider}, pero no has iniciado sesión.</translation>
+    </message>
+    <message>
+      <source>Addon folder installed.</source>
+      <translation>Carpeta de complemento instalada.</translation>
+    </message>
+    <message>
+      <source>Recommendation: open Addon Manager, inspect the addon diagnostics, then repair or disable it.</source>
+      <translation>Recomendación: abre el Administrador de complementos, revisa los diagnósticos del complemento y luego repáralo o desactívalo.</translation>
+    </message>
+    <message>
+      <source>Installed addon: </source>
+      <translation>Complemento instalado: </translation>
+    </message>
+    <message>
+      <source>Technical detail: </source>
+      <translation>Detalle técnico: </translation>
+    </message>
+    <message>
+      <source>Agent</source>
+      <translation>Agente</translation>
+    </message>
+    <message>
+      <source>Model prompts, responses, parsed JSON, and tool payloads appear here while the task runs.</source>
+      <translation>Las indicaciones del modelo, las respuestas, el JSON analizado y las cargas de herramientas aparecen aquí mientras se ejecuta la tarea.</translation>
+    </message>
+    <message>
+      <source>Waiting {elapsed}</source>
+      <translation>Esperando {elapsed}</translation>
+    </message>
+    <message>
+      <source>Receiving response ({elapsed})</source>
+      <translation>Recibiendo respuesta ({elapsed})</translation>
+    </message>
+    <message>
+      <source>Handing off to {agent}</source>
+      <translation>Transfiriendo a {agent}</translation>
+    </message>
+    <message>
+      <source>Explicit handoff to {agent}</source>
+      <translation>Transferencia explícita a {agent}</translation>
+    </message>
+    <message>
+      <source>Prompt {summary}</source>
+      <translation>Indicación {summary}</translation>
+    </message>
+    <message>
+      <source>Using {tool}</source>
+      <translation>Usando {tool}</translation>
+    </message>
+    <message>
+      <source>avg {avg} | invalid {invalid} | repair {repairs} | fallback {fallbacks}</source>
+      <translation>promedio {avg} | inválido {invalid} | reparación {repairs} | respaldo {fallbacks}</translation>
+    </message>
+    <message>
+      <source>calls {calls}, average latency {avg}s, invalid JSON {invalid}, repairs {repairs}, fallbacks {fallbacks}</source>
+      <translation>llamadas {calls}, latencia media {avg}s, JSON inválido {invalid}, reparaciones {repairs}, respaldos {fallbacks}</translation>
+    </message>
+    <message>
+      <source>Told {target}: {message}</source>
+      <translation>Avisé a {target}: {message}</translation>
+    </message>
+    <message>
+      <source>Heard from {source}: {message}</source>
+      <translation>Recibido de {source}: {message}</translation>
+    </message>
+    <message>
+      <source>Thought: {message}</source>
+      <translation>Pensamiento: {message}</translation>
+    </message>
+    <message>
+      <source>thought: {message}</source>
+      <translation>pensamiento: {message}</translation>
+    </message>
+    <message>
+      <source>Handoff ({status}): {reason}</source>
+      <translation>Transferencia ({status}): {reason}</translation>
+    </message>
+    <message>
+      <source>{agent} returned final response</source>
+      <translation>{agent} devolvió la respuesta final</translation>
+    </message>
+    <message>
+      <source>returned final response</source>
+      <translation>devolvió la respuesta final</translation>
+    </message>
+    <message>
+      <source>agent turn {turn}: {agent}</source>
+      <translation>turno de agente {turn}: {agent}</translation>
+    </message>
+    <message>
+      <source>agent read-only turn: {agent}</source>
+      <translation>turno de solo lectura del agente: {agent}</translation>
+    </message>
+    <message>
+      <source>prompt prepared for {agent}: {chars} chars ({mode})</source>
+      <translation>indicación preparada para {agent}: {chars} caracteres ({mode})</translation>
+    </message>
+    <message>
+      <source>requesting LLM tool response via {route}</source>
+      <translation>solicitando respuesta de herramienta LLM vía {route}</translation>
+    </message>
+    <message>
+      <source>model call still waiting after {elapsed} via {route}</source>
+      <translation>la llamada al modelo sigue esperando tras {elapsed} vía {route}</translation>
+    </message>
+    <message>
+      <source>model first token after {elapsed} via {route}</source>
+      <translation>primer token del modelo tras {elapsed} vía {route}</translation>
+    </message>
+    <message>
+      <source>model response received in {elapsed}s ({chars} chars)</source>
+      <translation>respuesta del modelo recibida en {elapsed}s ({chars} caracteres)</translation>
+    </message>
+    <message>
+      <source>model callback response received in {elapsed}s ({chars} chars)</source>
+      <translation>respuesta de callback del modelo recibida en {elapsed}s ({chars} caracteres)</translation>
+    </message>
+    <message>
+      <source>tool {tool} failed: {message}</source>
+      <translation>herramienta {tool} falló: {message}</translation>
+    </message>
+    <message>
+      <source>tool {tool}: exit {code}: {message}</source>
+      <translation>herramienta {tool}: salida {code}: {message}</translation>
+    </message>
+    <message>
+      <source>tool call: {tool}</source>
+      <translation>llamada de herramienta: {tool}</translation>
+    </message>
+    <message>
+      <source>{agent} tool call: {tool}</source>
+      <translation>llamada de herramienta de {agent}: {tool}</translation>
+    </message>
+    <message>
+      <source>Message cannot be empty.</source>
+      <translation>El mensaje no puede estar vacío.</translation>
+    </message>
+    <message>
+      <source>Permission approved.</source>
+      <translation>Permiso aprobado.</translation>
+    </message>
+    <message>
+      <source>Permission declined.</source>
+      <translation>Permiso denegado.</translation>
+    </message>
+    <message>
+      <source>delta</source>
+      <translation>delta</translation>
+    </message>
+    <message>
+      <source>full</source>
+      <translation>completo</translation>
+    </message>
+    <message>
+      <source>read-only full</source>
+      <translation>solo lectura completo</translation>
+    </message>
+    <message>
+      <source>waiting</source>
+      <translation>en espera</translation>
+    </message>
+    <message>
+      <source>blocked</source>
+      <translation>bloqueado</translation>
+    </message>
+    <message>
+      <source>done</source>
+      <translation>listo</translation>
+    </message>
+    <message>
+      <source>continue</source>
+      <translation>continuar</translation>
+    </message>
+    <message>
+      <source>ready_for_review</source>
+      <translation>listo para revisión</translation>
+    </message>
+    <message>
+      <source>complete</source>
+      <translation>completado</translation>
+    </message>
+    <message>
+      <source>Fetch the full readable text of a specific web page URL on demand. Use this when the user asks about a website/page and the passive browser preview is missing, partial, stale, or not enough.</source>
+      <translation>Obtiene bajo demanda el texto legible completo de una URL de página web específica. Úsalo cuando el usuario pregunte por un sitio/página y la vista previa pasiva del navegador falte, esté incompleta, desactualizada o no sea suficiente.</translation>
     </message>
     <message>
       <source>Custom</source>

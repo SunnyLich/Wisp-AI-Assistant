@@ -251,6 +251,10 @@
       <translation>程式設置</translation>
     </message>
     <message>
+      <source>App Settings</source>
+      <translation>程式設定</translation>
+    </message>
+    <message>
       <source>Accent color</source>
       <translation>強調色</translation>
     </message>
@@ -697,6 +701,10 @@ Let model decide — expose web search and browser page fetch tools.</source>
       <translation>OpenAI API（API 密鑰計費）</translation>
     </message>
     <message>
+      <source>OpenAI API</source>
+      <translation>OpenAI API</translation>
+    </message>
+    <message>
       <source>Colors for the theme selected above. Light and Dark each keep their
 own set — switching Theme swaps these to that mode's colors.
 Cards, borders and buttons are shaded automatically from these four.</source>
@@ -747,6 +755,14 @@ Cards, borders and buttons are shaded automatically from these four.</source>
     <message>
       <source>Context:</source>
       <translation>上下文：</translation>
+    </message>
+    <message>
+      <source>Intent context keys:</source>
+      <translation>意圖上下文鍵：</translation>
+    </message>
+    <message>
+      <source>Timeout ms:</source>
+      <translation>逾時（毫秒）：</translation>
     </message>
     <message>
       <source>Continue</source>
@@ -838,6 +854,10 @@ Cards, borders and buttons are shaded automatically from these four.</source>
     </message>
     <message>
       <source>DICTATION (HOLD TO TYPE)</source>
+      <translation>聽寫（按住即可輸入）</translation>
+    </message>
+    <message>
+      <source>Dictation (hold to type)</source>
       <translation>聽寫（按住即可輸入）</translation>
     </message>
     <message>
@@ -1351,6 +1371,10 @@ Let model decide — expose git status/diff and GitHub repo/issue tools.</source
       <translation>記憶設置</translation>
     </message>
     <message>
+      <source>Memory Settings</source>
+      <translation>記憶設定</translation>
+    </message>
+    <message>
       <source>Main model</source>
       <translation>主模型</translation>
     </message>
@@ -1533,6 +1557,26 @@ Say "remember that ...", "note that ...", or "keep in mind ..." to store a fact.
     <message>
       <source>None</source>
       <translation>無</translation>
+    </message>
+    <message>
+      <source>unavailable</source>
+      <translation>無法使用</translation>
+    </message>
+    <message>
+      <source>authorized</source>
+      <translation>已授權</translation>
+    </message>
+    <message>
+      <source>denied</source>
+      <translation>已拒絕</translation>
+    </message>
+    <message>
+      <source>not_determined</source>
+      <translation>未決定</translation>
+    </message>
+    <message>
+      <source>restricted</source>
+      <translation>受限制</translation>
     </message>
     <message>
       <source>Not configured</source>
@@ -3123,6 +3167,194 @@ Let model decide — expose an open-document tool during the answer.</source>
     <message>
       <source>Recommendation: turn on Trust/privacy mode before sending sensitive context.</source>
       <translation>建議：傳送敏感上下文前開啟信任/隱私模式。</translation>
+    </message>
+    <message>
+      <source>LLM route uses {provider} but you are not logged in.</source>
+      <translation>LLM 路由使用 {provider}，但你尚未登入。</translation>
+    </message>
+    <message>
+      <source>Addon folder installed.</source>
+      <translation>外掛資料夾已安裝。</translation>
+    </message>
+    <message>
+      <source>Recommendation: open Addon Manager, inspect the addon diagnostics, then repair or disable it.</source>
+      <translation>建議：開啟外掛管理器，檢查外掛診斷資訊，然後修復或停用它。</translation>
+    </message>
+    <message>
+      <source>Installed addon: </source>
+      <translation>已安裝外掛：</translation>
+    </message>
+    <message>
+      <source>Technical detail: </source>
+      <translation>技術細節：</translation>
+    </message>
+    <message>
+      <source>Agent</source>
+      <translation>代理</translation>
+    </message>
+    <message>
+      <source>Model prompts, responses, parsed JSON, and tool payloads appear here while the task runs.</source>
+      <translation>任務執行時，模型提示詞、回應、已解析的 JSON 和工具酬載會顯示在這裡。</translation>
+    </message>
+    <message>
+      <source>Waiting {elapsed}</source>
+      <translation>等待 {elapsed}</translation>
+    </message>
+    <message>
+      <source>Receiving response ({elapsed})</source>
+      <translation>正在接收回應（{elapsed}）</translation>
+    </message>
+    <message>
+      <source>Handing off to {agent}</source>
+      <translation>正在交接給 {agent}</translation>
+    </message>
+    <message>
+      <source>Explicit handoff to {agent}</source>
+      <translation>明確交接給 {agent}</translation>
+    </message>
+    <message>
+      <source>Prompt {summary}</source>
+      <translation>提示詞 {summary}</translation>
+    </message>
+    <message>
+      <source>Using {tool}</source>
+      <translation>正在使用 {tool}</translation>
+    </message>
+    <message>
+      <source>avg {avg} | invalid {invalid} | repair {repairs} | fallback {fallbacks}</source>
+      <translation>平均 {avg} | 無效 {invalid} | 修復 {repairs} | 回退 {fallbacks}</translation>
+    </message>
+    <message>
+      <source>calls {calls}, average latency {avg}s, invalid JSON {invalid}, repairs {repairs}, fallbacks {fallbacks}</source>
+      <translation>呼叫 {calls}，平均延遲 {avg}s，無效 JSON {invalid}，修復 {repairs}，回退 {fallbacks}</translation>
+    </message>
+    <message>
+      <source>Told {target}: {message}</source>
+      <translation>已告知 {target}：{message}</translation>
+    </message>
+    <message>
+      <source>Heard from {source}: {message}</source>
+      <translation>收到 {source} 的訊息：{message}</translation>
+    </message>
+    <message>
+      <source>Thought: {message}</source>
+      <translation>想法：{message}</translation>
+    </message>
+    <message>
+      <source>thought: {message}</source>
+      <translation>想法：{message}</translation>
+    </message>
+    <message>
+      <source>Handoff ({status}): {reason}</source>
+      <translation>交接（{status}）：{reason}</translation>
+    </message>
+    <message>
+      <source>{agent} returned final response</source>
+      <translation>{agent} 已傳回最終回應</translation>
+    </message>
+    <message>
+      <source>returned final response</source>
+      <translation>已傳回最終回應</translation>
+    </message>
+    <message>
+      <source>agent turn {turn}: {agent}</source>
+      <translation>代理輪次 {turn}：{agent}</translation>
+    </message>
+    <message>
+      <source>agent read-only turn: {agent}</source>
+      <translation>代理唯讀輪次：{agent}</translation>
+    </message>
+    <message>
+      <source>prompt prepared for {agent}: {chars} chars ({mode})</source>
+      <translation>已為 {agent} 準備提示詞：{chars} 字元（{mode}）</translation>
+    </message>
+    <message>
+      <source>requesting LLM tool response via {route}</source>
+      <translation>正透過 {route} 請求 LLM 工具回應</translation>
+    </message>
+    <message>
+      <source>model call still waiting after {elapsed} via {route}</source>
+      <translation>模型呼叫透過 {route} 等待已超過 {elapsed}</translation>
+    </message>
+    <message>
+      <source>model first token after {elapsed} via {route}</source>
+      <translation>模型透過 {route} 在 {elapsed} 後收到第一個 token</translation>
+    </message>
+    <message>
+      <source>model response received in {elapsed}s ({chars} chars)</source>
+      <translation>模型回應已在 {elapsed}s 內收到（{chars} 字元）</translation>
+    </message>
+    <message>
+      <source>model callback response received in {elapsed}s ({chars} chars)</source>
+      <translation>模型回呼回應已在 {elapsed}s 內收到（{chars} 字元）</translation>
+    </message>
+    <message>
+      <source>tool {tool} failed: {message}</source>
+      <translation>工具 {tool} 失敗：{message}</translation>
+    </message>
+    <message>
+      <source>tool {tool}: exit {code}: {message}</source>
+      <translation>工具 {tool}：結束碼 {code}：{message}</translation>
+    </message>
+    <message>
+      <source>tool call: {tool}</source>
+      <translation>工具呼叫：{tool}</translation>
+    </message>
+    <message>
+      <source>{agent} tool call: {tool}</source>
+      <translation>{agent} 工具呼叫：{tool}</translation>
+    </message>
+    <message>
+      <source>Message cannot be empty.</source>
+      <translation>訊息不可為空。</translation>
+    </message>
+    <message>
+      <source>Permission approved.</source>
+      <translation>權限已批准。</translation>
+    </message>
+    <message>
+      <source>Permission declined.</source>
+      <translation>權限已拒絕。</translation>
+    </message>
+    <message>
+      <source>delta</source>
+      <translation>差異</translation>
+    </message>
+    <message>
+      <source>full</source>
+      <translation>完整</translation>
+    </message>
+    <message>
+      <source>read-only full</source>
+      <translation>唯讀完整</translation>
+    </message>
+    <message>
+      <source>waiting</source>
+      <translation>等待中</translation>
+    </message>
+    <message>
+      <source>blocked</source>
+      <translation>已封鎖</translation>
+    </message>
+    <message>
+      <source>done</source>
+      <translation>完成</translation>
+    </message>
+    <message>
+      <source>continue</source>
+      <translation>繼續</translation>
+    </message>
+    <message>
+      <source>ready_for_review</source>
+      <translation>等待審查</translation>
+    </message>
+    <message>
+      <source>complete</source>
+      <translation>完成</translation>
+    </message>
+    <message>
+      <source>Fetch the full readable text of a specific web page URL on demand. Use this when the user asks about a website/page and the passive browser preview is missing, partial, stale, or not enough.</source>
+      <translation>按需擷取特定網頁 URL 的完整可讀文字。當使用者詢問網站/頁面，而被動瀏覽器預覽缺失、不完整、過期或不夠充分時使用。</translation>
     </message>
     <message>
       <source>Custom</source>

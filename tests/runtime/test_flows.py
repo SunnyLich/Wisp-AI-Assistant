@@ -2346,82 +2346,45 @@ def test_query_privacy_report_surfaces_redacted_summary_badge_and_report():
 
 
 @pytest.mark.workflow
-def test_health_status_request_collects_live_rows_and_warns(monkeypatch):
-    """Health Status routes through the supervisor and combines worker checks."""
+def test_health_request_uses_fast_static_rows_and_warns(monkeypatch):
+    """Health requests use the lightweight setup report instead of live probes."""
     import core.setup_check as setup_check
 
+    static_rows = [
+        {
+            "name": "Config",
+            "status": "warn",
+            "message": "Static config check needs attention.",
+            "recommendation": "",
+        }
+    ]
     monkeypatch.setattr(
         setup_check,
         "run_setup_check",
-        lambda: [
-            {
-                "name": "Config",
-                "status": "ok",
-                "message": "Static config check passed.",
-                "recommendation": "",
-            }
-        ],
+        lambda: static_rows,
     )
-    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
-    monkeypatch.setattr(config, "LLM_PROVIDER", "openai", raising=False)
-    monkeypatch.setattr(config, "LLM_MODEL", "gpt-test", raising=False)
-    monkeypatch.setattr(config, "LLM_FALLBACKS", "", raising=False)
 
     ui = FakeWorker(
         {
-            "ping": lambda _params: {"pong": True},
             "ui.health.show": lambda _params: {"queued": True},
             "ui.reply.notice": lambda _params: {"queued": True},
         }
     )
-    brain = FakeWorker(
-        {
-            "ping": lambda _params: {"pong": True},
-            "brain.llm.test": lambda _params: {"ok": True, "message": "LLM OK"},
-        }
-    )
-    audio = FakeWorker(
-        {
-            "ping": lambda _params: {"pong": True},
-            "audio.stt.is_ready": lambda _params: {"ready": False, "message": "STT warming up"},
-        }
-    )
-    native = FakeWorker(
-        {
-            "ping": lambda _params: {"pong": True},
-            "native.permissions.snapshot": lambda _params: {
-                "accessibility": True,
-                "screen_recording": False,
-                "microphone": "authorized",
-            },
-        }
-    )
+    brain = FakeWorker({"brain.llm.test": lambda _params: {"ok": True, "message": "LLM OK"}})
+    audio = FakeWorker({"audio.stt.is_ready": lambda _params: {"ready": False}})
+    native = FakeWorker({"native.permissions.snapshot": lambda _params: {}})
 
     flow, _native, ui, _brain, _audio = make_flow(native=native, ui=ui, brain=brain, audio=audio)
     flow._last_privacy_report = {"count": 1, "categories": {"email": 1}}
     ui.emit("ui.health.requested", {})
 
-    llm_params = brain.last_call("brain.llm.test")["params"]
-    assert llm_params["include_fallbacks"] is False
-
-    rows = ui.last_call("ui.health.show")["params"]["rows"]
-    names = {row["name"] for row in rows}
-    assert {
-        "Config",
-        "UI worker",
-        "Brain worker",
-        "Audio worker",
-        "Native worker",
-        "LLM",
-        "STT",
-        "TTS",
-        "Screenshot capture",
-        "Privacy",
-    } <= names
+    call = ui.last_call("ui.health.show")["params"]
+    assert call["rows"] == static_rows
+    assert call["title"] == "Setup check"
     assert len(ui.calls_for("ui.health.show")) == 1
-    assert any(row["name"] == "STT" and row["status"] == "ok" for row in rows)
-    assert any(row["name"] == "TTS" and row["status"] == "ok" for row in rows)
-    assert any(row["name"] == "Screenshot capture" and row["status"] == "fail" for row in rows)
+    assert not brain.calls_for("brain.llm.test")
+    assert not audio.calls_for("audio.stt.is_ready")
+    assert not native.calls_for("native.permissions.snapshot")
     assert "Health issue:" in ui.last_call("ui.reply.notice")["params"]["text"]
 
 
@@ -3242,6 +3205,31 @@ def test_agent_run_request_streams_through_brain_agent_run():
     assert ui.last_call("ui.agent.done")["params"]["final"] == "done"
 
 
+def test_agent_approval_request_declines_when_ui_cannot_accept():
+    """Verify unshowable approval requests do not leave the brain waiting forever."""
+    def agent_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        """Emit one approval request without an active UI approval panel."""
+        on_event("agent.approval.request", {"approval_id": "abc", "action": "git"}, 1)
+        return {"run_dir": "/tmp/run", "final": "done"}
+
+    brain = FakeWorker(
+        handlers={"brain.agent.approval.respond": lambda params: {"ok": True, "approved": params["approved"]}},
+        stream_handlers={"brain.agent.run": agent_stream},
+    )
+    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.agent.run_requested",
+        {"spec": {"title": "demo task", "max_runtime_minutes": 1}},
+    )
+
+    assert brain.last_call("brain.agent.approval.respond")["params"] == {
+        "approval_id": "abc",
+        "approved": False,
+    }
+    assert "could not be shown" in ui.last_call("ui.reply.notice")["params"]["text"]
+
+
 def test_agent_approval_and_cancel_route_to_brain():
     """Verify agent approval and cancel route to brain behavior."""
     held_on_event = {}
@@ -3274,6 +3262,30 @@ def test_agent_approval_and_cancel_route_to_brain():
         "approval_id": "abc",
         "approved": True,
     }
+
+
+def test_agent_pause_nudge_and_permissions_route_to_active_brain_run():
+    """Verify live agent controls route to the active brain stream."""
+    brain = FakeWorker(
+        handlers={
+            "brain.agent.control": lambda params: {"ok": True, "action": params["action"]},
+        }
+    )
+    flow, _native, ui, brain, _audio = make_flow(brain=brain)
+
+    with flow._lock:
+        flow._active_agent_stream_id = 7
+    ui.emit("ui.agent.pause_requested", {})
+    ui.emit("ui.agent.resume_requested", {})
+    ui.emit("ui.agent.nudge", {"target_agent": "Builder", "message": "Please inspect tests."})
+    ui.emit("ui.agent.permissions", {"permission_modes": {"shell": "ask permission"}})
+
+    calls = brain.calls_for("brain.agent.control")
+    assert [call["params"]["action"] for call in calls] == ["pause", "resume", "nudge", "permissions"]
+    assert all(call["params"]["target"] == 7 for call in calls)
+    assert calls[2]["params"]["target_agent"] == "Builder"
+    assert calls[2]["params"]["message"] == "Please inspect tests."
+    assert calls[3]["params"]["permission_modes"] == {"shell": "ask permission"}
 
 
 def test_agent_history_routes_read_retry_and_continue_specs():

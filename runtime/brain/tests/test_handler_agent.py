@@ -277,6 +277,8 @@ def test_agent_approval_callback_emits_request_and_accepts_response(record_ctx):
     assert requests
     assert requests[0]["action"] == "write_file"
     assert requests[0]["details"]["path"] == "note.txt"
+    logs = _events_of(events, "agent.log")
+    assert any("waiting for user approval: write_file" in log["line"] for log in logs)
 
     response = handlers.HANDLERS["brain.agent.approval.respond"](
         approval_id=requests[0]["approval_id"],
@@ -347,3 +349,50 @@ def test_agent_run_approval_request_can_be_approved(record_ctx, tmp_path, monkey
     approvals = _events_of(events, "agent.approval.request")
     assert approvals
     assert approvals[0]["action"] == "create_file"
+
+
+def test_agent_control_routes_to_registered_run_control():
+    """Verify brain agent control commands mutate the registered run control."""
+    class Control:
+        def __init__(self):
+            self.calls = []
+
+        def pause_after_turn(self):
+            self.calls.append(("pause",))
+
+        def resume(self):
+            self.calls.append(("resume",))
+
+        def add_nudge(self, target, message):
+            self.calls.append(("nudge", target, message))
+
+        def update_permission_modes(self, modes):
+            self.calls.append(("permissions", modes))
+
+    control = Control()
+    with handlers._AGENT_RUN_CONTROLS_LOCK:
+        handlers._AGENT_RUN_CONTROLS["run-1"] = control
+    try:
+        assert handlers.HANDLERS["brain.agent.control"](target="run-1", action="pause")["ok"] is True
+        assert handlers.HANDLERS["brain.agent.control"](target="run-1", action="resume")["ok"] is True
+        assert handlers.HANDLERS["brain.agent.control"](
+            target="run-1",
+            action="nudge",
+            target_agent="Builder",
+            message="Check tests.",
+        )["ok"] is True
+        assert handlers.HANDLERS["brain.agent.control"](
+            target="run-1",
+            action="permissions",
+            permission_modes={"shell": "ask permission"},
+        )["ok"] is True
+    finally:
+        with handlers._AGENT_RUN_CONTROLS_LOCK:
+            handlers._AGENT_RUN_CONTROLS.pop("run-1", None)
+
+    assert control.calls == [
+        ("pause",),
+        ("resume",),
+        ("nudge", "Builder", "Check tests."),
+        ("permissions", {"shell": "ask permission"}),
+    ]

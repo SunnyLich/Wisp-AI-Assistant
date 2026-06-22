@@ -9,13 +9,12 @@ Implemented in the current build:
 
 - Settings exposes a lightweight setup check that avoids importing provider
   SDKs, audio stacks, or STT.
-- The tray/menu health status path runs live worker, LLM, audio, native,
-  screenshot, and privacy probes.
+- The tray/menu no longer exposes the old live health status path.
 - Voice and dictation can show transcript candidates when confirmation is
   enabled.
 - Privacy reports show redaction counts and safe category summaries.
 - Error recommendations are shared by setup/status surfaces.
-- Setup, health, privacy, voice, and warning strings are covered by the Qt
+- Setup, privacy, voice, and warning strings are covered by the Qt
   locale catalogs, including Traditional Chinese.
 
 Still planned:
@@ -40,7 +39,7 @@ Still planned:
 
 Entry point:
 
-- Settings exposes a reusable setup-check entry point.
+- Settings button exposes a reusable setup-check entry point.
 - Current build: the entry point opens a lightweight setup/status dialog.
 - Future calibration work can add a fuller wizard and store completion state
   with a setting such as `WISP_SETUP_COMPLETED=true` so Wisp can suggest the
@@ -67,18 +66,18 @@ Tests:
 
 Entry point:
 
-- Add a right-click menu item named "Health Status".
-- Opening it shows a compact health window.
+- Settings exposes a lightweight "Run setup check" action.
+- Opening it shows a compact setup window.
 - Important problems can also show as a small dismissible notice near the Wisp icon.
 
-Health window content:
+Setup window content:
 
 - Hotkeys active/inactive.
 - Current LLM provider and model.
 - TTS provider status.
-- STT ready, warming, skipped, or failed.
+- STT configured, skipped, or failed.
 - Context sources enabled.
-- Last serious error and recommendation.
+- Configuration problems and recommendations.
 
 Near-icon notices:
 
@@ -94,10 +93,10 @@ Dismissal behavior:
 
 Tests:
 
-- Right-click menu exposes the health status action.
-- Health window renders degraded states without crashing.
+- Right-click menu does not expose the setup check.
+- Setup window renders degraded states without crashing.
 - Near-icon notices are dismissible and reappear when status changes.
-- All health strings are translated.
+- All setup strings are translated.
 
 ## 3. Context Preview
 

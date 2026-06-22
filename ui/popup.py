@@ -8,6 +8,8 @@ import config
 from PySide6.QtWidgets import QLabel, QWidget, QApplication, QVBoxLayout
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
+from ui.i18n import t
+from ui.shared.window_utils import enable_standard_window_controls
 
 
 POPUP_WIDTH = 320
@@ -24,13 +26,10 @@ class TextPopup(QWidget):
     def __init__(self, text: str, parent=None):
         """Initialize the text popup instance."""
         super().__init__(parent)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowTitle(t("Wisp Reply"))
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.setFixedWidth(POPUP_WIDTH)
+        enable_standard_window_controls(self)
 
         self._build_ui(text)
         self._position_near_icon()

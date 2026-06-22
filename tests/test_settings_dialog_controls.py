@@ -364,11 +364,57 @@ def test_i18n_supports_traditional_chinese(monkeypatch):
         assert i18n.t("Clipboard") == "\u526a\u8cbc\u7c3f"
         assert i18n.t("Files") == "\u6a94\u6848"
         assert i18n.t("Chinese (Traditional)") == "\u7e41\u9ad4\u4e2d\u6587"
+        assert i18n.t("Intent context keys:") == "\u610f\u5716\u4e0a\u4e0b\u6587\u9375\uff1a"
+        assert i18n.t("Timeout ms:") == "\u903e\u6642\uff08\u6beb\u79d2\uff09\uff1a"
+        assert i18n.t("App Settings") == "\u7a0b\u5f0f\u8a2d\u5b9a"
+        assert i18n.t("Memory Settings") == "\u8a18\u61b6\u8a2d\u5b9a"
+        assert i18n.t("Dictation (hold to type)") == "\u807d\u5beb\uff08\u6309\u4f4f\u5373\u53ef\u8f38\u5165\uff09"
+        assert i18n.t("OpenAI API") == "OpenAI API"
+        assert i18n.t("unavailable") == "\u7121\u6cd5\u4f7f\u7528"
+        assert i18n.t("LLM route uses {provider} but you are not logged in.").format(
+            provider="chatgpt"
+        ) == "LLM \u8def\u7531\u4f7f\u7528 chatgpt\uff0c\u4f46\u4f60\u5c1a\u672a\u767b\u5165\u3002"
+        assert i18n.t("Addon folder installed.") == "\u5916\u639b\u8cc7\u6599\u593e\u5df2\u5b89\u88dd\u3002"
+        assert i18n.t(
+            "Recommendation: open Addon Manager, inspect the addon diagnostics, then repair or disable it."
+        ).startswith("\u5efa\u8b70\uff1a\u958b\u555f\u5916\u639b\u7ba1\u7406\u5668")
+        assert i18n.t("Agent") == "\u4ee3\u7406"
+        assert i18n.t("Waiting {elapsed}").format(elapsed="5s") == "\u7b49\u5f85 5s"
+        assert i18n.t("tool {tool} failed: {message}").format(
+            tool="send_message",
+            message="\u8a0a\u606f\u4e0d\u53ef\u70ba\u7a7a\u3002",
+        ) == "\u5de5\u5177 send_message \u5931\u6557\uff1a\u8a0a\u606f\u4e0d\u53ef\u70ba\u7a7a\u3002"
+        assert i18n.t(
+            "Fetch the full readable text of a specific web page URL on demand. "
+            "Use this when the user asks about a website/page and the passive "
+            "browser preview is missing, partial, stale, or not enough."
+        ).startswith("\u6309\u9700\u64f7\u53d6")
         assert i18n.t("Browser/Web: ") == "\u700f\u89bd\u5668/\u7db2\u9801\uff1a"
         assert i18n.t("Browser/Web: On") == "Browser/Web: On"
     finally:
         config.APP_LANGUAGE = old_language
         i18n.set_language(app=app)
+
+
+def test_settings_status_messages_translate_nested_values(monkeypatch):
+    """Verify composed settings health messages translate dynamic values."""
+    from ui.settings_panel import dialog
+
+    translations = {
+        "LLM test failed: {message}": "LLM \u6e2c\u8a66\u5931\u6557\uff1a{message}",
+        "LLM route uses {provider} but you are not logged in.": "LLM \u8def\u7531\u4f7f\u7528 {provider}\uff0c\u4f46\u4f60\u5c1a\u672a\u767b\u5165\u3002",
+        "Microphone permission: {value}.": "\u9ea5\u514b\u98a8\u6b0a\u9650\uff1a{value}\u3002",
+        "unavailable": "\u7121\u6cd5\u4f7f\u7528",
+    }
+    monkeypatch.setattr(dialog, "t", lambda text: translations.get(text, text))
+
+    assert dialog._translate_status_message(
+        "LLM test failed: LLM route uses chatgpt but you are not logged in."
+    ) == "LLM \u6e2c\u8a66\u5931\u6557\uff1aLLM \u8def\u7531\u4f7f\u7528 chatgpt\uff0c\u4f46\u4f60\u5c1a\u672a\u767b\u5165\u3002"
+    assert (
+        dialog._translate_status_message("Microphone permission: unavailable.")
+        == "\u9ea5\u514b\u98a8\u6b0a\u9650\uff1a\u7121\u6cd5\u4f7f\u7528\u3002"
+    )
 
 
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
@@ -1383,7 +1429,7 @@ def test_settings_apply_clears_dirty_before_showing_save_warning(monkeypatch):
         def fake_save():
             row = dialog._caller_blocks[0]["intent_rows"][0]
             row["label"].setText("\u9019\u662f\u4ec0\u9ebc\uff1f")
-            row["prompt"].setText("\u9019\u662f\u4ec0\u9ebc\uff1f\u8acb\u7528\u7e41\u9ad4\u4e2d\u6587\u89e3\u91cb\u3002")
+            _set(row["prompt"], "\u9019\u662f\u4ec0\u9ebc\uff1f\u8acb\u7528\u7e41\u9ad4\u4e2d\u6587\u89e3\u91cb\u3002")
             dialog._last_save_warnings = ["Non-fatal model capability warning."]
             return True
 
@@ -1415,6 +1461,140 @@ def test_settings_apply_clears_dirty_before_showing_save_warning(monkeypatch):
         assert not opened[0]["status"].startswith("Unsaved changes")
         assert dialog._dirty_keys == set()
         assert apply_btn.isEnabled() is False
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
+    """The real save path should localize WASD prompt QTextEdits without crashing."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QTextEdit
+
+    from ui.settings_panel import dialog as settings_dialog
+    from ui.settings_panel.dialog import SettingsDialog, _get, _set
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        captured = {}
+        monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
+        monkeypatch.setattr(dialog, "_capability_warnings_for_values", lambda _vals: ([], {}))
+        monkeypatch.setattr(dialog, "_set_warning_markers", lambda _warnings: None)
+        monkeypatch.setattr(settings_dialog, "_write_env", lambda vals, remove_keys=None: captured.update(vals))
+
+        for index, block in enumerate(dialog._caller_blocks, 1):
+            block["hotkey"].setText(f"ctrl+alt+{index}")
+        for index, key in enumerate(("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE", "HOTKEY_DICTATE"), 1):
+            dialog._fields[key].setText(f"ctrl+shift+alt+{index}")
+
+        _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
+        _set(dialog._fields["CHAT_ELABORATE_PROMPT"], "Please elaborate on that.")
+        row = dialog._caller_blocks[0]["intent_rows"][0]
+        assert isinstance(row["prompt"], QTextEdit)
+        assert not row["prompt"].acceptRichText()
+        row["key"].setText("w")
+        row["label"].setText("What is this?")
+        _set(row["prompt"], "What is this? Give me a clear, plain-English explanation in 2-3 sentences.")
+
+        assert dialog._do_save() is True
+        assert captured["CALLER_1_INTENT_1_LABEL"] == "\u9019\u662f\u4ec0\u9ebc\uff1f"
+        assert "\u7e41\u9ad4\u4e2d\u6587" in captured["CALLER_1_INTENT_1_PROMPT"]
+        assert _get(row["prompt"]) == captured["CALLER_1_INTENT_1_PROMPT"]
+        assert captured["CHAT_ELABORATE_PROMPT"] == "\u8acb\u8a73\u7d30\u8aaa\u660e\u4e00\u4e0b\u3002"
+        assert _get(dialog._fields["CHAT_ELABORATE_PROMPT"]) == captured["CHAT_ELABORATE_PROMPT"]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_apply_real_save_clears_dirty_after_language_change(monkeypatch):
+    """Changing Assistant language should save, localize prompts, and clear dirty state."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    import config
+    from core import filler_bake, tts
+    from core.llm_clients import client as llm_client
+    from ui.settings_panel import dialog as settings_dialog
+    from ui.settings_panel.dialog import SettingsDialog, _set
+    from ui.shared import theme
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        apply_btn = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert apply_btn is not None
+
+        captured = {}
+        monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
+        monkeypatch.setattr(dialog, "_capability_warnings_for_values", lambda _vals: ([], {}))
+        monkeypatch.setattr(dialog, "_set_warning_markers", lambda _warnings: None)
+        monkeypatch.setattr(settings_dialog, "_write_env", lambda vals, remove_keys=None: captured.update(vals))
+        monkeypatch.setattr(settings_dialog, "_read_env", lambda: dict(captured))
+        monkeypatch.setattr(config, "reload", lambda: None)
+        monkeypatch.setattr(llm_client, "reset_clients", lambda: None)
+        monkeypatch.setattr(tts, "reset_connections", lambda: None)
+        monkeypatch.setattr(theme, "apply_app_theme", lambda: None)
+        monkeypatch.setattr(filler_bake, "bake_in_background", lambda: None)
+
+        for index, block in enumerate(dialog._caller_blocks, 1):
+            block["hotkey"].setText(f"ctrl+alt+{index}")
+        for index, key in enumerate(("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE", "HOTKEY_DICTATE"), 1):
+            dialog._fields[key].setText(f"ctrl+shift+alt+{index}")
+
+        _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
+        row = dialog._caller_blocks[0]["intent_rows"][0]
+        row["key"].setText("w")
+        row["label"].setText("What is this?")
+        _set(row["prompt"], "What is this? Give me a clear, plain-English explanation in 2-3 sentences.")
+        app.processEvents()
+
+        assert apply_btn.isEnabled()
+        assert dialog._apply_settings() is True
+        app.processEvents()
+
+        assert "\u7e41\u9ad4\u4e2d\u6587" in captured["CALLER_1_INTENT_1_PROMPT"]
+        assert dialog._dirty_keys == set()
+        assert apply_btn.isEnabled() is False
+        assert not dialog._status_lbl.text().startswith("Unsaved changes")
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_apply_reports_unexpected_save_exception(monkeypatch):
+    """Confirm/Apply failures should show a visible reason instead of doing nothing."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        warnings = []
+
+        def fail_save():
+            raise RuntimeError("prompt field update failed")
+
+        def capture_warning(_parent, title, message):
+            warnings.append((title, message))
+            return QMessageBox.StandardButton.Ok
+
+        dialog._do_save = fail_save
+        monkeypatch.setattr(QMessageBox, "warning", capture_warning)
+
+        assert dialog._apply_settings() is False
+        assert warnings
+        assert warnings[0][0]
+        assert "prompt field update failed" in warnings[0][1]
     finally:
         dialog.deleteLater()
         app.processEvents()

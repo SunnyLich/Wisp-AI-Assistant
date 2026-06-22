@@ -71,9 +71,6 @@ callers and older addon code, but new work should use addon naming and
 - Settings setup checks call `core.setup_check.run_setup_check()` through the
   supervisor with `source=settings`. This path is intentionally lightweight and
   does not import provider SDKs, audio stacks, or STT.
-- Tray/menu health status collects live worker, LLM, STT/TTS, screenshot, and
-  privacy rows. The LLM health probe checks the primary route only; fallback
-  chains are still used by normal model requests.
 - `TTS_PROVIDER=none` and an empty STT model are valid text-only configurations;
   setup/status rows should explain that voice and dictation can remain off.
 - `APP_LANGUAGE` controls UI translations. `ASSISTANT_LANGUAGE` controls model

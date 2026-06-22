@@ -20,6 +20,15 @@ from typing import Any
 from runtime.bootstrap import configure_paths
 from runtime.boundaries import boundary_status
 from runtime import VERSION, protocol
+from ui.agent.activity_i18n import (
+    translate_agent_activity_text,
+    translate_agent_health_badge,
+    translate_agent_health_detail,
+    translate_agent_log_line,
+    translate_agent_name,
+    translate_agent_role,
+    translate_agent_status,
+)
 from ui.i18n import localize_widget_tree, t
 
 log = logging.getLogger("wisp.ui_host")
@@ -51,23 +60,20 @@ def _context_display_label(label: str) -> str:
 
 def _mac_status_text(status: str) -> str:
     """Handle mac status text for runtime workers UI host."""
-    text = str(status or "")
-    for prefix in (
-        "Waiting ",
-        "Receiving response (",
-        "Handing off to ",
-        "Explicit handoff to ",
-        "Prompt ",
-        "Using ",
-    ):
-        if text.startswith(prefix):
-            return t(prefix) + text[len(prefix):]
-    return t(text)
+    return translate_agent_status(status)
 
 
 def _status_label(status: str) -> str:
     """Translate setup/health status labels."""
     return t(_STATUS_LABELS.get(str(status or "").strip().lower(), "WARN"))
+
+
+def _translate_health_value(value: str) -> str:
+    """Translate known health value atoms while preserving provider/model names."""
+    text = str(value or "")
+    if text in {"None", "unavailable", "authorized", "denied", "not_determined", "restricted"}:
+        return t(text)
+    return text
 
 
 def _translate_health_text(text: str) -> str:
@@ -89,12 +95,37 @@ def _translate_health_text(text: str) -> str:
         (r"^Microphone permission: (?P<value>.+)\.$", "Microphone permission: {value}."),
         (r"^TTS synthesis responded with (?P<provider>.+)\.$", "TTS synthesis responded with {provider}."),
         (r"^LLM test failed: (?P<message>.+)$", "LLM test failed: {message}"),
+        (r"^LLM route uses (?P<provider>.+) but you are not logged in\.$", "LLM route uses {provider} but you are not logged in."),
     )
     for pattern, template in dynamic_patterns:
         match = re.match(pattern, value)
         if match:
-            return t(template).format(**match.groupdict())
+            groups = match.groupdict()
+            if "message" in groups:
+                groups["message"] = _translate_health_text(groups["message"])
+            if "value" in groups:
+                groups["value"] = _translate_health_value(groups["value"])
+            return t(template).format(**groups)
     return t(value)
+
+
+def _translate_notice_text(text: str) -> str:
+    """Translate known system notice/bubble lines without touching arbitrary output."""
+    lines = str(text or "").splitlines()
+    if not lines:
+        return t(str(text or ""))
+    out: list[str] = []
+    for line in lines:
+        if not line:
+            out.append(line)
+            continue
+        for prefix in ("Installed addon: ", "Technical detail: "):
+            if line.startswith(prefix):
+                out.append(t(prefix) + line[len(prefix):])
+                break
+        else:
+            out.append(t(line))
+    return "\n".join(out)
 
 
 def _ui_log_dir() -> Path:
@@ -286,14 +317,33 @@ def _make_fit_graphics_view(QGraphicsView, Qt):
         def __init__(self, scene):
             """Initialize the mac fit graphics view instance."""
             super().__init__(scene)
+            self._zoom_factor = 1.0
+            self._min_zoom = 0.45
+            self._max_zoom = 3.0
             self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+            self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
 
         def fit_scene(self) -> None:
             """Handle fit scene for mac fit graphics view."""
             rect = self.scene().sceneRect() if self.scene() else None
             if rect is not None and not rect.isEmpty():
+                self.resetTransform()
                 self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+                if self._zoom_factor != 1.0:
+                    self.scale(self._zoom_factor, self._zoom_factor)
+
+        def wheelEvent(self, event):  # noqa: N802
+            """Zoom the meeting room with the mouse wheel."""
+            delta = event.angleDelta().y()
+            if delta == 0:
+                super().wheelEvent(event)
+                return
+            step = 1.15 if delta > 0 else 1 / 1.15
+            self._zoom_factor = max(self._min_zoom, min(self._max_zoom, self._zoom_factor * step))
+            self.fit_scene()
+            event.accept()
 
         def resizeEvent(self, event):  # noqa: N802
             """Resize event."""
@@ -509,7 +559,9 @@ class MacAgentRunDialog:
         from PySide6.QtWidgets import (
             QApplication,
             QDialog,
+            QDialogButtonBox,
             QFrame,
+            QFormLayout,
             QGraphicsEllipseItem,
             QGraphicsItemGroup,
             QGraphicsRectItem,
@@ -518,6 +570,8 @@ class MacAgentRunDialog:
             QGraphicsView,
             QHBoxLayout,
             QLabel,
+            QMessageBox,
+            QComboBox,
             QPushButton,
             QSplitter,
             QTabWidget,
@@ -528,6 +582,7 @@ class MacAgentRunDialog:
 
         self._host = host
         self._spec = dict(spec or {})
+        self._paused = False
         self._run_dir = ""
         self._pending_approval_id = ""
         self._QApplication = QApplication
@@ -536,8 +591,14 @@ class MacAgentRunDialog:
         self._QTimer = QTimer
         self._QUrl = QUrl
         self._QBrush = QBrush
+        self._QComboBox = QComboBox
+        self._QDialog = QDialog
+        self._QDialogButtonBox = QDialogButtonBox
+        self._QFormLayout = QFormLayout
+        self._QVBoxLayout = QVBoxLayout
         self._QColor = QColor
         self._QFont = QFont
+        self._QMessageBox = QMessageBox
         self._QPainterPath = QPainterPath
         self._QPen = QPen
         self._Qt = Qt
@@ -578,6 +639,8 @@ class MacAgentRunDialog:
         self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.dialog.setWindowTitle(f"{t('Agent Task')} - {title}")
         self.dialog.setMinimumSize(1100, 700)
+        from ui.shared.window_utils import enable_standard_window_controls
+        enable_standard_window_controls(self.dialog)
 
         root = QVBoxLayout(self.dialog)
         root.setContentsMargins(12, 12, 12, 12)
@@ -586,6 +649,20 @@ class MacAgentRunDialog:
         title_label = QLabel(f"<b>{title}</b>")
         title_label.setTextFormat(Qt.TextFormat.RichText)
         root.addWidget(title_label)
+
+        self.completion_banner = QFrame()
+        self.completion_banner.setObjectName("agentCompletionBanner")
+        banner_layout = QVBoxLayout(self.completion_banner)
+        banner_layout.setContentsMargins(14, 10, 14, 10)
+        banner_layout.setSpacing(2)
+        self.completion_banner_title = QLabel(t("Agent Task Running"))
+        self.completion_banner_title.setObjectName("agentCompletionBannerTitle")
+        self.completion_banner_detail = QLabel(t("The run is still working."))
+        self.completion_banner_detail.setWordWrap(True)
+        banner_layout.addWidget(self.completion_banner_title)
+        banner_layout.addWidget(self.completion_banner_detail)
+        self.completion_banner.hide()
+        root.addWidget(self.completion_banner)
 
         self.approval_panel = QFrame()
         self.approval_panel.setStyleSheet(
@@ -699,6 +776,12 @@ class MacAgentRunDialog:
         self.continue_btn = QPushButton(t("Continue"))
         self.continue_btn.setEnabled(False)
         self.continue_btn.clicked.connect(self._continue_run)
+        self.nudge_btn = QPushButton(t("Nudge Agent"))
+        self.nudge_btn.clicked.connect(self._send_manual_nudge)
+        self.permissions_btn = QPushButton(t("Permissions"))
+        self.permissions_btn.clicked.connect(self._edit_live_permissions)
+        self.pause_btn = QPushButton(t("Pause After Turn"))
+        self.pause_btn.clicked.connect(self._toggle_pause)
         self.cancel_btn = QPushButton(t("Cancel"))
         self.cancel_btn.clicked.connect(self._cancel_run)
         close_btn = QPushButton(t("Close"))
@@ -709,6 +792,9 @@ class MacAgentRunDialog:
         row.addWidget(self.open_scope_btn)
         row.addWidget(self.retry_btn)
         row.addWidget(self.continue_btn)
+        row.addWidget(self.nudge_btn)
+        row.addWidget(self.permissions_btn)
+        row.addWidget(self.pause_btn)
         row.addWidget(self.cancel_btn)
         row.addWidget(close_btn)
         root.addLayout(row)
@@ -730,8 +816,9 @@ class MacAgentRunDialog:
         line = str(payload.get("line") or payload.get("text") or payload.get("data") or "")
         if line:
             self._update_live_meeting(line)
-            self._append_text(self.log_view, line)
-            self.status_label.setText(t("Running..."))
+            self._append_text(self.log_view, translate_agent_log_line(line))
+            if not self._paused:
+                self.status_label.setText(t("Running..."))
             self._refresh_meeting_room()
 
     def append_trace(self, data: dict[str, Any]) -> None:
@@ -758,22 +845,55 @@ class MacAgentRunDialog:
 
         if error_text:
             self.status_label.setText(t("Failed"))
+            self._show_completion_banner(t("Agent Task Failed"), error_text, "failed")
             self._set_agent_status(self._active_agent, "Failed", error_text)
         elif payload.get("cancelled"):
             self.status_label.setText(t("Cancelled"))
+            self._show_completion_banner(t("Agent Task Cancelled"), t("Agent task cancelled."), "cancelled")
             self._set_agent_status(self._active_agent, "Cancelled", "Agent task cancelled.")
         else:
             self.status_label.setText(t("Finished"))
+            self._show_completion_banner(
+                t("Agent Task Finished"),
+                f"{t('Final report is ready. Log:')} {self._run_dir}" if self._run_dir else t("Final report is ready."),
+                "success",
+            )
             for name in self._agent_names:
                 status = str(self._agent_states.get(name, {}).get("status") or "")
                 if status not in {"Done", "Failed", "Cancelled"}:
                     self._set_agent_status(name, "Finished", "Agent run finished.")
         self.approval_panel.hide()
         self.cancel_btn.setEnabled(False)
+        self.pause_btn.setEnabled(False)
+        self.nudge_btn.setEnabled(False)
+        self.permissions_btn.setEnabled(False)
         self.open_result_btn.setEnabled(bool(self._run_dir))
         self.retry_btn.setEnabled(True)
         self.continue_btn.setEnabled(bool(self._run_dir))
+        self.tabs.setCurrentWidget(self.final_view)
         self._refresh_meeting_room()
+        self.show()
+        self._QApplication.alert(self.dialog, 0)
+        notice_title = t("Agent Task Failed") if error_text else t("Agent Task Cancelled") if payload.get("cancelled") else t("Agent Task Finished")
+        if hasattr(self._host, "_agent_notify_approval"):
+            self._host._agent_notify_approval(notice_title, True, {"run_dir": self._run_dir})
+
+    def _show_completion_banner(self, title: str, detail: str, kind: str) -> None:
+        """Show a prominent completion banner at the top of the run window."""
+        styles = {
+            "success": ("#dcfce7", "#16a34a", "#14532d"),
+            "failed": ("#fee2e2", "#dc2626", "#7f1d1d"),
+            "cancelled": ("#e5e7eb", "#6b7280", "#111827"),
+        }
+        bg, border, text = styles.get(kind, styles["success"])
+        self.completion_banner.setStyleSheet(
+            f"QFrame#agentCompletionBanner {{ background: {bg}; border: 3px solid {border}; border-radius: 8px; }}"
+            f"QLabel {{ color: {text}; background: transparent; }}"
+            "QLabel#agentCompletionBannerTitle { font-size: 22px; font-weight: 800; }"
+        )
+        self.completion_banner_title.setText(title)
+        self.completion_banner_detail.setText(detail)
+        self.completion_banner.show()
 
     def request_approval(self, data: dict[str, Any]) -> None:
         """Handle request approval for mac agent run dialog."""
@@ -795,7 +915,7 @@ class MacAgentRunDialog:
         self._set_agent_status(self._active_agent, "Needs approval", text)
         self._refresh_meeting_room()
         self._host._agent_notify_approval(
-            text + "\n" + t("Approve or decline in the Agent Task window."),
+            text,
             resolved=False,
             data=payload,
         )
@@ -820,6 +940,24 @@ class MacAgentRunDialog:
         cursor.insertText(text.rstrip("\n"))
         bar = view.verticalScrollBar()
         bar.setValue(bar.maximum())
+
+    @staticmethod
+    def _scroll_snapshot(view) -> tuple[int, bool]:
+        """Capture scroll position and whether the view was following the bottom."""
+        bar = view.verticalScrollBar()
+        value = bar.value()
+        return value, value >= bar.maximum() - 4
+
+    @classmethod
+    def _set_plain_text_preserving_scroll(cls, view, text: str) -> None:
+        """Set text without snapping a user-scrolled view back to the top."""
+        old_value, was_at_bottom = cls._scroll_snapshot(view)
+        view.setPlainText(text)
+        bar = view.verticalScrollBar()
+        if was_at_bottom:
+            bar.setValue(bar.maximum())
+        else:
+            bar.setValue(min(old_value, bar.maximum()))
 
     @staticmethod
     def _agent_roles_from_spec(spec: dict[str, Any]) -> dict[str, str]:
@@ -921,9 +1059,13 @@ class MacAgentRunDialog:
             self._set_agent_status(self._active_agent, "Retrying", body)
             return
         if body.startswith("agent run paused"):
+            self._paused = True
+            self.pause_btn.setText(t("Resume"))
             self.status_label.setText(t("Paused after current turn"))
             return
         if body.startswith("agent run resumed"):
+            self._paused = False
+            self.pause_btn.setText(t("Pause After Turn"))
             self.status_label.setText(t("Running..."))
             return
         if body.startswith("agent reached turn limit"):
@@ -1084,9 +1226,9 @@ class MacAgentRunDialog:
                 self._select_live_agent,
                 x,
                 y,
-                name,
-                str(state.get("role") or "Agent"),
-                str(state.get("status") or "Waiting"),
+                translate_agent_name(name),
+                translate_agent_role(str(state.get("role") or "Agent")),
+                translate_agent_status(str(state.get("status") or "Waiting")),
                 self._shorten(str(state.get("objective") or ""), 96),
                 self._health_badge(name),
                 name == self._active_agent,
@@ -1208,8 +1350,8 @@ class MacAgentRunDialog:
             return
         health = self._health_detail(self._selected_agent)
         detail = (
-            f"<h3>{html.escape(self._selected_agent)}</h3>"
-            f"<p><b>{html.escape(t('Role:'))}</b> {html.escape(str(state.get('role') or t('Agent')))}<br>"
+            f"<h3>{html.escape(translate_agent_name(self._selected_agent))}</h3>"
+            f"<p><b>{html.escape(t('Role:'))}</b> {html.escape(translate_agent_role(str(state.get('role') or 'Agent')))}<br>"
             f"<b>{html.escape(t('Status:'))}</b> {html.escape(_mac_status_text(str(state.get('status') or 'Waiting')))}<br>"
             f"<b>{html.escape(t('Last tool:'))}</b> {html.escape(str(state.get('tool') or t('None')))}</p>"
             f"<p><b>{html.escape(t('Current objective'))}</b><br>"
@@ -1220,43 +1362,31 @@ class MacAgentRunDialog:
         )
         self.agent_detail_view.setHtml(detail)
         history = state.get("history") or []
-        self.agent_activity_view.setPlainText(
-            "\n".join(f"- {item}" for item in history[-18:]) or f"- {t('No activity yet.')}"
+        self._set_plain_text_preserving_scroll(
+            self.agent_activity_view,
+            "\n".join(f"- {translate_agent_activity_text(item)}" for item in history[-18:])
+            or f"- {t('No activity yet.')}",
         )
 
     def _refresh_shared_board(self) -> None:
         """Refresh shared board."""
         if not self._meeting_messages:
-            self.shared_board_view.setPlainText(t("No messages yet."))
+            self._set_plain_text_preserving_scroll(self.shared_board_view, t("No messages yet."))
             return
         lines: list[str] = []
         for item in self._meeting_messages:
-            lines.append(f"{item['from']} -> {item['to']}")
-            lines.append(item["message"])
+            lines.append(f"{translate_agent_name(item['from'])} -> {translate_agent_name(item['to'])}")
+            lines.append(translate_agent_activity_text(item["message"]))
             lines.append("")
-        self.shared_board_view.setPlainText("\n".join(lines).strip())
+        self._set_plain_text_preserving_scroll(self.shared_board_view, "\n".join(lines).strip())
 
     def _health_badge(self, name: str) -> str:
         """Handle health badge for mac agent run dialog."""
-        health = self._agent_health(name)
-        calls = int(health.get("calls", 0))
-        avg = "-" if not calls else f"{float(health.get('total_latency', 0.0)) / calls:.1f}s"
-        return (
-            f"{t('avg')} {avg} | {t('invalid')} {int(health.get('invalid_json', 0))} | "
-            f"{t('repair')} {int(health.get('repairs', 0))} | {t('fallback')} {int(health.get('fallbacks', 0))}"
-        )
+        return translate_agent_health_badge(self._agent_health(name))
 
     def _health_detail(self, name: str) -> str:
         """Handle health detail for mac agent run dialog."""
-        health = self._agent_health(name)
-        calls = int(health.get("calls", 0))
-        avg = 0.0 if not calls else float(health.get("total_latency", 0.0)) / calls
-        return (
-            f"{t('calls')} {calls}, {t('average latency')} {avg:.1f}s, "
-            f"{t('invalid JSON')} {int(health.get('invalid_json', 0))}, "
-            f"{t('repairs')} {int(health.get('repairs', 0))}, "
-            f"{t('fallbacks')} {int(health.get('fallbacks', 0))}"
-        )
+        return translate_agent_health_detail(self._agent_health(name))
 
     @staticmethod
     def _shorten(text: str, max_chars: int) -> str:
@@ -1277,16 +1407,94 @@ class MacAgentRunDialog:
             "ui.agent.approval.respond",
             {"approval_id": approval_id, "approved": bool(approved)},
         )
-        self._host._agent_notify_approval(
-            "Permission approved." if approved else "Permission declined.",
-            resolved=True,
-            data={"approval_id": approval_id, "approved": bool(approved)},
+
+    def _toggle_pause(self) -> None:
+        """Pause after the current turn, or resume a paused run."""
+        if self._paused:
+            self._host.emit("ui.agent.resume_requested", {})
+            self._paused = False
+            self.pause_btn.setText(t("Pause After Turn"))
+            self.status_label.setText(t("Running..."))
+        else:
+            self._host.emit("ui.agent.pause_requested", {})
+            self._paused = True
+            self.pause_btn.setText(t("Resume"))
+            self.status_label.setText(t("Will pause after current turn"))
+
+    def _send_manual_nudge(self) -> None:
+        """Queue a user message for the running agent task."""
+        from ui.agent.task_window import AgentNudgeDialog
+
+        dialog = AgentNudgeDialog(self._agent_names + ["ALL"], parent=self.dialog)
+        if dialog.exec() != self._QDialog.DialogCode.Accepted or not dialog.nudge:
+            return
+        target = str(dialog.nudge.get("to") or "ALL")
+        message = str(dialog.nudge.get("message") or "").strip()
+        if not message:
+            return
+        self._host.emit("ui.agent.nudge", {"target_agent": target, "message": message})
+        self.status_label.setText(f"{t('Nudge queued for')} {target}")
+        self._record_meeting_message(f"message: User -> {target}: {message.replace(chr(10), ' ')}")
+        self._refresh_meeting_room()
+
+    def _edit_live_permissions(self) -> None:
+        """Edit permission modes for the active run."""
+        dialog = self._QDialog(self.dialog)
+        dialog.setWindowTitle(t("Permission Modes"))
+        layout = self._QVBoxLayout(dialog)
+        form = self._QFormLayout()
+        mode_options = ("auto", "ask permission", "never permit")
+        fields = {
+            "shell": ("shell_permission_mode", t("Shell")),
+            "network": ("network_permission_mode", t("Network")),
+            "git": ("git_permission_mode", t("Git")),
+            "file_create": ("file_create_permission_mode", t("Create files")),
+            "file_edit": ("file_edit_permission_mode", t("Edit files")),
+            "file_delete": ("file_delete_permission_mode", t("Delete files")),
+        }
+        combos: dict[str, Any] = {}
+        for category, (spec_key, label) in fields.items():
+            combo = self._QComboBox()
+            for option in mode_options:
+                combo.addItem(t(option), option)
+            current = str(self._spec.get(spec_key) or "never permit").strip().lower()
+            idx = combo.findData(current)
+            combo.setCurrentIndex(max(0, idx))
+            combos[category] = combo
+            form.addRow(label, combo)
+        layout.addLayout(form)
+        buttons = self._QDialogButtonBox(
+            self._QDialogButtonBox.StandardButton.Cancel | self._QDialogButtonBox.StandardButton.Ok
         )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        localize_widget_tree(dialog)
+        if dialog.exec() != self._QDialog.DialogCode.Accepted:
+            return
+        modes = {category: str(combo.currentData() or "") for category, combo in combos.items()}
+        for category, mode in modes.items():
+            spec_key = fields[category][0]
+            self._spec[spec_key] = mode
+            allow_key = {
+                "shell": "allow_shell",
+                "network": "allow_network",
+                "git": "allow_git",
+                "file_create": "allow_file_create",
+                "file_edit": "allow_file_edit",
+                "file_delete": "allow_file_delete",
+            }[category]
+            self._spec[allow_key] = mode not in {"never", "never permit", "deny"}
+        self._host.emit("ui.agent.permissions", {"permission_modes": modes})
+        self.status_label.setText(t("Permission changes queued"))
 
     def _cancel_run(self) -> None:
         """Cancel run."""
         self.status_label.setText(t("Cancelling..."))
         self.cancel_btn.setEnabled(False)
+        self.pause_btn.setEnabled(False)
+        self.nudge_btn.setEnabled(False)
+        self.permissions_btn.setEnabled(False)
         self._host.emit("ui.agent.cancel_requested", {})
 
     def _retry_run(self) -> None:
@@ -1342,6 +1550,8 @@ class MacAgentHistoryDialog:
         self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.dialog.setWindowTitle(t("Agent Task History"))
         self.dialog.setMinimumSize(960, 620)
+        from ui.shared.window_utils import enable_standard_window_controls
+        enable_standard_window_controls(self.dialog)
 
         root = QVBoxLayout(self.dialog)
         root.setContentsMargins(12, 12, 12, 12)
@@ -1805,8 +2015,8 @@ class QtProtocolHost:
             self._overlay_signals.show_agent_history.connect(
                 lambda: self.emit("ui.agent.history_requested", {})
             )
-            self._overlay_signals.show_health_status.connect(
-                lambda: self.emit("ui.health.requested", {})
+            self._overlay_signals.request_setup_check.connect(
+                lambda: self.emit("ui.health.requested", {"source": "settings"})
             )
             self._overlay_signals.context_items_dropped.connect(self._context_items_dropped)
             self._overlay_signals.remove_dropped_item.connect(
@@ -2010,8 +2220,9 @@ class QtProtocolHost:
 
     def _reply_notice(self, text: str = "", timeout_ms: int = 12000) -> dict[str, Any]:
         """Handle reply notice for qt protocol host."""
-        self._ensure_bubble().show_notice(text, timeout_ms=timeout_ms)
-        return {"shown": True, "text": text}
+        translated = _translate_notice_text(text)
+        self._ensure_bubble().show_notice(translated, timeout_ms=timeout_ms)
+        return {"shown": True, "text": translated}
 
     def _reply_transcript(self, text: str = "") -> dict[str, Any]:
         """Handle reply transcript for qt protocol host."""
@@ -2604,7 +2815,7 @@ class QtProtocolHost:
         self._active_conversation_idx = len(self._all_conversations) - 1
         self._persist_conversations()
         if self._chat is not None:
-            self._chat.ingest_new_conversations()
+            self._chat.ingest_new_conversations(select_new=True)
         return {"count": len(self._all_conversations), "continued": False}
 
     @staticmethod
@@ -2815,7 +3026,7 @@ class QtProtocolHost:
         body = self._format_status_rows(rows)
 
         def _open() -> None:
-            self._show_status_dialog(title or "Health Status", body)
+            self._show_status_dialog(title or "Setup check", body)
 
         QTimer.singleShot(0, _open)
         return {"queued": True, "count": len(rows or [])}
@@ -2907,6 +3118,8 @@ class QtProtocolHost:
         dialog = QDialog()
         dialog.setWindowTitle(t("Addon Manager"))
         dialog.setModal(False)
+        from ui.shared.window_utils import enable_standard_window_controls
+        enable_standard_window_controls(dialog)
         root = QVBoxLayout(dialog)
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
@@ -3161,6 +3374,8 @@ class QtProtocolHost:
         dialog = QDialog(self._addons_dialog)
         dialog.setWindowTitle(f"{display_name} {t('Settings')}")
         dialog.setModal(False)
+        from ui.shared.window_utils import enable_standard_window_controls
+        enable_standard_window_controls(dialog)
         root = QVBoxLayout(dialog)
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
@@ -3222,6 +3437,8 @@ class QtProtocolHost:
         dialog = QDialog(self._addons_dialog)
         dialog.setWindowTitle(f"{display_name} {t('Logs')}")
         dialog.setModal(False)
+        from ui.shared.window_utils import enable_standard_window_controls
+        enable_standard_window_controls(dialog)
         root = QVBoxLayout(dialog)
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
@@ -3393,8 +3610,8 @@ class QtProtocolHost:
         if self._agent_run_dialog is not None:
             self._agent_run_dialog.request_approval(params)
             return {"accepted": True}
-        self._agent_notify_approval("Agent approval requested.", resolved=False, data=params)
-        return {"accepted": False}
+        result = self._agent_notify_approval("Agent approval requested.", resolved=False, data=params)
+        return {"accepted": bool(result.get("actionable"))}
 
     def _agent_history_detail(self, **params: Any) -> dict[str, Any]:
         """Handle agent history detail for qt protocol host."""
@@ -3412,9 +3629,23 @@ class QtProtocolHost:
         """Handle agent notify approval for qt protocol host."""
         overlay = self._ensure_overlay()
         notify = getattr(overlay, "notify_agent_approval", None)
+        approval_id = str((data or {}).get("approval_id") or "").strip()
+
+        def respond(approved: bool) -> None:
+            self.emit(
+                "ui.agent.approval.respond",
+                {"approval_id": approval_id, "approved": bool(approved)},
+            )
+
+        kwargs: dict[str, Any] = {"resolved": bool(resolved)}
+        if approval_id and not resolved:
+            kwargs["on_approve"] = lambda: respond(True)
+            kwargs["on_decline"] = lambda: respond(False)
         if callable(notify):
-            notify(text or "Agent approval requested.", resolved=bool(resolved))
-        return {"shown": bool(callable(notify)), "data": data or {}}
+            result = notify(text or "Agent approval requested.", **kwargs)
+            if isinstance(result, dict):
+                return {**result, "data": data or {}}
+        return {"shown": bool(callable(notify)), "actionable": False, "data": data or {}}
 
 
 def main() -> int:

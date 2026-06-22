@@ -61,7 +61,7 @@ Click the icon at any time to open a full chat window for deeper conversations w
 - **Remembers you** â€” a local JSON memory store keeps facts across sessions; relevant ones surface automatically on every query
 - **Bring your own model** â€” Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, Ollama, GitHub Copilot, and more
 - **Addons** â€” extend Wisp with query hooks, tray actions, settings, and model-callable tools; each addon runs in its own process
-- **Settings that explain themselves** - setup checks, health status, privacy reports, model capability warnings, and translated status text are available from the app
+- **Settings that explain themselves** - setup checks, privacy reports, model capability warnings, and translated status text are available from the app
 - **Feels instant** â€” filler audio plays in milliseconds to mask the LLM round-trip; the real answer usually arrives before the filler finishes
 - **Stays out of the way** â€” icon auto-hides when idle, pops up on hotkey, disappears after the answer fades out
 
@@ -262,11 +262,6 @@ SDKs, audio, or STT stacks. It checks the configured LLM route, optional TTS/STT
 settings, hotkeys, and privacy redaction. Text-only setups are valid:
 `TTS_PROVIDER=none` is treated as OK, and leaving STT unconfigured only means
 voice and dictation stay off.
-
-The tray/menu health status uses live worker probes for UI, native, audio, brain,
-LLM, screenshot capture, and privacy state. LLM health checks probe the primary
-route so a temporary fallback outage does not hide the state of the route you
-actually selected.
 
 ---
 

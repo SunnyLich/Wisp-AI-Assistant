@@ -2779,16 +2779,21 @@ class SettingsDialog(QDialog):
         key_edit = QLineEdit(key)
         key_edit.setFixedWidth(40)
         key_edit.setPlaceholderText("w")
-        h.addWidget(key_edit)
+        h.addWidget(key_edit, 0, Qt.AlignmentFlag.AlignTop)
 
         label_edit = QLineEdit(label)
         label_edit.setFixedWidth(130)
         label_edit.setPlaceholderText("Label")
-        h.addWidget(label_edit)
+        h.addWidget(label_edit, 0, Qt.AlignmentFlag.AlignTop)
 
-        prompt_edit = QLineEdit(prompt)
+        prompt_edit = QTextEdit()
+        prompt_edit.setAcceptRichText(False)
+        prompt_edit.setTabChangesFocus(True)
+        prompt_edit.setPlainText(prompt)
         prompt_edit.setPlaceholderText("Prompt sent to LLM...")
-        prompt_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        prompt_edit.setMinimumHeight(56)
+        prompt_edit.setMaximumHeight(88)
+        prompt_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         h.addWidget(prompt_edit)
 
         row_info: dict = {"widget": row_w, "key": key_edit, "label": label_edit, "prompt": prompt_edit}
@@ -2797,7 +2802,7 @@ class SettingsDialog(QDialog):
         del_btn.setFixedWidth(40)
         del_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
         del_btn.clicked.connect(lambda: self._delete_caller_intent_row(blk, row_info))
-        h.addWidget(del_btn)
+        h.addWidget(del_btn, 0, Qt.AlignmentFlag.AlignTop)
 
         blk["intents_layout"].addWidget(row_w)
         blk["intent_rows"].append(row_info)
@@ -4008,16 +4013,20 @@ class SettingsDialog(QDialog):
 
         auto_elab = self._env.get("CHAT_AUTO_ELABORATE", str(cfg.CHAT_AUTO_ELABORATE)).lower() == "true"
         self._fields["CHAT_AUTO_ELABORATE"].setChecked(auto_elab)  # type: ignore
-        default_elaborate_prompt = t(cfg.CHAT_ELABORATE_PROMPT)
+        assistant_language = self._env.get("ASSISTANT_LANGUAGE", getattr(cfg, "ASSISTANT_LANGUAGE", ""))
+        default_elaborate_prompt = cfg.localize_chat_elaborate_prompt_if_default(
+            self._env.get("CHAT_ELABORATE_PROMPT", getattr(cfg, "CHAT_ELABORATE_PROMPT", "")),
+            assistant_language,
+        )
         _set(self._fields["CHAT_ELABORATE_PROMPT"],
-             self._env.get("CHAT_ELABORATE_PROMPT", default_elaborate_prompt))
+             default_elaborate_prompt)
         _set(
             self._fields["APP_LANGUAGE"],
             self._env.get("APP_LANGUAGE", getattr(cfg, "APP_LANGUAGE", "")),
         )
         _set(
             self._fields["ASSISTANT_LANGUAGE"],
-            self._env.get("ASSISTANT_LANGUAGE", getattr(cfg, "ASSISTANT_LANGUAGE", "")),
+            assistant_language,
         )
 
         _set(self._fields["ICON_SIZE"],    self._env.get("ICON_SIZE", self._env.get("DOLL_SIZE", str(cfg.ICON_SIZE))))
@@ -4618,6 +4627,10 @@ class SettingsDialog(QDialog):
                 self._refresh_capability_warning_markers()
                 self._refresh_search_index()
                 self._reset_dirty_baseline()
+        except Exception as exc:  # noqa: BLE001 - surface save/apply failures to the user
+            _settings_log.exception("Settings apply failed")
+            QMessageBox.warning(self, t("Save failed"), str(exc))
+            saved = False
         finally:
             self._saving_settings = False
         if saved:
@@ -4997,6 +5010,12 @@ class SettingsDialog(QDialog):
             for mode in ("light", "dark")
             for role in self._THEME_ROLES
         }
+        assistant_language = _get(self._fields["ASSISTANT_LANGUAGE"])
+        chat_elaborate_prompt = cfg.localize_chat_elaborate_prompt_if_default(
+            _get(self._fields["CHAT_ELABORATE_PROMPT"]),
+            assistant_language,
+        )
+        _set(self._fields["CHAT_ELABORATE_PROMPT"], chat_elaborate_prompt)
 
         vals = {
             "LLM_PROVIDER":      llm_p,
@@ -5048,9 +5067,9 @@ class SettingsDialog(QDialog):
             "TRUST_PRIVACY_MODE": str(self._fields["TRUST_PRIVACY_MODE"].isChecked()),  # type: ignore
             "ICON_AUTO_HIDE":    str(self._fields["ICON_AUTO_HIDE"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
-            "CHAT_ELABORATE_PROMPT": _get(self._fields["CHAT_ELABORATE_PROMPT"]),
+            "CHAT_ELABORATE_PROMPT": chat_elaborate_prompt,
             "APP_LANGUAGE": _get(self._fields["APP_LANGUAGE"]),
-            "ASSISTANT_LANGUAGE": _get(self._fields["ASSISTANT_LANGUAGE"]),
+            "ASSISTANT_LANGUAGE": assistant_language,
             "ICON_SIZE":    _get(self._fields["ICON_SIZE"]),
             "BUBBLE_WIDTH": _get(self._fields["BUBBLE_WIDTH"]),
             "BUBBLE_LINES": _get(self._fields["BUBBLE_LINES"]),
@@ -5136,7 +5155,7 @@ class SettingsDialog(QDialog):
                 )
                 row["key"].setText(str(intent.get("key", "")))
                 row["label"].setText(str(intent.get("label", "")))
-                row["prompt"].setPlainText(str(intent.get("prompt", "")))
+                _set(row["prompt"], str(intent.get("prompt", "")))
                 vals[f"CALLER_{n}_INTENT_{m}_KEY"]    = str(intent.get("key", ""))
                 vals[f"CALLER_{n}_INTENT_{m}_LABEL"]  = str(intent.get("label", ""))
                 vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = str(intent.get("prompt", ""))
@@ -5287,7 +5306,7 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
 
 _PROVIDER_LABELS: dict[str, str] = {
     "groq":       "Groq",
-    "openai":     "OpenAI API (API key billing)",
+    "openai":     "OpenAI API",
     "anthropic":  "Anthropic",
     "google":     "Google AI Studio",
     "chatgpt":    "ChatGPT Plus/Pro (OAuth subscription)",
@@ -5426,6 +5445,14 @@ def _short_test_error(message: str, route_name: str) -> str:
     return " ".join(text.split())
 
 
+def _translate_status_value(value: str) -> str:
+    """Translate known status value atoms while preserving provider/model names."""
+    text = str(value or "")
+    if text in {"None", "unavailable", "authorized", "denied", "not_determined", "restricted"}:
+        return t(text)
+    return text
+
+
 def _translate_status_message(message: str) -> str:
     """Handle translate status message for UI settings panel dialog."""
     text = str(message or "")
@@ -5437,11 +5464,21 @@ def _translate_status_message(message: str) -> str:
         (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),
         (r"^STT model configured: (?P<model>.+)\.$", "STT model configured: {model}."),
         (r"^(?P<count>\d+) hotkeys configured\.$", "{count} hotkeys configured."),
+        (r"^Accessibility permission: (?P<value>.+)\.$", "Accessibility permission: {value}."),
+        (r"^Screen recording permission: (?P<value>.+)\.$", "Screen recording permission: {value}."),
+        (r"^Microphone permission: (?P<value>.+)\.$", "Microphone permission: {value}."),
+        (r"^LLM test failed: (?P<message>.+)$", "LLM test failed: {message}"),
+        (r"^LLM route uses (?P<provider>.+) but you are not logged in\.$", "LLM route uses {provider} but you are not logged in."),
     )
     for pattern, template in dynamic_patterns:
         match = re.match(pattern, text)
         if match:
-            return t(template).format(**match.groupdict())
+            groups = match.groupdict()
+            if "message" in groups:
+                groups["message"] = _translate_status_message(groups["message"])
+            if "value" in groups:
+                groups["value"] = _translate_status_value(groups["value"])
+            return t(template).format(**groups)
     for prefix in (
         "Error reading status: ",
         "Keychain error: ",

@@ -19,6 +19,7 @@ else:
 
 from ui.chat_window import (
     _CHAT_RENDER_CHAR_LIMIT,
+    _SIDEBAR_GENERAL_GROUP_GAP,
     ChatWindow,
     _chat_model_messages,
     _context_not_anchored_to_messages,
@@ -248,6 +249,76 @@ def test_chat_sidebar_shows_conversation_timestamp():
         assert title_btn._subtitle in title_btn.toolTip()
     finally:
         row.deleteLater()
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_window_open_does_not_retarget_hotkey_continuation_until_send():
+    """Verify opening history visually does not make hotkeys continue it."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    selected: list[int] = []
+    conversations = [
+        {"messages": [{"role": "user", "content": "old"}], "project_id": "general"},
+    ]
+    window = ChatWindow(conversations, lambda _messages: iter(()), on_select=selected.append)
+    try:
+        assert selected == []
+
+        window._send("continue from chat composer")
+
+        assert selected == [0]
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_sidebar_separates_project_chats_from_unheaded_general_history(monkeypatch):
+    """Verify General is translated and visually separated without a heading."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel
+    import ui.chat_window as chat_window_module
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(chat_window_module, "t", lambda text: f"T[{text}]")
+    conversations = [
+        {"messages": [{"role": "user", "content": "General chat 1"}], "project_id": "general"},
+        {"messages": [{"role": "user", "content": "Project chat 1"}], "project_id": "project-1"},
+        {"messages": [{"role": "user", "content": "General chat 2"}], "project_id": "general"},
+    ]
+    window = ChatWindow(
+        conversations,
+        lambda _messages: iter(()),
+        projects=[
+            {"id": "general", "name": "General"},
+            {"id": "project-1", "name": "Project 1"},
+        ],
+    )
+    try:
+        groups = window._grouped_sidebar_indices()
+
+        assert groups[0] == ("project-1", "Project 1", [1])
+        assert groups[1][0:2] == ("general", "T[General]")
+        assert groups[1][2] == [2, 0]
+        assert window._project_combo.itemText(0) == "T[General]"
+
+        headers = [
+            label.text().strip()
+            for label in window._sidebar_items.findChildren(QLabel)
+            if label.text().strip() in {"Project 1", "T[General]"}
+        ]
+        assert headers == ["Project 1"]
+        spacers = [
+            item.spacerItem().sizeHint().height()
+            for i in range(window._sidebar_layout.count())
+            if (item := window._sidebar_layout.itemAt(i)).spacerItem() is not None
+        ]
+        assert _SIDEBAR_GENERAL_GROUP_GAP in spacers
+    finally:
         window.close()
         app.processEvents()
 

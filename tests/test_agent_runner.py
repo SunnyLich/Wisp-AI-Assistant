@@ -43,6 +43,12 @@ class DummySpec:
     allow_file_create: bool = True
     allow_file_edit: bool = True
     allow_file_delete: bool = False
+    shell_permission_mode: str = "auto"
+    network_permission_mode: str = "never permit"
+    git_permission_mode: str = "auto"
+    file_create_permission_mode: str = "auto"
+    file_edit_permission_mode: str = "auto"
+    file_delete_permission_mode: str = "never permit"
     allowed_file_globs: list[str] = field(default_factory=list)
     blocked_file_globs: list[str] = field(default_factory=lambda: ["private/*"])
     required_context: str = ""
@@ -112,6 +118,11 @@ class AgentToolboxTests(unittest.TestCase):
 
             self.assertEqual(result.data, "hello agent")
             self.assertTrue(any("tool patch_file" in line for line in logs))
+
+            result = tools.edit_file("note.txt", "agent", "builder")
+            self.assertTrue(result.ok)
+            self.assertEqual(result.tool, "edit_file")
+            self.assertEqual(tools.read_file("note.txt").data, "hello builder")
 
     def test_toolbox_rejects_edit_without_permission(self):
         """Verify toolbox rejects edit without permission behavior."""
@@ -224,9 +235,12 @@ class AgentToolboxTests(unittest.TestCase):
         """Verify git tools short circuit outside worktree behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             logs: list[str] = []
+            approvals: list[dict] = []
             tools = AgentToolbox(
                 ScopedWorkspace(tmp),
                 AgentPermissions(allow_git=True, allow_shell=False),
+                require_approval=True,
+                approval_callback=lambda request: approvals.append(request) or False,
                 log=logs.append,
             )
 
@@ -241,8 +255,49 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertFalse(diff.ok)
             self.assertEqual(status.data["returncode"], 128)
             self.assertIn("not a git repository", status.data["stderr"])
+            self.assertEqual(approvals, [])
             self.assertTrue(any("git status --short" in line for line in logs))
             self.assertTrue(any("git diff -- ." in line for line in logs))
+
+    def test_git_lifecycle_commands_use_git_permission_without_shell_permission(self):
+        """Verify scoped Git init/add/commit are available when Git is enabled."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "maze.py").write_text("print('maze')\n", encoding="utf-8")
+            tools = AgentToolbox(
+                ScopedWorkspace(root),
+                AgentPermissions(allow_git=True, allow_shell=False),
+            )
+            completed = subprocess.CompletedProcess(["git"], 0, stdout="", stderr="")
+
+            with patch("core.agent.toolbox.subprocess.run", return_value=completed) as run:
+                self.assertTrue(tools.git_init().ok)
+                (root / ".git").mkdir()
+                self.assertTrue(tools.git_add(["maze.py"]).ok)
+                self.assertTrue(tools.git_commit("Initial maze").ok)
+
+            self.assertEqual(run.call_count, 3)
+            commit_env = run.call_args_list[2].kwargs["env"]
+            self.assertEqual(commit_env["GIT_AUTHOR_NAME"], "Wisp Agent")
+            self.assertEqual(commit_env["GIT_COMMITTER_EMAIL"], "wisp-agent@example.invalid")
+
+    def test_git_lifecycle_allowlist_rejects_unsafe_commands_and_paths(self):
+        """Verify Git allowance is scoped and does not unlock arbitrary Git commands."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tools = AgentToolbox(
+                ScopedWorkspace(root, blocked_globs=["private/*"]),
+                AgentPermissions(allow_git=True, allow_shell=False),
+            )
+            (root / "private").mkdir()
+            (root / "private" / "secret.txt").write_text("nope", encoding="utf-8")
+
+            self.assertTrue(tools._is_command_allowed(["git", "init"]))
+            self.assertTrue(tools._is_command_allowed(["git", "add", "file.txt"]))
+            self.assertTrue(tools._is_command_allowed(["git", "commit", "-m", "message"]))
+            self.assertFalse(tools._is_command_allowed(["git", "reset", "--hard"]))
+            self.assertFalse(tools._is_command_allowed(["git", "add", ".."]))
+            self.assertFalse(tools._is_command_allowed(["git", "add", "."]))
 
     def test_run_command_timeout_returns_tool_result(self):
         """Verify run command timeout returns tool result behavior."""
@@ -543,11 +598,84 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("- read_file args:", prompt)
         self.assertIn("- send_message args:", prompt)
         self.assertNotIn("- create_file args:", prompt)
+        self.assertNotIn("- edit_file args:", prompt)
         self.assertNotIn("- write_file args:", prompt)
         self.assertNotIn("- patch_file args:", prompt)
         self.assertNotIn("- delete_file args:", prompt)
         self.assertNotIn("- run_command args:", prompt)
         self.assertNotIn("- git_status args:", prompt)
+
+    def test_prompt_marks_ask_permission_tools_as_available(self):
+        """Verify ask-permission tools stay available and are described as approval-gated."""
+        spec = DummySpec(
+            allow_shell=True,
+            allow_git=True,
+            allow_file_create=True,
+            allow_file_edit=True,
+            allow_file_delete=False,
+        )
+        spec.shell_permission_mode = "ask permission"
+        spec.file_edit_permission_mode = "ask permission"
+        spec.file_create_permission_mode = "ask permission"
+        spec.git_permission_mode = "ask permission"
+
+        prompt = AgentTaskRunner()._build_agent_prompt(spec, ["snake_game.py"], [["python", "-m", "pytest"]])
+
+        self.assertIn("- edit_file args:", prompt)
+        self.assertIn("- create_file args:", prompt)
+        self.assertNotIn("- write_file args:", prompt)
+        self.assertNotIn("- patch_file args:", prompt)
+        self.assertIn("- run_command args:", prompt)
+        self.assertIn("- git_init args:", prompt)
+        self.assertIn("- git_status args:", prompt)
+        self.assertIn("- git_add args:", prompt)
+        self.assertIn("- git_commit args:", prompt)
+        self.assertIn("available but require user approval", prompt)
+        self.assertIn("Call them normally when needed", prompt)
+        self.assertIn("Do not treat ask-permission tools as unavailable", prompt)
+
+    def test_prompt_exposes_git_lifecycle_tools_without_shell_permission(self):
+        """Verify Git permission exposes direct Git tools without shell access."""
+        spec = DummySpec(
+            allow_shell=False,
+            allow_git=True,
+            allow_file_create=False,
+            allow_file_edit=False,
+            allow_file_delete=False,
+        )
+        prompt = AgentTaskRunner()._build_agent_prompt(spec, ["maze.py"], [])
+
+        self.assertIn("- git_init args:", prompt)
+        self.assertIn("- git_status args:", prompt)
+        self.assertIn("- git_diff args:", prompt)
+        self.assertIn("- git_add args:", prompt)
+        self.assertIn("- git_commit args:", prompt)
+        self.assertNotIn("- run_command args:", prompt)
+
+    def test_ask_permission_mode_invokes_approval_callback_without_ask_tool(self):
+        """Verify normal tool calls trigger approval when a tool mode is ask-permission."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "note.txt"
+            target.write_text("hello", encoding="utf-8")
+            requests: list[dict] = []
+            tools = AgentToolbox(
+                ScopedWorkspace(root),
+                AgentPermissions(allow_file_edit=True),
+                approval_callback=lambda request: requests.append(request) or True,
+                permission_modes={"file_edit": "ask permission"},
+            )
+
+            result = AgentTaskRunner()._execute_tool_call(
+                tools,
+                {"tool": "edit_file", "args": {"path": "note.txt", "old": "hello", "new": "bye"}},
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.tool, "edit_file")
+            self.assertEqual(target.read_text(encoding="utf-8"), "bye")
+            self.assertEqual(requests[0]["action"], "edit_file")
+            self.assertIn("-hello", requests[0]["diff"])
 
     def test_read_only_prompt_omits_write_and_shell_tools_even_when_enabled(self):
         """Verify read only prompt omits write and shell tools even when enabled behavior."""
@@ -561,8 +689,11 @@ class AgentRunnerTests(unittest.TestCase):
         prompt = AgentTaskRunner()._build_agent_prompt(spec, ["snake_game.py"], [], read_only_phase=True)
 
         self.assertIn("Allowed tool_calls in this phase are: list_files, read_file, send_message, git_status, git_diff", prompt)
+        self.assertIn("do not report them as unusable", prompt)
+        self.assertIn("this is a phase limit, not an approval denial or broken tool", prompt)
         self.assertIn("- git_status args:", prompt)
         self.assertNotIn("- create_file args:", prompt)
+        self.assertNotIn("- edit_file args:", prompt)
         self.assertNotIn("- patch_file args:", prompt)
         self.assertNotIn("- run_command args:", prompt)
 
@@ -623,6 +754,35 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual([turn["agent"] for turn in turns], ["Coordinator", "Builder", "Coordinator"])
             self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Coordinator final.")
             self.assertIn("completion requires Coordinator", (run_dir / "run.log").read_text(encoding="utf-8"))
+
+    def test_early_coordinator_waiting_final_routes_to_builder(self):
+        """Verify a non-terminal coordinator final is treated as a handoff."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            logs = Path(tmp) / "logs"
+            scope.mkdir()
+            spec = DummySpec(scope_folder=str(scope), max_turns=3)
+            spec.agents = [
+                {"name": "Coordinator", "role": "Coordinator", "provider": "same as task", "model": "same as task", "responsibility": ""},
+                {"name": "Builder", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""},
+            ]
+            responses = [
+                {"thought": "Assigned work.", "tool_calls": [], "final": "Waiting for Builder to inspect and implement."},
+                {"thought": "Implementation complete.", "tool_calls": [], "final": "Builder finished."},
+                {"thought": "Accept final.", "tool_calls": [], "final": "Coordinator final."},
+            ]
+
+            def fake_model(_prompt: str) -> str:
+                """Verify fake model behavior."""
+                return json.dumps(responses.pop(0))
+
+            run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
+
+            turns = json.loads((run_dir / "turns.json").read_text(encoding="utf-8"))
+            self.assertEqual([turn["agent"] for turn in turns], ["Coordinator", "Builder", "Coordinator"])
+            self.assertEqual(turns[0]["routing"]["status"], "deferred_final_handoff")
+            self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Coordinator final.")
+            self.assertIn("completion deferred", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_non_reviewer_final_routes_to_reviewer_when_no_coordinator(self):
         """Verify non reviewer final routes to reviewer when no coordinator behavior."""
@@ -949,7 +1109,7 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertTrue(all(turn["tool_results"][0]["ok"] is False for turn in turns))
 
     def test_git_not_repo_is_marked_unavailable(self):
-        """Verify git not repo is marked unavailable behavior."""
+        """Verify git not repo is treated as an initialization-needed state."""
         task_state = AgentTaskRunner._initial_task_state([])
         logs: list[str] = []
         AgentTaskRunner._update_task_state(
@@ -966,8 +1126,54 @@ class AgentRunnerTests(unittest.TestCase):
         )
 
         self.assertIs(task_state["git_available"], False)
-        self.assertEqual(task_state["git_reason"], "not a git repository")
-        self.assertIn("git", task_state["disabled_tools"])
+        self.assertIn("use git_init", task_state["git_reason"])
+        self.assertNotIn("git", task_state["disabled_tools"])
+        self.assertIn("git_init", task_state["next_step"])
+
+    def test_git_init_is_allowed_after_not_repo_state_and_clears_it(self):
+        """Verify Git-enabled agents can recover from an uninitialized scope."""
+        runner = AgentTaskRunner()
+        task_state = AgentTaskRunner._initial_task_state([])
+        task_state["git_available"] = False
+        task_state["git_reason"] = "not a git repository yet; use git_init before git status, add, diff, or commit"
+        task_state["known_issues"] = [
+            "git repository is not initialized; use git_init if Git history is needed",
+            "keep this real issue",
+        ]
+
+        self.assertIsNone(
+            runner._guard_disabled_or_duplicate_tool(
+                "run_command",
+                {"args": ["git", "init"]},
+                task_state,
+            )
+        )
+        blocked = runner._guard_disabled_or_duplicate_tool(
+            "run_command",
+            {"args": ["git", "status", "--short"]},
+            task_state,
+        )
+        self.assertIsNotNone(blocked)
+        self.assertIn("git_init", blocked.message)
+
+        AgentTaskRunner._update_task_state(
+            task_state,
+            [{
+                "tool": "run_command",
+                "ok": True,
+                "message": "exit 0: git init",
+                "data": {"returncode": 0, "stdout": "Initialized empty Git repository", "stderr": ""},
+            }],
+            {"thought": "Initialize repo."},
+            "Builder",
+            lambda _message: None,
+        )
+
+        self.assertIs(task_state["git_available"], True)
+        self.assertEqual(task_state["git_reason"], "")
+        self.assertNotIn("git", task_state["disabled_tools"])
+        self.assertEqual(task_state["known_issues"], ["keep this real issue"])
+        self.assertIn("git repository is initialized", task_state["next_step"])
 
     def test_read_only_briefing_marks_git_unavailable(self):
         """Verify read-only briefing shares git availability failures with the main run."""
@@ -1007,9 +1213,9 @@ class AgentRunnerTests(unittest.TestCase):
             )
 
             self.assertIs(task_state["git_available"], False)
-            self.assertEqual(task_state["git_reason"], "not a git repository")
-            self.assertIn("git", task_state["disabled_tools"])
-            self.assertEqual(turns[0]["tool_results"][0]["tool"], "run_command")
+            self.assertIn("use git_init", task_state["git_reason"])
+            self.assertNotIn("git", task_state["disabled_tools"])
+            self.assertEqual(turns[0]["tool_results"][0]["tool"], "git_status")
 
     def test_full_run_carries_briefing_git_failure_and_specific_python_verification(self):
         """Verify a realistic non-git Python task stops advertising git and suggests py_compile."""
@@ -1065,7 +1271,7 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertNotIn("- git_status args: {}", builder_prompts[0])
             self.assertIn("- python -m py_compile tic_tac_toe.py", builder_prompts[0])
             self.assertIn(
-                "shared task state: git marked unavailable",
+                "shared task state: git repo not initialized; git_init remains available",
                 (run_dir / "run.log").read_text(encoding="utf-8"),
             )
 
@@ -1326,6 +1532,29 @@ class AgentRunnerTests(unittest.TestCase):
         control.resume()
         control.wait_if_paused()
         self.assertFalse(control.is_pause_requested())
+
+    def test_control_permission_updates_apply_to_tools_and_prompt_spec(self):
+        """Verify live permission updates affect tool permissions and prompt capability checks."""
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = DummySpec(scope_folder=tmp, allow_shell=False, shell_permission_mode="never permit")
+            control = AgentRunControl()
+            control.update_permission_modes({"shell": "ask permission", "git": "auto"})
+            tools = AgentToolbox(
+                ScopedWorkspace(tmp),
+                AgentPermissions(allow_shell=False, allow_git=False),
+                permission_modes={"shell": "never permit", "git": "never permit"},
+            )
+            logs: list[str] = []
+
+            AgentTaskRunner(control=control)._apply_permission_updates(spec, tools, logs.append)
+
+            self.assertTrue(spec.allow_shell)
+            self.assertEqual(spec.shell_permission_mode, "ask permission")
+            self.assertTrue(spec.allow_git)
+            self.assertTrue(tools.permissions.allow_shell)
+            self.assertTrue(tools.permissions.allow_git)
+            self.assertEqual(tools._permission_modes["shell"], "ask permission")
+            self.assertIn("permissions updated", logs[-1])
 
     def test_parallel_read_only_round_allows_messages_but_denies_writes(self):
         """Verify parallel read only round allows messages but denies writes behavior."""

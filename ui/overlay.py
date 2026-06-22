@@ -52,7 +52,7 @@ class OverlaySignals(QObject):
     show_addon_manager    = Signal()        # tray "Addon Manager" clicked
     show_agent_task        = Signal()        # tray "Start agent task" clicked
     show_agent_history     = Signal()        # tray "Agent task history" clicked
-    show_health_status     = Signal()        # tray/settings health report requested
+    request_setup_check    = Signal()        # Settings setup check requested
     context_items_dropped  = Signal(object)  # list[(name, content, type)] from drag-drop
     add_context_item       = Signal(str, str) # (name, type) add one removable badge (hotkey/voice add)
     show_context_summary   = Signal(object)  # list[(name, type)] of context sent with a prompt
@@ -249,8 +249,6 @@ class IconOverlay(QMainWindow):
         menu.aboutToShow.connect(self._sync_icon_toggle_text)
         memory_action = QAction(t("Memory"), self)
         memory_action.triggered.connect(self.signals.show_memory_viewer.emit)
-        health_action = QAction(t("Health Status"), self)
-        health_action.triggered.connect(self.signals.show_health_status.emit)
         settings_action = QAction(t("Settings"), self)
         settings_action.triggered.connect(self._open_settings)
         quit_action = QAction(t("Quit"), self)
@@ -259,7 +257,6 @@ class IconOverlay(QMainWindow):
         menu.addAction(self._icon_toggle_action)
         menu.addSeparator()
         menu.addAction(memory_action)
-        menu.addAction(health_action)
         addon_manager_action = QAction(t("Addon Manager"), self)
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
             addon_manager_action.triggered.connect(self.signals.show_addon_manager.emit)
@@ -342,7 +339,14 @@ class IconOverlay(QMainWindow):
                 5000,
             )
 
-    def notify_agent_approval(self, text: str, *, resolved: bool = False) -> None:
+    def notify_agent_approval(
+        self,
+        text: str,
+        *,
+        resolved: bool = False,
+        on_approve=None,
+        on_decline=None,
+    ) -> dict:
         """Raise the icon and show an agent approval notice bubble."""
         if hasattr(self, "_icon_hide_timer"):
             self._icon_hide_timer.stop()
@@ -350,10 +354,16 @@ class IconOverlay(QMainWindow):
             self._set_icon_pixmap("thinking" if not resolved else "idle")
             self._icon_label.show()
             self._icon_label.raise_()
+        shown = False
+        actionable = bool(on_approve and on_decline and not resolved)
         if hasattr(self, "_bubble"):
             timeout = 4500 if resolved else 15000
-            self._bubble.show_notice(text, timeout_ms=timeout)
-        if hasattr(self, "_tray"):
+            actions = None
+            if actionable:
+                actions = [(t("Approve"), on_approve), (t("Decline"), on_decline)]
+            self._bubble.show_notice(text, timeout_ms=timeout, actions=actions)
+            shown = True
+        if hasattr(self, "_tray") and not shown:
             self._tray.showMessage(
                 t("Agent permission") if not resolved else t("Agent permission resolved"),
                 text,
@@ -363,6 +373,7 @@ class IconOverlay(QMainWindow):
         if hasattr(self, "_icon_hide_timer"):
             self._icon_hide_timer.setInterval(15000 if not resolved else self._icon_backstop_ms())
             self._icon_hide_timer.start()
+        return {"shown": shown, "actionable": shown and actionable}
 
     def _open_settings(self):
         # Defer the actual open to the next event-loop turn. This action fires
@@ -378,7 +389,7 @@ class IconOverlay(QMainWindow):
             lambda: open_settings(
                 parent=self,
                 on_apply=self.signals.settings_applied.emit,
-                on_setup_check=self.signals.show_health_status.emit,
+                on_setup_check=self.signals.request_setup_check.emit,
             ),
         )
 

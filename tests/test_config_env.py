@@ -107,7 +107,7 @@ class ConfigEnvTests(unittest.TestCase):
 
             prompt = config.get_system_prompt()
             self.assertIn("Base prompt.", prompt)
-            self.assertIn("Respond in Chinese", prompt)
+            self.assertIn("Respond in Simplified Chinese", prompt)
         finally:
             for name, value in previous.items():
                 setattr(config, name, value)
@@ -193,6 +193,76 @@ class ConfigEnvTests(unittest.TestCase):
             self.assertIn("\u7e41\u9ad4\u4e2d\u6587", config.CALLER_ROWS[0]["intents"][0]["prompt"])
             self.assertEqual(config.CALLER_ROWS[1]["intents"][0]["label"], "\u4fee\u6b63\u8a9e\u6cd5")
             self.assertIn("Respond in Traditional Chinese", config.get_system_prompt())
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_assistant_language_templates_cover_all_supported_languages(self):
+        """Every supported assistant language uses the same default-intent path."""
+        expected_response_names = {
+            "English": "English",
+            "Chinese": "Simplified Chinese",
+            "Chinese (Traditional)": "Traditional Chinese",
+            "Spanish": "Spanish",
+            "French": "French",
+            "German": "German",
+            "Japanese": "Japanese",
+            "Korean": "Korean",
+            "Portuguese": "Portuguese",
+            "Hindi": "Hindi",
+        }
+
+        self.assertEqual(set(config._CALLER_INTENT_TEMPLATES), set(expected_response_names))
+        self.assertEqual(set(config._ASSISTANT_RESPONSE_LANGUAGE_NAMES), set(expected_response_names))
+
+        for language, response_name in expected_response_names.items():
+            localized = config.localize_intent_if_default(0, 0, {}, language)
+            template = config._CALLER_INTENT_TEMPLATES[language][0][0]
+            self.assertEqual(localized["label"], template["label"])
+            self.assertEqual(localized["prompt"], template["prompt"])
+            self.assertIn(
+                f"Respond in {response_name}",
+                config._assistant_language_instruction(language),
+            )
+
+    def test_assistant_language_localizes_chat_elaborate_default_prompt(self):
+        """Built-in auto-elaborate prompt follows assistant language."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "CHAT_ELABORATE_PROMPT": config.CHAT_ELABORATE_PROMPT,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in ("ASSISTANT_LANGUAGE", "CHAT_ELABORATE_PROMPT"):
+                    os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "Chinese (Traditional)",
+                    "CHAT_ELABORATE_PROMPT": "Please elaborate on that.",
+                })
+                config.reload()
+
+            self.assertEqual(config.CHAT_ELABORATE_PROMPT, "\u8acb\u8a73\u7d30\u8aaa\u660e\u4e00\u4e0b\u3002")
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_assistant_language_preserves_custom_chat_elaborate_prompt(self):
+        """Custom auto-elaborate prompt text should not be overwritten."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "CHAT_ELABORATE_PROMPT": config.CHAT_ELABORATE_PROMPT,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in ("ASSISTANT_LANGUAGE", "CHAT_ELABORATE_PROMPT"):
+                    os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "Chinese (Traditional)",
+                    "CHAT_ELABORATE_PROMPT": "Use my custom expansion style.",
+                })
+                config.reload()
+
+            self.assertEqual(config.CHAT_ELABORATE_PROMPT, "Use my custom expansion style.")
         finally:
             for name, value in previous.items():
                 setattr(config, name, value)

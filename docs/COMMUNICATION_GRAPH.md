@@ -130,20 +130,11 @@ sequenceDiagram
     participant Supervisor as FlowController
     participant Setup as core.setup_check
     participant UI as wisp-ui
-    participant Brain as wisp-brain
-    participant Audio as wisp-audio
-    participant Native as wisp-native
 
     Settings->>Supervisor: ui.health.requested(source=settings)
     Supervisor->>Setup: run_setup_check()
     Setup-->>Supervisor: static setup rows
     Supervisor-->>UI: ui.health.show(title="Setup check")
-
-    UI->>Supervisor: ui.health.requested()
-    Supervisor->>Brain: brain.llm.test(include_fallbacks=false)
-    Supervisor->>Audio: audio.stt.is_ready / TTS probe when enabled
-    Supervisor->>Native: permissions and screenshot probes
-    Supervisor-->>UI: ui.health.show(title="Health Status")
 ```
 
 ## Boundary Rules

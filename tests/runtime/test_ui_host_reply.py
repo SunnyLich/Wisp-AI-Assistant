@@ -12,6 +12,49 @@ def test_context_source_labels_translate_without_touching_custom_labels(monkeypa
     assert ui_host._context_display_label("notes.txt") == "notes.txt"
 
 
+def test_health_text_translates_nested_messages_and_values(monkeypatch) -> None:
+    """Verify health text translation handles composed messages and value atoms."""
+    from runtime.workers import ui_host
+
+    translations = {
+        "LLM test failed: {message}": "LLM \u6e2c\u8a66\u5931\u6557\uff1a{message}",
+        "LLM route uses {provider} but you are not logged in.": "LLM \u8def\u7531\u4f7f\u7528 {provider}\uff0c\u4f46\u4f60\u5c1a\u672a\u767b\u5165\u3002",
+        "Microphone permission: {value}.": "\u9ea5\u514b\u98a8\u6b0a\u9650\uff1a{value}\u3002",
+        "unavailable": "\u7121\u6cd5\u4f7f\u7528",
+    }
+    monkeypatch.setattr(ui_host, "t", lambda text: translations.get(text, text))
+
+    assert ui_host._translate_health_text(
+        "LLM test failed: LLM route uses chatgpt but you are not logged in."
+    ) == "LLM \u6e2c\u8a66\u5931\u6557\uff1aLLM \u8def\u7531\u4f7f\u7528 chatgpt\uff0c\u4f46\u4f60\u5c1a\u672a\u767b\u5165\u3002"
+    assert (
+        ui_host._translate_health_text("Microphone permission: unavailable.")
+        == "\u9ea5\u514b\u98a8\u6b0a\u9650\uff1a\u7121\u6cd5\u4f7f\u7528\u3002"
+    )
+
+
+def test_notice_text_translates_known_bubble_messages(monkeypatch) -> None:
+    """Verify system bubble notices translate known lines while preserving layout."""
+    from runtime.workers import ui_host
+
+    translations = {
+        "Addon folder installed.": "\u5916\u639b\u8cc7\u6599\u593e\u5df2\u5b89\u88dd\u3002",
+        "Recommendation: open Addon Manager, inspect the addon diagnostics, then repair or disable it.": "\u5efa\u8b70\uff1a\u958b\u555f\u5916\u639b\u7ba1\u7406\u5668\uff0c\u6aa2\u67e5\u5916\u639b\u8a3a\u65b7\u8cc7\u8a0a\uff0c\u7136\u5f8c\u4fee\u5fa9\u6216\u505c\u7528\u5b83\u3002",
+        "Technical detail: ": "\u6280\u8853\u7d30\u7bc0\uff1a",
+    }
+    monkeypatch.setattr(ui_host, "t", lambda text: translations.get(text, text))
+
+    assert ui_host._translate_notice_text(
+        "Addon folder installed.\n\n"
+        "Recommendation: open Addon Manager, inspect the addon diagnostics, then repair or disable it.\n"
+        "Technical detail: addon.json missing"
+    ) == (
+        "\u5916\u639b\u8cc7\u6599\u593e\u5df2\u5b89\u88dd\u3002\n\n"
+        "\u5efa\u8b70\uff1a\u958b\u555f\u5916\u639b\u7ba1\u7406\u5668\uff0c\u6aa2\u67e5\u5916\u639b\u8a3a\u65b7\u8cc7\u8a0a\uff0c\u7136\u5f8c\u4fee\u5fa9\u6216\u505c\u7528\u5b83\u3002\n"
+        "\u6280\u8853\u7d30\u7bc0\uff1aaddon.json missing"
+    )
+
+
 def test_memory_proxy_accepts_project_scope() -> None:
     """Verify UI memory proxy forwards project-scoped add/update payloads."""
     from runtime.workers.ui_host import MemoryProxy
@@ -104,6 +147,28 @@ def test_chat_add_conversation_stamps_metadata() -> None:
     assert conv["updated_at"] == conv["created_at"]
     assert conv["messages"][0]["created_at"] == conv["created_at"]
     assert conv["messages"][1]["created_at"] == conv["created_at"]
+
+
+def test_chat_add_conversation_selects_new_chat_when_window_is_open() -> None:
+    """Verify externally created chats become visible in an open chat window."""
+    from types import SimpleNamespace
+
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = None
+    host._active_project_id = "general"
+    host._all_conversations = []
+    host._persist_conversations = lambda: None  # type: ignore[attr-defined]
+    ingest_calls = []
+    host._chat = SimpleNamespace(
+        ingest_new_conversations=lambda **kwargs: ingest_calls.append(kwargs)
+    )
+
+    result = host._chat_add_conversation(user="hi", assistant="hello")
+
+    assert result == {"count": 1, "continued": False}
+    assert ingest_calls == [{"select_new": True}]
 
 
 def test_chat_add_conversation_persists_file_context() -> None:

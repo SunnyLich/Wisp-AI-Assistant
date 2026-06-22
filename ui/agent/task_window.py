@@ -59,10 +59,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ui.agent.log_parser import parse_live_log_event
+from ui.agent.activity_i18n import (
+    translate_agent_activity_text,
+    translate_agent_health_badge,
+    translate_agent_health_detail,
+    translate_agent_log_line,
+    translate_agent_name,
+    translate_agent_role,
+    translate_agent_status,
+)
 from ui.agent.combo_helpers import (
     AGENT_PROVIDER_OPTIONS as _AGENT_PROVIDER_OPTIONS,
     AGENT_ROLE_OPTIONS as _AGENT_ROLE_OPTIONS,
-    APPROVAL_OPTIONS as _APPROVAL_OPTIONS,
     COMMUNICATION_PHASE_OPTIONS as _COMMUNICATION_PHASE_OPTIONS,
     MAP_AGENT_PROVIDER_OPTIONS as _MAP_AGENT_PROVIDER_OPTIONS,
     PERMISSION_OPTIONS as _PERMISSION_OPTIONS,
@@ -77,7 +85,7 @@ from ui.agent.combo_helpers import (
     set_combo_value as _set_combo_value,
 )
 from ui.i18n import localize_widget_tree, t
-from ui.settings_panel.helpers import parse_fallback_rows
+from ui.settings_panel.helpers import NoScrollCombo as _NoScrollCombo, parse_fallback_rows
 from ui.settings_panel.dialog import (
     _PROVIDER_LABELS,
     _PROVIDER_MODELS,
@@ -91,11 +99,17 @@ from core.agent.task_spec import (
     AgentRoleSpec,
     AgentTaskSpec,
     agent_task_spec_from_dict,
+    default_agent_specs,
+    default_communication_specs,
+    default_generic_agent_name,
     continue_spec_from_run,
     is_inside_scope,
     is_role_template,
+    localize_agent_spec_if_default,
+    localize_communication_spec_if_default,
     resolve_scope_folder,
     retry_spec_from_run,
+    role_label,
     role_responsibility,
 )
 from core.system.paths import AGENT_RUNS_DIR
@@ -331,7 +345,6 @@ class AgentTaskDialog(QDialog):
         self.objective_edit.setPlainText(spec.objective)
         self.scope_edit.setText(spec.scope_folder)
         _set_combo_value(self.sandbox_combo, spec.sandbox_mode)
-        _set_combo_value(self.approval_combo, spec.approval_policy)
         _set_combo_value(self.provider_combo, getattr(spec, "provider", "same as app"))
         self._refresh_task_model_combo()
         self.model_edit.setCurrentText(spec.model)
@@ -365,24 +378,28 @@ class AgentTaskDialog(QDialog):
         self.max_parallel_agents.setValue(int(getattr(spec, "max_parallel_agents", 4) or 4))
         # Agents and communications
         self._agent_specs = [
-            {
+            localize_agent_spec_if_default(idx, {
                 "name": a.name,
                 "role": a.role,
                 "provider": getattr(a, "provider", "same as task"),
                 "model": a.model,
                 "responsibility": a.responsibility,
-            }
-            for a in spec.agents
+            }, self._assistant_language())
+            for idx, a in enumerate(spec.agents)
+        ]
+        agent_names = [
+            (agent.get("name") or default_generic_agent_name(idx + 1, self._assistant_language())).strip()
+            for idx, agent in enumerate(self._agent_specs)
         ]
         self._communication_specs = [
-            {
+            localize_communication_spec_if_default(idx, {
                 "from_agent": c.from_agent,
                 "to_agent": c.to_agent,
                 "phase": c.phase,
                 "trigger": c.trigger,
                 "message": c.message,
-            }
-            for c in spec.communications
+            }, self._assistant_language(), agent_names)
+            for idx, c in enumerate(spec.communications)
         ]
         self._refresh_agent_list()
         self._refresh_communication_list()
@@ -416,7 +433,7 @@ class AgentTaskDialog(QDialog):
         model_row = QHBoxLayout()
         model_row.setContentsMargins(0, 0, 0, 0)
         model_row.setSpacing(8)
-        self.provider_combo = QComboBox()
+        self.provider_combo = _NoScrollCombo()
         self.provider_combo.setEditable(True)
         self._populate_provider_combo(self.provider_combo)
         self.model_edit = self._model_combo()
@@ -481,7 +498,7 @@ class AgentTaskDialog(QDialog):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(8)
 
-        provider_combo = QComboBox()
+        provider_combo = _NoScrollCombo()
         provider_combo.setEditable(True)
         self._populate_provider_combo(provider_combo)
         if provider:
@@ -520,7 +537,7 @@ class AgentTaskDialog(QDialog):
     @staticmethod
     def _model_combo(provider: str = "") -> QComboBox:
         """Create an editable provider-aware model combo matching Settings model rows."""
-        combo = QComboBox()
+        combo = _NoScrollCombo()
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         AgentTaskDialog._refresh_model_combo_for_provider(combo, provider)
@@ -590,12 +607,12 @@ class AgentTaskDialog(QDialog):
         self.agent_name_edit = QLineEdit()
         self.agent_name_edit.hide()
         self.agent_name_edit.textChanged.connect(self._save_current_agent)
-        self.agent_role_combo = QComboBox()
+        self.agent_role_combo = _NoScrollCombo()
         self.agent_role_combo.hide()
         self.agent_role_combo.setEditable(True)
         _add_translated_combo_items(self.agent_role_combo, _AGENT_ROLE_OPTIONS)
         self.agent_role_combo.currentTextChanged.connect(self._agent_role_changed)
-        self.agent_provider_combo = QComboBox()
+        self.agent_provider_combo = _NoScrollCombo()
         self.agent_provider_combo.hide()
         self.agent_provider_combo.setEditable(True)
         _add_translated_combo_items(self.agent_provider_combo, _AGENT_PROVIDER_OPTIONS)
@@ -645,7 +662,7 @@ class AgentTaskDialog(QDialog):
         layout = QVBoxLayout(box)
         layout.setSpacing(10)
         form = _expanding_form_layout()
-        self.sandbox_combo = QComboBox()
+        self.sandbox_combo = _NoScrollCombo()
         _add_translated_combo_items(self.sandbox_combo, _SANDBOX_OPTIONS)
 
         self.allowed_globs_edit = QLineEdit()
@@ -697,7 +714,7 @@ class AgentTaskDialog(QDialog):
     @staticmethod
     def _permission_combo(default: str) -> QComboBox:
         """Handle permission combo for agent task dialog."""
-        combo = QComboBox()
+        combo = _NoScrollCombo()
         _add_translated_combo_items(combo, _PERMISSION_OPTIONS)
         _set_combo_value(combo, default)
         return combo
@@ -718,12 +735,8 @@ class AgentTaskDialog(QDialog):
         form = _expanding_form_layout(box)
         form.setSpacing(10)
 
-        self.reasoning_combo = QComboBox()
+        self.reasoning_combo = _NoScrollCombo()
         _add_translated_combo_items(self.reasoning_combo, _REASONING_OPTIONS)
-
-        self.approval_combo = QComboBox()
-        _add_translated_combo_items(self.approval_combo, _APPROVAL_OPTIONS)
-        _set_combo_value(self.approval_combo, "ask before escalation")
 
         self.runtime_minutes = QSpinBox()
         self.runtime_minutes.setRange(1, 480)
@@ -745,7 +758,6 @@ class AgentTaskDialog(QDialog):
         self.agent_temperature.setValue(0.0)
 
         form.addRow("Reasoning", self.reasoning_combo)
-        form.addRow("Approvals", self.approval_combo)
         form.addRow("Time limit", self.runtime_minutes)
         form.addRow("Turn limit", self.max_turns)
         form.addRow("Briefing", self.parallel_briefing)
@@ -804,7 +816,7 @@ class AgentTaskDialog(QDialog):
             "summary produced, etc."
         )
 
-        self.report_combo = QComboBox()
+        self.report_combo = _NoScrollCombo()
         _add_translated_combo_items(self.report_combo, _REPORT_OPTIONS)
 
         form.addRow("Done when", self.completion_edit)
@@ -858,58 +870,24 @@ class AgentTaskDialog(QDialog):
         self.reset_agents_to_default()
 
     @staticmethod
+    def _assistant_language() -> str:
+        """Return the configured assistant/model language for model-facing presets."""
+        try:
+            import config
+
+            return str(getattr(config, "ASSISTANT_LANGUAGE", "") or "")
+        except Exception:
+            return ""
+
+    @staticmethod
     def _default_agent_specs() -> list[dict[str, str]]:
         """Handle default agent specs for agent task dialog."""
-        return [
-            {
-                "name": "Coordinator",
-                "role": "Coordinator",
-                "provider": "same as task",
-                "model": "same as task",
-                "responsibility": role_responsibility("Coordinator"),
-            },
-            {
-                "name": "Builder",
-                "role": "Implementer",
-                "provider": "same as task",
-                "model": "same as task",
-                "responsibility": role_responsibility("Implementer"),
-            },
-            {
-                "name": "Reviewer",
-                "role": "Reviewer",
-                "provider": "same as task",
-                "model": "same as task",
-                "responsibility": role_responsibility("Reviewer"),
-            },
-        ]
+        return default_agent_specs(AgentTaskDialog._assistant_language())
 
     @staticmethod
     def _default_communication_specs() -> list[dict[str, str]]:
         """Handle default communication specs for agent task dialog."""
-        return [
-            {
-                "from_agent": "Coordinator",
-                "to_agent": "Builder",
-                "phase": "Planning",
-                "trigger": "After reading the objective and scope",
-                "message": "Send the implementation plan, constraints, and first files to inspect.",
-            },
-            {
-                "from_agent": "Builder",
-                "to_agent": "Reviewer",
-                "phase": "Review",
-                "trigger": "After changes and local verification",
-                "message": "Send changed files, verification results, and known tradeoffs for review.",
-            },
-            {
-                "from_agent": "Reviewer",
-                "to_agent": "Coordinator",
-                "phase": "Completion",
-                "trigger": "After review is complete",
-                "message": "Send approval status, remaining concerns, and final-report notes.",
-            },
-        ]
+        return default_communication_specs(AgentTaskDialog._assistant_language())
 
     def reset_agents_to_default(self) -> None:
         """Restore the default agents and communications, then refresh the lists."""
@@ -952,12 +930,13 @@ class AgentTaskDialog(QDialog):
         """Add agent."""
         self._save_current_agent()
         number = len(self._agent_specs) + 1
+        language = self._assistant_language()
         self._agent_specs.append({
-            "name": f"Agent {number}",
-            "role": "Implementer",
+            "name": default_generic_agent_name(number, language),
+            "role": role_label("Implementer", language),
             "provider": "same as task",
             "model": "same as task",
-            "responsibility": role_responsibility("Implementer"),
+            "responsibility": role_responsibility("Implementer", language),
         })
         self._refresh_agent_list()
         self.agent_list.setCurrentRow(len(self._agent_specs) - 1)
@@ -1010,7 +989,7 @@ class AgentTaskDialog(QDialog):
             return
         role = _combo_value(self.agent_role_combo, "Implementer")
         current = self.agent_responsibility_edit.toPlainText().strip()
-        template = role_responsibility(role)
+        template = role_responsibility(role, self._assistant_language())
         if template and (not current or is_role_template(current)):
             self.agent_responsibility_edit.setPlainText(template)
         self._save_current_agent()
@@ -1167,7 +1146,31 @@ class AgentTaskDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, t("Invalid Agent Task"), str(exc))
             return
-        QMessageBox.information(self, t("Agent Task Spec"), self._format_spec(spec))
+        self._show_spec_preview(self._format_spec(spec))
+
+    def _show_spec_preview(self, text: str) -> None:
+        """Show the task spec in a resizable, scrollable preview dialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t("Agent Task Spec"))
+        dialog.setMinimumSize(720, 520)
+        enable_standard_window_controls(dialog)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        viewer = QTextEdit()
+        viewer.setReadOnly(True)
+        viewer.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        viewer.setPlainText(text)
+        layout.addWidget(viewer, stretch=1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        fit_window_to_screen(dialog, preferred_width=860, preferred_height=680)
+        dialog.exec()
 
     def _accept(self) -> None:
         """Handle accept for agent task dialog."""
@@ -1208,15 +1211,17 @@ class AgentTaskDialog(QDialog):
             raise ValueError("Choose a model provider.")
         if not model:
             raise ValueError("Add a model name.")
+        language = self._assistant_language()
         agents = [
             AgentRoleSpec(
-                name=(agent.get("name") or f"Agent {idx + 1}").strip(),
-                role=(agent.get("role") or "Implementer").strip(),
-                provider=(agent.get("provider") or "same as task").strip(),
-                model=(agent.get("model") or "same as task").strip(),
-                responsibility=agent.get("responsibility", "").strip(),
+                name=(localized.get("name") or default_generic_agent_name(idx + 1, language)).strip(),
+                role=(localized.get("role") or role_label("Implementer", language)).strip(),
+                provider=(localized.get("provider") or "same as task").strip(),
+                model=(localized.get("model") or "same as task").strip(),
+                responsibility=localized.get("responsibility", "").strip(),
             )
             for idx, agent in enumerate(self._agent_specs)
+            for localized in [localize_agent_spec_if_default(idx, agent, language)]
         ]
         if not agents:
             raise ValueError("Add at least one agent.")
@@ -1225,14 +1230,20 @@ class AgentTaskDialog(QDialog):
         agent_names = {agent.name for agent in agents}
         communications = [
             AgentCommunicationSpec(
-                from_agent=spec.get("from_agent", "").strip(),
-                to_agent=spec.get("to_agent", "").strip(),
-                phase=spec.get("phase", "").strip(),
-                trigger=spec.get("trigger", "").strip(),
-                message=spec.get("message", "").strip(),
+                from_agent=localized.get("from_agent", "").strip(),
+                to_agent=localized.get("to_agent", "").strip(),
+                phase=localized.get("phase", "").strip(),
+                trigger=localized.get("trigger", "").strip(),
+                message=localized.get("message", "").strip(),
             )
-            for spec in self._communication_specs
-            if spec.get("from_agent") and spec.get("to_agent")
+            for idx, spec in enumerate(self._communication_specs)
+            for localized in [localize_communication_spec_if_default(
+                idx,
+                spec,
+                language,
+                [agent.name for agent in agents],
+            )]
+            if localized.get("from_agent") and localized.get("to_agent")
         ]
         for comm in communications:
             if comm.from_agent not in agent_names or comm.to_agent not in agent_names:
@@ -1244,7 +1255,7 @@ class AgentTaskDialog(QDialog):
             objective=objective,
             scope_folder=str(scope),
             sandbox_mode=_combo_value(self.sandbox_combo),
-            approval_policy=_combo_value(self.approval_combo),
+            approval_policy="per-tool permissions",
             provider=provider,
             model=model,
             model_fallbacks=self._collect_fallbacks(),
@@ -1293,12 +1304,128 @@ class AgentTaskDialog(QDialog):
     @staticmethod
     def _format_spec(spec: AgentTaskSpec) -> str:
         """Format spec."""
+        labels = {
+            "title": "Title",
+            "objective": "Objective",
+            "scope_folder": "Filesystem Scope",
+            "sandbox_mode": "Sandbox",
+            "provider": "Provider",
+            "model": "Model",
+            "reasoning_effort": "Reasoning",
+            "max_runtime_minutes": "Time limit",
+            "max_turns": "Turn limit",
+            "allow_shell": "Shell",
+            "allow_network": "Network",
+            "allow_git": "Git",
+            "allow_file_create": "Create files",
+            "allow_file_edit": "Edit files",
+            "allow_file_delete": "Delete files",
+            "shell_permission_mode": "Shell",
+            "network_permission_mode": "Network",
+            "git_permission_mode": "Git",
+            "file_create_permission_mode": "Create files",
+            "file_edit_permission_mode": "Edit files",
+            "file_delete_permission_mode": "Delete files",
+            "allowed_file_globs": "Allow globs",
+            "blocked_file_globs": "Block globs",
+            "required_context": "Context",
+            "completion_criteria": "Done when",
+            "report_format": "Report",
+            "model_fallbacks": "Fallback Model",
+            "agents": "Agents",
+            "communications": "Communications",
+            "parallel_read_only_briefing": "Briefing",
+            "parallel_execution": "Parallel work",
+            "max_parallel_agents": "Max parallel agents",
+            "full_turn_max_tokens": "Full turn max tokens",
+            "delta_turn_max_tokens": "Delta turn max tokens",
+            "read_only_max_tokens": "Read-only max tokens",
+            "agent_temperature": "Agent temperature",
+            "tool_result_text_limit": "Tool text chars",
+            "tool_result_command_limit": "Command output chars",
+            "tool_result_value_limit": "Nested value chars",
+            "tool_result_list_limit": "Tool list items",
+            "visible_files_full_limit": "Full visible files",
+            "visible_files_delta_limit": "Delta visible files",
+        }
         lines: list[str] = []
         for key, value in asdict(spec).items():
-            if isinstance(value, list):
-                value = json.dumps(value, indent=2) if value else "(none)"
-            lines.append(f"{key}: {value}")
+            if key == "approval_policy":
+                continue
+            label = t(labels.get(key, key.replace("_", " ").title()))
+            lines.append(f"{label}: {AgentTaskDialog._format_spec_value(key, value)}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_spec_value(key: str, value) -> str:  # noqa: ANN001
+        """Format one task-spec value for a localized human preview."""
+        if isinstance(value, bool):
+            return t("On") if value else t("Off")
+        if isinstance(value, list):
+            if not value:
+                return t("None")
+            if key == "agents":
+                return "\n" + "\n".join(AgentTaskDialog._format_agent_preview(agent) for agent in value)
+            if key == "communications":
+                return "\n" + "\n".join(AgentTaskDialog._format_communication_preview(comm) for comm in value)
+            return json.dumps(value, indent=2, ensure_ascii=False)
+        if isinstance(value, str):
+            if not value:
+                return t("None")
+            legacy_values = {
+                "never": "never permit",
+            }
+            value = legacy_values.get(value, value)
+            option_groups = (
+                _SANDBOX_OPTIONS,
+                _AGENT_PROVIDER_OPTIONS,
+                _MAP_AGENT_PROVIDER_OPTIONS,
+                _PERMISSION_OPTIONS,
+                _REASONING_OPTIONS,
+                _REPORT_OPTIONS,
+            )
+            if any(value in options for options in option_groups):
+                return t(value)
+        return str(value)
+
+    @staticmethod
+    def _format_agent_preview(agent: dict) -> str:
+        """Format an agent row for the preview dialog."""
+        fields = (
+            ("name", "Name", _display_agent_name),
+            ("role", "Role", _display_role),
+            ("provider", "Provider", AgentTaskDialog._format_spec_value),
+            ("model", "Model", AgentTaskDialog._format_spec_value),
+            ("responsibility", "Responsibility", None),
+        )
+        parts: list[str] = []
+        for key, label, formatter in fields:
+            raw = str(agent.get(key) or "")
+            if formatter is None:
+                value = raw or t("None")
+            elif formatter is AgentTaskDialog._format_spec_value:
+                value = formatter(key, raw)
+            else:
+                value = formatter(raw)
+            parts.append(f"  {t(label)}: {value}")
+        return "- " + "\n".join(parts).lstrip()
+
+    @staticmethod
+    def _format_communication_preview(comm: dict) -> str:
+        """Format a communication row for the preview dialog."""
+        fields = (
+            ("from_agent", "From", _display_agent_name),
+            ("to_agent", "To", _display_agent_name),
+            ("phase", "Phase", _display_phase),
+            ("trigger", "Trigger", None),
+            ("message", "Message", None),
+        )
+        parts: list[str] = []
+        for key, label, formatter in fields:
+            raw = str(comm.get(key) or "")
+            value = formatter(raw) if formatter is not None else (raw or t("None"))
+            parts.append(f"  {t(label)}: {value}")
+        return "- " + "\n".join(parts).lstrip()
 
     @classmethod
     def _task_history_root(cls) -> Path:
@@ -1722,10 +1849,10 @@ class AgentCommunicationMapWindow(QDialog):
         agent_form = _expanding_form_layout()
         agent_form.setSpacing(8)
         self.map_agent_name = QLineEdit()
-        self.map_agent_role = QComboBox()
+        self.map_agent_role = _NoScrollCombo()
         self.map_agent_role.setEditable(True)
         _add_translated_combo_items(self.map_agent_role, _AGENT_ROLE_OPTIONS)
-        self.map_agent_provider = QComboBox()
+        self.map_agent_provider = _NoScrollCombo()
         self.map_agent_provider.setEditable(True)
         _add_translated_combo_items(self.map_agent_provider, _MAP_AGENT_PROVIDER_OPTIONS)
         self.map_agent_model = QLineEdit()
@@ -1757,9 +1884,9 @@ class AgentCommunicationMapWindow(QDialog):
         comm_layout.addWidget(self.exchange_list)
         comm_form = _expanding_form_layout()
         comm_form.setSpacing(8)
-        self.map_comm_from = QComboBox()
-        self.map_comm_to = QComboBox()
-        self.map_comm_phase = QComboBox()
+        self.map_comm_from = _NoScrollCombo()
+        self.map_comm_to = _NoScrollCombo()
+        self.map_comm_phase = _NoScrollCombo()
         self.map_comm_phase.setEditable(True)
         _add_translated_combo_items(self.map_comm_phase, _COMMUNICATION_PHASE_OPTIONS)
         self.map_comm_trigger = QLineEdit()
@@ -1903,7 +2030,19 @@ class AgentCommunicationMapWindow(QDialog):
             sx, sy = centers[source]
             tx, ty = centers[target]
             sx_edge, sy_edge, tx_edge, ty_edge = self._edge_points(sx, sy, tx, ty)
-            self._draw_double_arrow(sx_edge, sy_edge, tx_edge, ty_edge)
+            bidirectional = any(
+                other is not comm
+                and other.get("from_agent", "") == target
+                and other.get("to_agent", "") == source
+                for other in communications
+            )
+            self._draw_directed_arrow(
+                sx_edge,
+                sy_edge,
+                tx_edge,
+                ty_edge,
+                bidirectional=bidirectional,
+            )
             mx = (sx + tx) / 2
             my = (sy + ty) / 2
             item = _RelationshipItem(idx, self._select_exchange_from_map, mx - 82, my - 18, 164, 36)
@@ -1937,8 +2076,16 @@ class AgentCommunicationMapWindow(QDialog):
             ty - uy * end_offset,
         )
 
-    def _draw_double_arrow(self, sx: float, sy: float, tx: float, ty: float) -> None:
-        """Handle draw double arrow for agent communication map window."""
+    def _draw_directed_arrow(
+        self,
+        sx: float,
+        sy: float,
+        tx: float,
+        ty: float,
+        *,
+        bidirectional: bool = False,
+    ) -> None:
+        """Draw a directed exchange; add a reverse head only for paired routes."""
         pen = QPen(QColor("#5d7fa9"), 2.0)
         self.relationship_scene.addLine(sx, sy, tx, ty, pen)
         dx, dy = tx - sx, ty - sy
@@ -1946,7 +2093,10 @@ class AgentCommunicationMapWindow(QDialog):
         ux, uy = dx / length, dy / length
         px, py = -uy, ux
         size = 10
-        for ax, ay, tip_dir in ((tx, ty, 1), (sx, sy, -1)):
+        arrowheads = [(tx, ty, 1)]
+        if bidirectional:
+            arrowheads.append((sx, sy, -1))
+        for ax, ay, tip_dir in arrowheads:
             bx = ax - tip_dir * ux * size
             by = ay - tip_dir * uy * size
             left = (bx + px * size * 0.55, by + py * size * 0.55)
@@ -2067,7 +2217,7 @@ class AgentCommunicationMapWindow(QDialog):
             return
         role = _combo_value(self.map_agent_role, "Implementer")
         current = self.map_agent_responsibility.toPlainText().strip()
-        template = role_responsibility(role)
+        template = role_responsibility(role, self._task_dialog._assistant_language())
         if template and (not current or is_role_template(current)):
             self.map_agent_responsibility.setPlainText(template)
         self._save_agent_form()
@@ -2080,7 +2230,10 @@ class AgentCommunicationMapWindow(QDialog):
         if row < 0 or row >= len(self._task_dialog._agent_specs):
             return
         old_name = self._task_dialog._agent_specs[row].get("name", "")
-        new_name = self.map_agent_name.text().strip() or f"Agent {row + 1}"
+        new_name = self.map_agent_name.text().strip() or default_generic_agent_name(
+            row + 1,
+            self._task_dialog._assistant_language(),
+        )
         self._task_dialog._agent_specs[row] = {
             "name": new_name,
             "role": _combo_value(self.map_agent_role, "Implementer"),
@@ -2172,12 +2325,12 @@ class AgentCommunicationDialog(QDialog):
         form = _expanding_form_layout()
         form.setSpacing(10)
 
-        self.from_combo = QComboBox()
-        self.to_combo = QComboBox()
+        self.from_combo = _NoScrollCombo()
+        self.to_combo = _NoScrollCombo()
         for agent in agents:
             self.from_combo.addItem(_display_agent_name(agent), agent)
             self.to_combo.addItem(_display_agent_name(agent), agent)
-        self.phase_combo = QComboBox()
+        self.phase_combo = _NoScrollCombo()
         self.phase_combo.setEditable(True)
         _add_translated_combo_items(self.phase_combo, _COMMUNICATION_PHASE_OPTIONS)
         self.trigger_edit = QLineEdit()
@@ -2247,7 +2400,7 @@ class AgentNudgeDialog(QDialog):
         form = _expanding_form_layout()
         form.setSpacing(10)
 
-        self.target_combo = QComboBox()
+        self.target_combo = _NoScrollCombo()
         for target in targets:
             self.target_combo.addItem(_display_agent_name(target), target)
         self.message_edit = QTextEdit()
@@ -2288,14 +2441,33 @@ class _FitGraphicsView(QGraphicsView):
     def __init__(self, scene):
         """Initialize the fit graphics view instance."""
         super().__init__(scene)
+        self._zoom_factor = 1.0
+        self._min_zoom = 0.45
+        self._max_zoom = 3.0
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
 
     def fit_scene(self) -> None:
         """Handle fit scene for fit graphics view."""
         rect = self.scene().sceneRect() if self.scene() else None
         if rect is not None and not rect.isEmpty():
+            self.resetTransform()
             self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+            if self._zoom_factor != 1.0:
+                self.scale(self._zoom_factor, self._zoom_factor)
+
+    def wheelEvent(self, event):  # noqa: N802
+        """Zoom the meeting room with the mouse wheel."""
+        delta = event.angleDelta().y()
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        step = 1.15 if delta > 0 else 1 / 1.15
+        self._zoom_factor = max(self._min_zoom, min(self._max_zoom, self._zoom_factor * step))
+        self.fit_scene()
+        event.accept()
 
     def resizeEvent(self, event):  # noqa: N802
         """Resize event."""
@@ -2362,6 +2534,20 @@ class AgentRunWindow(QDialog):
         title.setTextFormat(Qt.TextFormat.RichText)
         root.addWidget(title)
 
+        self.completion_banner = QFrame()
+        self.completion_banner.setObjectName("agentCompletionBanner")
+        banner_layout = QVBoxLayout(self.completion_banner)
+        banner_layout.setContentsMargins(14, 10, 14, 10)
+        banner_layout.setSpacing(2)
+        self.completion_banner_title = QLabel(t("Agent Task Running"))
+        self.completion_banner_title.setObjectName("agentCompletionBannerTitle")
+        self.completion_banner_detail = QLabel(t("The run is still working."))
+        self.completion_banner_detail.setWordWrap(True)
+        banner_layout.addWidget(self.completion_banner_title)
+        banner_layout.addWidget(self.completion_banner_detail)
+        self.completion_banner.hide()
+        root.addWidget(self.completion_banner)
+
         self.approval_panel = QFrame()
         self._approval_style_dark = (
             "QFrame { background: #2b2b3a; border: 1px solid #555577; border-radius: 6px; }"
@@ -2406,15 +2592,15 @@ class AgentRunWindow(QDialog):
         self.agent_activity_view = QTextEdit()
         self.agent_activity_view.setReadOnly(True)
         self.agent_activity_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        agent_detail_layout.addWidget(QLabel("Agent Detail"))
+        agent_detail_layout.addWidget(QLabel(t("Agent Detail")))
         agent_detail_layout.addWidget(self.agent_summary_view)
-        agent_detail_layout.addWidget(QLabel("Recent Activity"))
+        agent_detail_layout.addWidget(QLabel(t("Recent Activity")))
         agent_detail_layout.addWidget(self.agent_activity_view, stretch=1)
         board_panel = QWidget()
         board_layout = QVBoxLayout(board_panel)
         board_layout.setContentsMargins(0, 0, 0, 0)
         board_layout.setSpacing(8)
-        board_layout.addWidget(QLabel("Shared Board"))
+        board_layout.addWidget(QLabel(t("Shared Board")))
         self.shared_board_view = QTextEdit()
         self.shared_board_view.setReadOnly(True)
         self.shared_board_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
@@ -2425,10 +2611,10 @@ class AgentRunWindow(QDialog):
         meeting_panel_layout.setContentsMargins(0, 0, 0, 0)
         meeting_panel_layout.setSpacing(6)
         meeting_header = QHBoxLayout()
-        meeting_header.addWidget(QLabel("Meeting"))
+        meeting_header.addWidget(QLabel(t("Meeting")))
         meeting_header.addStretch()
-        self.reset_layout_btn = QPushButton("Reset Layout")
-        self.reset_layout_btn.setToolTip("Restore every agent card to its default position and size")
+        self.reset_layout_btn = QPushButton(t("Reset Layout"))
+        self.reset_layout_btn.setToolTip(t("Restore every agent card to its default position and size"))
         self.reset_layout_btn.clicked.connect(self._reset_agent_layout)
         meeting_header.addWidget(self.reset_layout_btn)
         meeting_panel_layout.addLayout(meeting_header)
@@ -2449,10 +2635,10 @@ class AgentRunWindow(QDialog):
         self.trace_view = QTextEdit()
         self.trace_view.setReadOnly(True)
         self.trace_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.trace_view.setPlaceholderText("Model prompts, responses, parsed JSON, and tool payloads appear here while the task runs.")
+        self.trace_view.setPlaceholderText(t("Model prompts, responses, parsed JSON, and tool payloads appear here while the task runs."))
         self.final_view = QTextEdit()
         self.final_view.setReadOnly(True)
-        self.final_view.setPlaceholderText("Final report appears here when the task finishes.")
+        self.final_view.setPlaceholderText(t("Final report appears here when the task finishes."))
         self.tabs.addTab(meeting_splitter, t("Meeting"))
         self.tabs.addTab(self.log_view, t("Live Log"))
         self.tabs.addTab(self.trace_view, t("Model Trace"))
@@ -2828,7 +3014,7 @@ class AgentRunWindow(QDialog):
         table = QPainterPath()
         table.addRoundedRect(445, 230, 190, 100, 24, 24)
         self.meeting_scene.addPath(table, QPen(QColor("#9fb2c8"), 1.5), QBrush(QColor("#dbe6f2")))
-        title = QGraphicsTextItem("Agent Meeting")
+        title = QGraphicsTextItem(t("Agent Meeting"))
         title.setDefaultTextColor(QColor("#26384f"))
         title.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
         title.setTextWidth(150)
@@ -2854,9 +3040,9 @@ class AgentRunWindow(QDialog):
                 self._select_live_agent,
                 x,
                 y,
-                _display_agent_name(name),
-                _display_role(str(state.get("role") or "Agent")),
-                str(state.get("status") or "Waiting"),
+                translate_agent_name(name),
+                translate_agent_role(str(state.get("role") or "Agent")),
+                translate_agent_status(str(state.get("status") or "Waiting")),
                 self._shorten(str(state.get("objective") or ""), 96),
                 self._health_badge(name),
                 name == self._active_agent,
@@ -2990,14 +3176,14 @@ class AgentRunWindow(QDialog):
             self.agent_summary_view.clear()
             self.agent_activity_view.clear()
             return
-        history = "\n".join(f"- {item}" for item in state.get("history", []))
+        history = "\n".join(f"- {translate_agent_activity_text(item)}" for item in state.get("history", []))
         health = self._health_detail(name)
-        display_name = _display_agent_name(name)
-        display_role = _display_role(str(state.get("role") or "Agent"))
+        display_name = translate_agent_name(name)
+        display_role = translate_agent_role(str(state.get("role") or "Agent"))
         summary = (
             f"<h3>{html.escape(display_name)}</h3>"
             f"<p><b>{t('Role:')}</b> {html.escape(display_role)}<br>"
-            f"<b>{t('Status:')}</b> {html.escape(t(str(state.get('status') or 'Waiting')))}<br>"
+            f"<b>{t('Status:')}</b> {html.escape(translate_agent_status(str(state.get('status') or 'Waiting')))}<br>"
             f"<b>{t('Last tool:')}</b> {html.escape(str(state.get('tool') or t('None')))}</p>"
             f"<p><b>{t('Current objective')}</b><br>{html.escape(str(state.get('objective') or t('No current objective.')))}</p>"
             f"<p><b>{t('Model health')}</b><br>{html.escape(health)}</p>"
@@ -3009,39 +3195,23 @@ class AgentRunWindow(QDialog):
     def _health_badge(self, name: str) -> str:
         """Handle health badge for agent run window."""
         health = self._agent_health(name)
-        calls = int(health.get("calls", 0))
-        if not calls:
-            avg = "-"
-        else:
-            avg = f"{float(health.get('total_latency', 0.0)) / calls:.1f}s"
-        return (
-            f"avg {avg} | invalid {int(health.get('invalid_json', 0))} | "
-            f"repair {int(health.get('repairs', 0))} | fallback {int(health.get('fallbacks', 0))}"
-        )
+        return translate_agent_health_badge(health)
 
     def _health_detail(self, name: str) -> str:
         """Handle health detail for agent run window."""
-        health = self._agent_health(name)
-        calls = int(health.get("calls", 0))
-        avg = 0.0 if not calls else float(health.get("total_latency", 0.0)) / calls
-        return (
-            f"calls {calls}, average latency {avg:.1f}s, "
-            f"invalid JSON {int(health.get('invalid_json', 0))}, "
-            f"repairs {int(health.get('repairs', 0))}, "
-            f"fallbacks {int(health.get('fallbacks', 0))}"
-        )
+        return translate_agent_health_detail(self._agent_health(name))
 
     def _refresh_shared_board(self) -> None:
         """Refresh shared board."""
         if not hasattr(self, "shared_board_view"):
             return
         if not self._meeting_messages:
-            self._set_plain_text_preserving_scroll(self.shared_board_view, "No messages yet.")
+            self._set_plain_text_preserving_scroll(self.shared_board_view, t("No messages yet."))
         else:
             lines = []
             for item in self._meeting_messages:
-                lines.append(f"{item['from']} -> {item['to']}")
-                lines.append(item["message"])
+                lines.append(f"{translate_agent_name(item['from'])} -> {translate_agent_name(item['to'])}")
+                lines.append(translate_agent_activity_text(item["message"]))
                 lines.append("")
             self._set_plain_text_preserving_scroll(self.shared_board_view, "\n".join(lines).strip())
 
@@ -3062,19 +3232,19 @@ class AgentRunWindow(QDialog):
             prefix = f"{name} "
             if body.startswith(prefix):
                 label = self._agent_label(name, role)
-                return f'<span style="color:#8f8f9e;">{html.escape(stamp)}</span>{label} {html.escape(body[len(prefix):])}'
+                suffix = translate_agent_activity_text(body[len(prefix):])
+                return f'<span style="color:#8f8f9e;">{html.escape(stamp)}</span>{label} {html.escape(suffix)}'
             turn_marker = f": {name}"
             if body.startswith("agent turn ") and body.endswith(turn_marker):
-                before = body[: -len(name)]
-                return f'<span style="color:#8f8f9e;">{html.escape(stamp + before)}</span>{self._agent_label(name, role)}'
+                return f'<span style="color:#8f8f9e;">{html.escape(stamp)}</span>{html.escape(translate_agent_activity_text(body))}'
 
-        return html.escape(line)
+        return html.escape(translate_agent_log_line(line))
 
     @staticmethod
     def _agent_label(name: str, role: str) -> str:
         """Handle agent label for agent run window."""
-        safe_name = html.escape(_display_agent_name(name))
-        safe_role = html.escape(_display_role(role))
+        safe_name = html.escape(translate_agent_name(name))
+        safe_role = html.escape(translate_agent_role(role))
         if safe_role and safe_role.lower() != safe_name.lower():
             return f'<b>{safe_name}</b> <span style="color:#8f8f9e;">({safe_role})</span>'
         return f"<b>{safe_name}</b>"
@@ -3083,6 +3253,11 @@ class AgentRunWindow(QDialog):
         """Handle finished events."""
         self._run_dir = run_dir
         self.status_lbl.setText(f"{t('Finished. Log:')} {run_dir}")
+        self._show_completion_banner(
+            t("Agent Task Finished"),
+            f"{t('Final report is ready. Log:')} {run_dir}",
+            "success",
+        )
         self.cancel_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
         self.nudge_btn.setEnabled(False)
@@ -3091,6 +3266,12 @@ class AgentRunWindow(QDialog):
         self.retry_btn.setEnabled(True)
         self.continue_btn.setEnabled(True)
         self._load_finished_artifacts(Path(run_dir))
+        self.tabs.setCurrentWidget(self.final_view)
+        if self._approval_notice_callback:
+            self._approval_notice_callback(f"{t('Agent Task Finished')}\n{run_dir}", True)
+        self.raise_()
+        self.activateWindow()
+        QApplication.alert(self, 0)
 
     def _load_finished_artifacts(self, run_dir: Path) -> None:
         """Load finished artifacts."""
@@ -3100,6 +3281,35 @@ class AgentRunWindow(QDialog):
             self._set_plain_text_preserving_scroll(self.trace_view, trace_path.read_text(encoding="utf-8", errors="replace"))
         if final_path.exists():
             self._set_plain_text_preserving_scroll(self.final_view, final_path.read_text(encoding="utf-8", errors="replace"))
+
+    def _show_completion_banner(self, title: str, detail: str, kind: str) -> None:
+        """Show a prominent completion banner at the top of the run window."""
+        styles = {
+            "success": (
+                "#dcfce7",
+                "#16a34a",
+                "#14532d",
+            ),
+            "failed": (
+                "#fee2e2",
+                "#dc2626",
+                "#7f1d1d",
+            ),
+            "cancelled": (
+                "#e5e7eb",
+                "#6b7280",
+                "#111827",
+            ),
+        }
+        bg, border, text = styles.get(kind, styles["success"])
+        self.completion_banner.setStyleSheet(
+            f"QFrame#agentCompletionBanner {{ background: {bg}; border: 3px solid {border}; border-radius: 8px; }}"
+            f"QLabel {{ color: {text}; background: transparent; }}"
+            "QLabel#agentCompletionBannerTitle { font-size: 22px; font-weight: 800; }"
+        )
+        self.completion_banner_title.setText(title)
+        self.completion_banner_detail.setText(detail)
+        self.completion_banner.show()
 
     def _show_approval(self, request: dict, state: object) -> None:
         """Show approval."""
@@ -3111,10 +3321,9 @@ class AgentRunWindow(QDialog):
         self.approval_panel.show()
         self.status_lbl.setText(t("Permission needed"))
         if self._approval_notice_callback:
-            notice = f"Permission needed: {request.get('action')}"
+            notice = f"{t('Permission needed:')} {request.get('action')}"
             if detail_text:
                 notice += f"\n{detail_text}"
-            notice += "\nApprove or decline in the Agent Task window."
             self._approval_notice_callback(notice, False)
         self.raise_()
         QApplication.alert(self, 0)
@@ -3128,11 +3337,6 @@ class AgentRunWindow(QDialog):
         self._pending_approval = None
         self.approval_panel.setStyleSheet(self._approval_style_dark)
         self.approval_panel.hide()
-        if self._approval_notice_callback:
-            self._approval_notice_callback(
-                "Permission approved." if approved else "Permission declined.",
-                True,
-            )
 
     def _toggle_pause(self) -> None:
         """Handle toggle pause for agent run window."""

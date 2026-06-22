@@ -13,7 +13,7 @@ query = "read"
 response = "read"
 tools = true
 hotkeys = true
-ui = ["tray", "settings", "intents", "notifications"]
+ui = ["settings", "intents", "notifications"]
 
 events = ["app.startup", "response.after"]
 

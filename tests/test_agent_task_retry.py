@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 
-from core.agent.task_spec import continue_spec_from_run, role_responsibility, retry_spec_from_run
+from core.agent.runner import AgentTaskRunner
+from core.agent.task_spec import (
+    canonical_agent_name,
+    canonical_agent_role,
+    canonical_communication_phase,
+    continue_spec_from_run,
+    default_agent_specs,
+    default_communication_specs,
+    localize_agent_spec_if_default,
+    localize_communication_spec_if_default,
+    role_responsibility,
+    retry_spec_from_run,
+)
 
 
 class AgentTaskRetryTests(unittest.TestCase):
@@ -15,6 +28,83 @@ class AgentTaskRetryTests(unittest.TestCase):
     def test_researcher_role_has_default_responsibility(self):
         """Verify researcher role has default responsibility behavior."""
         self.assertIn("read-only context", role_responsibility("Researcher"))
+
+    def test_agent_defaults_follow_assistant_language(self):
+        """Verify built-in agent presets can be localized for model-facing specs."""
+        agents = default_agent_specs("Chinese (Traditional)")
+        communications = default_communication_specs("Chinese (Traditional)")
+
+        self.assertEqual(agents[0]["name"], "協調員")
+        self.assertEqual(agents[1]["name"], "建構者")
+        self.assertEqual(agents[1]["role"], "實作者")
+        self.assertIn("程式碼", agents[1]["responsibility"])
+        self.assertEqual(communications[0]["from_agent"], "協調員")
+        self.assertEqual(communications[0]["to_agent"], "建構者")
+        self.assertEqual(communications[0]["phase"], "規劃")
+        self.assertEqual(canonical_agent_name("建構者"), "Builder")
+        self.assertEqual(canonical_agent_role("實作者"), "Implementer")
+        self.assertEqual(canonical_communication_phase("規劃"), "Planning")
+
+    def test_agent_default_localization_preserves_custom_edits(self):
+        """Verify only built-in/default agent fields are localized."""
+        english = default_agent_specs("English")[1]
+        localized = localize_agent_spec_if_default(1, english, "Spanish")
+        custom = localize_agent_spec_if_default(
+            1,
+            {**english, "name": "Fixer", "responsibility": "Only touch tests."},
+            "Spanish",
+        )
+
+        self.assertEqual(localized["name"], "Constructor")
+        self.assertEqual(localized["role"], "Implementador")
+        self.assertIn("código", localized["responsibility"])
+        self.assertEqual(custom["name"], "Fixer")
+        self.assertEqual(custom["responsibility"], "Only touch tests.")
+        self.assertEqual(custom["role"], "Implementador")
+
+    def test_default_communication_routes_follow_custom_agent_names(self):
+        """Verify localized default communication routes use the current agent names."""
+        english_comm = default_communication_specs("English")[0]
+        localized = localize_communication_spec_if_default(
+            0,
+            english_comm,
+            "Chinese (Traditional)",
+            ["Lead", "Fixer", "Reviewer"],
+        )
+
+        self.assertEqual(localized["from_agent"], "Lead")
+        self.assertEqual(localized["to_agent"], "Fixer")
+        self.assertEqual(localized["phase"], "規劃")
+        self.assertIn("實作計畫", localized["message"])
+
+    def test_localized_roles_keep_runner_permissions(self):
+        """Verify localized built-in roles still map to runner capabilities."""
+        spec = SimpleNamespace(
+            allow_git=True,
+            git_permission_mode="auto",
+            allow_file_edit=True,
+            file_edit_permission_mode="auto",
+            allow_file_create=True,
+            file_create_permission_mode="auto",
+            allow_file_delete=False,
+            file_delete_permission_mode="never",
+            allow_shell=True,
+            shell_permission_mode="auto",
+        )
+
+        implementer_tools = AgentTaskRunner._allowed_tool_names(
+            spec,
+            active_agent={"name": "建構者", "role": "實作者"},
+        )
+        coordinator_tools = AgentTaskRunner._allowed_tool_names(
+            spec,
+            active_agent={"name": "協調員", "role": "協調員"},
+        )
+
+        self.assertIn("edit_file", implementer_tools)
+        self.assertIn("run_command", implementer_tools)
+        self.assertNotIn("edit_file", coordinator_tools)
+        self.assertNotIn("run_command", coordinator_tools)
 
     def test_retry_spec_loads_original_task(self):
         """Verify retry spec loads original task behavior."""
@@ -76,4 +166,3 @@ class AgentTaskRetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

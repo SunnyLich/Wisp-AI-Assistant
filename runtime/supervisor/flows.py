@@ -345,6 +345,10 @@ class FlowController:
         self.ui.on_event("ui.agent.history_requested", self._on_agent_history_requested)
         self.ui.on_event("ui.agent.run_requested", self._on_agent_run_requested)
         self.ui.on_event("ui.agent.cancel_requested", self._on_agent_cancel_requested)
+        self.ui.on_event("ui.agent.pause_requested", self._on_agent_pause_requested)
+        self.ui.on_event("ui.agent.resume_requested", self._on_agent_resume_requested)
+        self.ui.on_event("ui.agent.nudge", self._on_agent_nudge)
+        self.ui.on_event("ui.agent.permissions", self._on_agent_permissions)
         self.ui.on_event("ui.agent.approval.respond", self._on_agent_approval_respond)
         self.ui.on_event("ui.agent.history.refresh", self._on_agent_history_refresh)
         self.ui.on_event("ui.agent.history.read", self._on_agent_history_read)
@@ -535,6 +539,33 @@ class FlowController:
     def _on_agent_cancel_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle agent cancel requested events."""
         self._schedule(self.cancel_agent_task)
+
+    def _on_agent_pause_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle agent pause requested events."""
+        self._schedule(self.control_agent_task, {"action": "pause"})
+
+    def _on_agent_resume_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle agent resume requested events."""
+        self._schedule(self.control_agent_task, {"action": "resume"})
+
+    def _on_agent_nudge(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle agent nudge events."""
+        payload = data or {}
+        self._schedule(
+            self.control_agent_task,
+            {
+                "action": "nudge",
+                "target_agent": str(payload.get("target_agent") or payload.get("to") or "ALL"),
+                "message": str(payload.get("message") or ""),
+            },
+        )
+
+    def _on_agent_permissions(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle live agent permission updates."""
+        self._schedule(
+            self.control_agent_task,
+            {"action": "permissions", "permission_modes": dict((data or {}).get("permission_modes") or {})},
+        )
 
     def _on_agent_approval_respond(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle agent approval respond events."""
@@ -1101,174 +1132,11 @@ class FlowController:
         if isinstance(result, dict) and not result.get("started"):
             self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
 
-    def _health_row(
-        self,
-        name: str,
-        status: str,
-        message: str,
-        recommendation: str = "",
-    ) -> dict[str, str]:
-        """Build one setup/health report row."""
-        return {
-            "name": name,
-            "status": status if status in {"ok", "warn", "fail"} else "warn",
-            "message": message,
-            "recommendation": recommendation,
-        }
-
-    def _worker_ping_row(self, worker: WorkerLike, label: str) -> dict[str, str]:
-        result = self._safe_call(worker, "ping", timeout=5.0)
-        ok = isinstance(result, dict) and bool(result.get("pong"))
-        return self._health_row(
-            f"{label} worker",
-            "ok" if ok else "fail",
-            f"{label} worker responded." if ok else f"{label} worker did not respond.",
-            "" if ok else "Recommendation: restart Wisp and try the setup check again.",
-        )
-
-    def _llm_health_row(self) -> dict[str, str]:
-        import config
-
-        result = self._safe_call(
-            self.brain,
-            "brain.llm.test",
-            {
-                "provider": getattr(config, "LLM_PROVIDER", ""),
-                "model": getattr(config, "LLM_MODEL", ""),
-                "fallbacks": getattr(config, "LLM_FALLBACKS", ""),
-                "route_name": "LLM",
-                "include_fallbacks": False,
-            },
-            timeout=20.0,
-        )
-        if isinstance(result, dict) and result.get("ok"):
-            return self._health_row("LLM", "ok", str(result.get("message") or "LLM route responded."))
-        message = str(result.get("message") or "LLM route test did not respond.") if isinstance(result, dict) else "LLM route test did not respond."
-        return self._health_row(
-            "LLM",
-            "fail",
-            message,
-            "Recommendation: check the LLM provider, model, API key, or fallback settings.",
-        )
-
-    def _stt_health_row(self) -> dict[str, str]:
-        result = self._safe_call(self.audio, "audio.stt.is_ready", timeout=8.0)
-        ready = bool(result.get("ready")) if isinstance(result, dict) else False
-        message = str((result or {}).get("message") or (result or {}).get("backend") or "") if isinstance(result, dict) else ""
-        return self._health_row(
-            "STT",
-            "ok",
-            message or (
-                "Speech recognition is ready."
-                if ready
-                else "Speech recognition will warm up on first voice or dictation use."
-            ),
-            "",
-        )
-
-    def _tts_health_row(self) -> dict[str, str]:
-        import config
-
-        provider = str(getattr(config, "TTS_PROVIDER", "none") or "none").strip().lower()
-        if provider in {"", "none"}:
-            return self._health_row("TTS", "ok", "TTS is off; replies will stay text-only.")
-        result = self._safe_call(self.audio, "audio.tts.synthesize", {"text": "Wisp setup check."}, timeout=30.0)
-        ok = isinstance(result, dict) and bool(result.get("path"))
-        message = str((result or {}).get("provider") or provider) if isinstance(result, dict) else provider
-        return self._health_row(
-            "TTS",
-            "ok" if ok else "fail",
-            f"TTS synthesis responded with {message}." if ok else "TTS synthesis did not return audio.",
-            "" if ok else "Recommendation: check the TTS provider, voice, and API key in Settings.",
-        )
-
-    def _native_permission_rows(self) -> list[dict[str, str]]:
-        result = self._safe_call(self.native, "native.permissions.snapshot", timeout=8.0)
-        if not isinstance(result, dict):
-            return [
-                self._health_row(
-                    "Native permissions",
-                    "fail",
-                    "Native permission check did not respond.",
-                    "Recommendation: restart Wisp and try Health Status again.",
-                )
-            ]
-
-        def _permission_status(value: Any) -> str:
-            if value in {True, "authorized"}:
-                return "ok"
-            if value is False or value in {"denied", "restricted"}:
-                return "fail"
-            return "warn"
-
-        accessibility = result.get("accessibility")
-        screen = result.get("screen_recording")
-        microphone = result.get("microphone")
-        return [
-            self._health_row(
-                "Context capture",
-                _permission_status(accessibility),
-                f"Accessibility permission: {accessibility}.",
-                "" if accessibility in {True, None} else "Recommendation: allow Accessibility/Input Monitoring permissions for Wisp.",
-            ),
-            self._health_row(
-                "Screenshot capture",
-                _permission_status(screen),
-                f"Screen recording permission: {screen}.",
-                "" if screen in {True, None} else "Recommendation: allow Screen Recording permission for Wisp.",
-            ),
-            self._health_row(
-                "Microphone",
-                _permission_status(microphone),
-                f"Microphone permission: {microphone}.",
-                "" if microphone in {"authorized", "unavailable"} else "Recommendation: allow Microphone permission for Wisp.",
-            ),
-        ]
-
-    def _privacy_health_rows(self) -> list[dict[str, str]]:
-        report = self._last_privacy_report if isinstance(self._last_privacy_report, dict) else {}
-        count = int(report.get("count") or 0)
-        if not count:
-            return [self._health_row("Privacy", "ok", "No privacy redactions in the latest request.")]
-        categories = report.get("categories") if isinstance(report.get("categories"), dict) else {}
-        summary = ", ".join(f"{key}: {value}" for key, value in sorted(categories.items())) or f"{count} item(s)"
-        return [
-            self._health_row(
-                "Privacy",
-                "warn",
-                f"Latest request detected and censored {count} item(s): {summary}.",
-                "Recommendation: open the privacy report to review safe redacted previews.",
-            )
-        ]
-
-    def _collect_health_rows(self) -> list[dict[str, str]]:
-        from core.setup_check import run_setup_check
-
-        rows = list(run_setup_check())
-        rows.extend(
-            [
-                self._worker_ping_row(self.ui, "UI"),
-                self._worker_ping_row(self.brain, "Brain"),
-                self._worker_ping_row(self.audio, "Audio"),
-                self._worker_ping_row(self.native, "Native"),
-                self._llm_health_row(),
-                self._stt_health_row(),
-                self._tts_health_row(),
-            ]
-        )
-        rows.extend(self._native_permission_rows())
-        rows.extend(self._privacy_health_rows())
-        return rows
-
     def _on_health_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
         from core.setup_check import run_setup_check
 
-        if isinstance(data, dict) and data.get("source") == "settings":
-            rows = list(run_setup_check())
-            self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Setup check"}, timeout=5.0)
-        else:
-            rows = self._collect_health_rows()
-            self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Health Status"}, timeout=5.0)
+        rows = list(run_setup_check())
+        self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Setup check"}, timeout=5.0)
         warnings = [row for row in rows if row.get("status") in {"warn", "fail"}]
         if warnings:
             first = warnings[0]
@@ -1743,7 +1611,17 @@ class FlowController:
             elif event == "agent.trace":
                 self._safe_call(self.ui, "ui.agent.trace", params, timeout=30.0)
             elif event == "agent.approval.request":
-                self._safe_call(self.ui, "ui.agent.approval.request", params, timeout=30.0)
+                result = self._safe_call(self.ui, "ui.agent.approval.request", params, timeout=30.0) or {}
+                accepted = bool(result.get("accepted")) if isinstance(result, dict) else False
+                approval_id = str(params.get("approval_id") or "").strip()
+                if approval_id and not accepted:
+                    self._notice("Agent approval could not be shown; declining the request.")
+                    self._safe_call(
+                        self.brain,
+                        "brain.agent.approval.respond",
+                        {"approval_id": approval_id, "approved": False},
+                        timeout=30.0,
+                    )
             elif event == "agent.done":
                 done_seen = True
                 self._safe_call(self.ui, "ui.agent.done", params, timeout=30.0)
@@ -1785,6 +1663,19 @@ class FlowController:
             self._notice("Agent task cancellation requested.")
         else:
             self._notice("Agent task was not running.")
+
+    def control_agent_task(self, data: dict[str, Any]) -> None:
+        """Send a cooperative control command to the active agent task."""
+        with self._lock:
+            target = self._active_agent_stream_id
+        if target is None:
+            self._notice("No agent task is running.")
+            return
+        payload = dict(data or {})
+        payload["target"] = target
+        result = self._safe_call(self.brain, "brain.agent.control", payload, timeout=30.0) or {}
+        if isinstance(result, dict) and result.get("message"):
+            self._notice(str(result["message"]))
 
     def respond_agent_approval(self, data: dict[str, Any]) -> None:
         """Handle respond agent approval for flow controller."""

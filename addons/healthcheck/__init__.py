@@ -76,7 +76,7 @@ def on_event(event: str, payload: dict) -> dict:
 
 def get_tray_actions() -> list[dict]:
     """Return tray actions."""
-    return [{"label": "Healthcheck: log a line", "callback": _on_tray_click}]
+    return []
 
 
 def _on_tray_click() -> None:

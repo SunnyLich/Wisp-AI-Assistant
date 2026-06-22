@@ -79,12 +79,14 @@ _ACCENT_BG_60 = "#55558c"
 _WHITE_BG_8 = "#24242c"
 _WHITE_BG_10 = "#282832"
 _WHITE_BG_12 = "#2c2c36"
+_PROJECT_HEADER_BG = "#181820"
 _REVERT_DELAY_MS = 3000   # how long bold words stay highlighted after TTS finishes
 _CHAT_RENDER_CHAR_LIMIT = 24_000
 _CONTEXT_TOOLTIP_CHAR_LIMIT = 4_000
 _ATTACHMENT_CONTEXT_CHAR_LIMIT = 40_000
 _SIDEBAR_MENU_W = 32
 _SIDEBAR_FADE_W = 34
+_SIDEBAR_GENERAL_GROUP_GAP = 8
 
 
 def _ui_font(point_size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
@@ -805,6 +807,7 @@ class ChatWindow(QWidget):
         self._context_preview_id = ""
         self._conversation_menu: QMenu | None = None
         self.setAcceptDrops(True)
+        self._opened_with_explicit_active_idx = active_idx is not None
         if active_idx is not None and 0 <= active_idx < len(conversations):
             self._active_idx = active_idx
         else:
@@ -833,7 +836,11 @@ class ChatWindow(QWidget):
         if start_new:
             QTimer.singleShot(0, lambda: self.start_new_conversation(auto_message=auto_message))
         elif conversations:
-            if self._on_select and 0 <= self._active_idx < len(self._conversations):
+            if (
+                self._opened_with_explicit_active_idx
+                and self._on_select
+                and 0 <= self._active_idx < len(self._conversations)
+            ):
                 self._on_select(self._active_idx)
             QTimer.singleShot(0, self.request_context_preview)
             if auto_message:
@@ -867,24 +874,35 @@ class ChatWindow(QWidget):
         title = QLabel(t("Chat"))
         title.setFont(_ui_font(10, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT}; background: transparent;")
-        new_chat = QPushButton(t("New"))
-        new_chat.setFixedSize(52, 26)
+        h.addWidget(title)
+        h.addStretch()
+        return bar
+
+    _NEW_PROJECT_SENTINEL = "__new_project__"
+
+    def _project_display_name(self, project: dict | None, fallback: str | None = None) -> str:
+        """Return a UI label for a project, translating the built-in General bucket."""
+        project = project or {}
+        if str(project.get("id") or "") == _GENERAL_PROJECT_ID:
+            return t("General")
+        name = str(project.get("name") or "").strip()
+        return name or fallback or t("Project")
+
+    def _make_new_chat_button(self) -> QPushButton:
+        """Create the sidebar new-chat button."""
+        new_chat = QPushButton(t("New chat"))
+        new_chat.setFixedHeight(28)
         new_chat.setToolTip(t("Start a new conversation (Ctrl+N)"))
         new_chat.setStyleSheet(
             f"QPushButton {{ background: {_ACCENT_BG_18}; color: {_ACCENT};"
-            f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 9pt; }}"
+            f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 9pt;"
+            " font-weight: 700; }}"
             f"QPushButton:hover {{ background: {_ACCENT_BG_28}; }}"
             f"QPushButton:disabled {{ color: #666; border-color: {_WHITE_BG_10}; }}"
         )
         new_chat.clicked.connect(self.start_new_conversation)
         self._new_chat_btn = new_chat
-        h.addWidget(title)
-        h.addStretch()
-        h.addWidget(self._make_project_selector())
-        h.addWidget(new_chat)
-        return bar
-
-    _NEW_PROJECT_SENTINEL = "__new_project__"
+        return new_chat
 
     def _make_project_selector(self) -> QWidget:
         """Dropdown that scopes new conversations (and memory) to a project."""
@@ -910,7 +928,7 @@ class ChatWindow(QWidget):
         combo.blockSignals(True)
         combo.clear()
         for proj in self._projects:
-            combo.addItem(proj.get("name", t("General")), proj.get("id"))
+            combo.addItem(self._project_display_name(proj), proj.get("id"))
         combo.addItem(t("＋ New project…"), self._NEW_PROJECT_SENTINEL)
         idx = combo.findData(self._active_project_id)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -964,6 +982,15 @@ class ChatWindow(QWidget):
         )
         vl.addWidget(hdr)
 
+        controls = QWidget()
+        controls.setStyleSheet(f"background: {_SIDEBAR_BG}; border-bottom: 1px solid {_BORDER};")
+        controls_l = QVBoxLayout(controls)
+        controls_l.setContentsMargins(8, 8, 8, 8)
+        controls_l.setSpacing(6)
+        controls_l.addWidget(self._make_project_selector())
+        controls_l.addWidget(self._make_new_chat_button())
+        vl.addWidget(controls)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -996,15 +1023,62 @@ class ChatWindow(QWidget):
             )
             self._sidebar_layout.addWidget(lbl)
         else:
-            # Pinned conversations float to the top; within each group the
-            # newest is first. sort() is stable so it preserves recency order.
-            order = list(range(len(self._conversations) - 1, -1, -1))
-            order.sort(key=lambda ix: not self._conversations[ix].get("pinned"))
-            for real_idx in order:
-                row, title_btn = self._make_sidebar_row(real_idx, self._conversations[real_idx])
-                self._sidebar_layout.addWidget(row)
-                self._sidebar_btns.append((real_idx, title_btn))
+            grouped = self._grouped_sidebar_indices()
+            rows_added = False
+            for project_id, project_name, indices in grouped:
+                if not indices:
+                    continue
+                if project_id != _GENERAL_PROJECT_ID:
+                    self._sidebar_layout.addWidget(self._make_sidebar_project_header(project_name))
+                elif rows_added:
+                    self._sidebar_layout.addSpacing(_SIDEBAR_GENERAL_GROUP_GAP)
+                for real_idx in indices:
+                    row, title_btn = self._make_sidebar_row(real_idx, self._conversations[real_idx])
+                    self._sidebar_layout.addWidget(row)
+                    self._sidebar_btns.append((real_idx, title_btn))
+                rows_added = True
         self._sidebar_layout.addStretch()
+
+    def _grouped_sidebar_indices(self) -> list[tuple[str, str, list[int]]]:
+        """Return conversation indices grouped by project for the sidebar."""
+        by_project: dict[str, list[int]] = {}
+        valid_projects = {str(p.get("id") or "") for p in self._projects}
+        for idx in range(len(self._conversations) - 1, -1, -1):
+            raw_pid = str(self._conversations[idx].get("project_id") or _GENERAL_PROJECT_ID)
+            project_id = raw_pid if raw_pid in valid_projects else _GENERAL_PROJECT_ID
+            by_project.setdefault(project_id, []).append(idx)
+
+        def sort_group(indices: list[int]) -> list[int]:
+            # Pinned conversations float within their project; each subgroup is newest first.
+            return sorted(indices, key=lambda ix: not self._conversations[ix].get("pinned"))
+
+        groups: list[tuple[str, str, list[int]]] = []
+        for proj in self._projects:
+            project_id = str(proj.get("id") or "")
+            if not project_id or project_id == _GENERAL_PROJECT_ID:
+                continue
+            indices = sort_group(by_project.pop(project_id, []))
+            if indices:
+                groups.append((project_id, self._project_display_name(proj), indices))
+
+        general = sort_group(by_project.pop(_GENERAL_PROJECT_ID, []))
+        for unknown_indices in by_project.values():
+            general.extend(sort_group(unknown_indices))
+        if general:
+            groups.append((_GENERAL_PROJECT_ID, t("General"), general))
+        return groups
+
+    def _make_sidebar_project_header(self, name: str) -> QLabel:
+        """Create a compact project heading for grouped history."""
+        lbl = QLabel(f"  {name}")
+        lbl.setFixedHeight(28)
+        lbl.setStyleSheet(
+            f"QLabel {{ background: {_PROJECT_HEADER_BG}; color: {_ACCENT};"
+            f" border-top: 1px solid {_BORDER}; border-bottom: 1px solid {_BORDER};"
+            " font-size: 8pt; font-weight: 700; padding-left: 2px; }}"
+        )
+        lbl.setToolTip(name)
+        return lbl
 
     def _conversation_title(self, idx: int, conv: dict) -> str:
         """Handle conversation title for chat window."""
@@ -1069,7 +1143,7 @@ class ChatWindow(QWidget):
         project_menu = menu.addMenu(t("Add to project"))
         for proj in self._projects:
             pid = proj.get("id")
-            name = proj.get("name", "General")
+            name = self._project_display_name(proj)
             act = project_menu.addAction(name, lambda p=pid: self._assign_project(idx, p))
             act.setCheckable(True)
             act.setChecked(conv.get("project_id", _GENERAL_PROJECT_ID) == pid)
@@ -1302,14 +1376,15 @@ class ChatWindow(QWidget):
         if auto_message:
             QTimer.singleShot(0, lambda: self._send(auto_message))
 
-    def ingest_new_conversations(self):
+    def ingest_new_conversations(self, *, select_new: bool = False):
         """Build pages for any conversations appended to the shared list since the
         window was built (e.g. a query started via hotkey while the chat was open).
 
         The new tab is added to the history sidebar but NOT selected — the user
         stays on whatever tab they were reading. (Exception: if the window was
         showing the empty-history placeholder, the newest tab is shown so the
-        window isn't left blank.)"""
+        window isn't left blank.) Pass select_new when the new chat was created
+        by an external prompt that the user expects to see immediately."""
         from_placeholder = self._has_placeholder and self._conversations
         if from_placeholder:
             placeholder = self._stack.widget(0)
@@ -1329,7 +1404,7 @@ class ChatWindow(QWidget):
             return
         self._input_frame.setEnabled(True)
         self._rebuild_sidebar()
-        if from_placeholder:
+        if from_placeholder or select_new:
             self._switch(len(self._conversations) - 1)
 
     def _make_page_placeholder(self) -> QLabel:
@@ -2206,6 +2281,8 @@ class ChatWindow(QWidget):
         """Send the chat window workflow."""
         if self._streaming or not self._conversations:
             return
+        if self._on_select and 0 <= self._active_idx < len(self._conversations):
+            self._on_select(self._active_idx)
         self._streaming = True
         self._send_btn.setEnabled(False)
         self._new_chat_btn.setEnabled(False)

@@ -1940,20 +1940,34 @@ def test_agent_permission_notice_and_bubble_notice_workflow(qapp, tmp_path: Path
         window.show()
         qapp.processEvents()
         approval_state = {"event": threading.Event(), "approved": False}
+        notices.clear()
         window._show_approval({"action": "write file", "details": {"path": "README.md"}}, approval_state)
         qapp.processEvents()
         assert window.approval_panel.isVisible()
         assert "Permission needed" in window.approval_label.text()
-        assert notices[-1][0].startswith("Permission needed: write file")
-        assert notices[-1][1] is False
+        permission_notices = [notice for notice in notices if notice[0].startswith("Permission needed: write file")]
+        assert permission_notices
+        assert permission_notices[-1][1] is False
 
         window._finish_approval(False)
         assert approval_state["event"].wait(0.1)
         assert approval_state["approved"] is False
-        assert notices[-1] == ("Permission declined.", True)
+        assert all(notice[0] != "Permission declined." for notice in notices)
+
+        actions: list[str] = []
+        bubble.show_notice(
+            "Permission needed.",
+            timeout_ms=0,
+            actions=[("Approve", lambda: actions.append("approve")), ("Decline", lambda: actions.append("decline"))],
+        )
+        assert [label for label, _callback in bubble._notice_actions] == ["Approve", "Decline"]
+        assert len(bubble._action_rects) == 2
+        bubble._notice_actions[0][1]()
+        assert actions == ["approve"]
 
         bubble.show_notice("Browser permission denied.", timeout_ms=20)
         assert "Browser permission denied." in bubble._full_text
+        assert bubble._notice_actions == []
         _pump_until(qapp, lambda: not bubble.isVisible(), timeout=1.0)
     finally:
         window.deleteLater()

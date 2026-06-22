@@ -72,8 +72,8 @@ def test_final_only_reply_starts_visible_at_beginning():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_multi_chunk_reply_follows_latest_text_before_audio():
-    """Verify streamed chunks show the latest arrived text before audio tracking."""
+def test_multi_chunk_reply_follows_latest_text_before_first_highlight():
+    """Verify early chunks can keep the newest text visible before reading starts."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -89,13 +89,47 @@ def test_multi_chunk_reply_follows_latest_text_before_audio():
 
     try:
         bubble.append_chunk("one two three four five ")
-        assert "one" in " ".join(bubble._lines)
+        assert bubble._revealed_count == 0
 
         bubble.append_chunk("six seven eight nine ten eleven")
 
         visible = " ".join(bubble._lines)
         assert "eleven" in visible
         assert "one two" not in visible
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_multi_chunk_reply_follows_read_highlight_once_reveal_starts():
+    """Verify later chunks do not pull the bubble away from the read position."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_LINES = 1
+    config.BUBBLE_WIDTH = 260
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("one two three four five ")
+        bubble._revealed_count = 1
+        bubble._rewrap()
+        assert "one" in " ".join(bubble._lines)
+
+        bubble.append_chunk("six seven eight nine ten eleven")
+
+        visible = " ".join(bubble._lines)
+        assert "one" in visible
+        assert "eleven" not in visible
     finally:
         config.BUBBLE_LINES = old_lines
         config.BUBBLE_WIDTH = old_width
