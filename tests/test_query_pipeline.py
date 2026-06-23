@@ -187,6 +187,62 @@ class BuildContextTests(unittest.TestCase):
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz1234567890", rendered)
 
     @pytest.mark.workflow
+    def test_privacy_mode_redacts_common_provider_tokens(self):
+        """Verify provider-specific token formats are censored."""
+        github = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcd"
+        slack = "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwxyz"
+        stripe = "sk_live_abcdefghijklmnopqrstuvwxyz123456"
+        google = "AIza" + ("A" * 35)
+        npm = "npm_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ123456"
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "signaturepart1234567890"
+        )
+        discord = "MTIzNDU2Nzg5MDEyMzQ1Njc4.ABCDEF.abcdefghijklmnopqrstuvwxyz123"
+        out = _build(
+            selected="\n".join(
+                [
+                    github,
+                    "AKIAIOSFODNN7EXAMPLE",
+                    slack,
+                    stripe,
+                    google,
+                    npm,
+                    jwt,
+                    discord,
+                ]
+            )
+        )
+
+        self.assertGreaterEqual(out.ambient_ctx.count("[API_KEY]"), 6)
+        self.assertGreaterEqual(out.ambient_ctx.count("[BEARER_TOKEN]"), 2)
+        for raw in (github, slack, stripe, google, npm, jwt, discord, "AKIAIOSFODNN7EXAMPLE"):
+            self.assertNotIn(raw, out.ambient_ctx)
+            self.assertNotIn(raw, repr(out.privacy_report))
+        self.assertGreaterEqual(out.privacy_report["categories"]["api_key"], 6)
+        self.assertGreaterEqual(out.privacy_report["categories"]["bearer_token"], 2)
+
+    @pytest.mark.workflow
+    def test_privacy_mode_redacts_url_credential_params(self):
+        """Verify sensitive URL query values are censored without hiding safe params."""
+        out = _build(
+            selected=(
+                "Open https://example.test/callback?access_token=abc123"
+                "&refresh_token=def456&code=secret-code&state=visible"
+            )
+        )
+
+        self.assertIn("https://example.test/callback?access_token=[URL_CREDENTIAL]", out.ambient_ctx)
+        self.assertIn("&refresh_token=[URL_CREDENTIAL]", out.ambient_ctx)
+        self.assertIn("&code=[URL_CREDENTIAL]", out.ambient_ctx)
+        self.assertIn("&state=visible", out.ambient_ctx)
+        self.assertNotIn("abc123", out.ambient_ctx)
+        self.assertNotIn("def456", out.ambient_ctx)
+        self.assertNotIn("secret-code", out.ambient_ctx)
+        self.assertEqual(out.privacy_report["categories"]["url_credential"], 3)
+
+    @pytest.mark.workflow
     def test_privacy_mode_can_be_disabled_for_context_building(self):
         """Verify privacy mode can be disabled for context building behavior."""
         out = _build(

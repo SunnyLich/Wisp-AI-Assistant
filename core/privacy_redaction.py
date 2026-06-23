@@ -27,8 +27,39 @@ REDACTION_PATTERNS: tuple[RedactionPattern, ...] = (
         ),
         "[PRIVATE_KEY]",
     ),
+    RedactionPattern(
+        "url_credential",
+        re.compile(
+            r"(?i)([?&;](?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|"
+            r"token|api[_-]?key|key|signature|sig|auth|code)=)[^&#\s]+"
+        ),
+        r"\1[URL_CREDENTIAL]",
+    ),
     RedactionPattern("api_key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b"), "[API_KEY]"),
     RedactionPattern("api_key", re.compile(r"\bsk-ant-[A-Za-z0-9\-_]{20,}\b"), "[API_KEY]"),
+    RedactionPattern(
+        "api_key",
+        re.compile(r"\b(?:gh[opusr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{20,})\b"),
+        "[API_KEY]",
+    ),
+    RedactionPattern("api_key", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "[API_KEY]"),
+    RedactionPattern("api_key", re.compile(r"\bxox(?:[abprs]|o)-[A-Za-z0-9-]{20,}\b"), "[API_KEY]"),
+    RedactionPattern("api_key", re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"), "[API_KEY]"),
+    RedactionPattern("api_key", re.compile(r"\bAIza[0-9A-Za-z\-_]{35}\b"), "[API_KEY]"),
+    RedactionPattern("api_key", re.compile(r"\bnpm_[A-Za-z0-9]{36,}\b"), "[API_KEY]"),
+    RedactionPattern(
+        "bearer_token",
+        re.compile(
+            r"\b(?:mfa\.[A-Za-z0-9_-]{20,}|"
+            r"[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,})\b"
+        ),
+        "[BEARER_TOKEN]",
+    ),
+    RedactionPattern(
+        "bearer_token",
+        re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+        "[BEARER_TOKEN]",
+    ),
     RedactionPattern(
         "bearer_token",
         re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-_.~+/=]{20,}"),

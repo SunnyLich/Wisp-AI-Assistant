@@ -55,12 +55,60 @@
       <translation>隱私遮蔽報告</translation>
     </message>
     <message>
+      <source>Privacy: {count} redacted</source>
+      <translation>隱私：已遮蔽 {count} 項</translation>
+    </message>
+    <message>
+      <source>Privacy: {count} item(s) detected and censored.</source>
+      <translation>隱私：已偵測並遮蔽 {count} 項。</translation>
+    </message>
+    <message>
       <source>item(s) detected and censored.</source>
       <translation>項已偵測並遮蔽。</translation>
     </message>
     <message>
       <source>Sensitive data</source>
       <translation>敏感資料</translation>
+    </message>
+    <message>
+      <source>Bearer token</source>
+      <translation>Bearer 權杖</translation>
+    </message>
+    <message>
+      <source>Card number</source>
+      <translation>卡號</translation>
+    </message>
+    <message>
+      <source>Credential</source>
+      <translation>憑證</translation>
+    </message>
+    <message>
+      <source>Email</source>
+      <translation>電子郵件</translation>
+    </message>
+    <message>
+      <source>Private key</source>
+      <translation>私密金鑰</translation>
+    </message>
+    <message>
+      <source>SSN</source>
+      <translation>社會安全號</translation>
+    </message>
+    <message>
+      <source>URL credential</source>
+      <translation>URL 憑證</translation>
+    </message>
+    <message>
+      <source>Active document</source>
+      <translation>作用中文件</translation>
+    </message>
+    <message>
+      <source>Document</source>
+      <translation>文件</translation>
+    </message>
+    <message>
+      <source>Dropped file</source>
+      <translation>拖放檔案</translation>
     </message>
     <message>
       <source>Additional redactions were hidden from this compact report.</source>

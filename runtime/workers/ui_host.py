@@ -51,11 +51,51 @@ _STATUS_LABELS = {
     "fail": "FAIL",
 }
 
+_PRIVACY_CATEGORY_LABELS = {
+    "api_key": "API key",
+    "bearer_token": "Bearer token",
+    "card_number": "Card number",
+    "credential": "Credential",
+    "email": "Email",
+    "private_key": "Private key",
+    "ssn": "SSN",
+    "url_credential": "URL credential",
+}
+
+_PRIVACY_SOURCE_LABELS = {
+    "active_document": "Active document",
+    "ambient": "App",
+    "buffered_context": "Context",
+    "clipboard": "Clipboard",
+    "prompt": "Prompt",
+    "selection": "Selection",
+}
+
 
 def _context_display_label(label: str) -> str:
     """Translate built-in context source labels while preserving user labels."""
     text = str(label or "Context")
     return t(text) if text in _CONTEXT_SOURCE_LABELS else text
+
+
+def _privacy_category_label(category: str) -> str:
+    """Translate privacy report category keys into user-facing labels."""
+    text = str(category or "Sensitive data").strip()
+    label = _PRIVACY_CATEGORY_LABELS.get(text.lower(), text or "Sensitive data")
+    return t(label)
+
+
+def _privacy_source_label(source: str) -> str:
+    """Translate privacy report source keys while preserving file/user labels."""
+    text = str(source or "Context").strip()
+    lowered = text.lower()
+    if lowered.startswith("document:"):
+        return f"{t('Document')}: {text.split(':', 1)[1].strip()}"
+    if lowered.startswith("dropped:"):
+        return f"{t('Dropped file')}: {text.split(':', 1)[1].strip()}"
+    if lowered in _PRIVACY_SOURCE_LABELS:
+        return t(_PRIVACY_SOURCE_LABELS[lowered])
+    return _context_display_label(text)
 
 
 def _mac_status_text(status: str) -> str:
@@ -3040,8 +3080,8 @@ class QtProtocolHost:
         items = [item for item in (report.get("items") or []) if isinstance(item, dict)]
         lines = [t("Privacy redaction report"), f"{count} {t('item(s) detected and censored.')}"]
         for item in items[:8]:
-            category = t(str(item.get("category") or "Sensitive data"))
-            source = t(str(item.get("source") or "Context"))
+            category = _privacy_category_label(str(item.get("category") or "Sensitive data"))
+            source = _privacy_source_label(str(item.get("source") or "Context"))
             preview = str(item.get("preview") or item.get("replacement") or "[redacted]")
             lines.append(f"{category} - {source}: {preview}")
         if count > len(items[:8]):

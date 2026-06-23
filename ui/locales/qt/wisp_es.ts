@@ -55,12 +55,60 @@
       <translation>Informe de censura de privacidad</translation>
     </message>
     <message>
+      <source>Privacy: {count} redacted</source>
+      <translation>Privacidad: {count} censurados</translation>
+    </message>
+    <message>
+      <source>Privacy: {count} item(s) detected and censored.</source>
+      <translation>Privacidad: {count} elemento(s) detectados y censurados.</translation>
+    </message>
+    <message>
       <source>item(s) detected and censored.</source>
       <translation>elemento(s) detectados y censurados.</translation>
     </message>
     <message>
       <source>Sensitive data</source>
       <translation>Datos sensibles</translation>
+    </message>
+    <message>
+      <source>Bearer token</source>
+      <translation>Token Bearer</translation>
+    </message>
+    <message>
+      <source>Card number</source>
+      <translation>Numero de tarjeta</translation>
+    </message>
+    <message>
+      <source>Credential</source>
+      <translation>Credencial</translation>
+    </message>
+    <message>
+      <source>Email</source>
+      <translation>Correo electronico</translation>
+    </message>
+    <message>
+      <source>Private key</source>
+      <translation>Clave privada</translation>
+    </message>
+    <message>
+      <source>SSN</source>
+      <translation>NSS</translation>
+    </message>
+    <message>
+      <source>URL credential</source>
+      <translation>Credencial de URL</translation>
+    </message>
+    <message>
+      <source>Active document</source>
+      <translation>Documento activo</translation>
+    </message>
+    <message>
+      <source>Document</source>
+      <translation>Documento</translation>
+    </message>
+    <message>
+      <source>Dropped file</source>
+      <translation>Archivo soltado</translation>
     </message>
     <message>
       <source>Additional redactions were hidden from this compact report.</source>
@@ -1822,7 +1870,7 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
     </message>
     <message>
       <source>Prompt</source>
-      <translation>Prompt</translation>
+      <translation>Instruccion</translation>
     </message>
     <message>
       <source>Prompt </source>

@@ -55,12 +55,60 @@
       <translation>Rapport de masquage de confidentialite</translation>
     </message>
     <message>
+      <source>Privacy: {count} redacted</source>
+      <translation>Confidentialite : {count} masques</translation>
+    </message>
+    <message>
+      <source>Privacy: {count} item(s) detected and censored.</source>
+      <translation>Confidentialite : {count} element(s) detectes et masques.</translation>
+    </message>
+    <message>
       <source>item(s) detected and censored.</source>
       <translation>element(s) detectes et masques.</translation>
     </message>
     <message>
       <source>Sensitive data</source>
       <translation>Donnees sensibles</translation>
+    </message>
+    <message>
+      <source>Bearer token</source>
+      <translation>Jeton Bearer</translation>
+    </message>
+    <message>
+      <source>Card number</source>
+      <translation>Numero de carte</translation>
+    </message>
+    <message>
+      <source>Credential</source>
+      <translation>Identifiant</translation>
+    </message>
+    <message>
+      <source>Email</source>
+      <translation>E-mail</translation>
+    </message>
+    <message>
+      <source>Private key</source>
+      <translation>Cle privee</translation>
+    </message>
+    <message>
+      <source>SSN</source>
+      <translation>Numero SSN</translation>
+    </message>
+    <message>
+      <source>URL credential</source>
+      <translation>Identifiant d'URL</translation>
+    </message>
+    <message>
+      <source>Active document</source>
+      <translation>Document actif</translation>
+    </message>
+    <message>
+      <source>Document</source>
+      <translation>Document</translation>
+    </message>
+    <message>
+      <source>Dropped file</source>
+      <translation>Fichier depose</translation>
     </message>
     <message>
       <source>Additional redactions were hidden from this compact report.</source>
@@ -1822,7 +1870,7 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
     </message>
     <message>
       <source>Prompt</source>
-      <translation>Prompt</translation>
+      <translation>Invite</translation>
     </message>
     <message>
       <source>Prompt </source>

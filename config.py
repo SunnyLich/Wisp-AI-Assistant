@@ -798,9 +798,9 @@ def _load_config() -> None:
     HOTKEY_SNIP          = os.getenv("HOTKEY_SNIP",          "ctrl+alt+q")
     HOTKEY_VOICE         = os.getenv("HOTKEY_VOICE",         "f9")
     # Push-to-talk dictation: hold to transcribe straight into the focused text
-    # field (no assistant). Empty = disabled. DICTATE_MODE: "raw" pastes the
+    # field (no assistant). Set empty to disable. DICTATE_MODE: "raw" pastes the
     # transcript verbatim; "llm" runs it through the LLM for punctuation/cleanup.
-    HOTKEY_DICTATE       = os.getenv("HOTKEY_DICTATE",       "")
+    HOTKEY_DICTATE       = os.getenv("HOTKEY_DICTATE",       "f8")
     DICTATE_MODE         = os.getenv("DICTATE_MODE",         "raw")
     VOICE_TRANSCRIPT_CONFIRM = env_bool("VOICE_TRANSCRIPT_CONFIRM", False)
     INTENT_CONTEXT_TOGGLE_KEYS = _intent_context_toggle_keys(

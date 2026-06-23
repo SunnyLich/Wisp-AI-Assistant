@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from runtime.supervisor import tool_modes
+from ui.i18n import t
 
 log = logging.getLogger("wisp.runtime.flows")
 _INTERACTIVE_LLM_TIMEOUT_SECONDS = 120.0
@@ -1897,7 +1898,14 @@ class FlowController:
             self._safe_call(
                 self.ui,
                 "ui.context.summary",
-                {"items": [{"label": f"Privacy: {privacy_count} redacted", "type": "privacy"}]},
+                {
+                    "items": [
+                        {
+                            "label": t("Privacy: {count} redacted").format(count=privacy_count),
+                            "type": "privacy",
+                        }
+                    ]
+                },
                 timeout=30.0,
             )
             self._safe_call(
@@ -2991,7 +2999,7 @@ class FlowController:
         """Append detected-and-censored privacy detail to a context warning."""
         if redactions <= 0:
             return warning
-        privacy = f"Privacy: {redactions} item{'s' if redactions != 1 else ''} detected and censored."
+        privacy = t("Privacy: {count} item(s) detected and censored.").format(count=redactions)
         return f"{warning}\n\n{privacy}" if warning else privacy
 
     def _intent_context_items(self, pending: PendingInvocation | None) -> list[dict[str, Any]]:

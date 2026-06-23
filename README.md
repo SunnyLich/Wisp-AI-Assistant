@@ -36,22 +36,25 @@ Highlight text, press `Ctrl+Q`, hit one intent key, and Wisp asks your configure
 ## Highlights
 
 - **Overlay first** - a floating icon, intent picker, and reply bubble stay on top without taking over your desktop.
+- **Privacy by default** - you control exactly which context sources are included, privacy mode keeps redaction warnings on, and nothing extra is sent beyond the query you make.
+- **Highly customizable** - every hotkey, intent key, prompt, context source, paste-back behavior, model route, voice setting, and bubble dimension can be changed.
+- **Approachable GUI** - Settings, setup checks, privacy reports, memory tools, and model warnings explain what is happening without requiring you to read the code.
 - **Context capture** - Wisp can read selected text, clipboard text, focused UI, open documents, browser content, recent files, and optional screenshots.
 - **Voice in and out** - local STT via faster-whisper, plus Cartesia, ElevenLabs, OpenAI, OpenAI-compatible, or disabled TTS.
 - **Vision snips** - draw a region with `Ctrl+Alt+Q` and send the screenshot to a vision model.
 - **Rewrite and paste** - use `Ctrl+Shift+Q` to rewrite selected text and paste the result back into the active field.
 - **Bring your own provider** - Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, XAI, Together, Cerebras, custom OpenAI-compatible servers, GitHub Copilot, and more.
 - **Local memory** - optional short-term and long-term memory are stored locally, with a viewer for editing or deleting facts.
-- **Process isolation** - UI, native OS work, audio, and brain/model work run in separate worker processes under one Python supervisor.
 - **Addons** - extend Wisp with hooks, tray actions, settings, model-callable tools, intents, and hotkeys.
 - **Agent tasks** - a sandboxed task framework exists for longer jobs that need decomposition, review, and artifacts.
 
-## How It Feels
+## Workflow
 
 ```text
-hotkey
-  -> capture context
-  -> pick an intent
+highlight text, choose context, or draw a snip
+  -> press the caller hotkey
+  -> Wisp captures only the enabled context
+  -> pick an intent or type a custom prompt
   -> stream model reply
   -> show bubble + optional TTS
   -> store useful memory locally
@@ -61,10 +64,12 @@ Example flows:
 
 | Moment | Action | Result |
 | --- | --- | --- |
-| A traceback is selected | `Ctrl+Q`, then the "fix this" intent | Wisp explains the likely cause without leaving the editor |
-| A sentence needs polish | `Ctrl+Shift+Q` | Wisp rewrites it and pastes the result back |
-| A UI element is confusing | `Ctrl+Alt+Q`, draw a box | Wisp sends the snip to a vision model |
-| You do not want to type | Hold `F9` | Wisp records, transcribes, and sends the query |
+| You want an explanation of selected text | Highlight the text, press `Ctrl+Q`, then choose `W` (`What is this?`) or `A` (`Explain simply`) | Wisp explains the selection in the overlay |
+| You want to rewrite a sentence | Highlight the sentence first, press `Ctrl+Shift+Q`, then choose `W`, `A`, or `D` for grammar, simplification, or tone | Wisp rewrites the selected text and can paste it back |
+| You need to ask your own question | Press `Ctrl+Q`, press `S`, type the prompt, then press Enter | Wisp sends your custom prompt with whatever context is enabled for that caller |
+| A UI element or image is confusing | Press `Ctrl+Alt+Q`, draw a box, then choose an intent or custom prompt | Wisp sends the snip to a vision model |
+| You want to ask the model by voice | Hold `F9`, speak, then release | Wisp transcribes your voice and sends it as a model query |
+| You want to dictate into another app | Hold `F8`, speak, then release | Wisp transcribes your speech directly into the focused text field |
 
 ## Quick Start
 
@@ -153,6 +158,7 @@ The Settings window can store provider keys, run a setup check, explain missing 
 | `Alt+Q` | Add the current selection to the context buffer |
 | `Alt+W` | Clear the context buffer |
 | `F9` hold | Record voice, transcribe, and query |
+| `F8` hold | Direct dictation into the focused text field |
 | `W` / `A` / `D` | Trigger built-in intent rows |
 | `S` | Custom prompt mode |
 | `Esc` | Cancel the picker |
@@ -163,8 +169,9 @@ Every caller, hotkey, label, prompt, context source, paste-back setting, and UI 
 
 Wisp is designed as a local desktop assistant, not a hosted service.
 
-- There is no "Wisp cloud."
-- Your configured model provider receives only the query and context you ask Wisp to send.
+- Your configured model provider receives only the query you make and the context sources you enabled for that caller.
+- Context is controlled per hotkey profile: ambient app context, clipboard, documents, browser pages, GitHub context, memory, tools, and screenshots can each be enabled, disabled, or routed on demand.
+- Privacy mode keeps privacy-first setup checks and warning behavior enabled, including redaction status before sensitive context is sent.
 - Memory is stored locally on disk.
 - Optional voice, document reading, browser content, screenshots, GitHub Copilot, and addons stay inactive until configured.
 - Addons run in isolated Python host processes and must declare the capabilities they need.
