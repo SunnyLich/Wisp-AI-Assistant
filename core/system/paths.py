@@ -66,6 +66,7 @@ FILLER_AUDIO_DIR = ASSETS_DIR / "filler"
 # voice. Played in addition to the bundled clips. Survives PyInstaller
 # rebuilds because it lives under user-data, not _MEIPASS.
 USER_FILLER_AUDIO_DIR = _user_data_dir() / "filler"
+UPDATE_DOWNLOAD_DIR = _user_data_dir() / "updates"
 
 # Single-instance lock. Lives in the user-data dir (not the repo / bundle) so a
 # dev run (`python -m runtime.supervisor.app`) and an installed build contend for the *same* lock —

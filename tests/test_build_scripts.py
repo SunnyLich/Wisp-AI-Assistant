@@ -1,7 +1,6 @@
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -33,6 +32,15 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn("sys.version_info[2]", script)
         self.assertIn('HAVE_VERSION="$(python_version "$PYTHON")"', script)
         self.assertNotIn("py_minor", script)
+
+    def test_macos_build_script_uses_macos_spec_and_lockfile(self) -> None:
+        script = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
+
+        self.assertIn('SPEC_NAME="WispMac.spec"', script)
+        self.assertIn('MACOS_LOCK_FILE="$ROOT/requirements-macos.lock"', script)
+        self.assertIn('if [[ "$(uname -s)" != "Darwin" ]]', script)
+        self.assertIn('"$PYTHON" -m PyInstaller --noconfirm "$SPEC"', script)
+        self.assertIn('Built app bundle: $ROOT/dist/$APP_NAME.app', script)
 
     def test_build_scripts_check_dependency_manifests_before_mutating_outputs(self) -> None:
         powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
@@ -102,6 +110,12 @@ class BuildScriptTests(unittest.TestCase):
 
         self.assertIn("exact patch version", docs)
         self.assertNotIn("minor version", docs)
+
+    def test_specs_bundle_version_metadata_for_updater(self) -> None:
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertIn('pyproject.toml', spec)
 
 
 if __name__ == "__main__":

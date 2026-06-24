@@ -723,7 +723,7 @@ def context_snapshot(
     # the user's field is still focused, so a later rewrite can be written back
     # in place via Accessibility even if focus has since moved.
     if capture_focus:
-        snapshot["focus_token"] = _ax_capture_focus()
+        snapshot["focus_token"] = _capture_focus()
     sel_dt = clip_dt = br_dt = 0.0
     if include_selection:
         _s = time.monotonic()
@@ -987,20 +987,30 @@ def _activate_pid(pid: int) -> dict[str, Any]:
         return result
 
 
-# --- Accessibility (AX) in-place text replacement --------------------------
-# Lets a rewrite land in the originally-focused text field without refocusing
-# the app or synthesising Cmd+V, so it survives the user moving on to something
-# else. The focused AXUIElement is a live CFTypeRef, so capture (at hotkey time)
-# and apply (after the rewrite) must both run in THIS long-lived worker process;
-# only a small integer token crosses IPC. Best-effort: any failure returns False
-# and the caller falls back to activate + Cmd+V.
+# --- Anchored paste-back focus cache ---------------------------------------
+# Lets a rewrite land in the originally-focused text field/range instead of the
+# caret that happens to be focused after the model replies. The cached native
+# objects must stay in THIS long-lived worker process; only a small integer token
+# crosses IPC.
 _AX_FOCUSED_ATTR = "AXFocusedUIElement"
 _AX_SELECTED_TEXT_ATTR = "AXSelectedText"
 _AX_ROLE_ATTR = "AXRole"
 _AX_ERROR_SUCCESS = 0  # kAXErrorSuccess
+_UIA_TEXT_PATTERN_ID = 10014
+_UIA_TEXT_PATTERN_RANGE_ENDPOINT_START = 0
+_UIA_TEXT_PATTERN_RANGE_ENDPOINT_END = 1
 
 _focus_seq = 0
-_focus_cache: dict[str, Any] = {}  # {"token": int, "element": AXUIElement}
+_focus_cache: dict[str, Any] = {}  # {"token": int, "kind": str, ...native objects}
+
+
+def _capture_focus() -> int:
+    """Cache the hotkey-time text target for later paste-back."""
+    if IS_MAC:
+        return _ax_capture_focus()
+    if IS_WIN:
+        return _win_uia_capture_focus()
+    return 0
 
 
 def _ax_capture_focus() -> int:
@@ -1021,11 +1031,64 @@ def _ax_capture_focus() -> int:
         _focus_seq += 1
         _focus_cache.clear()
         _focus_cache["token"] = _focus_seq
+        _focus_cache["kind"] = "mac-ax"
         _focus_cache["element"] = focused
         _plog(f"ax capture token={_focus_seq} ok")
         return _focus_seq
     except Exception as exc:  # noqa: BLE001 - AX is best-effort
         _plog(f"ax capture raised {type(exc).__name__}: {exc}")
+        return 0
+
+
+def _win_uia_capture_focus() -> int:
+    """Cache the focused Windows UIA text range; return a token (0 on failure)."""
+    global _focus_seq
+    if not IS_WIN:
+        return 0
+    try:
+        import comtypes.client
+
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        import comtypes.gen.UIAutomationClient as uiac  # type: ignore
+
+        uia = comtypes.client.CreateObject(
+            "{ff48dba4-60ef-4201-aa87-54103eef594e}",
+            interface=uiac.IUIAutomation,
+        )
+        element = uia.GetFocusedElement()
+        raw_pattern = element.GetCurrentPattern(_UIA_TEXT_PATTERN_ID)
+        text_pattern = raw_pattern.QueryInterface(uiac.IUIAutomationTextPattern)
+        selections = text_pattern.GetSelection()
+        if selections.Length <= 0:
+            _plog("uia capture: focused element has no text selection")
+            return 0
+        text_range = selections.GetElement(0)
+        start_endpoint = getattr(
+            uiac,
+            "TextPatternRangeEndpoint_Start",
+            _UIA_TEXT_PATTERN_RANGE_ENDPOINT_START,
+        )
+        end_endpoint = getattr(
+            uiac,
+            "TextPatternRangeEndpoint_End",
+            _UIA_TEXT_PATTERN_RANGE_ENDPOINT_END,
+        )
+        try:
+            if text_range.CompareEndpoints(start_endpoint, text_range, end_endpoint) == 0:
+                _plog("uia capture: text selection is collapsed")
+                return 0
+        except Exception:
+            pass
+        _focus_seq += 1
+        _focus_cache.clear()
+        _focus_cache["token"] = _focus_seq
+        _focus_cache["kind"] = "win-uia"
+        _focus_cache["element"] = element
+        _focus_cache["range"] = text_range
+        _plog(f"uia capture token={_focus_seq} ok")
+        return _focus_seq
+    except Exception as exc:  # noqa: BLE001 - UIA is best-effort
+        _plog(f"uia capture raised {type(exc).__name__}: {exc}")
         return 0
 
 
@@ -1065,7 +1128,7 @@ def _ax_apply_selected_text(token: int, text: str) -> dict[str, Any]:
     """Replace the cached element's selected text in place. Best-effort."""
     if not IS_MAC:
         return {"ok": False, "error": "not macos"}
-    if not token or _focus_cache.get("token") != token:
+    if not token or _focus_cache.get("token") != token or _focus_cache.get("kind") not in {"mac-ax", None}:
         return {"ok": False, "error": "stale or missing focus token"}
     element = _focus_cache.get("element")
     if element is None:
@@ -1085,7 +1148,78 @@ def _ax_apply_selected_text(token: int, text: str) -> dict[str, Any]:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
-def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0, focus_token: int = 0) -> dict[str, Any]:
+def _win_uia_apply_selected_text(
+    token: int,
+    text: str,
+    *,
+    paste_combo: str = "",
+    restore_clipboard: bool = False,
+) -> dict[str, Any]:
+    """Replace the cached Windows UIA selection range, avoiding current focus."""
+    if not IS_WIN:
+        return {"ok": False, "error": "not windows"}
+    if not token or _focus_cache.get("token") != token or _focus_cache.get("kind") != "win-uia":
+        return {"ok": False, "error": "stale or missing focus token"}
+    element = _focus_cache.get("element")
+    text_range = _focus_cache.get("range")
+    if element is None or text_range is None:
+        return {"ok": False, "error": "no cached selection range"}
+    original_clipboard = clipboard_get().get("text", "") if restore_clipboard else ""
+    clip_ok = False
+    restored = False
+    try:
+        from core.platform_utils import PASTE_COMBO, send_keys
+
+        try:
+            element.SetFocus()
+        except Exception:
+            pass
+        text_range.Select()
+        time.sleep(0.05)
+        clip_ok = bool(clipboard_set(text).get("ok"))
+        if not clip_ok:
+            return {"ok": False, "method": "uia-range", "clipboard_ok": False, "error": "clipboard write failed"}
+        send_keys(paste_combo or PASTE_COMBO)
+        if restore_clipboard:
+            time.sleep(_PASTE_CLIPBOARD_RESTORE_DELAY_SECONDS)
+            restored = bool(clipboard_set(original_clipboard).get("ok"))
+        _plog(f"paste via UIA range token={token} restored={restored} ok")
+        return {
+            "ok": True,
+            "method": "uia-range",
+            "activated": True,
+            "confirmed": True,
+            "keystroke_sent": True,
+            "clipboard_ok": True,
+            "clipboard_restored": restored,
+            "target_pid": 0,
+            "error": "",
+        }
+    except Exception as exc:  # noqa: BLE001 - UIA is best-effort
+        if restore_clipboard and clip_ok:
+            try:
+                restored = bool(clipboard_set(original_clipboard).get("ok"))
+            except Exception:
+                restored = False
+        return {
+            "ok": False,
+            "method": "uia-range",
+            "clipboard_ok": bool(clip_ok),
+            "clipboard_restored": restored,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+_PASTE_CLIPBOARD_RESTORE_DELAY_SECONDS = 0.25
+
+
+def paste_text(
+    text: str = "",
+    paste_combo: str = "",
+    target_pid: int = 0,
+    focus_token: int = 0,
+    restore_clipboard: bool = False,
+) -> dict[str, Any]:
     """Paste text."""
     if IS_MAC:
         from core.platform import macos_native
@@ -1113,20 +1247,22 @@ def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0, focus
                 f"({ax.get('error')}); falling back to activate+Cmd+V"
             )
 
+        original_clipboard = clipboard_get().get("text", "") if restore_clipboard else ""
         act = _activate_pid(target_pid)
         confirmed = bool(act.get("confirmed"))
-        # Settle longer when we couldn't confirm focus — the activation may still
-        # be in flight. The clipboard is always populated below, so even a missed
-        # Cmd+V leaves the rewrite recoverable via a manual paste.
+        # Settle longer when we couldn't confirm focus; the activation may still
+        # be in flight.
         time.sleep(0.15 if confirmed else 0.3)
-        # Ensure the rewrite is on the clipboard regardless of paste success, so
-        # the caller can offer a manual-paste fallback when focus didn't land.
         clip_ok = macos_native.set_clipboard_text(text)
         time.sleep(0.05)  # let pbcopy propagate before Cmd+V
         sent = macos_native.send_key_combo(paste_combo or "cmd+v")
+        restored = False
+        if restore_clipboard and clip_ok:
+            time.sleep(_PASTE_CLIPBOARD_RESTORE_DELAY_SECONDS)
+            restored = bool(clipboard_set(original_clipboard).get("ok"))
         _plog(
             f"paste target_pid={target_pid} confirmed={confirmed} "
-            f"clipboard={clip_ok} keystroke={sent} app={act.get('app_name')!r}"
+            f"clipboard={clip_ok} restored={restored} keystroke={sent} app={act.get('app_name')!r}"
         )
         return {
             "ok": bool(sent and confirmed),
@@ -1134,6 +1270,7 @@ def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0, focus
             "confirmed": confirmed,
             "keystroke_sent": bool(sent),
             "clipboard_ok": bool(clip_ok),
+            "clipboard_restored": restored,
             "target_pid": int(target_pid or 0),
             "frontmost_pid": int(act.get("frontmost_pid") or 0),
             "app_name": act.get("app_name") or "",
@@ -1142,7 +1279,29 @@ def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0, focus
     try:
         from core.platform_utils import PASTE_COMBO, send_keys, set_foreground_window
 
+        if focus_token:
+            uia = _win_uia_apply_selected_text(
+                int(focus_token),
+                text,
+                paste_combo=paste_combo,
+                restore_clipboard=restore_clipboard,
+            )
+            if uia.get("ok"):
+                return uia
+            _plog(
+                f"paste UIA range token={focus_token} failed "
+                f"({uia.get('error')}); refusing unanchored paste"
+            )
+            return {
+                **uia,
+                "ok": False,
+                "activated": False,
+                "confirmed": False,
+                "keystroke_sent": False,
+            }
+
         activated = False
+        original_clipboard = clipboard_get().get("text", "") if restore_clipboard else ""
         if target_pid:
             set_foreground_window(int(target_pid))
             activated = True
@@ -1151,8 +1310,19 @@ def paste_text(text: str = "", paste_combo: str = "", target_pid: int = 0, focus
             _plog(f"paste target_pid={target_pid} clipboard write FAILED")
             return {"ok": False, "activated": activated, "clipboard_ok": False, "error": "clipboard write failed"}
         send_keys(paste_combo or PASTE_COMBO)
-        _plog(f"paste target_pid={target_pid} activated={activated} keystroke sent")
-        return {"ok": True, "activated": activated, "confirmed": activated, "keystroke_sent": True, "clipboard_ok": True}
+        restored = False
+        if restore_clipboard:
+            time.sleep(_PASTE_CLIPBOARD_RESTORE_DELAY_SECONDS)
+            restored = bool(clipboard_set(original_clipboard).get("ok"))
+        _plog(f"paste target_pid={target_pid} activated={activated} restored={restored} keystroke sent")
+        return {
+            "ok": True,
+            "activated": activated,
+            "confirmed": activated,
+            "keystroke_sent": True,
+            "clipboard_ok": True,
+            "clipboard_restored": restored,
+        }
     except Exception as exc:  # noqa: BLE001 - report pasteback failure to caller
         _plog(f"paste target_pid={target_pid} raised {type(exc).__name__}: {exc}")
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}

@@ -112,6 +112,57 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
     }
 
 
+def test_chat_normalizes_user_context_and_file_attachments(record_ctx, monkeypatch):
+    """Verify user-turn context keeps attached files clearly separated."""
+    from core.conversation_store import store as conversation_store
+
+    captured = {}
+
+    monkeypatch.setattr(conversation_store, "normalize_attachments", lambda refs: list(refs or []))
+    monkeypatch.setattr(
+        conversation_store,
+        "attachment_context_text",
+        lambda ref: f"Path: {ref['path']}\n\n{ref['text']}",
+    )
+    monkeypatch.setattr(conversation_store, "first_image_base64_from_message", lambda _msg: "")
+
+    def fake_stream(messages, memory_context, **kwargs):
+        captured["messages"] = messages
+        yield "ok"
+
+    monkeypatch.setattr(handlers, "_stream_chat_reply", fake_stream)
+    _events, ctx = record_ctx()
+
+    handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[
+            {
+                "role": "user",
+                "content": "compare these",
+                "context": "Selection from editor",
+                "attachments": [
+                    {"name": "alpha.txt", "path": "/tmp/alpha.txt", "text": "alpha content"},
+                    {"name": "beta.txt", "path": "/tmp/beta.txt", "text": "beta content"},
+                ],
+            }
+        ],
+        memory_context="(none)",
+    )
+
+    content = captured["messages"][0]["content"]
+    assert content.startswith("compare these\n\n[Attached context for this message]")
+    assert "--- BEGIN MESSAGE CONTEXT ---" in content
+    assert "Selection from editor" in content
+    assert "--- BEGIN ATTACHED FILE: alpha.txt ---" in content
+    assert "Path: /tmp/alpha.txt" in content
+    assert "alpha content" in content
+    assert "--- END ATTACHED FILE: alpha.txt ---" in content
+    assert "--- BEGIN ATTACHED FILE: beta.txt ---" in content
+    assert "Path: /tmp/beta.txt" in content
+    assert "beta content" in content
+    assert "--- END ATTACHED FILE: beta.txt ---" in content
+
+
 def test_chat_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch):
     """Verify chat progress narration streams live but is excluded from final text."""
     class ProgressChunk(str):

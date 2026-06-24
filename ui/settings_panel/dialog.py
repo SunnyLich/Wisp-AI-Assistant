@@ -229,6 +229,11 @@ class _ModelFetchSignals(QObject):
     done = Signal(object, str)
 
 
+class _UpdateSignals(QObject):
+    """Marshals update check/download results back to the Qt main thread."""
+    done = Signal(object, str)
+
+
 def _read_env() -> dict[str, str]:
     """Read env."""
     old_path = settings_env.ENV_PATH
@@ -304,6 +309,11 @@ class SettingsDialog(QDialog):
         self._open_warning_boxes: list[QMessageBox] = []
         self._status_refresh_token = 0
         self._status_refresh_running = False
+        self._update_check_result = None
+        self._update_download_path = None
+        self._update_mode = "check"
+        self._update_running = False
+        self._update_signal_carriers: list[_UpdateSignals] = []
         self._tabs = None
         self._test_result_timer = QTimer(self)
         self._test_result_timer.setInterval(100)
@@ -3387,9 +3397,191 @@ class SettingsDialog(QDialog):
         f.addRow(t("Read word color"), _read_word_color_row)
         cv.addWidget(fw)
         outer.addWidget(card)
+
+        updates_card, updates_cv = self._card("Updates")
+        from core import updater
+
+        self._update_current_lbl = QLabel(f"{t('Current version')}: {updater.current_version()}")
+        self._update_status_lbl = QLabel(t("Ready to check for updates."))
+        self._update_status_lbl.setObjectName("settingsUpdateStatusLabel")
+        self._update_status_lbl.setWordWrap(True)
+        self._update_status_lbl.setStyleSheet("color: palette(placeholder-text);")
+        self._update_btn = QPushButton(t("Check for updates"))
+        self._update_btn.setObjectName("settingsUpdateButton")
+        self._update_btn.setToolTip(t("Check GitHub Releases for a newer Wisp build."))
+        self._update_btn.clicked.connect(self._on_update_button)
+        updates_row = QHBoxLayout()
+        updates_row.addWidget(self._update_current_lbl)
+        updates_row.addStretch()
+        updates_row.addWidget(self._update_btn)
+        updates_cv.addLayout(updates_row)
+        updates_cv.addWidget(self._update_status_lbl)
+        outer.addWidget(updates_card)
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _set_update_status(self, message: str, state: str | None = None) -> None:
+        """Update the Settings updater status label."""
+        label = getattr(self, "_update_status_lbl", None)
+        if label is None:
+            return
+        label.setText(t(message))
+        if state == "ok":
+            label.setStyleSheet("color: #80c080;")
+        elif state == "error":
+            label.setStyleSheet("color: #c04040;")
+        elif state == "warn":
+            label.setStyleSheet("color: #c0a040;")
+        else:
+            label.setStyleSheet("color: palette(placeholder-text);")
+
+    def _on_update_button(self) -> None:
+        """Handle the Settings update button based on its current mode."""
+        mode = getattr(self, "_update_mode", "check")
+        if mode == "download":
+            self._download_available_update()
+        elif mode == "open":
+            self._open_downloaded_update()
+        else:
+            self._check_for_updates()
+
+    def _remember_update_carrier(self, carrier: _UpdateSignals) -> None:
+        self._update_signal_carriers.append(carrier)
+
+    def _forget_update_carrier(self, carrier: _UpdateSignals) -> None:
+        try:
+            self._update_signal_carriers.remove(carrier)
+        except ValueError:
+            pass
+
+    def _check_for_updates(self) -> None:
+        """Check the release manifest without blocking the Settings dialog."""
+        if self._update_running:
+            return
+        self._update_running = True
+        self._update_mode = "check"
+        self._update_check_result = None
+        self._update_download_path = None
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText(t("Checking..."))
+        self._set_update_status("Checking for updates...")
+
+        carrier = _UpdateSignals()
+        self._remember_update_carrier(carrier)
+        carrier.done.connect(lambda result, error, c=carrier: self._finish_update_check(c, result, error))
+
+        def _worker() -> None:
+            try:
+                from core import updater
+
+                carrier.done.emit(updater.check_for_updates(), "")
+            except Exception as exc:  # noqa: BLE001 - update checks should be visible, not fatal
+                carrier.done.emit(None, str(exc))
+
+        threading.Thread(target=_worker, daemon=True, name="wisp-update-check").start()
+
+    def _finish_update_check(self, carrier: _UpdateSignals, result: object, error: str) -> None:
+        """Apply an update-check result on the Qt thread."""
+        self._forget_update_carrier(carrier)
+        self._update_running = False
+        self._update_btn.setEnabled(True)
+        if error:
+            self._update_mode = "check"
+            self._update_btn.setText(t("Check for updates"))
+            self._set_update_status(f"Update check failed: {error}", "error")
+            return
+
+        update_available = bool(getattr(result, "update_available", False))
+        asset = getattr(result, "asset", None)
+        latest_version = str(getattr(result, "latest_version", "") or "")
+        if update_available and asset is not None:
+            self._update_check_result = result
+            self._update_mode = "download"
+            self._update_btn.setText(t("Download update"))
+            self._set_update_status(f"Version {latest_version} is available.", "ok")
+            return
+
+        from core import updater
+
+        if updater.is_newer_version(latest_version, updater.current_version()) and asset is None:
+            platform_key = updater.normalized_platform_key()
+            self._update_mode = "check"
+            self._update_btn.setText(t("Check for updates"))
+            self._set_update_status(f"Version {latest_version} is available, but no {platform_key} build was published.", "warn")
+            return
+
+        self._update_mode = "check"
+        self._update_btn.setText(t("Check for updates"))
+        self._set_update_status("Wisp is up to date.", "ok")
+
+    def _download_available_update(self) -> None:
+        """Download the selected update artifact."""
+        if self._update_running:
+            return
+        result = self._update_check_result
+        asset = getattr(result, "asset", None)
+        if asset is None:
+            self._update_mode = "check"
+            self._update_btn.setText(t("Check for updates"))
+            self._set_update_status("No update is ready to download.", "warn")
+            return
+
+        self._update_running = True
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText(t("Downloading..."))
+        self._set_update_status("Downloading update...")
+
+        carrier = _UpdateSignals()
+        self._remember_update_carrier(carrier)
+        carrier.done.connect(lambda path, error, c=carrier: self._finish_update_download(c, path, error))
+
+        def _worker() -> None:
+            try:
+                from core import updater
+
+                carrier.done.emit(str(updater.download_update(asset)), "")
+            except Exception as exc:  # noqa: BLE001 - update downloads should be visible, not fatal
+                carrier.done.emit("", str(exc))
+
+        threading.Thread(target=_worker, daemon=True, name="wisp-update-download").start()
+
+    def _finish_update_download(self, carrier: _UpdateSignals, path: object, error: str) -> None:
+        """Apply an update-download result on the Qt thread."""
+        self._forget_update_carrier(carrier)
+        self._update_running = False
+        self._update_btn.setEnabled(True)
+        if error:
+            self._update_mode = "download" if self._update_check_result is not None else "check"
+            self._update_btn.setText(t("Download update") if self._update_mode == "download" else t("Check for updates"))
+            self._set_update_status(f"Update download failed: {error}", "error")
+            return
+
+        from pathlib import Path
+
+        self._update_download_path = Path(str(path))
+        self._update_mode = "open"
+        self._update_btn.setText(t("Open update"))
+        self._set_update_status(f"Downloaded update: {self._update_download_path}", "ok")
+
+    def _open_downloaded_update(self) -> None:
+        """Open the downloaded update artifact with the platform shell."""
+        path = self._update_download_path
+        if path is None or not path.exists():
+            self._update_mode = "check"
+            self._update_btn.setText(t("Check for updates"))
+            self._set_update_status("Downloaded update file is no longer available.", "error")
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+            self._set_update_status("Update opened. Close Wisp before installing if prompted.", "ok")
+        except Exception as exc:  # noqa: BLE001 - surface launcher issues in Settings
+            self._set_update_status(f"Could not open update: {exc}", "error")
 
     def _update_chat_elaborate_prompt_visibility(self, checked: bool | None = None) -> None:
         """Show the elaborate prompt field only when auto-elaborate is enabled."""

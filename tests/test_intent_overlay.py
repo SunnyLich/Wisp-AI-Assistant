@@ -7,6 +7,44 @@ import pytest
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_context_preview_entries_expand_item_sources(monkeypatch):
+    """Verify one App chip can show multiple detected source previews."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        context_items=[
+            {
+                "id": "ambient",
+                "key": "1",
+                "label": "App",
+                "state": "on",
+                "sources": [
+                    {"label": "Notepad", "preview": "notepad body"},
+                    {"label": "demo.py", "preview": "VS Code paragraph"},
+                ],
+            }
+        ],
+    )
+    try:
+        assert overlay._context_preview_entries() == [
+            ("App 1: Notepad", "notepad body"),
+            ("App 2: demo.py", "VS Code paragraph"),
+        ]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
     """Verify custom prompt input grabs keyboard on windows behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -402,12 +440,15 @@ def test_intent_overlay_conversation_choice_toggles_new_and_continue():
     )
     try:
         assert overlay.conversation_choice() == {"mode": "continue", "index": 1}
+        assert overlay.conversation_choice_touched() is False
 
         overlay._toggle_conversation_mode()
         assert overlay.conversation_choice() == {"mode": "new"}
+        assert overlay.conversation_choice_touched() is True
 
         overlay._set_conversation_choice(0)
         assert overlay.conversation_choice() == {"mode": "continue", "index": 0}
+        assert overlay.conversation_choice_touched() is True
     finally:
         overlay.close()
         app.processEvents()

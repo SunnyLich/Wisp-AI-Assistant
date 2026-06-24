@@ -518,8 +518,8 @@ def test_context_buffer_drop_priority_and_privacy_workflow():
     assert out.screenshot_b64 == "BASE64PNG"
     assert out.user_message == "Summarize the current task."
     assert "[Context priority]\nPrioritize Browser/Web" in out.ambient_ctx
-    assert out.ambient_ctx.index("Buffered Alt+Q context") < out.ambient_ctx.index("[Document: notes.md]")
-    assert out.ambient_ctx.index("[Document: notes.md]") < out.ambient_ctx.index("raw dropped text")
+    assert out.ambient_ctx.index("Buffered Alt+Q context") < out.ambient_ctx.index("--- BEGIN DOCUMENT: notes.md ---")
+    assert out.ambient_ctx.index("--- BEGIN DOCUMENT: notes.md ---") < out.ambient_ctx.index("raw dropped text")
     assert out.ambient_ctx.index("raw dropped text") < out.ambient_ctx.index("Selected user text")
     assert "[BEARER_TOKEN]" in out.ambient_ctx
     assert "[REDACTED_CREDENTIAL]" in out.ambient_ctx
@@ -816,6 +816,7 @@ def test_supervisor_rewrite_snip_voice_and_dictation_workflow(tmp_path: Path):
     assert paste["text"] == "good grammar"
     assert paste["target_pid"] == 777
     assert paste["focus_token"] == 9
+    assert paste["restore_clipboard"] is True
     assert not ui.calls_for("ui.reply.notice")
 
     image_path = tmp_path / "snip.png"

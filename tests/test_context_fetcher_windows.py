@@ -201,6 +201,17 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
 
         self.assertEqual(docs, [("Notes.txt", "hello from notepad")])
 
+    def test_code_process_window_is_document_candidate_without_standard_suffix(self):
+        """Verify VS Code-like windows are document candidates by process name."""
+        win = self.cf.WindowInfo(
+            title="demo.py - Python-AI-assistant-overlay",
+            process_name="Code.exe",
+            pid=202,
+            hwnd=222,
+        )
+
+        self.assertEqual(self.cf._extract_doc_name_from_window(win), "demo.py")
+
     def test_browser_page_rect_filter_skips_toolbar_area(self):
         """Verify browser page rect filter skips toolbar area behavior."""
         root_rect = (0.0, 0.0, 1280.0, 900.0)
@@ -216,6 +227,106 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         cleaned = self.cf._clean_browser_uia_text(text)
 
         self.assertEqual(cleaned, "Home\n\nArticle title\nBody text")
+
+    def test_repair_mojibake_text_fixes_common_context_garbling(self):
+        """Verify fetched context mojibake is repaired before prompt construction."""
+        text = "café — 記事本 😊".encode("utf-8").decode("cp1252")
+
+        repaired = self.cf._repair_mojibake_text(text)
+
+        self.assertEqual(repaired, "café — 記事本 😊")
+
+    def test_clean_document_uia_text_trims_vscode_chrome_and_icon_noise(self):
+        """Verify document UIA text trims editor chrome leaked by VS Code."""
+        text = (
+            "This situation should be copied ðŸ˜Š "
+            "File Edit Selection View Go Run More \uea60 Search More Actions Open in App\n"
+            "This situation should be copied"
+        )
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, "This situation should be copied")
+
+    def test_clean_document_uia_text_rejects_vscode_chrome_dump(self):
+        """Verify editor menu/status dumps are not sent as document context."""
+        text = "\n".join(
+            [
+                "File",
+                "Edit",
+                "Selection",
+                "View",
+                "Go",
+                "Run",
+                "More",
+                "Search",
+                "More Actions",
+                "Open in Agents",
+                "1",
+                "Claude Code",
+                "Python",
+                "GitHub Actions",
+                "Text 2Untitled-1",
+                "Claude Code: Open",
+                (
+                    "The editor is not accessible at this time. To enable screen "
+                    "reader optimized mode, use Shift+Alt+F1"
+                ),
+                "0",
+                "Plain Text",
+                "CRLF",
+                "UTF-8",
+                "Spaces: 4",
+                "Ln 5, Col 82",
+            ]
+        )
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, "")
+
+    def test_clean_document_uia_text_keeps_real_text_inside_chrome_dump(self):
+        """Verify real editor text survives when standalone chrome is present."""
+        text = "\n".join(
+            [
+                "File",
+                "Edit",
+                "Selection",
+                "This is the actual paragraph from VS Code.",
+                "Plain Text",
+                "CRLF",
+                "UTF-8",
+                "Ln 5, Col 82",
+            ]
+        )
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, "This is the actual paragraph from VS Code.")
+
+    def test_clean_document_uia_text_strips_leading_icon_noise(self):
+        """Verify leading editor glyphs are not treated as document content."""
+        text = "ðŸ˜Š \uea60 This situation requires immediate attention."
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, "This situation requires immediate attention.")
+
+    def test_clean_document_uia_text_keeps_normal_leading_punctuation(self):
+        """Verify ordinary leading punctuation is not stripped as icon noise."""
+        text = '"This situation requires immediate attention."'
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, '"This situation requires immediate attention."')
+
+    def test_clean_document_uia_text_keeps_short_plain_document_lines(self):
+        """Verify plain content is not stripped without chrome-dump signals."""
+        text = "1\nPython"
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, "1\nPython")
 
     def test_rect_tuple_reads_uia_like_rectangle(self):
         """Verify rect tuple reads uia like rectangle behavior."""

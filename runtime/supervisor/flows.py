@@ -1957,9 +1957,23 @@ class FlowController:
                 self._on_reply_chunk(payload)
 
         try:
+            query_params = self._brain_query_params(prompt, pending)
+            rewrite_context = self._rewrite_context_from_query_params(query_params)
+            log.info(
+                "rewrite request context: prompt_chars=%d selected_chars=%d "
+                "source_chars=%d source_labels=%r",
+                len(prompt or ""),
+                len(selected),
+                len(rewrite_context),
+                self._rewrite_source_labels(rewrite_context),
+            )
             result = self._brain_call_with_events(
                 "brain.rewrite",
-                {"selected_text": selected, "intent_prompt": prompt},
+                {
+                    "selected_text": selected,
+                    "intent_prompt": prompt,
+                    "rewrite_context": rewrite_context,
+                },
                 timeout=_INTERACTIVE_LLM_TIMEOUT_SECONDS,
                 on_event=on_event,
             )
@@ -1970,6 +1984,7 @@ class FlowController:
             self._set_idle()
             return
         text = str((result or {}).get("text") or "").strip()
+        log.info("rewrite result: text_chars=%d", len(text))
         if text and self._is_current(gen):
             paste = self.native.call(
                 "native.paste_text",
@@ -1977,6 +1992,7 @@ class FlowController:
                     "text": text,
                     "target_pid": pending.paste_target_pid,
                     "focus_token": int(pending.context.get("focus_token") or 0),
+                    "restore_clipboard": True,
                 },
                 timeout=30.0,
             )
@@ -1993,25 +2009,102 @@ class FlowController:
             if paste.get("ok"):
                 pass  # silent success
             elif paste.get("clipboard_ok"):
-                # Focus didn't land on the target app (common on remote/headless
-                # macOS where activateWithOptions_ is ignored). The rewrite is on
-                # the clipboard, so tell the user how to recover it.
                 app = str(paste.get("app_name") or "").strip()
                 where = f" into {app}" if app else ""
                 log.warning(
                     "rewrite paste-back could not confirm focus%s (frontmost=%s); "
-                    "left rewrite on clipboard", where, paste.get("frontmost_pid"),
+                    "clipboard_restored=%s",
+                    where,
+                    paste.get("frontmost_pid"),
+                    paste.get("clipboard_restored"),
                 )
                 self._native_notify(
-                    "Wisp â€” rewrite on clipboard",
-                    f"Couldn't focus the app. Press {self._paste_shortcut()} to paste the rewrite.",
+                    "Wisp rewrite could not paste",
+                    "Couldn't replace the selected text. Your clipboard was restored.",
                 )
             else:
                 log.error("rewrite paste-back failed: %s", paste.get("error") or paste)
                 self._native_notify("Wisp â€” rewrite failed", "Couldn't paste the rewrite. See native.stderr.log.")
+        elif self._is_current(gen):
+            log.warning("rewrite returned empty text; paste-back skipped")
+            self._native_notify("Wisp rewrite returned nothing", "The model returned no replacement text.")
         self._set_idle()
 
     # -- helpers --------------------------------------------------------
+
+    @staticmethod
+    def _rewrite_context_from_query_params(params: dict[str, Any]) -> str:
+        """Render the shared Ctrl+Q context payload as source-only rewrite context."""
+        parts: list[str] = []
+        context_priority = str(params.get("context_priority") or "").strip()
+        if context_priority:
+            parts.append(f"[Context priority]\nPrioritize {context_priority} when sources disagree.")
+        ambient_text = str(params.get("ambient_text") or "").strip()
+        if ambient_text:
+            parts.append(ambient_text)
+        active_document_text = FlowController._rewrite_source_document_text(
+            str(params.get("active_document_text") or ""),
+            str(params.get("selected") or ""),
+        ).strip()
+        if active_document_text:
+            label = " ".join(str(params.get("active_document_label") or "").split()).strip()
+            if label:
+                parts.append(
+                    f"--- BEGIN ACTIVE DOCUMENT: {label} ---\n"
+                    f"{active_document_text}\n"
+                    f"--- END ACTIVE DOCUMENT: {label} ---"
+                )
+            else:
+                parts.append(f"[Active document]\n{active_document_text}")
+        return "\n\n".join(part for part in parts if str(part or "").strip())
+
+    @staticmethod
+    def _rewrite_source_document_text(active_document_text: str, selected_text: str) -> str:
+        """Drop target-selection document blocks when other document sources exist."""
+        raw = str(active_document_text or "").strip()
+        selected = FlowController._rewrite_match_text(selected_text)
+        if not raw or not selected:
+            return raw
+        matches = list(re.finditer(r"(?m)^\[([^\]\n]{1,160})\]\n", raw))
+        if len(matches) <= 1:
+            return raw
+
+        kept: list[str] = []
+        removed = 0
+        for idx, match in enumerate(matches):
+            label = match.group(1).strip()
+            start = match.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+            body = raw[start:end].strip()
+            body_match = FlowController._rewrite_match_text(body)
+            is_target = bool(body_match) and (selected in body_match or body_match in selected)
+            if is_target:
+                removed += 1
+                continue
+            if label and body:
+                kept.append(f"[{label}]\n{body}")
+        if removed and kept:
+            return "\n\n".join(kept)
+        return raw
+
+    @staticmethod
+    def _rewrite_match_text(text: str) -> str:
+        """Normalize text for target/source block matching."""
+        return " ".join(str(text or "").split()).casefold()
+
+    @staticmethod
+    def _rewrite_source_labels(text: str) -> list[str]:
+        """Return source block labels for rewrite diagnostics without logging content."""
+        labels: list[str] = []
+        for pattern in (
+            r"(?m)^--- BEGIN [^-:\n]+: (.{1,160}?) ---$",
+            r"(?m)^\[([^\]\n]{1,160})\]$",
+        ):
+            for match in re.finditer(pattern, str(text or "")):
+                label = " ".join(match.group(1).split()).strip()
+                if label and label not in labels:
+                    labels.append(label)
+        return labels[:8]
 
     @staticmethod
     def _paste_shortcut() -> str:
@@ -2488,6 +2581,8 @@ class FlowController:
         ) or {}
         text = str(result.get("text") or "") if isinstance(result, dict) else ""
         doc_debug = result.get("debug") if isinstance(result, dict) else None
+        if isinstance(context, dict):
+            context["active_document_sources"] = self._active_document_source_previews(text, doc_debug)
         log.info(
             "active document context chars=%d debug=%r error=%r",
             len(text),
@@ -2495,6 +2590,58 @@ class FlowController:
             result.get("error") if isinstance(result, dict) else None,
         )
         return text
+
+    def _active_document_source_previews(self, text: str, debug: Any) -> list[dict[str, str]]:
+        """Split active-document text into labelled preview rows for the overlay."""
+        raw = str(text or "").strip()
+        if not raw:
+            return []
+        labels: list[str] = []
+        if isinstance(debug, dict):
+            labels = [
+                str(label or "").strip()
+                for label in (debug.get("window_labels") or [])
+                if str(label or "").strip()
+            ]
+            if not labels:
+                labels = [
+                    Path(str(path or "")).name
+                    for path in (debug.get("paths") or [])
+                    if str(path or "").strip()
+                ]
+        sources: list[dict[str, str]] = []
+        matches = list(re.finditer(r"(?m)^\[([^\]\n]{1,160})\]\n", raw))
+        for idx, match in enumerate(matches):
+            label = " ".join(match.group(1).split()).strip()
+            start = match.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+            preview = self._context_preview_text(raw[start:end])
+            if label and preview:
+                sources.append({"label": label, "preview": preview})
+        if sources:
+            return sources[:5]
+        label = labels[0] if labels else self._active_document_label({})
+        return [{"label": label, "preview": self._context_preview_text(raw)}]
+
+    def _active_document_label(self, context: dict[str, Any]) -> str:
+        """Return a human-readable source label for active document context."""
+        active_window = self._active_document_window(context)
+        process = " ".join(str(active_window.get("process_name") or "").split()).strip()
+        title = " ".join(str(active_window.get("title") or "").split()).strip()
+        if process and title and title != process:
+            return f"{process} - {title}"
+        return title or process or "Active document"
+
+    def _active_document_context_label(self, context: dict[str, Any]) -> str:
+        """Return the prompt boundary label for active-document context."""
+        sources = [
+            item
+            for item in (context.get("active_document_sources") or [])
+            if isinstance(item, dict) and str(item.get("preview") or "").strip()
+        ]
+        if len(sources) > 1:
+            return "Open app documents"
+        return self._active_document_label(context)
 
     def _fetch_browser_content_for_context(self, context: dict[str, Any]) -> dict[str, str]:
         """Fetch browser page text using the URL/handle captured at hotkey time."""
@@ -2653,8 +2800,11 @@ class FlowController:
                 if item_type == "image" and not screenshot_b64:
                     screenshot_b64 = self._image_content_b64(content)
                     continue
+                name = " ".join(str(item.get("name") or "Context").split()).strip() or "Context"
                 drop_text_parts.append(
-                    f"{item.get('name') or 'Context'} ({item_type}):\n{self._content_to_text(content)}"
+                    f"--- BEGIN DROPPED CONTEXT: {name} ({item_type}) ---\n"
+                    f"{self._content_to_text(content)}\n"
+                    f"--- END DROPPED CONTEXT: {name} ({item_type}) ---"
                 )
             if drop_text_parts:
                 ambient_parts.append("[Dropped context]\n" + "\n\n".join(drop_text_parts))
@@ -2693,6 +2843,7 @@ class FlowController:
             "screenshot_tool_b64": screenshot_tool_b64,
             "include_active_document": include_active_document and not active_document_text,
             "active_document_text": active_document_text,
+            "active_document_label": self._active_document_context_label(context) if include_active_document else "",
             "context_priority": context_priority,
             "_ui_context_summary": summary,
             "context_policy": _normalized_context_policy(caller),
@@ -2813,7 +2964,12 @@ class FlowController:
             if not active_document_text:
                 active_document_text = self._fetch_active_document_text(context)
             if active_document_text:
-                parts.append(f"[Active document]\n{active_document_text}")
+                label = self._active_document_context_label(context)
+                parts.append(
+                    f"--- BEGIN ACTIVE DOCUMENT: {label} ---\n"
+                    f"{active_document_text}\n"
+                    f"--- END ACTIVE DOCUMENT: {label} ---"
+                )
 
         if wants_browser:
             browser = self._fetch_browser_content_for_context(context)
@@ -3038,6 +3194,11 @@ class FlowController:
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
         document_window = context.get("document_window") if isinstance(context.get("document_window"), dict) else {}
         active_document_text = str(context.get("active_document_text") or "")
+        app_source_previews = [
+            dict(item)
+            for item in (context.get("active_document_sources") or [])
+            if isinstance(item, dict) and str(item.get("preview") or "").strip()
+        ]
         active_text = " ".join(
             str(part)
             for part in (
@@ -3091,6 +3252,8 @@ class FlowController:
         selected_redactions = self._redaction_count(selected_text)
         clipboard_redactions = self._redaction_count(clipboard_text)
         app_preview = self._context_preview_text(active_document_text or active_text)
+        if app_source_previews:
+            app_preview = str(app_source_previews[0].get("preview") or app_preview)
         browser_preview = self._context_preview_text(browser_text)
         if not browser_preview and browser_requested and browser_available:
             browser_preview = self._context_preview_text(
@@ -3113,6 +3276,7 @@ class FlowController:
                 "state": app_state,
                 "tokens": self._deferred_token_label() if app_deferred else self._token_label(active_text),
                 "preview": app_preview,
+                "sources": app_source_previews,
                 "privacy_count": app_redactions,
                 "warning": self._with_privacy_warning(
                     self._context_warning(

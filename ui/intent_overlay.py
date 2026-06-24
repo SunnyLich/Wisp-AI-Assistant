@@ -302,6 +302,7 @@ class IntentOverlay(QWidget):
         )
         self._conversation_mode = "continue" if selected is not None else "new"
         self._conversation_index = int(selected["index"]) if selected is not None else None
+        self._conversation_choice_touched = False
         self._project_rect = QRect()
         self._conversation_mode_rect = QRect()
         self._conversation_list_rect = QRect()
@@ -512,6 +513,10 @@ class IntentOverlay(QWidget):
         if self._conversation_mode == "continue" and self._conversation_index is not None:
             return {"mode": "continue", "index": int(self._conversation_index)}
         return {"mode": "new"}
+
+    def conversation_choice_touched(self) -> bool:
+        """Return whether the user changed the chat target in this overlay."""
+        return bool(self._conversation_choice_touched)
 
     def project_choice(self) -> dict:
         """Return the selected project for this prompt."""
@@ -877,6 +882,26 @@ class IntentOverlay(QWidget):
             state = str(item.get("state") or "off").lower()
             if state == "off":
                 continue
+            sources = item.get("sources")
+            if isinstance(sources, list) and sources:
+                base_label = " ".join(str(item.get("label") or t("Context")).split())
+                added_source = False
+                for source_idx, source in enumerate(sources, start=1):
+                    if len(entries) >= _CTX_PREVIEW_MAX:
+                        break
+                    if not isinstance(source, dict):
+                        continue
+                    preview = " ".join(str(source.get("preview") or "").split())
+                    if not preview:
+                        continue
+                    source_label = " ".join(str(source.get("label") or "").split())
+                    label = f"{base_label} {source_idx}"
+                    if source_label:
+                        label = f"{label}: {source_label}"
+                    entries.append((label, preview))
+                    added_source = True
+                if added_source:
+                    continue
             preview = " ".join(str(item.get("preview") or "").split())
             if not preview:
                 continue
@@ -996,6 +1021,7 @@ class IntentOverlay(QWidget):
 
     def _toggle_conversation_mode(self) -> bool:
         """Swap between continuing the selected chat and starting fresh."""
+        self._conversation_choice_touched = True
         if self._conversation_mode == "continue":
             self._conversation_mode = "new"
         elif self._filtered_conversation_options():
@@ -1089,12 +1115,14 @@ class IntentOverlay(QWidget):
         menu.popup(self.mapToGlobal(self._conversation_list_rect.bottomLeft()))
 
     def _set_conversation_new(self) -> None:
+        self._conversation_choice_touched = True
         self._conversation_mode = "new"
         self._conversation_index = None
         self._note_interaction()
         self.update()
 
     def _set_conversation_choice(self, idx: int) -> None:
+        self._conversation_choice_touched = True
         self._conversation_mode = "continue"
         self._conversation_index = int(idx)
         self._note_interaction()
@@ -1278,9 +1306,10 @@ class IntentOverlay(QWidget):
     def eventFilter(self, obj, event):
         """Handle event filter for intent overlay."""
         from PySide6.QtCore import QEvent
-        if obj is self._input_line and event.type() == QEvent.Type.FocusOut:
+        input_line = getattr(self, "_input_line", None)
+        if obj is input_line and event.type() == QEvent.Type.FocusOut:
             QTimer.singleShot(0, self._cancel_if_focus_left)
-        if obj is self._input_line and event.type() in {
+        if obj is input_line and event.type() in {
             QEvent.Type.KeyPress,
             QEvent.Type.ShortcutOverride,
         }:

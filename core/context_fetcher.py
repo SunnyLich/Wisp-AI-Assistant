@@ -41,6 +41,7 @@ import re
 import sys
 import tempfile
 import time
+import unicodedata
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from html import unescape as html_unescape
@@ -334,9 +335,53 @@ def _clip_page_context(text: str, max_chars: int | None) -> str:
     return f"{clipped}{suffix}"
 
 
+_MOJIBAKE_MARKER_RE = re.compile(
+    r"(?:Ã.|Â.|â[€‚ƒ„…†‡ˆ‰Š‹ŒŽ™š›œžŸ]|ðŸ|ï¿½|�|è¨|äº|æœ|Å|Ëœ)"
+)
+_MOJIBAKE_REPAIR_CHUNK_RE = re.compile(
+    r"[\u00a0-\u00ff\u0152\u0153\u0160\u0161\u0178\u017D\u017E"
+    r"\u02c6\u02dc\u201a-\u201e\u2020-\u2022\u2030\u2039\u203a\u20ac\u2122]{2,}"
+)
+
+
+def _mojibake_score(text: str) -> int:
+    """Return a rough score for text that looks like UTF-8 decoded as cp1252."""
+    raw = str(text or "")
+    return (
+        len(_MOJIBAKE_MARKER_RE.findall(raw)) * 4
+        + raw.count("�") * 8
+        + raw.count("ï¿½") * 8
+    )
+
+
+def _repair_mojibake_text(text: str) -> str:
+    """Repair common UTF-8-as-cp1252 mojibake in fetched context text."""
+    raw = str(text or "")
+    if not raw or _mojibake_score(raw) <= 0:
+        return raw
+
+    def repair_chunk(match: re.Match[str]) -> str:
+        chunk = match.group(0)
+        try:
+            repaired = chunk.encode("cp1252").decode("utf-8")
+        except UnicodeError:
+            return chunk
+        if _mojibake_score(repaired) < _mojibake_score(chunk):
+            return repaired
+        return chunk
+
+    repaired = raw
+    for _ in range(2):
+        next_text = _MOJIBAKE_REPAIR_CHUNK_RE.sub(repair_chunk, repaired)
+        if next_text == repaired:
+            break
+        repaired = next_text
+    return repaired
+
+
 def _normalize_page_text(text: str) -> str:
     """Normalize page text while preserving useful paragraph breaks."""
-    text = (text or "").replace("\xa0", " ")
+    text = _repair_mojibake_text(text).replace("\xa0", " ")
     text = re.sub(r"\r\n?", "\n", text)
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     cleaned: list[str] = []
@@ -1247,6 +1292,7 @@ def _is_probable_page_rect(
 
 def _clean_browser_uia_text(text: str) -> str:
     """Normalize UIA browser text while removing exact repeated short lines."""
+    text = _repair_mojibake_text(text)
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in re.split(r"\r?\n", text or "")]
     cleaned: list[str] = []
     seen_short: set[str] = set()
@@ -1259,6 +1305,143 @@ def _clean_browser_uia_text(text: str) -> str:
         if len(line) <= 80 and key in seen_short:
             continue
         if len(line) <= 80:
+            seen_short.add(key)
+        if blank_pending and cleaned and cleaned[-1]:
+            cleaned.append("")
+        cleaned.append(line)
+        blank_pending = False
+    return "\n".join(cleaned).strip()
+
+
+_DOCUMENT_CHROME_MARKERS: tuple[str, ...] = (
+    " File Edit Selection View Go Run ",
+    "File Edit Selection View Go Run ",
+    " File Edit View ",
+    "File Edit View ",
+)
+_DOCUMENT_CHROME_LINE_KEYS: set[str] = {
+    "file",
+    "edit",
+    "selection",
+    "view",
+    "go",
+    "run",
+    "more",
+    "search",
+    "more actions",
+    "open in agents",
+    "open in app",
+    "claude code",
+    "claude code: open",
+    "python",
+    "github actions",
+    "plain text",
+    "crlf",
+    "utf-8",
+}
+_DOCUMENT_CHROME_LINE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\d+$"),
+    re.compile(r"^spaces:\s*\d+$", re.IGNORECASE),
+    re.compile(r"^ln\s+\d+\s*,\s*col\s+\d+$", re.IGNORECASE),
+    re.compile(r"^text\s*\d+\s*untitled-\d+$", re.IGNORECASE),
+)
+_DOCUMENT_ACCESSIBILITY_WARNING_RE = re.compile(
+    r"^the editor is not accessible at this time\.",
+    re.IGNORECASE,
+)
+
+_MOJIBAKE_ICON_TAIL_RE = re.compile(
+    r"(?:[\s\W]*[ðÐÃÂâ€ŒœžŸ™š˜‹›¢£¤¥§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿�]+[\s\W]*)+$"
+)
+
+
+def _strip_document_edge_noise(line: str) -> str:
+    """Strip leading/trailing UI glyph noise from a repaired document line."""
+    line = str(line or "").strip()
+    while line and (
+        line[0] in "\ufeff\ufffd�"
+        or unicodedata.category(line[0])[0] in {"C", "S", "M"}
+    ):
+        line = line[1:].lstrip()
+    while line and (
+        line[-1] in "\ufeff\ufffd�"
+        or unicodedata.category(line[-1])[0] in {"C", "S", "M"}
+    ):
+        line = line[:-1].rstrip()
+    return line
+
+
+def _is_document_chrome_line(line: str, *, chrome_mode: bool) -> bool:
+    """Return True for standalone editor chrome/status lines leaked by UIA."""
+    cleaned = " ".join(str(line or "").split()).strip()
+    if not cleaned:
+        return True
+    folded = cleaned.casefold()
+    if _DOCUMENT_ACCESSIBILITY_WARNING_RE.search(cleaned):
+        return True
+    if not chrome_mode:
+        return False
+    if any(pattern.search(cleaned) for pattern in _DOCUMENT_CHROME_LINE_PATTERNS):
+        return True
+    if folded in _DOCUMENT_CHROME_LINE_KEYS:
+        return True
+    return False
+
+
+def _clean_document_uia_text(text: str) -> str:
+    """Normalize UIA document text and trim app chrome leaked by editor windows."""
+    text = _repair_mojibake_text(text).replace("\xa0", " ")
+    text = re.sub(r"\r\n?", "\n", text)
+    text = "".join(
+        ch
+        for ch in text
+        if ch in "\n\t" or (
+            unicodedata.category(ch)[0] != "C"
+            and unicodedata.category(ch) != "Co"
+        )
+    )
+    raw_lines = [re.sub(r"[ \t]+", " ", raw_line).strip() for raw_line in text.split("\n")]
+    chrome_hits = sum(
+        1
+        for line in raw_lines
+        if _is_document_chrome_line(line, chrome_mode=True)
+        or any(marker.strip() and marker.strip() in line for marker in _DOCUMENT_CHROME_MARKERS)
+    )
+    chrome_mode = chrome_hits >= 3
+    cleaned: list[str] = []
+    seen_short: set[str] = set()
+    blank_pending = False
+    for line in raw_lines:
+        if not line:
+            blank_pending = bool(cleaned)
+            continue
+        line = _strip_document_edge_noise(line)
+        if not line:
+            continue
+        cut_at_chrome = False
+        for marker in _DOCUMENT_CHROME_MARKERS:
+            idx = line.find(marker)
+            if idx > 0:
+                line = line[:idx].rstrip()
+                cut_at_chrome = True
+                break
+            if idx == 0:
+                line = ""
+                break
+        if cut_at_chrome:
+            while line and unicodedata.category(line[-1])[0] in {"S", "M"}:
+                line = line[:-1].rstrip()
+            line = re.sub(r"\s+[\u0080-\U0010ffff][\u0080-\U0010ffff\s\W]*$", "", line).strip()
+        line = _MOJIBAKE_ICON_TAIL_RE.sub("", line).strip()
+        line = _strip_document_edge_noise(line)
+        if not line:
+            continue
+        if _is_document_chrome_line(line, chrome_mode=chrome_mode):
+            continue
+        key = line.casefold()
+        if len(line) <= 100 and key in seen_short:
+            continue
+        if len(line) <= 100:
             seen_short.add(key)
         if blank_pending and cleaned and cleaned[-1]:
             cleaned.append("")
@@ -1431,7 +1614,7 @@ def _get_window_text_uia(hwnd: int, max_chars: int) -> str | None:
                             text = vp.CurrentValue or ""
                     except Exception:
                         text = ""
-                text = re.sub(r"\r\n?", "\n", text or "").strip()
+                text = _clean_document_uia_text(text)
                 if not text or text in seen:
                     continue
                 seen.add(text)
@@ -2030,6 +2213,10 @@ _DOC_APP_PROCESS_NAMES: set[str] = {
     "textmate",
     "notepad.exe", "notepad",
     "notepad++.exe", "notepad++",
+    "code.exe", "code",
+    "code - insiders.exe", "code - insiders",
+    "cursor.exe", "cursor",
+    "windsurf.exe", "windsurf",
     "sublime_text.exe", "sublime_text",
     "typora.exe", "typora",
     "zettlr.exe", "zettlr",
@@ -2347,7 +2534,7 @@ def _obsidian_find_note(stripped_title: str) -> str:
 
 def _extract_doc_name_from_window(win: WindowInfo) -> str:
     """Extract the document portion of a supported app window title."""
-    title = (win.title or "").strip()
+    title = _repair_mojibake_text((win.title or "").strip())
     if not title:
         return ""
 

@@ -27,11 +27,15 @@ jobs:
         shell: pwsh
         run: .\tools\build_exe.ps1 -Clean -Yes
 
+      - name: Package Windows artifact
+        shell: pwsh
+        run: Compress-Archive -Path dist\Wisp -DestinationPath "dist\Wisp-${{ github.ref_name }}-windows-x64.zip" -Force
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: wisp-windows
-          path: dist/Wisp
+          path: dist/Wisp-*-windows-x64.zip
           if-no-files-found: error
           # These bundles are multi-GB (torch/chromadb/PySide6). Keep them short
           # to stay under the Actions storage quota; default retention is 90 days.
@@ -64,12 +68,95 @@ jobs:
       - name: Build Linux artifact
         run: ./tools/build_exe.sh --clean --yes
 
+      - name: Package Linux artifact
+        run: tar -czf "dist/Wisp-${GITHUB_REF_NAME}-linux-x64.tar.gz" -C dist Wisp
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: wisp-linux
-          path: dist/Wisp
+          path: dist/Wisp-*-linux-x64.tar.gz
           if-no-files-found: error
           # See the Windows job: keep these large bundles short-lived.
           retention-days: 14
           compression-level: 9
+
+  build-macos:
+    name: macOS build
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: |
+            requirements-macos.lock
+            requirements-build.txt
+
+      - name: Make build script executable
+        run: chmod +x ./tools/build_macos_app.sh
+
+      - name: Build macOS artifact
+        run: ./tools/build_macos_app.sh --clean --yes
+
+      - name: Package macOS artifact
+        run: |
+          arch="$(uname -m)"
+          if [ "$arch" = "x86_64" ]; then arch="x64"; fi
+          ditto -c -k --keepParent dist/Wisp.app "dist/Wisp-${GITHUB_REF_NAME}-macos-${arch}.zip"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wisp-macos
+          path: dist/Wisp-*-macos-*.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
+
+  publish-release:
+    name: Publish draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-windows
+      - build-linux
+      - build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+
+      - name: Verify tag matches pyproject version
+        run: |
+          project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          test "$project_version" = "$tag_version"
+
+      - name: Generate update manifest
+        run: |
+          python scripts/make_release_manifest.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --out release-assets/wisp-release-manifest.json \
+            $(find release-assets -type f ! -name "wisp-release-manifest.json" -print)
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes "Draft Wisp release."
+          find release-assets -type f -print0 | xargs -0 gh release upload "$GITHUB_REF_NAME" --clobber

@@ -38,6 +38,17 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertNotIn("actions/checkout@v4", workflow_text)
         self.assertNotIn("actions/setup-python@v5", workflow_text)
 
+    def test_build_workflow_publishes_three_platform_release_manifest(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn("build-windows:", workflow)
+        self.assertIn("build-linux:", workflow)
+        self.assertIn("build-macos:", workflow)
+        self.assertIn("publish-release:", workflow)
+        self.assertIn("scripts/make_release_manifest.py", workflow)
+        self.assertIn("wisp-release-manifest.json", workflow)
+        self.assertIn('gh release upload "$GITHUB_REF_NAME" --clobber', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

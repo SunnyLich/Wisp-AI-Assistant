@@ -51,6 +51,7 @@ a = Analysis(
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
+        (str(ROOT / "pyproject.toml"), "."),
     ] + LITEPARSE_DATAS,
     hiddenimports=[
         "pynput.keyboard._win32",

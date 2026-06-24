@@ -1101,6 +1101,7 @@ def test_intent_enabled_app_fetches_active_document_when_setting_off():
 
     query = brain.last_call("brain.query")["params"]
     assert query["active_document_text"] == "DOC TEXT"
+    assert query["active_document_label"] == "Notes"
     assert query["include_active_document"] is False
     assert {"label": "App", "type": "file"} in ui.last_call("ui.context.summary")["params"]["items"]
 
@@ -1139,7 +1140,52 @@ def test_intent_app_on_estimates_and_sends_active_document_when_documents_off():
 
     query = brain.last_call("brain.query")["params"]
     assert "notepad body" in query["active_document_text"]
+    assert query["active_document_label"] == "Notes"
     assert query["include_active_document"] is False
+
+
+def test_intent_app_preview_lists_multiple_active_document_sources():
+    """Verify App context preview exposes each detected document source."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(
+        handlers={
+            "brain.context.active_document": lambda _params: {
+                "text": "[Notepad]\nnotepad body\n\n[demo.py]\nVS Code paragraph",
+                "debug": {"window_labels": ["Notepad", "demo.py"]},
+            }
+        },
+        stream_handlers={"brain.query": query_stream("ok")},
+    )
+    with caller_config(rows):
+        _flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        _flow.begin_caller(0)
+
+    app_chip = next(
+        item
+        for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
+        if item["id"] == "ambient"
+    )
+    assert app_chip["sources"] == [
+        {"label": "Notepad", "preview": "notepad body"},
+        {"label": "demo.py", "preview": "VS Code paragraph"},
+    ]
+    ui.emit("ui.intent.chosen", {"custom": "Use VS Code"})
+    query = brain.last_call("brain.query")["params"]
+    assert query["active_document_label"] == "Open app documents"
+    assert "[Notepad]\nnotepad body" in query["active_document_text"]
+    assert "[demo.py]\nVS Code paragraph" in query["active_document_text"]
 
 
 def test_context_priority_marks_browser_when_browser_was_active():
@@ -1273,6 +1319,7 @@ def test_active_document_auto_fetches_before_query_and_summary():
 
     query = brain.last_call("brain.query")["params"]
     assert query["active_document_text"] == "DOC TEXT"
+    assert query["active_document_label"] == "Notes"
     assert query["include_active_document"] is False
     assert len(brain.calls_for("brain.context.active_document")) == 1
     summary = ui.last_call("ui.context.summary")["params"]["items"]
@@ -1331,7 +1378,9 @@ def test_active_document_request_includes_hotkey_time_window():
         "pid": 202,
         "window_id": 222,
     }
-    assert brain.last_call("brain.query")["params"]["active_document_text"] == "CALC CELLS"
+    query = brain.last_call("brain.query")["params"]
+    assert query["active_document_text"] == "CALC CELLS"
+    assert query["active_document_label"] == "soffice.bin - Untitled 1 \u2014 LibreOffice Calc"
 
 
 def test_active_document_request_prefers_captured_macos_window_title():
@@ -2054,10 +2103,126 @@ def test_rewrite_flow_pastes_back_to_original_pid():
     assert paste["target_pid"] == 777
     # ...and the captured token is forwarded so paste_text can do the AX write.
     assert paste["focus_token"] == 9
+    assert paste["restore_clipboard"] is True
     # Success is silent: the bubble finishes, no status banner is written into it.
     assert ui.calls_for("ui.reply.done"), "bubble should be finished after paste"
     assert not ui.calls_for("ui.reply.notice"), "rewrite status must not go in the bubble"
     assert not native.calls_for("native.notify"), "successful paste should not notify"
+
+
+def test_rewrite_flow_includes_app_context_as_source():
+    """Verify paste-back rewrite can use App context without changing the paste target."""
+    rows = [
+        {
+            "paste_back": True,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        },
+    ]
+
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "selected_text": "notepad text",
+            "active_app": {"name": "Notepad", "pid": 777, "window_id": 777},
+            "document_window": {
+                "process_name": "Code",
+                "title": "demo.py",
+                "pid": 123,
+                "window_id": 123,
+            },
+            "focus_token": 9,
+        }
+
+    def active_document(params: dict[str, Any]) -> dict[str, Any]:
+        active_window = params["active_window"]
+        assert active_window["process_name"] == "Code"
+        assert active_window["title"] == "demo.py"
+        return {"text": "VS Code paragraph"}
+
+    native = FakeWorker(
+        {
+            "native.context.snapshot": snapshot,
+            "native.paste_text": lambda _params: {"ok": True},
+        }
+    )
+    brain = FakeWorker(
+        handlers={"brain.context.active_document": active_document},
+        stream_handlers={"brain.rewrite": query_stream("VS Code paragraph")},
+    )
+    with caller_config(rows):
+        _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit("ui.intent.chosen", {"custom": "Replace with the one from VS Code"})
+
+    rewrite = brain.last_call("brain.rewrite")["params"]
+    assert rewrite["selected_text"] == "notepad text"
+    assert "--- BEGIN ACTIVE DOCUMENT: Code - demo.py ---" in rewrite["rewrite_context"]
+    assert "VS Code paragraph" in rewrite["rewrite_context"]
+    paste = native.last_call("native.paste_text")["params"]
+    assert paste["target_pid"] == 777
+    assert paste["text"] == "VS Code paragraph"
+
+
+def test_rewrite_context_excludes_target_document_when_other_sources_exist():
+    """Verify custom paste-back prompts do not use the target app as source."""
+    rows = [
+        {
+            "paste_back": True,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        },
+    ]
+
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "selected_text": "Yeah, no worries.\nLet's keep it.",
+            "active_app": {"name": "Notepad", "pid": 777, "window_id": 777},
+            "focus_token": 9,
+        }
+
+    def active_document(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "text": (
+                "[Yeah, no worries. Let's just keep i]\n"
+                "Yeah, no worries.\nLet's keep it.\n\n"
+                "[This situation requires immediate attent - Untitled-1]\n"
+                "This situation requires immediate attention."
+            ),
+            "debug": {
+                "window_labels": [
+                    "Yeah, no worries. Let's just keep i",
+                    "This situation requires immediate attent - Untitled-1",
+                ]
+            },
+        }
+
+    native = FakeWorker(
+        {
+            "native.context.snapshot": snapshot,
+            "native.paste_text": lambda _params: {"ok": True},
+        }
+    )
+    brain = FakeWorker(
+        handlers={"brain.context.active_document": active_document},
+        stream_handlers={"brain.rewrite": query_stream("This situation requires immediate attention.")},
+    )
+    with caller_config(rows):
+        _flow, _native, _ui, brain, _audio = make_flow(native=native, brain=brain)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        _ui.emit(
+            "ui.intent.chosen",
+            {"custom": "Replace the selected text from the content of VS Code"},
+        )
+
+    rewrite = brain.last_call("brain.rewrite")["params"]
+    assert "Yeah, no worries.\nLet's keep it." not in rewrite["rewrite_context"]
+    assert "This situation requires immediate attention." in rewrite["rewrite_context"]
 
 
 def test_paste_back_file_prompt_routes_to_local_file_tools():
@@ -2094,8 +2259,8 @@ def test_paste_back_file_prompt_routes_to_local_file_tools():
     assert ui.calls_for("ui.chat.add_conversation")
 
 
-def test_rewrite_falls_back_to_clipboard_when_focus_not_confirmed():
-    """Verify rewrite falls back to clipboard when focus not confirmed behavior."""
+def test_rewrite_does_not_treat_clipboard_only_paste_as_success():
+    """Verify rewrite reports failure when selected text was not replaced."""
     rows = [
         {
             "paste_back": True,
@@ -2109,10 +2274,10 @@ def test_rewrite_falls_back_to_clipboard_when_focus_not_confirmed():
     native = FakeWorker(
         {
             "native.context.snapshot": context_handler(selected="bad grammar", pid=777),
-            # Focus didn't land on the target app, but the rewrite is on the clipboard.
             "native.paste_text": lambda _params: {
                 "ok": False,
                 "clipboard_ok": True,
+                "clipboard_restored": True,
                 "confirmed": False,
                 "app_name": "TextEdit",
                 "frontmost_pid": 999,
@@ -2124,10 +2289,11 @@ def test_rewrite_falls_back_to_clipboard_when_focus_not_confirmed():
         _flow, native, ui, _brain, _audio = make_flow(native=native, brain=brain)
         ui.emit("ui.intent.chosen", {"custom": "Fix grammar"})
 
-    # The recovery hint goes to a system notification, never the reply bubble.
     assert not ui.calls_for("ui.reply.notice"), "fallback status must not go in the bubble"
+    paste = native.last_call("native.paste_text")["params"]
+    assert paste["restore_clipboard"] is True
     notify = native.last_call("native.notify")["params"]
-    assert "paste" in notify["message"].lower()
+    assert "replace the selected text" in notify["message"]
 
 
 def test_rewrite_failure_reports_notice_and_returns_idle():

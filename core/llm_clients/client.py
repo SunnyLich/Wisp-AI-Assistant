@@ -44,6 +44,7 @@ from core.llm_clients.routes import (
 )
 from core.llm_clients.logging_utils import log_event
 from core.llm_clients.messages import (
+    build_contextual_user_text as _build_contextual_user_text,
     build_openai_messages as _build_openai_messages,
     sanitize_history as _sanitize_history,
 )
@@ -3511,10 +3512,9 @@ def stream_response(
         user_message:     The user's query text.
         image_base64:     Optional base64-encoded PNG for vision input.
         ambient_context:  Plain-text context block (active window, clipboard,
-                          focused element) -” injected into system prompt.
+                          focused element) - injected into the current user turn.
         memory_context:   Pre-formatted LTM facts + STM session summary from
-                          core.memory -” injected into system prompt before the
-                          ambient context block.
+                          core.memory - injected into the current user turn.
         use_tools:        If True and provider is Anthropic, expose
                   web_search + get_context/retrieve_website tools so Claude can
                   pull extra context when it decides to. The model
@@ -3542,7 +3542,7 @@ def stream_response(
 
     if ambient_context:
         _log_context(
-            "ambient snapshot -” captured at hotkey/voice trigger, injected into system prompt",
+            "ambient snapshot - captured at hotkey/voice trigger, injected into user prompt",
             ambient_context,
         )
 
@@ -3877,13 +3877,10 @@ def _stream_copilot(
     parts = []
     if system_prompt:
         parts.append(system_prompt)
-    if memory_context:
-        parts.append(memory_context)
-    if ambient_context:
-        parts.append("Context:\n" + ambient_context)
     system = "\n\n".join(parts)
     history_prefix = _codex_history_prefix(_sanitize_history(history))
-    prompt = (history_prefix + user_message) if history_prefix else user_message
+    current_turn = _build_contextual_user_text(user_message, ambient_context, memory_context)
+    prompt = (history_prefix + current_turn) if history_prefix else current_turn
     yield from copilot_client.stream(
         prompt,
         model,
@@ -4310,14 +4307,8 @@ def _stream_openai_compat(
 # ------------------------------------------------------------------
 
 def _build_codex_text(user_message: str, ambient_context: str = "", memory_context: str = "") -> str:
-    """Prepend context into a single text block for the Codex endpoint."""
-    parts = []
-    if memory_context:
-        parts.append(memory_context)
-    if ambient_context:
-        parts.append(f"---\n{ambient_context}")
-    parts.append(user_message)
-    return "\n\n".join(parts)
+    """Render Codex's single text input with context as user data."""
+    return _build_contextual_user_text(user_message, ambient_context, memory_context)
 
 
 def _codex_history_prefix(prior_turns: list[dict]) -> str:
@@ -4605,10 +4596,7 @@ def _stream_anthropic(
         system = _with_local_file_tools_note(system, allowed_tools)
     system = _with_memory_search_note(system, allowed_tools if use_tools else None)
     system = _with_memory_save_note(system, allowed_tools if use_tools else None)
-    if memory_context:
-        system += f"\n\n{memory_context}"
-    if ambient_context:
-        system += f"\n\n---\n{ambient_context}"
+    user_text = _build_contextual_user_text(user_message, ambient_context, memory_context)
 
     # Anthropic requires an explicit max_tokens, so "no app cap" (0) maps to a
     # generous per-request ceiling rather than being truly unlimited.
@@ -4617,6 +4605,7 @@ def _stream_anthropic(
 
     if image_base64:
         content = [
+            {"type": "text", "text": user_text},
             {
                 "type": "image",
                 "source": {
@@ -4625,10 +4614,9 @@ def _stream_anthropic(
                     "data": image_base64,
                 },
             },
-            {"type": "text", "text": user_message},
         ]
     else:
-        content = user_message
+        content = user_text
 
     # --- No tools: original streaming path (lowest latency) ---
     if not tools_active:
@@ -4766,7 +4754,12 @@ def _stream_anthropic(
 # Inline rewrite / fix  (Ctrl+Shift+Q)
 # ------------------------------------------------------------------
 
-def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the following text") -> Generator[str, None, None]:
+def stream_rewrite(
+    selected_text: str,
+    intent_prompt: str = "Rewrite or fix the following text",
+    *,
+    rewrite_context: str = "",
+) -> Generator[str, None, None]:
     """
     Stream a rewrite/fix of the selected text using the primary LLM.
 
@@ -4774,14 +4767,35 @@ def stream_rewrite(selected_text: str, intent_prompt: str = "Rewrite or fix the 
     no prose, no markdown, no explanation.  The result is pasted back directly.
 
     Args:
-        selected_text:  The text to rewrite.
+        selected_text:  The text to replace in the user's app.
         intent_prompt:  The instruction (e.g. "Fix the grammar and spelling").
                         Taken from the caller's chosen intent row.
+        rewrite_context: Optional source context, such as active app/document text.
     """
     import time
     ts = time.strftime("%H:%M:%S")
     print(f"[llm {ts}] Rewrite request ({len(selected_text)} chars) -” {intent_prompt[:60]!r}")
-    user_message = f"{intent_prompt}:\n\n{selected_text}"
+    context = str(rewrite_context or "").strip()
+    user_message = (
+        "Instruction:\n"
+        f"{intent_prompt}\n\n"
+        "The text below is the ONLY text that will be replaced in the user's app.\n"
+        "--- BEGIN TARGET SELECTION ---\n"
+        f"{selected_text}\n"
+        "--- END TARGET SELECTION ---"
+    )
+    if context:
+        user_message = (
+            f"{user_message}\n\n"
+            "Use the following source context only when the instruction asks for it. "
+            "If the instruction says to replace the target from an app/source such as VS Code, "
+            "choose the matching source block and output that replacement text. "
+            "Never use the target selection as its own source. "
+            "Do not rewrite the source context unless it is explicitly requested.\n"
+            "--- BEGIN SOURCE CONTEXT ---\n"
+            f"{context}\n"
+            "--- END SOURCE CONTEXT ---"
+        )
     candidates = _route_candidates(config.LLM_PROVIDER, config.LLM_MODEL, config.LLM_FALLBACKS)
     yield from _stream_with_fallbacks(
         "rewrite",

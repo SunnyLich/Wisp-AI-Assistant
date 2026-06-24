@@ -1287,6 +1287,7 @@ def brain_query(
     screenshot_tool_b64: str | None = None,
     include_active_document: bool = False,
     active_document_text: str = "",
+    active_document_label: str = "",
     context_priority: str = "",
     history: list[dict] | None = None,
     memory_project: str | None = None,
@@ -1347,6 +1348,7 @@ def brain_query(
             screenshot_b64=screenshot_b64,
             ambient_text=ambient_text,
             active_document_text=active_document,
+            active_document_label=active_document_label,
             priority_context=context_priority,
             trust_privacy_mode=trust_privacy_mode,
         )
@@ -1357,6 +1359,7 @@ def brain_query(
         built = _redact_built_context(built)
         memory_context = _redact_text(memory_context)
 
+    normalized_history = _normalize_chat_messages(history or []) if history else None
     parts: list[str] = []
     file_context: list[dict[str, Any]] = []
     _log(
@@ -1373,7 +1376,7 @@ def brain_query(
         allow_screenshot_tool,
         screenshot_tool_b64,
         pinned_tools=pinned_tools,
-        history=history,
+        history=normalized_history,
         ctx=ctx,
         file_access_mode=file_access_mode,
         file_context=file_context,
@@ -1558,6 +1561,7 @@ def brain_rewrite(
     ctx: StreamContext,
     selected_text: str = "",
     intent_prompt: str = "Rewrite or fix the following text",
+    rewrite_context: str = "",
 ) -> dict[str, Any]:
     """Stream an inline rewrite for native paste-back callers."""
     selected_text = selected_text.strip()
@@ -1565,7 +1569,7 @@ def brain_rewrite(
         raise ValueError("selected_text is required")
 
     parts: list[str] = []
-    for chunk in _stream_rewrite_reply(selected_text, intent_prompt):
+    for chunk in _stream_rewrite_reply(selected_text, intent_prompt, rewrite_context):
         if ctx.cancelled:
             break
         parts.append(chunk)
@@ -1576,7 +1580,7 @@ def brain_rewrite(
     return {"text": full}
 
 
-def _stream_rewrite_reply(selected_text: str, intent_prompt: str) -> Iterator[str]:
+def _stream_rewrite_reply(selected_text: str, intent_prompt: str, rewrite_context: str = "") -> Iterator[str]:
     """Stream rewrite reply."""
     if _offline_brain():
         reply = f"[fake-rewrite] {intent_prompt}: {selected_text}"
@@ -1586,7 +1590,7 @@ def _stream_rewrite_reply(selected_text: str, intent_prompt: str) -> Iterator[st
 
     from core.llm_clients.client import stream_rewrite
 
-    yield from stream_rewrite(selected_text, intent_prompt)
+    yield from stream_rewrite(selected_text, intent_prompt, rewrite_context=rewrite_context)
 
 
 @handler("brain.chat", streaming=True)
@@ -1670,8 +1674,57 @@ def brain_chat(
     return done_payload
 
 
+def _message_context_text(raw: object) -> str:
+    """Normalize one message-scoped hidden context value."""
+    if isinstance(raw, list):
+        return "\n\n---\n".join(
+            str(item or "").strip()
+            for item in raw
+            if str(item or "").strip()
+        )
+    return str(raw or "").strip()
+
+
+def _source_boundary_label(value: object, fallback: str) -> str:
+    """Return a single-line source label safe for prompt boundaries."""
+    label = " ".join(str(value or "").split()).strip()
+    return label or fallback
+
+
+def _user_turn_with_message_context(raw: dict[str, Any], content: str, conversation_store: Any) -> str:
+    """Attach message-local context to the owning user turn with source boundaries."""
+    context_parts: list[str] = []
+    context_text = _message_context_text(raw.get("context"))
+    if context_text:
+        context_parts.append(
+            "--- BEGIN MESSAGE CONTEXT ---\n"
+            f"{context_text}\n"
+            "--- END MESSAGE CONTEXT ---"
+        )
+    if conversation_store is not None:
+        for ref in conversation_store.normalize_attachments(raw.get("attachments")):
+            ref_context = conversation_store.attachment_context_text(ref)
+            if not ref_context:
+                continue
+            name = _source_boundary_label(ref.get("name") or ref.get("path"), "attachment")
+            context_parts.append(
+                f"--- BEGIN ATTACHED FILE: {name} ---\n"
+                f"{ref_context}\n"
+                f"--- END ATTACHED FILE: {name} ---"
+            )
+    if not context_parts:
+        return content
+    joined_context = "\n\n".join(context_parts)
+    return (
+        f"{content.rstrip()}\n\n"
+        "[Attached context for this message]\n"
+        "Each block below belongs only to this user message. Keep file/source boundaries distinct.\n"
+        f"{joined_context}"
+    )
+
+
 def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Normalize chat messages."""
+    """Normalize chat messages, keeping user context anchored to its source turn."""
     allowed_roles = {"system", "user", "assistant"}
     turns: list[dict[str, str]] = []
     try:
@@ -1684,6 +1737,8 @@ def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, s
         if role not in allowed_roles or content is None:
             continue
         text = str(content).strip()
+        if role == "user":
+            text = _user_turn_with_message_context(raw, text, conversation_store)
         turn: dict[str, str] = {"role": role, "content": text}
         # Carry attached screenshots/images forward by resolving references at
         # model-call time, never by persisting base64 in conversation history.

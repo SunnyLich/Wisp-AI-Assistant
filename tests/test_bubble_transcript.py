@@ -104,6 +104,38 @@ def test_multi_chunk_reply_follows_latest_text_before_first_highlight():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_preserves_explicit_newlines_and_blank_lines():
+    """Verify model paragraphs remain visible as separate bubble lines."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_LINES = 5
+    config.BUBBLE_WIDTH = 520
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("First paragraph.\nSecond line.\n\nNew paragraph.")
+
+        assert bubble._lines[:4] == [
+            "First paragraph.",
+            "Second line.",
+            "",
+            "New paragraph.",
+        ]
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_multi_chunk_reply_follows_read_highlight_once_reveal_starts():
     """Verify later chunks do not pull the bubble away from the read position."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

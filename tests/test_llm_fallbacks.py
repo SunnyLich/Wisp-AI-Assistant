@@ -168,6 +168,51 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertIn("Memory text", input_text)
         self.assertEqual(content[1]["type"], "input_image")
 
+    def test_anthropic_query_attaches_context_to_user_message(self):
+        """Verify anthropic context is user data instead of system text."""
+        captured = {}
+
+        class FakeStream:
+            text_stream = iter(["ok"])
+
+            def __enter__(self):
+                """Enter fake stream."""
+                return self
+
+            def __exit__(self, *_args):
+                """Exit fake stream."""
+                return False
+
+        class FakeMessages:
+            def stream(self, **kwargs):
+                """Capture anthropic request."""
+                captured["kwargs"] = kwargs
+                return FakeStream()
+
+        fake_client = SimpleNamespace(messages=FakeMessages())
+
+        chunks = list(
+            llm._stream_anthropic(
+                "explain",
+                None,
+                "claude-test",
+                fake_client,
+                "[Selection]\nselected text",
+                "[Session memory]\nremembered fact",
+                use_tools=False,
+                system_prompt="SYSTEM RULES",
+            )
+        )
+
+        self.assertEqual(chunks, ["ok"])
+        request = captured["kwargs"]
+        self.assertEqual(request["system"], "SYSTEM RULES")
+        self.assertNotIn("selected text", request["system"])
+        user_text = request["messages"][-1]["content"]
+        self.assertIn("<captured_context>\n[Selection]\nselected text\n</captured_context>", user_text)
+        self.assertIn("<memory>\n[Session memory]\nremembered fact\n</memory>", user_text)
+        self.assertTrue(user_text.endswith("<request>\nexplain\n</request>"))
+
     def test_active_document_falls_back_to_window_text_when_no_path(self):
         """Verify active document falls back to window text when no path behavior."""
         with patch("core.context_fetcher.get_all_open_document_paths", return_value=[]), \
@@ -1086,7 +1131,8 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertEqual(chunks, ["ok"])
         self.assertIn("tools", calls[0])
         self.assertNotIn("tools", calls[1])
-        self.assertIn("Document text", calls[1]["messages"][0]["content"])
+        self.assertNotIn("Document text", calls[1]["messages"][0]["content"])
+        self.assertIn("Document text", calls[1]["messages"][-1]["content"])
         self.assertFalse(llm._get_route_capabilities("google", "model").supports_tools)
 
     def test_chatgpt_route_probe_retries_streaming_when_create_rejected(self):

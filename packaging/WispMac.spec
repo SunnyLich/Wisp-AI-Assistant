@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller specification for the Linux Wisp executable bundle.
+# PyInstaller specification for the macOS Wisp app bundle.
 
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
@@ -16,9 +16,6 @@ def _repo_root() -> Path:
 
 ROOT = _repo_root()
 
-# LiteParse ships a loose pdfium shared library that its native extension
-# loads at runtime; collect the package explicitly or the frozen app panics
-# on parse. (See Wisp.spec for the Windows equivalent.)
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 UV_BINARIES = [
     (str(path), "bin")
@@ -43,12 +40,10 @@ a = Analysis(
         (str(ROOT / "pyproject.toml"), "."),
     ] + LITEPARSE_DATAS,
     hiddenimports=[
-        "pynput.keyboard._xorg",
-        "pynput.mouse._xorg",
-        # SSL support — required for any https:// request from the bundle
-        "ssl",
-        "_ssl",
-        "certifi",
+        "pynput.keyboard._darwin",
+        "pynput.mouse._darwin",
+        "AppKit",
+        "Quartz",
     ] + LITEPARSE_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
@@ -61,13 +56,6 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
-
-# Strip bundled libssl/libcrypto — venv and system versions can mismatch.
-# The system's OpenSSL pair is always self-consistent.
-a.binaries = [
-    b for b in a.binaries
-    if not (b[0].startswith("libssl") or b[0].startswith("libcrypto"))
-]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -87,7 +75,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(ROOT / "assets" / "app.ico") if (ROOT / "assets" / "app.ico").exists() else None,
 )
 
 coll = COLLECT(
@@ -99,4 +86,17 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name="Wisp",
+)
+
+app = BUNDLE(
+    coll,
+    name="Wisp.app",
+    icon=None,
+    bundle_identifier="app.wisp.desktop",
+    info_plist={
+        "CFBundleName": "Wisp",
+        "CFBundleDisplayName": "Wisp",
+        "NSMicrophoneUsageDescription": "Wisp uses the microphone for voice input when you enable speech features.",
+        "NSAppleEventsUsageDescription": "Wisp uses automation access for app context and pasteback features.",
+    },
 )

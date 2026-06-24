@@ -2179,7 +2179,11 @@ class QtProtocolHost:
             )
 
         self._intent.intent_chosen.connect(_chosen)
-        self._intent.cancelled.connect(lambda: self.emit("ui.intent.cancelled", {"caller_idx": caller_idx}))
+        def _cancelled() -> None:
+            self._apply_cancelled_intent_conversation_choice(self._intent)
+            self.emit("ui.intent.cancelled", {"caller_idx": caller_idx})
+
+        self._intent.cancelled.connect(_cancelled)
         self._intent.destroyed.connect(lambda: setattr(self, "_intent", None))
         self._intent.show()
         self._intent.raise_()
@@ -2187,6 +2191,11 @@ class QtProtocolHost:
             self._intent.activateWindow()
             self._intent.setFocus()
         return {"shown": True, "caller_idx": caller_idx}
+
+    def _apply_cancelled_intent_conversation_choice(self, overlay) -> None:
+        """Preserve only explicit chat-target changes from a canceled picker."""
+        if overlay is not None and overlay.conversation_choice_touched():
+            self._apply_intent_conversation_choice(overlay.conversation_choice())
 
     def _update_intent_context_items(
         self,

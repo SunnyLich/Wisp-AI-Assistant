@@ -69,12 +69,22 @@ class BuildContextTests(unittest.TestCase):
         """Verify dropped image kept as context when screenshot exists behavior."""
         out = _build(screenshot_b64="EXISTING", drop_items=[("shot.png", "BASE64", "image")])
         self.assertEqual(out.screenshot_b64, "EXISTING")
-        self.assertEqual(out.ambient_ctx, "[Dropped context: shot.png]\nBASE64")
+        self.assertEqual(
+            out.ambient_ctx,
+            "--- BEGIN DROPPED CONTEXT: shot.png ---\n"
+            "BASE64\n"
+            "--- END DROPPED CONTEXT: shot.png ---",
+        )
 
     def test_dropped_document_is_read_and_labelled(self):
         """Verify dropped document is read and labelled behavior."""
         out = _build(drop_items=[("notes.txt", "/tmp/notes.txt", "document_path")])
-        self.assertEqual(out.ambient_ctx, "[Document: notes.txt]\nDOC</tmp/notes.txt>")
+        self.assertEqual(
+            out.ambient_ctx,
+            "--- BEGIN DOCUMENT: notes.txt ---\n"
+            "DOC</tmp/notes.txt>\n"
+            "--- END DOCUMENT: notes.txt ---",
+        )
 
     def test_dropped_document_empty_read_is_skipped(self):
         """Verify dropped document empty read is skipped behavior."""
@@ -88,6 +98,16 @@ class BuildContextTests(unittest.TestCase):
         """Verify active document appended when no screenshot behavior."""
         out = _build(selected="sel", active_document_text="ACTIVE")
         self.assertEqual(out.ambient_ctx, "[Selection]\nsel\n\n[Active document]\nACTIVE")
+
+    def test_active_document_uses_source_boundaries_when_labelled(self):
+        """Verify active document context identifies its app/window source."""
+        out = _build(active_document_text="ACTIVE", active_document_label="Code - notes.py")
+        self.assertEqual(
+            out.ambient_ctx,
+            "--- BEGIN ACTIVE DOCUMENT: Code - notes.py ---\n"
+            "ACTIVE\n"
+            "--- END ACTIVE DOCUMENT: Code - notes.py ---",
+        )
 
     def test_priority_note_added_when_browser_and_document_context_exist(self):
         """Verify priority note added when browser and document context exist behavior."""
@@ -143,8 +163,12 @@ class BuildContextTests(unittest.TestCase):
             out.ambient_ctx,
             "AMB\n\n"
             "[Buffered context]\nbuf\n\n"
-            "[Document: d.txt]\nDOC</p>\n\n"
-            "[Dropped context: x]\nraw\n\n"
+            "--- BEGIN DOCUMENT: d.txt ---\n"
+            "DOC</p>\n"
+            "--- END DOCUMENT: d.txt ---\n\n"
+            "--- BEGIN DROPPED CONTEXT: x ---\n"
+            "raw\n"
+            "--- END DROPPED CONTEXT: x ---\n\n"
             "[Clipboard]\nclip\n\n"
             "[Selection]\nsel\n\n"
             "[Active document]\nACTIVE",

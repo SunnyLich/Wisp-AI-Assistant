@@ -15,6 +15,7 @@ Press a hotkey, choose an intent, and Wisp captures the right context, streams t
 
 [Quick start](#quick-start) | [What it does](#what-wisp-does) | [Configuration](#configuration) | [Privacy](#privacy-and-control)
 
+![Wisp Ctrl+Q demo](ReadMe%201st%20Demo.gif)
 </div>
 
 ---
@@ -152,6 +153,12 @@ Wisp is designed as a local desktop assistant. Storage stays on your machine, an
 | macOS 13+ | Supported with native/audio work isolated in workers |
 | Linux X11 | Functional |
 | Linux Wayland | Limited; use X11 for the full hotkey/screenshot path |
+
+## Feedback And Platform Help
+
+Bug reports are welcome, especially for desktop behaviors that depend on OS permissions, window managers, audio devices, or display servers. If you hit a crash, missing permission, broken hotkey, capture issue, paste-back failure, or setup-check warning that looks wrong, please open an issue with your OS version, launcher, logs, and the action that triggered it.
+
+Help testing and improving macOS support and Linux Wayland support is especially useful. These platforms have the most native integration edge cases, so real-world reports from different machines, desktop environments, and permission states make Wisp better for everyone.
 
 <details>
 <summary>Contributor docs</summary>

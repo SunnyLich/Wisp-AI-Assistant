@@ -45,3 +45,36 @@ Notes:
   it into `dist\Wisp\bin\uv.exe`.
 - If packaging fails on a missing optional dependency, install it into `.venv` and rerun the script.
 - On Windows, if the repo path is long enough to trip the OS path limit during `elevenlabs` install, the build script now skips that optional package instead of failing the whole build. The packaged app will still build, but the ElevenLabs TTS provider will be unavailable unless you enable Windows long paths and reinstall dependencies.
+
+## Cross-Platform Release Builds
+
+Tagged releases are built by `.github/workflows/build.yml`.
+
+Create a release tag that matches `pyproject.toml`:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow builds:
+
+- Windows: `Wisp-<tag>-windows-x64.zip`
+- macOS: `Wisp-<tag>-macos-<arch>.zip`
+- Linux: `Wisp-<tag>-linux-x64.tar.gz`
+
+After all platform jobs finish, the workflow creates or updates a draft GitHub
+Release and uploads `wisp-release-manifest.json`. The Settings update button
+uses that manifest to find the newest build for the current platform, verify
+the SHA256 hash, and open the downloaded installer/archive.
+
+Manual platform build entry points:
+
+```powershell
+.\tools\build_exe.ps1 -Clean
+```
+
+```bash
+./tools/build_exe.sh --clean --yes
+./tools/build_macos_app.sh --clean --yes
+```

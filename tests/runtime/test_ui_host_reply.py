@@ -314,6 +314,54 @@ def test_intent_conversation_options_start_new_until_chat_is_active() -> None:
     assert [option for option in selected_options if option["selected"]][0]["index"] == 0
 
 
+def test_apply_intent_conversation_choice_preserves_new_selection() -> None:
+    """Verify a canceled picker can retarget future prompts to a new chat."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = 0
+    host._all_conversations = [
+        {"messages": [{"role": "user", "content": "existing chat"}]},
+    ]
+
+    result = host._apply_intent_conversation_choice({"mode": "new"})
+
+    assert result == {"mode": "new"}
+    assert host._active_conversation_idx is None
+
+
+def test_cancelled_intent_only_applies_touched_conversation_choice() -> None:
+    """Verify plain cancel keeps the active chat but explicit picker changes stick."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class FakeOverlay:
+        def __init__(self, touched: bool, choice: dict):
+            self._touched = touched
+            self._choice = choice
+
+        def conversation_choice_touched(self) -> bool:
+            return self._touched
+
+        def conversation_choice(self) -> dict:
+            return self._choice
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = 0
+    host._all_conversations = [
+        {"messages": [{"role": "user", "content": "existing chat"}]},
+        {"messages": [{"role": "user", "content": "latest chat"}]},
+    ]
+
+    host._apply_cancelled_intent_conversation_choice(FakeOverlay(False, {"mode": "new"}))
+    assert host._active_conversation_idx == 0
+
+    host._apply_cancelled_intent_conversation_choice(FakeOverlay(True, {"mode": "new"}))
+    assert host._active_conversation_idx is None
+
+    host._apply_cancelled_intent_conversation_choice(FakeOverlay(True, {"mode": "continue", "index": 1}))
+    assert host._active_conversation_idx == 1
+
+
 def test_apply_intent_project_choice_sets_active_or_creates_project(monkeypatch) -> None:
     """Verify intent overlay project choice updates the active project."""
     from core.conversation_store import store as conversation_store

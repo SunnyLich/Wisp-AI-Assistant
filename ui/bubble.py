@@ -669,7 +669,7 @@ class SpeechBubble(QWidget):
             self._restore_base_size()
         self._pending_words = self._reveal_units(text)
         self._revealed_count = len(self._pending_words)
-        self._full_text = self._join_reveal_units(self._pending_words)
+        self._full_text = text
         self._layout_action_buttons()
         self._rewrap()
         self.show()
@@ -815,10 +815,16 @@ class SpeechBubble(QWidget):
         # a source word so spacing and the read-highlight index stay correct.
         words: list[tuple[str, bool, int | None, bool, bool]] = []
         for word, bold in thought_words:
+            if word == "\n":
+                words.append((word, bold, None, True, False))
+                continue
             for u_i, unit in enumerate(self._wrap_units(word)):
                 words.append((unit, bold, None, True, u_i == 0))
         reply_idx = 0
         for word, bold in reply_words:
+            if word == "\n":
+                words.append((word, bold, None, False, False))
+                continue
             reveal_units = self._reveal_units(word) or [word]
             for reveal_i, reveal_unit in enumerate(reveal_units):
                 for u_i, unit in enumerate(self._wrap_units(reveal_unit)):
@@ -829,6 +835,12 @@ class SpeechBubble(QWidget):
         current_w = 0
         prev_is_thought: bool | None = None
         for word, bold, reply_idx, is_thought, space_before in words:
+            if word == "\n":
+                lines.append(current)
+                current = []
+                current_w = 0
+                prev_is_thought = is_thought
+                continue
             fm = self._bold_fm if bold else self._fm
             word_w = fm.horizontalAdvance(word)
             # Break onto a new line where the model's thinking ends and the
@@ -1043,19 +1055,38 @@ class SpeechBubble(QWidget):
         words: list[tuple[str, bool]] = []
         bold = False
         buf = ""
+
+        def flush_buffer() -> None:
+            nonlocal buf
+            word = ""
+            for ch in buf.replace("\r\n", "\n").replace("\r", "\n"):
+                if ch == "\n":
+                    if word:
+                        words.append((word, bold))
+                        word = ""
+                    words.append(("\n", bold))
+                elif ch.isspace():
+                    if word:
+                        words.append((word, bold))
+                        word = ""
+                else:
+                    word += ch
+            if word:
+                words.append((word, bold))
+            buf = ""
+
         i = 0
         while i < len(text):
             if text.startswith("**", i) or text.startswith("__", i):
                 if buf:
-                    words.extend((part, bold) for part in buf.split())
-                    buf = ""
+                    flush_buffer()
                 bold = not bold
                 i += 2
                 continue
             buf += text[i]
             i += 1
         if buf:
-            words.extend((part, bold) for part in buf.split())
+            flush_buffer()
         return words
 
     # ------------------------------------------------------------------

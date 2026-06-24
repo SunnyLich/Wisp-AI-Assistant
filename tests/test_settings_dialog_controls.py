@@ -291,6 +291,33 @@ def test_app_tab_exposes_assistant_language_setting():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_app_tab_exposes_update_controls():
+    """Verify the App tab exposes manual update controls."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    tab = SettingsDialog._tab_app(dialog)
+
+    try:
+        update_button = tab.findChild(QPushButton, "settingsUpdateButton")
+        update_status = tab.findChild(QLabel, "settingsUpdateStatusLabel")
+
+        assert update_button is not None
+        assert update_button.text() == t("Check for updates")
+        assert update_status is not None
+        assert update_status.text() == t("Ready to check for updates.")
+    finally:
+        tab.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_localize_widget_tree_uses_app_language(monkeypatch):
     """Verify localize widget tree uses app language behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

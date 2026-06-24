@@ -55,6 +55,7 @@ class ContextInputs:
     drop_items: list[tuple] = field(default_factory=list)  # (name, content, type)
     clipboard_text: str | None = None                  # already read when caller opted in
     active_document_text: str = ""                      # already read + filtered, or ""
+    active_document_label: str = ""                     # app/window/file label for active document text
     priority_context: str = ""                          # e.g. "Browser/Web" or "Active document"
     trust_privacy_mode: bool = True
 
@@ -164,14 +165,22 @@ def build_context(
                     doc_text, privacy_enabled, f"document:{name}"
                 )
                 if redacted:
-                    context_blocks.append(f"[Document: {label}]\n{redacted}")
+                    context_blocks.append(
+                        f"--- BEGIN DOCUMENT: {label} ---\n"
+                        f"{redacted}\n"
+                        f"--- END DOCUMENT: {label} ---"
+                    )
                 reports.append(report)
         else:
             redacted, report = _redact_with_report_if_enabled(
                 content, privacy_enabled, f"dropped:{name}"
             )
             if redacted:
-                context_blocks.append(f"[Dropped context: {label}]\n{redacted}")
+                context_blocks.append(
+                    f"--- BEGIN DROPPED CONTEXT: {label} ---\n"
+                    f"{redacted}\n"
+                    f"--- END DROPPED CONTEXT: {label} ---"
+                )
             reports.append(report)
 
     if inp.clipboard_text:
@@ -198,7 +207,17 @@ def build_context(
     sources = _context_sources(ambient_text, all_contexts, active_document_text)
 
     ctx_block = "\n\n".join(all_contexts)
-    active_doc_block = f"[Active document]\n{active_document_text}" if active_document_text else ""
+    active_doc_block = ""
+    if active_document_text:
+        label = " ".join(str(inp.active_document_label or "").split()).strip()
+        if label:
+            active_doc_block = (
+                f"--- BEGIN ACTIVE DOCUMENT: {label} ---\n"
+                f"{active_document_text}\n"
+                f"--- END ACTIVE DOCUMENT: {label} ---"
+            )
+        else:
+            active_doc_block = f"[Active document]\n{active_document_text}"
     priority_note = _context_priority_note(inp.priority_context, sources)
 
     # Assemble in priority order with explicit source headers. The LLM client

@@ -142,6 +142,67 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
     }
 
 
+def test_query_normalizes_history_context_and_attachments(record_ctx, monkeypatch):
+    """Verify hotkey followups replay file context with source boundaries."""
+    from core.conversation_store import store as conversation_store
+
+    captured = {}
+
+    monkeypatch.setattr(conversation_store, "normalize_attachments", lambda refs: list(refs or []))
+    monkeypatch.setattr(
+        conversation_store,
+        "attachment_context_text",
+        lambda ref: f"Path: {ref['path']}\n\n{ref['text']}",
+    )
+    monkeypatch.setattr(conversation_store, "first_image_base64_from_message", lambda _msg: "")
+
+    def fake_stream(
+        _built,
+        _memory_context,
+        use_tools,
+        allowed_tools,
+        allow_screenshot_tool,
+        screenshot_tool_b64,
+        pinned_tools=None,
+        history=None,
+        ctx=None,
+        file_access_mode="",
+        file_context=None,
+    ):
+        captured["history"] = history
+        yield "ok"
+
+    monkeypatch.setattr(handlers, "_stream_query_reply", fake_stream)
+    _events, ctx = record_ctx()
+
+    handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="follow up",
+        memory_context="(none)",
+        history=[
+            {
+                "role": "user",
+                "content": "summarize",
+                "context": "Original ambient context",
+                "attachments": [
+                    {"name": "notes.md", "path": "/tmp/notes.md", "text": "notes content"},
+                ],
+            },
+            {"role": "assistant", "content": "summary"},
+        ],
+    )
+
+    content = captured["history"][0]["content"]
+    assert content.startswith("summarize\n\n[Attached context for this message]")
+    assert "--- BEGIN MESSAGE CONTEXT ---" in content
+    assert "Original ambient context" in content
+    assert "--- BEGIN ATTACHED FILE: notes.md ---" in content
+    assert "Path: /tmp/notes.md" in content
+    assert "notes content" in content
+    assert "--- END ATTACHED FILE: notes.md ---" in content
+    assert captured["history"][1] == {"role": "assistant", "content": "summary"}
+
+
 def test_query_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch):
     """Verify progress narration streams live but is excluded from final text."""
     class ProgressChunk(str):
@@ -218,12 +279,14 @@ def test_query_includes_context_priority_note(record_ctx):
         intent_prompt="use both",
         ambient_text="[Browser/Web]\nPAGE TEXT",
         active_document_text="DOC TEXT",
+        active_document_label="Code - notes.py",
         context_priority="Browser/Web",
         memory_context="(none)",
     )
 
     assert "[Context priority]\nPrioritize Browser/Web" in result["text"]
-    assert "[Active document]\nDOC TEXT" in result["text"]
+    assert "--- BEGIN ACTIVE DOCUMENT: Code - notes.py ---\nDOC TEXT" in result["text"]
+    assert "--- END ACTIVE DOCUMENT: Code - notes.py ---" in result["text"]
     assert "".join(_chunks(events)) == result["text"]
 
 
@@ -358,6 +421,35 @@ def test_rewrite_streams_selected_text(record_ctx):
     assert "".join(_chunks(events)) == result["text"]
     done = [data for event, data in events if event == "reply.done"]
     assert done == [{"text": result["text"]}]
+
+
+def test_rewrite_forwards_source_context(record_ctx, monkeypatch):
+    """Verify rewrite source context reaches the LLM route."""
+    captured = {}
+
+    def fake_stream(selected_text: str, intent_prompt: str, rewrite_context: str = ""):
+        captured["selected_text"] = selected_text
+        captured["intent_prompt"] = intent_prompt
+        captured["rewrite_context"] = rewrite_context
+        yield "replacement"
+
+    monkeypatch.setattr(handlers, "_stream_rewrite_reply", fake_stream)
+    events, ctx = record_ctx()
+
+    result = handlers.HANDLERS["brain.rewrite"](
+        ctx,
+        intent_prompt="Use VS Code",
+        selected_text="notepad text",
+        rewrite_context="--- BEGIN ACTIVE DOCUMENT: Code - demo.py ---\nVS Code paragraph",
+    )
+
+    assert captured == {
+        "selected_text": "notepad text",
+        "intent_prompt": "Use VS Code",
+        "rewrite_context": "--- BEGIN ACTIVE DOCUMENT: Code - demo.py ---\nVS Code paragraph",
+    }
+    assert result["text"] == "replacement"
+    assert "".join(_chunks(events)) == "replacement"
 
 
 def test_rewrite_requires_selected_text(record_ctx):
