@@ -217,12 +217,32 @@ class LlmFallbackTests(unittest.TestCase):
         """Verify active document falls back to window text when no path behavior."""
         with patch("core.context_fetcher.get_all_open_document_paths", return_value=[]), \
              patch(
-                 "core.context_fetcher.get_all_open_document_window_texts",
-                 return_value=[("Notes.txt", "hello from notepad")],
+                 "core.context_fetcher.get_all_open_document_window_texts_with_debug",
+                 return_value=([("Notes.txt", "hello from notepad")], []),
              ):
             text = llm.read_active_document_for_context()
 
         self.assertEqual(text, "[Notes.txt]\nhello from notepad")
+
+    def test_active_document_merges_path_text_with_window_text(self):
+        """Verify a readable saved document does not hide unsaved app text."""
+        with patch("core.context_fetcher.get_all_open_document_paths", return_value=[r"C:\Notes\Text1.txt"]), \
+             patch.object(llm, "_read_document_paths", return_value="[Text1.txt]\nText1 body"), \
+             patch(
+                 "core.context_fetcher.get_all_open_document_window_texts_with_debug",
+                 return_value=(
+                     [
+                         ("Text1.txt", "Text1 body"),
+                         ("Text2", "Text2 body from other app"),
+                     ],
+                     [],
+                 ),
+             ):
+            text = llm.read_active_document_for_context()
+
+        self.assertIn("[Text1.txt]\nText1 body", text)
+        self.assertIn("[Text2]\nText2 body from other app", text)
+        self.assertEqual(text.count("Text1 body"), 1)
 
     def test_stream_with_fallbacks_cools_down_transient_503_and_summarizes_failures(self):
         """Verify stream with fallbacks cools down transient 503 and summarizes failures behavior."""

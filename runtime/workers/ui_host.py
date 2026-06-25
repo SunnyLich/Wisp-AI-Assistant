@@ -2763,6 +2763,7 @@ class QtProtocolHost:
     def _chat_chunk(
         self,
         request_id: str = "",
+        conversation_index: int | None = None,
         text: str = "",
         is_progress: bool = False,
         is_thought: bool = False,
@@ -2780,11 +2781,22 @@ class QtProtocolHost:
                     },
                 )
             )
+        elif self._chat is not None and conversation_index is not None:
+            self._chat.external_reply_chunk(
+                int(conversation_index),
+                {
+                    "text": text,
+                    "is_progress": bool(is_progress),
+                    "is_thought": bool(is_thought),
+                },
+            )
+            return {"queued": True}
         return {"queued": stream is not None}
 
     def _chat_done(
         self,
         request_id: str = "",
+        conversation_index: int | None = None,
         text: str = "",
         file_context: list | None = None,
         tool_context: dict | None = None,
@@ -2802,6 +2814,9 @@ class QtProtocolHost:
                     },
                 )
             )
+        elif self._chat is not None and conversation_index is not None:
+            self._chat.finish_external_reply_stream(int(conversation_index), text)
+            return {"queued": True}
         return {"queued": stream is not None}
 
     def _chat_error(self, request_id: str = "", error: str = "") -> dict[str, Any]:
@@ -3103,6 +3118,8 @@ class QtProtocolHost:
             append_user=True,
         )
         idx = self._active_conversation_idx
+        if self._chat is not None and idx is not None:
+            self._chat.begin_external_reply_stream(idx)
         return {
             "started": True,
             "conversation_index": idx,

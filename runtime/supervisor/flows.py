@@ -1797,6 +1797,7 @@ class FlowController:
         first_chunk_seen = False
         streamed_reply_parts: list[str] = []
         tts_segmenter = _TtsSegmentBuffer() if self._tts_enabled() else None
+        early_chat_index: int | None = None
         try:
             from core.assistant_text import ThoughtStreamParser
 
@@ -1813,6 +1814,18 @@ class FlowController:
                     log.info("query first reply chunk after %.2fs", time.monotonic() - query_started)
                 if not bool((payload or {}).get("is_progress")) and not bool((payload or {}).get("is_thought")):
                     streamed_reply_parts.append(str((payload or {}).get("text") or ""))
+                if early_chat_index is not None:
+                    self._safe_call(
+                        self.ui,
+                        "ui.chat.chunk",
+                        {
+                            "conversation_index": early_chat_index,
+                            "text": str((payload or {}).get("text") or ""),
+                            "is_progress": bool((payload or {}).get("is_progress")),
+                            "is_thought": bool((payload or {}).get("is_thought")),
+                        },
+                        timeout=30.0,
+                    )
                 if self._reply_bubble_cancelled(gen):
                     return
                 for segment, is_thought, is_progress in self._on_reply_chunk(payload):
@@ -1854,7 +1867,6 @@ class FlowController:
             log.exception("failed to fetch active conversation history")
 
         context_policy = params.pop("context_policy", {})
-        early_chat_index: int | None = None
         try:
             begin_result = self._safe_call(
                 self.ui,
@@ -1891,6 +1903,13 @@ class FlowController:
         except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
             log.exception("brain query failed after %.2fs", time.monotonic() - query_started)
             self._reply_thought_parser = None
+            if early_chat_index is not None:
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.done",
+                    {"conversation_index": early_chat_index, "text": ""},
+                    timeout=30.0,
+                )
             self._notice(f"LLM request failed: {self._friendly_error(exc)}")
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             self._set_idle()
@@ -1916,6 +1935,24 @@ class FlowController:
         self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
         self._last_reply = text
         bubble_cancelled = self._reply_bubble_cancelled(gen)
+        if early_chat_index is not None:
+            self._safe_call(
+                self.ui,
+                "ui.chat.done",
+                {
+                    "conversation_index": early_chat_index,
+                    "text": text,
+                    "file_context": file_context,
+                    "tool_context": _normalized_tool_context(
+                        {
+                            "allowed_tools": params.get("allowed_tools") or [],
+                            "pinned_tools": params.get("pinned_tools") or [],
+                            "file_access_mode": params.get("file_access_mode") or "",
+                        }
+                    ),
+                },
+                timeout=30.0,
+            )
         if text and not bubble_cancelled and "".join(streamed_reply_parts) != text:
             self._replace_reply_text(text)
         if tts_segmenter is not None and not bubble_cancelled:
@@ -2444,18 +2481,22 @@ class FlowController:
             import config
 
             log.info(
-                "caller %d config label=%r hotkey=%r ambient=%s docs=%s browser=%s memory=%s "
-                "screenshot=%r clipboard=%s paste_back=%s cwd=%r config_file=%r env_file=%r",
+                "caller %d config\n"
+                "  label=%r hotkey=%r paste_back=%s\n"
+                "  context: app=%s docs=%s browser=%s memory=%s screenshot=%r clipboard=%s\n"
+                "  runtime: cwd=%r\n"
+                "           config=%r\n"
+                "           env=%r",
                 caller_idx,
                 caller.get("label"),
                 caller.get("hotkey"),
+                caller.get("paste_back"),
                 caller.get("context_ambient"),
                 self._context_mode(caller, "documents"),
                 self._context_mode(caller, "browser"),
                 self._context_mode(caller, "memory"),
                 caller.get("context_screenshot"),
                 caller.get("context_clipboard"),
-                caller.get("paste_back"),
                 str(Path.cwd()),
                 str(getattr(config, "__file__", "") or ""),
                 str(getattr(config, "_ENV_FILE", "") or ""),
@@ -2497,37 +2538,41 @@ class FlowController:
         window_debug = debug.get("window") if isinstance(debug.get("window"), dict) else {}
         browser_window = debug.get("browser_window") if isinstance(debug.get("browser_window"), dict) else {}
         log.info(
-            "context snapshot active=%r hwnd=%s browser_url=%s browser_hwnd=%s browser_chars=%d",
+            "context snapshot\n"
+            "  active: title=%r process=%r pid=%s hwnd=%s\n"
+            "  foreground: raw=(hwnd=%s pid=%s process=%r title=%r)\n"
+            "              chosen=(hwnd=%s pid=%s process=%r title=%r corrected=%s)\n"
+            "  browser: url=%s hwnd=%s chars=%d\n"
+            "  runtime: cwd=%r repo=%r exe=%r\n"
+            "           config=%r env=%r",
             active_app.get("name"),
+            active_app.get("process_name"),
+            active_app.get("pid"),
             active_app.get("window_id") or active_app.get("pid") or 0,
-            "y" if snapshot.get("browser_url") else "n",
+            window_debug.get("raw_hwnd"),
+            window_debug.get("raw_pid"),
+            window_debug.get("raw_process"),
+            window_debug.get("raw_title"),
+            window_debug.get("chosen_hwnd"),
+            window_debug.get("chosen_pid"),
+            window_debug.get("chosen_process"),
+            window_debug.get("chosen_title"),
+            window_debug.get("corrected"),
+            snapshot.get("browser_url") or "",
             snapshot.get("browser_hwnd") or 0,
             len(str(snapshot.get("browser_content") or "")),
-        )
-        log.info(
-            "context runtime cwd=%r repo=%r exe=%r config_file=%r env_file=%r",
             runtime_debug.get("cwd"),
             runtime_debug.get("repo_root"),
             runtime_debug.get("executable"),
             runtime_debug.get("config_file"),
             runtime_debug.get("env_file"),
         )
-        log.info(
-            "context foreground raw_hwnd=%s raw_pid=%s raw_process=%r raw_title=%r "
-            "corrected=%s chosen_hwnd=%s chosen_pid=%s chosen_process=%r chosen_title=%r",
-            window_debug.get("raw_hwnd"),
-            window_debug.get("raw_pid"),
-            window_debug.get("raw_process"),
-            window_debug.get("raw_title"),
-            window_debug.get("corrected"),
-            window_debug.get("chosen_hwnd"),
-            window_debug.get("chosen_pid"),
-            window_debug.get("chosen_process"),
-            window_debug.get("chosen_title"),
-        )
         if browser_window:
             log.info(
-                "context browser window hwnd=%s pid=%s process=%r title=%r url=%r",
+                "context browser window\n"
+                "  hwnd=%s pid=%s process=%r\n"
+                "  title=%r\n"
+                "  url=%r",
                 browser_window.get("hwnd"),
                 browser_window.get("pid"),
                 browser_window.get("process_name"),
@@ -2651,11 +2696,42 @@ class FlowController:
         doc_debug = result.get("debug") if isinstance(result, dict) else None
         if isinstance(context, dict):
             context["active_document_sources"] = self._active_document_source_previews(text, doc_debug)
+        sources = context.get("active_document_sources") if isinstance(context, dict) else []
+        source_labels = [
+            str(item.get("label") or "")
+            for item in (sources or [])
+            if isinstance(item, dict) and str(item.get("label") or "")
+        ]
+        candidate_lines: list[str] = []
+        if isinstance(doc_debug, dict):
+            for item in (doc_debug.get("window_candidates") or [])[:12]:
+                if not isinstance(item, dict):
+                    continue
+                candidate_lines.append(
+                    "    - {label!r} process={process!r} hwnd={hwnd} chars={chars} accepted={accepted} method={method!r}".format(
+                        label=item.get("label") or item.get("title") or "",
+                        process=item.get("process_name") or "",
+                        hwnd=item.get("hwnd") or 0,
+                        chars=item.get("chars") or 0,
+                        accepted=bool(item.get("accepted")),
+                        method=item.get("method") or "",
+                    )
+                )
+        candidate_text = "\n".join(candidate_lines) if candidate_lines else "    - none"
         log.info(
-            "active document context chars=%d debug=%r error=%r",
+            "active document context\n"
+            "  chars=%d sources=%r error=%r\n"
+            "  paths=%r path_chars=%s\n"
+            "  window_labels=%r window_chars=%s\n"
+            "  window_candidates:\n%s",
             len(text),
-            doc_debug,
+            source_labels,
             result.get("error") if isinstance(result, dict) else None,
+            doc_debug.get("paths") if isinstance(doc_debug, dict) else [],
+            doc_debug.get("path_chars") if isinstance(doc_debug, dict) else 0,
+            doc_debug.get("window_labels") if isinstance(doc_debug, dict) else [],
+            doc_debug.get("window_chars") if isinstance(doc_debug, dict) else 0,
+            candidate_text,
         )
         return text
 

@@ -12,6 +12,7 @@ import sys
 import types
 
 import pytest
+import config
 
 from wisp_brain import handlers
 
@@ -140,6 +141,103 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         "file_access_mode": "ask",
         "file_context": [],
     }
+
+
+def test_query_uses_planned_chunking_when_enabled_and_eligible(record_ctx, monkeypatch):
+    """Verify eligible query streams planned visible chunks as one final reply."""
+    from core.llm_clients import client as llm_client
+
+    monkeypatch.setattr(handlers, "_offline_brain", lambda: False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING", True, raising=False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING_CHUNKS", 3, raising=False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING_MIN_PROMPT_CHARS", 0, raising=False)
+    planned_calls: list[dict] = []
+
+    def fake_planned(*args, **kwargs):
+        planned_calls.append({"args": args, "kwargs": kwargs})
+        yield "First part."
+        yield " Second part."
+        yield " Final part."
+
+    monkeypatch.setattr(llm_client, "stream_planned_chunk_response", fake_planned)
+    monkeypatch.setattr(
+        llm_client,
+        "stream_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("normal path should not run")),
+    )
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="Explain planned chunking with enough detail to pass the prompt length gate.",
+        memory_enabled=False,
+    )
+
+    assert _chunks(events) == ["First part.", " Second part.", " Final part."]
+    assert result["text"] == "First part. Second part. Final part."
+    assert planned_calls
+    assert planned_calls[0]["kwargs"]["chunks"] == 3
+    assert [data for event, data in events if event == "reply.done"] == [{"text": result["text"]}]
+
+
+def test_query_uses_normal_stream_when_planned_chunking_is_disabled(record_ctx, monkeypatch):
+    """Verify disabled feature flag keeps the existing query path."""
+    from core.llm_clients import client as llm_client
+
+    monkeypatch.setattr(handlers, "_offline_brain", lambda: False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING", False, raising=False)
+    monkeypatch.setattr(
+        llm_client,
+        "stream_planned_chunk_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("planned path should not run")),
+    )
+    monkeypatch.setattr(llm_client, "stream_response", lambda *_args, **_kwargs: iter(["normal answer"]))
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="Explain planned chunking with enough detail to pass the prompt length gate.",
+        memory_enabled=False,
+    )
+
+    assert _chunks(events) == ["normal answer"]
+    assert result["text"] == "normal answer"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"use_tools": True, "allowed_tools": ["get_context.documents"]},
+        {"screenshot_b64": "image-data"},
+        {"allow_screenshot_tool": True, "screenshot_tool_b64": "screen-data"},
+        {"file_access_mode": "ask"},
+        {"history": [{"role": "user", "content": "prior"}]},
+    ],
+)
+def test_query_ineligible_planned_chunking_cases_use_normal_stream(record_ctx, monkeypatch, params):
+    """Verify tools, images, file access, and history force the normal path."""
+    from core.llm_clients import client as llm_client
+
+    monkeypatch.setattr(handlers, "_offline_brain", lambda: False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING", True, raising=False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING_MIN_PROMPT_CHARS", 0, raising=False)
+    monkeypatch.setattr(
+        llm_client,
+        "stream_planned_chunk_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("planned path should not run")),
+    )
+    monkeypatch.setattr(llm_client, "stream_response", lambda *_args, **_kwargs: iter(["normal answer"]))
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="Explain planned chunking with enough detail to pass the prompt length gate.",
+        memory_enabled=False,
+        **params,
+    )
+
+    assert _chunks(events) == ["normal answer"]
+    assert result["text"] == "normal answer"
 
 
 def test_query_normalizes_history_context_and_attachments(record_ctx, monkeypatch):
@@ -418,7 +516,7 @@ def test_rewrite_streams_selected_text(record_ctx):
     assert result["text"].startswith("[fake-rewrite]")
     assert "Fix grammar" in result["text"]
     assert "this are rough" in result["text"]
-    assert "".join(_chunks(events)) == result["text"]
+    assert _chunks(events) == []
     done = [data for event, data in events if event == "reply.done"]
     assert done == [{"text": result["text"]}]
 
@@ -428,10 +526,12 @@ def test_rewrite_forwards_source_context(record_ctx, monkeypatch):
     captured = {}
 
     def fake_stream(selected_text: str, intent_prompt: str, rewrite_context: str = ""):
+        from core.llm_clients.client import _rewrite_result_chunk
+
         captured["selected_text"] = selected_text
         captured["intent_prompt"] = intent_prompt
         captured["rewrite_context"] = rewrite_context
-        yield "replacement"
+        yield _rewrite_result_chunk("replacement")
 
     monkeypatch.setattr(handlers, "_stream_rewrite_reply", fake_stream)
     events, ctx = record_ctx()
@@ -449,7 +549,29 @@ def test_rewrite_forwards_source_context(record_ctx, monkeypatch):
         "rewrite_context": "--- BEGIN ACTIVE DOCUMENT: Code - demo.py ---\nVS Code paragraph",
     }
     assert result["text"] == "replacement"
-    assert "".join(_chunks(events)) == "replacement"
+    assert _chunks(events) == []
+
+
+def test_rewrite_streams_commentary_but_returns_tool_result(record_ctx, monkeypatch):
+    """Verify visible rewrite commentary is not pasted back."""
+    from core.llm_clients.client import _progress_chunk, _rewrite_result_chunk
+
+    def fake_stream(selected_text: str, intent_prompt: str, rewrite_context: str = ""):
+        yield _progress_chunk("I found the source text.")
+        yield _rewrite_result_chunk("replacement from tool")
+
+    monkeypatch.setattr(handlers, "_stream_rewrite_reply", fake_stream)
+    events, ctx = record_ctx()
+
+    result = handlers.HANDLERS["brain.rewrite"](
+        ctx,
+        intent_prompt="Use source app",
+        selected_text="target text",
+        rewrite_context="[Source]\nreplacement from tool",
+    )
+
+    assert result["text"] == "replacement from tool"
+    assert _chunks(events) == ["I found the source text."]
 
 
 def test_rewrite_requires_selected_text(record_ctx):

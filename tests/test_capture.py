@@ -64,6 +64,20 @@ class CaptureTests(unittest.TestCase):
         send_keys.assert_called_once()
         self.assertEqual(restored, ["original clipboard"])
 
+    def test_clipboard_selection_accepts_same_text_when_clipboard_sequence_changes(self):
+        """Browsers may copy the same selected text that was already on the clipboard."""
+        restored: list[str] = []
+        with mock.patch.object(self.capture, "_IS_MAC", False), \
+             mock.patch.object(self.capture.pyperclip, "paste", side_effect=["selected text", "selected text"]), \
+             mock.patch.object(self.capture.pyperclip, "copy", side_effect=restored.append), \
+             mock.patch.object(self.capture, "_clipboard_sequence_number", side_effect=[10, 11]), \
+             mock.patch("core.platform_utils.send_keys") as send_keys, \
+             mock.patch.object(self.capture.time, "sleep"):
+            self.assertEqual(self.capture._get_selected_text_clipboard(), "selected text")
+
+        send_keys.assert_called_once()
+        self.assertEqual(restored, ["selected text"])
+
     def test_uia_selection_ignores_collapsed_text_range(self):
         """Verify UIA insertion-point ranges are not treated as selected text."""
         fake_uiac = types.ModuleType("comtypes.gen.UIAutomationClient")

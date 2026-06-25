@@ -1,7 +1,9 @@
 """Tests for test context fetcher windows."""
 
 import importlib
+import os
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -201,6 +203,45 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
 
         self.assertEqual(docs, [("Notes.txt", "hello from notepad")])
 
+    def test_open_document_window_texts_scan_past_empty_candidates(self):
+        """Verify max_docs limits readable results, not candidate windows."""
+        self.cf._context_window = self.cf.WindowInfo(
+            title="Text1.txt - Notepad",
+            process_name="notepad.exe",
+            pid=101,
+            hwnd=100,
+        )
+        windows = [
+            self.cf.WindowInfo(
+                title=f"Empty{i}.txt - Notepad",
+                process_name="notepad.exe",
+                pid=200 + i,
+                hwnd=200 + i,
+            )
+            for i in range(4)
+        ]
+        windows.append(
+            self.cf.WindowInfo(
+                title="Text2.txt - Notepad",
+                process_name="notepad.exe",
+                pid=300,
+                hwnd=300,
+            )
+        )
+
+        def text_for(hwnd: int, _max_chars: int) -> str:
+            if hwnd == 100:
+                return "Text1 body"
+            if hwnd == 300:
+                return "Text2 body"
+            return ""
+
+        with patch.object(self.cf, "_enumerate_open_doc_windows", return_value=windows), \
+             patch.object(self.cf, "_get_window_text_uia", side_effect=text_for):
+            docs = self.cf.get_all_open_document_window_texts(max_docs=2)
+
+        self.assertEqual(docs, [("Text1.txt", "Text1 body"), ("Text2.txt", "Text2 body")])
+
     def test_code_process_window_is_document_candidate_without_standard_suffix(self):
         """Verify VS Code-like windows are document candidates by process name."""
         win = self.cf.WindowInfo(
@@ -211,6 +252,39 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         )
 
         self.assertEqual(self.cf._extract_doc_name_from_window(win), "demo.py")
+
+    def test_code_process_window_without_product_suffix_is_document_candidate(self):
+        """Verify bare VS Code tab titles stay eligible for document context."""
+        win = self.cf.WindowInfo(
+            title="Text 2 \u2022 Untitled-1",
+            process_name="Code.exe",
+            pid=202,
+            hwnd=222,
+        )
+
+        self.assertEqual(self.cf._extract_doc_name_from_window(win), "Text 2 \u2022 Untitled-1")
+
+    def test_open_document_window_texts_reads_vscode_untitled_backup_when_uia_empty(self):
+        """Verify VS Code unsaved buffers can be read from backup storage."""
+        win = self.cf.WindowInfo(
+            title="Text 2 \u2022 Untitled-1",
+            process_name="Code.exe",
+            pid=202,
+            hwnd=222,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            backup_dir = os.path.join(tmp, "workspace", "untitled")
+            os.makedirs(backup_dir)
+            with open(os.path.join(backup_dir, "-7f9c1a2e"), "w", encoding="utf-8") as f:
+                f.write('untitled:Untitled-1 {"typeId":""}\nText 2\nActual body')
+
+            with patch.object(self.cf, "_enumerate_open_doc_windows", return_value=[win]), \
+                 patch.object(self.cf, "_get_window_text_uia", return_value=""), \
+                 patch.object(self.cf, "_vscode_backup_root", return_value=tmp):
+                docs, debug = self.cf.get_all_open_document_window_texts_with_debug(max_docs=1)
+
+        self.assertEqual(docs, [("Text 2 \u2022 Untitled-1", "Text 2\nActual body")])
+        self.assertEqual(debug[0]["method"], "vscode_backup_untitled")
 
     def test_browser_page_rect_filter_skips_toolbar_area(self):
         """Verify browser page rect filter skips toolbar area behavior."""
@@ -278,6 +352,24 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
                 "UTF-8",
                 "Spaces: 4",
                 "Ln 5, Col 82",
+            ]
+        )
+
+        cleaned = self.cf._clean_document_uia_text(text)
+
+        self.assertEqual(cleaned, "")
+
+    def test_clean_document_uia_text_rejects_captured_editor_sidebar_dump(self):
+        """Verify sidebar/tab/search chrome does not become answer context."""
+        text = "\n".join(
+            [
+                "Terminal",
+                "Help",
+                "Update",
+                "README.md",
+                "APPCONTEXTCLEANUPTEMPPLAN.md",
+                "CHAT/TOOLLOOPCOMPARISONPLAN.md",
+                "No results found for 'launch'",
             ]
         )
 

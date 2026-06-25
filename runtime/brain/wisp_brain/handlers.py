@@ -1534,26 +1534,81 @@ def _stream_query_reply(
 
     from core.llm_clients import client as llm_client
 
-    llm_client.set_live_file_access_mode(file_access_mode or None)
-    llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
-    llm_client.set_live_file_event_callback(_record_file_context(file_context) if file_context is not None else None)
-    try:
-        yield from llm_client.stream_response(
+    def normal_stream() -> Iterator[str]:
+        """Run the existing single-response query stream."""
+        llm_client.set_live_file_access_mode(file_access_mode or None)
+        llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
+        llm_client.set_live_file_event_callback(_record_file_context(file_context) if file_context is not None else None)
+        try:
+            yield from llm_client.stream_response(
+                built.user_message,
+                image_base64=built.screenshot_b64,
+                ambient_context=built.ambient_ctx,
+                memory_context=memory_context,
+                use_tools=use_tools,
+                allowed_tools=allowed_tools,
+                pinned_tools=pinned_tools,
+                allow_screenshot_tool=allow_screenshot_tool,
+                screenshot_tool_b64=screenshot_tool_b64,
+                history=history,
+            )
+        finally:
+            llm_client.set_live_file_access_mode(None)
+            llm_client.set_live_file_approval_callback(None)
+            llm_client.set_live_file_event_callback(None)
+
+    if _planned_chunking_query_enabled(
+        built,
+        use_tools=use_tools,
+        allow_screenshot_tool=allow_screenshot_tool,
+        screenshot_tool_b64=screenshot_tool_b64,
+        history=history,
+        file_access_mode=file_access_mode,
+    ):
+        import config
+
+        yield from llm_client.stream_planned_chunk_response(
             built.user_message,
-            image_base64=built.screenshot_b64,
             ambient_context=built.ambient_ctx,
             memory_context=memory_context,
-            use_tools=use_tools,
-            allowed_tools=allowed_tools,
-            pinned_tools=pinned_tools,
-            allow_screenshot_tool=allow_screenshot_tool,
-            screenshot_tool_b64=screenshot_tool_b64,
-            history=history,
+            chunks=getattr(config, "PLANNED_CHUNKING_CHUNKS", 3),
+            fallback_stream=normal_stream,
         )
-    finally:
-        llm_client.set_live_file_access_mode(None)
-        llm_client.set_live_file_approval_callback(None)
-        llm_client.set_live_file_event_callback(None)
+        return
+
+    yield from normal_stream()
+
+
+def _planned_chunking_query_enabled(
+    built: Any,
+    *,
+    use_tools: bool,
+    allow_screenshot_tool: bool,
+    screenshot_tool_b64: str | None,
+    history: list[dict] | None,
+    file_access_mode: str,
+) -> bool:
+    """Return whether this query is safe for experimental planned chunking."""
+    import config
+
+    if not bool(getattr(config, "PLANNED_CHUNKING", False)):
+        return False
+    if use_tools or allow_screenshot_tool or screenshot_tool_b64:
+        return False
+    if getattr(built, "screenshot_b64", None):
+        return False
+    if history:
+        return False
+    if (file_access_mode or "").strip().lower() not in {"", "off", "never"}:
+        return False
+    prompt_size = len(
+        (
+            str(getattr(built, "user_message", "") or "")
+            + "\n"
+            + str(getattr(built, "ambient_ctx", "") or "")
+        ).strip()
+    )
+    return prompt_size >= max(0, int(getattr(config, "PLANNED_CHUNKING_MIN_PROMPT_CHARS", 80) or 0))
 
 
 @handler("brain.rewrite", streaming=True)
@@ -1568,14 +1623,18 @@ def brain_rewrite(
     if not selected_text:
         raise ValueError("selected_text is required")
 
-    parts: list[str] = []
+    replacement_parts: list[str] = []
     for chunk in _stream_rewrite_reply(selected_text, intent_prompt, rewrite_context):
         if ctx.cancelled:
             break
-        parts.append(chunk)
-        ctx.emit("reply.chunk", {"text": chunk})
+        kind = str(getattr(chunk, "kind", "answer") or "answer")
+        text = str(chunk)
+        if kind == "rewrite_result":
+            replacement_parts.append(text)
+            continue
+        ctx.emit("reply.chunk", {"text": text})
 
-    full = "".join(parts)
+    full = "".join(replacement_parts)
     ctx.emit("reply.done", {"text": full})
     return {"text": full}
 
@@ -1583,9 +1642,10 @@ def brain_rewrite(
 def _stream_rewrite_reply(selected_text: str, intent_prompt: str, rewrite_context: str = "") -> Iterator[str]:
     """Stream rewrite reply."""
     if _offline_brain():
+        from core.llm_clients.client import _rewrite_result_chunk
+
         reply = f"[fake-rewrite] {intent_prompt}: {selected_text}"
-        for word in reply.split(" "):
-            yield word + " "
+        yield _rewrite_result_chunk(reply)
         return
 
     from core.llm_clients.client import stream_rewrite

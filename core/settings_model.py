@@ -112,6 +112,14 @@ class MemorySettings:
 
 
 @dataclass(frozen=True)
+class PlannedChunkingSettings:
+    """Experimental planned reply chunking settings."""
+    enabled: bool
+    chunks: int
+    min_prompt_chars: int
+
+
+@dataclass(frozen=True)
 class PrivacySettings:
     """Store trust and privacy settings configuration data."""
     trust_privacy_mode: bool
@@ -135,6 +143,7 @@ class AppSettings:
     ui: UiSettings
     audio: AudioSettings
     memory: MemorySettings
+    planned_chunking: PlannedChunkingSettings
     privacy: PrivacySettings
     callers: CallerSettings
     context: ContextBudgets
@@ -204,6 +213,11 @@ class AppSettings:
                 auto_consolidate=bool(values.get("MEMORY_AUTO_CONSOLIDATE", False)),
                 top_k=int(values.get("MEMORY_TOP_K", 0)),
                 stm_token_budget=int(values.get("MEMORY_STM_TOKEN_BUDGET", 0)),
+            ),
+            planned_chunking=PlannedChunkingSettings(
+                enabled=_copy_bool(values.get("PLANNED_CHUNKING"), False),
+                chunks=int(values.get("PLANNED_CHUNKING_CHUNKS", 3)),
+                min_prompt_chars=int(values.get("PLANNED_CHUNKING_MIN_PROMPT_CHARS", 80)),
             ),
             privacy=PrivacySettings(
                 trust_privacy_mode=_copy_bool(values.get("TRUST_PRIVACY_MODE"), True),

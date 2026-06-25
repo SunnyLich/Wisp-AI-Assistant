@@ -1308,6 +1308,61 @@ class ChatWindow(QWidget):
         self._rebuild_sidebar()
         self._switch(idx)
 
+    def begin_external_reply_stream(self, idx: int) -> None:
+        """Show a temporary assistant bubble for a hotkey/overlay reply."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        self._ensure_page_built(idx)
+        if idx != self._active_idx:
+            self._switch(idx)
+        layout = self._active_layout()
+        if layout is None:
+            return
+        self._streaming = True
+        self._send_btn.setEnabled(False)
+        self._new_chat_btn.setEnabled(False)
+        self._current_ai_text = ""
+        self._current_ai_reply_text = ""
+        self._current_ai_segments = []
+        self._current_ai_parser = ThoughtStreamParser()
+        self._current_file_context = []
+        self._current_tool_context = {}
+        self._current_ai_label = self._bubble(layout, "...", "assistant", created_at=_now_iso())
+        self._scroll_bottom()
+
+    def external_reply_chunk(self, idx: int, chunk: object) -> None:
+        """Append one hotkey/overlay reply chunk to the temporary assistant bubble."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        if self._current_ai_label is None:
+            self.begin_external_reply_stream(idx)
+        self._on_chunk(chunk)
+
+    def finish_external_reply_stream(self, idx: int, final_text: str = "") -> None:
+        """Finalize and remove the temporary assistant bubble before persistence sync."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        if final_text:
+            self._on_final_text(final_text)
+        label = self._current_ai_label
+        wrapper = label.parentWidget() if label is not None else None
+        self._current_ai_label = None
+        self._current_ai_text = ""
+        self._current_ai_reply_text = ""
+        self._current_ai_segments = []
+        self._current_ai_parser = None
+        self._current_file_context = []
+        self._current_tool_context = {}
+        self._streaming = False
+        self._send_btn.setEnabled(True)
+        self._new_chat_btn.setEnabled(True)
+        if wrapper is not None:
+            wrapper.hide()
+            wrapper.deleteLater()
+        elif label is not None:
+            label.hide()
+            label.deleteLater()
+
     # ------------------------------------------------------------------ Right panel
 
     def _make_right_panel(self) -> QWidget:

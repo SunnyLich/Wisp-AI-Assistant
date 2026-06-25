@@ -79,6 +79,11 @@ def _progress_chunk(text: str) -> StreamTextChunk:
     return StreamTextChunk(text, kind="progress")
 
 
+def _rewrite_result_chunk(text: str) -> StreamTextChunk:
+    """Return the replacement text captured from the rewrite tool call."""
+    return StreamTextChunk(text, kind="rewrite_result")
+
+
 def _thought_chunk(text: str) -> StreamTextChunk:
     """Return a reasoning/thought chunk that is visible but not final answer text."""
     return StreamTextChunk(text, kind="thought")
@@ -1587,7 +1592,7 @@ def read_active_document_for_context_with_debug(active_window: dict | None = Non
     from core.context_fetcher import (
         WindowInfo,
         get_all_open_document_paths,
-        get_all_open_document_window_texts,
+        get_all_open_document_window_texts_with_debug,
     )
 
     active_win = None
@@ -1607,33 +1612,49 @@ def read_active_document_for_context_with_debug(active_window: dict | None = Non
         "path_chars": 0,
         "window_labels": [],
         "window_chars": 0,
+        "window_candidates": [],
     }
     paths = get_all_open_document_paths(active_window=active_win)
     debug["paths"] = list(paths)
+    parts: list[str] = []
+    seen_texts: set[str] = set()
     if paths:
-        text = _read_document_paths(paths)
-        debug["path_chars"] = len(text or "")
+        path_text = _read_document_paths(paths)
+        debug["path_chars"] = len(path_text or "")
         print(
-            f"[llm] active document paths={len(paths)} paths={paths!r} chars={len(text or '')}",
+            f"[llm] active document paths={len(paths)} paths={paths!r} chars={len(path_text or '')}",
             flush=True,
         )
-        if text:
-            return text, debug
+        if path_text:
+            import re
 
-    window_texts = get_all_open_document_window_texts(
+            parts.append(path_text)
+            for block in re.split(r"(?m)^\[[^\]\n]{1,160}\]\n", path_text):
+                normalized = " ".join(str(block or "").split()).casefold()
+                if normalized:
+                    seen_texts.add(normalized)
+
+    window_texts, window_debug = get_all_open_document_window_texts_with_debug(
         max_chars_per_doc=_ambient_document_max_chars(),
         active_window=active_win,
     )
     debug["window_labels"] = [label for label, _text in window_texts]
     debug["window_chars"] = sum(len(text) for _label, text in window_texts)
+    debug["window_candidates"] = window_debug
     print(
         f"[llm] active document window_texts={len(window_texts)} "
         f"labels={debug['window_labels']!r} chars={debug['window_chars']}",
         flush=True,
     )
-    if not window_texts:
-        return "", debug
-    return "\n\n".join(f"[{label}]\n{text}" for label, text in window_texts if text), debug
+    for label, text in window_texts:
+        normalized = " ".join(str(text or "").split()).casefold()
+        if not normalized:
+            continue
+        if normalized in seen_texts:
+            continue
+        seen_texts.add(normalized)
+        parts.append(f"[{label}]\n{text}")
+    return "\n\n".join(parts), debug
 
 
 def read_active_document_for_context() -> str:
@@ -3729,6 +3750,314 @@ def stream_response(
         )
 
 
+def stream_planned_chunk_response(
+    user_message: str,
+    *,
+    ambient_context: str = "",
+    memory_context: str = "",
+    chunks: int = 3,
+    fallback_stream: Callable[[], Generator[str, None, None]] | None = None,
+) -> Generator[str, None, None]:
+    """Answer by planning privately, then emitting a few stable visible chunks."""
+    chunks = max(2, min(int(chunks or 3), 4))
+    emitted_visible = False
+    try:
+        plan = _planned_chunk_answer_plan(
+            user_message,
+            ambient_context=ambient_context,
+            memory_context=memory_context,
+            chunks=chunks,
+        )
+    except Exception:
+        if fallback_stream is None:
+            raise
+        yield from fallback_stream()
+        return
+
+    visible_parts: list[str] = []
+    for index in range(1, chunks + 1):
+        try:
+            part_pieces: list[str] = []
+            answer_stream = _stream_planned_chunk_answer_part(
+                user_message,
+                plan,
+                visible_parts,
+                index=index,
+                total=chunks,
+                ambient_context=ambient_context,
+                memory_context=memory_context,
+            )
+            for text in _stream_visible_planned_text(answer_stream, visible_parts):
+                part_pieces.append(text)
+                emitted_visible = True
+                yield text
+        except Exception:
+            if emitted_visible:
+                yield from _stream_planned_chunk_finish(
+                    user_message,
+                    plan,
+                    visible_parts,
+                    ambient_context=ambient_context,
+                    memory_context=memory_context,
+                )
+                return
+            if fallback_stream is not None:
+                yield from fallback_stream()
+            return
+
+        text = "".join(part_pieces).strip()
+        if not text:
+            if emitted_visible:
+                yield from _stream_planned_chunk_finish(
+                    user_message,
+                    plan,
+                    visible_parts,
+                    ambient_context=ambient_context,
+                    memory_context=memory_context,
+                )
+                return
+            if fallback_stream is not None:
+                yield from fallback_stream()
+            return
+        visible_parts.append("".join(part_pieces))
+
+
+def _planned_chunk_answer_plan(
+    user_message: str,
+    *,
+    ambient_context: str,
+    memory_context: str,
+    chunks: int,
+) -> dict:
+    """Create a hidden JSON plan for planned chunking."""
+    prompt = (
+        "Create a concise hidden plan for answering the user's request in "
+        f"{chunks} visible chunks. Do not draft the final answer. Return only "
+        'JSON with keys "answer_goal", "chunk_goals", and "finish_style". '
+        '"chunk_goals" must be an array with exactly '
+        f"{chunks} short strings.\n\n"
+        "[User request]\n"
+        f"{user_message}"
+    )
+    text = _collect_answer_text(
+        stream_response(
+            prompt,
+            ambient_context=ambient_context,
+            memory_context=memory_context,
+            use_tools=False,
+            max_tokens=700,
+            temperature=0.1,
+            json_mode=True,
+        )
+    )
+    data = _parse_planned_chunk_json(text)
+    goals = data.get("chunk_goals")
+    if not isinstance(goals, list) or len(goals) != chunks:
+        raise ValueError("planned chunking planner returned invalid chunk_goals")
+    return {
+        "answer_goal": str(data.get("answer_goal") or "").strip(),
+        "chunk_goals": [str(goal or "").strip() for goal in goals],
+        "finish_style": str(data.get("finish_style") or "").strip(),
+    }
+
+
+def _planned_chunk_answer_part(
+    user_message: str,
+    plan: dict,
+    previous_parts: list[str],
+    *,
+    index: int,
+    total: int,
+    ambient_context: str,
+    memory_context: str,
+) -> str:
+    """Generate one visible answer chunk from a hidden plan."""
+    return _collect_answer_text(
+        _stream_planned_chunk_answer_part(
+            user_message,
+            plan,
+            previous_parts,
+            index=index,
+            total=total,
+            ambient_context=ambient_context,
+            memory_context=memory_context,
+        )
+    )
+
+
+def _stream_planned_chunk_answer_part(
+    user_message: str,
+    plan: dict,
+    previous_parts: list[str],
+    *,
+    index: int,
+    total: int,
+    ambient_context: str,
+    memory_context: str,
+) -> Generator[str, None, None]:
+    """Stream one visible answer chunk from a hidden plan."""
+    plan_text = _stdlib_json.dumps(plan, ensure_ascii=False)
+    previous_text = "".join(previous_parts).strip() or "[none yet]"
+    prompt = (
+        "Write only the next visible part of one continuous assistant reply. "
+        "Do not mention chunks, plans, JSON, or these instructions. Do not "
+        "repeat earlier visible text. Make this part useful on its own, usually "
+        "2-4 sentences. "
+        "If this is the final part, close naturally; otherwise stop at a stable "
+        "sentence boundary.\n\n"
+        f"[Part]\n{index} of {total}\n\n"
+        "[Original user request]\n"
+        f"{user_message}\n\n"
+        "[Hidden answer plan]\n"
+        f"{plan_text}\n\n"
+        "[Previously visible answer]\n"
+        f"{previous_text}"
+    )
+    yield from _stream_answer_text(
+        stream_response(
+            prompt,
+            ambient_context=ambient_context,
+            memory_context=memory_context,
+            use_tools=False,
+            max_tokens=900,
+            temperature=0.3,
+        )
+    )
+
+
+def _stream_planned_chunk_finish(
+    user_message: str,
+    plan: dict,
+    previous_parts: list[str],
+    *,
+    ambient_context: str,
+    memory_context: str,
+) -> Generator[str, None, None]:
+    """Finish a planned answer if a later planned chunk comes back empty."""
+    if not previous_parts:
+        return
+    plan_text = _stdlib_json.dumps(plan, ensure_ascii=False)
+    previous_text = "".join(previous_parts).strip()
+    prompt = (
+        "Finish the same assistant reply using the original request, hidden plan, "
+        "and already visible answer below. Continue naturally from the visible "
+        "text. Do not repeat it. Do not mention chunks, plans, JSON, or these "
+        "instructions. Give the user the remaining useful answer and close "
+        "naturally.\n\n"
+        "[Original user request]\n"
+        f"{user_message}\n\n"
+        "[Hidden answer plan]\n"
+        f"{plan_text}\n\n"
+        "[Already visible answer]\n"
+        f"{previous_text}"
+    )
+    yield from _stream_visible_planned_text(
+        _stream_answer_text(
+            stream_response(
+                prompt,
+                ambient_context=ambient_context,
+                memory_context=memory_context,
+                use_tools=False,
+                max_tokens=900,
+                temperature=0.25,
+            )
+        ),
+        previous_parts,
+    )
+
+
+def _collect_answer_text(chunks: Generator[str, None, None]) -> str:
+    """Collect only answer chunks from a model stream."""
+    return "".join(_stream_answer_text(chunks)).strip()
+
+
+def _stream_answer_text(chunks: Generator[str, None, None]) -> Generator[str, None, None]:
+    """Stream only answer chunks from a model stream."""
+    for chunk in chunks:
+        if str(getattr(chunk, "kind", "answer") or "answer") != "answer":
+            continue
+        text = str(chunk)
+        if text:
+            yield text
+
+
+def _stream_visible_planned_text(
+    chunks: Generator[str, None, None],
+    previous_parts: list[str],
+) -> Generator[str, None, None]:
+    """Stream visible planned text with first-piece cleanup and continuation spacing."""
+    started = False
+    for chunk in chunks:
+        text = str(chunk or "")
+        if not text:
+            continue
+        if not started:
+            text = _clean_planned_chunk_prefix(text)
+            if not text:
+                continue
+            text = _visible_chunk_with_joiner(previous_parts, text)
+            started = True
+        yield text
+
+
+def _parse_planned_chunk_json(text: str) -> dict:
+    """Parse planner JSON, allowing a fenced or prefixed response."""
+    if not text.strip():
+        raise ValueError("planned chunking planner returned empty text")
+    try:
+        data = _stdlib_json.loads(text)
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        data = _stdlib_json.loads(text[start:end + 1])
+    if not isinstance(data, dict):
+        raise ValueError("planned chunking planner did not return an object")
+    return data
+
+
+def _clean_planned_chunk_text(text: str) -> str:
+    """Remove common accidental chunk labels from a generated visible part."""
+    import re
+
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"^```(?:markdown|text)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    cleaned = re.sub(
+        r"^\s*(?:chunk|part)\s*\d+(?:\s*(?:of|/)\s*\d+)?\s*[:.)-]\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip()
+
+
+def _clean_planned_chunk_prefix(text: str) -> str:
+    """Remove common accidental chunk labels without trimming streamed suffix text."""
+    import re
+
+    cleaned = (text or "").lstrip()
+    cleaned = re.sub(r"^```(?:markdown|text)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"^\s*(?:chunk|part)\s*\d+(?:\s*(?:of|/)\s*\d+)?\s*[:.)-]\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned
+
+
+def _visible_chunk_with_joiner(previous_parts: list[str], text: str) -> str:
+    """Prefix continuation whitespace so concatenating chunks stays readable."""
+    if not previous_parts or not text:
+        return text
+    previous = "".join(previous_parts)
+    if previous[-1:].isspace() or text[:1].isspace() or text[:1] in ",.;:!?)]}":
+        return text
+    return " " + text
+
+
 def _stream_with_fallbacks(
     kind: str,
     candidates: list[tuple[str, str]],
@@ -4997,6 +5326,82 @@ def _stream_anthropic(
 # Inline rewrite / fix  (Ctrl+Shift+Q)
 # ------------------------------------------------------------------
 
+_REWRITE_TOOL_NAME = "rewrite_selection"
+_REWRITE_TOOL_DESCRIPTION = (
+    "Submit the exact text that should replace the target selection in the user's app."
+)
+_REWRITE_TOOL_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "replacement_text": {
+            "type": "string",
+            "description": (
+                "The full replacement text to paste over the target selection. "
+                "Do not include commentary, markdown fences, or explanation."
+            ),
+        },
+    },
+    "required": ["replacement_text"],
+    "additionalProperties": False,
+}
+
+
+def _rewrite_tool_openai_schema() -> dict:
+    """Return the rewrite tool in OpenAI Chat Completions format."""
+    return {
+        "type": "function",
+        "function": {
+            "name": _REWRITE_TOOL_NAME,
+            "description": _REWRITE_TOOL_DESCRIPTION,
+            "parameters": _REWRITE_TOOL_PARAMETERS,
+        },
+    }
+
+
+def _rewrite_tool_anthropic_schema() -> dict:
+    """Return the rewrite tool in Anthropic format."""
+    return {
+        "name": _REWRITE_TOOL_NAME,
+        "description": _REWRITE_TOOL_DESCRIPTION,
+        "input_schema": _REWRITE_TOOL_PARAMETERS,
+    }
+
+
+def _rewrite_tool_responses_schema() -> dict:
+    """Return the rewrite tool in Responses API format."""
+    return {
+        "type": "function",
+        "name": _REWRITE_TOOL_NAME,
+        "description": _REWRITE_TOOL_DESCRIPTION,
+        "parameters": _REWRITE_TOOL_PARAMETERS,
+    }
+
+
+def _replacement_from_tool_arguments(arguments: str | dict) -> str:
+    """Extract replacement_text from a rewrite_selection tool-call payload."""
+    if isinstance(arguments, dict):
+        data = arguments
+    else:
+        try:
+            data = _stdlib_json.loads(str(arguments or "{}"))
+        except Exception:
+            data = {}
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("replacement_text") or "")
+
+
+def _replacement_from_tool_calls(tool_calls: dict[int, dict]) -> str:
+    """Extract the first rewrite_selection replacement from OpenAI tool calls."""
+    for call in tool_calls.values():
+        if str(call.get("name") or "") != _REWRITE_TOOL_NAME:
+            continue
+        replacement = _replacement_from_tool_arguments(call.get("arguments") or "{}")
+        if replacement:
+            return replacement
+    return ""
+
+
 def stream_rewrite(
     selected_text: str,
     intent_prompt: str = "Rewrite or fix the following text",
@@ -5006,8 +5411,9 @@ def stream_rewrite(
     """
     Stream a rewrite/fix of the selected text using the primary LLM.
 
-    The system prompt instructs the model to output raw replacement text only -”
-    no prose, no markdown, no explanation.  The result is pasted back directly.
+    The model may emit normal assistant text, but the replacement is accepted
+    only through the forced rewrite_selection tool call. The tool's
+    replacement_text argument is pasted back directly.
 
     Args:
         selected_text:  The text to replace in the user's app.
@@ -5022,22 +5428,14 @@ def stream_rewrite(
     user_message = (
         "Instruction:\n"
         f"{intent_prompt}\n\n"
-        "The text below is the ONLY text that will be replaced in the user's app.\n"
-        "--- BEGIN TARGET SELECTION ---\n"
-        f"{selected_text}\n"
-        "--- END TARGET SELECTION ---"
+        "Selected text:\n"
+        f"{selected_text}"
     )
     if context:
         user_message = (
             f"{user_message}\n\n"
-            "Use the following source context only when the instruction asks for it. "
-            "If the instruction says to replace the target from an app/source such as VS Code, "
-            "choose the matching source block and output that replacement text. "
-            "Never use the target selection as its own source. "
-            "Do not rewrite the source context unless it is explicitly requested.\n"
-            "--- BEGIN SOURCE CONTEXT ---\n"
-            f"{context}\n"
-            "--- END SOURCE CONTEXT ---"
+            "Context:\n"
+            f"{context}"
         )
     candidates = _route_candidates(config.LLM_PROVIDER, config.LLM_MODEL, config.LLM_FALLBACKS)
     yield from _stream_with_fallbacks(
@@ -5050,53 +5448,220 @@ def stream_rewrite(
 def _stream_single_rewrite_route(provider: str, model: str, user_message: str) -> Generator[str, None, None]:
     """Stream single rewrite route."""
     _check_route_config(provider, model, "LLM")
-    _log_model_route("rewrite", provider, model, use_tools=False)
+    _log_model_route("rewrite", provider, model, use_tools=True)
     if provider in _OPENAI_COMPAT_PROVIDER_SET:
-        kwargs = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": _REWRITE_SYSTEM_PROMPT},
-                {"role": "user",   "content": user_message},
-            ],
-            "stream": not _use_macos_openai_compat_non_streaming(provider),
-        }
-        _apply_sampling(kwargs, model, 0.3)
-        _apply_max_output(kwargs, model, 1024)
-        yield from _stream_openai_compat_plain(provider, model, kwargs)
+        yield from _stream_openai_compat_rewrite_tool(provider, model, user_message)
         return
     elif provider == "anthropic":
-        client = _dynamic_anthropic_client()
-        request = {
-            "model": model,
-            "max_tokens": 1024,
-            "system": _REWRITE_SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": user_message}],
-        }
-        _apply_sampling(request, model, 0.3)
-        with client.messages.stream(**request) as stream:
-            for text in stream.text_stream:
-                yield text
-    elif provider == "copilot":
-        from core.auth import copilot_client
-        yield from copilot_client.stream(
-            user_message,
-            model,
-            system=_REWRITE_SYSTEM_PROMPT,
-        )
+        yield from _stream_anthropic_rewrite_tool(model, user_message)
+        return
     elif provider == "chatgpt":
-        yield from _response_stream_text(
-            _get_codex_client(),
-            {
-                "model": model,
-                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": user_message}]}],
-                "instructions": _REWRITE_SYSTEM_PROMPT,
-                "store": False,
-            },
-            provider="chatgpt",
-            model=model,
-        )
+        yield from _stream_responses_rewrite_tool(model, user_message)
+        return
+    elif provider == "copilot":
+        raise ValueError("Copilot rewrite route does not support forced rewrite_selection tool calls.")
     else:
         raise ValueError(f"Unknown rewrite provider: {provider}")
+
+
+def _stream_openai_compat_rewrite_tool(
+    provider: str,
+    model: str,
+    user_message: str,
+) -> Generator[str, None, None]:
+    """Run rewrite through an OpenAI-compatible forced tool call."""
+    kwargs = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _REWRITE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        "tools": [_rewrite_tool_openai_schema()],
+        "tool_choice": {"type": "function", "function": {"name": _REWRITE_TOOL_NAME}},
+        "stream": not _use_macos_openai_compat_non_streaming(provider),
+    }
+    _apply_sampling(kwargs, model, 0.3)
+    _apply_max_output(kwargs, model, 1024)
+    for unsupported in list(_get_route_capabilities(provider, model).unsupported_parameters):
+        kwargs.pop(unsupported, None)
+    if "tools" not in kwargs:
+        raise ValueError(f"{provider}/{model} does not support forced rewrite tool calls.")
+
+    client = _dynamic_openai_client(provider)
+    first_round_text: list[str] = []
+    tool_calls_acc: dict[int, dict] = {}
+
+    if not kwargs.get("stream"):
+        while True:
+            try:
+                response = client.chat.completions.create(**kwargs)
+                break
+            except Exception as exc:
+                _record_route_error_capabilities(provider, model, exc)
+                retry_kwargs = _without_unsupported_parameter(kwargs, exc)
+                if retry_kwargs is None:
+                    raise
+                name = _unsupported_parameter_name(exc)
+                _mark_unsupported_parameter(provider, model, name)
+                if name in {"tools", "tool_choice"}:
+                    raise ValueError(
+                        f"{provider}/{model} rejected forced rewrite tool calls: {exc}"
+                    ) from exc
+                kwargs = retry_kwargs
+        first_text = _openai_compat_message_text(response)
+        if first_text:
+            first_round_text.append(first_text)
+        tool_calls_acc = _openai_compat_message_tool_calls(response)
+    else:
+        try:
+            with client.chat.completions.create(**kwargs) as stream:
+                _update_route_capabilities(provider, model, supports_stream=True, supports_tools=True)
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        first_round_text.append(delta.content)
+                    for tc in (delta.tool_calls or []):
+                        entry = tool_calls_acc.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                        if tc.id:
+                            entry["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                entry["name"] += tc.function.name
+                            if tc.function.arguments:
+                                entry["arguments"] += tc.function.arguments
+        except Exception as exc:
+            _record_route_error_capabilities(provider, model, exc)
+            retry_kwargs = _without_unsupported_parameter(kwargs, exc)
+            if retry_kwargs is not None:
+                name = _unsupported_parameter_name(exc)
+                _mark_unsupported_parameter(provider, model, name)
+                if name in {"tools", "tool_choice"}:
+                    raise ValueError(
+                        f"{provider}/{model} rejected forced rewrite tool calls: {exc}"
+                    ) from exc
+                yield from _stream_openai_compat_rewrite_tool(provider, model, user_message)
+                return
+            if _stream_mode_error(exc):
+                _update_route_capabilities(provider, model, supports_stream=False, requires_stream=False)
+                kwargs["stream"] = False
+                response = client.chat.completions.create(**kwargs)
+                first_text = _openai_compat_message_text(response)
+                if first_text:
+                    first_round_text.append(first_text)
+                tool_calls_acc = _openai_compat_message_tool_calls(response)
+            else:
+                raise
+
+    progress = "".join(first_round_text).strip()
+    if progress:
+        yield _progress_chunk(progress)
+    replacement = _replacement_from_tool_calls(tool_calls_acc)
+    if not replacement:
+        raise ValueError("Rewrite model did not call rewrite_selection with replacement_text.")
+    yield _rewrite_result_chunk(replacement)
+
+
+def _stream_anthropic_rewrite_tool(
+    model: str,
+    user_message: str,
+) -> Generator[str, None, None]:
+    """Run rewrite through an Anthropic forced tool call."""
+    client = _dynamic_anthropic_client()
+    request = {
+        "model": model,
+        "max_tokens": 1024,
+        "system": _REWRITE_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_message}],
+        "tools": [_rewrite_tool_anthropic_schema()],
+        "tool_choice": {"type": "tool", "name": _REWRITE_TOOL_NAME},
+    }
+    _apply_sampling(request, model, 0.3)
+    first_round_text: list[str] = []
+    with client.messages.stream(**request) as stream:
+        _update_route_capabilities("anthropic", model, supports_stream=True, supports_tools=True)
+        for text in stream.text_stream:
+            first_round_text.append(text)
+        final = stream.get_final_message()
+
+    progress = "".join(first_round_text).strip()
+    if progress:
+        yield _progress_chunk(progress)
+    for block in getattr(final, "content", []) or []:
+        if getattr(block, "type", "") != "tool_use":
+            continue
+        if getattr(block, "name", "") != _REWRITE_TOOL_NAME:
+            continue
+        replacement = _replacement_from_tool_arguments(getattr(block, "input", {}) or {})
+        if replacement:
+            yield _rewrite_result_chunk(replacement)
+            return
+    raise ValueError("Rewrite model did not call rewrite_selection with replacement_text.")
+
+
+def _stream_responses_rewrite_tool(
+    model: str,
+    user_message: str,
+) -> Generator[str, None, None]:
+    """Run rewrite through a Responses API forced tool call."""
+    response = _responses_rewrite_create_with_retries(
+        _get_codex_client(),
+        {
+            "model": model,
+            "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": user_message}]}],
+            "instructions": _REWRITE_SYSTEM_PROMPT,
+            "tools": [_rewrite_tool_responses_schema()],
+            "tool_choice": {"type": "function", "name": _REWRITE_TOOL_NAME},
+            "store": False,
+        },
+        model=model,
+    )
+    progress = _response_output_text(response).strip()
+    if progress:
+        yield _progress_chunk(progress)
+    for call in _response_function_calls(response):
+        if call.get("name") != _REWRITE_TOOL_NAME:
+            continue
+        replacement = _replacement_from_tool_arguments(call.get("arguments") or "{}")
+        if replacement:
+            yield _rewrite_result_chunk(replacement)
+            return
+    raise ValueError("Rewrite model did not call rewrite_selection with replacement_text.")
+
+
+def _responses_rewrite_create_with_retries(client, kwargs: dict, *, model: str):
+    """Create a Responses rewrite request without dropping forced tool fields."""
+    current = _with_responses_reasoning(kwargs, provider="chatgpt", model=model)
+    while True:
+        try:
+            return client.responses.create(**current)
+        except Exception as exc:
+            _record_route_error_capabilities("chatgpt", model, exc)
+            if _store_must_be_false_error(exc) and current.get("store") is True:
+                current = dict(current)
+                current["store"] = False
+                print("[llm] Responses rewrite requires store=false; retrying without stored response", flush=True)
+                continue
+            if _requires_stream_error(exc):
+                _update_route_capabilities("chatgpt", model, supports_stream=True, requires_stream=True)
+                return _responses_stream_to_response(
+                    client,
+                    current,
+                    provider="chatgpt",
+                    model=model,
+                )
+            retry_kwargs = _without_unsupported_parameter(current, exc)
+            if retry_kwargs is None:
+                raise
+            name = _unsupported_parameter_name(exc)
+            _mark_unsupported_parameter("chatgpt", model, name)
+            if name in {"tools", "tool_choice"}:
+                raise ValueError(
+                    f"chatgpt/{model} rejected forced rewrite tool calls: {exc}"
+                ) from exc
+            print("[llm] Responses rewrite rejected unsupported parameter; retrying without it", flush=True)
+            current = retry_kwargs
 
 
 # ------------------------------------------------------------------

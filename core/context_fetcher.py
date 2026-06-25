@@ -1326,6 +1326,9 @@ _DOCUMENT_CHROME_LINE_KEYS: set[str] = {
     "view",
     "go",
     "run",
+    "terminal",
+    "help",
+    "update",
     "more",
     "search",
     "more actions",
@@ -1341,6 +1344,9 @@ _DOCUMENT_CHROME_LINE_KEYS: set[str] = {
 }
 _DOCUMENT_CHROME_LINE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\d+$"),
+    re.compile(r"^no results found for ['\"].+['\"]$", re.IGNORECASE),
+    re.compile(r"^[\w .()@+-]+?\.(?:md|markdown|txt|py|js|ts|tsx|jsx|json|ya?ml|toml|ini|cfg|css|html?|xml|csv|log)$", re.IGNORECASE),
+    re.compile(r"^[\w .()@+-]+(?:[/\\][\w .()@+-]+)+\.(?:md|markdown|txt|py|js|ts|tsx|jsx|json|ya?ml|toml|ini|cfg|css|html?|xml|csv|log)$", re.IGNORECASE),
     re.compile(r"^spaces:\s*\d+$", re.IGNORECASE),
     re.compile(r"^ln\s+\d+\s*,\s*col\s+\d+$", re.IGNORECASE),
     re.compile(r"^text\s*\d+\s*untitled-\d+$", re.IGNORECASE),
@@ -1587,9 +1593,41 @@ def _get_window_text_uia(hwnd: int, max_chars: int) -> str | None:
         root = uia.ElementFromHandle(hwnd)
         if root is None:
             return None
+        root_info = _fetch_window_info_win(hwnd)
+        root_proc = (root_info.process_name or "").lower()
+        is_vscode_like = root_proc in _VSCODE_LIKE_STORAGE
 
         parts: list[str] = []
         seen: set[str] = set()
+
+        def _text_pattern_text(el) -> str:
+            try:
+                raw = el.GetCurrentPattern(_UIA_TextPatternId)
+                if raw is not None:
+                    tp = raw.QueryInterface(uiac.IUIAutomationTextPattern)
+                    return tp.DocumentRange.GetText(max_chars if max_chars and max_chars > 0 else -1) or ""
+            except Exception:
+                return ""
+            return ""
+
+        def _value_pattern_text(el) -> str:
+            try:
+                raw = el.GetCurrentPattern(_UIA_ValuePatternId)
+                if raw is not None:
+                    vp = raw.QueryInterface(uiac.IUIAutomationValuePattern)
+                    return vp.CurrentValue or ""
+            except Exception:
+                return ""
+            return ""
+
+        def _add_text(text: str) -> bool:
+            text = _clean_document_uia_text(text)
+            if not text or text in seen:
+                return False
+            seen.add(text)
+            parts.append(text)
+            return True
+
         for control_type in (50030, 50004):  # Document, Edit
             condition = uia.CreatePropertyCondition(
                 30003,  # UIA_ControlTypePropertyId
@@ -1598,31 +1636,55 @@ def _get_window_text_uia(hwnd: int, max_chars: int) -> str | None:
             elements = root.FindAll(uiac.TreeScope_Descendants, condition)
             for idx in range(getattr(elements, "Length", 0) or 0):
                 el = elements.GetElement(idx)
-                text = ""
-                try:
-                    raw = el.GetCurrentPattern(_UIA_TextPatternId)
-                    if raw is not None:
-                        tp = raw.QueryInterface(uiac.IUIAutomationTextPattern)
-                        text = tp.DocumentRange.GetText(max_chars if max_chars and max_chars > 0 else -1)
-                except Exception:
-                    text = ""
+                text = _text_pattern_text(el)
                 if not text:
-                    try:
-                        raw = el.GetCurrentPattern(_UIA_ValuePatternId)
-                        if raw is not None:
-                            vp = raw.QueryInterface(uiac.IUIAutomationValuePattern)
-                            text = vp.CurrentValue or ""
-                    except Exception:
-                        text = ""
-                text = _clean_document_uia_text(text)
-                if not text or text in seen:
+                    text = _value_pattern_text(el)
+                if not _add_text(text):
                     continue
-                seen.add(text)
-                parts.append(text)
                 if sum(len(part) for part in parts) >= max_chars:
                     break
             if parts:
                 break
+        if not parts and is_vscode_like:
+            # VS Code often exposes editor lines as text-like descendants rather
+            # than one useful Document/Edit range, especially when it is not the
+            # foreground window. Scan narrowly and let the chrome cleaner reject
+            # menus/status text while preserving real editor lines.
+            vscode_loose_control_types = {
+                50020,  # Text
+                50030,  # Document
+                50004,  # Edit
+                50025,  # Custom
+                50026,  # Group
+                50033,  # Pane
+            }
+            true_condition = uia.CreateTrueCondition()
+            descendants = root.FindAll(uiac.TreeScope_Descendants, true_condition)
+            loose_lines: list[str] = []
+            seen_lines: set[str] = set()
+            for idx in range(min(getattr(descendants, "Length", 0) or 0, 2500)):
+                try:
+                    el = descendants.GetElement(idx)
+                    control_type = int(getattr(el, "CurrentControlType", 0) or 0)
+                    if control_type not in vscode_loose_control_types:
+                        continue
+                    text = _text_pattern_text(el) or _value_pattern_text(el)
+                    if not text:
+                        text = str(getattr(el, "CurrentName", "") or "")
+                    text = " ".join(str(text or "").split()).strip()
+                    if not text:
+                        continue
+                    key = text.casefold()
+                    if key in seen_lines:
+                        continue
+                    seen_lines.add(key)
+                    loose_lines.append(text)
+                    if sum(len(line) for line in loose_lines) >= max_chars:
+                        break
+                except Exception:
+                    continue
+            if loose_lines:
+                _add_text("\n".join(loose_lines))
         combined = "\n\n".join(parts).strip()
         if not combined:
             return None
@@ -2288,6 +2350,7 @@ _VSCODE_TITLE_MARKERS: tuple[str, ...] = (
     " - Cursor",
     " - Windsurf",
 )
+_VSCODE_UNTITLED_RE = re.compile(r"\bUntitled-\d+\b", re.IGNORECASE)
 
 
 def _decode_vscode_uri(uri: str) -> str:
@@ -2352,6 +2415,150 @@ def _vscode_find_file(filename: str, workspace_hint: str = "", storage_path: str
         folders.sort(key=lambda p: 0 if os.path.basename(p).lower() == hint_lower else 1)
 
     return _search_filename_in_folders(filename, folders)
+
+
+def _vscode_app_root(process_name: str) -> str:
+    """Return the VS Code-like application data root for a process."""
+    rel_storage = _VSCODE_LIKE_STORAGE.get((process_name or "").lower())
+    if not rel_storage:
+        return ""
+    storage_path = os.path.join(_config_dir(), rel_storage)
+    # .../<app>/User/globalStorage/storage.json -> .../<app>
+    return os.path.dirname(os.path.dirname(os.path.dirname(storage_path)))
+
+
+def _vscode_backup_root(process_name: str) -> str:
+    """Return the VS Code-like backup root for a process."""
+    app_root = _vscode_app_root(process_name)
+    return os.path.join(app_root, "Backups") if app_root else ""
+
+
+def _decode_vscode_backup_file(path: str, max_chars: int) -> tuple[str, str, str, str]:
+    """Return ``(kind, label, source_path, text)`` for a VS Code backup file."""
+    try:
+        limit = max((max_chars or 0) + 8192, 16384)
+        with open(path, "rb") as f:
+            raw = f.read(limit)
+    except Exception:
+        return "", "", "", ""
+
+    text = ""
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except Exception:
+            continue
+    if not text:
+        text = raw.decode("utf-8", errors="ignore")
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    first, sep, rest = text.partition("\n")
+    header = first.strip()
+    payload = rest if sep else text
+    kind = ""
+    label = ""
+    source_path = ""
+    header_token = header.split(" ", 1)[0]
+    if header_token.lower().startswith("untitled:"):
+        kind = "untitled"
+        label = unquote(header_token[len("untitled:"):]).strip()
+    elif header_token.lower().startswith("file:"):
+        kind = "file"
+        source_path = _decode_vscode_uri(header_token)
+        label = os.path.basename(source_path) if source_path else ""
+    else:
+        payload = text
+
+    payload = payload.lstrip("\ufeff").strip()
+    if max_chars and max_chars > 0:
+        payload = payload[:max_chars]
+    payload = _redact(payload)
+    return kind, label, source_path, payload
+
+
+def _vscode_backup_records(process_name: str, max_chars: int) -> list[dict[str, Any]]:
+    """Read recent VS Code backup records without depending on UIA."""
+    import glob
+
+    root = _vscode_backup_root(process_name)
+    if not root or not os.path.isdir(root):
+        return []
+
+    paths: list[str] = []
+    for kind in ("untitled", "file"):
+        paths.extend(glob.glob(os.path.join(root, "*", kind, "*")))
+    paths = [path for path in paths if os.path.isfile(path)]
+    paths.sort(key=lambda path: os.path.getmtime(path), reverse=True)
+
+    records: list[dict[str, Any]] = []
+    for path in paths[:80]:
+        kind, label, source_path, text = _decode_vscode_backup_file(path, max_chars)
+        if not text:
+            continue
+        records.append(
+            {
+                "kind": kind,
+                "label": label,
+                "source_path": source_path,
+                "text": text,
+                "mtime": os.path.getmtime(path),
+            }
+        )
+    return records
+
+
+def _vscode_window_terms(win: WindowInfo) -> set[str]:
+    """Return lower-cased title fragments that can identify a VS Code tab."""
+    title = _repair_mojibake_text((win.title or "").strip())
+    doc_name = _extract_doc_name_from_window(win)
+    raw_terms = {title, doc_name}
+    for value in (title, doc_name):
+        for sep in (" \u2022 ", " • ", " - ", " — ", " – "):
+            if sep in value:
+                raw_terms.update(part.strip() for part in value.split(sep))
+    raw_terms.update(match.group(0) for match in _VSCODE_UNTITLED_RE.finditer(title))
+    raw_terms.update(match.group(0) for match in _VSCODE_UNTITLED_RE.finditer(doc_name))
+    terms: set[str] = set()
+    for term in raw_terms:
+        term = re.sub(r"\s*\[.*?\]\s*$", "", str(term or "")).strip().lstrip("\u25cf\u2022*").strip()
+        if term:
+            terms.add(term.casefold())
+    return terms
+
+
+def _vscode_backup_matches_window(record: dict[str, Any], win: WindowInfo) -> bool:
+    """Return True when a VS Code backup record belongs to a window/tab title."""
+    terms = _vscode_window_terms(win)
+    if not terms:
+        return False
+
+    kind = str(record.get("kind") or "")
+    label = str(record.get("label") or "").strip()
+    source_path = str(record.get("source_path") or "").strip()
+    label_folded = label.casefold()
+    basename_folded = os.path.basename(source_path).casefold() if source_path else ""
+
+    if kind == "untitled":
+        return bool(label_folded and label_folded in terms)
+    if kind == "file":
+        return bool(basename_folded and basename_folded in terms)
+    return False
+
+
+def _get_vscode_backup_text(win: WindowInfo, max_chars: int) -> tuple[str, str]:
+    """Read the matching VS Code backup for a visible Code/Cursor/Windsurf window."""
+    if (win.process_name or "").lower() not in _VSCODE_LIKE_STORAGE:
+        return "", ""
+    for record in _vscode_backup_records(win.process_name, max_chars):
+        if not _vscode_backup_matches_window(record, win):
+            continue
+        text = str(record.get("text") or "").strip()
+        if not text:
+            continue
+        kind = str(record.get("kind") or "backup")
+        return text, f"vscode_backup_{kind}"
+    return "", ""
 
 
 def _vscode_running_roots(process_name: str, workspace_hint: str = "") -> list[str]:
@@ -2562,6 +2769,10 @@ def _extract_doc_name_from_window(win: WindowInfo) -> str:
             idx = title.find(marker)
             if idx != -1:
                 return title[:idx].strip()
+        # VS Code/Cursor/Windsurf do not always include the product suffix in
+        # the visible title. Treat the Code-like process itself as the signal so
+        # untitled tabs such as "Text 2 • Untitled-1" stay eligible.
+        return _leading_title_piece()
 
     for suffix in _DOC_APP_TITLE_SUFFIXES:
         if title.endswith(suffix):
@@ -2956,8 +3167,42 @@ def get_all_open_document_window_texts(
     UI Automation but does not expose a reliable filesystem path. Returns
     ``(label, text)`` pairs. Empty/unreadable windows are skipped.
     """
+    results, _debug = get_all_open_document_window_texts_with_debug(
+        max_docs=max_docs,
+        max_chars_per_doc=max_chars_per_doc,
+        active_window=active_window,
+    )
+    return results
+
+
+def _read_window_document_text(win: WindowInfo, max_chars: int) -> tuple[str, str]:
+    """Read text from a document/editor window and return ``(text, method)``."""
+    proc_lower = (win.process_name or "").lower()
+    if proc_lower in _VSCODE_LIKE_STORAGE:
+        text, method = _get_vscode_backup_text(win, max_chars)
+        if text:
+            return text, method
+
+    text = _get_window_text_uia(win.hwnd, max_chars) or ""
+    if text:
+        return text, "uia"
+
+    if proc_lower in _VSCODE_LIKE_STORAGE:
+        text, method = _get_vscode_backup_text(win, max_chars)
+        if text:
+            return text, method
+
+    return "", ""
+
+
+def get_all_open_document_window_texts_with_debug(
+    max_docs: int = 5,
+    max_chars_per_doc: int | None = None,
+    active_window: WindowInfo | None = None,
+) -> tuple[list[tuple[str, str]], list[dict[str, Any]]]:
+    """Read visible document/editor text and return candidate diagnostics."""
     if not _IS_WIN:
-        return []
+        return [], []
     if max_chars_per_doc is None:
         max_chars_per_doc = config.CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS
 
@@ -2969,8 +3214,11 @@ def get_all_open_document_window_texts(
         windows.append(primary)
         seen_windows.add(int(primary.hwnd))
 
+    # Keep scanning beyond max_docs candidates: some supported app windows expose
+    # no usable UIA text, and stopping before reading them can hide later sources.
+    max_candidate_windows = max(max_docs * 4, max_docs + 8)
     for win in _enumerate_open_doc_windows():
-        if len(windows) >= max_docs:
+        if len(windows) >= max_candidate_windows:
             break
         if not win.hwnd or int(win.hwnd) in seen_windows:
             continue
@@ -2978,15 +3226,28 @@ def get_all_open_document_window_texts(
         seen_windows.add(int(win.hwnd))
 
     results: list[tuple[str, str]] = []
+    debug: list[dict[str, Any]] = []
     for win in windows:
         if len(results) >= max_docs:
             break
         label = _extract_doc_name_from_window(win) or win.title or "Open document"
         label = re.sub(r"\s*\[.*?\]\s*$", "", label).strip().lstrip("\u25cf\u2022*").strip()
-        text = _get_window_text_uia(win.hwnd, max_chars_per_doc) or ""
+        text, method = _read_window_document_text(win, max_chars_per_doc)
+        debug.append(
+            {
+                "label": label or "Open document",
+                "title": win.title,
+                "process_name": win.process_name,
+                "pid": win.pid,
+                "hwnd": win.hwnd,
+                "chars": len(text),
+                "accepted": bool(text),
+                "method": method or "",
+            }
+        )
         if text:
             results.append((label or "Open document", text))
-    return results
+    return results, debug
 
 
 def format_context_for_prompt(snapshot: ContextSnapshot) -> str:

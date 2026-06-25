@@ -51,10 +51,14 @@ MEMORY_SEARCH_NOTE = (
 
 REWRITE_SYSTEM_PROMPT = (
     "You are a text editor assistant. "
-    "Rewrite or fix the provided text. "
-    "Output ONLY the corrected/rewritten text -- no explanation, "
-    "no markdown, no commentary, no code fences. "
-    "Your entire response will be pasted directly as a replacement for the original text."
+    "Reason about the user's rewrite instruction normally. "
+    "The user message contains the selected text to rewrite and may include "
+    "additional context captured at hotkey time. Use that context when it helps "
+    "understand the requested replacement. "
+    "When you know the exact text that should replace the target selection, "
+    "you must call the rewrite_selection tool with that exact replacement_text. "
+    "Only the tool argument will be pasted into the user's app; normal assistant "
+    "text is visible status/commentary and is not pasted."
 )
 
 

@@ -832,6 +832,9 @@ def test_llm_tab_hides_advanced_chat_harness_controls_until_expanded():
         for key in (
             "WISP_UNIFIED_CHAT_TOOL_LOOP",
             "CHAT_TOOL_TRACE_UI",
+            "WISP_PLANNED_CHUNKING",
+            "WISP_PLANNED_CHUNKING_CHUNKS",
+            "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
             "CHAT_REASONING_EFFORT",
             "CHAT_AUTO_ELABORATE",
             "CHAT_ELABORATE_PROMPT",
@@ -1096,6 +1099,9 @@ def test_reset_page_key_mapping_is_scoped():
         "ASSISTANT_LANGUAGE": "Chinese",
         "WISP_UNIFIED_CHAT_TOOL_LOOP": "True",
         "CHAT_TOOL_TRACE_UI": "True",
+        "WISP_PLANNED_CHUNKING": "True",
+        "WISP_PLANNED_CHUNKING_CHUNKS": "3",
+        "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS": "80",
         "CHAT_REASONING_EFFORT": "high",
         "CHAT_AUTO_ELABORATE": "True",
         "CHAT_ELABORATE_PROMPT": "Please elaborate.",
@@ -1105,6 +1111,9 @@ def test_reset_page_key_mapping_is_scoped():
         "LLM_PROVIDER",
         "WISP_UNIFIED_CHAT_TOOL_LOOP",
         "CHAT_TOOL_TRACE_UI",
+        "WISP_PLANNED_CHUNKING",
+        "WISP_PLANNED_CHUNKING_CHUNKS",
+        "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
         "CHAT_REASONING_EFFORT",
         "CHAT_AUTO_ELABORATE",
         "CHAT_ELABORATE_PROMPT",
@@ -1656,6 +1665,9 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
 
         _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["CHAT_ELABORATE_PROMPT"], "Please elaborate on that.")
+        dialog._fields["WISP_PLANNED_CHUNKING"].setChecked(True)
+        dialog._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setText("4")
+        dialog._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setText("120")
         row = dialog._caller_blocks[0]["intent_rows"][0]
         assert isinstance(row["prompt"], QTextEdit)
         assert not row["prompt"].acceptRichText()
@@ -1669,6 +1681,9 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
         assert _get(row["prompt"]) == captured["CALLER_1_INTENT_1_PROMPT"]
         assert captured["CHAT_ELABORATE_PROMPT"] == "\u8acb\u8a73\u7d30\u8aaa\u660e\u4e00\u4e0b\u3002"
         assert _get(dialog._fields["CHAT_ELABORATE_PROMPT"]) == captured["CHAT_ELABORATE_PROMPT"]
+        assert captured["WISP_PLANNED_CHUNKING"] == "True"
+        assert captured["WISP_PLANNED_CHUNKING_CHUNKS"] == "4"
+        assert captured["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] == "120"
     finally:
         dialog.deleteLater()
         app.processEvents()

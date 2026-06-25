@@ -99,9 +99,28 @@ def _get_selected_text_clipboard() -> str | None:
         return macos_native.get_selected_text(COPY_COMBO)
 
     previous = _safe_get_clipboard()
+    previous_sequence = _clipboard_sequence_number()
     send_keys(COPY_COMBO)
-    time.sleep(0.08)
-    text = pyperclip.paste().strip()
+    text = ""
+    changed = False
+    deadline = time.monotonic() + (0.50 if sys.platform == "win32" else 0.18)
+    while time.monotonic() < deadline:
+        time.sleep(0.04)
+        current = (_safe_get_clipboard() or "").strip()
+        current_sequence = _clipboard_sequence_number()
+        sequence_changed = (
+            previous_sequence is not None
+            and current_sequence is not None
+            and current_sequence != previous_sequence
+        )
+        if current and (sequence_changed or current != (previous or "").strip()):
+            text = current
+            changed = True
+            break
+        if current and sequence_changed:
+            text = current
+            changed = True
+            break
 
     # Restore original clipboard content
     if previous is not None:
@@ -110,7 +129,19 @@ def _get_selected_text_clipboard() -> str | None:
         except Exception:
             pass
 
-    return text if text and text != previous else None
+    return text if changed and text else None
+
+
+def _clipboard_sequence_number() -> int | None:
+    """Return the Windows clipboard sequence number when available."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        return int(ctypes.windll.user32.GetClipboardSequenceNumber())
+    except Exception:
+        return None
 
 
 def _get_primary_selection_linux() -> str | None:

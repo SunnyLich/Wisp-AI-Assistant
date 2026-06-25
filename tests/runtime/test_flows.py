@@ -469,6 +469,40 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert ui.calls_for("ui.context.clear")
 
 
+def test_query_flow_streams_reply_into_open_chat_conversation():
+    """Verify overlay query chunks are mirrored into the open chat window."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    ui = FakeWorker({"ui.chat.begin_conversation": lambda _params: {"started": True, "conversation_index": 2}})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("hello")})
+    with caller_config(rows):
+        _flow, _native, ui, _brain, _audio = make_flow(native=native, ui=ui, brain=brain)
+        _flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "Explain this"})
+
+    chat_chunks = [call["params"] for call in ui.calls_for("ui.chat.chunk")]
+    assert chat_chunks == [
+        {"conversation_index": 2, "text": "he", "is_progress": False, "is_thought": False},
+        {"conversation_index": 2, "text": "llo", "is_progress": False, "is_thought": False},
+    ]
+    assert ui.calls_for("ui.chat.done")[-1]["params"]["conversation_index"] == 2
+    assert ui.calls_for("ui.chat.done")[-1]["params"]["text"] == "hello"
+    assert ui.last_call("ui.chat.add_conversation")["params"]["conversation_index"] == 2
+    assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == "hello"
+
+
 def test_query_bubble_splits_exposed_thought_segments():
     """Verify speech bubble receives exposed model thought segments separately."""
     def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:

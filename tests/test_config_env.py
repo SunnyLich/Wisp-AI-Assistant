@@ -43,6 +43,37 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_reload_parses_planned_chunking_flags(self):
+        """Verify planned chunking env flags are parsed and clamped."""
+        previous = {
+            "PLANNED_CHUNKING": getattr(config, "PLANNED_CHUNKING", False),
+            "PLANNED_CHUNKING_CHUNKS": getattr(config, "PLANNED_CHUNKING_CHUNKS", 3),
+            "PLANNED_CHUNKING_MIN_PROMPT_CHARS": getattr(
+                config, "PLANNED_CHUNKING_MIN_PROMPT_CHARS", 80
+            ),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "WISP_PLANNED_CHUNKING": "yes",
+                    "WISP_PLANNED_CHUNKING_CHUNKS": "9",
+                    "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS": "12",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertTrue(config.PLANNED_CHUNKING)
+            self.assertEqual(config.PLANNED_CHUNKING_CHUNKS, 4)
+            self.assertEqual(config.PLANNED_CHUNKING_MIN_PROMPT_CHARS, 12)
+            self.assertTrue(config.get_settings().planned_chunking.enabled)
+            self.assertEqual(config.get_settings().planned_chunking.chunks, 4)
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_legacy_doll_keys_still_honored(self):
         """Old DOLL_* env keys remain valid via back-compat fallback."""
         previous = {

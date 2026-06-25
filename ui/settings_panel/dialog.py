@@ -1423,6 +1423,19 @@ class SettingsDialog(QDialog):
             "Show temporary progress lines in Chat that identify the tool loop and tool calls. "
             "Useful for testing; leave off for normal use."
         )
+        self._fields["WISP_PLANNED_CHUNKING"] = QCheckBox(t("Use planned chunked replies"))
+        self._fields["WISP_PLANNED_CHUNKING"].setToolTip(
+            "Experimental. For eligible overlay replies, privately plans the answer and emits "
+            "a few stable visible parts. Tool, file, image, and history requests keep the normal path."
+        )
+        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"] = QLineEdit()
+        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setPlaceholderText("e.g. 3")
+        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setToolTip("Number of visible parts, clamped to 2-4.")
+        self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] = QLineEdit()
+        self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setPlaceholderText("e.g. 80")
+        self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setToolTip(
+            "Minimum combined prompt/context length before planned chunking can run."
+        )
         reasoning_combo = _NoScrollCombo()
         reasoning_combo.setToolTip(
             "OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; "
@@ -1447,6 +1460,15 @@ class SettingsDialog(QDialog):
         advanced_form.setContentsMargins(0, 0, 0, 0)
         advanced_form.addRow("", self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"])
         advanced_form.addRow("", self._fields["CHAT_TOOL_TRACE_UI"])
+        advanced_form.addRow("", self._fields["WISP_PLANNED_CHUNKING"])
+        advanced_form.addRow(
+            _tooltip_label("Planned reply chunks", "Number of visible parts for eligible planned replies. Runtime clamps this to 2-4."),
+            self._fields["WISP_PLANNED_CHUNKING_CHUNKS"],
+        )
+        advanced_form.addRow(
+            _tooltip_label("Planned reply min chars", "Minimum combined prompt/context length before planned chunking can run."),
+            self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"],
+        )
         advanced_form.addRow(
             _tooltip_label(
                 "Reasoning effort",
@@ -4391,6 +4413,27 @@ class SettingsDialog(QDialog):
             ).strip().lower()
             in {"1", "true", "yes", "on"}
         )  # type: ignore[attr-defined]
+        self._fields["WISP_PLANNED_CHUNKING"].setChecked(
+            self._env.get(
+                "WISP_PLANNED_CHUNKING",
+                str(getattr(cfg, "PLANNED_CHUNKING", False)),
+            ).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )  # type: ignore[attr-defined]
+        _set(
+            self._fields["WISP_PLANNED_CHUNKING_CHUNKS"],
+            self._env.get(
+                "WISP_PLANNED_CHUNKING_CHUNKS",
+                str(getattr(cfg, "PLANNED_CHUNKING_CHUNKS", 3)),
+            ),
+        )
+        _set(
+            self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"],
+            self._env.get(
+                "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
+                str(getattr(cfg, "PLANNED_CHUNKING_MIN_PROMPT_CHARS", 80)),
+            ),
+        )
         _set(
             self._fields["CHAT_REASONING_EFFORT"],
             self._env.get("CHAT_REASONING_EFFORT", getattr(cfg, "CHAT_REASONING_EFFORT", "high")),
@@ -5337,6 +5380,7 @@ class SettingsDialog(QDialog):
                 "VISION_LLM_PROVIDER", "VISION_LLM_MODEL", "VISION_LLM_FALLBACKS",
                 "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "MEMORY_LLM_FALLBACKS",
                 "TOOL_LLM_MODEL", "WISP_UNIFIED_CHAT_TOOL_LOOP", "CHAT_TOOL_TRACE_UI", "CHAT_REASONING_EFFORT",
+                "WISP_PLANNED_CHUNKING", "WISP_PLANNED_CHUNKING_CHUNKS", "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
                 "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT", "CUSTOM_BASE_URL",
                 "GITHUB_CLIENT_ID", "GITHUB_OAUTH_SCOPES",
                 "COPILOT_CLI_URL", "COPILOT_CLI_PATH",
@@ -5692,6 +5736,9 @@ class SettingsDialog(QDialog):
             "MEMORY_LLM_FALLBACKS": mem_f,
             "WISP_UNIFIED_CHAT_TOOL_LOOP": str(self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"].isChecked()),  # type: ignore[attr-defined]
             "CHAT_TOOL_TRACE_UI": str(self._fields["CHAT_TOOL_TRACE_UI"].isChecked()),  # type: ignore[attr-defined]
+            "WISP_PLANNED_CHUNKING": str(self._fields["WISP_PLANNED_CHUNKING"].isChecked()),  # type: ignore[attr-defined]
+            "WISP_PLANNED_CHUNKING_CHUNKS": _get(self._fields["WISP_PLANNED_CHUNKING_CHUNKS"]),
+            "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS": _get(self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"]),
             "CHAT_REASONING_EFFORT": _get(self._fields["CHAT_REASONING_EFFORT"]),
             "TTS_PROVIDER":      _get(self._fields["TTS_PROVIDER"]),
             "CARTESIA_VOICE_ID": _get(self._fields["CARTESIA_VOICE_ID"]),
