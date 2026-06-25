@@ -1223,6 +1223,10 @@ Let model decide — expose git status/diff and GitHub repo/issue tools.</source
       <translation>听到</translation>
     </message>
     <message>
+      <source>Reading</source>
+      <translation>正在朗读</translation>
+    </message>
+    <message>
       <source>Hide icon</source>
       <translation>隐藏图标</translation>
     </message>
@@ -1365,6 +1369,26 @@ Let model decide — expose git status/diff and GitHub repo/issue tools.</source
     <message>
       <source>Last chat</source>
       <translation>最近聊天</translation>
+    </message>
+    <message>
+      <source>Read selection aloud</source>
+      <translation>朗读选中文本</translation>
+    </message>
+    <message>
+      <source>No selected text to read aloud.</source>
+      <translation>没有可朗读的选中文本。</translation>
+    </message>
+    <message>
+      <source>TTS is off. Choose a voice provider in Settings first.</source>
+      <translation>TTS 已关闭。请先在设置中选择语音提供商。</translation>
+    </message>
+    <message>
+      <source>Could not read selected text</source>
+      <translation>无法读取选中文本</translation>
+    </message>
+    <message>
+      <source>Could not read selected text aloud.</source>
+      <translation>无法朗读选中文本。</translation>
     </message>
     <message>
       <source>Last tool:</source>
@@ -3093,6 +3117,34 @@ Continue?</source>
     <message>
       <source>Tell Wisp what to change before trying again.</source>
       <translation>告诉 Wisp 重试前需要更改什么。</translation>
+    </message>
+    <message>
+      <source>Chunking controls for read-aloud TTS and long speech-to-text recordings.</source>
+      <translation>朗读 TTS 和长语音转文字录音的分块控制。</translation>
+    </message>
+    <message>
+      <source>Read-aloud min words</source>
+      <translation>朗读最少词数</translation>
+    </message>
+    <message>
+      <source>Read-aloud max words</source>
+      <translation>朗读最多词数</translation>
+    </message>
+    <message>
+      <source>STT first chunk trigger (s)</source>
+      <translation>STT 首个分块触发（秒）</translation>
+    </message>
+    <message>
+      <source>STT chunk cadence (s)</source>
+      <translation>STT 分块间隔（秒）</translation>
+    </message>
+    <message>
+      <source>STT live-edge delay (s)</source>
+      <translation>STT 实时边缘延迟（秒）</translation>
+    </message>
+    <message>
+      <source>STT overlap (s)</source>
+      <translation>STT 重叠（秒）</translation>
     </message>
   </context>
   <context>

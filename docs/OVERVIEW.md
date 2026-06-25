@@ -115,7 +115,7 @@ Run the full test suite from the repository root:
 On Windows, the pytest harness suppresses modal native crash dialogs from child
 processes so a failing worker cannot block the run. If you still see repeated
 `python.exe` access-violation events, check the venv version first: Wisp is
-pinned to Python `3.12.13`, and a stale Python 3.14 venv should be rebuilt with
+targeting Python `3.12`, and a stale Python 3.14 venv should be rebuilt with
 `.\scripts\setup_dev.ps1`.
 
 Run the current focused lint/type baseline with:

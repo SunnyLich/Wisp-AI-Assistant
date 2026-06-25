@@ -9,7 +9,7 @@
 Wisp gives you hotkey-driven AI that can read your selection, clipboard, app, browser, documents, or screen snip while you stay where you are. Press a hotkey, choose an intent, and stream the answer into a small overlay.
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-333333?style=flat-square)](#platform-status)
-[![Python](https://img.shields.io/badge/python-3.12.13-3572A5?style=flat-square)](#quick-start)
+[![Python](https://img.shields.io/badge/python-3.12-3572A5?style=flat-square)](#quick-start)
 [![Local first](https://img.shields.io/badge/local--first-context%20and%20memory-4B8F8C?style=flat-square)](#privacy-and-control)
 [![License](https://img.shields.io/badge/license-MIT-7C3AED?style=flat-square)](#license)
 
@@ -132,7 +132,7 @@ To build your own packaged copy, see [Building an EXE](docs/BUILDING_EXE.md) for
 
 Requirements:
 
-- Python `3.12.13` exactly, pinned in `.python-version`
+- Python `3.12`, pinned in `.python-version`
 - Windows 10/11, macOS 13+, or Linux with X11 for the full hotkey/screenshot path
 - At least one configured LLM provider key or local compatible server
 
@@ -188,6 +188,23 @@ Free tiers are rate-limited and change often, so add at least one fallback route
 | `Esc` | Cancel the picker |
 
 Every caller, hotkey, label, prompt, context source, paste-back setting, and UI dimension is configurable from Settings.
+
+## Addons
+
+Addons are the supported way to extend Wisp. Each addon lives in its own folder under `addons/` with an `addon.toml` manifest, and runs in its own isolated Python host process, so a crash, a slow hook, or a bad dependency in one addon cannot take down the brain worker or any other addon. Capabilities are opt-in: an addon only gets what its manifest declares, and missing permissions are denied. Addons that need third-party packages get a dedicated virtual environment that you approve before it runs.
+
+An addon can hook into Wisp at several points:
+
+- **Context** - read or rewrite the prompt and context before a query is sent.
+- **Tools** - register model-callable tools the model can invoke mid-answer.
+- **Responses** - observe completed responses to log, save, or forward them.
+- **Intents and hotkeys** - add its own intent rows and global hotkeys with custom prompts.
+- **UI** - contribute tray actions, settings fields, and notifications.
+- **LLM actions** - run its own capped model calls from a hook or hotkey.
+
+**What addons can do:** because an addon can inject context, expose tools, and react to responses, the surface is broad. An addon could pull your current git diff, calendar, or an open ticket into the prompt automatically; give the model a tool to search an internal wiki, query a database, hit a weather or stock API, or toggle a smart-home device; redact or tag sensitive context on its way out for compliance; append every answer to a daily journal or push it to Notion or Slack; or add a one-key "rewrite this in our house style" intent backed by its own prompt. If you can write it in Python and it fits one of the hook points above, you can wire it into the same hotkey-driven overlay you already use.
+
+The bundled `addons/healthcheck` addon is a working reference that exercises every hook. See the [Addon guide](addons/README.md) for the full manifest and hook contract, or the **Add-ons** page in the [Wisp documentation site](Wisp%20Website/Wisp%20Docs.html).
 
 ## Privacy And Control
 

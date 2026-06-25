@@ -17,6 +17,66 @@ _emit: Callable[[str, Any, Any], None] | None = None
 _playback_stop = threading.Event()
 _config_prewarm_lock = threading.Lock()
 _config_prewarm_generation = 0
+_warmup_lock = threading.Lock()
+_local_tts_warming = False
+_local_tts_ready = False
+_local_tts_error = ""
+
+
+def _local_tts_provider(provider: str) -> bool:
+    """Return whether provider has an in-process local model warmup."""
+    return provider == "kokoro"
+
+
+def _warmup_items(provider: str) -> list[str]:
+    """Return local audio components that should warm up in this process."""
+    items = ["stt"]
+    if _local_tts_provider(provider):
+        items.append("tts")
+    return items
+
+
+def _set_local_tts_warmup(*, warming: bool, ready: bool | None = None, error: str = "") -> None:
+    """Track whether local TTS is warming or ready."""
+    global _local_tts_warming, _local_tts_ready, _local_tts_error
+    with _warmup_lock:
+        _local_tts_warming = warming
+        if ready is not None:
+            _local_tts_ready = ready
+        _local_tts_error = error
+
+
+def _local_tts_is_warming() -> bool:
+    """Return whether a local TTS warmup is currently holding the model."""
+    with _warmup_lock:
+        return _local_tts_warming and not _local_tts_ready
+
+
+def _warm_local_audio(provider: str) -> dict[str, Any]:
+    """Warm local STT and local TTS, returning per-component status."""
+    result: dict[str, Any] = {"stt": "skipped", "tts": "skipped"}
+    try:
+        from core.macos_helper import handlers as stt_handlers
+
+        stt_handlers.stt_prewarm(wait=True)
+        result["stt"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        result["stt"] = f"error: {type(exc).__name__}: {exc}"
+    if _local_tts_provider(provider):
+        _set_local_tts_warmup(warming=True, ready=False)
+        try:
+            from core import tts
+
+            tts.prewarm()
+            result["tts"] = "ok"
+            _set_local_tts_warmup(warming=False, ready=True)
+        except Exception as exc:  # noqa: BLE001
+            message = f"error: {type(exc).__name__}: {exc}"
+            result["tts"] = message
+            _set_local_tts_warmup(warming=False, ready=False, error=message)
+    else:
+        _set_local_tts_warmup(warming=False, ready=False)
+    return result
 
 
 def set_event_sink(fn: Callable[[str, Any, Any], None]) -> None:
@@ -46,28 +106,20 @@ def _output_dir() -> Path:
 
 def _prewarm_after_config_reload(generation: int, provider: str) -> None:
     """Warm STT/TTS after config reload without blocking the IPC response."""
-    stt_status = "skipped"
-    tts_status = "skipped"
-    try:
-        from core.macos_helper import handlers as stt_handlers
-
-        stt_handlers.stt_prewarm()
-        stt_status = "started"
-    except Exception as exc:  # noqa: BLE001
-        stt_status = f"error: {type(exc).__name__}: {exc}"
-    try:
-        from core import tts
-
-        tts.prewarm()
-        tts_status = "ok"
-    except Exception as exc:  # noqa: BLE001
-        tts_status = f"error: {type(exc).__name__}: {exc}"
+    items = _warmup_items(provider)
+    _event("audio.warmup.started", {"items": items, "provider": provider, "reason": "config_reload"})
+    result = _warm_local_audio(provider)
     with _config_prewarm_lock:
         stale = generation != _config_prewarm_generation
     suffix = " stale" if stale else ""
+    ok = not any(str(value).startswith("error:") for value in result.values())
+    _event(
+        "audio.warmup.done",
+        {"items": items, "provider": provider, "reason": "config_reload", "ok": ok, "result": result},
+    )
     print(
         f"[audio] config reload background prewarm{suffix}: "
-        f"tts_provider={provider!r} stt={stt_status} tts={tts_status}",
+        f"tts_provider={provider!r} stt={result['stt']} tts={result['tts']}",
         flush=True,
     )
 
@@ -105,21 +157,17 @@ def audio_config_reload() -> dict[str, Any]:
 
 def audio_prewarm() -> dict[str, Any]:
     """Warm audio/STT/TTS dependencies in the audio process only."""
-    result: dict[str, Any] = {"stt": "skipped", "tts": "skipped"}
-    try:
-        from core.macos_helper import handlers as stt_handlers
+    import config
 
-        stt_handlers.stt_prewarm()
-        result["stt"] = "started"
-    except Exception as exc:  # noqa: BLE001
-        result["stt"] = f"error: {type(exc).__name__}: {exc}"
-    try:
-        from core import tts
-
-        tts.prewarm()
-        result["tts"] = "ok"
-    except Exception as exc:  # noqa: BLE001
-        result["tts"] = f"error: {type(exc).__name__}: {exc}"
+    provider = config.TTS_PROVIDER.lower()
+    items = _warmup_items(provider)
+    _event("audio.warmup.started", {"items": items, "provider": provider, "reason": "startup"})
+    result = _warm_local_audio(provider)
+    ok = not any(str(value).startswith("error:") for value in result.values())
+    _event(
+        "audio.warmup.done",
+        {"items": items, "provider": provider, "reason": "startup", "ok": ok, "result": result},
+    )
     return result
 
 
@@ -186,6 +234,8 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
     from core import tts
 
     provider = config.TTS_PROVIDER.lower()
+    if _local_tts_provider(provider) and _local_tts_is_warming():
+        raise RuntimeError("Local TTS is still warming up. Try again when local speech is ready.")
     print(f"[audio] tts.synthesize provider={provider!r} text={text[:40]!r}", flush=True)
 
     def _synth() -> tuple[list[bytes], list[str], list[int]]:
@@ -215,13 +265,17 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
         if expects_audio and not chunks:
             raise RuntimeError(f"{provider} returned no audio")
     except Exception as exc:  # noqa: BLE001
+        if "warming up" in str(exc).lower():
+            raise
         print(f"[audio] tts.synthesize first attempt failed ({type(exc).__name__}: {exc}); retrying fresh", flush=True)
         tts.reset_connections()
         try:
             chunks, words, start_ms = _synth()
         except Exception as exc2:  # noqa: BLE001 — surface as silence, not a crash
             print(f"[audio] tts.synthesize retry failed ({type(exc2).__name__}: {exc2})", flush=True)
-            chunks, words, start_ms = [], [], []
+            raise RuntimeError(f"{provider} TTS failed: {exc2}") from exc2
+        if expects_audio and not chunks:
+            raise RuntimeError(f"{provider} returned no audio")
 
     path = _output_dir() / f"tts-{int(time.time() * 1000)}.wav"
     if provider == "none" or not chunks:

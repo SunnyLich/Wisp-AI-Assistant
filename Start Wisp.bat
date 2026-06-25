@@ -11,19 +11,20 @@ cd /d "%~dp0"
 
 set "WANT="
 if not exist ".python-version" (
-  echo ERROR: .python-version is required and must contain an exact Python version like 3.12.13.
+  echo ERROR: .python-version is required and must contain a Python version like 3.12 or 3.12.13.
   pause
   exit /b 1
 )
 set /p WANT=<.python-version
 if not defined WANT (
-  echo ERROR: .python-version is required and must contain an exact Python version like 3.12.13.
+  echo ERROR: .python-version is required and must contain a Python version like 3.12 or 3.12.13.
   pause
   exit /b 1
 )
 echo(!WANT!| findstr /r "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+if errorlevel 1 echo(!WANT!| findstr /r "^[0-9][0-9]*\.[0-9][0-9]*$" >nul
 if errorlevel 1 (
-  echo ERROR: .python-version must contain an exact Python version like 3.12.13.
+  echo ERROR: .python-version must contain a Python version like 3.12 or 3.12.13.
   pause
   exit /b 1
 )

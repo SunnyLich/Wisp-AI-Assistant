@@ -58,12 +58,12 @@ OSA
 trap close_macos_terminal_on_exit EXIT
 
 if [ ! -s .python-version ]; then
-  echo "ERROR: .python-version is required and must contain an exact Python version like 3.12.13." >&2
+  echo "ERROR: .python-version is required and must contain a Python version like 3.12 or 3.12.13." >&2
   exit 1
 fi
 WANT="$(tr -d '[:space:]' < .python-version)"
-if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ERROR: .python-version must contain an exact Python version like 3.12.13." >&2
+if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "ERROR: .python-version must contain a Python version like 3.12 or 3.12.13." >&2
   exit 1
 fi
 WANT_MM="$(printf '%s' "$WANT" | cut -d. -f1,2)"
@@ -91,7 +91,10 @@ python_version() {
 }
 
 python_matches_want() {
-  [ -n "${1:-}" ] && [ "$(python_version "$1")" = "$WANT" ]
+  local version
+  [ -n "${1:-}" ] || return 1
+  version="$(python_version "$1")"
+  [ "$version" = "$WANT" ] || [[ "$WANT" =~ ^[0-9]+\.[0-9]+$ && "$version" == "$WANT".* ]]
 }
 
 try_python() {

@@ -10,16 +10,17 @@ import sys
 from pathlib import Path
 
 try:
-    from scripts.check_python_version import parse_version, version_text
+    from scripts.check_python_version import parse_version, version_matches, version_text
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts.check_python_version import parse_version, version_text
+    from scripts.check_python_version import parse_version, version_matches, version_text
 
 DEFAULT_DEV_MODULES = ("pytest", "ruff", "mypy")
 RUNTIME_MODULES = ("PySide6", "dotenv", "PIL", "numpy")
 REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)")
 EXACT_REQUIREMENT_RE = re.compile(r"^\s*[A-Za-z0-9_.-]+(?:\[[^\]]+\])?==[^,\s]+$")
 REQUIRES_PYTHON_LINE_RE = re.compile(r"^\s*requires-python\s*=\s*(['\"])(.*?)\1\s*(?:#.*)?$")
+PYTHON_MINOR_RANGE_RE = re.compile(r"^>=\s*(\d+)\.(\d+)\s*,\s*<\s*(\d+)\.(\d+)$")
 SYS_PLATFORM_EQ_RE = re.compile(r"sys_platform\s*==\s*['\"]([^'\"]+)['\"]")
 SYS_PLATFORM_NE_RE = re.compile(r"sys_platform\s*!=\s*['\"]([^'\"]+)['\"]")
 TOML_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
@@ -33,6 +34,11 @@ def read_expected_version(root: Path) -> str:
     if not value:
         raise ValueError(".python-version is empty")
     return value
+
+
+def target_minor(value: str) -> str:
+    major, minor, _micro = parse_version(value)
+    return f"{major}.{minor}"
 
 
 def read_project_required_version(root: Path) -> str:
@@ -50,16 +56,28 @@ def read_project_required_version(root: Path) -> str:
         match = REQUIRES_PYTHON_LINE_RE.match(line)
         if match:
             specifier = match.group(2).strip()
-            if not specifier.startswith("=="):
-                raise ValueError(f"pyproject.toml requires-python must be an exact == pin, got {specifier!r}")
-            version = specifier[2:].strip()
-            try:
-                parse_version(version)
-            except ValueError as exc:
-                raise ValueError(f"pyproject.toml requires-python has invalid exact pin {specifier!r}: {exc}") from exc
-            return version
+            range_match = PYTHON_MINOR_RANGE_RE.match(specifier)
+            if range_match:
+                lower_major, lower_minor, upper_major, upper_minor = (int(part) for part in range_match.groups())
+                if upper_major == lower_major and upper_minor == lower_minor + 1:
+                    return f"{lower_major}.{lower_minor}"
+                raise ValueError(
+                    "pyproject.toml requires-python must cover exactly one Python minor line, "
+                    f"got {specifier!r}"
+                )
+            if specifier.startswith("=="):
+                version = specifier[2:].strip()
+                try:
+                    parse_version(version)
+                except ValueError as exc:
+                    raise ValueError(f"pyproject.toml requires-python has invalid exact pin {specifier!r}: {exc}") from exc
+                return target_minor(version)
+            raise ValueError(
+                "pyproject.toml requires-python must be a Python minor range like '>=3.12,<3.13', "
+                f"got {specifier!r}"
+            )
         if "requires-python" in line:
-            raise ValueError("pyproject.toml requires-python must be a quoted exact == pin")
+            raise ValueError("pyproject.toml requires-python must be a quoted Python version specifier")
     raise ValueError("pyproject.toml is missing requires-python")
 
 
@@ -253,10 +271,10 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"Developer environment is not ready: {exc}.")
         return 1
-    if project_required != expected_text:
+    if project_required != target_minor(expected_text):
         print(
             "Developer environment is not ready: "
-            f".python-version is {expected_text!r} but pyproject.toml requires {project_required!r}."
+            f".python-version targets {target_minor(expected_text)!r} but pyproject.toml requires {project_required!r}."
         )
         return 1
     try:
@@ -286,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         problems.append(f"missing virtual environment interpreter: {python}")
     else:
         actual = interpreter_version(python)
-        if actual != expected:
+        if actual is None or not version_matches(expected, actual):
             actual_text = version_text(actual) if actual else "unknown"
             problems.append(f"expected Python {expected_text}, found {actual_text} at {python}")
         runtime_problem = runtime_module_problem(python)

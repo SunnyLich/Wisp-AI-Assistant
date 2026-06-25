@@ -3,7 +3,7 @@
 Wisp keeps `requirements.txt` as the human-edited runtime dependency manifest.
 Developer-only tools live in `requirements-dev.txt`, and packaging-only tools
 live in `requirements-build.txt`. macOS installs use `requirements-macos.lock`,
-an exact resolved runtime lock for Python `3.12.13` on Apple Silicon.
+an exact resolved runtime lock for Python `3.12` on Apple Silicon.
 
 The lock matters because Wisp crosses several native macOS boundaries:
 PySide6/Qt Cocoa, PortAudio through `sounddevice`, PyObjC Quartz/AppKit,

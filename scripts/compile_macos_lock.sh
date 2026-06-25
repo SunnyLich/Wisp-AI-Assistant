@@ -6,12 +6,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 if [ ! -s .python-version ]; then
-  echo "ERROR: .python-version is required and must contain an exact Python version like 3.12.13." >&2
+  echo "ERROR: .python-version is required and must contain a Python version like 3.12 or 3.12.13." >&2
   exit 1
 fi
 WANT="$(tr -d '[:space:]' < .python-version)"
-if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ERROR: .python-version must contain an exact Python version like 3.12.13." >&2
+if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "ERROR: .python-version must contain a Python version like 3.12 or 3.12.13." >&2
   exit 1
 fi
 WANT_MM="$(printf '%s' "$WANT" | cut -d. -f1,2)"
@@ -31,6 +31,12 @@ python_version() {
   "$1" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}")' 2>/dev/null || true
 }
 
+python_matches_want() {
+  local version
+  version="$(python_version "$1")"
+  [ "$version" = "$WANT" ] || [[ "$WANT" =~ ^[0-9]+\.[0-9]+$ && "$version" == "$WANT".* ]]
+}
+
 find_python() {
   local c
   for c in "${PYTHON_BIN:-}" ./.venv/bin/python "python$WANT_MM" python3 python; do
@@ -40,7 +46,7 @@ find_python() {
     elif [ ! -x "$c" ]; then
       continue
     fi
-    if [ "$(python_version "$c")" = "$WANT" ]; then
+    if python_matches_want "$c"; then
       echo "$c"
       return 0
     fi
@@ -61,4 +67,4 @@ uv pip compile requirements.txt \
   --python-platform aarch64-apple-darwin \
   --output-file requirements-macos.lock
 
-echo "Updated requirements-macos.lock for macOS arm64 / Python $WANT."
+echo "Updated requirements-macos.lock for macOS arm64 / Python $WANT_MM."

@@ -23,12 +23,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENV_DIR="$ROOT/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"
 if [ ! -s "$ROOT/.python-version" ]; then
-    echo "ERROR: .python-version is required and must contain an exact Python version like 3.12.13." >&2
+    echo "ERROR: .python-version is required and must contain a Python version like 3.12 or 3.12.13." >&2
     exit 1
 fi
 WANT="$(tr -d '[:space:]' < "$ROOT/.python-version")"
-if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "ERROR: .python-version must contain an exact Python version like 3.12.13." >&2
+if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "ERROR: .python-version must contain a Python version like 3.12 or 3.12.13." >&2
     exit 1
 fi
 WANT_MM="$(printf '%s' "$WANT" | cut -d. -f1,2)"
@@ -86,9 +86,15 @@ python_version() {
     "$1" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}")' 2>/dev/null || true
 }
 
+python_matches_want() {
+    local version
+    version="$(python_version "$1")"
+    [ "$version" = "$WANT" ] || [[ "$WANT" =~ ^[0-9]+\.[0-9]+$ && "$version" == "$WANT".* ]]
+}
+
 find_expected_python() {
     for cmd in "python$WANT_MM" python3 python; do
-        if command -v "$cmd" >/dev/null 2>&1 && [[ "$(python_version "$(command -v "$cmd")")" == "$WANT" ]]; then
+        if command -v "$cmd" >/dev/null 2>&1 && python_matches_want "$(command -v "$cmd")"; then
             command -v "$cmd"
             return 0
         fi
@@ -119,7 +125,7 @@ if ! $USE_GLOBAL_PYTHON; then
     fi
     PYTHON="$VENV_PYTHON"
     HAVE_VERSION="$(python_version "$PYTHON")"
-    if [[ "$HAVE_VERSION" != "$WANT" ]]; then
+    if ! python_matches_want "$PYTHON"; then
         echo "$PYTHON is Python $HAVE_VERSION, but Wisp packaging is pinned to Python $WANT." >&2
         echo "Rebuild .venv with scripts/setup_dev.sh or rerun the launcher with Python $WANT installed." >&2
         exit 1

@@ -44,7 +44,7 @@ def test_settings_combo_ignores_wheel_when_popup_closed():
 def test_settings_memory_tab_does_not_show_stored_facts():
     """Verify settings memory tab does not show stored facts behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -102,6 +102,8 @@ def test_tts_voice_tab_exposes_stt_settings():
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}
     tab = SettingsDialog._tab_tts(dialog)
+    tab.show()
+    app.processEvents()
 
     try:
         assert {"STT_MODEL", "STT_COMPUTE_TYPE", "STT_LANGUAGE"} <= set(dialog._fields)
@@ -141,6 +143,23 @@ def test_tts_voice_tab_exposes_stt_settings():
         assert dialog._fields["STT_LANGUAGE"].itemData(
             dialog._fields["STT_LANGUAGE"].findText("Cantonese")
         ) == "yue"
+        for key in (
+            "TTS_READ_ALOUD_MIN_WORDS",
+            "TTS_READ_ALOUD_MAX_WORDS",
+            "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS",
+            "STT_BACKGROUND_CHUNK_STEP_SECONDS",
+            "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
+            "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+        ):
+            assert key in dialog._fields
+        buttons = [button for button in tab.findChildren(QPushButton) if button.text() == t("Advanced settings")]
+        assert buttons
+        advanced_button = buttons[0]
+        assert advanced_button.isCheckable()
+        assert not advanced_button.isChecked()
+        advanced_button.setChecked(True)
+        assert dialog._fields["TTS_READ_ALOUD_MIN_WORDS"].isVisible()
+        assert dialog._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"].isVisible()
     finally:
         tab.deleteLater()
         app.processEvents()
@@ -2130,6 +2149,7 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
 
     try:
         assert "HOTKEY_VOICE" in dialog._fields
+        assert "HOTKEY_READ_SELECTION_ALOUD" in dialog._fields
         vb = dialog._voice_block
         assert set(vb) >= {
             "context_ambient",
@@ -2167,6 +2187,7 @@ def test_reset_keybinds_page_includes_voice_keys():
         "VOICE_CONTEXT_BROWSER_MODE",
         "CALLER_1_TOOLS",
         "HOTKEY_VOICE",
+        "HOTKEY_READ_SELECTION_ALOUD",
     } <= keys
 
 

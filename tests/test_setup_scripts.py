@@ -173,7 +173,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertLess(batch.index('set "PYCMD="'), batch.index("rmdir /s /q .venv"))
         self.assertLess(batch.index("if not defined UV ("), batch.rindex("rmdir /s /q .venv"))
 
-    def test_entry_points_reject_non_exact_python_version_pin(self) -> None:
+    def test_entry_points_accept_python_minor_or_patch_target(self) -> None:
         posix_scripts = [
             "Start Wisp.command",
             "scripts/setup_dev.sh",
@@ -185,24 +185,25 @@ class SetupScriptTests(unittest.TestCase):
                 script = (ROOT / script_name).read_text(encoding="utf-8")
                 self.assertIn("[ ! -s .python-version ]", script)
                 self.assertNotIn('WANT="${WANT:-3.12.13}"', script)
-                self.assertIn(".python-version is required and must contain an exact Python version like 3.12.13", script)
-                self.assertIn('[[ ! "$WANT" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]', script)
-                self.assertIn(".python-version must contain an exact Python version like 3.12.13", script)
+                self.assertIn(".python-version is required and must contain a Python version like 3.12 or 3.12.13", script)
+                self.assertIn('[[ ! "$WANT" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]', script)
+                self.assertIn(".python-version must contain a Python version like 3.12 or 3.12.13", script)
 
         batch = (ROOT / "Start Wisp.bat").read_text(encoding="utf-8")
         self.assertIn('set "WANT="', batch)
         self.assertIn('if not exist ".python-version"', batch)
         self.assertNotIn('set "WANT=3.12.13"', batch)
-        self.assertIn(".python-version is required and must contain an exact Python version like 3.12.13", batch)
+        self.assertIn(".python-version is required and must contain a Python version like 3.12 or 3.12.13", batch)
         self.assertIn('findstr /r "^[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*$"', batch)
-        self.assertIn(".python-version must contain an exact Python version like 3.12.13", batch)
+        self.assertIn('findstr /r "^[0-9][0-9]*\\.[0-9][0-9]*$"', batch)
+        self.assertIn(".python-version must contain a Python version like 3.12 or 3.12.13", batch)
 
         powershell = (ROOT / "scripts" / "setup_dev.ps1").read_text(encoding="utf-8")
         self.assertIn('$Want = ""', powershell)
         self.assertNotIn('$Want = "3.12.13"', powershell)
-        self.assertIn(".python-version is required and must contain an exact Python version like 3.12.13", powershell)
-        self.assertIn("$Want -notmatch '^\\d+\\.\\d+\\.\\d+$'", powershell)
-        self.assertIn(".python-version must contain an exact Python version like 3.12.13", powershell)
+        self.assertIn(".python-version is required and must contain a Python version like 3.12 or 3.12.13", powershell)
+        self.assertIn("$Want -notmatch '^\\d+\\.\\d+(\\.\\d+)?$'", powershell)
+        self.assertIn(".python-version must contain a Python version like 3.12 or 3.12.13", powershell)
 
     def test_macos_launcher_requires_lock_file(self) -> None:
         script = (ROOT / "Start Wisp.command").read_text(encoding="utf-8")

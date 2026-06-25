@@ -84,7 +84,8 @@ _cartesia_ws = None           # the entered connection object (has .context())
 _cartesia_ws_lock = threading.Lock()
 _kokoro_pipeline = None
 _kokoro_pipeline_lang = ""
-_kokoro_lock = threading.Lock()
+_kokoro_lock = threading.RLock()
+_KOKORO_LOCK_TIMEOUT_SECONDS = 15.0
 
 
 def _get_cartesia_ws():
@@ -133,7 +134,9 @@ def prewarm():
     if config.TTS_PROVIDER.lower() == "cartesia":
         _get_cartesia_ws()
     elif config.TTS_PROVIDER.lower() == "kokoro":
-        _get_kokoro_pipeline()
+        for chunk in _stream_kokoro("ok"):
+            if chunk:
+                break
 
 
 def close():
@@ -285,16 +288,22 @@ def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
 def _reset_kokoro_pipeline() -> None:
     """Discard the cached Kokoro pipeline so language changes apply."""
     global _kokoro_pipeline, _kokoro_pipeline_lang
-    with _kokoro_lock:
+    if not _kokoro_lock.acquire(timeout=1.0):
+        return
+    try:
         _kokoro_pipeline = None
         _kokoro_pipeline_lang = ""
+    finally:
+        _kokoro_lock.release()
 
 
 def _get_kokoro_pipeline():
     """Return a cached Kokoro pipeline for the configured language code."""
     global _kokoro_pipeline, _kokoro_pipeline_lang
     lang_code = (getattr(config, "KOKORO_LANG_CODE", "a") or "a").strip()
-    with _kokoro_lock:
+    if not _kokoro_lock.acquire(timeout=_KOKORO_LOCK_TIMEOUT_SECONDS):
+        raise RuntimeError("Kokoro is still warming up. Try again when local speech is ready.")
+    try:
         if _kokoro_pipeline is None or _kokoro_pipeline_lang != lang_code:
             try:
                 from kokoro import KPipeline  # type: ignore
@@ -305,6 +314,8 @@ def _get_kokoro_pipeline():
             _kokoro_pipeline = KPipeline(lang_code=lang_code)
             _kokoro_pipeline_lang = lang_code
         return _kokoro_pipeline
+    finally:
+        _kokoro_lock.release()
 
 
 def _float_audio_to_pcm16(audio, *, source_rate: int, target_rate: int) -> bytes:
@@ -334,16 +345,21 @@ def _stream_kokoro(text: str) -> Generator[bytes, None, None]:
     """Synthesize speech with the local Kokoro Python package."""
     if not text.strip():
         return
-    pipeline = _get_kokoro_pipeline()
-    voice = (getattr(config, "KOKORO_VOICE", "af_heart") or "af_heart").strip()
-    speed = float(getattr(config, "KOKORO_SPEED", 1.0) or 1.0)
-    split_pattern = getattr(config, "KOKORO_SPLIT_PATTERN", r"\n+")
-    target_rate = int(getattr(config, "KOKORO_SAMPLE_RATE", _KOKORO_SAMPLE_RATE) or _KOKORO_SAMPLE_RATE)
-    generator = pipeline(text, voice=voice, speed=speed, split_pattern=split_pattern)
-    for _graphemes, _phonemes, audio in generator:
-        chunk = _float_audio_to_pcm16(audio, source_rate=_KOKORO_SAMPLE_RATE, target_rate=target_rate)
-        if chunk:
-            yield chunk
+    if not _kokoro_lock.acquire(timeout=_KOKORO_LOCK_TIMEOUT_SECONDS):
+        raise RuntimeError("Kokoro is still warming up. Try again when local speech is ready.")
+    try:
+        pipeline = _get_kokoro_pipeline()
+        voice = (getattr(config, "KOKORO_VOICE", "af_heart") or "af_heart").strip()
+        speed = float(getattr(config, "KOKORO_SPEED", 1.0) or 1.0)
+        split_pattern = getattr(config, "KOKORO_SPLIT_PATTERN", r"\n+")
+        target_rate = int(getattr(config, "KOKORO_SAMPLE_RATE", _KOKORO_SAMPLE_RATE) or _KOKORO_SAMPLE_RATE)
+        generator = pipeline(text, voice=voice, speed=speed, split_pattern=split_pattern)
+        for _graphemes, _phonemes, audio in generator:
+            chunk = _float_audio_to_pcm16(audio, source_rate=_KOKORO_SAMPLE_RATE, target_rate=target_rate)
+            if chunk:
+                yield chunk
+    finally:
+        _kokoro_lock.release()
 
 
 # ------------------------------------------------------------------

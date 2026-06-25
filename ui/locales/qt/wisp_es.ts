@@ -1223,6 +1223,10 @@ Dejar decidir al modelo — expone estado/diff de git y herramientas de reposito
       <translation>Escuchado</translation>
     </message>
     <message>
+      <source>Reading</source>
+      <translation>Leyendo</translation>
+    </message>
+    <message>
       <source>Hide icon</source>
       <translation>Ocultar icono</translation>
     </message>
@@ -1365,6 +1369,26 @@ Dejar decidir al modelo — expone estado/diff de git y herramientas de reposito
     <message>
       <source>Last chat</source>
       <translation>Último chat</translation>
+    </message>
+    <message>
+      <source>Read selection aloud</source>
+      <translation>Leer selección en voz alta</translation>
+    </message>
+    <message>
+      <source>No selected text to read aloud.</source>
+      <translation>No hay texto seleccionado para leer en voz alta.</translation>
+    </message>
+    <message>
+      <source>TTS is off. Choose a voice provider in Settings first.</source>
+      <translation>TTS está desactivado. Elige primero un proveedor de voz en Configuración.</translation>
+    </message>
+    <message>
+      <source>Could not read selected text</source>
+      <translation>No se pudo leer el texto seleccionado</translation>
+    </message>
+    <message>
+      <source>Could not read selected text aloud.</source>
+      <translation>No se pudo leer el texto seleccionado en voz alta.</translation>
     </message>
     <message>
       <source>Last tool:</source>
@@ -3093,6 +3117,34 @@ Continuar?</translation>
     <message>
       <source>Tell Wisp what to change before trying again.</source>
       <translation>Dile a Wisp qué cambiar antes de intentarlo de nuevo.</translation>
+    </message>
+    <message>
+      <source>Chunking controls for read-aloud TTS and long speech-to-text recordings.</source>
+      <translation>Controles de fragmentacion para TTS de lectura en voz alta y grabaciones largas de voz a texto.</translation>
+    </message>
+    <message>
+      <source>Read-aloud min words</source>
+      <translation>Min. palabras de lectura</translation>
+    </message>
+    <message>
+      <source>Read-aloud max words</source>
+      <translation>Max. palabras de lectura</translation>
+    </message>
+    <message>
+      <source>STT first chunk trigger (s)</source>
+      <translation>Inicio del primer fragmento STT (s)</translation>
+    </message>
+    <message>
+      <source>STT chunk cadence (s)</source>
+      <translation>Cadencia de fragmentos STT (s)</translation>
+    </message>
+    <message>
+      <source>STT live-edge delay (s)</source>
+      <translation>Retraso respecto al audio en vivo STT (s)</translation>
+    </message>
+    <message>
+      <source>STT overlap (s)</source>
+      <translation>Solapamiento STT (s)</translation>
     </message>
   </context>
   <context>

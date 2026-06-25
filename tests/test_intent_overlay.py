@@ -218,6 +218,78 @@ def test_intent_overlay_cancel_if_focus_leaves(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_close_emits_cancelled_once(qapp):
+    """Verify lifecycle closes report cancellation to reset overlay state."""
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    cancelled: list[bool] = []
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.cancelled.connect(lambda: cancelled.append(True))
+    try:
+        overlay.show()
+        overlay.close()
+        qapp.processEvents()
+
+        assert cancelled == [True]
+        assert overlay._handled is True
+
+        overlay.close()
+        qapp.processEvents()
+
+        assert cancelled == [True]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        qapp.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_pending_selection_close_cancels_not_chosen(qapp, monkeypatch):
+    """Verify a vanished picker cancels if the highlighted row was not emitted yet."""
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    callbacks = []
+    chosen: list[tuple[str, str]] = []
+    cancelled: list[bool] = []
+    config.CALLER_ROWS[:] = [
+        {
+            "intents": [{"key": "w", "label": "What?", "prompt": "What is this?"}],
+            "custom_key": "s",
+        }
+    ]
+    monkeypatch.setattr(
+        intent_overlay.QTimer,
+        "singleShot",
+        staticmethod(lambda _delay, callback: callbacks.append(callback)),
+    )
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
+    overlay.cancelled.connect(lambda: cancelled.append(True))
+    try:
+        overlay._select(0)
+        overlay.close()
+        qapp.processEvents()
+
+        assert cancelled == [True]
+        assert chosen == []
+
+        assert callbacks
+        callbacks[0]()
+
+        assert cancelled == [True]
+        assert chosen == []
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        qapp.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_translates_default_custom_prompt_label(monkeypatch):
     """Verify intent overlay translates default custom prompt label behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

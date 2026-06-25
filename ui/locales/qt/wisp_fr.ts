@@ -1223,6 +1223,10 @@ Laisser le modèle décider — expose le statut/diff git et les outils dépôt/
       <translation>Entendu</translation>
     </message>
     <message>
+      <source>Reading</source>
+      <translation>Lecture</translation>
+    </message>
+    <message>
       <source>Hide icon</source>
       <translation>Masquer l’icône</translation>
     </message>
@@ -1365,6 +1369,26 @@ Laisser le modèle décider — expose le statut/diff git et les outils dépôt/
     <message>
       <source>Last chat</source>
       <translation>Dernier chat</translation>
+    </message>
+    <message>
+      <source>Read selection aloud</source>
+      <translation>Lire la sélection à voix haute</translation>
+    </message>
+    <message>
+      <source>No selected text to read aloud.</source>
+      <translation>Aucun texte sélectionné à lire à voix haute.</translation>
+    </message>
+    <message>
+      <source>TTS is off. Choose a voice provider in Settings first.</source>
+      <translation>La synthèse vocale est désactivée. Choisissez d’abord un fournisseur vocal dans Paramètres.</translation>
+    </message>
+    <message>
+      <source>Could not read selected text</source>
+      <translation>Impossible de lire le texte sélectionné</translation>
+    </message>
+    <message>
+      <source>Could not read selected text aloud.</source>
+      <translation>Impossible de lire le texte sélectionné à voix haute.</translation>
     </message>
     <message>
       <source>Last tool:</source>
@@ -3093,6 +3117,34 @@ Continuer ?</translation>
     <message>
       <source>Tell Wisp what to change before trying again.</source>
       <translation>Dites à Wisp quoi changer avant de réessayer.</translation>
+    </message>
+    <message>
+      <source>Chunking controls for read-aloud TTS and long speech-to-text recordings.</source>
+      <translation>Controles de decoupage pour la lecture TTS et les longs enregistrements de reconnaissance vocale.</translation>
+    </message>
+    <message>
+      <source>Read-aloud min words</source>
+      <translation>Nombre min. de mots a lire</translation>
+    </message>
+    <message>
+      <source>Read-aloud max words</source>
+      <translation>Nombre max. de mots a lire</translation>
+    </message>
+    <message>
+      <source>STT first chunk trigger (s)</source>
+      <translation>Declenchement du premier segment STT (s)</translation>
+    </message>
+    <message>
+      <source>STT chunk cadence (s)</source>
+      <translation>Cadence des segments STT (s)</translation>
+    </message>
+    <message>
+      <source>STT live-edge delay (s)</source>
+      <translation>Delai par rapport au direct STT (s)</translation>
+    </message>
+    <message>
+      <source>STT overlap (s)</source>
+      <translation>Chevauchement STT (s)</translation>
     </message>
   </context>
   <context>

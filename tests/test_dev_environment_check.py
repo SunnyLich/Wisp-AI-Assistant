@@ -140,29 +140,29 @@ class DevEnvironmentCheckTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check_dev_environment.ensure_macos_lock(Path(tmp))
 
-    def test_read_project_required_version_reads_exact_pin(self) -> None:
+    def test_read_project_required_version_reads_minor_range(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
+            Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12,<3.13"\n', encoding="utf-8")
 
-            self.assertEqual(check_dev_environment.read_project_required_version(Path(tmp)), "3.12.13")
+            self.assertEqual(check_dev_environment.read_project_required_version(Path(tmp)), "3.12")
 
     def test_read_project_required_version_allows_toml_quotes_and_comment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "pyproject.toml").write_text(
-                "[project]\nrequires-python = '==3.12.13'  # pinned runtime\n",
+                "[project]\nrequires-python = '>=3.12,<3.13'  # supported runtime line\n",
                 encoding="utf-8",
             )
 
-            self.assertEqual(check_dev_environment.read_project_required_version(Path(tmp)), "3.12.13")
+            self.assertEqual(check_dev_environment.read_project_required_version(Path(tmp)), "3.12")
 
     def test_read_project_required_version_uses_project_section_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "pyproject.toml").write_text(
-                '[tool.demo]\nrequires-python = "==9.9.9"\n\n[project]\nrequires-python = "==3.12.13"\n',
+                '[tool.demo]\nrequires-python = "==9.9.9"\n\n[project]\nrequires-python = ">=3.12,<3.13"\n',
                 encoding="utf-8",
             )
 
-            self.assertEqual(check_dev_environment.read_project_required_version(Path(tmp)), "3.12.13")
+            self.assertEqual(check_dev_environment.read_project_required_version(Path(tmp)), "3.12")
 
     def test_read_project_required_version_ignores_non_project_requires_python(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -171,7 +171,7 @@ class DevEnvironmentCheckTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check_dev_environment.read_project_required_version(Path(tmp))
 
-    def test_read_project_required_version_rejects_non_exact_pin(self) -> None:
+    def test_read_project_required_version_rejects_broad_range(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n', encoding="utf-8")
 
@@ -192,31 +192,31 @@ class DevEnvironmentCheckTests(unittest.TestCase):
 
     def test_read_project_required_version_rejects_invalid_exact_pin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12"\n', encoding="utf-8")
+            Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.x"\n', encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.read_project_required_version(Path(tmp))
 
-    def test_main_reports_non_exact_project_python_pin(self) -> None:
+    def test_main_reports_broad_project_python_range(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
-            Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
+            Path(tmp, ".python-version").write_text("3.12\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n', encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requires-python must be an exact == pin", stdout.getvalue())
+        self.assertIn("requires-python must be a Python minor range", stdout.getvalue())
 
-    def test_main_reports_python_version_pin_mismatch(self) -> None:
+    def test_main_reports_python_version_target_mismatch(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
-            Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
-            Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.14"\n', encoding="utf-8")
+            Path(tmp, ".python-version").write_text("3.12\n", encoding="utf-8")
+            Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = ">=3.13,<3.14"\n', encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn(".python-version is '3.12.13'", stdout.getvalue())
-        self.assertIn("pyproject.toml requires '3.12.14'", stdout.getvalue())
+        self.assertIn(".python-version targets '3.12'", stdout.getvalue())
+        self.assertIn("pyproject.toml requires '3.13'", stdout.getvalue())
 
     def test_main_reports_missing_pyproject_file(self) -> None:
         stdout = io.StringIO()
@@ -370,7 +370,7 @@ class DevEnvironmentCheckTests(unittest.TestCase):
     def test_main_reports_invalid_python_version_file(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
-            Path(tmp, ".python-version").write_text("3.12\n", encoding="utf-8")
+            Path(tmp, ".python-version").write_text("3\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)

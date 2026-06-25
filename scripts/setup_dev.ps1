@@ -9,14 +9,14 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Want = ""
 $PythonVersionFile = Join-Path $Root ".python-version"
 if (-not (Test-Path $PythonVersionFile)) {
-    throw ".python-version is required and must contain an exact Python version like 3.12.13."
+    throw ".python-version is required and must contain a Python version like 3.12 or 3.12.13."
 }
 $Want = (Get-Content $PythonVersionFile -TotalCount 1).Trim()
 if (-not $Want) {
-    throw ".python-version is required and must contain an exact Python version like 3.12.13."
+    throw ".python-version is required and must contain a Python version like 3.12 or 3.12.13."
 }
-if ($Want -notmatch '^\d+\.\d+\.\d+$') {
-    throw ".python-version must contain an exact Python version like 3.12.13."
+if ($Want -notmatch '^\d+\.\d+(\.\d+)?$') {
+    throw ".python-version must contain a Python version like 3.12 or 3.12.13."
 }
 $WantMinor = ($Want -split "\.")[0..1] -join "."
 $VenvDir = Join-Path $Root ".venv"
@@ -44,7 +44,8 @@ function Get-PythonVersion {
 
 function Test-PythonMatches {
     param([string]$Python)
-    return (Test-Path $Python) -and ((Get-PythonVersion $Python) -eq $Want)
+    $ActualVersion = Get-PythonVersion $Python
+    return (Test-Path $Python) -and (($ActualVersion -eq $Want) -or (($Want -match '^\d+\.\d+$') -and $ActualVersion.StartsWith("$Want.")))
 }
 
 function Invoke-Native {
@@ -148,7 +149,8 @@ try {
                 } catch {}
             }
             if ($null -eq $PyExe -and (Get-Command python -ErrorAction SilentlyContinue)) {
-                if ((Get-PythonVersion "python") -eq $Want) {
+                $PythonVersion = Get-PythonVersion "python"
+                if (($PythonVersion -eq $Want) -or (($Want -match '^\d+\.\d+$') -and $PythonVersion.StartsWith("$Want."))) {
                     $PyExe = "python"
                     $PyArgs = @()
                 }
@@ -177,7 +179,7 @@ try {
     }
 
     $ActualVersion = Get-PythonVersion $Python
-    if ($ActualVersion -ne $Want) {
+    if (($ActualVersion -ne $Want) -and (-not (($Want -match '^\d+\.\d+$') -and $ActualVersion.StartsWith("$Want.")))) {
         throw "Development setup requires Python $Want, but $Python is $ActualVersion."
     }
 

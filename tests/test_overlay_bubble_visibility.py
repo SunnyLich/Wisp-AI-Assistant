@@ -70,6 +70,7 @@ def test_tray_menu_rebuilds_after_language_change(monkeypatch):
 
     import config
     from ui import i18n
+    from ui.i18n import t
     from ui.overlay import IconOverlay, OverlaySignals
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -82,7 +83,8 @@ def test_tray_menu_rebuilds_after_language_change(monkeypatch):
 
     try:
         labels = {action.text() for action in overlay._tray_menu.actions()}
-        assert "設定" in labels
+        settings_label = t("Settings")
+        assert settings_label in labels
 
         monkeypatch.setattr(config, "APP_LANGUAGE", "en", raising=False)
         overlay.apply_settings()
@@ -90,7 +92,7 @@ def test_tray_menu_rebuilds_after_language_change(monkeypatch):
 
         labels = {action.text() for action in overlay._tray_menu.actions()}
         assert "Settings" in labels
-        assert "設定" not in labels
+        assert settings_label not in labels
     finally:
         monkeypatch.setattr(config, "APP_LANGUAGE", old_language, raising=False)
         i18n.set_language(app=app)

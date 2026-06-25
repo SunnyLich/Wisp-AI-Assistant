@@ -9,7 +9,7 @@ For the current architecture map, start with `docs/OVERVIEW.md`, then use
 
 ## Quick Setup
 
-Wisp is pinned to Python `3.12.13`.
+Wisp targets Python `3.12`.
 
 On Windows:
 
@@ -122,7 +122,7 @@ feature flows.
 
 ## Tests And Checks
 
-Check that the local `.venv` uses the pinned Python and has runtime/developer tools:
+Check that the local `.venv` uses the configured Python line and has runtime/developer tools:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\check_dev_environment.py

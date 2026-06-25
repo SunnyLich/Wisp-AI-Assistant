@@ -424,6 +424,76 @@ class ConfigEnvTests(unittest.TestCase):
             config.VOICE_CALLER.update(previous["VOICE_CALLER"])
             config.SETTINGS = previous["SETTINGS"]
 
+    def test_read_selection_aloud_hotkey_loads_from_env(self):
+        """Verify read-selection-aloud hotkey defaults blank and can be configured."""
+        previous = getattr(config, "HOTKEY_READ_SELECTION_ALOUD", "")
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("HOTKEY_READ_SELECTION_ALOUD", None)
+                config.reload()
+            self.assertEqual(config.HOTKEY_READ_SELECTION_ALOUD, "")
+
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"HOTKEY_READ_SELECTION_ALOUD": "ctrl+alt+r"},
+                clear=False,
+            ):
+                config.reload()
+            self.assertEqual(config.HOTKEY_READ_SELECTION_ALOUD, "ctrl+alt+r")
+        finally:
+            config.HOTKEY_READ_SELECTION_ALOUD = previous
+
+    def test_audio_chunk_settings_load_from_env(self):
+        """Verify TTS/STT chunk tuning settings load from env."""
+        previous = {
+            "TTS_READ_ALOUD_MIN_WORDS": getattr(config, "TTS_READ_ALOUD_MIN_WORDS", 50),
+            "TTS_READ_ALOUD_MAX_WORDS": getattr(config, "TTS_READ_ALOUD_MAX_WORDS", 110),
+            "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS": getattr(
+                config,
+                "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS",
+                15.0,
+            ),
+            "STT_BACKGROUND_CHUNK_STEP_SECONDS": getattr(
+                config,
+                "STT_BACKGROUND_CHUNK_STEP_SECONDS",
+                10.0,
+            ),
+            "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS": getattr(
+                config,
+                "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
+                4.5,
+            ),
+            "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS": getattr(
+                config,
+                "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+                1.0,
+            ),
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "TTS_READ_ALOUD_MIN_WORDS": "40",
+                    "TTS_READ_ALOUD_MAX_WORDS": "90",
+                    "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS": "18.5",
+                    "STT_BACKGROUND_CHUNK_STEP_SECONDS": "11.0",
+                    "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS": "3.5",
+                    "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS": "1.25",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.TTS_READ_ALOUD_MIN_WORDS, 40)
+            self.assertEqual(config.TTS_READ_ALOUD_MAX_WORDS, 90)
+            self.assertEqual(config.STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS, 18.5)
+            self.assertEqual(config.STT_BACKGROUND_CHUNK_STEP_SECONDS, 11.0)
+            self.assertEqual(config.STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS, 3.5)
+            self.assertEqual(config.STT_BACKGROUND_CHUNK_OVERLAP_SECONDS, 1.25)
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_assistant_language_can_match_user(self):
         """Verify assistant language can match user behavior."""
         previous = {

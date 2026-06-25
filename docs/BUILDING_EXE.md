@@ -12,9 +12,9 @@ From PowerShell in the project root:
 The script uses the project `.venv` by default. If `.venv` does not exist, it
 creates it automatically, then checks dependencies and installs anything that is
 missing or out of date — no prompts. Already-satisfied packages are skipped.
-Builds must use Python `3.12.13`, matching `.python-version`; the script stops
+Builds must use Python `3.12`, matching `.python-version`; the script stops
 with a clear message if the selected `.venv` or global Python does not match
-that exact patch version.
+that Python minor line.
 
 (`-Yes` is still accepted for backward compatibility but no longer does anything,
 since auto-install is now the default.)

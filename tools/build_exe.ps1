@@ -27,14 +27,14 @@ Set-Location $Root
 
 $ExpectedPython = ""
 if (-not (Test-Path $PythonVersionFile)) {
-    throw ".python-version is required and must contain an exact Python version like 3.12.13."
+    throw ".python-version is required and must contain a Python version like 3.12 or 3.12.13."
 }
 $ExpectedPython = (Get-Content $PythonVersionFile -TotalCount 1).Trim()
 if (-not $ExpectedPython) {
-    throw ".python-version is required and must contain an exact Python version like 3.12.13."
+    throw ".python-version is required and must contain a Python version like 3.12 or 3.12.13."
 }
-if ($ExpectedPython -notmatch '^\d+\.\d+\.\d+$') {
-    throw ".python-version must contain an exact Python version like 3.12.13."
+if ($ExpectedPython -notmatch '^\d+\.\d+(\.\d+)?$') {
+    throw ".python-version must contain a Python version like 3.12 or 3.12.13."
 }
 $ExpectedMinor = ($ExpectedPython -split "\.")[0..1] -join "."
 
@@ -128,7 +128,7 @@ function Assert-PythonVersion {
     param([string]$Python)
 
     $ActualVersion = Get-PythonVersion -Python $Python
-    if ($ActualVersion -ne $ExpectedPython) {
+    if (($ActualVersion -ne $ExpectedPython) -and (-not (($ExpectedPython -match '^\d+\.\d+$') -and $ActualVersion.StartsWith("$ExpectedPython.")))) {
         throw "$Python is Python $ActualVersion, but Wisp packaging is pinned to Python $ExpectedPython. Rebuild .venv with scripts\setup_dev.ps1 or rerun the launcher with Python $ExpectedPython installed."
     }
 }
@@ -140,7 +140,7 @@ function New-ProjectVenv {
     if (Get-Command py.exe -ErrorAction SilentlyContinue) {
         $PyLauncherArg = "-$ExpectedMinor"
         $PyVersion = Get-PythonVersion -Python "py" -PythonArgs @($PyLauncherArg)
-        if ($PyVersion -eq $ExpectedPython) {
+        if (($PyVersion -eq $ExpectedPython) -or (($ExpectedPython -match '^\d+\.\d+$') -and $PyVersion.StartsWith("$ExpectedPython."))) {
             & py $PyLauncherArg -m venv $VenvDir
             return
         }
@@ -148,7 +148,7 @@ function New-ProjectVenv {
 
     if (Get-Command python -ErrorAction SilentlyContinue) {
         $PythonVersion = Get-PythonVersion -Python "python"
-        if ($PythonVersion -eq $ExpectedPython) {
+        if (($PythonVersion -eq $ExpectedPython) -or (($ExpectedPython -match '^\d+\.\d+$') -and $PythonVersion.StartsWith("$ExpectedPython."))) {
             & python -m venv $VenvDir
             return
         }

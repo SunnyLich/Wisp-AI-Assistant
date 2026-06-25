@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 import config
-from runtime.supervisor.flows import FlowController
+from runtime.supervisor.flows import FlowController, PendingInvocation
 
 
 class FakeWorker:
@@ -219,6 +219,38 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
     assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
     assert not ui.calls_for("ui.reply.listening")
+
+
+def test_audio_warmup_events_surface_user_notices():
+    """Verify local audio warmup start and finish are visible to the user."""
+    flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit("audio.warmup.started", {"items": ["stt", "tts"], "provider": "kokoro"})
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt", "tts"], "provider": "kokoro", "ok": True, "result": {"stt": "ok", "tts": "ok"}},
+    )
+
+    notices = [call["params"]["text"] for call in ui.calls_for("ui.reply.notice")]
+    assert "Warming up local voice and speech recognition..." in notices
+    assert "Local voice and speech recognition are ready." in notices
+
+
+def test_audio_warmup_failure_surfaces_user_notice():
+    """Verify local audio warmup failures are visible to the user."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["tts"],
+            "provider": "kokoro",
+            "ok": False,
+            "result": {"tts": "error: RuntimeError: missing model"},
+        },
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Local speech warmup failed:")
 
 
 def test_caller_hotkey_captures_selection_before_intent_steals_focus():
@@ -579,6 +611,118 @@ def test_add_context_without_text_falls_back_to_notice():
         flow.add_context()
     assert not ui.calls_for("ui.context.add_item")
     assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("No selected")
+
+
+def test_read_selection_aloud_speaks_selected_text_without_model(monkeypatch):
+    """Verify read-selection-aloud uses selected text and local TTS only."""
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="read this out loud")})
+    audio = FakeWorker(
+        {
+            "audio.tts.synthesize": lambda params: {
+                "path": "selection.wav",
+                "provider": "fake",
+                "word_timestamps": {
+                    "words": str(params.get("text") or "").split(),
+                    "start_ms": [0, 100, 200, 300],
+                    "estimated": False,
+                },
+            },
+            "audio.play_file": lambda params: {"played": True, "path": params.get("path")},
+            "audio.stop": lambda _params: {"stopped": True},
+        }
+    )
+    flow, native, ui, brain, audio = make_flow(native=native, audio=audio)
+
+    flow.read_selection_aloud()
+
+    assert not brain.calls_for("brain.query")
+    snapshot = native.last_call("native.context.snapshot")["params"]
+    assert snapshot["include_selection"] is True
+    assert snapshot["include_clipboard"] is False
+    assert audio.last_call("audio.tts.synthesize")["params"]["text"] == "read this out loud"
+    assert audio.last_call("audio.play_file")["params"]["path"] == "selection.wav"
+    assert ui.last_call("ui.reply.reading")["params"]["text"] == "read this out loud"
+    assert any(
+        call["params"].get("state") == "speaking"
+        for call in ui.calls_for("ui.overlay.state")
+    )
+
+
+def test_read_selection_aloud_synthesizes_next_chunk_while_first_plays(monkeypatch):
+    """Verify long read-aloud selections synthesize one chunk ahead."""
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    first_chunk = " ".join(f"alpha{i}" for i in range(49)) + " alpha49."
+    second_chunk = " ".join(f"beta{i}" for i in range(59)) + " beta59."
+    native = FakeWorker({"native.context.snapshot": context_handler(selected=f"{first_chunk} {second_chunk}")})
+    second_synth_started = threading.Event()
+    lock = threading.Lock()
+    synth_count = {"value": 0}
+    synth_texts: list[str] = []
+
+    def synth_handler(params):
+        with lock:
+            synth_count["value"] += 1
+            count = synth_count["value"]
+            synth_texts.append(str(params.get("text") or ""))
+        if count == 2:
+            second_synth_started.set()
+        return {"path": f"chunk-{count}.wav", "provider": "fake"}
+
+    def play_handler(params):
+        path = str(params.get("path") or "")
+        if path == "chunk-1.wav":
+            assert second_synth_started.wait(1.0), "second chunk should synthesize while first plays"
+        return {"played": True, "path": path}
+
+    audio = FakeWorker(
+        {
+            "audio.tts.synthesize": synth_handler,
+            "audio.play_file": play_handler,
+            "audio.stop": lambda _params: {"stopped": True},
+        }
+    )
+    flow, _native, _ui, brain, audio = make_flow(native=native, audio=audio)
+
+    flow.read_selection_aloud()
+
+    assert not brain.calls_for("brain.query")
+    assert synth_texts == [first_chunk, second_chunk]
+    assert [call["params"]["path"] for call in audio.calls_for("audio.play_file")] == [
+        "chunk-1.wav",
+        "chunk-2.wav",
+    ]
+
+
+def test_read_selection_aloud_without_selection_shows_notice(monkeypatch):
+    """Verify read-selection-aloud tells the user when nothing is selected."""
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="", clipboard="clipboard")})
+    flow, _native, ui, brain, audio = make_flow(native=native)
+
+    flow.read_selection_aloud()
+
+    assert not brain.calls_for("brain.query")
+    assert not audio.calls_for("audio.tts.synthesize")
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == "No selected text to read aloud."
+
+
+def test_read_selection_aloud_native_hotkey_routes_to_tts(monkeypatch):
+    """Verify the configurable native hotkey invokes read-selection-aloud."""
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="read by hotkey")})
+    audio = FakeWorker(
+        {
+            "audio.tts.synthesize": lambda _params: {"path": "selection.wav", "provider": "fake"},
+            "audio.play_file": lambda _params: {"played": True},
+            "audio.stop": lambda _params: {"stopped": True},
+        }
+    )
+    _flow, native, _ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "read_selection_aloud"})
+
+    assert audio.last_call("audio.tts.synthesize")["params"]["text"] == "read by hotkey"
 
 
 def test_clear_context_empties_panel_without_bubble():
@@ -1957,6 +2101,58 @@ def test_precaptured_screenshot_is_discarded_when_final_choice_turns_it_off():
     assert len(native.calls_for("native.capture.fullscreen")) == 1
     assert query["screenshot_b64"] is None
     assert query["screenshot_tool_b64"] is None
+    assert ui.last_call("ui.chat.begin_conversation")["params"]["image_base64"] is None
+
+
+def test_unused_pending_context_is_discarded_after_payload_build():
+    """Verify unselected preview context is removed from transient request state."""
+    pending = PendingInvocation(
+        context={
+            "selected_text": "preview selection",
+            "clipboard_text": "preview clipboard",
+            "browser_url": "https://example.test/private",
+            "browser_content": "preview browser",
+            "browser_app": "Browser",
+            "browser_hwnd": 123,
+            "active_document_text": "preview document",
+            "active_document_sources": [{"label": "Doc"}],
+            "document_window": {"title": "Doc"},
+            "active_app": {"name": "Notes"},
+            "debug": {"window": {"raw_title": "Secret title"}},
+            "focus_token": 99,
+        },
+        screenshot_b64="SCREEN",
+        screenshot_tool_b64="TOOL",
+    )
+
+    FlowController._discard_unused_pending_context(
+        pending,
+        {
+            "selected": "",
+            "ambient_text": "",
+            "active_document_text": "",
+            "screenshot_b64": None,
+            "screenshot_tool_b64": None,
+        },
+    )
+
+    for key in (
+        "selected_text",
+        "clipboard_text",
+        "browser_url",
+        "browser_content",
+        "browser_app",
+        "browser_hwnd",
+        "active_document_text",
+        "active_document_sources",
+        "document_window",
+        "active_app",
+        "debug",
+    ):
+        assert key not in pending.context
+    assert pending.context["focus_token"] == 99
+    assert pending.screenshot_b64 is None
+    assert pending.screenshot_tool_b64 is None
 
 
 def test_screenshot_toggled_on_later_captures_at_send_time():
@@ -2984,7 +3180,10 @@ def test_chat_request_streams_through_brain_chat():
     ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "hi"}]})
 
     assert brain.last_call("brain.chat")["params"]["messages"][0]["content"] == "hi"
-    assert [c["params"]["text"] for c in ui.calls_for("ui.chat.chunk")] == ["ch", "at reply"]
+    chunks = [c["params"] for c in ui.calls_for("ui.chat.chunk")]
+    progress_chunks = [c for c in chunks if c.get("is_progress")]
+    assert [c["text"] for c in progress_chunks] in ([], ["Using tools..."])
+    assert [c["text"] for c in chunks if not c.get("is_progress")] == ["ch", "at reply"]
     done_params = ui.last_call("ui.chat.done")["params"]
     assert done_params["request_id"] == "chat-1"
     assert done_params["text"] == "chat reply"

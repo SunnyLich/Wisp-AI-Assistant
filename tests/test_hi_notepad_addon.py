@@ -1,4 +1,4 @@
-"""Regression tests for the bundled hi Notepad addon."""
+"""Regression tests for the bundled hi editor addon."""
 from __future__ import annotations
 
 import importlib.util
@@ -37,12 +37,56 @@ def test_hi_addon_opens_notepad_file_without_rewriting_prompt(monkeypatch, tmp_p
     assert (tmp_path / "wisp-hi-from-wisp.txt").read_text(encoding="utf-8") == "hi from wisp"
 
 
+def test_hi_addon_opens_linux_editor_file_without_rewriting_prompt(monkeypatch, tmp_path):
+    """Verify standalone hi opens a Linux editor and leaves the model prompt alone."""
+    addon = _load_addon()
+    popen_calls: list[list[str]] = []
+
+    def fake_popen(args, **_kwargs):
+        popen_calls.append(list(args))
+        return object()
+
+    monkeypatch.setattr(addon.sys, "platform", "linux")
+    monkeypatch.setattr(addon.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(addon.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("VISUAL", "code --reuse-window")
+    monkeypatch.delenv("EDITOR", raising=False)
+    monkeypatch.setattr(addon.shutil, "which", lambda command: command if command == "code" else None)
+
+    prompt, context = addon.before_query("well hi there", "ctx")
+
+    note_path = tmp_path / "wisp-hi-from-wisp.txt"
+    assert (prompt, context) == ("well hi there", "ctx")
+    assert popen_calls == [["code", "--reuse-window", str(note_path)]]
+    assert note_path.read_text(encoding="utf-8") == "hi from wisp"
+
+
+def test_hi_addon_falls_back_to_linux_desktop_opener(monkeypatch, tmp_path):
+    """Verify Linux falls back to xdg-open when editor env vars are unavailable."""
+    addon = _load_addon()
+    popen_calls: list[list[str]] = []
+
+    def fake_popen(args, **_kwargs):
+        popen_calls.append(list(args))
+        return object()
+
+    monkeypatch.setattr(addon.sys, "platform", "linux")
+    monkeypatch.setattr(addon.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(addon.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    monkeypatch.setattr(addon.shutil, "which", lambda command: command if command == "xdg-open" else None)
+
+    assert addon.before_query("hi", "ctx") == ("hi", "ctx")
+    assert popen_calls == [["xdg-open", str(tmp_path / "wisp-hi-from-wisp.txt")]]
+
+
 def test_hi_addon_ignores_non_standalone_hi(monkeypatch):
-    """Verify words containing hi do not trigger Notepad."""
+    """Verify words containing hi do not trigger an editor."""
     addon = _load_addon()
 
     def fail_popen(*_args, **_kwargs):
-        raise AssertionError("Notepad should not launch")
+        raise AssertionError("Editor should not launch")
 
     monkeypatch.setattr(addon.sys, "platform", "win32")
     monkeypatch.setattr(addon.subprocess, "Popen", fail_popen)
@@ -50,8 +94,8 @@ def test_hi_addon_ignores_non_standalone_hi(monkeypatch):
     assert addon.before_query("this should not match", "ctx") == ("this should not match", "ctx")
 
 
-def test_hi_addon_swallows_notepad_launch_errors(monkeypatch, tmp_path):
-    """Verify Notepad failures do not block the query."""
+def test_hi_addon_swallows_editor_launch_errors(monkeypatch, tmp_path):
+    """Verify editor failures do not block the query."""
     addon = _load_addon()
 
     monkeypatch.setattr(addon.sys, "platform", "win32")

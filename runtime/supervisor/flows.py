@@ -23,6 +23,9 @@ _INTERACTIVE_LLM_TIMEOUT_SECONDS = 120.0
 _INTERACTIVE_LLM_TOOL_TIMEOUT_SECONDS = 300.0
 _TTS_SEGMENT_MIN_CHARS = 60
 _TTS_SEGMENT_MAX_CHARS = 520
+_READ_ALOUD_MIN_WORDS = 50
+_READ_ALOUD_MAX_WORDS = 110
+_READ_ALOUD_PAUSE_RE = re.compile(r"[.!?;:][\"')\]}]*$")
 _BROWSER_APP_NAMES = {
     "browser",
     "chrome",
@@ -366,6 +369,8 @@ class FlowController:
         self.brain.on_event("agent.trace", self._forward_agent_event("ui.agent.trace"))
         self.brain.on_event("agent.done", self._forward_agent_event("ui.agent.done"))
         self.brain.on_event("agent.approval.request", self._on_agent_approval_request)
+        self.audio.on_event("audio.warmup.started", self._on_audio_warmup_started)
+        self.audio.on_event("audio.warmup.done", self._on_audio_warmup_done)
         self.audio.on_event("audio.playback.started", self._on_audio_playback_started)
         self.audio.on_event("audio.playback.done", self._on_audio_playback_done)
         self.ui.call("ui.show_overlay", timeout=30.0)
@@ -408,6 +413,9 @@ class FlowController:
         elif kind == "clear_context":
             log.info("hotkey received: kind=%s", kind)
             self._schedule(self.clear_context)
+        elif kind == "read_selection_aloud":
+            log.info("hotkey received: kind=%s", kind)
+            self._schedule(self.read_selection_aloud)
         elif kind == "voice_start":
             if self._claim_voice_start():
                 log.info("hotkey received: kind=%s", kind)
@@ -592,6 +600,46 @@ class FlowController:
     def _on_settings_applied(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle settings applied events."""
         self._schedule(self.reload_settings)
+
+    def _on_audio_warmup_started(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Tell the user local speech models are warming."""
+        items = set((data or {}).get("items") or [])
+        if not items:
+            return
+        if "tts" in items and "stt" in items:
+            text = "Warming up local voice and speech recognition..."
+        elif "tts" in items:
+            text = "Warming up local voice..."
+        else:
+            text = "Warming up local speech recognition..."
+        self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 0}, timeout=30.0)
+
+    def _on_audio_warmup_done(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Tell the user local speech warmup finished."""
+        items = set((data or {}).get("items") or [])
+        if not items:
+            return
+        result = (data or {}).get("result") if isinstance((data or {}).get("result"), dict) else {}
+        failures = [
+            f"{name}: {status}"
+            for name, status in result.items()
+            if str(status).startswith("error:")
+        ]
+        if failures:
+            self._safe_call(
+                self.ui,
+                "ui.reply.notice",
+                {"text": "Local speech warmup failed: " + "; ".join(failures), "timeout_ms": 6000},
+                timeout=30.0,
+            )
+            return
+        if "tts" in items and "stt" in items:
+            text = "Local voice and speech recognition are ready."
+        elif "tts" in items:
+            text = "Local voice is ready."
+        else:
+            text = "Local speech recognition is ready."
+        self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 3000}, timeout=30.0)
 
     def _on_bubble_speed(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle bubble speed events."""
@@ -891,6 +939,29 @@ class FlowController:
         name = "Selection"
         self._drop_context_items.append({"name": name, "content": text, "type": "text"})
         self._fire(self.ui, "ui.context.add_item", {"name": name, "item_type": "text"})
+
+    def read_selection_aloud(self) -> None:
+        """Speak the currently selected text without sending it to a model."""
+        if not self._tts_enabled():
+            self._notice(t("TTS is off. Choose a voice provider in Settings first."))
+            return
+        try:
+            context = self._context_snapshot({"context_clipboard": False})
+        except Exception as exc:  # noqa: BLE001 - keep tray action user-facing
+            log.exception("read selection aloud failed to capture context")
+            self._notice(f"{t('Could not read selected text')}: {self._friendly_error(exc)}")
+            return
+        text = str(context.get("selected_text") or "").strip()
+        if not text:
+            self._notice(t("No selected text to read aloud."))
+            return
+
+        gen = self._new_generation()
+        self._safe_call(self.audio, "audio.stop", timeout=5.0)
+        self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
+        self._safe_call(self.ui, "ui.reply.reading", {"text": text}, timeout=30.0)
+        if not self._read_aloud_text(text, generation=gen):
+            self._notice(t("Could not read selected text aloud."))
 
     def clear_context(self) -> None:
         """Clear context."""
@@ -1777,6 +1848,7 @@ class FlowController:
             self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
             self._safe_call(self.ui, "ui.reply.thinking", timeout=30.0)
         params = self._brain_query_params(prompt, pending)
+        self._discard_unused_pending_context(pending, params)
         log.info(
             "query context ready in %.2fs prompt_chars=%d ambient_chars=%d "
             "selected_chars=%d screenshot=%s screenshot_tool=%s tools=%s",
@@ -1874,7 +1946,7 @@ class FlowController:
                 {
                     "user": prompt,
                     "context": chat_context,
-                    "image_base64": pending.screenshot_b64,
+                    "image_base64": params.get("screenshot_b64"),
                     "context_policy": context_policy,
                 },
                 timeout=30.0,
@@ -1974,7 +2046,7 @@ class FlowController:
                     "user": prompt,
                     "assistant": text,
                     "context": chat_context,
-                    "image_base64": pending.screenshot_b64,
+                    "image_base64": params.get("screenshot_b64"),
                     "file_context": file_context,
                     "tool_context": tool_context,
                     "context_policy": context_policy,
@@ -2997,6 +3069,58 @@ class FlowController:
         }
 
     @staticmethod
+    def _discard_unused_pending_context(
+        pending: PendingInvocation,
+        params: dict[str, Any],
+    ) -> None:
+        """Drop gathered context that was left out of the final request payload.
+
+        This is best-effort transient cleanup, not secure memory erasure. The
+        provider-bound payload in ``params`` keeps the selected context; this
+        removes unselected preview/capture values from the pending request state
+        before the provider call starts.
+        """
+        context = pending.context if isinstance(pending.context, dict) else {}
+        ambient = str(params.get("ambient_text") or "")
+
+        selected_used = bool(params.get("selected"))
+        clipboard_used = "[Clipboard]" in ambient
+        browser_used = "[Browser/Web]" in ambient
+        active_document_used = bool(params.get("active_document_text")) or (
+            "--- BEGIN ACTIVE DOCUMENT:" in ambient or "[Active document]" in ambient
+        )
+        app_used = "[App]" in ambient or active_document_used
+
+        if not selected_used:
+            context.pop("selected_text", None)
+        if not clipboard_used:
+            context.pop("clipboard_text", None)
+        if not browser_used:
+            for key in (
+                "browser_url",
+                "browser_content",
+                "browser_app",
+                "browser_hwnd",
+                "browser_window",
+                "browser_error",
+            ):
+                context.pop(key, None)
+        if not active_document_used:
+            for key in ("active_document_text", "active_document_sources", "document_window"):
+                context.pop(key, None)
+        if not app_used:
+            context.pop("active_app", None)
+
+        # Debug snapshots can contain window titles/process metadata that are
+        # useful for local diagnostics but are never needed after payload build.
+        context.pop("debug", None)
+
+        if not params.get("screenshot_b64"):
+            pending.screenshot_b64 = None
+        if not params.get("screenshot_tool_b64"):
+            pending.screenshot_tool_b64 = None
+
+    @staticmethod
     def _is_browser_active_context(context: dict[str, Any]) -> bool:
         """Return whether browser active context is true."""
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
@@ -3772,6 +3896,127 @@ class FlowController:
                 if self._tts_queue is q:
                     self._tts_queue = None
                     self._tts_sequence_active = False
+            if self._is_current(generation) and not self._reply_bubble_cancelled(generation):
+                self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
+                self._set_idle()
+
+    def _begin_manual_tts_sequence(self, generation: int) -> None:
+        """Mark playback as owned by a manual TTS flow."""
+        with self._tts_lock:
+            self._tts_generation = generation
+            self._tts_queue = None
+            self._tts_sequence_active = True
+
+    def _end_manual_tts_sequence(self, generation: int) -> None:
+        """Release manual TTS playback ownership."""
+        with self._tts_lock:
+            if self._tts_generation == generation and self._tts_queue is None:
+                self._tts_sequence_active = False
+
+    @staticmethod
+    def _read_aloud_chunks(text: str) -> list[str]:
+        """Split read-aloud text into responsive TTS chunks."""
+        import config
+
+        min_words = max(1, int(getattr(config, "TTS_READ_ALOUD_MIN_WORDS", _READ_ALOUD_MIN_WORDS)))
+        max_words = max(min_words, int(getattr(config, "TTS_READ_ALOUD_MAX_WORDS", _READ_ALOUD_MAX_WORDS)))
+        words = re.findall(r"\S+", text or "")
+        if not words:
+            return []
+        chunks: list[str] = []
+        current: list[str] = []
+        for word in words:
+            current.append(word)
+            word_count = len(current)
+            should_split = (
+                word_count >= min_words
+                and _READ_ALOUD_PAUSE_RE.search(word) is not None
+            ) or word_count >= max_words
+            if should_split:
+                chunks.append(" ".join(current))
+                current = []
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
+    def _read_aloud_text(self, text: str, *, generation: int) -> bool:
+        """Read selected text with one synthesized chunk buffered ahead."""
+        chunks = self._read_aloud_chunks(text)
+        if not chunks or not self._is_current(generation) or self._reply_bubble_cancelled(generation):
+            return False
+
+        synth_queue: "queue.Queue[dict[str, Any] | None]" = queue.Queue(maxsize=1)
+        stop_synth = threading.Event()
+
+        def put_synth_result(item: dict[str, Any] | None) -> bool:
+            while not stop_synth.is_set():
+                try:
+                    synth_queue.put(item, timeout=0.1)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def synthesize_ahead() -> None:
+            try:
+                for chunk in chunks:
+                    if (
+                        stop_synth.is_set()
+                        or not self._is_current(generation)
+                        or self._reply_bubble_cancelled(generation)
+                    ):
+                        break
+                    try:
+                        result = self.audio.call("audio.tts.synthesize", {"text": chunk}, timeout=180.0)
+                    except Exception as exc:  # noqa: BLE001 - surface playback failure below
+                        put_synth_result({"error": exc})
+                        return
+                    if not put_synth_result({"chunk": chunk, "result": result}):
+                        return
+            finally:
+                put_synth_result(None)
+
+        self._begin_manual_tts_sequence(generation)
+        threading.Thread(target=synthesize_ahead, daemon=True).start()
+        played_any = False
+        reported_error = False
+        try:
+            while self._is_current(generation) and not self._reply_bubble_cancelled(generation):
+                try:
+                    item = synth_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                if item is None:
+                    break
+                error = item.get("error")
+                if error is not None:
+                    if "warming up" in str(error).lower():
+                        self._notice("Local voice is still warming up. Try again when Wisp says local speech is ready.")
+                        reported_error = True
+                        break
+                    log.error(
+                        "read selection aloud synthesis failed",
+                        exc_info=(type(error), error, error.__traceback__),
+                    )
+                    break
+                result = item.get("result")
+                path = result.get("path") if isinstance(result, dict) else ""
+                if not path:
+                    break
+                if not self._is_current(generation) or self._reply_bubble_cancelled(generation):
+                    break
+                self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
+                play_result = self.audio.call("audio.play_file", {"path": path}, timeout=180.0)
+                if isinstance(play_result, dict) and play_result.get("stopped"):
+                    break
+                played_any = True
+            return played_any or reported_error
+        except Exception:
+            log.exception("read selection aloud playback failed")
+            return played_any
+        finally:
+            stop_synth.set()
+            self._end_manual_tts_sequence(generation)
             if self._is_current(generation) and not self._reply_bubble_cancelled(generation):
                 self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
                 self._set_idle()

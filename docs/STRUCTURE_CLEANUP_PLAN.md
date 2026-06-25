@@ -5,7 +5,7 @@ standard Python desktop application without interrupting product work.
 
 ## Decisions
 
-- Keep Python pinned to `3.12.13` for now. The project, CI, launchers, and
+- Keep Python targeted to `3.12` for now. The project, CI, launchers, and
   PyInstaller packaging already target 3.12. Moving to 3.14 should wait until
   the GUI/audio/native dependency stack officially supports it.
 - Treat `runtime.supervisor.app` as the primary runtime entrypoint. The

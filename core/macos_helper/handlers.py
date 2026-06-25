@@ -14,6 +14,7 @@ any platform (this is what lets the IPC harness be tested off-macOS).
 from __future__ import annotations
 
 import os
+import re
 import threading
 from typing import Any, Callable
 
@@ -56,6 +57,11 @@ def ping(value: Any = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _SAMPLE_RATE = 16_000  # Whisper expects 16 kHz mono
+_STT_BG_FIRST_TRIGGER_SECONDS = 15.0
+_STT_BG_STEP_SECONDS = 10.0
+_STT_BG_LIVE_DELAY_SECONDS = 4.5
+_STT_BG_OVERLAP_SECONDS = 1.0
+_STT_BG_POLL_SECONDS = 0.2
 
 _model = None
 _model_ready = False  # True once the model is loaded AND warmed (first clip fast)
@@ -65,6 +71,41 @@ _stream = None
 _recording = False
 _chunks: list = []
 _chunks_lock = threading.Lock()
+_stt_bg_thread: threading.Thread | None = None
+_stt_bg_stop: threading.Event | None = None
+_stt_bg_results: list[dict[str, Any]] = []
+_stt_bg_lock = threading.Lock()
+
+
+def _stt_bg_seconds(name: str, default: float, *, minimum: float = 0.0) -> float:
+    """Return configurable background STT timing in seconds."""
+    try:
+        import config
+
+        value = float(getattr(config, name, default))
+    except Exception:
+        value = default
+    return max(minimum, value)
+
+
+def _stt_bg_first_trigger_seconds() -> float:
+    """Return the first background STT trigger time."""
+    return _stt_bg_seconds("STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS", _STT_BG_FIRST_TRIGGER_SECONDS, minimum=1.0)
+
+
+def _stt_bg_step_seconds() -> float:
+    """Return the background STT cadence."""
+    return _stt_bg_seconds("STT_BACKGROUND_CHUNK_STEP_SECONDS", _STT_BG_STEP_SECONDS, minimum=1.0)
+
+
+def _stt_bg_live_delay_seconds() -> float:
+    """Return how far behind live audio background STT should stay."""
+    return _stt_bg_seconds("STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS", _STT_BG_LIVE_DELAY_SECONDS)
+
+
+def _stt_bg_overlap_seconds() -> float:
+    """Return overlap between background STT windows."""
+    return _stt_bg_seconds("STT_BACKGROUND_CHUNK_OVERLAP_SECONDS", _STT_BG_OVERLAP_SECONDS)
 
 
 def _get_model():
@@ -85,9 +126,13 @@ def _get_model():
     return _model
 
 
-def stt_prewarm() -> None:
+def stt_prewarm(wait: bool = False) -> None:
     """Load the model in a background thread; return immediately so the request
     loop is not blocked by the (slow) first model load."""
+    if wait:
+        _get_model()
+        return None
+
     def _worker() -> None:
         """Handle worker for macos helper handlers."""
         try:
@@ -124,6 +169,170 @@ def _audio_callback(indata, frames, time_info, status) -> None:
             _chunks.append(indata.copy())
 
 
+def _sample_count(chunks: list[Any]) -> int:
+    """Return total samples in captured mono chunks."""
+    return sum(int(getattr(chunk, "shape", [len(chunk)])[0]) for chunk in chunks)
+
+
+def _chunk_audio_slice(chunks: list[Any], start_sample: int, end_sample: int):
+    """Copy one sample window out of the captured chunks."""
+    import numpy as np
+
+    if end_sample <= start_sample or not chunks:
+        return np.array([], dtype="float32")
+    audio = np.concatenate(chunks, axis=0).flatten()
+    start = max(0, min(start_sample, len(audio)))
+    end = max(start, min(end_sample, len(audio)))
+    return audio[start:end].copy()
+
+
+def _transcribe_audio(audio, *, label: str) -> str:
+    """Normalize and transcribe one audio buffer."""
+    import numpy as np
+    import config
+    from core.stt_postprocess import clean_transcript
+
+    seconds = len(audio) / float(_SAMPLE_RATE)
+    if len(audio) < _SAMPLE_RATE * 0.3:
+        _log(f"transcribe skipped: {label} too short ({seconds:.2f}s)")
+        return ""
+
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    if peak < 0.01:
+        _log(f"transcribe skipped: {label} input level too low (peak={peak:.4f})")
+        return ""
+    if peak < 0.3:
+        audio = audio * (0.3 / peak)
+
+    model = _get_model()
+    language = config.STT_LANGUAGE or None
+    beam_size = config.STT_BEAM_SIZE
+    _log(f"transcribing {label} {seconds:.2f}s with language={language!r} beam_size={beam_size}")
+    segments, _info = model.transcribe(
+        audio,
+        beam_size=beam_size,
+        language=language,
+        vad_filter=True,
+    )
+    raw_text = " ".join(seg.text.strip() for seg in segments).strip()
+    text = clean_transcript(raw_text)
+    if raw_text and not text:
+        _log(f"discarded repeated-token transcript for {label}: {raw_text!r}")
+    _log(f"transcribed {label}: {text!r}")
+    return text
+
+
+def _first_background_end_sample() -> int:
+    """Return the first settled STT chunk end sample."""
+    end_seconds = max(0.3, _stt_bg_first_trigger_seconds() - _stt_bg_live_delay_seconds())
+    return int(end_seconds * _SAMPLE_RATE)
+
+
+def _background_window_for_end(end_sample: int) -> tuple[int, int]:
+    """Return the audio window for one background STT chunk end sample."""
+    first_end = _first_background_end_sample()
+    if end_sample <= first_end:
+        return 0, end_sample
+    overlap = int(_stt_bg_overlap_seconds() * _SAMPLE_RATE)
+    step = int(_stt_bg_step_seconds() * _SAMPLE_RATE)
+    return max(0, end_sample - step - overlap), end_sample
+
+
+def _background_window_due(total_samples: int, end_sample: int) -> bool:
+    """Return whether the requested background window is safely behind live audio."""
+    delay = int(_stt_bg_live_delay_seconds() * _SAMPLE_RATE)
+    return total_samples >= end_sample + delay
+
+
+def _merge_transcript_parts(parts: list[str]) -> str:
+    """Merge chunk transcripts, removing repeated words from overlap."""
+    merged: list[str] = []
+
+    def key(word: str) -> str:
+        return re.sub(r"^\W+|\W+$", "", word).lower()
+
+    for part in parts:
+        words = [word for word in str(part or "").split() if word]
+        if not words:
+            continue
+        if not merged:
+            merged.extend(words)
+            continue
+        merged_keys = [key(word) for word in merged]
+        word_keys = [key(word) for word in words]
+        max_overlap = min(30, len(merged_keys), len(word_keys))
+        overlap = 0
+        for size in range(max_overlap, 0, -1):
+            if merged_keys[-size:] == word_keys[:size]:
+                overlap = size
+                break
+        merged.extend(words[overlap:])
+    return " ".join(merged).strip()
+
+
+def _snapshot_recording_window(start_sample: int, end_sample: int):
+    """Copy a stable recording window while the mic continues capturing."""
+    with _chunks_lock:
+        return _chunk_audio_slice(list(_chunks), start_sample, end_sample)
+
+
+def _stt_background_worker(stop_event: threading.Event) -> None:
+    """Transcribe settled recording windows while capture continues."""
+    next_end = _first_background_end_sample()
+    step = int(_stt_bg_step_seconds() * _SAMPLE_RATE)
+    while not stop_event.is_set():
+        with _chunks_lock:
+            total = _sample_count(_chunks)
+        if not _background_window_due(total, next_end):
+            stop_event.wait(_STT_BG_POLL_SECONDS)
+            continue
+        start, end = _background_window_for_end(next_end)
+        audio = _snapshot_recording_window(start, end)
+        try:
+            text = _transcribe_audio(audio, label=f"background {start / _SAMPLE_RATE:.1f}-{end / _SAMPLE_RATE:.1f}s")
+        except Exception as exc:  # noqa: BLE001 - final tail covers this failed window
+            _log(f"background STT chunk failed: {type(exc).__name__}: {exc}")
+            next_end += step
+            continue
+        if text:
+            with _stt_bg_lock:
+                _stt_bg_results.append({"start": start, "end": end, "text": text})
+        next_end += step
+
+
+def _start_background_stt() -> None:
+    """Start background STT chunking for the current recording."""
+    global _stt_bg_thread, _stt_bg_stop
+    stop_event = threading.Event()
+    with _stt_bg_lock:
+        _stt_bg_results.clear()
+    _stt_bg_stop = stop_event
+    _stt_bg_thread = threading.Thread(
+        target=_stt_background_worker,
+        args=(stop_event,),
+        daemon=True,
+        name="wisp-stt-background",
+    )
+    _stt_bg_thread.start()
+
+
+def _stop_background_stt() -> list[dict[str, Any]]:
+    """Stop background STT and return completed chunk transcripts."""
+    global _stt_bg_thread, _stt_bg_stop
+    thread = _stt_bg_thread
+    stop_event = _stt_bg_stop
+    if stop_event is not None:
+        stop_event.set()
+    if thread is not None and thread.is_alive():
+        thread.join()
+    _stt_bg_thread = None
+    _stt_bg_stop = None
+    with _stt_bg_lock:
+        results = list(_stt_bg_results)
+        _stt_bg_results.clear()
+    return results
+
+
 def stt_start_recording() -> None:
     """Open the mic and start buffering. The PortAudio/CoreAudio stream is opened
     on the worker's main thread (this request loop) — safe here because no Qt run
@@ -131,6 +340,7 @@ def stt_start_recording() -> None:
     global _stream, _recording
     import sounddevice as sd
     with _recording_lock:
+        _stop_background_stt()
         if _stream is not None:
             try:
                 _stream.stop()
@@ -154,6 +364,7 @@ def stt_start_recording() -> None:
         except Exception:
             _recording = False
             raise
+        _start_background_stt()
     _log("recording started")
     return None
 
@@ -162,9 +373,6 @@ def stt_stop_and_transcribe() -> str:
     """Stop recording and transcribe synchronously. Returns "" for empty/too-short
     clips. Blocks ~200–600 ms; the parent calls this from a worker thread."""
     global _stream, _recording
-    import numpy as np
-    import config
-    from core.stt_postprocess import clean_transcript
     with _recording_lock:
         _recording = False
         if _stream is not None:
@@ -178,42 +386,30 @@ def stt_stop_and_transcribe() -> str:
         with _chunks_lock:
             chunks = list(_chunks)
             _chunks.clear()
+        background_results = _stop_background_stt()
     if not chunks:
         _log("transcribe skipped: no audio chunks captured")
         return ""
 
-    audio = np.concatenate(chunks, axis=0).flatten()
-    seconds = len(audio) / float(_SAMPLE_RATE)
-    if len(audio) < _SAMPLE_RATE * 0.3:  # ignore accidental sub-0.3 s taps
-        _log(f"transcribe skipped: clip too short ({seconds:.2f}s)")
-        return ""
+    total_samples = _sample_count(chunks)
+    if not background_results:
+        return _transcribe_audio(
+            _chunk_audio_slice(chunks, 0, total_samples),
+            label="full clip",
+        )
 
-    # Whisper hallucinates fluent text from near-silent audio, so reject a dead
-    # or far-too-quiet mic instead of returning gibberish; boost quiet-but-real
-    # speech to a normal level so the model gets a properly-levelled signal.
-    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
-    if peak < 0.01:
-        _log(f"transcribe skipped: input level too low (peak={peak:.4f}) — check microphone")
-        return ""
-    if peak < 0.3:
-        audio = audio * (0.3 / peak)
-
-    model = _get_model()
-    language = config.STT_LANGUAGE or None
-    beam_size = config.STT_BEAM_SIZE
-    _log(f"transcribing {seconds:.2f}s with language={language!r} beam_size={beam_size}")
-    segments, _info = model.transcribe(
-        audio,
-        beam_size=beam_size,
-        language=language,
-        vad_filter=True,
+    background_results.sort(key=lambda item: int(item.get("start") or 0))
+    last_end = max(int(item.get("end") or 0) for item in background_results)
+    overlap = int(_stt_bg_overlap_seconds() * _SAMPLE_RATE)
+    tail_start = max(0, last_end - overlap)
+    tail_text = _transcribe_audio(
+        _chunk_audio_slice(chunks, tail_start, total_samples),
+        label=f"tail {tail_start / _SAMPLE_RATE:.1f}-{total_samples / _SAMPLE_RATE:.1f}s",
     )
-    raw_text = " ".join(seg.text.strip() for seg in segments).strip()
-    text = clean_transcript(raw_text)
-    if raw_text and not text:
-        _log(f"discarded repeated-token transcript: {raw_text!r}")
-    _log(f"transcribed: {text!r}")
-    return text
+    parts = [str(item.get("text") or "") for item in background_results]
+    parts.append(tail_text)
+    return _merge_transcript_parts(parts)
+
 
 
 def stt_selftest(seconds: float = 1.0) -> dict[str, Any]:

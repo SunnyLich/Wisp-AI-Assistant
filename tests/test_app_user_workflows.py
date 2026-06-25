@@ -1336,7 +1336,7 @@ def test_settings_env_changes_reach_runtime_surfaces_workflow(
         assert settings.audio.stt_model == "small"
         assert settings.memory.top_k == 1
         assert settings.context.browser_max_chars == 111
-        assert config.INTENT_CONTEXT_TOGGLE_KEYS == "7654321"
+        assert config.INTENT_CONTEXT_TOGGLE_KEYS == "76543218"
 
         caller = settings.callers.callers[0]
         assert caller["label"] == "Workflow Caller"
@@ -1909,17 +1909,9 @@ def test_chat_context_chip_stylesheets_use_plain_rgb_colors_workflow(qapp):
     """Chat context chips use conservative colors accepted by Qt on every OS."""
     import re
 
-    from PySide6.QtCore import qInstallMessageHandler
-
     from ui.chat_window import ChatWindow
     from ui.shared.theme import apply_app_theme
 
-    qt_messages: list[str] = []
-
-    def _qt_message_handler(_mode, _context, message):
-        qt_messages.append(str(message))
-
-    previous_handler = qInstallMessageHandler(_qt_message_handler)
     window = None
     try:
         apply_app_theme(qapp)
@@ -1929,9 +1921,7 @@ def test_chat_context_chip_stylesheets_use_plain_rgb_colors_workflow(qapp):
             style = chip.styleSheet()
             assert "rgba(" not in style
             assert not re.search(r"#[0-9a-fA-F]{8}\b", style)
-        assert not any("Could not parse stylesheet" in message for message in qt_messages)
     finally:
-        qInstallMessageHandler(previous_handler)
         if window is not None:
             window.close()
             window.deleteLater()

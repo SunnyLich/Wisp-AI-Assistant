@@ -172,6 +172,7 @@ class _DirectHotkeys:
                 on_add_context=lambda: emit_hotkey("add_context"),
                 on_clear_context=lambda: emit_hotkey("clear_context"),
                 on_snip=lambda: emit_hotkey("snip"),
+                on_read_selection_aloud=lambda: emit_hotkey("read_selection_aloud"),
                 on_voice_start=lambda: emit_hotkey("voice_start"),
                 on_voice_stop=lambda: emit_hotkey("voice_stop"),
                 on_dictate_start=lambda: emit_hotkey("dictate_start"),

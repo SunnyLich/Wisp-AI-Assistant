@@ -128,6 +128,12 @@ def test_setup_health_voice_sources_have_catalog_translations() -> None:
         "Voice transcript",
         "Dictation transcript",
         "Choose or edit the transcript:",
+        "Read selection aloud",
+        "Reading",
+        "No selected text to read aloud.",
+        "TTS is off. Choose a voice provider in Settings first.",
+        "Could not read selected text",
+        "Could not read selected text aloud.",
         "No status details available.",
         "Privacy Report",
         "Privacy redaction report",
@@ -205,6 +211,13 @@ def test_setup_health_voice_sources_have_catalog_translations() -> None:
         "installing packages",
         "finalizing",
         "working - see terminal for full pip log",
+        "Chunking controls for read-aloud TTS and long speech-to-text recordings.",
+        "Read-aloud min words",
+        "Read-aloud max words",
+        "STT first chunk trigger (s)",
+        "STT chunk cadence (s)",
+        "STT live-edge delay (s)",
+        "STT overlap (s)",
     }
     for language in LANGUAGES:
         catalog = _translations(language)

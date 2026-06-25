@@ -787,6 +787,7 @@ class SettingsDialog(QDialog):
         if key.startswith("CALLER_") or key.startswith("VOICE_") or key in {
             "HOTKEY_VOICE", "HOTKEY_DICTATE", "DICTATE_MODE",
             "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP",
+            "HOTKEY_READ_SELECTION_ALOUD",
             "INTENT_CONTEXT_TOGGLE_KEYS", "INTENT_OVERLAY_TIMEOUT_MS",
             "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
         }:
@@ -2374,6 +2375,24 @@ class SettingsDialog(QDialog):
             self._tts_volume_value_lbl.setText(f"{int(value)}%")
 
         self._fields["TTS_VOLUME"].valueChanged.connect(_update_volume_label)
+        self._fields["TTS_READ_ALOUD_MIN_WORDS"] = QLineEdit()
+        self._fields["TTS_READ_ALOUD_MIN_WORDS"].setPlaceholderText("50")
+        tts_chunk_min_tip = "Minimum words before read-aloud TTS may split at punctuation."
+        self._fields["TTS_READ_ALOUD_MAX_WORDS"] = QLineEdit()
+        self._fields["TTS_READ_ALOUD_MAX_WORDS"].setPlaceholderText("110")
+        tts_chunk_max_tip = "Maximum words per read-aloud TTS chunk before Wisp splits anyway."
+        self._fields["STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS"] = QLineEdit()
+        self._fields["STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS"].setPlaceholderText("15.0")
+        stt_first_chunk_tip = "Recording length before background transcription starts."
+        self._fields["STT_BACKGROUND_CHUNK_STEP_SECONDS"] = QLineEdit()
+        self._fields["STT_BACKGROUND_CHUNK_STEP_SECONDS"].setPlaceholderText("10.0")
+        stt_chunk_step_tip = "Seconds between background STT chunks after the first one."
+        self._fields["STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS"] = QLineEdit()
+        self._fields["STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS"].setPlaceholderText("4.5")
+        stt_live_delay_tip = "How far background STT stays behind the live microphone edge."
+        self._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"] = QLineEdit()
+        self._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"].setPlaceholderText("1.0")
+        stt_overlap_tip = "Audio overlap between STT chunks, used to avoid losing boundary words."
 
         # Cartesia group
         cartesia_w = QWidget()
@@ -2491,6 +2510,43 @@ class SettingsDialog(QDialog):
         playback_f.addRow(_tooltip_label("Volume", tts_volume_tip), volume_row)
         playback_cv.addWidget(playback_w)
         outer.addWidget(playback_card)
+
+        advanced_group, advanced_layout = self._collapsible_group("Advanced settings")
+        advanced_note = QLabel(
+            f"<small>{t('Chunking controls for read-aloud TTS and long speech-to-text recordings.')}</small>"
+        )
+        advanced_note.setWordWrap(True)
+        advanced_form_w = QWidget()
+        advanced_form = _expanding_form_layout(advanced_form_w)
+        advanced_form.setContentsMargins(0, 0, 0, 0)
+        advanced_form.setSpacing(8)
+        advanced_form.addRow(advanced_note)
+        advanced_form.addRow(
+            _tooltip_label("Read-aloud min words", tts_chunk_min_tip),
+            self._fields["TTS_READ_ALOUD_MIN_WORDS"],
+        )
+        advanced_form.addRow(
+            _tooltip_label("Read-aloud max words", tts_chunk_max_tip),
+            self._fields["TTS_READ_ALOUD_MAX_WORDS"],
+        )
+        advanced_form.addRow(
+            _tooltip_label("STT first chunk trigger (s)", stt_first_chunk_tip),
+            self._fields["STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS"],
+        )
+        advanced_form.addRow(
+            _tooltip_label("STT chunk cadence (s)", stt_chunk_step_tip),
+            self._fields["STT_BACKGROUND_CHUNK_STEP_SECONDS"],
+        )
+        advanced_form.addRow(
+            _tooltip_label("STT live-edge delay (s)", stt_live_delay_tip),
+            self._fields["STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS"],
+        )
+        advanced_form.addRow(
+            _tooltip_label("STT overlap (s)", stt_overlap_tip),
+            self._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"],
+        )
+        advanced_layout.addWidget(advanced_form_w)
+        outer.addWidget(advanced_group)
 
         # ── TEST card ─────────────────────────────────────────────────────
         test_card, test_cv = self._card("Test")
@@ -2814,6 +2870,7 @@ class SettingsDialog(QDialog):
         self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
         self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
         self._fields["HOTKEY_SNIP"]          = self._kb_special_row("Snip screen region")
+        self._fields["HOTKEY_READ_SELECTION_ALOUD"] = self._kb_special_row("Read selection aloud")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("12345678")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].hide()
@@ -4509,6 +4566,14 @@ class SettingsDialog(QDialog):
         _set(self._fields["KOKORO_SPEED"], self._env.get("KOKORO_SPEED", str(cfg.KOKORO_SPEED)))
         _set(self._fields["KOKORO_SAMPLE_RATE"], self._env.get("KOKORO_SAMPLE_RATE", str(cfg.KOKORO_SAMPLE_RATE)))
         _set(self._fields["TTS_VOLUME"], self._env.get("TTS_VOLUME", str(getattr(cfg, "TTS_VOLUME", 1.0))))
+        _set(
+            self._fields["TTS_READ_ALOUD_MIN_WORDS"],
+            self._env.get("TTS_READ_ALOUD_MIN_WORDS", str(getattr(cfg, "TTS_READ_ALOUD_MIN_WORDS", 50))),
+        )
+        _set(
+            self._fields["TTS_READ_ALOUD_MAX_WORDS"],
+            self._env.get("TTS_READ_ALOUD_MAX_WORDS", str(getattr(cfg, "TTS_READ_ALOUD_MAX_WORDS", 110))),
+        )
         self._update_tts_provider_fields()
         _set(self._fields["STT_MODEL"], self._env.get("STT_MODEL", cfg.STT_MODEL))
         self._rebuild_stt_languages()  # drop yue if the loaded model isn't large-v3
@@ -4516,9 +4581,44 @@ class SettingsDialog(QDialog):
         _set(self._fields["STT_LANGUAGE"], self._env.get("STT_LANGUAGE", cfg.STT_LANGUAGE))
         _set(self._fields["STT_BEAM_SIZE"], self._env.get("STT_BEAM_SIZE", str(cfg.STT_BEAM_SIZE)))
         _set(self._fields["STT_DEVICE"], self._env.get("STT_DEVICE", cfg.STT_DEVICE))
+        _set(
+            self._fields["STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS"],
+            self._env.get(
+                "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS",
+                str(getattr(cfg, "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS", 15.0)),
+            ),
+        )
+        _set(
+            self._fields["STT_BACKGROUND_CHUNK_STEP_SECONDS"],
+            self._env.get(
+                "STT_BACKGROUND_CHUNK_STEP_SECONDS",
+                str(getattr(cfg, "STT_BACKGROUND_CHUNK_STEP_SECONDS", 10.0)),
+            ),
+        )
+        _set(
+            self._fields["STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS"],
+            self._env.get(
+                "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
+                str(getattr(cfg, "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS", 4.5)),
+            ),
+        )
+        _set(
+            self._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"],
+            self._env.get(
+                "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+                str(getattr(cfg, "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS", 1.0)),
+            ),
+        )
         _set(self._fields["HOTKEY_ADD_CONTEXT"],   self._env.get("HOTKEY_ADD_CONTEXT",   cfg.HOTKEY_ADD_CONTEXT))
         _set(self._fields["HOTKEY_CLEAR_CONTEXT"], self._env.get("HOTKEY_CLEAR_CONTEXT", cfg.HOTKEY_CLEAR_CONTEXT))
         _set(self._fields["HOTKEY_SNIP"],          self._env.get("HOTKEY_SNIP",          cfg.HOTKEY_SNIP))
+        _set(
+            self._fields["HOTKEY_READ_SELECTION_ALOUD"],
+            self._env.get(
+                "HOTKEY_READ_SELECTION_ALOUD",
+                getattr(cfg, "HOTKEY_READ_SELECTION_ALOUD", ""),
+            ),
+        )
         _set(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"], self._env.get(
             "INTENT_CONTEXT_TOGGLE_KEYS",
             getattr(cfg, "INTENT_CONTEXT_TOGGLE_KEYS", "12345678"),
@@ -5433,15 +5533,17 @@ class SettingsDialog(QDialog):
                 "GPT_SOVITS_URL", "GPT_SOVITS_REF_AUDIO_PATH", "GPT_SOVITS_PROMPT_TEXT",
                 "GPT_SOVITS_PROMPT_LANG", "GPT_SOVITS_TEXT_LANG", "GPT_SOVITS_SAMPLE_RATE",
                 "KOKORO_VOICE", "KOKORO_LANG_CODE", "KOKORO_SPEED", "KOKORO_SAMPLE_RATE",
-                "TTS_VOLUME",
+                "TTS_VOLUME", "TTS_READ_ALOUD_MIN_WORDS", "TTS_READ_ALOUD_MAX_WORDS",
                 "STT_MODEL", "STT_COMPUTE_TYPE", "STT_LANGUAGE", "STT_BEAM_SIZE", "STT_DEVICE",
+                "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS", "STT_BACKGROUND_CHUNK_STEP_SECONDS",
+                "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS", "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
             },
             "Prompts": {
                 "SYSTEM_PROMPT_UTILITY",
             },
             "Keybinds": {
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
-                "HOTKEY_DICTATE", "DICTATE_MODE", "INTENT_CONTEXT_TOGGLE_KEYS",
+                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "INTENT_CONTEXT_TOGGLE_KEYS",
                 "INTENT_OVERLAY_TIMEOUT_MS",
                 "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
                 "CALLER_COUNT",
@@ -5800,14 +5902,29 @@ class SettingsDialog(QDialog):
             "KOKORO_SPEED": _get(self._fields["KOKORO_SPEED"]),
             "KOKORO_SAMPLE_RATE": _get(self._fields["KOKORO_SAMPLE_RATE"]),
             "TTS_VOLUME": _get(self._fields["TTS_VOLUME"]),
+            "TTS_READ_ALOUD_MIN_WORDS": _get(self._fields["TTS_READ_ALOUD_MIN_WORDS"]),
+            "TTS_READ_ALOUD_MAX_WORDS": _get(self._fields["TTS_READ_ALOUD_MAX_WORDS"]),
             "STT_MODEL":         _get(self._fields["STT_MODEL"]),
             "STT_COMPUTE_TYPE":  _get(self._fields["STT_COMPUTE_TYPE"]),
             "STT_LANGUAGE":      _get(self._fields["STT_LANGUAGE"]),
             "STT_BEAM_SIZE":     _get(self._fields["STT_BEAM_SIZE"]),
             "STT_DEVICE":        _get(self._fields["STT_DEVICE"]),
+            "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS": _get(
+                self._fields["STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS"]
+            ),
+            "STT_BACKGROUND_CHUNK_STEP_SECONDS": _get(
+                self._fields["STT_BACKGROUND_CHUNK_STEP_SECONDS"]
+            ),
+            "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS": _get(
+                self._fields["STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS"]
+            ),
+            "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS": _get(
+                self._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"]
+            ),
             "HOTKEY_ADD_CONTEXT":  _get(self._fields["HOTKEY_ADD_CONTEXT"]),
             "HOTKEY_CLEAR_CONTEXT": _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
             "HOTKEY_SNIP":         _get(self._fields["HOTKEY_SNIP"]),
+            "HOTKEY_READ_SELECTION_ALOUD": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD"]),
             "INTENT_CONTEXT_TOGGLE_KEYS": _get(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"]),
             "INTENT_OVERLAY_TIMEOUT_MS": _get(self._fields["INTENT_OVERLAY_TIMEOUT_MS"]),
             "SNIP_CONTEXT_AMBIENT": str(self._fields["SNIP_CONTEXT_AMBIENT"].isChecked()),  # type: ignore
@@ -5873,7 +5990,17 @@ class SettingsDialog(QDialog):
         # Key conflict check (caller hotkeys + special hotkeys)
         all_keys = (
             [_get(blk["hotkey"]).strip().lower() for blk in self._caller_blocks]
-            + [_get(self._fields[k]).strip().lower() for k in ("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE", "HOTKEY_DICTATE")]
+            + [
+                _get(self._fields[k]).strip().lower()
+                for k in (
+                    "HOTKEY_ADD_CONTEXT",
+                    "HOTKEY_CLEAR_CONTEXT",
+                    "HOTKEY_SNIP",
+                    "HOTKEY_READ_SELECTION_ALOUD",
+                    "HOTKEY_VOICE",
+                    "HOTKEY_DICTATE",
+                )
+            ]
         )
         non_empty = [k for k in all_keys if k]
         if len(non_empty) != len(set(non_empty)):

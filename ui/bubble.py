@@ -644,6 +644,13 @@ class SpeechBubble(QWidget):
         self._show_static_text(f"{t('Heard')}: {text}", timeout_ms=0)
         self._transcript_preview = True
 
+    def show_reading(self, text: str):
+        """Show selected text being read aloud, with the normal stop affordance."""
+        text = (text or "").strip()
+        if not text:
+            return
+        self._show_static_text(f"{t('Reading')}: {text}", timeout_ms=0)
+
     def _show_static_text(
         self,
         text: str,

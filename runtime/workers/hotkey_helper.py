@@ -224,6 +224,7 @@ def _hotkey_specs_from_config(config: Any) -> list[tuple[str, str, dict]]:
         ("HOTKEY_ADD_CONTEXT", "add_context"),
         ("HOTKEY_CLEAR_CONTEXT", "clear_context"),
         ("HOTKEY_SNIP", "snip"),
+        ("HOTKEY_READ_SELECTION_ALOUD", "read_selection_aloud"),
     ):
         combo = getattr(config, attr, "")
         if combo:
@@ -569,6 +570,7 @@ def main() -> int:
             on_add_context=lambda: emit_hotkey("add_context"),
             on_clear_context=lambda: emit_hotkey("clear_context"),
             on_snip=lambda: emit_hotkey("snip"),
+            on_read_selection_aloud=lambda: emit_hotkey("read_selection_aloud"),
             on_voice_start=lambda: emit_hotkey("voice_start"),
             on_voice_stop=lambda: emit_hotkey("voice_stop"),
         )

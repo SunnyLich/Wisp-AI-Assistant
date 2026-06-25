@@ -81,12 +81,14 @@ def test_specs_from_config():
         HOTKEY_ADD_CONTEXT="ctrl+a",
         HOTKEY_CLEAR_CONTEXT="",
         HOTKEY_SNIP="cmd+shift+s",
+        HOTKEY_READ_SELECTION_ALOUD="ctrl+alt+r",
     )
     specs = hotkey_helper._hotkey_specs_from_config(config)
     assert ("ctrl+q", "caller", {"index": 0}) in specs
     assert ("cmd+shift+1", "caller", {"index": 2}) in specs
     assert ("ctrl+a", "add_context", {}) in specs
     assert ("cmd+shift+s", "snip", {}) in specs
+    assert ("ctrl+alt+r", "read_selection_aloud", {}) in specs
     # Empty caller hotkey and empty HOTKEY_CLEAR_CONTEXT are skipped.
     assert all(combo for combo, _, _ in specs)
     assert all(kind != "clear_context" for _, kind, _ in specs)

@@ -323,6 +323,7 @@ class IntentOverlay(QWidget):
 
         self._hovered: int | None = None
         self._handled = False
+        self._selection_pending_idx: int | None = None
         self._custom_mode = False
         self._was_activated = False   # macOS: dismiss on focus-out once activated
         self._kb_hook = None
@@ -1216,7 +1217,7 @@ class IntentOverlay(QWidget):
 
     def _select(self, idx: int, *, drop_trigger_key: bool = True):
         """Handle select for intent overlay."""
-        if self._handled:
+        if self._handled or self._selection_pending_idx is not None:
             return
         if self._rows[idx]["is_custom"]:
             self._hovered = idx
@@ -1227,7 +1228,7 @@ class IntentOverlay(QWidget):
                 lambda: self._enter_custom_mode(drop_trigger_key=drop_trigger_key),
             )
             return
-        self._handled = True
+        self._selection_pending_idx = idx
         self._hovered = idx
         self.update()
         QTimer.singleShot(80, lambda: self._fire(idx))
@@ -1552,11 +1553,37 @@ class IntentOverlay(QWidget):
 
     def closeEvent(self, event):
         """Close event."""
-        self._unhook()
+        self._cancel_if_unhandled()
         super().closeEvent(event)
+
+    def hideEvent(self, event):
+        """Treat unexpected hides as cancellation so the icon returns idle."""
+        self._cancel_if_unhandled()
+        super().hideEvent(event)
+
+    def close_without_cancel(self) -> None:
+        """Close an internally superseded picker without emitting cancelled."""
+        self._handled = True
+        self.close()
+
+    def _cancel_if_unhandled(self) -> bool:
+        """Emit cancellation for lifecycle closes that bypass _cancel()."""
+        if self._handled:
+            self._unhook()
+            return False
+        self._selection_pending_idx = None
+        self._handled = True
+        self._unhook()
+        self._timer.stop()
+        self.cancelled.emit()
+        return True
 
     def _fire(self, idx: int):
         """Handle fire for intent overlay."""
+        if self._handled or self._selection_pending_idx != idx:
+            return
+        self._selection_pending_idx = None
+        self._handled = True
         self._unhook()
         self._timer.stop()
         row = self._rows[idx]
@@ -1567,8 +1594,5 @@ class IntentOverlay(QWidget):
         """Cancel the intent overlay workflow."""
         if self._handled:
             return
-        self._handled = True
-        self._unhook()
-        self._timer.stop()
-        self.cancelled.emit()
+        self._cancel_if_unhandled()
         self.close()

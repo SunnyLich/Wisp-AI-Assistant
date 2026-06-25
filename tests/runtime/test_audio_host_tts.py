@@ -57,6 +57,58 @@ def test_tts_synthesize_uses_provider_pcm_format_for_kokoro(monkeypatch):
         assert wf.readframes(wf.getnframes()) == samples.tobytes()
 
 
+def test_audio_prewarm_reports_local_warmup_events(monkeypatch):
+    """Startup warmup should tell the supervisor when local audio is ready."""
+    import config
+    from core import tts
+    from core.macos_helper import handlers as stt_handlers
+
+    events: list[tuple[str, dict]] = []
+    stt_calls: list[bool] = []
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: stt_calls.append(wait))
+    monkeypatch.setattr(tts, "prewarm", lambda: None)
+    audio_host.set_event_sink(lambda name, data, _req_id: events.append((name, data)))
+
+    result = audio_host.audio_prewarm()
+
+    assert result == {"stt": "ok", "tts": "ok"}
+    assert stt_calls == [True]
+    assert events[0] == (
+        "audio.warmup.started",
+        {"items": ["stt", "tts"], "provider": "kokoro", "reason": "startup"},
+    )
+    assert events[-1][0] == "audio.warmup.done"
+    assert events[-1][1]["ok"] is True
+
+
+def test_tts_synthesize_raises_while_local_voice_is_warming(monkeypatch):
+    """A user TTS request should not sit behind a stuck local warmup forever."""
+    import config
+
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    audio_host._set_local_tts_warmup(warming=True, ready=False)
+    try:
+        with pytest.raises(RuntimeError, match="still warming up"):
+            audio_host.tts_synthesize("hello")
+    finally:
+        audio_host._set_local_tts_warmup(warming=False, ready=False)
+
+
+def test_tts_synthesize_raises_when_provider_returns_no_audio(monkeypatch):
+    """Provider failures should not be converted into silent success WAVs."""
+    import config
+    from core import tts
+
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    audio_host._set_local_tts_warmup(warming=False, ready=True)
+    monkeypatch.setattr(tts, "stream_audio_from_chunks", lambda *_args, **_kwargs: iter([]))
+    monkeypatch.setattr(tts, "reset_connections", lambda: None)
+
+    with pytest.raises(RuntimeError, match="returned no audio"):
+        audio_host.tts_synthesize("hello")
+
+
 def test_play_file_applies_tts_volume(monkeypatch):
     """The Settings volume slider applies to file-based worker playback too."""
     import config

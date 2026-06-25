@@ -2000,6 +2000,8 @@ class QtProtocolHost:
             return self._reply_notice(**params)
         if method == "ui.reply.transcript":
             return self._reply_transcript(**params)
+        if method == "ui.reply.reading":
+            return self._reply_reading(**params)
         if method == "ui.voice.candidates":
             return self._voice_candidates(**params)
         if method == "ui.health.show":
@@ -2185,7 +2187,7 @@ class QtProtocolHost:
         from ui.intent_overlay import IntentOverlay
 
         if self._intent is not None:
-            self._intent.close()
+            self._intent.close_without_cancel()
             self._intent = None
         self._intent = IntentOverlay(
             caller_idx=caller_idx,
@@ -2340,6 +2342,11 @@ class QtProtocolHost:
     def _reply_transcript(self, text: str = "") -> dict[str, Any]:
         """Handle reply transcript for qt protocol host."""
         self._ensure_bubble().show_transcript(text)
+        return {"shown": bool((text or "").strip()), "text": text}
+
+    def _reply_reading(self, text: str = "") -> dict[str, Any]:
+        """Show selected text that is being read aloud."""
+        self._ensure_bubble().show_reading(text)
         return {"shown": bool((text or "").strip()), "text": text}
 
     def _voice_candidates(

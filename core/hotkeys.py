@@ -271,6 +271,7 @@ class HotkeyListener:
         on_add_context: Callable[[], None] | None = None,
         on_clear_context: Callable[[], None] | None = None,
         on_snip: Callable[[], None] | None = None,
+        on_read_selection_aloud: Callable[[], None] | None = None,
         on_voice_start: Callable[[], None] | None = None,
         on_voice_stop: Callable[[], None] | None = None,
         on_dictate_start: Callable[[], None] | None = None,
@@ -290,6 +291,9 @@ class HotkeyListener:
             self._hotkey_defs.append((config.HOTKEY_CLEAR_CONTEXT, on_clear_context))
         if on_snip:
             self._hotkey_defs.append((config.HOTKEY_SNIP, on_snip))
+        read_selection_hotkey = getattr(config, "HOTKEY_READ_SELECTION_ALOUD", "")
+        if on_read_selection_aloud and read_selection_hotkey:
+            self._hotkey_defs.append((read_selection_hotkey, on_read_selection_aloud))
         for hotkey, cb in extra_hotkeys or []:
             if hotkey and cb:
                 self._hotkey_defs.append((hotkey, cb))

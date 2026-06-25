@@ -5,33 +5,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BuildScriptTests(unittest.TestCase):
-    def test_windows_build_requires_exact_python_version_pin(self) -> None:
+    def test_windows_build_accepts_python_minor_or_patch_target(self) -> None:
         script = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
 
         self.assertIn('$ExpectedPython = ""', script)
         self.assertNotIn('$ExpectedPython = "3.12.13"', script)
-        self.assertIn(".python-version is required and must contain an exact Python version like 3.12.13", script)
-        self.assertIn("$ExpectedPython -notmatch '^\\d+\\.\\d+\\.\\d+$'", script)
-        self.assertIn(".python-version must contain an exact Python version like 3.12.13", script)
+        self.assertIn(".python-version is required and must contain a Python version like 3.12 or 3.12.13", script)
+        self.assertIn("$ExpectedPython -notmatch '^\\d+\\.\\d+(\\.\\d+)?$'", script)
+        self.assertIn(".python-version must contain a Python version like 3.12 or 3.12.13", script)
         self.assertIn("function Get-PythonVersion", script)
         self.assertIn("sys.version_info[2]", script)
         self.assertIn("$ActualVersion -ne $ExpectedPython", script)
-        self.assertNotIn("function Get-PythonMinor", script)
-        self.assertNotIn("Assert-PythonMinor", script)
+        self.assertIn('StartsWith("$ExpectedPython.")', script)
 
-    def test_posix_build_requires_exact_python_version_pin(self) -> None:
+    def test_posix_build_accepts_python_minor_or_patch_target(self) -> None:
         script = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
 
         self.assertIn('if [ ! -s "$ROOT/.python-version" ]; then', script)
         self.assertIn('WANT="$(tr -d', script)
         self.assertNotIn('printf "3.12.13"', script)
-        self.assertIn(".python-version is required and must contain an exact Python version like 3.12.13", script)
-        self.assertIn('[[ ! "$WANT" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]', script)
-        self.assertIn(".python-version must contain an exact Python version like 3.12.13", script)
+        self.assertIn(".python-version is required and must contain a Python version like 3.12 or 3.12.13", script)
+        self.assertIn('[[ ! "$WANT" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]', script)
+        self.assertIn(".python-version must contain a Python version like 3.12 or 3.12.13", script)
         self.assertIn("python_version()", script)
+        self.assertIn("python_matches_want()", script)
         self.assertIn("sys.version_info[2]", script)
         self.assertIn('HAVE_VERSION="$(python_version "$PYTHON")"', script)
-        self.assertNotIn("py_minor", script)
+        self.assertIn('if ! python_matches_want "$PYTHON"; then', script)
 
     def test_macos_build_script_uses_macos_spec_and_lockfile(self) -> None:
         script = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
@@ -105,11 +105,11 @@ class BuildScriptTests(unittest.TestCase):
         self.assertLess(first_shell_packaging_check, shell.index('rm -rf "$ROOT/build" "$ROOT/dist"'))
         self.assertLess(first_shell_packaging_check, shell.index('"$PYTHON" -m pip install'))
 
-    def test_build_docs_describe_exact_patch_version_requirement(self) -> None:
+    def test_build_docs_describe_python_minor_version_requirement(self) -> None:
         docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
 
-        self.assertIn("exact patch version", docs)
-        self.assertNotIn("minor version", docs)
+        self.assertIn("Python `3.12`", docs)
+        self.assertNotIn("exact patch version", docs)
 
     def test_specs_bundle_version_metadata_for_updater(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
