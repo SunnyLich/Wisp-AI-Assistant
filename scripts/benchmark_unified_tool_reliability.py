@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.llm_clients.chat_flow_compare import (  # noqa: E402
+from core.llm_clients.chat_flow_harness import (  # noqa: E402
     ChatScenario,
     FakeToolExecutor,
     LiveResponsesUnifiedRunner,
@@ -24,9 +24,9 @@ from core.llm_clients.chat_flow_compare import (  # noqa: E402
     synthetic_live_scenarios,
 )
 from core.llm_clients.chat_tool_loop import WispToolResult  # noqa: E402
-from core.llm_clients.openai_evals_style import (  # noqa: E402
-    OpenAIStyleEvalItem,
-    OpenAIStyleExpectedTool,
+from core.llm_clients.harness_grading import (  # noqa: E402
+    ExpectedTool,
+    HarnessItem,
     default_items_by_scenario,
     grade_trace,
 )
@@ -236,15 +236,15 @@ def reliability_fixtures() -> dict[str, ScenarioFixtures]:
     return fixtures
 
 
-def reliability_items() -> dict[str, OpenAIStyleEvalItem]:
-    """Return OpenAI-style expected tool behavior for reliability scenarios."""
+def reliability_items() -> dict[str, HarnessItem]:
+    """Return expected tool behavior for reliability scenarios."""
     items = default_items_by_scenario()
-    items["synthetic_file_edit"] = OpenAIStyleEvalItem(
+    items["synthetic_file_edit"] = HarnessItem(
         id="synthetic_file_edit",
         prompt="Change the greeting in app.py from hi to hello.",
         expected_tools=[
-            OpenAIStyleExpectedTool("read_file", {"path": "app.py"}),
-            OpenAIStyleExpectedTool("edit_file", {"path": "app.py"}),
+            ExpectedTool("read_file", {"path": "app.py"}),
+            ExpectedTool("edit_file", {"path": "app.py"}),
         ],
         expected_output_contains=["app.py", "hello"],
     )

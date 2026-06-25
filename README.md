@@ -4,18 +4,20 @@
 
 # Wisp
 
-**A local-first desktop AI assistant that lives where you work.**
+**Tired of typing the same prompts and pasting the same context?**
 
-Press a hotkey, choose an intent, and Wisp captures the right context, streams the answer into a small overlay, and can read it aloud while you stay in the current app.
+Wisp gives you hotkey-driven AI that can read your selection, clipboard, app, browser, documents, or screen snip while you stay where you are. Press a hotkey, choose an intent, and stream the answer into a small overlay.
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-333333?style=flat-square)](#platform-status)
 [![Python](https://img.shields.io/badge/python-3.12.13-3572A5?style=flat-square)](#quick-start)
 [![Local first](https://img.shields.io/badge/local--first-context%20and%20memory-4B8F8C?style=flat-square)](#privacy-and-control)
 [![License](https://img.shields.io/badge/license-MIT-7C3AED?style=flat-square)](#license)
 
-[Quick start](#quick-start) | [What it does](#what-wisp-does) | [Demos](#demos) | [Configuration](#configuration) | [Privacy](#privacy-and-control)
+[Quick start](#quick-start) | [What it does](#what-wisp-does) | [Demos](#demos) | [Configuration](#configuration) | [Free APIs](#free-model-api-sources) | [Privacy](#privacy-and-control)
 
 ![Wisp Ctrl+Q demo](ReadMe%201st%20Demo.gif)
+
+**Overlay query:** Press a hotkey, choose an intent, and get a streamed answer without leaving the app you are already using.
 </div>
 
 ---
@@ -51,13 +53,17 @@ Highlight text, press `Ctrl+Q`, hit one intent key, and Wisp asks your configure
 
 ## Demos
 
-The snip flow is for cases where visual context matters. `Ctrl+Alt+Q` lets you draw a region, send just that crop to a vision model, and keep the answer in the overlay instead of switching apps.
-
 ![Wisp Ctrl+Alt+Q screen snip demo](ReadMe%202nd%20Demo.gif)
 
-The rewrite flow shows the other side of Wisp's context system: it can gather useful app context without a screenshot, ask the model to rewrite selected text, and paste the result back where you were working.
+**Vision snip:** The snip flow is for cases where visual context matters. `Ctrl+Alt+Q` lets you draw a region, send just that crop to a vision model, and keep the answer in the overlay instead of switching apps.
 
 ![Wisp context-aware rewrite demo](ReadMe%203rd%20Demo.gif)
+
+**Context-aware rewrite:** Wisp can gather useful app context without taking a screenshot, so the model knows what you are working on. Then `Ctrl+Shift+Q` rewrites only the selected text and pastes the replacement back where you were working.
+
+![Wisp multi-agent task demo](ReadMe%204th%20Demo.gif)
+
+**Sandboxed agent run:** The agent task flow is for longer workspace jobs. Wisp can split a task across coordinator, builder, and reviewer roles, inspect project files, make a focused change, run checks, and leave behind a final report and artifacts for the run.
 
 ## Workflow
 
@@ -143,6 +149,28 @@ Start Wisp Debug.sh
 Use the Settings window for normal setup. It can store provider keys, choose model routes, configure voice, run a setup check, explain missing optional features, and show warnings for unsupported model capabilities.
 
 For source builds and advanced setups, `.env.example` documents the available configuration keys. You usually do not need to edit those by hand.
+
+## Free Model API Sources
+
+Wisp is free, and you can keep your model costs at zero too. Several providers offer a genuinely free tier, free monthly credits, or no-cost rate-limited access. Wisp reaches most of them through its OpenAI-compatible client — a few have a dedicated `LLM_PROVIDER` value, and the rest work through the `custom` endpoint by pointing `CUSTOM_BASE_URL` at the provider's OpenAI-compatible URL. Add the key itself in **Settings → LLM**.
+
+| Provider | What's free | Good for |
+| --- | --- | --- |
+| OpenRouter | `:free` models — ~20 req/min and 50/day with no credits, 1,000/day after a one-time $10 top-up; plus an `openrouter/free` router | Easiest "one API, many models" option |
+| Google AI Studio | Gemini API free tier in supported regions, with rate limits | Multimodal and long-context work, including vision |
+| Mistral | Free experimental tier on La Plateforme, rate-limited | European, GDPR-friendly models and function calling |
+| NVIDIA | Free API access to many open models via the NVIDIA API Catalog | Trying many open-weight models on fast hosted endpoints |
+| GroqCloud | Free tier with rate limits | Very fast inference for open models like Llama and Qwen |
+| Cerebras Inference | Free API tier for Cerebras-hosted models | Extremely fast text inference and prototyping |
+| GitHub Models | Rate-limited no-cost access for every GitHub account | Prototyping, experiments, GitHub-integrated workflows |
+| Hugging Face Inference Providers | Free monthly credits (currently ~$0.10/month for free users) | Trying lots of open models through one ecosystem |
+| Cloudflare Workers AI | Workers free plan with a free daily allocation | Apps already on Cloudflare; serverless AI endpoints |
+| Vercel AI Gateway | Free tier with $5/month of gateway credit for eligible models | Next.js/Vercel projects; unified OpenAI-compatible access |
+| SambaNova Cloud | $5 of free API credit, no credit card required | Fast hosted open-model inference |
+| Puter.js | Front-end JS access to many models with no API key of your own | Browser apps and demos; not a Wisp backend provider |
+| Local — Ollama / LM Studio / vLLM | Free whenever you run the model yourself | Privacy, no token billing, OpenAI-compatible local endpoints |
+
+Free tiers are rate-limited and change often, so add at least one fallback route, and avoid sending sensitive context to providers that may train on your prompts (Wisp's redaction still applies). For the full how-to-connect guide and caveats, see the **Free API sources** page in the [Wisp documentation site](Wisp%20Website/Wisp%20Docs.html).
 
 ## Default Hotkeys
 

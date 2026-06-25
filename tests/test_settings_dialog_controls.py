@@ -830,7 +830,6 @@ def test_llm_tab_hides_advanced_chat_harness_controls_until_expanded():
         app.processEvents()
 
         for key in (
-            "WISP_UNIFIED_CHAT_TOOL_LOOP",
             "CHAT_TOOL_TRACE_UI",
             "WISP_PLANNED_CHUNKING",
             "WISP_PLANNED_CHUNKING_CHUNKS",
@@ -1097,7 +1096,6 @@ def test_reset_page_key_mapping_is_scoped():
         "STT_MODEL": "small",
         "APP_LANGUAGE": "zh",
         "ASSISTANT_LANGUAGE": "Chinese",
-        "WISP_UNIFIED_CHAT_TOOL_LOOP": "True",
         "CHAT_TOOL_TRACE_UI": "True",
         "WISP_PLANNED_CHUNKING": "True",
         "WISP_PLANNED_CHUNKING_CHUNKS": "3",
@@ -1109,7 +1107,6 @@ def test_reset_page_key_mapping_is_scoped():
 
     assert SettingsDialog._reset_env_keys_for_page("LLM", env) >= {
         "LLM_PROVIDER",
-        "WISP_UNIFIED_CHAT_TOOL_LOOP",
         "CHAT_TOOL_TRACE_UI",
         "WISP_PLANNED_CHUNKING",
         "WISP_PLANNED_CHUNKING_CHUNKS",
@@ -1232,6 +1229,65 @@ def test_custom_provider_is_model_route_option_without_api_key_table_row():
 
         api_key_row = dialog._add_api_key_row()
         assert api_key_row["provider"].findText("custom") == -1
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_copilot_is_api_key_provider_option(monkeypatch):
+    """Verify Copilot can be entered through the API key provider list."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from core.auth import copilot_auth
+    from ui.settings_panel.dialog import SettingsDialog
+
+    monkeypatch.setattr(copilot_auth, "token_status", lambda: (False, "Not configured"))
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        api_key_row = dialog._add_api_key_row("copilot")
+
+        assert api_key_row["provider"].findData("copilot") >= 0
+        assert api_key_row["provider"].currentData() == "copilot"
+        assert "github_pat_" in api_key_row["key"].placeholderText()
+        assert dialog._copilot_status_lbl is not None
+        assert "API Keys" in dialog._warning_headers
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_copilot_api_key_row_saves_through_copilot_auth(monkeypatch):
+    """Verify Copilot API key rows use the Copilot keychain helper."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from core import secret_store
+    from core.auth import copilot_auth
+    from ui.settings_panel.dialog import SettingsDialog
+
+    saved_tokens = []
+    monkeypatch.setattr(copilot_auth, "token_status", lambda: (False, "Not configured"))
+    monkeypatch.setattr(copilot_auth, "save_token", lambda token: saved_tokens.append(token))
+    monkeypatch.setattr(secret_store, "migrate_env_secrets", lambda _env: None)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        api_key_row = dialog._add_api_key_row("copilot")
+        api_key_row["key"].setText("github_pat_test")
+
+        assert dialog._save_api_keys_to_keychain() is True
+
+        assert saved_tokens == ["github_pat_test"]
+        assert api_key_row["key"].text() == ""
+        assert api_key_row["key"].placeholderText() == "stored in keychain"
     finally:
         dialog.deleteLater()
         app.processEvents()

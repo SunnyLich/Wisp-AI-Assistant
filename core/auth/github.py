@@ -142,15 +142,47 @@ def _post_form(url: str, params: dict) -> dict:
 
     resp = requests.post(
         url,
-        data=params,
+        data={k: v for k, v in params.items() if v not in (None, "")},
         headers={
             "Accept": "application/json",
             "User-Agent": "python-ai-overlay",
         },
         timeout=30,
     )
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+    if resp.status_code >= 400:
+        if isinstance(data, dict) and data.get("error"):
+            return data
+        resp.raise_for_status()
+    if isinstance(data, dict):
+        return data
     resp.raise_for_status()
-    return resp.json()
+    return {}
+
+
+def _oauth_error_message(data: dict) -> str:
+    """Return a readable GitHub OAuth error message."""
+    error = str(data.get("error") or "GitHub OAuth error")
+    description = str(data.get("error_description") or "").strip()
+    if error == "incorrect_client_credentials":
+        hint = (
+            "GitHub rejected the OAuth client ID. Check GITHUB_CLIENT_ID, or "
+            "verify that the bundled OAuth app still exists."
+        )
+    elif error == "device_flow_disabled":
+        hint = (
+            "Device flow is disabled for this OAuth app. Enable device flow in "
+            "the app's GitHub settings or use a client ID with device flow enabled."
+        )
+    else:
+        hint = ""
+    parts = [description or error]
+    if hint and hint not in parts[0]:
+        parts.append(hint)
+    return " ".join(parts)
 
 
 def _get_json(url: str, token: str) -> dict:
@@ -223,7 +255,7 @@ def start_device_login(
             return
 
         if "error" in device:
-            on_error(device.get("error_description") or device["error"])
+            on_error(_oauth_error_message(device))
             return
 
         verification_uri = device["verification_uri"]
@@ -263,7 +295,7 @@ def start_device_login(
             if error == "slow_down":
                 interval = int(data.get("interval", interval + 5))
                 continue
-            on_error(data.get("error_description") or error)
+            on_error(_oauth_error_message(data))
             return
 
         on_error("GitHub device code expired. Start sign-in again.")

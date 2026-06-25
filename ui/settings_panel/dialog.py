@@ -369,13 +369,25 @@ class SettingsDialog(QDialog):
         # LLM provider keys from the API key table
         for row in self._api_key_rows:
             provider = _get(row["provider"]).strip()
-            key_name = _PROVIDER_KEY_NAMES.get(provider)
-            if not key_name:
-                continue
             value = row["key"].text().strip()
             if not value:
                 continue
             label = _PROVIDER_LABELS.get(provider, provider)
+            if provider == "copilot":
+                try:
+                    from core.auth import copilot_auth
+                    copilot_auth.save_token(value)
+                    _settings_log.info("Saved GitHub Copilot token to OS keychain")
+                    row["key"].clear()
+                    row["key"].setPlaceholderText(t("stored in keychain"))
+                    continue
+                except Exception as exc:  # noqa: BLE001 - reported with other keychain failures
+                    _settings_log.error("Could not save GitHub Copilot token to OS keychain: %s", exc)
+                    failures.append(f"{label}: {exc}")
+                    continue
+            key_name = _PROVIDER_KEY_NAMES.get(provider)
+            if not key_name:
+                continue
             if _store(key_name, value, label):
                 row["key"].clear()
                 row["key"].setPlaceholderText(t("stored in keychain"))
@@ -1226,34 +1238,6 @@ class SettingsDialog(QDialog):
         gh_btns = github_row.findChildren(QPushButton)
         self._github_login_btn, self._github_logout_btn = gh_btns[0], gh_btns[1]
         auth_cv.addWidget(github_row)
-        auth_cv.addWidget(_sep(visible=True))
-
-        copilot_hdr = QLabel("GitHub Copilot")
-        copilot_hdr.setStyleSheet("font-weight: 600;")
-        auth_cv.addWidget(copilot_hdr)
-        auth_cv.addWidget(_desc_label("", "Fine-grained PAT with Copilot Requests: Read-only. Stored in OS keychain."))
-        self._copilot_token_edit = self._password()
-        self._copilot_token_edit.setPlaceholderText("github_pat_… (not saved to .env)")
-        copilot_f_w = QWidget()
-        copilot_f = _expanding_form_layout(copilot_f_w)
-        copilot_f.setContentsMargins(0, 0, 0, 0)
-        copilot_f.setSpacing(8)
-        copilot_f.addRow("Token", self._copilot_token_edit)
-        auth_cv.addWidget(copilot_f_w)
-        self._copilot_status_lbl = QLabel()
-        self._copilot_status_lbl.setWordWrap(True)
-        self._set_status_label(self._copilot_status_lbl, None, "Checking status...")
-        auth_cv.addWidget(self._copilot_status_lbl)
-        copilot_row = self._button_row(
-            ("Save token",       self._copilot_save_token),
-            ("Test token / SDK", self._copilot_test_token),
-            ("Clear token",      self._copilot_clear_token),
-        )
-        cp_btns = copilot_row.findChildren(QPushButton)
-        self._copilot_save_btn, self._copilot_test_btn, self._copilot_clear_btn = (
-            cp_btns[0], cp_btns[1], cp_btns[2]
-        )
-        auth_cv.addWidget(copilot_row)
         credentials_layout.addWidget(auth_card)
 
         # ── API KEYS card ─────────────────────────────────────────────────
@@ -1287,6 +1271,26 @@ class SettingsDialog(QDialog):
         akw.addStretch()
         api_keys_cv.addLayout(akw)
         add_key_btn.clicked.connect(lambda: self._add_api_key_row())
+
+        api_keys_cv.addWidget(_sep(visible=True))
+        copilot_hdr = QLabel("GitHub Copilot")
+        copilot_hdr.setStyleSheet("font-weight: 600;")
+        api_keys_cv.addWidget(copilot_hdr)
+        api_keys_cv.addWidget(_desc_label(
+            "",
+            "Choose GitHub Copilot in the provider list above, then paste a fine-grained PAT with Copilot Requests: Read-only.",
+        ))
+        self._copilot_status_lbl = QLabel()
+        self._copilot_status_lbl.setWordWrap(True)
+        self._set_status_label(self._copilot_status_lbl, None, "Checking status...")
+        api_keys_cv.addWidget(self._copilot_status_lbl)
+        copilot_row = self._button_row(
+            ("Test token / SDK", self._copilot_test_token),
+            ("Clear token",      self._copilot_clear_token),
+        )
+        cp_btns = copilot_row.findChildren(QPushButton)
+        self._copilot_test_btn, self._copilot_clear_btn = cp_btns[0], cp_btns[1]
+        api_keys_cv.addWidget(copilot_row)
         credentials_layout.addWidget(api_keys_card)
 
         # ── CUSTOM PROVIDER card ──────────────────────────────────────────
@@ -1413,11 +1417,6 @@ class SettingsDialog(QDialog):
             model_layout.addWidget(card)
 
         advanced_group, advanced_layout = self._collapsible_group("Advanced settings")
-        self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"] = QCheckBox(t("Use unified chat tool loop"))
-        self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"].setToolTip(
-            "Default on. Routes chat tool calls through the shared observe-act-observe loop. "
-            "Turn off only to fall back to the older provider-specific chat loop."
-        )
         self._fields["CHAT_TOOL_TRACE_UI"] = QCheckBox(t("Show chat tool-loop trace"))
         self._fields["CHAT_TOOL_TRACE_UI"].setToolTip(
             "Show temporary progress lines in Chat that identify the tool loop and tool calls. "
@@ -1458,7 +1457,6 @@ class SettingsDialog(QDialog):
         advanced_form = _expanding_form_layout(advanced_form_w)
         advanced_form.setSpacing(8)
         advanced_form.setContentsMargins(0, 0, 0, 0)
-        advanced_form.addRow("", self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"])
         advanced_form.addRow("", self._fields["CHAT_TOOL_TRACE_UI"])
         advanced_form.addRow("", self._fields["WISP_PLANNED_CHUNKING"])
         advanced_form.addRow(
@@ -1507,7 +1505,7 @@ class SettingsDialog(QDialog):
         provider_combo = self._combo(
             ["groq", "openai", "anthropic", "google", "deepseek",
              "openrouter", "mistral", "xai", "together", "cerebras",
-             "ollama"],
+             "ollama", "copilot"],
             provider,
         )
         provider_combo.setMinimumWidth(120)
@@ -1534,7 +1532,10 @@ class SettingsDialog(QDialog):
             "alias":    alias_edit,
             "key":      key_edit,
         }
+        self._sync_api_key_row_placeholder(row_info, stored=stored)
+
         remove_btn.clicked.connect(lambda: self._remove_api_key_row(row_info))
+        provider_combo.currentIndexChanged.connect(lambda _: self._sync_api_key_row_placeholder(row_info))
         provider_combo.currentIndexChanged.connect(lambda _: self._refresh_model_api_key_combos())
         alias_edit.textChanged.connect(lambda _: self._refresh_model_api_key_combos())
 
@@ -1545,6 +1546,17 @@ class SettingsDialog(QDialog):
         self._refresh_search_index()
         self._schedule_dirty_refresh()
         return row_info
+
+    def _sync_api_key_row_placeholder(self, row_info: dict, *, stored: bool = False) -> None:
+        """Refresh provider-specific API key placeholder text."""
+        provider = _get(row_info["provider"])
+        key_edit = row_info["key"]
+        if provider == "copilot":
+            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("github_pat_… (not saved to .env)"))
+        elif provider == "ollama":
+            key_edit.setPlaceholderText(t("not required"))
+        else:
+            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
 
     def _remove_api_key_row(self, row_info: dict) -> None:
         """Remove api key row."""
@@ -1568,7 +1580,8 @@ class SettingsDialog(QDialog):
             options.append((display, provider))
         # OAuth/keychain providers — always available regardless of API key rows
         options.append((t(_PROVIDER_LABELS.get("chatgpt", "ChatGPT Plus/Pro (OAuth subscription)")), "chatgpt"))
-        options.append((t(_PROVIDER_LABELS.get("copilot", "GitHub Copilot") + " (OAuth/keychain)"), "copilot"))
+        if not any(provider == "copilot" for _display, provider in options):
+            options.append((t(_PROVIDER_LABELS.get("copilot", "GitHub Copilot") + " (keychain token)"), "copilot"))
         options.append((t(_PROVIDER_LABELS.get("custom", "Custom (OpenAI-compatible)")), "custom"))
         return options
 
@@ -1809,6 +1822,17 @@ class SettingsDialog(QDialog):
             field = self._fields.get("CUSTOM_API_KEY")
             typed = _get(field).strip() if field is not None else ""
             return typed or secret_store.get_keychain_secret("CUSTOM_API_KEY") or ""
+        if provider == "copilot":
+            for row in self._api_key_rows:
+                if _get(row["provider"]) == provider:
+                    typed = row["key"].text().strip()
+                    if typed:
+                        return typed
+            try:
+                from core.auth import copilot_auth
+                return copilot_auth.get_token() or ""
+            except Exception:
+                return ""
         key_name = _PROVIDER_KEY_NAMES.get(provider, "")
         if not key_name:
             return ""
@@ -2091,8 +2115,17 @@ class SettingsDialog(QDialog):
         """Handle copilot save token for settings dialog."""
         try:
             from core.auth import copilot_auth
-            copilot_auth.save_token(self._copilot_token_edit.text())
-            self._copilot_token_edit.clear()
+            token = ""
+            for row in self._api_key_rows:
+                if _get(row["provider"]) == "copilot":
+                    token = row["key"].text()
+                    if token.strip():
+                        copilot_auth.save_token(token)
+                        row["key"].clear()
+                        row["key"].setPlaceholderText(t("stored in keychain"))
+                        break
+            if not token.strip():
+                raise ValueError("Add a GitHub Copilot provider row and paste a token first.")
             self._refresh_copilot_status()
         except Exception as exc:
             self._copilot_status_lbl.setText(t(str(exc)))
@@ -2104,7 +2137,10 @@ class SettingsDialog(QDialog):
         try:
             from core.auth import copilot_auth
             copilot_auth.clear_token()
-            self._copilot_token_edit.clear()
+            for row in self._api_key_rows:
+                if _get(row["provider"]) == "copilot":
+                    row["key"].clear()
+                    self._sync_api_key_row_placeholder(row)
             self._refresh_copilot_status()
         except Exception as exc:
             self._copilot_status_lbl.setText(t(str(exc)))
@@ -4380,6 +4416,13 @@ class SettingsDialog(QDialog):
         for provider, key_name in _LLM_KEY_MAP:
             if self._secret_configured_fast(key_name):
                 self._add_api_key_row(provider=provider, stored=True)
+        try:
+            from core.auth import copilot_auth
+            stored, _message = copilot_auth.token_status()
+            if stored:
+                self._add_api_key_row(provider="copilot", stored=True)
+        except Exception:
+            pass
         # No default placeholder row — the list stays empty until the user adds
         # a key via "+ Add API Key". Avoids a spurious "Groq" row on every open.
 
@@ -4399,13 +4442,6 @@ class SettingsDialog(QDialog):
         _load_section("LLM",        "LLM_PROVIDER",        "LLM_MODEL",        "LLM_FALLBACKS",        cfg.LLM_PROVIDER,        cfg.LLM_MODEL,        cfg.LLM_FALLBACKS)
         _load_section("VISION_LLM", "VISION_LLM_PROVIDER", "VISION_LLM_MODEL", "VISION_LLM_FALLBACKS", cfg.VISION_LLM_PROVIDER, cfg.VISION_LLM_MODEL, cfg.VISION_LLM_FALLBACKS)
         _load_section("MEMORY_LLM", "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "MEMORY_LLM_FALLBACKS", cfg.MEMORY_LLM_PROVIDER, cfg.MEMORY_LLM_MODEL, cfg.MEMORY_LLM_FALLBACKS)
-        self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"].setChecked(
-            self._env.get(
-                "WISP_UNIFIED_CHAT_TOOL_LOOP",
-                str(getattr(cfg, "UNIFIED_CHAT_TOOL_LOOP", True)),
-            ).strip().lower()
-            in {"1", "true", "yes", "on"}
-        )  # type: ignore[attr-defined]
         self._fields["CHAT_TOOL_TRACE_UI"].setChecked(
             self._env.get(
                 "CHAT_TOOL_TRACE_UI",
@@ -5262,10 +5298,14 @@ class SettingsDialog(QDialog):
             llm_provider = vals.get("LLM_PROVIDER", "")
             vision_provider = vals.get("VISION_LLM_PROVIDER", "")
             auth_targets: list[str] = []
-            if llm_provider.strip().lower() in {"chatgpt", "copilot"}:
+            if llm_provider.strip().lower() == "chatgpt":
                 auth_targets.extend(["Provider credentials", "Authentication", "LLM"])
-            if vision_provider.strip().lower() in {"chatgpt", "copilot"}:
+            if llm_provider.strip().lower() == "copilot":
+                auth_targets.extend(["Provider credentials", "API Keys", "LLM"])
+            if vision_provider.strip().lower() == "chatgpt":
                 auth_targets.extend(["Provider credentials", "Authentication", "VISION_LLM"])
+            if vision_provider.strip().lower() == "copilot":
+                auth_targets.extend(["Provider credentials", "API Keys", "VISION_LLM"])
             for warning in subscription_auth_warnings(
                 llm_provider=llm_provider,
                 vision_provider=vision_provider,
@@ -5379,7 +5419,7 @@ class SettingsDialog(QDialog):
                 "LLM_PROVIDER", "LLM_MODEL", "LLM_FALLBACKS",
                 "VISION_LLM_PROVIDER", "VISION_LLM_MODEL", "VISION_LLM_FALLBACKS",
                 "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "MEMORY_LLM_FALLBACKS",
-                "TOOL_LLM_MODEL", "WISP_UNIFIED_CHAT_TOOL_LOOP", "CHAT_TOOL_TRACE_UI", "CHAT_REASONING_EFFORT",
+                "TOOL_LLM_MODEL", "CHAT_TOOL_TRACE_UI", "CHAT_REASONING_EFFORT",
                 "WISP_PLANNED_CHUNKING", "WISP_PLANNED_CHUNKING_CHUNKS", "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
                 "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT", "CUSTOM_BASE_URL",
                 "GITHUB_CLIENT_ID", "GITHUB_OAUTH_SCOPES",
@@ -5734,7 +5774,6 @@ class SettingsDialog(QDialog):
             "MEMORY_LLM_PROVIDER": mem_p,
             "MEMORY_LLM_MODEL":    mem_m,
             "MEMORY_LLM_FALLBACKS": mem_f,
-            "WISP_UNIFIED_CHAT_TOOL_LOOP": str(self._fields["WISP_UNIFIED_CHAT_TOOL_LOOP"].isChecked()),  # type: ignore[attr-defined]
             "CHAT_TOOL_TRACE_UI": str(self._fields["CHAT_TOOL_TRACE_UI"].isChecked()),  # type: ignore[attr-defined]
             "WISP_PLANNED_CHUNKING": str(self._fields["WISP_PLANNED_CHUNKING"].isChecked()),  # type: ignore[attr-defined]
             "WISP_PLANNED_CHUNKING_CHUNKS": _get(self._fields["WISP_PLANNED_CHUNKING_CHUNKS"]),

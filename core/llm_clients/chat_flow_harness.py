@@ -1,4 +1,4 @@
-"""Deterministic comparison harness for chat tool-loop behavior."""
+"""Unified deterministic harness for chat tool-loop behavior."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -7,7 +7,6 @@ from datetime import datetime
 import html
 import json
 from pathlib import Path
-import threading
 import time
 from typing import Any, Protocol
 
@@ -24,7 +23,7 @@ from core.llm_clients.chat_tool_loop import (
 
 @dataclass(frozen=True)
 class ChatScenario:
-    """One behavior scenario to run through current and candidate chat flows."""
+    """One behavior scenario to run through the unified chat flow."""
 
     name: str
     prompt: str
@@ -38,7 +37,7 @@ class ChatScenario:
 
 @dataclass(frozen=True)
 class ChatFlowTrace:
-    """Comparable trace for one scenario run through one flow."""
+    """Comparable trace for one scenario run."""
 
     flow: str
     scenario: str
@@ -53,65 +52,48 @@ class ChatFlowTrace:
 
 
 @dataclass(frozen=True)
-class ChatFlowComparison:
-    """Current-vs-unified result for one scenario."""
+class ChatFlowRun:
+    """Unified harness result for one scenario."""
 
     scenario: str
-    current: dict[str, Any]
-    unified: dict[str, Any]
-    current_trace: ChatFlowTrace
-    unified_trace: ChatFlowTrace
+    score: dict[str, Any]
+    trace: ChatFlowTrace
 
 
 @dataclass(frozen=True)
-class ChatFlowComparisonReport:
-    """Full comparison report for all scenarios."""
+class ChatFlowHarnessReport:
+    """Full unified harness report for all scenarios."""
 
     generated_at: str
-    comparisons: list[ChatFlowComparison]
+    runs: list[ChatFlowRun]
 
     @property
     def summary(self) -> dict[str, Any]:
-        """Return compact aggregate counts for the comparison run."""
+        """Return compact aggregate counts for the harness run."""
         totals = {
-            "scenarios": len(self.comparisons),
-            "current_relevant_tool_called": 0,
-            "unified_relevant_tool_called": 0,
-            "current_answered_actual_request": 0,
-            "unified_answered_actual_request": 0,
-            "current_recovered_after_failed_tool": 0,
-            "unified_recovered_after_failed_tool": 0,
-            "current_completion_gate_missed": 0,
-            "unified_completion_gate_missed": 0,
-            "current_verification_attempted": 0,
-            "unified_verification_attempted": 0,
+            "scenarios": len(self.runs),
+            "relevant_tool_called": 0,
+            "answered_actual_request": 0,
+            "recovered_after_failed_tool": 0,
+            "completion_gate_missed": 0,
+            "verification_attempted": 0,
         }
-        for comparison in self.comparisons:
-            if comparison.current.get("relevant_tool_called"):
-                totals["current_relevant_tool_called"] += 1
-            if comparison.unified.get("relevant_tool_called"):
-                totals["unified_relevant_tool_called"] += 1
-            if comparison.current.get("answered_actual_request"):
-                totals["current_answered_actual_request"] += 1
-            if comparison.unified.get("answered_actual_request"):
-                totals["unified_answered_actual_request"] += 1
-            if comparison.current.get("recovered_after_failed_tool"):
-                totals["current_recovered_after_failed_tool"] += 1
-            if comparison.unified.get("recovered_after_failed_tool"):
-                totals["unified_recovered_after_failed_tool"] += 1
-            if comparison.current.get("completion_gate_missed"):
-                totals["current_completion_gate_missed"] += 1
-            if comparison.unified.get("completion_gate_missed"):
-                totals["unified_completion_gate_missed"] += 1
-            if comparison.current.get("verification_attempted"):
-                totals["current_verification_attempted"] += 1
-            if comparison.unified.get("verification_attempted"):
-                totals["unified_verification_attempted"] += 1
+        for run in self.runs:
+            if run.score.get("relevant_tool_called"):
+                totals["relevant_tool_called"] += 1
+            if run.score.get("answered_actual_request"):
+                totals["answered_actual_request"] += 1
+            if run.score.get("recovered_after_failed_tool"):
+                totals["recovered_after_failed_tool"] += 1
+            if run.score.get("completion_gate_missed"):
+                totals["completion_gate_missed"] += 1
+            if run.score.get("verification_attempted"):
+                totals["verification_attempted"] += 1
         return totals
 
 
 class ChatFlowRunner(Protocol):
-    """Runner interface used by the comparison harness."""
+    """Runner interface used by the unified harness."""
 
     name: str
 
@@ -182,62 +164,6 @@ def _fixture_key(call: WispToolCall) -> str:
     return json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
 
 
-class ScriptedChatFlowRunner:
-    """Small deterministic runner that exercises the harness without live LLMs."""
-
-    def __init__(
-        self,
-        name: str,
-        steps_by_scenario: dict[str, list[ScriptedModelStep]],
-        *,
-        fixtures_by_scenario: dict[str, ScenarioFixtures] | None = None,
-    ):
-        """Initialize scripted runner."""
-        self.name = name
-        self._steps_by_scenario = steps_by_scenario
-        self._fixtures_by_scenario = fixtures_by_scenario or {}
-
-    def run(self, scenario: ChatScenario) -> ChatFlowTrace:
-        """Run a scenario using scripted model steps and fake tool results."""
-        steps = list(self._steps_by_scenario.get(scenario.name) or [])
-        executor = FakeToolExecutor(self._fixtures_by_scenario.get(scenario.name))
-        tool_calls: list[WispToolCall] = []
-        observations: list[WispObservation] = []
-        progress_chunks: list[str] = []
-        final_text = ""
-        final_status = "no_final"
-        for step in steps:
-            if step.progress:
-                progress_chunks.append(step.progress)
-            if step.tool_calls:
-                results = [executor.execute(call) for call in step.tool_calls]
-                tool_calls.extend(step.tool_calls)
-                observations.append(
-                    WispObservation(
-                        tool_results=results,
-                        summary=_observation_summary(results),
-                        remaining_budget={},
-                    )
-                )
-                continue
-            if step.final:
-                final_text = step.final
-                final_status = step.status or "final"
-                break
-        return ChatFlowTrace(
-            flow=self.name,
-            scenario=scenario.name,
-            prompt=scenario.prompt,
-            tools_offered=list(scenario.tools),
-            tool_calls=tool_calls,
-            observations=observations,
-            final_text=final_text,
-            final_status=final_status,
-            progress_chunks=progress_chunks,
-            metadata={},
-        )
-
-
 class ScriptedChatLoopModel(ChatLoopModel):
     """Scripted model adapter consumed by the provider-neutral loop."""
 
@@ -263,7 +189,7 @@ class ScriptedChatLoopModel(ChatLoopModel):
         )
 
 
-class LoopBackedScriptedChatFlowRunner:
+class UnifiedScriptedChatFlowRunner:
     """Harness runner that exercises the real provider-neutral ChatToolLoop."""
 
     def __init__(
@@ -385,206 +311,58 @@ class LiveResponsesUnifiedRunner:
         return RuntimeLiveModelToolExecutor(allowed_tools=scenario.tools)
 
 
-class LiveCodexCurrentRunner:
-    """Run a scenario through Wisp's existing ChatGPT/Responses chat path."""
-
-    requires_serial_run = True
-
-    def __init__(
-        self,
-        name: str,
-        client,
-        *,
-        model: str,
-        instructions: str = "",
-        fixtures_by_scenario: dict[str, ScenarioFixtures] | None = None,
-    ):
-        """Initialize live current runner."""
-        self.name = name
-        self._client = client
-        self._model = model
-        self._instructions = instructions
-        self._fixtures_by_scenario = fixtures_by_scenario or {}
-
-    def run(self, scenario: ChatScenario) -> ChatFlowTrace:
-        """Run one live scenario through the existing Wisp path and capture tools."""
-        from core.llm_clients import client as llm
-
-        tool_calls: list[WispToolCall] = []
-        observations: list[WispObservation] = []
-        progress_chunks: list[str] = []
-        answer_chunks: list[str] = []
-        original_execute = llm._execute_model_tool
-        call_index = 0
-        fake_executor = (
-            FakeToolExecutor(self._fixtures_by_scenario[scenario.name])
-            if scenario.name in self._fixtures_by_scenario
-            else None
-        )
-
-        def recording_execute(name: str, inputs: dict, allowed_tools: list[str] | None = None) -> str:
-            nonlocal call_index
-            call_index += 1
-            call = WispToolCall(id=f"current_{call_index}", name=name, arguments=dict(inputs or {}))
-            tool_calls.append(call)
-            if fake_executor is not None:
-                fake_result = fake_executor.execute(call)
-                content = fake_result.content if isinstance(fake_result.content, str) else json.dumps(fake_result.content)
-            else:
-                content = original_execute(name, inputs, allowed_tools=allowed_tools)
-            result = WispToolResult(
-                call_id=call.id,
-                name=name,
-                ok=not _looks_like_tool_failure(content),
-                content=content,
-            )
-            observations.append(
-                WispObservation(
-                    tool_results=[result],
-                    summary=_observation_summary([result]),
-                    remaining_budget={},
-                )
-            )
-            return content
-
-        try:
-            llm._execute_model_tool = recording_execute
-            for chunk in llm._stream_codex(
-                scenario.prompt,
-                self._model,
-                self._client,
-                use_tools=True,
-                allowed_tools=scenario.tools,
-                pinned_tools=scenario.tools,
-                system_prompt=self._instructions or None,
-            ):
-                if getattr(chunk, "kind", "answer") == "progress":
-                    progress_chunks.append(str(chunk))
-                else:
-                    answer_chunks.append(str(chunk))
-        finally:
-            llm._execute_model_tool = original_execute
-        return ChatFlowTrace(
-            flow=self.name,
-            scenario=scenario.name,
-            prompt=scenario.prompt,
-            tools_offered=list(scenario.tools),
-            tool_calls=tool_calls,
-            observations=observations,
-            final_text="".join(answer_chunks),
-            final_status="final",
-            progress_chunks=progress_chunks,
-            metadata={},
-        )
-
-
-def compare_chat_flows(
+def run_chat_flow_harness(
     scenarios: list[ChatScenario],
-    current_runner: ChatFlowRunner,
-    unified_runner: ChatFlowRunner,
+    runner: ChatFlowRunner,
     *,
     parallel: bool = True,
     max_workers: int | None = None,
-) -> ChatFlowComparisonReport:
-    """Run scenarios through both flows and return metrics plus traces."""
+) -> ChatFlowHarnessReport:
+    """Run scenarios through the unified flow and return metrics plus traces."""
     if parallel:
-        return _compare_chat_flows_parallel(
-            scenarios,
-            current_runner,
-            unified_runner,
-            max_workers=max_workers,
-        )
-    comparisons: list[ChatFlowComparison] = []
+        return _run_chat_flow_harness_parallel(scenarios, runner, max_workers=max_workers)
+    runs: list[ChatFlowRun] = []
     for scenario in scenarios:
-        current_trace = _run_or_error_trace(current_runner, scenario)
-        unified_trace = _run_or_error_trace(unified_runner, scenario)
-        comparisons.append(
-            ChatFlowComparison(
-                scenario=scenario.name,
-                current=score_trace(scenario, current_trace),
-                unified=score_trace(scenario, unified_trace),
-                current_trace=current_trace,
-                unified_trace=unified_trace,
-            )
-        )
-    return ChatFlowComparisonReport(
-        generated_at=datetime.now().isoformat(timespec="seconds"),
-        comparisons=comparisons,
-    )
+        trace = _run_or_error_trace(runner, scenario)
+        runs.append(ChatFlowRun(scenario=scenario.name, score=score_trace(scenario, trace), trace=trace))
+    return ChatFlowHarnessReport(generated_at=datetime.now().isoformat(timespec="seconds"), runs=runs)
 
 
-_SERIAL_RUN_LOCK = threading.Lock()
-
-
-def _compare_chat_flows_parallel(
+def _run_chat_flow_harness_parallel(
     scenarios: list[ChatScenario],
-    current_runner: ChatFlowRunner,
-    unified_runner: ChatFlowRunner,
+    runner: ChatFlowRunner,
     *,
     max_workers: int | None = None,
-) -> ChatFlowComparisonReport:
-    """Run flow/scenario cells concurrently and gather them into one report."""
+) -> ChatFlowHarnessReport:
+    """Run scenarios concurrently and gather them into one report."""
     if not scenarios:
-        return ChatFlowComparisonReport(
-            generated_at=datetime.now().isoformat(timespec="seconds"),
-            comparisons=[],
-        )
-    workers = max_workers or min(8, max(1, len(scenarios) * 2))
+        return ChatFlowHarnessReport(generated_at=datetime.now().isoformat(timespec="seconds"), runs=[])
+    workers = max_workers or min(8, max(1, len(scenarios)))
     futures = {}
-    traces: dict[tuple[str, str], ChatFlowTrace] = {}
+    traces: dict[str, ChatFlowTrace] = {}
     started_at = time.monotonic()
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="chat-flow") as executor:
         for scenario in scenarios:
-            futures[executor.submit(_run_trace_cell, "current", current_runner, scenario)] = ("current", scenario.name)
-            futures[executor.submit(_run_trace_cell, "unified", unified_runner, scenario)] = ("unified", scenario.name)
+            futures[executor.submit(_run_or_error_trace, runner, scenario)] = scenario.name
         for future in as_completed(futures):
-            flow_key, scenario_name = futures[future]
-            traces[(flow_key, scenario_name)] = future.result()
+            traces[futures[future]] = future.result()
 
-    comparisons: list[ChatFlowComparison] = []
+    runs: list[ChatFlowRun] = []
     for scenario in scenarios:
-        current_trace = traces[("current", scenario.name)]
-        unified_trace = traces[("unified", scenario.name)]
-        comparisons.append(
-            ChatFlowComparison(
-                scenario=scenario.name,
-                current=score_trace(scenario, current_trace),
-                unified=score_trace(scenario, unified_trace),
-                current_trace=current_trace,
-                unified_trace=unified_trace,
-            )
-        )
-    report = ChatFlowComparisonReport(
-        generated_at=datetime.now().isoformat(timespec="seconds"),
-        comparisons=comparisons,
-    )
-    for comparison in report.comparisons:
-        comparison.current_trace.metadata.setdefault("comparison_parallel", True)
-        comparison.current_trace.metadata.setdefault("comparison_elapsed_seconds", round(time.monotonic() - started_at, 3))
-        comparison.unified_trace.metadata.setdefault("comparison_parallel", True)
-        comparison.unified_trace.metadata.setdefault("comparison_elapsed_seconds", round(time.monotonic() - started_at, 3))
-    return report
-
-
-def _run_trace_cell(flow_key: str, runner: ChatFlowRunner, scenario: ChatScenario) -> ChatFlowTrace:
-    """Run one flow/scenario cell with timing and unsafe-run locking."""
-    started_at = time.monotonic()
-    if getattr(runner, "requires_serial_run", False):
-        with _SERIAL_RUN_LOCK:
-            trace = _run_or_error_trace(runner, scenario)
-    else:
-        trace = _run_or_error_trace(runner, scenario)
-    trace.metadata.setdefault("flow_key", flow_key)
-    trace.metadata.setdefault("duration_seconds", round(time.monotonic() - started_at, 3))
-    return trace
+        trace = traces[scenario.name]
+        trace.metadata.setdefault("harness_parallel", True)
+        trace.metadata.setdefault("harness_elapsed_seconds", round(time.monotonic() - started_at, 3))
+        runs.append(ChatFlowRun(scenario=scenario.name, score=score_trace(scenario, trace), trace=trace))
+    return ChatFlowHarnessReport(generated_at=datetime.now().isoformat(timespec="seconds"), runs=runs)
 
 
 def _run_or_error_trace(runner: ChatFlowRunner, scenario: ChatScenario) -> ChatFlowTrace:
-    """Run a flow, converting exceptions into traceable comparison output."""
+    """Run a flow, converting exceptions into traceable harness output."""
+    started_at = time.monotonic()
     try:
-        return runner.run(scenario)
+        trace = runner.run(scenario)
     except Exception as exc:  # noqa: BLE001 - harness must record flow failures
-        return ChatFlowTrace(
+        trace = ChatFlowTrace(
             flow=runner.name,
             scenario=scenario.name,
             prompt=scenario.prompt,
@@ -595,6 +373,8 @@ def _run_or_error_trace(runner: ChatFlowRunner, scenario: ChatScenario) -> ChatF
             final_status="runner_error",
             metadata={"error_type": type(exc).__name__, "error": str(exc)},
         )
+    trace.metadata.setdefault("duration_seconds", round(time.monotonic() - started_at, 3))
+    return trace
 
 
 def score_trace(scenario: ChatScenario, trace: ChatFlowTrace) -> dict[str, Any]:
@@ -627,66 +407,48 @@ def score_trace(scenario: ChatScenario, trace: ChatFlowTrace) -> dict[str, Any]:
     }
 
 
-def write_comparison_artifacts(
-    report: ChatFlowComparisonReport,
+def write_harness_artifacts(
+    report: ChatFlowHarnessReport,
     output_root: str | Path,
     *,
-    report_title: str = "Chat Flow Comparison",
+    report_title: str = "Unified Chat Flow Harness",
 ) -> Path:
-    """Write comparison traces and summaries to a timestamped artifact folder."""
+    """Write unified harness traces and summaries to a timestamped artifact folder."""
     root = Path(output_root)
     run_dir = root / report.generated_at.replace(":", "-")
-    current_dir = run_dir / "current"
-    unified_dir = run_dir / "unified"
-    current_dir.mkdir(parents=True, exist_ok=True)
-    unified_dir.mkdir(parents=True, exist_ok=True)
+    trace_dir = run_dir / "traces"
+    trace_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "summary.json").write_text(
         json.dumps(report.summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    openai_eval_scores = _openai_eval_scores(report)
-    (run_dir / "openai_eval_scores.json").write_text(
-        json.dumps(openai_eval_scores, indent=2, ensure_ascii=False),
+    harness_scores = _harness_scores(report)
+    (run_dir / "harness_scores.json").write_text(
+        json.dumps(harness_scores, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    from core.llm_clients.openai_evals_harness import build_harness_matrix, run_openai_evals_package
-
-    openai_package_report = run_openai_evals_package(report, run_dir / "openai_evals_package")
-    (run_dir / "openai_evals_package_report.json").write_text(
-        json.dumps(openai_package_report, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    (run_dir / "harness_matrix.json").write_text(
-        json.dumps(build_harness_matrix(report, openai_package_report), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    (run_dir / "openai_eval_spec.json").write_text(
-        json.dumps(_openai_eval_spec(report), indent=2, ensure_ascii=False),
+    (run_dir / "harness_spec.json").write_text(
+        json.dumps(_harness_spec(report), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     (run_dir / "results.json").write_text(
-        json.dumps(_report_dict(report, openai_package_report), indent=2, ensure_ascii=False),
+        json.dumps(_report_dict(report), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     scenario_payload = [
         {
-            "scenario": comparison.scenario,
-            "current": comparison.current,
-            "unified": comparison.unified,
+            "scenario": run.scenario,
+            "score": run.score,
         }
-        for comparison in report.comparisons
+        for run in report.runs
     ]
     (run_dir / "scenarios.json").write_text(
         json.dumps(scenario_payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    for comparison in report.comparisons:
-        (current_dir / f"{comparison.scenario}.json").write_text(
-            json.dumps(_trace_dict(comparison.current_trace), indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        (unified_dir / f"{comparison.scenario}.json").write_text(
-            json.dumps(_trace_dict(comparison.unified_trace), indent=2, ensure_ascii=False),
+    for run in report.runs:
+        (trace_dir / f"{run.scenario}.json").write_text(
+            json.dumps(_trace_dict(run.trace), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
     (run_dir / "report.md").write_text(render_markdown_report(report, title=report_title), encoding="utf-8")
@@ -694,8 +456,8 @@ def write_comparison_artifacts(
     return run_dir
 
 
-def render_markdown_report(report: ChatFlowComparisonReport, *, title: str = "Chat Flow Comparison") -> str:
-    """Render a compact human-readable comparison report."""
+def render_markdown_report(report: ChatFlowHarnessReport, *, title: str = "Unified Chat Flow Harness") -> str:
+    """Render a compact human-readable harness report."""
     lines = [
         f"# {title}",
         "",
@@ -710,51 +472,38 @@ def render_markdown_report(report: ChatFlowComparisonReport, *, title: str = "Ch
         "## Scenarios",
         "",
     ]
-    for comparison in report.comparisons:
-        current_final = _one_line(comparison.current["final_text"])
-        unified_final = _one_line(comparison.unified["final_text"])
+    for run in report.runs:
+        final = _one_line(run.score["final_text"])
         lines.extend(
             [
-                f"### {comparison.scenario}",
+                f"### {run.scenario}",
                 "",
-                "| Checkpoint | Current Flow | Unified Flow |",
-                "| --- | --- | --- |",
-                f"| Final status | `{comparison.current['final_status']}` | `{comparison.unified['final_status']}` |",
-                f"| Tool calls | `{comparison.current['tool_calls_total']}` | `{comparison.unified['tool_calls_total']}` |",
-                f"| Relevant tool called | `{comparison.current['relevant_tool_called']}` | `{comparison.unified['relevant_tool_called']}` |",
-                f"| Relevant tool succeeded | `{comparison.current['relevant_tool_succeeded']}` | `{comparison.unified['relevant_tool_succeeded']}` |",
-                f"| Recovered after failed tool | `{comparison.current['recovered_after_failed_tool']}` | `{comparison.unified['recovered_after_failed_tool']}` |",
-                f"| Answered actual request | `{comparison.current['answered_actual_request']}` | `{comparison.unified['answered_actual_request']}` |",
-                f"| Verification attempted | `{comparison.current['verification_attempted']}` | `{comparison.unified['verification_attempted']}` |",
-                f"| Completion gate missed | `{comparison.current['completion_gate_missed']}` | `{comparison.unified['completion_gate_missed']}` |",
-                f"| Final answer excerpt | {current_final} | {unified_final} |",
+                "| Checkpoint | Unified Flow |",
+                "| --- | --- |",
+                f"| Final status | `{run.score['final_status']}` |",
+                f"| Tool calls | `{run.score['tool_calls_total']}` |",
+                f"| Relevant tool called | `{run.score['relevant_tool_called']}` |",
+                f"| Relevant tool succeeded | `{run.score['relevant_tool_succeeded']}` |",
+                f"| Recovered after failed tool | `{run.score['recovered_after_failed_tool']}` |",
+                f"| Answered actual request | `{run.score['answered_actual_request']}` |",
+                f"| Verification attempted | `{run.score['verification_attempted']}` |",
+                f"| Completion gate missed | `{run.score['completion_gate_missed']}` |",
+                f"| Final answer excerpt | {final} |",
                 "",
             ]
         )
     return "\n".join(lines)
 
 
-def _one_line(text: str, limit: int = 160) -> str:
-    """Return escaped one-line text for Markdown tables."""
-    value = " ".join(str(text or "").split())
-    value = value.replace("|", "\\|")
-    if len(value) > limit:
-        return f"{value[:limit].rstrip()}..."
-    return value or "(empty)"
-
-
-def render_html_report(report: ChatFlowComparisonReport, *, title: str = "Chat Flow Comparison") -> str:
-    """Render an inspectable side-by-side HTML comparison report."""
+def render_html_report(report: ChatFlowHarnessReport, *, title: str = "Unified Chat Flow Harness") -> str:
+    """Render an inspectable HTML harness report."""
     scenario_cards = []
-    for comparison in report.comparisons:
+    for run in report.runs:
         scenario_cards.append(
             f"""
             <section class="scenario">
-              <h2>{html.escape(comparison.scenario)}</h2>
-              <div class="grid">
-                {render_html_flow_panel("Current Flow", comparison.current)}
-                {render_html_flow_panel("Unified Flow", comparison.unified)}
-              </div>
+              <h2>{html.escape(run.scenario)}</h2>
+              {render_html_flow_panel("Unified Flow", run.score)}
             </section>
             """
         )
@@ -769,7 +518,6 @@ def render_html_report(report: ChatFlowComparisonReport, *, title: str = "Chat F
     h2 {{ font-size: 18px; margin: 0 0 12px; }}
     .meta {{ color: #5f6368; margin-bottom: 20px; }}
     .summary, .scenario {{ background: #fff; border: 1px solid #dadce0; border-radius: 8px; padding: 16px; margin-bottom: 16px; }}
-    .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }}
     .panel {{ border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; background: #fcfcfd; }}
     .panel h3 {{ font-size: 15px; margin: 0 0 10px; }}
     dl {{ display: grid; grid-template-columns: 180px 1fr; gap: 8px 10px; margin: 0; }}
@@ -818,12 +566,12 @@ def render_html_flow_panel(title: str, metrics: dict[str, Any]) -> str:
     """
 
 
-def live_chatgpt_runners(
+def live_chatgpt_runner(
     model: str | None = None,
     *,
     synthetic_tools: bool = False,
-) -> tuple[LiveCodexCurrentRunner, LiveResponsesUnifiedRunner]:
-    """Build live current/unified runners for ChatGPT Responses comparison."""
+) -> LiveResponsesUnifiedRunner:
+    """Build a live unified runner for ChatGPT Responses harness runs."""
     from core.llm_clients import client as llm
     import config
 
@@ -839,24 +587,13 @@ def live_chatgpt_runners(
         llm._with_tools_note(config.get_system_prompt(), True),
         allowed_tools,
     )
-    client = llm._get_chat_codex_client()
-    fixtures = synthetic_live_fixtures() if synthetic_tools else {}
-    return (
-        LiveCodexCurrentRunner(
-            "current-live-chatgpt",
-            client,
-            model=selected_model,
-            instructions=instructions,
-            fixtures_by_scenario=fixtures,
-        ),
-        LiveResponsesUnifiedRunner(
-            "unified-live-chatgpt",
-            client,
-            model=selected_model,
-            instructions=instructions,
-            tools=tools,
-            fixtures_by_scenario=fixtures,
-        ),
+    return LiveResponsesUnifiedRunner(
+        "unified-live-chatgpt",
+        llm._get_chat_codex_client(),
+        model=selected_model,
+        instructions=instructions,
+        tools=tools,
+        fixtures_by_scenario=synthetic_live_fixtures() if synthetic_tools else {},
     )
 
 
@@ -882,7 +619,7 @@ def synthetic_live_scenarios() -> list[ChatScenario]:
 
 
 def synthetic_live_fixtures() -> dict[str, ScenarioFixtures]:
-    """Return synthetic tool outputs for safe live-model comparisons."""
+    """Return synthetic tool outputs for safe live-model harness runs."""
     return {
         "synthetic_file_context": {
             "list_files": ["config.py\napp.py\nREADME.md"],
@@ -928,6 +665,33 @@ def synthetic_live_fixtures() -> dict[str, ScenarioFixtures]:
     }
 
 
+def sample_harness_self_test_scenarios() -> list[ChatScenario]:
+    """Return scripted scenarios used to self-test the unified harness plumbing."""
+    return [
+        ChatScenario(
+            name="needs_file_context",
+            prompt="What does this project use for settings storage?",
+            tools=["list_files", "read_file"],
+            expected_relevant_tools=["list_files", "read_file"],
+        ),
+        ChatScenario(
+            name="edit_plus_verification",
+            prompt="Fix the syntax error in app.py and verify it.",
+            tools=["read_file", "edit_file", "run_command"],
+            expected_relevant_tools=["read_file"],
+            expected_change_tools=["edit_file"],
+            expected_verification_tools=["run_command"],
+        ),
+        ChatScenario(
+            name="permission_boundary",
+            prompt="Delete old.log.",
+            tools=[],
+            expected_relevant_tools=[],
+            permissions={"delete_file": "disabled"},
+        ),
+    ]
+
+
 def _filter_response_tools(tools: list[dict], allowed_tool_names: list[str]) -> list[dict]:
     """Return Responses tool schemas allowed for one scenario."""
     allowed = set(allowed_tool_names)
@@ -939,38 +703,6 @@ def _filter_response_tools(tools: list[dict], allowed_tool_names: list[str]) -> 
         if name in allowed:
             filtered.append(tool)
     return filtered
-
-
-def _observation_summary(results: list[WispToolResult]) -> str:
-    """Build a compact observation summary."""
-    if not results:
-        return "No tool results."
-    parts = []
-    for result in results:
-        status = "ok" if result.ok else "failed"
-        parts.append(f"{result.name}: {status}")
-    return "; ".join(parts)
-
-
-def _looks_like_tool_failure(content: str) -> bool:
-    """Return whether a live tool result reads like an in-band failure."""
-    text = str(content or "").lower()
-    return any(
-        marker in text
-        for marker in (
-            " is disabled ",
-            "failed",
-            "not found",
-            "no such file",
-            "could not find",
-            "couldn't find",
-            "cannot find",
-            "permission",
-            "not allowed",
-            "tool call skipped",
-            "requires ",
-        )
-    )
 
 
 def _made_allowed_change(trace: ChatFlowTrace, change_tools: set[str]) -> bool:
@@ -1050,80 +782,56 @@ def _trace_dict(trace: ChatFlowTrace) -> dict[str, Any]:
     return asdict(trace)
 
 
-def _report_dict(
-    report: ChatFlowComparisonReport,
-    openai_package_report: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Convert a full comparison report into one consolidated JSON payload."""
-    openai_scores = _openai_eval_scores(report)
+def _report_dict(report: ChatFlowHarnessReport) -> dict[str, Any]:
+    """Convert a full harness report into one consolidated JSON payload."""
+    harness_scores = _harness_scores(report)
     return {
         "generated_at": report.generated_at,
         "summary": report.summary,
-        "openai_eval_scores": openai_scores,
-        "openai_evals_package": openai_package_report or {},
-        "comparisons": [
+        "harness_scores": harness_scores,
+        "runs": [
             {
-                "scenario": comparison.scenario,
-                "current": comparison.current,
-                "unified": comparison.unified,
-                "openai_eval": openai_scores.get(comparison.scenario),
-                "current_trace": _trace_dict(comparison.current_trace),
-                "unified_trace": _trace_dict(comparison.unified_trace),
+                "scenario": run.scenario,
+                "score": run.score,
+                "harness_score": harness_scores.get(run.scenario),
+                "trace": _trace_dict(run.trace),
             }
-            for comparison in report.comparisons
+            for run in report.runs
         ],
     }
 
 
-def _openai_eval_scores(report: ChatFlowComparisonReport) -> dict[str, Any]:
-    """Return OpenAI-Evals-style scores for scenarios with configured items."""
-    from core.llm_clients.openai_evals_style import default_items_by_scenario, grade_comparison
+def _harness_scores(report: ChatFlowHarnessReport) -> dict[str, Any]:
+    """Return local harness scores for scenarios with configured items."""
+    from core.llm_clients.harness_grading import default_items_by_scenario, grade_trace
 
     items = default_items_by_scenario()
     scores = {}
-    for comparison in report.comparisons:
-        item = items.get(comparison.scenario)
+    for run in report.runs:
+        item = items.get(run.scenario)
         if item is None:
             continue
-        scores[comparison.scenario] = grade_comparison(item, comparison.current_trace, comparison.unified_trace)
+        scores[run.scenario] = grade_trace(item, run.trace)
     return scores
 
 
-def _openai_eval_spec(report: ChatFlowComparisonReport) -> dict[str, Any]:
-    """Return an OpenAI-Evals-style spec for scenarios present in a report."""
-    from core.llm_clients.openai_evals_style import default_items_by_scenario, eval_spec
+def _harness_spec(report: ChatFlowHarnessReport) -> dict[str, Any]:
+    """Return a local harness spec for scenarios present in a report."""
+    from core.llm_clients.harness_grading import default_items_by_scenario, harness_spec
 
     items_by_scenario = default_items_by_scenario()
     items = [
-        items_by_scenario[comparison.scenario]
-        for comparison in report.comparisons
-        if comparison.scenario in items_by_scenario
+        items_by_scenario[run.scenario]
+        for run in report.runs
+        if run.scenario in items_by_scenario
     ]
-    return eval_spec(items)
+    return harness_spec(items)
 
 
-def sample_harness_self_test_scenarios() -> list[ChatScenario]:
-    """Return scripted scenarios used to self-test the harness plumbing."""
-    return [
-        ChatScenario(
-            name="needs_file_context",
-            prompt="What does this project use for settings storage?",
-            tools=["list_files", "read_file"],
-            expected_relevant_tools=["list_files", "read_file"],
-        ),
-        ChatScenario(
-            name="edit_plus_verification",
-            prompt="Fix the syntax error in app.py and verify it.",
-            tools=["read_file", "edit_file", "run_command"],
-            expected_relevant_tools=["read_file"],
-            expected_change_tools=["edit_file"],
-            expected_verification_tools=["run_command"],
-        ),
-        ChatScenario(
-            name="permission_boundary",
-            prompt="Delete old.log.",
-            tools=[],
-            expected_relevant_tools=[],
-            permissions={"delete_file": "disabled"},
-        ),
-    ]
+def _one_line(text: str, limit: int = 160) -> str:
+    """Return escaped one-line text for Markdown tables."""
+    value = " ".join(str(text or "").split())
+    value = value.replace("|", "\\|")
+    if len(value) > limit:
+        return f"{value[:limit].rstrip()}..."
+    return value or "(empty)"

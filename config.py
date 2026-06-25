@@ -675,7 +675,7 @@ def _load_config() -> None:
     global DEEPSEEK_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY
     global XAI_API_KEY, TOGETHER_API_KEY, CEREBRAS_API_KEY
     global LLM_PROVIDER, LLM_MODEL, LLM_FALLBACKS
-    global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, TOOL_LLM_MODEL, UNIFIED_CHAT_TOOL_LOOP
+    global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, TOOL_LLM_MODEL
     global CHAT_REASONING_EFFORT, CHAT_TOOL_TRACE_UI
     global PLANNED_CHUNKING, PLANNED_CHUNKING_CHUNKS, PLANNED_CHUNKING_MIN_PROMPT_CHARS
     global VISION_LLM_PROVIDER, VISION_LLM_MODEL, VISION_LLM_FALLBACKS
@@ -749,7 +749,6 @@ def _load_config() -> None:
     # Empty = use the Main LLM model for tool calls. Set this only to force a
     # different model when tools are active (e.g. a more capable Anthropic model).
     TOOL_LLM_MODEL = os.getenv("TOOL_LLM_MODEL", "")
-    UNIFIED_CHAT_TOOL_LOOP = env_bool("WISP_UNIFIED_CHAT_TOOL_LOOP", True)
     CHAT_REASONING_EFFORT = os.getenv("CHAT_REASONING_EFFORT", "high").strip().lower()
     CHAT_TOOL_TRACE_UI = env_bool("CHAT_TOOL_TRACE_UI", False)
     PLANNED_CHUNKING = env_bool("WISP_PLANNED_CHUNKING", False)

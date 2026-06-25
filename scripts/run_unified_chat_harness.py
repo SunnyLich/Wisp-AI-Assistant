@@ -1,4 +1,4 @@
-"""Run scripted harness self-tests or live chat-flow smoke comparisons."""
+"""Run scripted or live unified chat-flow harness checks."""
 from __future__ import annotations
 
 import argparse
@@ -10,22 +10,21 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.llm_clients.chat_flow_compare import (
+from core.llm_clients.chat_flow_harness import (  # noqa: E402
     ChatScenario,
-    LoopBackedScriptedChatFlowRunner,
-    ScriptedChatFlowRunner,
     ScriptedModelStep,
-    compare_chat_flows,
-    live_chatgpt_runners,
+    UnifiedScriptedChatFlowRunner,
+    live_chatgpt_runner,
+    run_chat_flow_harness,
     sample_harness_self_test_scenarios,
     synthetic_live_scenarios,
-    write_comparison_artifacts,
+    write_harness_artifacts,
 )
-from core.llm_clients.chat_tool_loop import WispToolCall
+from core.llm_clients.chat_tool_loop import WispToolCall  # noqa: E402
 
 
 def main() -> int:
-    """Run the harness self-test or live comparison and write artifacts."""
+    """Run the unified harness self-test or live smoke run and write artifacts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output-root",
@@ -35,7 +34,7 @@ def main() -> int:
     parser.add_argument(
         "--live-chatgpt",
         action="store_true",
-        help="Run a real ChatGPT/Responses smoke comparison instead of the scripted harness self-test.",
+        help="Run a real ChatGPT/Responses smoke run instead of the scripted harness self-test.",
     )
     parser.add_argument(
         "--real-tools",
@@ -50,13 +49,13 @@ def main() -> int:
     parser.add_argument(
         "--serial",
         action="store_true",
-        help="Run flow/scenario cells serially instead of the default parallel harness mode.",
+        help="Run scenarios serially instead of the default parallel harness mode.",
     )
     parser.add_argument(
         "--max-workers",
         type=int,
         default=0,
-        help="Maximum parallel workers. Defaults to min(8, scenarios * 2).",
+        help="Maximum parallel workers. Defaults to min(8, scenarios).",
     )
     args = parser.parse_args()
 
@@ -78,40 +77,20 @@ def main() -> int:
             ]
         else:
             scenarios = synthetic_live_scenarios()
-        current, unified = live_chatgpt_runners(args.model or None, synthetic_tools=not args.real_tools)
-        report = compare_chat_flows(
+        runner = live_chatgpt_runner(args.model or None, synthetic_tools=not args.real_tools)
+        report = run_chat_flow_harness(
             scenarios,
-            current,
-            unified,
+            runner,
             parallel=not args.serial,
             max_workers=args.max_workers or None,
         )
-        run_dir = write_comparison_artifacts(report, args.output_root, report_title="Live Chat Flow Smoke Comparison")
-        print(f"Wrote live chat flow smoke-comparison artifacts to {run_dir}")
+        run_dir = write_harness_artifacts(report, args.output_root, report_title="Live Unified Chat Flow Smoke Run")
+        print(f"Wrote live unified chat-flow artifacts to {run_dir}")
         print(f"Consolidated results: {run_dir / 'results.json'}")
-        print(f"Harness matrix: {run_dir / 'harness_matrix.json'}")
-        print(f"OpenAI Evals package report: {run_dir / 'openai_evals_package_report.json'}")
         return 0
 
     scenarios = sample_harness_self_test_scenarios()
-    current = ScriptedChatFlowRunner(
-        "current",
-        {
-            "needs_file_context": [
-                ScriptedModelStep(final="It likely uses config.py.", status="answered_without_tools"),
-            ],
-            "edit_plus_verification": [
-                ScriptedModelStep(
-                    tool_calls=[WispToolCall(id="read_1", name="read_file", arguments={"path": "app.py"})]
-                ),
-                ScriptedModelStep(final="I found the syntax issue.", status="answered_without_editing"),
-            ],
-            "permission_boundary": [
-                ScriptedModelStep(final="Delete is disabled by permissions.", status="blocked"),
-            ],
-        },
-    )
-    unified = LoopBackedScriptedChatFlowRunner(
+    runner = UnifiedScriptedChatFlowRunner(
         "unified",
         {
             "needs_file_context": [
@@ -151,18 +130,15 @@ def main() -> int:
         },
     )
 
-    report = compare_chat_flows(
+    report = run_chat_flow_harness(
         scenarios,
-        current,
-        unified,
+        runner,
         parallel=not args.serial,
         max_workers=args.max_workers or None,
     )
-    run_dir = write_comparison_artifacts(report, args.output_root, report_title="Scripted Harness Self-Test")
-    print(f"Wrote scripted harness self-test artifacts to {run_dir}")
+    run_dir = write_harness_artifacts(report, args.output_root, report_title="Scripted Unified Harness Self-Test")
+    print(f"Wrote scripted unified harness artifacts to {run_dir}")
     print(f"Consolidated results: {run_dir / 'results.json'}")
-    print(f"Harness matrix: {run_dir / 'harness_matrix.json'}")
-    print(f"OpenAI Evals package report: {run_dir / 'openai_evals_package_report.json'}")
     return 0
 
 

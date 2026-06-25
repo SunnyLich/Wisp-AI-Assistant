@@ -2390,16 +2390,6 @@ def _responses_create_with_retries(client, kwargs: dict, *, provider: str, model
             current = retry_kwargs
 
 
-def _responses_tool_loop_kwargs(kwargs: dict) -> dict:
-    """Keep Responses tool-call turns available for later function outputs."""
-    current = dict(kwargs)
-    # Responses function_call_output items are matched against prior tool calls
-    # via previous_response_id. Some routes cannot do that if the prior response
-    # was created with store=false, so tool loops must be stateful.
-    current["store"] = True
-    return current
-
-
 def _responses_stream_kwargs(kwargs: dict) -> dict:
     """Return kwargs for Responses streaming with an explicit body stream flag."""
     current = dict(kwargs)
@@ -2428,152 +2418,6 @@ def _store_must_be_false_error(exc: Exception) -> bool:
             "only supports",
         )
     )
-
-
-def _stateless_tool_output_input(calls: list[dict[str, str]], tool_outputs: list[dict]) -> list[dict]:
-    """Build a fallback input that carries function calls and outputs together."""
-    items: list[dict] = []
-    for call, output in zip(calls, tool_outputs):
-        call_item = {
-            "type": "function_call",
-            "call_id": call["call_id"],
-            "name": call["name"],
-            "arguments": call.get("arguments") or "{}",
-        }
-        if call.get("id"):
-            call_item["id"] = call["id"]
-        items.append(call_item)
-        items.append(output)
-    return items
-
-
-def _run_responses_tool_loop(
-    client,
-    kwargs: dict,
-    *,
-    provider: str,
-    model: str,
-    allowed_tools: list[str] | None = None,
-    pinned_tools: list[str] | None = None,
-    user_intent: str = "",
-    max_rounds: int = 3,
-) -> Generator[str, None, None]:
-    """Run a non-streaming Responses API function-call loop."""
-    followup_instructions = kwargs.get("instructions")
-    executed_tools: list[str] = []
-    mutation_continuation_sent = False
-    response = _responses_create_with_retries(
-        client,
-        _responses_tool_loop_kwargs(kwargs),
-        provider=provider,
-        model=model,
-    )
-    _update_route_capabilities(provider, model, supports_tools=True)
-    tool_call_count = 0
-    tool_result_chars = 0
-    for _round in range(max_rounds):
-        calls = _response_function_calls(response)
-        if not calls:
-            if (
-                not mutation_continuation_sent
-                and _needs_file_mutation_continuation(
-                    user_intent=user_intent,
-                    allowed_tools=allowed_tools,
-                    executed_tools=executed_tools,
-                )
-            ):
-                mutation_continuation_sent = True
-                followup_kwargs = {
-                    "model": model,
-                    "input": [{
-                        "type": "message",
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": _file_mutation_continuation_prompt()}],
-                    }],
-                    "previous_response_id": _response_id(response),
-                    "store": True,
-                }
-                if followup_instructions:
-                    followup_kwargs["instructions"] = followup_instructions
-                response = _responses_create_with_retries(
-                    client,
-                    followup_kwargs,
-                    provider=provider,
-                    model=model,
-                )
-                continue
-            text = _response_output_text(response)
-            if text:
-                yield text
-            return
-        progress_text = _response_output_text(response)
-        if progress_text:
-            yield _progress_chunk(progress_text)
-        tool_outputs = []
-        for call in calls:
-            try:
-                inputs = _stdlib_json.loads(call["arguments"] or "{}")
-                if not isinstance(inputs, dict):
-                    inputs = {}
-            except Exception:
-                inputs = {}
-            executed_tools.append(call["name"])
-            if _tool_call_limit_reached(tool_call_count):
-                result = (
-                    "Tool call skipped: this reply's tool-call budget is exhausted. "
-                    "Ask for a narrower request or run a deeper profile."
-                )
-            else:
-                tool_call_count += 1
-                result = _execute_model_tool(call["name"], inputs, allowed_tools=allowed_tools)
-                result, tool_result_chars = _clip_tool_result_for_turn(result, tool_result_chars)
-            tool_outputs.append({
-                "type": "function_call_output",
-                "call_id": call["call_id"],
-                "output": result,
-            })
-        followup_kwargs = {
-            "model": model,
-            "input": tool_outputs,
-            "previous_response_id": _response_id(response),
-            "store": True,
-        }
-        if followup_instructions:
-            followup_kwargs["instructions"] = followup_instructions
-        try:
-            response = _responses_create_with_retries(
-                client,
-                followup_kwargs,
-                provider=provider,
-                model=model,
-            )
-        except Exception as exc:
-            if not _no_matching_tool_call_error(exc):
-                raise
-            fallback_kwargs = {
-                "model": model,
-                "input": _stateless_tool_output_input(calls, tool_outputs),
-                "store": False,
-            }
-            if followup_instructions:
-                fallback_kwargs["instructions"] = followup_instructions
-            response = _responses_create_with_retries(
-                client,
-                fallback_kwargs,
-                provider=provider,
-                model=model,
-            )
-    text = _response_output_text(response)
-    if text:
-        yield text
-
-
-def _unified_chat_tool_loop_enabled() -> bool:
-    """Return whether the provider-neutral chat tool loop should handle chat tools."""
-    raw = os.getenv("WISP_UNIFIED_CHAT_TOOL_LOOP")
-    if raw is not None:
-        return raw.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(getattr(config, "UNIFIED_CHAT_TOOL_LOOP", False))
 
 
 def _chat_tool_trace_ui_enabled() -> bool:
@@ -4822,8 +4666,7 @@ def _stream_codex(
                 openai_format=True,
             )
             try:
-                runner = _run_unified_responses_tool_loop if _unified_chat_tool_loop_enabled() else _run_responses_tool_loop
-                yield from runner(
+                yield from _run_unified_responses_tool_loop(
                     client,
                     {
                         "model": model,
@@ -5207,70 +5050,23 @@ def _stream_anthropic(
         )
         return
 
-    if _unified_chat_tool_loop_enabled():
-        try:
-            yield from _run_unified_anthropic_tool_loop(
-                client,
-                model=model,
-                system=system,
-                messages=messages,
-                tools=tool_schemas,
-                max_tokens=anthropic_tool_max_tokens,
-                allowed_tools=allowed_tools,
-                pinned_tools=pinned_tools,
-                user_intent=user_text,
-            )
-            return
-        except Exception as exc:
-            _record_route_error_capabilities("anthropic", model, exc)
-            if _tools_not_supported_error(exc):
-                print("[llm] Anthropic unified live tools rejected; retrying with front-loaded context", flush=True)
-                _update_route_capabilities("anthropic", model, supports_tools=False)
-                yield from _stream_anthropic(
-                    user_message,
-                    image_base64,
-                    model,
-                    client,
-                    _inject_frontloaded_tool_context(
-                        ambient_context,
-                        allowed_tools,
-                        query=user_message,
-                    ),
-                    memory_context,
-                    use_tools=False,
-                    allowed_tools=allowed_tools,
-                    allow_screenshot_tool=False,
-                    screenshot_tool_b64=screenshot_tool_b64,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    history=history,
-                    system_prompt=system_prompt,
-                )
-                return
-            raise
-
-    request = {
-        "model": model,
-        "max_tokens": anthropic_max_tokens,
-        "system": system,
-        "messages": messages,
-        "tools": tool_schemas,
-    }
-    if temperature is not None:
-        request["temperature"] = temperature
-    first_round_text: list[str] = []
     try:
-        with client.messages.stream(**request) as stream:
-            _update_route_capabilities("anthropic", model, supports_stream=True, supports_tools=True)
-            if image_base64:
-                _update_route_capabilities("anthropic", model, supports_images=True)
-            for text in stream.text_stream:
-                first_round_text.append(text)
-            final = stream.get_final_message()
+        yield from _run_unified_anthropic_tool_loop(
+            client,
+            model=model,
+            system=system,
+            messages=messages,
+            tools=tool_schemas,
+            max_tokens=anthropic_tool_max_tokens,
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
+            user_intent=user_text,
+        )
+        return
     except Exception as exc:
         _record_route_error_capabilities("anthropic", model, exc)
         if _tools_not_supported_error(exc):
-            print("[llm] Anthropic live tools rejected; retrying with front-loaded context", flush=True)
+            print("[llm] Anthropic unified live tools rejected; retrying with front-loaded context", flush=True)
             _update_route_capabilities("anthropic", model, supports_tools=False)
             yield from _stream_anthropic(
                 user_message,
@@ -5293,34 +5089,7 @@ def _stream_anthropic(
                 system_prompt=system_prompt,
             )
             return
-        if _streaming_not_supported_error(exc):
-            _update_route_capabilities("anthropic", model, supports_stream=False, requires_stream=False)
         raise
-
-    if final.stop_reason != "tool_use":
-        for text in first_round_text:
-            yield text
-        return
-
-    # A tool was called -” execute it and do followup round(s) non-streaming.
-    first_round_progress = "".join(first_round_text)
-    if first_round_progress:
-        yield _progress_chunk(first_round_progress)
-    yield from _run_anthropic_tool_loop(
-        client,
-        messages,
-        final,
-        model,
-        system,
-        max_tokens=anthropic_tool_max_tokens,
-        prompt=user_message,
-        include_general=use_tools,
-        include_screenshot=allow_screenshot_tool,
-        screenshot_tool_b64=screenshot_tool_b64,
-        allowed_tools=allowed_tools,
-        pinned_tools=pinned_tools,
-    )
-
 
 # ------------------------------------------------------------------
 # Inline rewrite / fix  (Ctrl+Shift+Q)
@@ -6038,8 +5807,7 @@ def _stream_single_history_route(
                     instructions = _with_local_file_tools_note(instructions, allowed_tools)
                     instructions = _with_memory_search_note(instructions, allowed_tools)
                     instructions = _with_memory_save_note(instructions, allowed_tools)
-                    runner = _run_unified_responses_tool_loop if _unified_chat_tool_loop_enabled() else _run_responses_tool_loop
-                    yield from runner(
+                    yield from _run_unified_responses_tool_loop(
                         _get_chat_codex_client(),
                         {
                             "model": model,
