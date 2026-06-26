@@ -701,6 +701,41 @@ class ConfigEnvTests(unittest.TestCase):
             config.VOICE_CALLER.clear()
             config.VOICE_CALLER.update(previous)
 
+    def test_snip_caller_loads_caller_style_context_and_forces_screenshot_off(self):
+        """Verify snip caller loads caller-style context while disabling screenshots."""
+        previous = dict(config.SNIP_CALLER)
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "SNIP_CONTEXT_AMBIENT": "false",
+                    "SNIP_CONTEXT_CLIPBOARD": "true",
+                    "SNIP_CONTEXT_DOCUMENTS_MODE": "model",
+                    "SNIP_CONTEXT_BROWSER_MODE": "model",
+                    "SNIP_CONTEXT_GITHUB_MODE": "off",
+                    "SNIP_CONTEXT_MEMORY_MODE": "off",
+                    "SNIP_CONTEXT_SCREENSHOT": "auto",
+                    "SNIP_FILE_ACCESS": "read",
+                    "SNIP_TOOLS": "alpha:on",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            snip = config.SNIP_CALLER
+            self.assertFalse(snip["context_ambient"])
+            self.assertTrue(snip["context_clipboard"])
+            self.assertEqual(snip["context_documents_mode"], "model")
+            self.assertEqual(snip["context_browser_mode"], "model")
+            self.assertEqual(snip["context_memory_mode"], "off")
+            self.assertEqual(snip["context_screenshot"], "off")
+            self.assertTrue(snip["context_tools"])
+            self.assertEqual(snip["file_access"], "read")
+            self.assertEqual(snip["tools"], {"alpha": "on"})
+        finally:
+            config.SNIP_CALLER.clear()
+            config.SNIP_CALLER.update(previous)
+
     def test_caller_tool_overrides_load_from_env(self):
         """Verify caller tool overrides load from env behavior."""
         previous_rows = list(config.CALLER_ROWS)

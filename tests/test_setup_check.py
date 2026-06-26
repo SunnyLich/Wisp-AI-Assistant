@@ -102,3 +102,28 @@ def test_setup_check_accepts_kokoro_with_voice(monkeypatch):
 
     assert by_name["TTS"]["status"] == "pass"
     assert "kokoro" in by_name["TTS"]["message"]
+
+
+def test_setup_check_warns_when_elevenlabs_package_missing(monkeypatch):
+    """ElevenLabs needs both an API key and the optional Python package."""
+    import config
+    from core import optional_deps
+
+    monkeypatch.setattr(config, "reload", lambda: None)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config, "LLM_MODEL", "llama-test", raising=False)
+    monkeypatch.setattr(config, "TTS_PROVIDER", "elevenlabs", raising=False)
+    monkeypatch.setattr(config, "ELEVENLABS_API_KEY", "eleven-key", raising=False)
+    monkeypatch.setattr(optional_deps, "is_importable", lambda module: False)
+    monkeypatch.setattr(config, "STT_MODEL", "base", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_SNIP", "ctrl+alt+q", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_VOICE", "f9", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_ADD_CONTEXT", "alt+q", raising=False)
+    monkeypatch.setattr(config, "CALLER_ROWS", [{"hotkey": "ctrl+q"}], raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+
+    rows = setup_check.run_setup_check()
+    by_name = {row["name"]: row for row in rows}
+
+    assert by_name["TTS"]["status"] == "fail"
+    assert "Install ElevenLabs" in by_name["TTS"]["recommendation"]

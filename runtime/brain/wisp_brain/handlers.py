@@ -586,6 +586,7 @@ def brain_addons_list() -> dict[str, Any]:
     from core.system.paths import ADDONS_DIR
 
     addons_dir = Path(ADDONS_DIR)
+    addons_dir.mkdir(parents=True, exist_ok=True)
     return {
         "addons_dir": str(addons_dir),
         "addons": _addon_summaries(addons_dir),

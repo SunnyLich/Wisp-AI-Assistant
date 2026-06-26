@@ -56,10 +56,23 @@ def run_setup_check() -> list[dict[str, str]]:
 
     tts_provider = str(getattr(config, "TTS_PROVIDER", "none") or "none").strip().lower()
     tts_ok = tts_provider == "none"
+    tts_recommendation = ""
     if tts_provider == "cartesia":
         tts_ok = bool(getattr(config, "CARTESIA_API_KEY", ""))
     elif tts_provider == "elevenlabs":
-        tts_ok = bool(getattr(config, "ELEVENLABS_API_KEY", ""))
+        has_key = bool(getattr(config, "ELEVENLABS_API_KEY", ""))
+        try:
+            from core import optional_deps
+
+            has_package = optional_deps.is_importable("elevenlabs")
+        except Exception:
+            has_package = False
+        tts_ok = has_key and has_package
+        if has_key and not has_package:
+            tts_recommendation = (
+                "Recommendation: ElevenLabs support is not installed. Open Settings > Voice and click "
+                "Install ElevenLabs, or rebuild from a shorter path."
+            )
     elif tts_provider == "openai":
         tts_ok = bool(getattr(config, "OPENAI_API_KEY", ""))
     elif tts_provider == "openai_compatible":
@@ -76,7 +89,7 @@ def run_setup_check() -> list[dict[str, str]]:
             "name": "TTS",
             "status": _status(tts_ok, warning=tts_provider == "none"),
             "message": "TTS is off." if tts_provider == "none" else f"TTS provider configured: {tts_provider}.",
-            "recommendation": "" if tts_ok else recommendation_for("tts no audio"),
+            "recommendation": "" if tts_ok else (tts_recommendation or recommendation_for("tts no audio")),
         }
     )
 

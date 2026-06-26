@@ -1028,12 +1028,12 @@ def test_context_disabled_sources_preview_and_os_native_contract_workflow(
     assert snapshot["browser_url"] == "https://example.test/page"
 
 
-def test_prompt_tool_keywords_and_memory_scheduler_settings_workflow(
+def test_prompt_tools_and_memory_scheduler_settings_workflow(
     isolated_app_state: IsolatedAppState,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    """Prompt, tool keyword, and memory scheduling settings change runtime behavior."""
+    """Prompt, tool visibility, and memory scheduling settings change runtime behavior."""
     import config
     from core.memory_store import store as memory_store
     from core.tool_registry import ToolRegistry, ToolSpec
@@ -1053,15 +1053,9 @@ def test_prompt_tool_keywords_and_memory_scheduler_settings_workflow(
             executor=lambda _inputs: "ok",
         )
     )
-    registry.set_keyword_filter("workflow_tool", ["deploy"])
-    assert "workflow_tool" not in {
+    assert "workflow_tool" in {
         schema["name"] for schema in registry.filtered_schemas("hello there", include_server_tools=False)
     }
-    assert "workflow_tool" in {
-        schema["name"] for schema in registry.filtered_schemas("please deploy", include_server_tools=False)
-    }
-    keywords_path = tmp_path / "tool_keywords.json"
-    registry.save_keyword_filters(keywords_path)
     reloaded = ToolRegistry(plugin_dir=tmp_path / "no-tools")
     reloaded.register_builtin(
         ToolSpec(
@@ -1071,9 +1065,8 @@ def test_prompt_tool_keywords_and_memory_scheduler_settings_workflow(
             executor=lambda _inputs: "ok",
         )
     )
-    reloaded.load_keyword_filters(keywords_path)
     assert "workflow_tool" in {
-        schema["name"] for schema in reloaded.filtered_schemas("deploy now", include_server_tools=False)
+        schema["name"] for schema in reloaded.filtered_schemas("anything now", include_server_tools=False)
     }
 
     timers: list[Any] = []

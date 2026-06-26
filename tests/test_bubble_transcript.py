@@ -38,6 +38,53 @@ def test_transcript_preview_is_replaced_by_first_reply_chunk():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_notice_bubble_close_is_dismiss_only():
+    """Informational notices should not route their close button to backend stop."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    stop_calls = []
+    bubble.set_stop_callback(lambda: stop_calls.append("stop"))
+
+    def close_release() -> QMouseEvent:
+        point = QPointF(bubble._close_rect().center())
+        return QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            point,
+            point,
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+
+    try:
+        bubble.show_notice("Warming up local voice...", timeout_ms=0)
+        assert bubble._close_cancels is False
+        bubble._close_pressed = True
+        bubble.mouseReleaseEvent(close_release())
+        assert stop_calls == []
+
+        bubble.show_reading("read this aloud")
+        assert bubble._close_cancels is True
+        bubble._close_pressed = True
+        bubble.mouseReleaseEvent(close_release())
+        assert stop_calls == ["stop"]
+
+        bubble.show_notice("Another notice", timeout_ms=0)
+        bubble.append_chunk("Actual reply")
+        assert bubble._close_cancels is True
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_final_only_reply_starts_visible_at_beginning():
     """Verify all-at-once replies show the beginning before reveal advances."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -96,6 +143,41 @@ def test_multi_chunk_reply_follows_latest_text_before_first_highlight():
         visible = " ".join(bubble._lines)
         assert "eleven" in visible
         assert "one two" not in visible
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_pending_speech_stops_following_latest_stream_text():
+    """Verify queued TTS anchors the bubble before audio playback starts."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_LINES = 1
+    config.BUBBLE_WIDTH = 260
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("one two three four five ")
+        bubble.append_chunk("six seven eight nine ten eleven ")
+        assert "eleven" in " ".join(bubble._lines)
+
+        bubble.start_speech_tracking()
+        assert "one" in " ".join(bubble._lines)
+
+        bubble.append_chunk("twelve thirteen fourteen fifteen")
+        visible = " ".join(bubble._lines)
+        assert "one" in visible
+        assert "fifteen" not in visible
     finally:
         config.BUBBLE_LINES = old_lines
         config.BUBBLE_WIDTH = old_width
@@ -309,6 +391,77 @@ def test_manual_scroll_snaps_back_to_highlight_while_speaking():
         assert bubble._lines == ["three", "four"]
     finally:
         config.BUBBLE_LINES = old_lines
+        config.BUBBLE_SCROLL_SNAP_ENABLED = old_snap
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_manual_wheel_scroll_repaints_immediately():
+    """Verify wheel scrolling does not wait for the next speech/highlight tick to repaint."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    class _Delta:
+        def __init__(self, value: int):
+            self._value = value
+
+        def y(self) -> int:
+            return self._value
+
+    class _WheelEvent:
+        def __init__(self, value: int):
+            self.accepted = False
+            self._value = value
+
+        def angleDelta(self) -> _Delta:
+            return _Delta(self._value)
+
+        def pixelDelta(self) -> _Delta:
+            return _Delta(0)
+
+        def accept(self) -> None:
+            self.accepted = True
+
+    class _TestBubble(SpeechBubble):
+        def __init__(self):
+            self.update_count = 0
+            super().__init__()
+
+        def update(self, *args, **kwargs):  # noqa: N802 - Qt override
+            self.update_count += 1
+            super().update(*args, **kwargs)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_scroll = getattr(config, "BUBBLE_SCROLL_ENABLED", True)
+    old_snap = getattr(config, "BUBBLE_SCROLL_SNAP_ENABLED", True)
+    config.BUBBLE_LINES = 2
+    config.BUBBLE_SCROLL_ENABLED = True
+    config.BUBBLE_SCROLL_SNAP_ENABLED = False
+    bubble = _TestBubble()
+
+    try:
+        bubble._all_line_segments = [
+            [(word, False, idx, False, True)]
+            for idx, word in enumerate(["one", "two", "three", "four"])
+        ]
+        bubble._revealed_count = 1
+        bubble._apply_visible_lines()
+        before_updates = bubble.update_count
+
+        event = _WheelEvent(-120)
+        bubble.wheelEvent(event)
+
+        assert event.accepted is True
+        assert bubble._lines == ["two", "three"]
+        assert bubble.update_count == before_updates + 1
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_SCROLL_ENABLED = old_scroll
         config.BUBBLE_SCROLL_SNAP_ENABLED = old_snap
         bubble.deleteLater()
         app.processEvents()

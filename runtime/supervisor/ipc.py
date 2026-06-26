@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from runtime import protocol
-from runtime.bootstrap import repo_root
+from runtime.bootstrap import data_root, repo_root
 
 log = logging.getLogger("wisp.runtime.supervisor")
 
@@ -87,7 +87,7 @@ class WorkerClient:
         env = os.environ.copy()
         env.update(self.spec.env)
         env.setdefault("PYTHONUNBUFFERED", "1")
-        env.setdefault("WISP_REPO_ROOT", str(repo_root()))
+        env.setdefault("WISP_REPO_ROOT", str(data_root()))
         self._stderr_log_path = self._worker_log_path(env)
         log.info("starting %s: %s", self.spec.name, self.spec.module)
         if self._stderr_log_path is not None:

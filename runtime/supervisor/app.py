@@ -36,7 +36,11 @@ def _runtime_log_mode() -> str:
     mode = str(os.environ.get("WISP_RUNTIME_LOG_MODE") or "").strip().lower()
     if mode in {"debug", "always", "logs", "log"}:
         return "debug"
+    if mode in {"crash", "off", "none", "0", "false"}:
+        return "crash"
     if os.environ.get("WISP_RUN_LOG_DIR"):
+        return "debug"
+    if getattr(sys, "frozen", False):
         return "debug"
     return "crash"
 

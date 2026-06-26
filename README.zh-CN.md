@@ -45,7 +45,7 @@ Wisp 专为那些打开聊天应用会打断工作流的时刻而设计。
 - **高度可定制** — 每个快捷键、意图键、提示词、上下文来源、粘贴行为、模型路由、语音设置和气泡尺寸均可修改。
 - **友好的图形界面** — 设置、检查、隐私报告、记忆工具和模型警告清晰说明正在发生的事情，无需阅读代码。
 - **上下文捕获** — Wisp 可以读取选中文本、剪贴板文本、聚焦 UI、打开的文档、浏览器内容、最近文件和可选截图。
-- **语音输入输出** — 通过 faster-whisper 实现本地语音识别，支持 Cartesia、ElevenLabs、OpenAI、OpenAI 兼容或禁用 TTS。
+- **语音输入输出** — 通过 faster-whisper 实现本地语音识别，外加在本机运行的神经 TTS（Kokoro 以及 GPT-SoVITS 语音克隆），或云端/兼容语音（Cartesia、ElevenLabs、OpenAI 以及任何 OpenAI 兼容服务器），默认禁用 TTS。
 - **视觉截图** — 使用 `Ctrl+Alt+Q` 绘制区域并将截图发送给视觉模型。
 - **重写并粘贴** — 使用 `Ctrl+Shift+Q` 重写选中文本并将结果粘贴回活动字段。
 - **自带提供商** — 支持 Groq、Anthropic、OpenAI、Google、DeepSeek、OpenRouter、Mistral、XAI、Together、Cerebras、自定义 OpenAI 兼容服务器、GitHub Copilot 等。
@@ -216,7 +216,7 @@ Wisp 是免费的，您也可以将模型费用保持在零。多个提供商提
 
 只要您能用 Python 编写它并且它适合上述某个钩子点，就可以将其连接到您已经使用的同一个快捷键驱动悬浮窗中。
 
-捆绑的 `addons/healthcheck` 插件是一个工作参考，演示了每个钩子。请参阅 [插件指南](addons/README.md) 了解完整的清单和钩子合约，或 [Wisp 文档网站](Wisp%20Website/Wisp%20Docs.html) 中的**插件**页面。
+Wisp 内置了一个 **MCP 桥接** 插件（`addons/mcp_bridge`）：在它的 `servers.json` 中列出任意 [Model Context Protocol](https://modelcontextprotocol.io) 服务器，它便会将这些服务器的整套工具作为 Wisp 工具暴露给模型，于是任何 MCP 服务器都能从悬浮窗调用。请参阅 [插件指南](addons/README.md) 了解完整的清单和钩子合约，或 [Wisp 文档网站](Wisp%20Website/Wisp%20Docs.html) 中的**插件**页面。
 
 ## 隐私与控制
 

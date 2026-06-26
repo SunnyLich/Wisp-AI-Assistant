@@ -114,6 +114,16 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def data_root() -> Path:
+    """Return the writable Wisp data root used by shared core modules."""
+    try:
+        from core.system.paths import REPO_ROOT
+
+        return Path(REPO_ROOT)
+    except Exception:
+        return repo_root()
+
+
 def brain_dir() -> Path:
     """Return the pure-Python brain package directory."""
     return repo_root() / "runtime" / "brain"
@@ -134,4 +144,10 @@ def configure_paths(*, include_brain: bool = False) -> Path:
         text = str(path)
         if text not in sys.path:
             sys.path.insert(0, text)
+    try:
+        from core import optional_deps
+
+        optional_deps.add_optional_packages_to_path()
+    except Exception:
+        pass
     return root

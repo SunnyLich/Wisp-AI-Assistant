@@ -484,6 +484,20 @@ _VOICE_DEFAULTS: dict = {
 }
 
 
+_SNIP_DEFAULTS: dict = {
+    "label": "Snip screen region",
+    "paste_back": False,
+    "context_ambient": True,
+    "context_clipboard": False,
+    "context_documents_mode": "auto",
+    "context_browser_mode": "off",
+    "context_github_mode": "off",
+    "context_memory_mode": "on",
+    "context_screenshot": "off",
+    "file_access": "off",
+}
+
+
 def _load_voice_caller() -> dict:
     """Read VOICE_CONTEXT_* env vars into a caller-shaped row for push-to-talk."""
     d = _VOICE_DEFAULTS
@@ -532,6 +546,86 @@ def _load_voice_caller() -> dict:
             str(profile_defaults.get("file_access") or d.get("file_access") or "off"),
         ),
         "tools": parse_tool_modes(os.getenv("VOICE_TOOLS")),
+    }
+
+
+def _load_snip_caller() -> dict:
+    """Read SNIP_CONTEXT_* env vars into a caller-shaped row for region snips."""
+    d = _SNIP_DEFAULTS
+    profile_env = os.getenv("SNIP_PROFILE")
+    profile_id = _profile_id(profile_env, ACTIVE_PROFILE)
+    profile_defaults = (
+        dict(resolve_profile(profile_id).caller_defaults)
+        if profile_env or ACTIVE_PROFILE != "default"
+        else {}
+    )
+    profile_documents_mode = str(
+        profile_defaults.get("context_documents_mode")
+        or d["context_documents_mode"]
+    )
+    profile_browser_mode = str(
+        profile_defaults.get("context_browser_mode")
+        or d["context_browser_mode"]
+    )
+    profile_github_mode = str(
+        profile_defaults.get("context_github_mode")
+        or d["context_github_mode"]
+    )
+    profile_memory_mode = str(
+        profile_defaults.get("context_memory_mode")
+        or d["context_memory_mode"]
+    )
+    legacy_documents_key = "SNIP_CONTEXT_DOCUMENTS"
+    legacy_tools_key = "SNIP_CONTEXT_TOOLS"
+    legacy_documents = env_bool(legacy_documents_key, profile_documents_mode == "auto")
+    legacy_tools = env_bool(
+        legacy_tools_key,
+        any(
+            mode == "model"
+            for mode in (
+                profile_documents_mode,
+                profile_browser_mode,
+                profile_github_mode,
+                profile_memory_mode,
+            )
+        ),
+    )
+    if os.getenv(legacy_documents_key) is not None or os.getenv(legacy_tools_key) is not None:
+        default_documents_mode = "auto" if legacy_documents else ("model" if legacy_tools else "off")
+    else:
+        default_documents_mode = profile_documents_mode
+    documents_mode = _context_mode(
+        os.getenv("SNIP_CONTEXT_DOCUMENTS_MODE"),
+        default_documents_mode,
+    )
+    browser_default = "model" if os.getenv(legacy_tools_key) is not None and legacy_tools else profile_browser_mode
+    github_default = "model" if os.getenv(legacy_tools_key) is not None and legacy_tools else profile_github_mode
+    browser_mode = _context_mode(os.getenv("SNIP_CONTEXT_BROWSER_MODE"), browser_default)
+    github_mode = _context_mode(os.getenv("SNIP_CONTEXT_GITHUB_MODE"), github_default)
+    memory_mode = _memory_context_mode(
+        os.getenv("SNIP_CONTEXT_MEMORY_MODE"),
+        profile_memory_mode,
+    )
+    tools = parse_tool_modes(os.getenv("SNIP_TOOLS"))
+    return {
+        "profile": profile_id,
+        "hotkey": os.getenv("HOTKEY_SNIP", "ctrl+alt+q"),
+        "label": d["label"],
+        "paste_back": False,
+        "context_ambient": env_bool("SNIP_CONTEXT_AMBIENT", bool(d["context_ambient"])),
+        "context_clipboard": env_bool("SNIP_CONTEXT_CLIPBOARD", bool(d["context_clipboard"])),
+        "context_documents": documents_mode == "auto",
+        "context_tools": any(m == "model" for m in (documents_mode, browser_mode, github_mode, memory_mode)),
+        "context_documents_mode": documents_mode,
+        "context_browser_mode": browser_mode,
+        "context_github_mode": github_mode,
+        "context_memory_mode": memory_mode,
+        "context_screenshot": "off",
+        "file_access": env_file_access_mode(
+            "SNIP_FILE_ACCESS",
+            str(profile_defaults.get("file_access") or d.get("file_access") or "off"),
+        ),
+        "tools": tools,
     }
 
 
@@ -699,7 +793,7 @@ def _load_config() -> None:
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP, HOTKEY_READ_SELECTION_ALOUD, HOTKEY_VOICE, HOTKEY_DICTATE, DICTATE_MODE
     global VOICE_TRANSCRIPT_CONFIRM
     global INTENT_CONTEXT_TOGGLE_KEYS, INTENT_OVERLAY_TIMEOUT_MS
-    global SNIP_CONTEXT_AMBIENT, SNIP_CONTEXT_DOCUMENTS, SNIP_CONTEXT_TOOLS
+    global SNIP_CONTEXT_AMBIENT, SNIP_CONTEXT_DOCUMENTS, SNIP_CONTEXT_TOOLS, SNIP_CALLER
     global STT_MODEL, STT_COMPUTE_TYPE, STT_LANGUAGE, STT_BEAM_SIZE, STT_DEVICE
     global CALLER_ROWS, VOICE_CALLER
     global CONTEXT_BROWSER_MAX_CHARS, CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS, CONTEXT_TOOL_DOCUMENT_MAX_CHARS
@@ -853,7 +947,7 @@ def _load_config() -> None:
     )
 
     SNIP_CONTEXT_AMBIENT   = env_bool("SNIP_CONTEXT_AMBIENT",   True)
-    SNIP_CONTEXT_DOCUMENTS = env_bool("SNIP_CONTEXT_DOCUMENTS", False)
+    SNIP_CONTEXT_DOCUMENTS = env_bool("SNIP_CONTEXT_DOCUMENTS", True)
     SNIP_CONTEXT_TOOLS     = env_bool("SNIP_CONTEXT_TOOLS",     False)
 
     # --- Context and tool budgets ---
@@ -930,6 +1024,14 @@ def _load_config() -> None:
     else:
         CALLER_ROWS = new_rows
 
+    # --- Snip screen-region caller context ---
+    new_snip = _load_snip_caller()
+    if "SNIP_CALLER" in globals():
+        SNIP_CALLER.clear()
+        SNIP_CALLER.update(new_snip)
+    else:
+        SNIP_CALLER = new_snip
+
     # --- Voice (push-to-talk) caller ---
     new_voice = _load_voice_caller()
     if "VOICE_CALLER" in globals():
@@ -949,7 +1051,7 @@ def _load_config() -> None:
 
     # --- UI sizes ---
     BUBBLE_WIDTH           = env_int("BUBBLE_WIDTH",      340)
-    BUBBLE_LINES           = env_int("BUBBLE_LINES",      3)
+    BUBBLE_LINES           = env_int("BUBBLE_LINES",      4)
     BUBBLE_FONT_SIZE       = max(6, min(env_int("BUBBLE_FONT_SIZE", 10), 32))
     BUBBLE_COLOR           = os.getenv("BUBBLE_COLOR",           "#1c1c24dc")
     BUBBLE_TEXT_COLOR      = os.getenv("BUBBLE_TEXT_COLOR",      "#e6e6e6")
@@ -959,7 +1061,7 @@ def _load_config() -> None:
     BUBBLE_SCROLL_SNAP_DELAY_MS = env_int("BUBBLE_SCROLL_SNAP_DELAY_MS", 2500)
     # ICON_SIZE / ICON_BACKSTOP_MS (formerly DOLL_SIZE / DOLL_ICON_BACKSTOP_MS) —
     # old keys still honored for back-compat.
-    ICON_SIZE              = env_int("ICON_SIZE",     env_int("DOLL_SIZE",             80))
+    ICON_SIZE              = env_int("ICON_SIZE",     env_int("DOLL_SIZE",             60))
     ICON_BACKSTOP_MS       = env_int("ICON_BACKSTOP_MS", env_int("DOLL_ICON_BACKSTOP_MS", 5000))
     BUBBLE_HIDE_DELAY_MS   = env_int("BUBBLE_HIDE_DELAY_MS",   3500)
     BUBBLE_REVEAL_WPM      = env_int("BUBBLE_REVEAL_WPM",      170)

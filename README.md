@@ -41,16 +41,17 @@ Highlight text, press `Ctrl+Q`, hit one intent key, and Wisp asks your configure
 ## Highlights
 
 - **Overlay first** - a floating icon, intent picker, and reply bubble stay on top without taking over your desktop.
+- **Full chat window** - click the floating icon to open a persistent chat that remembers past conversations, keeps the context you captured in the overlay, and can expand a quick overlay reply into a longer back-and-forth.
 - **Privacy by default** - Wisp has no hosted storage layer; data stays on your machine unless you send it to your chosen model, and privacy mode can warn or redact before sensitive context leaves.
 - **Highly customizable** - every hotkey, intent key, prompt, context source, paste-back behavior, model route, voice setting, and bubble dimension can be changed.
 - **Approachable GUI** - Settings, setup checks, privacy reports, memory tools, and model warnings explain what is happening without requiring you to read the code.
 - **Context capture** - Wisp can read selected text, clipboard text, focused UI, open documents, browser content, recent files, and optional screenshots, so it does not have to rely on screen grabs alone.
-- **Voice in and out** - local STT via faster-whisper, plus Cartesia, ElevenLabs, OpenAI, OpenAI-compatible, or disabled TTS.
+- **Voice in and out** - local STT via faster-whisper, plus on-device neural TTS (Kokoro, and GPT-SoVITS voice cloning) or cloud/compatible voices (Cartesia, ElevenLabs, OpenAI, any OpenAI-compatible server), with TTS off by default.
 - **Vision snips** - draw a region with `Ctrl+Alt+Q` and send the screenshot to a vision model.
 - **Rewrite and paste** - use `Ctrl+Shift+Q` to rewrite selected text with captured context and paste the result back into the active field.
 - **Bring your own provider** - Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, XAI, Together, Cerebras, custom OpenAI-compatible servers, GitHub Copilot, and more.
 - **Local memory** - optional short-term and long-term memory are stored locally, with a viewer for editing or deleting facts.
-- **Addons** - extend Wisp with hooks, tray actions, settings, model-callable tools, intents, and hotkeys.
+- **Addons and MCP** - extend Wisp with hooks, tray actions, settings, model-callable tools, intents, and hotkeys; a bundled MCP bridge turns any Model Context Protocol server into tools the model can call.
 - **Agent tasks** - a sandboxed task framework exists for longer jobs that need decomposition, review, and artifacts.
 
 ## Demos
@@ -154,7 +155,9 @@ For source builds and advanced setups, `.env.example` documents the available co
 
 ## Free Model API Sources
 
-Wisp is free, and you can keep your model costs at zero too. Several providers offer a genuinely free tier, free monthly credits, or no-cost rate-limited access. Wisp reaches most of them through its OpenAI-compatible client — a few have a dedicated `LLM_PROVIDER` value, and the rest work through the `custom` endpoint by pointing `CUSTOM_BASE_URL` at the provider's OpenAI-compatible URL. Add the key itself in **Settings → LLM**.
+Wisp is free, and you can keep your model costs at zero too. Several providers offer free-tier examples, free monthly credits, or no-cost rate-limited access. Wisp reaches most of them through its OpenAI-compatible client — a few have a dedicated provider value, and the rest work through the custom endpoint. Choose the provider and add the key in **Settings → LLM**.
+
+These examples were last updated on **June 24, 2026**. Free tiers change often, so confirm current limits, credit amounts, and eligibility on the provider's own pricing page before you depend on them.
 
 | Provider | What's free | Good for |
 | --- | --- | --- |
@@ -165,7 +168,7 @@ Wisp is free, and you can keep your model costs at zero too. Several providers o
 | GroqCloud | Free tier with rate limits | Very fast inference for open models like Llama and Qwen |
 | Cerebras Inference | Free API tier for Cerebras-hosted models | Extremely fast text inference and prototyping |
 | GitHub Models | Rate-limited no-cost access for every GitHub account | Prototyping, experiments, GitHub-integrated workflows |
-| Hugging Face Inference Providers | Free monthly credits (currently ~$0.10/month for free users) | Trying lots of open models through one ecosystem |
+| Hugging Face Inference Providers | Example: free monthly credits, about $0.10/month for free users when last checked | Trying lots of open models through one ecosystem |
 | Cloudflare Workers AI | Workers free plan with a free daily allocation | Apps already on Cloudflare; serverless AI endpoints |
 | Vercel AI Gateway | Free tier with $5/month of gateway credit for eligible models | Next.js/Vercel projects; unified OpenAI-compatible access |
 | SambaNova Cloud | $5 of free API credit, no credit card required | Fast hosted open-model inference |
@@ -195,6 +198,11 @@ Every caller, hotkey, label, prompt, context source, paste-back setting, and UI 
 
 Addons are the supported way to extend Wisp. Each addon lives in its own folder under `addons/` with an `addon.toml` manifest, and runs in its own isolated Python host process, so a crash, a slow hook, or a bad dependency in one addon cannot take down the brain worker or any other addon. Capabilities are opt-in: an addon only gets what its manifest declares, and missing permissions are denied. Addons that need third-party packages get a dedicated virtual environment that you approve before it runs.
 
+In portable packaged builds, Wisp creates an `addons` folder next to `Wisp.exe`
+when that folder is writable. If the app is installed somewhere read-only, use
+**Addon Manager -> Open addons folder** to open the fallback user-writable addon
+directory.
+
 An addon can hook into Wisp at several points:
 
 - **Context** - read or rewrite the prompt and context before a query is sent.
@@ -216,7 +224,7 @@ An addon can hook into Wisp at several points:
 
 If you can write it in Python and it fits one of the hook points above, you can wire it into the same hotkey-driven overlay you already use.
 
-The bundled `addons/healthcheck` addon is a working reference that exercises every hook. See the [Addon guide](addons/README.md) for the full manifest and hook contract, or the **Add-ons** page in the [Wisp documentation site](Wisp%20Website/Wisp%20Docs.html).
+Wisp ships with an **MCP bridge** addon (`addons/mcp_bridge`): list any [Model Context Protocol](https://modelcontextprotocol.io) servers in its `servers.json` and it exposes their whole toolkit to the model as Wisp tools, so any MCP server becomes callable from the overlay. See the [Addon guide](addons/README.md) for the full manifest and hook contract, or the **Add-ons** page in the [Wisp documentation site](Wisp%20Website/Wisp%20Docs.html).
 
 ## Privacy And Control
 

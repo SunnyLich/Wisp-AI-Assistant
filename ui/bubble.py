@@ -96,6 +96,7 @@ class SpeechBubble(QWidget):
         self._revealed_count = 0
         self._timestamp_mode = False      # True = driven by Cartesia timestamps
         self._audio_started = False       # True after first PCM chunk reaches playback
+        self._speech_tracking_pending = False  # True after TTS is queued but before audio starts
         self._audio_elapsed = QElapsedTimer()  # measures ms since audio start
         self._pre_audio_timestamps: list[tuple] = []  # batches that arrived before audio start
         self._speed_boosting = False
@@ -155,6 +156,7 @@ class SpeechBubble(QWidget):
         self._click_callback = None       # called on a click (no drag) — opens the chat window
         self._highlight_callback = None   # called(reply_text, revealed_count, finished)
         self._stop_callback = None        # called when the user clicks the close/stop affordance
+        self._close_cancels = True        # False for informational notices that only dismiss UI
 
     # ------------------------------------------------------------------
     # Drag API
@@ -298,7 +300,7 @@ class SpeechBubble(QWidget):
                 should_stop = self._close_rect().contains(event.position().toPoint())
                 self._close_pressed = False
                 if should_stop:
-                    if self._stop_callback:
+                    if self._close_cancels and self._stop_callback:
                         self._stop_callback()
                     self.clear()
                 event.accept()
@@ -363,6 +365,7 @@ class SpeechBubble(QWidget):
             current += steps
         self._manual_scroll_start = max(0, min(max_start, current))
         self._apply_visible_lines()
+        self.update()
         self._schedule_scroll_snap()
         event.accept()
 
@@ -383,7 +386,9 @@ class SpeechBubble(QWidget):
         self._manual_scroll_start = None
         self._reveal_mode = False
         self._audio_started = False
+        self._speech_tracking_pending = False
         self._pre_audio_timestamps = []
+        self._close_cancels = True
         self._scroll_snap_timer.stop()
         self._reveal_timer.stop()
         self._dot_timer.stop()
@@ -413,7 +418,9 @@ class SpeechBubble(QWidget):
         self._finishing = False
         self._reveal_mode = False
         self._audio_started = False
+        self._speech_tracking_pending = False
         self._pre_audio_timestamps = []
+        self._close_cancels = True
         self._scroll_snap_timer.stop()
         self._reveal_timer.stop()
         self._hide_timer.stop()
@@ -428,6 +435,7 @@ class SpeechBubble(QWidget):
         self._dot_timer.stop()
         first_audio_start = not self._audio_started
         self._audio_started = True
+        self._speech_tracking_pending = False
         self._highlight_generation += 1
         self._audio_elapsed.start()   # t=0 for timestamp scheduling
         if first_audio_start and not self._timestamp_mode:
@@ -453,6 +461,14 @@ class SpeechBubble(QWidget):
         self._pre_audio_timestamps = []
         self._rewrap()
         self.show()
+        self.update()
+
+    def start_speech_tracking(self) -> None:
+        """Anchor visible text to the upcoming spoken position before audio starts."""
+        if self._thinking or self._transcript_preview:
+            return
+        self._speech_tracking_pending = True
+        self._apply_visible_lines()
         self.update()
 
     def schedule_words(self, words: list, start_ms: list):
@@ -532,6 +548,7 @@ class SpeechBubble(QWidget):
         if self._thinking:
             self._thinking = False
             self._dot_timer.stop()
+        self._close_cancels = True
         if is_thought:
             self._thought_text += chunk
             self._rewrap()
@@ -618,6 +635,7 @@ class SpeechBubble(QWidget):
         self._finishing = False
         self._timestamp_mode = False
         self._audio_started = False
+        self._speech_tracking_pending = False
         self._last_chunk_ended_with_space = True
         self._reply_chunk_count = 0
         self._speed_boosting = False
@@ -635,6 +653,7 @@ class SpeechBubble(QWidget):
         self._line_segments = []
         self._clear_notice_actions()
         self._restore_base_size()
+        self._close_cancels = True
         self.hide()
 
     def show_notice(
@@ -645,14 +664,19 @@ class SpeechBubble(QWidget):
         actions: list[tuple[str, Callable[[], None]]] | None = None,
     ):
         """Show a compact non-streaming notice next to the icon."""
-        self._show_static_text(text, timeout_ms=timeout_ms, actions=actions)
+        self._show_static_text(
+            text,
+            timeout_ms=timeout_ms,
+            actions=actions,
+            cancel_on_close=False,
+        )
 
     def show_transcript(self, text: str):
         """Show what push-to-talk transcription heard before the answer starts."""
         text = (text or "").strip()
         if not text:
             return
-        self._show_static_text(f"{t('Heard')}: {text}", timeout_ms=0)
+        self._show_static_text(f"{t('Heard')}: {text}", timeout_ms=0, cancel_on_close=False)
         self._transcript_preview = True
 
     def show_reading(self, text: str):
@@ -660,7 +684,7 @@ class SpeechBubble(QWidget):
         text = (text or "").strip()
         if not text:
             return
-        self._show_static_text(f"{t('Reading')}: {text}", timeout_ms=0)
+        self._show_static_text(f"{t('Reading')}: {text}", timeout_ms=0, cancel_on_close=True)
 
     def _show_static_text(
         self,
@@ -668,6 +692,7 @@ class SpeechBubble(QWidget):
         *,
         timeout_ms: int = 12000,
         actions: list[tuple[str, Callable[[], None]]] | None = None,
+        cancel_on_close: bool = False,
     ):
         """Show static text."""
         self._hide_timer.stop()
@@ -678,11 +703,13 @@ class SpeechBubble(QWidget):
         self._finishing = False
         self._timestamp_mode = False
         self._audio_started = False
+        self._speech_tracking_pending = False
         self._thinking = False
         self._transcript_preview = False
         self._manual_scroll_start = None
         self._reply_chunk_count = 0
         self._thought_text = ""
+        self._close_cancels = bool(cancel_on_close)
         self._notice_actions = list(actions or [])
         self._action_hover = -1
         self._action_pressed = -1
@@ -938,6 +965,7 @@ class SpeechBubble(QWidget):
         """Follow streamed text only until a read-position highlight exists."""
         if (
             self._audio_started
+            or self._speech_tracking_pending
             or self._timestamp_mode
             or self._revealed_count > 0
             or self._manual_scroll_start is not None

@@ -26,21 +26,6 @@ import config
 
 ToolExecutor = Callable[[dict], str]
 
-# Default keyword filters for built-in tools.
-# Empty list = always send. Non-empty = only send when prompt contains a keyword.
-_DEFAULT_KEYWORD_MAP: dict[str, list[str]] = {
-    "git_status":   ["git", "commit", "branch", "status", "merge", "push", "pull", "stash"],
-    "git_diff":     ["git", "diff", "commit", "branch", "change", "merge"],
-    "github_repo":  ["github", "repo", "repository"],
-    "github_issue": ["github", "issue", "pr", "pull request", "ticket"],
-    "list_files":   ["file", "folder", "directory", "list files", "workspace"],
-    "read_file":    ["file", "read", "open", "inspect", "workspace"],
-    "create_file":  ["file", "create", "new file", "save", "write"],
-    "edit_file":    ["file", "edit", "change", "replace", "patch", "fix"],
-    "write_file":   ["file", "write", "create", "save", "overwrite"],
-}
-
-
 @dataclass(frozen=True)
 class ToolSpec:
     """Store tool spec configuration data."""
@@ -83,67 +68,39 @@ class ToolRegistry:
         self.plugin_dir = plugin_dir or Path(config.TOOL_PLUGIN_DIR)
         self._builtins: dict[str, ToolSpec] = {}
         self._scripts: dict[str, ToolSpec] | None = None
-        self._keyword_map: dict[str, list[str]] = dict(_DEFAULT_KEYWORD_MAP)
 
     # ------------------------------------------------------------------
-    # Keyword filter persistence
+    # Deprecated keyword filter compatibility
     # ------------------------------------------------------------------
 
     def load_keyword_filters(self, path: Path) -> None:
-        """Load keyword→tool filters from a JSON file, falling back to defaults."""
-        if path.exists():
-            try:
-                import json
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    merged = {
-                        k: [w.lower().strip() for w in v]
-                        for k, v in data.items()
-                        if isinstance(v, list)
-                    }
-                    # Fill in defaults for any tool not yet in the file.
-                    for name, kws in _DEFAULT_KEYWORD_MAP.items():
-                        merged.setdefault(name, kws)
-                    self._keyword_map = merged
-                    return
-            except Exception:
-                pass
-        self._keyword_map = dict(_DEFAULT_KEYWORD_MAP)
+        """Deprecated no-op kept so old callers do not fail."""
+        return None
 
     def save_keyword_filters(self, path: Path) -> None:
-        """Save keyword filters."""
-        import json
-        path.write_text(
-            json.dumps(self._keyword_map, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        """Deprecated no-op kept so old callers do not recreate routing files."""
+        return None
 
     def set_keyword_filter(self, tool_name: str, keywords: list[str]) -> None:
-        """Set keyword filter."""
-        self._keyword_map[tool_name] = [k.lower().strip() for k in keywords if k.strip()]
+        """Deprecated no-op: prompt words no longer control tool visibility."""
+        return None
 
     def _tool_visible(self, name: str, prompt: str) -> bool:
-        """Return True if this tool should be sent for the given prompt."""
-        keywords = self._keyword_map.get(name)
-        if not keywords:
-            return True  # empty list or not in map → always include
-        prompt_lower = prompt.lower()
-        return any(kw in prompt_lower for kw in keywords)
+        """Return True for compatibility; keyword routing has been removed."""
+        return True
 
     def filtered_schemas(self, prompt: str, include_server_tools: bool = True) -> list[dict]:
-        """Anthropic schemas filtered to only tools relevant to `prompt`."""
+        """Anthropic schemas allowed by caller policy; prompt text is ignored."""
         return [
             s.anthropic_schema()
             for s in self.list_tools(include_server_tools=include_server_tools)
-            if self._tool_visible(s.name, prompt)
         ]
 
     def filtered_openai_schemas(self, prompt: str) -> list[dict]:
-        """OpenAI schemas filtered to only tools relevant to `prompt`."""
+        """OpenAI schemas allowed by caller policy; prompt text is ignored."""
         return [
             s.openai_schema()
             for s in self.list_tools(include_server_tools=False)
-            if self._tool_visible(s.name, prompt)
         ]
 
     def register_builtin(self, spec: ToolSpec) -> None:

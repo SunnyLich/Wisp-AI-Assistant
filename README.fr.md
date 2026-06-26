@@ -45,7 +45,7 @@ Sélectionnez du texte, appuyez sur `Ctrl+Q`, appuyez sur une touche d'intention
 - **Hautement personnalisable** — chaque raccourci, touche d'intention, invite, source de contexte, comportement de collage, route de modèle, paramètre vocal et dimension de bulle peut être modifié.
 - **Interface graphique accessible** — les paramètres, les vérifications de configuration, les rapports de confidentialité, les outils de mémoire et les avertissements de modèle expliquent ce qui se passe sans nécessiter de lire le code.
 - **Capture de contexte** — Wisp peut lire le texte sélectionné, le texte du presse-papiers, l'interface utilisateur ciblée, les documents ouverts, le contenu du navigateur, les fichiers récents et des captures d'écran optionnelles.
-- **Voix entrée et sortie** — STT local via faster-whisper, plus Cartesia, ElevenLabs, OpenAI, compatible OpenAI, ou TTS désactivé.
+- **Voix entrée et sortie** — STT local via faster-whisper, plus TTS neuronal local sur l'appareil (Kokoro et clonage vocal GPT-SoVITS) ou voix cloud/compatibles (Cartesia, ElevenLabs, OpenAI, tout serveur compatible OpenAI), avec TTS désactivé par défaut.
 - **Captures visuelles** — tracez une région avec `Ctrl+Alt+Q` et envoyez la capture d'écran à un modèle de vision.
 - **Réécriture et collage** — utilisez `Ctrl+Shift+Q` pour réécrire le texte sélectionné avec le contexte capturé et coller le résultat dans le champ actif.
 - **Apportez votre propre fournisseur** — Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, XAI, Together, Cerebras, serveurs compatibles OpenAI personnalisés, GitHub Copilot, et plus.
@@ -216,7 +216,7 @@ Une extension peut s'accrocher à Wisp à plusieurs points :
 
 Si vous pouvez l'écrire en Python et qu'il s'adapte à l'un des points de hook ci-dessus, vous pouvez le connecter à la même superposition pilotée par raccourcis que vous utilisez déjà.
 
-L'extension `addons/healthcheck` fournie est une référence fonctionnelle qui exerce chaque hook. Voir le [Guide des extensions](addons/README.md) pour le contrat complet de manifeste et de hook, ou la page **Extensions** sur le [site de documentation Wisp](Wisp%20Website/Wisp%20Docs.html).
+Wisp est fourni avec une extension **pont MCP** (`addons/mcp_bridge`) : indiquez n'importe quels serveurs [Model Context Protocol](https://modelcontextprotocol.io) dans son `servers.json` et elle expose toute leur boîte à outils au modèle en tant qu'outils Wisp, de sorte que n'importe quel serveur MCP devient appelable depuis l'overlay. Voir le [Guide des extensions](addons/README.md) pour le contrat complet de manifeste et de hook, ou la page **Extensions** sur le [site de documentation Wisp](Wisp%20Website/Wisp%20Docs.html).
 
 ## Confidentialité et contrôle
 

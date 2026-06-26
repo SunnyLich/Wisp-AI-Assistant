@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import json
 import secrets
 import threading
@@ -75,6 +76,15 @@ def _generate_state() -> str:
 import pathlib as _pathlib
 
 _TOKEN_FILE = _pathlib.Path(__file__).parent.parent / "private" / ".chatgpt_tokens.json"
+_APP_ICON_FILE = _pathlib.Path(__file__).resolve().parents[2] / "assets" / "app.ico"
+
+
+def _app_icon_data_uri() -> str:
+    """Return the bundled Wisp app icon as an embeddable data URI."""
+    try:
+        return "data:image/x-icon;base64," + base64.b64encode(_APP_ICON_FILE.read_bytes()).decode("ascii")
+    except Exception:
+        return ""
 
 
 def _keyring_get() -> str | None:
@@ -345,13 +355,13 @@ def start_browser_login(
                 if error:
                     msg = error_desc or error
                     result.append(("error", msg))
-                    self._send_html(_HTML_ERROR.format(error=msg))
+                    self._send_html(_html_error(msg))
                 elif not code or got_state != state:
                     result.append(("error", "Invalid state or missing code"))
-                    self._send_html(_HTML_ERROR.format(error="Invalid OAuth callback"))
+                    self._send_html(_html_error("Invalid OAuth callback"))
                 else:
                     result.append(("code", code))
-                    self._send_html(_HTML_SUCCESS)
+                    self._send_html(_html_success())
                 done.set()
 
             def _send_html(self, html: str) -> None:
@@ -460,22 +470,128 @@ def start_device_login(
 # HTML templates for the redirect page
 # ---------------------------------------------------------------------------
 
-_HTML_SUCCESS = """\
-<!doctype html><html><head><title>Login Successful</title><style>
-body{{background:#131010;color:#f1ecec;font-family:system-ui;
-     display:flex;justify-content:center;align-items:center;height:100vh;margin:0}}
-.box{{text-align:center;padding:2rem}}h1{{color:#f1ecec}}p{{color:#b7b1b1}}
-</style></head><body><div class="box">
-<h1>Authorization Successful</h1>
-<p>You can close this window and return to the app.</p>
-</div><script>setTimeout(()=>window.close(),2000)</script></body></html>"""
+_HTML_SHELL = """\
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+:root {{
+  color-scheme: light;
+  --wisp-blue: #2563eb;
+  --wisp-blue-soft: #dbeafe;
+  --wisp-ink: #0f172a;
+  --wisp-muted: #475569;
+  --wisp-page: #f8fbff;
+  --wisp-white: #ffffff;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.10), transparent 34rem),
+    var(--wisp-page);
+  color: var(--wisp-ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}}
+main {{
+  width: min(92vw, 27rem);
+  padding: 2.75rem 2rem;
+  text-align: center;
+}}
+.icon {{
+  width: 4.5rem;
+  height: 4.5rem;
+  object-fit: contain;
+  margin-bottom: 1.5rem;
+  filter: drop-shadow(0 1rem 1.5rem rgba(37, 99, 235, 0.18));
+}}
+.icon-fallback {{
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0 auto 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 1.25rem;
+  background: var(--wisp-blue);
+  color: var(--wisp-white);
+  font-size: 2rem;
+  font-weight: 750;
+  box-shadow: 0 1rem 1.5rem rgba(37, 99, 235, 0.18);
+}}
+h1 {{
+  margin: 0;
+  color: var(--wisp-ink);
+  font-size: clamp(1.35rem, 5vw, 1.75rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+}}
+p {{
+  margin: 0.75rem 0 0;
+  color: var(--wisp-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}}
+.error {{
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  background: var(--wisp-white);
+  color: #1d4ed8;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
+}}
+</style>
+</head>
+<body>
+<main>
+{icon}
+{content}
+</main>
+{script}
+</body>
+</html>"""
 
-_HTML_ERROR = """\
-<!doctype html><html><head><title>Login Failed</title><style>
-body{{background:#131010;color:#f1ecec;font-family:system-ui;
-     display:flex;justify-content:center;align-items:center;height:100vh;margin:0}}
-.box{{text-align:center;padding:2rem}}h1{{color:#fc533a}}
-.err{{font-family:monospace;background:#3c140d;padding:.5rem 1rem;border-radius:4px;margin-top:1rem}}
-</style></head><body><div class="box">
-<h1>Authorization Failed</h1><div class="err">{error}</div>
-</div></body></html>"""
+
+def _html_icon() -> str:
+    icon_uri = _app_icon_data_uri()
+    if icon_uri:
+        return f'<img class="icon" src="{icon_uri}" alt="Wisp">'
+    return '<div class="icon-fallback" aria-label="Wisp">W</div>'
+
+
+def _html_success() -> str:
+    """Return the branded OAuth success page."""
+    return _HTML_SHELL.format(
+        title="Wisp - Authorization Complete",
+        icon=_html_icon(),
+        content=(
+            "<h1>Authorization completed successfully.</h1>\n"
+            "<p>You can close this window and return to Wisp.</p>"
+        ),
+        script="<script>setTimeout(() => window.close(), 2000)</script>",
+    )
+
+
+def _html_error(error: str) -> str:
+    """Return the branded OAuth error page."""
+    return _HTML_SHELL.format(
+        title="Wisp - Authorization Failed",
+        icon=_html_icon(),
+        content=(
+            "<h1>Authorization failed.</h1>\n"
+            "<p>Return to Wisp and try signing in again.</p>\n"
+            f'<div class="error">{html.escape(error)}</div>'
+        ),
+        script="",
+    )

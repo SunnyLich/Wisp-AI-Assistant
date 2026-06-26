@@ -2,7 +2,8 @@
 # PyInstaller specification for the Linux Wisp executable bundle.
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all
+import sys
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 
 def _repo_root() -> Path:
@@ -15,11 +16,19 @@ def _repo_root() -> Path:
 
 
 ROOT = _repo_root()
+sys.path.insert(0, str(ROOT / "runtime" / "brain"))
 
 # LiteParse ships a loose pdfium shared library that its native extension
 # loads at runtime; collect the package explicitly or the frozen app panics
 # on parse. (See Wisp.spec for the Windows equivalent.)
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
+LANGUAGE_TAGS_DATAS, LANGUAGE_TAGS_BINARIES, LANGUAGE_TAGS_HIDDENIMPORTS = collect_all("language_tags")
+RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
+BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
+PIP_HIDDENIMPORTS = collect_submodules("pip")
+MODULE_MODE_HIDDENIMPORTS = [
+    "core.addon_host",
+]
 UV_BINARIES = [
     (str(path), "bin")
     for path in (
@@ -35,13 +44,13 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
-    binaries=LITEPARSE_BINARIES + UV_BINARIES,
+    binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),
-    ] + LITEPARSE_DATAS,
+    ] + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS,
     hiddenimports=[
         "pynput.keyboard._xorg",
         "pynput.mouse._xorg",
@@ -49,7 +58,7 @@ a = Analysis(
         "ssl",
         "_ssl",
         "certifi",
-    ] + LITEPARSE_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.system.env_utils import CONTEXT_GOVERNED_TOOL_NAMES, normalize_file_access_mode
+from core.system.env_utils import (
+    CONTEXT_GOVERNED_TOOL_NAMES,
+    is_mcp_server_override_key,
+    normalize_file_access_mode,
+)
 from core.tools.local_files import file_tool_pins_for_access, file_tools_for_access
 
 
@@ -36,18 +40,23 @@ def context_mode(caller: dict[str, Any], name: str) -> str:
 def tool_overrides(caller: dict[str, Any]) -> dict[str, str]:
     """Return non-context tool overrides for this caller.
 
-    Context-fetch tools are governed by the context dropdowns. Ignore legacy
-    entries here so hidden saved overrides cannot silently fight those controls.
+    Context-fetch tools are normally governed by context dropdowns. Keep only
+    explicit ``off`` overrides for them so users can suppress a granted tool
+    without stale ``on`` entries silently enabling dropdown-controlled tools.
     """
     overrides = caller.get("tools")
     if not isinstance(overrides, dict):
         return {}
-    return {
-        str(name): str(mode).strip().lower()
-        for name, mode in overrides.items()
-        if str(mode).strip().lower() in {"on", "model", "off"}
-        and str(name).strip() not in CONTEXT_GOVERNED_TOOL_NAMES
-    }
+    result: dict[str, str] = {}
+    for raw_name, raw_mode in overrides.items():
+        name = str(raw_name).strip()
+        mode = str(raw_mode).strip().lower()
+        if not name or mode not in {"on", "model", "off"}:
+            continue
+        if name in CONTEXT_GOVERNED_TOOL_NAMES and mode != "off":
+            continue
+        result[name] = mode
+    return result
 
 
 def local_file_access_mode(caller: dict[str, Any]) -> str:
@@ -83,9 +92,14 @@ def allowed_model_tools(caller: dict[str, Any]) -> list[str]:
             allowed.append(name)
     overrides = tool_overrides(caller)
     for name, mode in overrides.items():
+        if is_mcp_server_override_key(name):
+            continue
         if mode != "off" and name not in allowed:
             allowed.append(name)
-    removed = {name for name, mode in overrides.items() if mode == "off"}
+    removed = {
+        name for name, mode in overrides.items()
+        if mode == "off" and not is_mcp_server_override_key(name)
+    }
     if removed:
         allowed = [
             name
@@ -109,8 +123,14 @@ def pinned_model_tools(caller: dict[str, Any]) -> list[str]:
         pinned.append("memory_search")
     pinned.extend(file_tool_pins_for_access(local_file_access_mode(caller)))
     overrides = tool_overrides(caller)
-    pinned.extend(name for name, mode in overrides.items() if mode == "on")
-    removed = {name for name, mode in overrides.items() if mode == "off"}
+    pinned.extend(
+        name for name, mode in overrides.items()
+        if mode == "on" and not is_mcp_server_override_key(name)
+    )
+    removed = {
+        name for name, mode in overrides.items()
+        if mode == "off" and not is_mcp_server_override_key(name)
+    }
     allowed = set(allowed_model_tools(caller))
     result: list[str] = []
     for name in pinned:

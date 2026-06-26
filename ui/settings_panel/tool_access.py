@@ -1,8 +1,8 @@
 """Per-caller "Allowed tools" dialog.
 
 Each prompt method (caller hotkey, voice) chooses which model-callable tools
-it exposes beyond the context controls. Every listed tool gets an Off / On /
-Let-model-decide selector:
+it exposes beyond the context controls. Off means never offer the schema. Auto
+means offer the schema and let the model decide whether to call it.
 
   Off              — never offered to the model for this caller
   On               — always offered
@@ -21,7 +21,12 @@ from PySide6.QtWidgets import (
     QScrollArea, QWidget, QComboBox,
 )
 
-from core.system.env_utils import CONTEXT_GOVERNED_TOOL_NAMES, TOOL_OVERRIDE_MODES
+from core.system.env_utils import (
+    CONTEXT_GOVERNED_TOOL_NAMES,
+    TOOL_OVERRIDE_MODES,
+    mcp_server_id_from_tool,
+    mcp_server_override_key,
+)
 from ui.i18n import t
 from ui.shared.window_utils import enable_standard_window_controls
 
@@ -34,18 +39,24 @@ LOCAL_FILE_TOOL_ROWS: tuple[tuple[str, str], ...] = (
 )
 LOCAL_FILE_TOOL_NAMES = {name for name, _note in LOCAL_FILE_TOOL_ROWS}
 
-_MODE_LABELS = [("Off", "off"), ("On", "on"), ("Let model decide", "model")]
+_ACCESS_MODE_LABELS = [("Off", "off"), ("Auto", "on")]
+_INHERIT_MODE_LABELS = [("Follow server", ""), ("Off", "off"), ("Auto", "on")]
 
 
 def _mode_tooltip() -> str:
     """Handle mode tooltip for UI settings panel tool access."""
     return (
         f"{t('Off')} - {t('never offered to the model for this hotkey.')}\n"
-        f"{t('On')} - {t('always offered.')}\n"
-        + t("Let model decide")
-        + " - "
-        + t("offered when the prompt matches the tool's keywords (Settings > Tools).")
+        f"{t('Auto')} - {t('offered to the model; the model decides whether to call it.')}"
     )
+
+
+def _normalize_mode(mode: str, default: str = "off") -> str:
+    """Normalize legacy mode names for display."""
+    value = str(mode or default).strip().lower()
+    if value == "model":
+        return "on"
+    return value if value in TOOL_OVERRIDE_MODES else default
 
 
 def _tool_name(spec) -> str:
@@ -60,6 +71,19 @@ def _tool_description(spec) -> str:
     if isinstance(spec, dict):
         return str(spec.get("description") or "")
     return str(getattr(spec, "description", "") or "")
+
+
+def _mcp_server_id(spec) -> str | None:
+    """Return the MCP server id for a bridge tool, when available."""
+    return mcp_server_id_from_tool(_tool_name(spec), _tool_description(spec))
+
+
+def _mcp_tool_display_name(name: str, server_id: str) -> str:
+    """Shorten a bridge-generated tool name under its server group."""
+    prefix = f"mcp_{server_id}_"
+    if name.startswith(prefix):
+        return name[len(prefix):]
+    return name
 
 
 def _normalize_extra_tool_payloads(raw_tools) -> list[dict[str, str]]:
@@ -187,10 +211,57 @@ class ToolAccessDialog(QDialog):
             )
             empty.setWordWrap(True)
             layout.addWidget(empty)
+
+        mcp_groups: dict[str, list] = {}
+        other_tools: list = []
         for spec in extra:
+            server_id = _mcp_server_id(spec)
+            if server_id:
+                mcp_groups.setdefault(server_id, []).append(spec)
+            else:
+                other_tools.append(spec)
+
+        if mcp_groups:
+            mcp_note = QLabel(
+                f"<small>{t('MCP tools are grouped by server. Tool rows can override their server.')}</small>"
+            )
+            mcp_note.setWordWrap(True)
+            layout.addWidget(mcp_note)
+        for server_id, specs in sorted(mcp_groups.items()):
+            group_key = mcp_server_override_key(server_id)
+            self._add_tool_row(
+                layout,
+                group_key,
+                t("{count} tools from this MCP server.").format(count=len(specs)),
+                _normalize_mode(overrides.get(group_key, "on"), "on"),
+                "on",
+                label=f"MCP: {server_id}",
+            )
+            for spec in sorted(specs, key=_tool_name):
+                name = _tool_name(spec)
+                desc = _tool_description(spec).strip()[:160]
+                self._add_tool_row(
+                    layout,
+                    name,
+                    desc,
+                    _normalize_mode(overrides.get(name, ""), ""),
+                    "",
+                    label=f"- {_mcp_tool_display_name(name, server_id)}",
+                    mode_labels=_INHERIT_MODE_LABELS,
+                )
+
+        if mcp_groups and other_tools:
+            layout.addWidget(_separator())
+        for spec in other_tools:
             name = _tool_name(spec)
             desc = _tool_description(spec).strip()[:160]
-            self._add_tool_row(layout, name, desc, overrides.get(name, "off"), "off")
+            self._add_tool_row(
+                layout,
+                name,
+                desc,
+                _normalize_mode(overrides.get(name, "on"), "on"),
+                "on",
+            )
 
         layout.addStretch()
         scroll.setWidget(body)
@@ -215,6 +286,9 @@ class ToolAccessDialog(QDialog):
         note: str,
         mode: str,
         default: str,
+        *,
+        label: str | None = None,
+        mode_labels: list[tuple[str, str]] | None = None,
     ) -> None:
         """Add tool row."""
         row = QWidget()
@@ -225,17 +299,19 @@ class ToolAccessDialog(QDialog):
         tv = QVBoxLayout(text_col)
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(1)
-        tv.addWidget(QLabel(f"<b>{t(name)}</b>"))
+        tv.addWidget(QLabel(f"<b>{t(label or name)}</b>"))
         if note:
             note_lbl = QLabel(f"<small>{note}</small>")
             note_lbl.setWordWrap(True)
             note_lbl.setStyleSheet("color: palette(placeholder-text);")
             tv.addWidget(note_lbl)
         combo = QComboBox()
-        for label, data in _MODE_LABELS:
-            combo.addItem(t(label), data)
-        mode = str(mode or "off").strip().lower()
-        idx = combo.findData(mode if mode in TOOL_OVERRIDE_MODES else "off")
+        for mode_label, data in (mode_labels or _ACCESS_MODE_LABELS):
+            combo.addItem(t(mode_label), data)
+        mode = str(mode if mode != "" else default).strip().lower()
+        if mode == "model":
+            mode = "on"
+        idx = combo.findData(mode if mode in TOOL_OVERRIDE_MODES or mode == "" else default)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         combo.setToolTip(_mode_tooltip())
         self._combos[name] = combo
@@ -253,8 +329,9 @@ class ToolAccessDialog(QDialog):
         """
         result: dict[str, str] = {}
         for name, combo in self._combos.items():
-            mode = str(combo.currentData() or "off")
-            if mode in TOOL_OVERRIDE_MODES and mode != self._defaults.get(name, "off"):
+            mode = str(combo.currentData() or "")
+            default = self._defaults.get(name, "off")
+            if mode in TOOL_OVERRIDE_MODES and mode != default:
                 result[name] = mode
         return result
 

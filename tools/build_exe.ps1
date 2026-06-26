@@ -5,14 +5,16 @@ param(
     # Kept for backward compatibility (CI passes it). Auto-install is now the
     # default, so this switch is accepted but no longer changes behavior.
     [switch]$Yes,
+    [switch]$UseDevVenv,
     [switch]$UseGlobalPython
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$VenvDir = Join-Path $Root ".venv"
-$VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+$VenvName = if ($UseDevVenv) { ".venv" } else { ".venv-build" }
+$VenvDir = Join-Path $Root $VenvName
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 $PythonVersionFile = Join-Path $Root ".python-version"
 $SpecName = "Wisp.spec"
 $AppName = "Wisp"
@@ -105,9 +107,23 @@ function Invoke-CheckedPython {
     )
 
     $ArgumentList = @($CommandArgs | Where-Object { $_ -ne $null -and $_ -ne "" })
-    $Process = Start-Process -FilePath $Python -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru
-    if ($Process.ExitCode -ne 0) {
-        throw "$StepName failed with exit code $($Process.ExitCode)."
+    Write-Host "Running: $Python $($ArgumentList -join ' ')"
+    & $Python @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        throw "$StepName failed with exit code $LASTEXITCODE."
+    }
+}
+
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string[]]$Arguments = @()
+    )
+
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Description failed with exit code $LASTEXITCODE."
     }
 }
 
@@ -124,17 +140,76 @@ function Get-PythonVersion {
     }
 }
 
+function Find-Uv {
+    if (Get-Command uv -ErrorAction SilentlyContinue) {
+        return "uv"
+    }
+
+    $Candidates = @(
+        (Join-Path $env:USERPROFILE ".local\bin\uv.exe"),
+        (Join-Path $env:USERPROFILE ".cargo\bin\uv.exe")
+    )
+    foreach ($Candidate in $Candidates) {
+        if (Test-Path $Candidate) {
+            return $Candidate
+        }
+    }
+    return $null
+}
+
+function Ensure-Uv {
+    $Uv = Find-Uv
+    if ($null -ne $Uv) {
+        return $Uv
+    }
+
+    Write-Host "No local Python $ExpectedPython found; installing uv to provision it..."
+    Invoke-Native "uv installer" "powershell" @(
+        "-ExecutionPolicy",
+        "ByPass",
+        "-NoProfile",
+        "-c",
+        "irm https://astral.sh/uv/install.ps1 | iex"
+    )
+    return Find-Uv
+}
+
+function Test-PipAvailable {
+    param([string]$Python)
+
+    try {
+        & $Python -m pip --version *> $null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    }
+}
+
+function Ensure-Pip {
+    param([string]$Python)
+
+    if (Test-PipAvailable -Python $Python) {
+        return
+    }
+
+    Write-Host "pip is missing from $Python; bootstrapping it with ensurepip..."
+    Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "ensurepip", "--upgrade") -StepName "pip bootstrap"
+    if (-not (Test-PipAvailable -Python $Python)) {
+        throw "pip is still unavailable in $Python after ensurepip. Recreate $VenvName or install pip manually."
+    }
+}
+
 function Assert-PythonVersion {
     param([string]$Python)
 
     $ActualVersion = Get-PythonVersion -Python $Python
     if (($ActualVersion -ne $ExpectedPython) -and (-not (($ExpectedPython -match '^\d+\.\d+$') -and $ActualVersion.StartsWith("$ExpectedPython.")))) {
-        throw "$Python is Python $ActualVersion, but Wisp packaging is pinned to Python $ExpectedPython. Rebuild .venv with scripts\setup_dev.ps1 or rerun the launcher with Python $ExpectedPython installed."
+        throw "$Python is Python $ActualVersion, but Wisp packaging is pinned to Python $ExpectedPython. Rebuild $VenvName with Python $ExpectedPython installed."
     }
 }
 
-function New-ProjectVenv {
-    Write-Host "Project virtual environment not found; creating it at:"
+function New-BuildVenv {
+    Write-Host "Build virtual environment not found; creating it at:"
     Write-Host "  $VenvDir"
 
     if (Get-Command py.exe -ErrorAction SilentlyContinue) {
@@ -154,7 +229,11 @@ function New-ProjectVenv {
         }
     }
 
-    throw "Could not find Python $ExpectedPython to create the project virtual environment."
+    $Uv = Ensure-Uv
+    if ($null -eq $Uv) {
+        throw "Could not find or install uv. Install Python $ExpectedPython or uv manually, then rerun this script."
+    }
+    Invoke-Native "uv build virtual environment creation" $Uv @("venv", "--seed", "--python", $ExpectedPython, $VenvDir)
 }
 
 function Test-LongPathRisk {
@@ -176,9 +255,9 @@ function New-BuildRequirementsFile {
 
 if (-not $UseGlobalPython) {
     if (-not (Test-Path $VenvPython)) {
-        New-ProjectVenv
+        New-BuildVenv
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) {
-            throw "Failed to create project virtual environment at $VenvDir."
+            throw "Failed to create build virtual environment at $VenvDir."
         }
     }
     $Python = $VenvPython
@@ -211,12 +290,14 @@ if (-not $SkipInstall) {
     $BuildRequirements = $RequirementsFile
     $FilteredRequirements = $null
     if ((-not $UseGlobalPython) -and (Test-LongPathRisk $VenvDir)) {
-        Write-Host "The project path is long enough to hit Windows path limits while installing ElevenLabs."
-        Write-Host "Building without ElevenLabs support in this environment; enable long paths if you need that provider bundled."
+        Write-Warning "IMPORTANT: ElevenLabs will not be bundled in this build."
+        Write-Warning "Reason: this project path is long enough to hit Windows path limits while installing the ElevenLabs wheel."
+        Write-Warning "Recovery: users can open Settings > Voice > Install ElevenLabs after startup, or rebuild from a shorter path / with Windows long paths enabled."
         $FilteredRequirements = New-BuildRequirementsFile -SourcePath $RequirementsFile
         $BuildRequirements = $FilteredRequirements
     }
 
+    Ensure-Pip -Python $Python
     Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "--upgrade", "pip") -StepName "pip upgrade"
     try {
         Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "-r", $BuildRequirements, "-r", $BuildRequirementsFile) -StepName "dependency install"

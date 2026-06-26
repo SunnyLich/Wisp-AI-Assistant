@@ -45,7 +45,7 @@ Selecciona texto, presiona `Ctrl+Q`, pulsa una tecla de intención, y Wisp consu
 - **Altamente personalizable** — cada atajo, tecla de intención, prompt, fuente de contexto, comportamiento de pegado, ruta del modelo, configuración de voz y dimensión de burbuja se puede cambiar.
 - **Interfaz accesible** — la configuración, las verificaciones de configuración, los informes de privacidad, las herramientas de memoria y las advertencias del modelo explican qué está pasando sin necesidad de leer el código.
 - **Captura de contexto** — Wisp puede leer texto seleccionado, texto del portapapeles, UI enfocada, documentos abiertos, contenido del navegador, archivos recientes y capturas de pantalla opcionales.
-- **Voz de entrada y salida** — STT local mediante faster-whisper, más Cartesia, ElevenLabs, OpenAI, compatible con OpenAI, o TTS deshabilitado.
+- **Voz de entrada y salida** — STT local mediante faster-whisper, más TTS neuronal en el dispositivo (Kokoro y clonación de voz GPT-SoVITS) o voces en la nube/compatibles (Cartesia, ElevenLabs, OpenAI, cualquier servidor compatible con OpenAI), con TTS deshabilitado por defecto.
 - **Capturas visuales** — dibuja una región con `Ctrl+Alt+Q` y envía la captura de pantalla a un modelo de visión.
 - **Reescribir y pegar** — usa `Ctrl+Shift+Q` para reescribir el texto seleccionado con el contexto capturado y pegar el resultado de vuelta en el campo activo.
 - **Trae tu propio proveedor** — Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, XAI, Together, Cerebras, servidores compatibles con OpenAI personalizados, GitHub Copilot, y más.
@@ -216,7 +216,7 @@ Un complemento puede engancharse a Wisp en varios puntos:
 
 Si puedes escribirlo en Python y encaja en uno de los puntos de hook anteriores, puedes conectarlo a la misma superposición controlada por atajos que ya usas.
 
-El complemento incluido `addons/healthcheck` es una referencia funcional que ejercita cada hook. Consulta la [Guía de complementos](addons/README.md) para el contrato completo de manifiesto y hook, o la página **Complementos** en el [sitio de documentación de Wisp](Wisp%20Website/Wisp%20Docs.html).
+Wisp incluye un complemento **puente MCP** (`addons/mcp_bridge`): indica cualquier servidor de [Model Context Protocol](https://modelcontextprotocol.io) en su `servers.json` y expone todo su conjunto de herramientas al modelo como herramientas de Wisp, de modo que cualquier servidor MCP se vuelve invocable desde el overlay. Consulta la [Guía de complementos](addons/README.md) para el contrato completo de manifiesto y hook, o la página **Complementos** en el [sitio de documentación de Wisp](Wisp%20Website/Wisp%20Docs.html).
 
 ## Privacidad y control
 

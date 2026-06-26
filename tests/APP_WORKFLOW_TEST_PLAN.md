@@ -195,7 +195,7 @@ Recommended fixtures:
 - Configure other hotkeys, intent context toggle keys, overlay timeout, and
   snip context.
 - Configure system prompt.
-- Configure tool keyword filters.
+- Configure allowed-tool policies and MCP server groups.
 - Configure context limits, model file roots, blocked private globs, memory
   tuning, bubble timing, and TTS speed.
 - Apply, reset page, reset all, search settings, show dirty state, validate
@@ -621,21 +621,21 @@ Tests:
 - Query/chat requests include the edited system prompt.
 - Reset restores default prompt.
 
-### Tools Tab
+### Allowed Tools Dialog
 
 Controls to cover:
 
-- Tool keyword filter fields for built-in and add-on tools.
-- Save keyword filters.
 - Per-caller/per-voice allowed-tools dialogs.
+- MCP server-level tool groups.
+- Individual tool overrides.
 
 Tests:
 
-- Empty keywords always include the tool when governing mode allows it.
-- Non-empty keywords include tools only when prompt matches.
+- Enabled tools are offered regardless of prompt wording.
+- MCP server-level Off suppresses all tools from that server.
+- Individual MCP tool overrides can re-enable or disable exceptions.
 - Disabled tools do not appear in allowed/pinned tool payloads.
-- Add-on tool keyword filters appear after add-on load and disappear after
-  disable.
+- Add-on tools appear after add-on load and disappear after disable.
 
 ### Advanced Tab
 
@@ -724,7 +724,7 @@ Effect checks to add:
 | Overlay timeout | Change `INTENT_OVERLAY_TIMEOUT_MS` | Overlay auto-closes at the configured time, while `0` stays open |
 | Snip context | Toggle snip Ambient/Open docs/Tools | Snip query includes/excludes the configured surrounding context |
 | System prompt | Edit `SYSTEM_PROMPT_UTILITY` | Next query/chat system message contains the edited prompt |
-| Tool keywords | Change keyword filters | Tool list offered to the model changes only when prompt keywords match |
+| Caller allowed tools | Change MCP server/tool overrides | Tool list offered to the model follows server groups and individual exceptions |
 | Context limits | Change browser/document/tool char limits | Captured context is truncated at the configured limits before model request |
 | File roots | Change `TOOL_FILE_ROOTS` | File tools allow only the configured roots |
 | Blocked globs | Change `TOOL_FILE_BLOCKED_GLOBS` | Matching files are refused even inside allowed roots |

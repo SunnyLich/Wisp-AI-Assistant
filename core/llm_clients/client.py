@@ -1140,20 +1140,13 @@ def _get_tool_schemas(
     general set, so it only appears when the caller explicitly allows the model
     to take screenshots. include_general gates every other built-in tool.
 
-    ``pinned_tools`` are caller-level "always on" tools: they are offered even
-    when the per-prompt keyword filter would have dropped them.
+    ``pinned_tools`` is kept for compatibility with older settings, but prompt
+    keywords no longer affect schema visibility.
 
-    ``unfiltered`` skips the per-prompt keyword filter and returns the full,
-    stable built-in set. Multi-turn chat uses this so the tool list (which renders
-    at the front of the prompt) stays byte-identical across turns and does not
-    invalidate prompt caching — the single-shot query path keeps filtering for
-    latency.
+    ``unfiltered`` is kept for compatibility; schema visibility is now governed
+    by the caller's explicit allowed-tools policy.
     """
-    base = (
-        _TOOL_REGISTRY.schemas(include_server_tools=True)
-        if unfiltered
-        else _TOOL_REGISTRY.filtered_schemas(prompt, include_server_tools=True)
-    )
+    base = _TOOL_REGISTRY.schemas(include_server_tools=True)
     schemas: list[dict] = []
     if include_general:
         schemas = [
@@ -1201,7 +1194,7 @@ def _get_openai_tool_schemas(
     if include_general:
         schemas = [
             schema
-            for schema in _TOOL_REGISTRY.filtered_openai_schemas(prompt)
+            for schema in _TOOL_REGISTRY.openai_schemas()
             if _tool_schema_allowed(
                 ((schema.get("function") or {}).get("name") or ""),
                 allowed_tools,
@@ -1277,7 +1270,7 @@ def _append_pinned_tool_schemas(
     *,
     openai_format: bool = False,
 ) -> None:
-    """Add back pinned ("always on") tools the per-prompt keyword filter dropped.
+    """Add back pinned ("always on") tools missing from the schema list.
 
     Mutates *schemas* in place. Opt-in tools (capture_screen, memory_search) are
     skipped — they have dedicated caller settings — and Anthropic-only server
@@ -1324,8 +1317,6 @@ def _append_local_file_tool_schemas(
         present = {s.get("name", "") for s in schemas}
     for name in sorted(_LOCAL_FILE_TOOLS):
         if name not in allowed or name in present:
-            continue
-        if name not in pinned and not unfiltered and not _TOOL_REGISTRY._tool_visible(name, prompt):
             continue
         spec = _TOOL_REGISTRY.get_tool(name)
         if spec is None:
@@ -1616,16 +1607,7 @@ def _openai_vision_model(provider: str, current_model: str) -> str:
     return current_model
 
 
-def _init_keyword_filters() -> None:
-    """Handle init keyword filters for LLM clients client."""
-    from core.system.paths import TOOL_KEYWORDS_FILE
-    _TOOL_REGISTRY.load_keyword_filters(TOOL_KEYWORDS_FILE)
-    if not TOOL_KEYWORDS_FILE.exists():
-        _TOOL_REGISTRY.save_keyword_filters(TOOL_KEYWORDS_FILE)
-
-
 _register_builtin_tools()
-_init_keyword_filters()
 
 
 def get_tool_registry() -> ToolRegistry:

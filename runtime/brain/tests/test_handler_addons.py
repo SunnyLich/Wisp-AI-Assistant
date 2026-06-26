@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 import types
-from pathlib import Path
 
 from wisp_brain import handlers
 
@@ -38,11 +37,9 @@ def test_addons_list_returns_discovered_addon_folder(tmp_path, monkeypatch):
     )
 
     import core.addon_manager as addon_manager
-    import core.addon_manager as addon_manager
     import core.system.paths as paths
 
     monkeypatch.setattr(paths, "ADDONS_DIR", addon_dir)
-    monkeypatch.setattr(addon_manager, "_manager", None)
     monkeypatch.setattr(addon_manager, "_manager", None)
 
     result = handlers.HANDLERS["brain.addons.list"]()
@@ -53,6 +50,23 @@ def test_addons_list_returns_discovered_addon_folder(tmp_path, monkeypatch):
     assert result["addons"][0]["hooks"] == ["before_query", "get_tools"]
 
     addon_manager.get_manager().on_shutdown()
+
+
+def test_addons_list_creates_missing_addons_folder(tmp_path, monkeypatch):
+    """Addon Manager creates the install location on first open."""
+    addon_dir = tmp_path / "addons"
+
+    import core.addon_manager as addon_manager
+    import core.system.paths as paths
+
+    monkeypatch.setattr(paths, "ADDONS_DIR", addon_dir)
+    monkeypatch.setattr(addon_manager, "_manager", None)
+
+    result = handlers.HANDLERS["brain.addons.list"]()
+
+    assert result["addons_dir"] == str(addon_dir)
+    assert result["addons"] == []
+    assert addon_dir.is_dir()
 
 
 def test_addons_list_initializes_shared_manager_and_action_can_run(tmp_path, monkeypatch):
@@ -76,11 +90,9 @@ def test_addons_list_initializes_shared_manager_and_action_can_run(tmp_path, mon
     )
 
     import core.addon_manager as addon_manager
-    import core.addon_manager as addon_manager
     import core.system.paths as paths
 
     monkeypatch.setattr(paths, "ADDONS_DIR", addon_dir)
-    monkeypatch.setattr(addon_manager, "_manager", None)
     monkeypatch.setattr(addon_manager, "_manager", None)
 
     result = handlers.HANDLERS["brain.addons.list"]()

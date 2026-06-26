@@ -20,3 +20,11 @@ def test_local_file_access_read_only_excludes_write_tools():
     assert "create_file" not in allowed
     assert "edit_file" not in allowed
     assert "write_file" not in allowed
+
+
+def test_mcp_server_group_override_is_not_model_tool_name():
+    caller = {"file_access": "off", "tools": {"mcp_server.example": "on"}}
+
+    assert tool_modes.tool_overrides(caller) == {"mcp_server.example": "on"}
+    assert "mcp_server.example" not in tool_modes.allowed_model_tools(caller)
+    assert "mcp_server.example" not in tool_modes.pinned_model_tools(caller)

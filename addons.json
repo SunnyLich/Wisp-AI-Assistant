@@ -1,13 +1,3 @@
 {
-  "addons": {
-    "healthcheck": {
-      "enabled": false,
-      "settings": {
-        "log_prefix": "[healthcheckcustomized]"
-      }
-    },
-    "hi-notepad-test": {
-      "enabled": false
-    }
-  }
+  "addons": {}
 }

@@ -50,7 +50,7 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('Path = (Join-Path $Root $RequirementsFile); Name = $RequirementsFile', powershell)
         self.assertIn('Path = (Join-Path $Root $BuildRequirementsFile); Name = $BuildRequirementsFile', powershell)
         self.assertIn("$Name is required for packaging.", powershell)
-        self.assertLess(powershell.index("$RequiredBuildFiles = @("), powershell.index("function New-ProjectVenv"))
+        self.assertLess(powershell.index("$RequiredBuildFiles = @("), powershell.index("function New-BuildVenv"))
         self.assertLess(powershell.index("$RequiredBuildFiles = @("), powershell.index("Remove-Item -LiteralPath"))
 
         shell = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
@@ -61,6 +61,13 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('echo "ERROR: $name is required for packaging."', shell)
         self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"'), shell.index('"$CREATE_PYTHON" -m venv'))
         self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"'), shell.index('rm -rf "$ROOT/build" "$ROOT/dist"'))
+
+    def test_windows_build_warns_loudly_when_elevenlabs_is_skipped(self) -> None:
+        powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("IMPORTANT: ElevenLabs will not be bundled in this build.", powershell)
+        self.assertIn("Settings > Voice > Install ElevenLabs", powershell)
+        self.assertIn("Windows long paths enabled", powershell)
 
     def test_build_scripts_check_packaging_inputs_before_mutating_outputs(self) -> None:
         powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
@@ -80,7 +87,7 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn("function Require-PackagingDirectory", powershell)
         self.assertIn("$Name must contain files for packaging.", powershell)
         first_packaging_check = powershell.index("$RequiredPackagingFiles = @(")
-        self.assertLess(first_packaging_check, powershell.index("function New-ProjectVenv"))
+        self.assertLess(first_packaging_check, powershell.index("function New-BuildVenv"))
         self.assertLess(first_packaging_check, powershell.index("Remove-Item -LiteralPath"))
         self.assertLess(first_packaging_check, powershell.index('Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install"'))
 
@@ -111,11 +118,75 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn("Python `3.12`", docs)
         self.assertNotIn("exact patch version", docs)
 
+    def test_build_scripts_use_dedicated_build_venv_by_default(self) -> None:
+        powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
+        linux = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
+        macos = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn('[switch]$UseDevVenv', powershell)
+        self.assertIn('$VenvName = if ($UseDevVenv) { ".venv" } else { ".venv-build" }', powershell)
+        self.assertIn('VENV_DIR="$ROOT/.venv-build"', linux)
+        self.assertIn('VENV_DIR="$ROOT/.venv-build"', macos)
+        self.assertIn("--use-dev-venv", linux)
+        self.assertIn("--use-dev-venv", macos)
+        self.assertIn("dedicated `.venv-build` environment", docs)
+        self.assertIn(".venv-build/", gitignore)
+        self.assertIn(".venv-dev/", gitignore)
+
+    def test_build_scripts_provision_python_with_uv_when_missing(self) -> None:
+        powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
+        linux = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
+        macos = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+
+        self.assertIn("function Ensure-Uv", powershell)
+        self.assertIn("No local Python $ExpectedPython found; installing uv to provision it", powershell)
+        self.assertIn('"irm https://astral.sh/uv/install.ps1 | iex"', powershell)
+        self.assertIn('Invoke-Native "uv build virtual environment creation"', powershell)
+        self.assertIn('@("venv", "--seed", "--python", $ExpectedPython, $VenvDir)', powershell)
+        self.assertIn("function Ensure-Pip", powershell)
+        self.assertIn('Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "ensurepip", "--upgrade")', powershell)
+        self.assertIn("ensure_uv()", linux)
+        self.assertIn('"$UV" venv --seed --python "$WANT" "$VENV_DIR"', linux)
+        self.assertIn("ensure_pip()", linux)
+        self.assertIn('"$1" -m ensurepip --upgrade', linux)
+        self.assertIn("ensure_uv()", macos)
+        self.assertIn('"$UV" venv --seed --python "$WANT" "$VENV_DIR"', macos)
+        self.assertIn("ensure_pip()", macos)
+        self.assertIn('"$1" -m ensurepip --upgrade', macos)
+        self.assertIn("installs/uses `uv` to provision that Python", docs)
+        self.assertIn("bootstraps it with `ensurepip`", docs)
+
     def test_specs_bundle_version_metadata_for_updater(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
             with self.subTest(spec=spec_name):
                 spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
                 self.assertIn('pyproject.toml', spec)
+
+    def test_specs_bundle_runtime_worker_modules_for_frozen_module_dispatch(self) -> None:
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertIn("collect_submodules", spec)
+                self.assertIn("MODULE_MODE_HIDDENIMPORTS", spec)
+                self.assertIn('"core.addon_host"', spec)
+                self.assertIn('collect_submodules("runtime.workers")', spec)
+                self.assertIn("RUNTIME_WORKER_HIDDENIMPORTS", spec)
+                self.assertIn('collect_submodules("wisp_brain")', spec)
+                self.assertIn("BRAIN_HIDDENIMPORTS", spec)
+                self.assertIn('collect_submodules("pip")', spec)
+                self.assertIn("PIP_HIDDENIMPORTS", spec)
+
+    def test_specs_bundle_language_tags_data_for_local_tts(self) -> None:
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertIn('collect_all("language_tags")', spec)
+                self.assertIn("LANGUAGE_TAGS_DATAS", spec)
+                self.assertIn("LANGUAGE_TAGS_BINARIES", spec)
+                self.assertIn("LANGUAGE_TAGS_HIDDENIMPORTS", spec)
 
 
 if __name__ == "__main__":

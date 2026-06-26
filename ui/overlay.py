@@ -51,6 +51,7 @@ class OverlaySignals(QObject):
     chat_sync_conversation = Signal(int)     # a voice query appended to an existing conversation (idx)
     show_memory_viewer     = Signal()        # tray "Memory-¦" clicked
     show_addon_manager    = Signal()        # tray "Addon Manager" clicked
+    show_runtime_status    = Signal()        # tray "Runtime Status" clicked
     show_agent_task        = Signal()        # tray "Start agent task" clicked
     show_agent_history     = Signal()        # tray "Agent task history" clicked
     request_setup_check    = Signal()        # Settings setup check requested
@@ -267,6 +268,10 @@ class IconOverlay(QMainWindow):
         else:
             addon_manager_action.triggered.connect(self._open_addon_manager)
         menu.addAction(addon_manager_action)
+        if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
+            runtime_status_action = QAction(t("Runtime Status"), self)
+            runtime_status_action.triggered.connect(self.signals.show_runtime_status.emit)
+            menu.addAction(runtime_status_action)
         menu.addSeparator()
 
         menu.addAction(settings_action)

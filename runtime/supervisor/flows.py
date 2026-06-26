@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import itertools
 import logging
+import os
 import queue
 import re
 import sys
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from core.system.env_utils import mcp_server_id_from_tool, mcp_server_override_key
 from runtime.supervisor import tool_modes
 from ui.i18n import t
 
@@ -382,6 +384,7 @@ class FlowController:
         self.ui.on_event("ui.memory.delete", self._on_memory_delete)
         self.ui.on_event("ui.settings.open_requested", self._on_settings_open_requested)
         self.ui.on_event("ui.addons.open_requested", self._on_addons_open_requested)
+        self.ui.on_event("ui.runtime_status.open_requested", self._on_runtime_status_open_requested)
         self.ui.on_event("ui.addons.run_action", self._on_addons_run_action)
         self.ui.on_event("ui.addons.set_enabled", self._on_addons_set_enabled)
         self.ui.on_event("ui.addons.set_setting", self._on_addons_set_setting)
@@ -556,6 +559,10 @@ class FlowController:
     def _on_addons_open_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle addons open requested events."""
         self._schedule(self.open_addons)
+
+    def _on_runtime_status_open_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle runtime status open requested events."""
+        self._schedule(self.open_runtime_status)
 
     def _on_addons_run_action(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle addons run action events."""
@@ -946,16 +953,7 @@ class FlowController:
         result = self.native.call("native.capture.region", {"region": region}, timeout=30.0)
         path = result.get("path") if isinstance(result, dict) else ""
         screenshot_b64 = self._file_b64(path) if path else None
-        caller = self._caller(0)
-        caller.update(
-            {
-                "context_ambient": self._config_value("SNIP_CONTEXT_AMBIENT", True),
-                "context_documents": self._config_value("SNIP_CONTEXT_DOCUMENTS", False),
-                "context_tools": self._config_value("SNIP_CONTEXT_TOOLS", False),
-                "context_screenshot": "off",
-                "paste_back": False,
-            }
-        )
+        caller = self._snip_caller()
         with self._lock:
             pending = PendingInvocation(
                 caller_idx=0,
@@ -1552,6 +1550,44 @@ class FlowController:
             self.ui,
             "ui.show_settings",
             {"extra_tools": self._addon_model_tool_payloads()},
+            timeout=30.0,
+        )
+
+    def _worker_status_row(self, name: str, worker: WorkerLike) -> dict[str, Any]:
+        """Build one worker status row without making an IPC round trip."""
+        spec = getattr(worker, "spec", None)
+        stderr_tail = ""
+        tail_fn = getattr(worker, "stderr_tail", None)
+        if callable(tail_fn):
+            try:
+                stderr_tail = str(tail_fn(30) or "")
+            except Exception:
+                stderr_tail = ""
+        alive_fn = getattr(worker, "alive", None)
+        try:
+            alive = bool(alive_fn()) if callable(alive_fn) else False
+        except Exception:
+            alive = False
+        return {
+            "name": name,
+            "pid": getattr(worker, "pid", None),
+            "alive": alive,
+            "module": str(getattr(spec, "module", "") or ""),
+            "stderr_tail": stderr_tail,
+        }
+
+    def open_runtime_status(self) -> None:
+        """Open a terminal-like diagnostics view for packaged/no-console runs."""
+        workers = [
+            self._worker_status_row("native", self.native),
+            self._worker_status_row("ui", self.ui),
+            self._worker_status_row("brain", self.brain),
+            self._worker_status_row("audio", self.audio),
+        ]
+        self._safe_call(
+            self.ui,
+            "ui.runtime_status.show",
+            {"workers": workers, "log_dir": os.environ.get("WISP_RUN_LOG_DIR", "")},
             timeout=30.0,
         )
 
@@ -2600,6 +2636,25 @@ class FlowController:
             return config.effective_caller(dict(voice))
         return self._caller(0)
 
+    def _snip_caller(self) -> dict[str, Any]:
+        """Context/tool config for region snips, while reusing caller 1's prompts."""
+        import config
+
+        caller = self._caller(0)
+        snip = getattr(config, "SNIP_CALLER", None)
+        if isinstance(snip, dict) and snip:
+            caller.update(config.effective_caller(dict(snip)))
+        else:
+            caller.update(
+                {
+                    "context_ambient": self._config_value("SNIP_CONTEXT_AMBIENT", True),
+                    "context_documents": self._config_value("SNIP_CONTEXT_DOCUMENTS", True),
+                    "context_tools": self._config_value("SNIP_CONTEXT_TOOLS", False),
+                }
+            )
+        caller.update({"context_screenshot": "off", "paste_back": False})
+        return caller
+
     @staticmethod
     def _current_config_mtime() -> float | None:
         """Handle current config mtime for flow controller."""
@@ -3256,15 +3311,23 @@ class FlowController:
         """Handle allowed model tools for flow controller."""
         allowed = tool_modes.allowed_model_tools(caller)
         overrides = tool_modes.tool_overrides(caller)
-        for name in self._addon_model_tools():
-            if overrides.get(name) == "off":
+        for item in self._addon_model_tool_payloads():
+            name = item["name"]
+            server_id = mcp_server_id_from_tool(name, item.get("description", ""))
+            group_mode = (
+                overrides.get(mcp_server_override_key(server_id))
+                if server_id
+                else None
+            )
+            mode = overrides.get(name, group_mode or "on")
+            if mode == "off":
                 continue
             if name not in allowed:
                 allowed.append(name)
         return allowed
 
     def _pinned_model_tools(self, caller: dict[str, Any]) -> list[str]:
-        """Tools always offered to the model, bypassing prompt keyword filters.
+        """Tools explicitly pinned by caller policy.
 
         Context dropdowns in "model" mode mean "offer the tool schema and let
         the model decide whether to call it." The allow-list uses dotted source
@@ -3985,6 +4048,7 @@ class FlowController:
             q = self._ensure_tts_sequence(generation)
         except RuntimeError:
             return
+        self._safe_call(self.ui, "ui.reply.track_speech", timeout=30.0)
         q.put(segment)
 
     def _finish_tts_sequence(self, generation: int) -> None:

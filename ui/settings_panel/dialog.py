@@ -722,7 +722,6 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._tab_tts(),       "TTS / Voice")
         tabs.addTab(self._tab_keybinds(),  "Keybinds")
         tabs.addTab(self._tab_prompt(),    "Prompts")
-        tabs.addTab(self._tab_tools(),     "Tools")
         tabs.addTab(self._tab_advanced(),  "Advanced")
         self._tabs = tabs
         self._tab_base_names = [tabs.tabText(i) for i in range(tabs.count())]
@@ -1074,12 +1073,11 @@ class SettingsDialog(QDialog):
 
     def _page_for_dirty_key(self, key: str) -> str:
         """Handle page for dirty key for settings dialog."""
-        if key.startswith("CALLER_") or key.startswith("VOICE_") or key in {
+        if key.startswith("CALLER_") or key.startswith("VOICE_") or key.startswith("SNIP_") or key in {
             "HOTKEY_VOICE", "HOTKEY_DICTATE", "DICTATE_MODE",
             "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP",
             "HOTKEY_READ_SELECTION_ALOUD",
             "INTENT_CONTEXT_TOGGLE_KEYS", "INTENT_OVERLAY_TIMEOUT_MS",
-            "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
         }:
             return "Keybinds"
         if key.startswith("API_KEY_ROW"):
@@ -1156,7 +1154,33 @@ class SettingsDialog(QDialog):
                 snapshot[f"VOICE_{name.upper()}"] = str(vb[name].currentData())
             snapshot["VOICE_TOOLS"] = format_tool_modes(vb.get("tool_overrides") or {})
 
+        if hasattr(self, "_snip_block"):
+            snapshot.update(self._snip_context_values())
+
         return snapshot
+
+    def _snip_context_values(self) -> dict[str, str]:
+        """Return persisted values for the region-snip context block."""
+        sb = self._snip_block
+        documents_mode = str(sb["context_documents_mode"].currentData())
+        browser_mode = str(sb["context_browser_mode"].currentData())
+        github_mode = str(sb["context_github_mode"].currentData())
+        memory_mode = str(sb["context_memory_mode"].currentData())
+        return {
+            "SNIP_CONTEXT_AMBIENT": str(sb["context_ambient"].isChecked()),
+            "SNIP_CONTEXT_CLIPBOARD": str(sb["context_clipboard"].isChecked()),
+            "SNIP_CONTEXT_DOCUMENTS_MODE": documents_mode,
+            "SNIP_CONTEXT_BROWSER_MODE": browser_mode,
+            "SNIP_CONTEXT_GITHUB_MODE": github_mode,
+            "SNIP_CONTEXT_MEMORY_MODE": memory_mode,
+            "SNIP_CONTEXT_SCREENSHOT": "off",
+            "SNIP_FILE_ACCESS": str(sb["file_access"].currentData()),
+            "SNIP_TOOLS": format_tool_modes(sb.get("tool_overrides") or {}),
+            "SNIP_CONTEXT_DOCUMENTS": str(documents_mode == "auto"),
+            "SNIP_CONTEXT_TOOLS": str(
+                any(mode == "model" for mode in (documents_mode, browser_mode, github_mode, memory_mode))
+            ),
+        }
 
     def _reset_dirty_baseline(self) -> None:
         """Reset dirty baseline."""
@@ -2719,6 +2743,16 @@ class SettingsDialog(QDialog):
         ef = _expanding_form_layout(eleven_w)
         ef.setContentsMargins(0, 0, 0, 0)
         ef.setSpacing(8)
+        eleven_note = QLabel(
+            f"<small>{t('ElevenLabs support can be installed after setup if it was skipped during the exe build because the build path was too long.')}</small>"
+        )
+        eleven_note.setWordWrap(True)
+        self._elevenlabs_install_btn = QPushButton(t("Install ElevenLabs"))
+        self._elevenlabs_install_btn.clicked.connect(self._install_elevenlabs)
+        self._elevenlabs_install_status_lbl = QLabel()
+        self._elevenlabs_install_status_lbl.setWordWrap(True)
+        ef.addRow(eleven_note)
+        ef.addRow(self._elevenlabs_install_btn, self._elevenlabs_install_status_lbl)
         ef.addRow(_link_label("ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys"), self._fields["ELEVENLABS_API_KEY"])
         ef.addRow(_tooltip_label("ElevenLabs Voice ID", eleven_voice_tip), self._fields["ELEVENLABS_VOICE_ID"])
         ef.addRow(_tooltip_label("ElevenLabs Model", eleven_model_tip), self._fields["ELEVENLABS_MODEL"])
@@ -2870,6 +2904,7 @@ class SettingsDialog(QDialog):
         outer.addWidget(test_card)
 
         self._update_tts_provider_fields()
+        self._refresh_elevenlabs_install_status()
         self._refresh_kokoro_install_status()
         outer.addStretch()
         scroll.setWidget(w)
@@ -2893,14 +2928,49 @@ class SettingsDialog(QDialog):
             notice.setText(t(_TTS_TIMING_NOTICE))
         if provider == "kokoro":
             self._refresh_kokoro_install_status()
+        elif provider == "elevenlabs":
+            self._refresh_elevenlabs_install_status()
+
+    @staticmethod
+    def _optional_package_installed(module_name: str) -> bool:
+        """Return True when an optional package is importable."""
+        try:
+            from core import optional_deps
+
+            return optional_deps.is_importable(module_name)
+        except Exception:
+            try:
+                importlib.invalidate_caches()
+                return importlib.util.find_spec(module_name) is not None
+            except Exception:
+                return False
+
+    def _elevenlabs_installed(self) -> bool:
+        """Return True when the optional ElevenLabs package is importable."""
+        return self._optional_package_installed("elevenlabs")
 
     def _kokoro_installed(self) -> bool:
         """Return True when the optional Kokoro package is importable."""
-        try:
-            importlib.invalidate_caches()
-            return importlib.util.find_spec("kokoro") is not None
-        except Exception:
-            return False
+        return self._optional_package_installed("kokoro")
+
+    def _refresh_elevenlabs_install_status(self) -> None:
+        """Refresh ElevenLabs install button and status copy."""
+        label = getattr(self, "_elevenlabs_install_status_lbl", None)
+        button = getattr(self, "_elevenlabs_install_btn", None)
+        if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
+            return
+        if self._elevenlabs_installed():
+            button.setEnabled(False)
+            button.setText(t("ElevenLabs installed"))
+            self._set_test_status(label, True, "ElevenLabs is installed.")
+        else:
+            button.setEnabled(True)
+            button.setText(t("Install ElevenLabs"))
+            self._set_test_status(
+                label,
+                "warn",
+                "ElevenLabs is not installed. If the exe build skipped it because the build path was too long, install it here.",
+            )
 
     def _refresh_kokoro_install_status(self) -> None:
         """Refresh Kokoro install button and status copy."""
@@ -2929,7 +2999,7 @@ class SettingsDialog(QDialog):
         sample_rate = _get(self._fields["KOKORO_SAMPLE_RATE"]).strip() or "24000"
         volume = _get(self._fields["TTS_VOLUME"]).strip() or "1.0"
         message = t(
-            "Wisp will install Kokoro into this Python environment.\n\n"
+            "Wisp will install Kokoro into its user-writable optional packages folder.\n\n"
             "Packages: kokoro>=0.9.4, soundfile\n"
             "Estimated storage: up to about 2 GB if speech dependencies are missing; less if they are already installed. "
             "First use may also download the Kokoro model cache.\n\n"
@@ -2960,38 +3030,86 @@ class SettingsDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
-        button = getattr(self, "_kokoro_install_btn", None)
+        self._install_optional_tts_package(
+            test_key="kokoro_install",
+            display_name="Kokoro",
+            packages=["kokoro>=0.9.4", "soundfile"],
+            button_attr="_kokoro_install_btn",
+            status_attr="_kokoro_install_status_lbl",
+            success_message="Kokoro installed. Click Test TTS to download/load the voice.",
+            thread_name="kokoro-install",
+        )
+
+    def _install_elevenlabs(self) -> None:
+        """Confirm and install optional ElevenLabs dependencies into Wisp's Python."""
+        if self._elevenlabs_installed():
+            self._refresh_elevenlabs_install_status()
+            return
+        message = t(
+            "Wisp will install ElevenLabs support into its user-writable optional packages folder.\n\n"
+            "Package: elevenlabs>=1.0.0\n\n"
+            "Use this when the packaged exe skipped ElevenLabs because the build path was too long. "
+            "The install may need internet access and will survive Wisp rebuilds.\n\n"
+            "Continue?"
+        )
+        answer = QMessageBox.question(
+            self,
+            t("Install ElevenLabs"),
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._install_optional_tts_package(
+            test_key="elevenlabs_install",
+            display_name="ElevenLabs",
+            packages=["elevenlabs>=1.0.0"],
+            button_attr="_elevenlabs_install_btn",
+            status_attr="_elevenlabs_install_status_lbl",
+            success_message="ElevenLabs installed. Add your API key, then click Test TTS.",
+            thread_name="elevenlabs-install",
+        )
+
+    def _install_optional_tts_package(
+        self,
+        *,
+        test_key: str,
+        display_name: str,
+        packages: list[str],
+        button_attr: str,
+        status_attr: str,
+        success_message: str,
+        thread_name: str,
+    ) -> None:
+        """Install optional TTS packages into Wisp's user package folder."""
+        button = getattr(self, button_attr, None)
         if isinstance(button, QPushButton):
             button.setEnabled(False)
-        status = getattr(self, "_kokoro_install_status_lbl", None)
+        status = getattr(self, status_attr, None)
         if not isinstance(status, QLabel):
             return
 
-        test_key = "kokoro_install"
         token = self._latest_test_token.get(test_key, 0) + 1
         self._latest_test_token[test_key] = token
         self._running_test_tokens.add((test_key, token))
-        self._set_test_pending(status, "Installing Kokoro: starting pip.")
+        self._set_test_pending(status, f"Installing {display_name}: starting installer.")
 
         def _progress(message: str) -> None:
             self._queue_test_progress(test_key, token, message)
 
         def _runner() -> tuple[bool, str]:
-            """Install Kokoro with pip in the current Python environment."""
-            command = [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--progress-bar=raw",
-                "kokoro>=0.9.4",
-                "soundfile",
-            ]
-            print(f"[kokoro install] Running: {' '.join(command)}", flush=True)
-            _settings_log.info("Installing Kokoro with command: %s", command)
-            _progress("Installing Kokoro: starting pip.")
+            """Install optional packages with pip into Wisp's user package folder."""
+            from core import optional_deps
+
+            command = optional_deps.pip_install_command(packages)
+            log_prefix = f"[{display_name.lower()} install]"
+            print(f"{log_prefix} Running: {' '.join(command)}", flush=True)
+            _settings_log.info("Installing %s with command: %s", display_name, command)
+            _progress(f"Installing {display_name}: starting installer.")
             tail: list[str] = []
-            last_progress = "Installing Kokoro: starting pip."
+            last_progress = f"Installing {display_name}: starting installer."
             try:
                 process = subprocess.Popen(
                     command,
@@ -2999,44 +3117,46 @@ class SettingsDialog(QDialog):
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
+                    env=optional_deps.pip_install_env(),
                 )
             except Exception as exc:
-                print(f"[kokoro install] Failed to start pip: {exc}", flush=True)
-                _settings_log.exception("Kokoro install could not start pip")
-                return False, f"Kokoro install failed: {exc}"
+                print(f"{log_prefix} Failed to start installer: {exc}", flush=True)
+                _settings_log.exception("%s install could not start installer", display_name)
+                return False, f"{display_name} install failed: {exc}"
             assert process.stdout is not None
-            print(f"[kokoro install] pip started with pid {process.pid}", flush=True)
+            print(f"{log_prefix} installer started with pid {process.pid}", flush=True)
             for raw_line in process.stdout:
                 line = raw_line.strip()
                 if not line:
                     continue
-                print(f"[kokoro install] {line}", flush=True)
-                _settings_log.info("Kokoro install: %s", line)
+                print(f"{log_prefix} {line}", flush=True)
+                _settings_log.info("%s install: %s", display_name, line)
                 tail.append(line)
                 tail = tail[-30:]
-                progress_message = _kokoro_install_progress_text(line)
+                progress_message = _optional_install_progress_text(line, display_name)
                 if progress_message != last_progress:
                     _progress(progress_message)
                     last_progress = progress_message
             returncode = process.wait()
             if returncode == 0:
                 importlib.invalidate_caches()
-                print("[kokoro install] Completed successfully.", flush=True)
-                return True, "Kokoro installed. Click Test TTS to download/load the voice."
+                optional_deps.add_optional_packages_to_path()
+                print(f"{log_prefix} Completed successfully.", flush=True)
+                return True, success_message
             detail = "\n".join(tail).strip()
             if len(detail) > 800:
                 detail = detail[-800:]
-            return False, f"Kokoro install failed: {detail or 'pip exited with an error.'}"
+            return False, f"{display_name} install failed: {detail or 'installer exited with an error.'}"
 
         def _worker() -> None:
             try:
                 ok, result_message = _runner()
             except Exception as exc:
-                ok, result_message = False, f"Kokoro install failed: {exc}"
+                ok, result_message = False, f"{display_name} install failed: {exc}"
             with self._pending_test_results_lock:
                 self._pending_test_results.append((test_key, token, ok, result_message))
 
-        threading.Thread(target=_worker, daemon=True, name="kokoro-install").start()
+        threading.Thread(target=_worker, daemon=True, name=thread_name).start()
         if not self._test_result_timer.isActive():
             self._test_result_timer.start()
 
@@ -3095,6 +3215,8 @@ class SettingsDialog(QDialog):
         btn_wrap.addWidget(add_caller_btn)
         btn_wrap.addStretch()
         caller_cv.addLayout(btn_wrap)
+
+        caller_cv.addWidget(self._build_snip_block())
 
         outer_layout.addWidget(caller_card)
 
@@ -3185,7 +3307,6 @@ class SettingsDialog(QDialog):
 
         self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
         self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
-        self._fields["HOTKEY_SNIP"]          = self._kb_special_row("Snip screen region")
         self._fields["HOTKEY_READ_SELECTION_ALOUD"] = self._kb_special_row("Read selection aloud")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("12345678")
@@ -3203,27 +3324,6 @@ class SettingsDialog(QDialog):
         context_key_h.addWidget(self._fields["INTENT_OVERLAY_TIMEOUT_MS"])
         context_key_h.addStretch()
         self._keybinds_layout.addWidget(context_key_row)
-
-        snip_ctx = QWidget()
-        snip_h = QGridLayout(snip_ctx)
-        snip_h.setContentsMargins(128, 2, 0, 2)
-        snip_h.setHorizontalSpacing(8)
-        snip_h.setVerticalSpacing(4)
-        snip_title = QLabel(t("Context"))
-        snip_title.setStyleSheet("font-weight: 600; color: palette(placeholder-text);")
-        snip_h.addWidget(snip_title, 0, 0, 1, 3)
-        self._fields["SNIP_CONTEXT_AMBIENT"] = QCheckBox(t("On"))
-        self._fields["SNIP_CONTEXT_DOCUMENTS"] = QCheckBox(t("Open docs"))
-        self._fields["SNIP_CONTEXT_TOOLS"] = QCheckBox(t("Tools"))
-        snip_h.addWidget(
-            self._context_source_block("App", 0, self._fields["SNIP_CONTEXT_AMBIENT"], self._fields["SNIP_CONTEXT_DOCUMENTS"]),
-            1,
-            0,
-        )
-        snip_h.addWidget(self._context_source_block("Screenshot", 4, QLabel(t("On"))), 1, 1)
-        snip_h.addWidget(self._context_source_block("Tools", -1, self._fields["SNIP_CONTEXT_TOOLS"]), 1, 2)
-        snip_h.setColumnStretch(3, 1)
-        self._keybinds_layout.addWidget(snip_ctx)
 
         outer_layout.addWidget(other_card)
         outer_layout.addStretch()
@@ -3252,6 +3352,58 @@ class SettingsDialog(QDialog):
 
         self._keybinds_layout.addWidget(row_w)
         return key_edit
+
+    def _build_snip_block(self) -> QFrame:
+        """Build the snip hotkey row with caller-style context controls."""
+        frame = QFrame()
+        frame.setObjectName("snipHotkeyBlock")
+        frame.setFrameShape(QFrame.Shape.StyledPanel)
+        frame.setStyleSheet(
+            "QFrame#snipHotkeyBlock { border: 1px solid palette(mid); border-radius: 4px; }"
+        )
+        outer = QVBoxLayout(frame)
+        outer.setSpacing(4)
+        outer.setContentsMargins(8, 6, 8, 6)
+
+        hdr = QWidget()
+        hdr_h = QHBoxLayout(hdr)
+        hdr_h.setContentsMargins(0, 0, 0, 0)
+        hdr_h.setSpacing(6)
+
+        hotkey_edit = HotkeyCaptureEdit()
+        hotkey_edit.setFixedWidth(120)
+        hotkey_edit.setPlaceholderText("Hotkey...")
+        self._fields["HOTKEY_SNIP"] = hotkey_edit
+        hdr_h.addWidget(hotkey_edit)
+
+        lbl = QLabel(t("Snip screen region"))
+        lbl.setStyleSheet("font-style: italic; color: palette(placeholder-text);")
+        hdr_h.addWidget(lbl)
+        hdr_h.addStretch()
+
+        tools_btn = QPushButton(t("Allowed tools…"))
+        tools_btn.setToolTip("Choose which installed/addon tools snip queries may use")
+        hdr_h.addWidget(tools_btn)
+        outer.addWidget(hdr)
+
+        context_row, context_controls = self._build_context_controls(
+            context_screenshot="off",
+            screenshot_enabled=False,
+        )
+        outer.addWidget(context_row)
+
+        self._fields["SNIP_CONTEXT_AMBIENT"] = context_controls["context_ambient"]
+        self._fields["SNIP_CONTEXT_CLIPBOARD"] = context_controls["context_clipboard"]
+        self._fields["SNIP_CONTEXT_DOCUMENTS_MODE"] = context_controls["context_documents_mode"]
+        self._fields["SNIP_CONTEXT_BROWSER_MODE"] = context_controls["context_browser_mode"]
+        self._fields["SNIP_CONTEXT_GITHUB_MODE"] = context_controls["context_github_mode"]
+        self._fields["SNIP_CONTEXT_MEMORY_MODE"] = context_controls["context_memory_mode"]
+        self._fields["SNIP_FILE_ACCESS"] = context_controls["file_access"]
+        self._snip_block: dict = {**context_controls, "tool_overrides": {}}
+        tools_btn.clicked.connect(
+            lambda: self._open_tool_access_dialog(self._snip_block, "Snip screen region")
+        )
+        return frame
 
     def _intent_context_keys(self) -> str:
         """Return the configured context toggle keys, padded for all sources."""
@@ -3317,6 +3469,7 @@ class SettingsDialog(QDialog):
         context_memory_mode: str = "on",
         context_screenshot: str = "off",
         file_access: str = "off",
+        screenshot_enabled: bool = True,
     ) -> tuple[QWidget, dict]:
         """Build the shared per-hotkey context grid (used by callers and voice).
 
@@ -3380,6 +3533,9 @@ class SettingsDialog(QDialog):
         memory_combo = _context_mode_combo(context_memory_mode, allow_auto=True, on_value="on")
         memory_combo.setProperty("legacy_auto_means_on", True)
         screenshot_combo = _context_mode_combo(context_screenshot, allow_auto=True)
+        if not screenshot_enabled:
+            _set(screenshot_combo, "off")
+            screenshot_combo.setEnabled(False)
         file_combo = _NoScrollCombo()
         for label, value in _FILE_ACCESS_OPTIONS:
             file_combo.addItem(t(label), value)
@@ -3400,6 +3556,10 @@ class SettingsDialog(QDialog):
         github_combo.setToolTip(github_tip)
         memory_combo.setToolTip(memory_tip)
         screenshot_combo.setToolTip(screenshot_tip)
+        if not screenshot_enabled:
+            screenshot_combo.setToolTip(
+                "Region snips already attach the selected image; extra screenshot context is disabled."
+            )
         file_combo.setToolTip(file_tip)
         controls = {
             "context_ambient": app_combo,
@@ -3746,107 +3906,6 @@ class SettingsDialog(QDialog):
         cfg_cv.addWidget(fw)
         return cfg_card
 
-    def _tab_tools(self) -> QWidget:
-        """Handle tab tools for settings dialog."""
-        from core.llm_clients.client import get_tool_registry
-        from core.system.paths import TOOL_KEYWORDS_FILE
-
-        registry = get_tool_registry()
-        self._tool_keyword_fields: list[tuple[str, QLineEdit]] = []
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-
-        w = QWidget()
-        outer = QVBoxLayout(w)
-        outer.setContentsMargins(12, 12, 12, 12)
-        outer.setSpacing(12)
-
-        card, cv = self._card("Tool Calling Keywords")
-
-        note = QLabel(t(
-            "Tools with <b>no keywords</b> are always sent to the model.<br>"
-            "Tools with keywords are only sent when the prompt contains at least one.<br>"
-            "Separate multiple keywords with commas."
-        ))
-        note.setWordWrap(True)
-        cv.addWidget(note)
-
-        try:
-            first = True
-            tools = registry.list_tools()
-            present = {spec.name for spec in tools}
-            for name in ("list_files", "read_file", "create_file", "edit_file", "write_file"):
-                spec = registry.get_tool(name)
-                if spec is not None and name not in present:
-                    tools.append(spec)
-                    present.add(name)
-            for spec in tools:
-                keywords = registry._keyword_map.get(spec.name, [])
-
-                if not first:
-                    sep = QFrame()
-                    sep.setFrameShape(QFrame.Shape.HLine)
-                    sep.setStyleSheet("max-height: 1px; background: #55555f; margin: 2px 0;")
-                    cv.addWidget(sep)
-                first = False
-
-                tool_w = QWidget()
-                tool_h = QHBoxLayout(tool_w)
-                tool_h.setContentsMargins(0, 4, 0, 4)
-                tool_h.setSpacing(12)
-
-                name_col = QWidget()
-                name_v = QVBoxLayout(name_col)
-                name_v.setContentsMargins(0, 0, 0, 0)
-                name_v.setSpacing(3)
-
-                name_lbl = QLabel(f"<b>{spec.name}</b>")
-                name_v.addWidget(name_lbl)
-
-                if spec.description:
-                    desc_lbl = QLabel(t(spec.description))
-                    desc_lbl.setWordWrap(True)
-                    desc_lbl.setStyleSheet("color: #6b6b7e; font-size: 9pt;")
-                    name_v.addWidget(desc_lbl)
-
-                field = QLineEdit(", ".join(keywords))
-                field.setPlaceholderText("leave empty to always include")
-                self._tool_keyword_fields.append((spec.name, field))
-
-                tool_h.addWidget(name_col, 3)
-                tool_h.addWidget(field, 2)
-                cv.addWidget(tool_w)
-
-        except Exception as exc:
-            cv.addWidget(QLabel(_translate_status_message(f"Could not load tools: {exc}")))
-
-        save_btn = QPushButton("Save keyword filters")
-        save_btn.clicked.connect(lambda: self._save_tool_keywords(registry, TOOL_KEYWORDS_FILE))
-        save_row = QHBoxLayout()
-        save_row.addStretch()
-        save_row.addWidget(save_btn)
-        cv.addLayout(save_row)
-
-        outer.addWidget(card)
-        outer.addStretch()
-        scroll.setWidget(w)
-        return scroll
-
-    def _save_tool_keywords(self, registry, path) -> None:
-        """Save tool keywords."""
-        for tool_name, field in getattr(self, "_tool_keyword_fields", []):
-            raw = field.text()
-            keywords = [k.strip().lower() for k in raw.split(",") if k.strip()]
-            registry.set_keyword_filter(tool_name, keywords)
-        try:
-            registry.save_keyword_filters(path)
-            self._status_lbl.setText("Tool keyword filters saved.")
-            QTimer.singleShot(3000, lambda: self._status_lbl.setText(""))
-        except Exception as exc:
-            QMessageBox.warning(self, "Save failed", str(exc))
-
     def _tab_app(self) -> QWidget:
         """Handle tab app for settings dialog."""
         from PySide6.QtWidgets import QScrollArea
@@ -3890,13 +3949,13 @@ class SettingsDialog(QDialog):
         self._fields["ASSISTANT_LANGUAGE"] = assistant_language
 
         self._fields["ICON_SIZE"] = QLineEdit()
-        self._fields["ICON_SIZE"].setPlaceholderText(t("e.g. 80"))
+        self._fields["ICON_SIZE"].setPlaceholderText(t("e.g. 60"))
         icon_size_tip = "Floating icon diameter in pixels."
         self._fields["BUBBLE_WIDTH"] = QLineEdit()
         self._fields["BUBBLE_WIDTH"].setPlaceholderText(t("e.g. 340"))
         bubble_width_tip = "Maximum width of the floating response bubble in pixels."
         self._fields["BUBBLE_LINES"] = QLineEdit()
-        self._fields["BUBBLE_LINES"].setPlaceholderText(t("e.g. 3"))
+        self._fields["BUBBLE_LINES"].setPlaceholderText(t("e.g. 4"))
         bubble_lines_tip = "How many lines of response text the bubble shows before scrolling."
         self._fields["BUBBLE_FONT_SIZE"] = QLineEdit()
         self._fields["BUBBLE_FONT_SIZE"].setPlaceholderText(t("e.g. 10"))
@@ -4966,9 +5025,57 @@ class SettingsDialog(QDialog):
             "INTENT_OVERLAY_TIMEOUT_MS",
             str(getattr(cfg, "INTENT_OVERLAY_TIMEOUT_MS", 60000)),
         ))
-        self._fields["SNIP_CONTEXT_AMBIENT"].setChecked(self._env.get("SNIP_CONTEXT_AMBIENT", str(cfg.SNIP_CONTEXT_AMBIENT)).lower() == "true")  # type: ignore
-        self._fields["SNIP_CONTEXT_DOCUMENTS"].setChecked(self._env.get("SNIP_CONTEXT_DOCUMENTS", str(cfg.SNIP_CONTEXT_DOCUMENTS)).lower() == "true")  # type: ignore
-        self._fields["SNIP_CONTEXT_TOOLS"].setChecked(self._env.get("SNIP_CONTEXT_TOOLS", str(cfg.SNIP_CONTEXT_TOOLS)).lower() == "true")  # type: ignore
+        sc = dict(getattr(cfg, "SNIP_CALLER", {}) or {})
+        sb = self._snip_block
+        legacy_snip_documents = self._env.get(
+            "SNIP_CONTEXT_DOCUMENTS",
+            str(sc.get("context_documents", getattr(cfg, "SNIP_CONTEXT_DOCUMENTS", True))),
+        ).lower() == "true"
+        legacy_snip_tools = self._env.get(
+            "SNIP_CONTEXT_TOOLS",
+            str(sc.get("context_tools", getattr(cfg, "SNIP_CONTEXT_TOOLS", False))),
+        ).lower() == "true"
+        snip_documents_mode = self._env.get(
+            "SNIP_CONTEXT_DOCUMENTS_MODE",
+            sc.get("context_documents_mode")
+            or ("auto" if legacy_snip_documents else ("model" if legacy_snip_tools else "off")),
+        )
+        sb["context_ambient"].setChecked(
+            self._env.get("SNIP_CONTEXT_AMBIENT", str(sc.get("context_ambient", True))).lower() == "true"
+        )
+        sb["context_clipboard"].setChecked(
+            self._env.get("SNIP_CONTEXT_CLIPBOARD", str(sc.get("context_clipboard", False))).lower() == "true"
+        )
+        _set(sb["context_documents_mode"], snip_documents_mode)
+        _set(
+            sb["context_browser_mode"],
+            self._env.get(
+                "SNIP_CONTEXT_BROWSER_MODE",
+                "model" if legacy_snip_tools else (sc.get("context_browser_mode") or "off"),
+            ),
+        )
+        _set(
+            sb["context_github_mode"],
+            self._env.get(
+                "SNIP_CONTEXT_GITHUB_MODE",
+                "model" if legacy_snip_tools else (sc.get("context_github_mode") or "off"),
+            ),
+        )
+        _set(
+            sb["context_memory_mode"],
+            self._env.get("SNIP_CONTEXT_MEMORY_MODE", sc.get("context_memory_mode") or "on"),
+        )
+        _set(sb["context_screenshot"], "off")
+        _set(
+            sb["file_access"],
+            normalize_file_access_mode(self._env.get("SNIP_FILE_ACCESS", sc.get("file_access", "off"))),
+        )
+        snip_tools_env = self._env.get("SNIP_TOOLS")
+        sb["tool_overrides"] = (
+            parse_tool_modes(snip_tools_env)
+            if snip_tools_env is not None
+            else dict(sc.get("tools") or {})
+        )
         _set(self._fields["CUSTOM_BASE_URL"],      self._env.get("CUSTOM_BASE_URL",      cfg.CUSTOM_BASE_URL))
         _set(self._fields["GITHUB_CLIENT_ID"],     self._env.get("GITHUB_CLIENT_ID",     cfg.GITHUB_CLIENT_ID))
         _set(self._fields["GITHUB_OAUTH_SCOPES"],  self._env.get("GITHUB_OAUTH_SCOPES",  cfg.GITHUB_OAUTH_SCOPES))
@@ -5422,6 +5529,12 @@ class SettingsDialog(QDialog):
                 button = getattr(self, "_kokoro_install_btn", None)
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
+            elif test_key == "elevenlabs_install" and ok:
+                self._refresh_elevenlabs_install_status()
+            elif test_key == "elevenlabs_install":
+                button = getattr(self, "_elevenlabs_install_btn", None)
+                if isinstance(button, QPushButton):
+                    button.setEnabled(True)
         if not self._running_test_tokens and not pending and not progress:
             self._test_result_timer.stop()
 
@@ -5712,7 +5825,11 @@ class SettingsDialog(QDialog):
             )
 
             vb = self._voice_block
-            all_blocks = [*self._caller_blocks, vb]
+            sb = getattr(self, "_snip_block", None)
+            context_blocks = [*self._caller_blocks, vb]
+            if sb:
+                context_blocks.append(sb)
+            all_blocks = context_blocks
             screenshot_modes = [
                 str(blk["context_screenshot"].currentData())  # type: ignore[attr-defined]
                 for blk in all_blocks
@@ -5755,8 +5872,9 @@ class SettingsDialog(QDialog):
 
             caller_tools = any(self._block_uses_live_tools(blk) for blk in self._caller_blocks)
             voice_tools = self._block_uses_live_tools(vb)
+            snip_tools = bool(sb) and self._block_uses_live_tools(sb)
             tool_warnings = tool_capability_warnings(
-                caller_tools or voice_tools,
+                caller_tools or voice_tools or snip_tools,
                 llm_provider=llm_provider,
             )
             tool_targets = ["LLM"]
@@ -5764,6 +5882,8 @@ class SettingsDialog(QDialog):
                 tool_targets.append("Caller Hotkeys")
             if voice_tools:
                 tool_targets.append("Voice (hold to talk)")
+            if snip_tools:
+                tool_targets.append("Snip screen region")
             for warning in tool_warnings:
                 add_warning(tool_targets, warning)
         except Exception:
@@ -5898,7 +6018,10 @@ class SettingsDialog(QDialog):
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
                 "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "INTENT_CONTEXT_TOGGLE_KEYS",
                 "INTENT_OVERLAY_TIMEOUT_MS",
-                "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_DOCUMENTS", "SNIP_CONTEXT_TOOLS",
+                "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_CLIPBOARD", "SNIP_CONTEXT_DOCUMENTS",
+                "SNIP_CONTEXT_DOCUMENTS_MODE", "SNIP_CONTEXT_BROWSER_MODE", "SNIP_CONTEXT_GITHUB_MODE",
+                "SNIP_CONTEXT_MEMORY_MODE", "SNIP_CONTEXT_SCREENSHOT", "SNIP_CONTEXT_TOOLS",
+                "SNIP_FILE_ACCESS", "SNIP_TOOLS",
                 "CALLER_COUNT",
             },
             "App": {
@@ -5926,7 +6049,7 @@ class SettingsDialog(QDialog):
         if page == "Keybinds":
             keys.update(
                 key for key in env
-                if key.startswith("CALLER_") or key.startswith("VOICE_")
+                if key.startswith("CALLER_") or key.startswith("VOICE_") or key.startswith("SNIP_")
             )
         return keys
 
@@ -5956,19 +6079,6 @@ class SettingsDialog(QDialog):
         if self._on_apply:
             self._on_apply()
 
-    def _reset_tools_page(self) -> None:
-        """Reset tools page."""
-        from core.llm_clients.client import get_tool_registry
-        from core.system.paths import TOOL_KEYWORDS_FILE
-
-        registry = get_tool_registry()
-        if TOOL_KEYWORDS_FILE.exists():
-            TOOL_KEYWORDS_FILE.unlink()
-        registry.load_keyword_filters(TOOL_KEYWORDS_FILE)
-        registry.save_keyword_filters(TOOL_KEYWORDS_FILE)
-        for name, edit in getattr(self, "_tool_keyword_fields", []):
-            edit.setText(", ".join(registry._keyword_map.get(name, [])))
-
     def _reset_current_page(self) -> None:
         """Reset current page."""
         tabs = getattr(self, "_tabs", None)
@@ -5992,57 +6102,54 @@ class SettingsDialog(QDialog):
             return
 
         try:
-            if page == "Tools":
-                self._reset_tools_page()
-            else:
-                current_env = _read_env()
-                active_preset = self._preset_slug(getattr(self, "_active_preset_slug", ""))
-                if active_preset:
-                    page_keys = self._preset_page_keys(active_preset, page, current_env)
-                    remove_keys = set(page_keys)
-                    remove_keys.update(
-                        self._preset_override_keys_for_keys(active_preset, page_keys, current_env)
-                    )
-                    preset_values = {
-                        key: value
-                        for key, value in _PRESET_DEFAULTS.get(active_preset, {}).items()
-                        if key in page_keys
-                    }
-                    if page == "Keybinds":
-                        ctx = _PRESET_CONTEXT_DEFAULTS.get(active_preset, {})
-                        caller_count = int(current_env.get("CALLER_COUNT", "0") or "0")
-                        for idx in range(1, caller_count + 1):
-                            if "documents" in ctx:
-                                preset_values[f"CALLER_{idx}_CONTEXT_DOCUMENTS_MODE"] = ctx["documents"]
-                            if "browser" in ctx:
-                                preset_values[f"CALLER_{idx}_CONTEXT_BROWSER_MODE"] = ctx["browser"]
-                            if "github" in ctx:
-                                preset_values[f"CALLER_{idx}_CONTEXT_GITHUB_MODE"] = ctx["github"]
-                            if "memory" in ctx:
-                                preset_values[f"CALLER_{idx}_CONTEXT_MEMORY_MODE"] = ctx["memory"]
-                            if "screenshot" in ctx:
-                                preset_values[f"CALLER_{idx}_CONTEXT_SCREENSHOT"] = ctx["screenshot"]
-                            if ctx.get("clear_tools", "").lower() == "true":
-                                preset_values[f"CALLER_{idx}_TOOLS"] = ""
+            current_env = _read_env()
+            active_preset = self._preset_slug(getattr(self, "_active_preset_slug", ""))
+            if active_preset:
+                page_keys = self._preset_page_keys(active_preset, page, current_env)
+                remove_keys = set(page_keys)
+                remove_keys.update(
+                    self._preset_override_keys_for_keys(active_preset, page_keys, current_env)
+                )
+                preset_values = {
+                    key: value
+                    for key, value in _PRESET_DEFAULTS.get(active_preset, {}).items()
+                    if key in page_keys
+                }
+                if page == "Keybinds":
+                    ctx = _PRESET_CONTEXT_DEFAULTS.get(active_preset, {})
+                    caller_count = int(current_env.get("CALLER_COUNT", "0") or "0")
+                    for idx in range(1, caller_count + 1):
                         if "documents" in ctx:
-                            preset_values["VOICE_CONTEXT_DOCUMENTS_MODE"] = ctx["documents"]
+                            preset_values[f"CALLER_{idx}_CONTEXT_DOCUMENTS_MODE"] = ctx["documents"]
                         if "browser" in ctx:
-                            preset_values["VOICE_CONTEXT_BROWSER_MODE"] = ctx["browser"]
+                            preset_values[f"CALLER_{idx}_CONTEXT_BROWSER_MODE"] = ctx["browser"]
                         if "github" in ctx:
-                            preset_values["VOICE_CONTEXT_GITHUB_MODE"] = ctx["github"]
+                            preset_values[f"CALLER_{idx}_CONTEXT_GITHUB_MODE"] = ctx["github"]
                         if "memory" in ctx:
-                            preset_values["VOICE_CONTEXT_MEMORY_MODE"] = ctx["memory"]
+                            preset_values[f"CALLER_{idx}_CONTEXT_MEMORY_MODE"] = ctx["memory"]
                         if "screenshot" in ctx:
-                            preset_values["VOICE_CONTEXT_SCREENSHOT"] = ctx["screenshot"]
+                            preset_values[f"CALLER_{idx}_CONTEXT_SCREENSHOT"] = ctx["screenshot"]
                         if ctx.get("clear_tools", "").lower() == "true":
-                            preset_values["VOICE_TOOLS"] = ""
-                    preset_values[_SETTINGS_PRESET_KEY] = active_preset
-                else:
-                    remove_keys = self._reset_env_keys_for_page(page, current_env)
-                    preset_values = {}
-                for key in remove_keys:
-                    os.environ.pop(key, None)
-                _write_env(preset_values, remove_keys=remove_keys - set(preset_values))
+                            preset_values[f"CALLER_{idx}_TOOLS"] = ""
+                    if "documents" in ctx:
+                        preset_values["VOICE_CONTEXT_DOCUMENTS_MODE"] = ctx["documents"]
+                    if "browser" in ctx:
+                        preset_values["VOICE_CONTEXT_BROWSER_MODE"] = ctx["browser"]
+                    if "github" in ctx:
+                        preset_values["VOICE_CONTEXT_GITHUB_MODE"] = ctx["github"]
+                    if "memory" in ctx:
+                        preset_values["VOICE_CONTEXT_MEMORY_MODE"] = ctx["memory"]
+                    if "screenshot" in ctx:
+                        preset_values["VOICE_CONTEXT_SCREENSHOT"] = ctx["screenshot"]
+                    if ctx.get("clear_tools", "").lower() == "true":
+                        preset_values["VOICE_TOOLS"] = ""
+                preset_values[_SETTINGS_PRESET_KEY] = active_preset
+            else:
+                remove_keys = self._reset_env_keys_for_page(page, current_env)
+                preset_values = {}
+            for key in remove_keys:
+                os.environ.pop(key, None)
+            _write_env(preset_values, remove_keys=remove_keys - set(preset_values))
             self._reload_after_page_reset(page)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Reset page failed", str(exc))
@@ -6281,9 +6388,6 @@ class SettingsDialog(QDialog):
             "HOTKEY_READ_SELECTION_ALOUD": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD"]),
             "INTENT_CONTEXT_TOGGLE_KEYS": _get(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"]),
             "INTENT_OVERLAY_TIMEOUT_MS": _get(self._fields["INTENT_OVERLAY_TIMEOUT_MS"]),
-            "SNIP_CONTEXT_AMBIENT": str(self._fields["SNIP_CONTEXT_AMBIENT"].isChecked()),  # type: ignore
-            "SNIP_CONTEXT_DOCUMENTS": str(self._fields["SNIP_CONTEXT_DOCUMENTS"].isChecked()),  # type: ignore
-            "SNIP_CONTEXT_TOOLS": str(self._fields["SNIP_CONTEXT_TOOLS"].isChecked()),  # type: ignore
             "CONTEXT_BROWSER_MAX_CHARS": _get(self._fields["CONTEXT_BROWSER_MAX_CHARS"]),
             "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": _get(self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"]),
             "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": _get(self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"]),
@@ -6325,7 +6429,25 @@ class SettingsDialog(QDialog):
             "TTS_HOLD_PLAYBACK_RATE": _get(self._fields["TTS_HOLD_PLAYBACK_RATE"]),
             "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
         }
+        vals.update(self._snip_context_values())
         vals.update(theme_vals)
+        tts_provider = str(vals.get("TTS_PROVIDER", "")).strip().lower()
+        if tts_provider == "kokoro" and not self._kokoro_installed():
+            self._refresh_kokoro_install_status()
+            QMessageBox.warning(
+                self,
+                t("Kokoro not installed"),
+                t("Install Kokoro before applying it as the active TTS provider."),
+            )
+            return False
+        if tts_provider == "elevenlabs" and not self._elevenlabs_installed():
+            self._refresh_elevenlabs_install_status()
+            QMessageBox.warning(
+                self,
+                t("ElevenLabs not installed"),
+                t("Install ElevenLabs before applying it as the active TTS provider."),
+            )
+            return False
         pending_active_profile = str(getattr(self, "_pending_active_profile", "") or "").strip()
         if pending_active_profile:
             vals["ACTIVE_PROFILE"] = pending_active_profile
@@ -6718,20 +6840,30 @@ def _translate_status_value(value: str) -> str:
 
 def _kokoro_install_progress_text(line: str) -> str:
     """Return a short user-facing install phase for a raw pip output line."""
+    return _optional_install_progress_text(line, "Kokoro")
+
+
+def _optional_install_progress_text(line: str, display_name: str) -> str:
+    """Return a short user-facing install phase for raw pip output."""
     lower = str(line or "").lower()
     if "requirement already satisfied" in lower:
         detail = "checking installed packages"
-    elif "collecting " in lower or "looking in indexes" in lower or "resolving" in lower:
+    elif (
+        "collecting " in lower
+        or "looking in indexes" in lower
+        or "resolving" in lower
+        or "resolved " in lower
+    ):
         detail = "resolving packages"
-    elif "downloading" in lower or "progress " in lower:
+    elif "downloading" in lower or "progress " in lower or "prepared " in lower:
         detail = "downloading packages"
-    elif "installing collected packages" in lower:
+    elif "installing collected packages" in lower or lower.startswith("installed "):
         detail = "installing packages"
     elif "successfully installed" in lower:
         detail = "finalizing"
     else:
-        detail = "working - see terminal for full pip log"
-    return f"Installing Kokoro: {detail}."
+        detail = "working - see terminal for full installer log"
+    return f"Installing {display_name}: {detail}."
 
 
 def _translate_status_message(message: str) -> str:

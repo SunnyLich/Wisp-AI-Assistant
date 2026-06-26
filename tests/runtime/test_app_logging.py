@@ -42,6 +42,24 @@ def test_runtime_log_mode_debug_env_enables_debug_logs(monkeypatch):
     assert supervisor_app._runtime_log_mode() == "debug"
 
 
+def test_runtime_log_mode_frozen_defaults_to_debug_logs(monkeypatch):
+    """Verify packaged no-console builds keep persistent runtime logs by default."""
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(supervisor_app.sys, "frozen", True, raising=False)
+
+    assert supervisor_app._runtime_log_mode() == "debug"
+
+
+def test_runtime_log_mode_explicit_crash_overrides_frozen_default(monkeypatch):
+    """Verify explicit crash logging mode still works for packaged builds."""
+    monkeypatch.setenv("WISP_RUNTIME_LOG_MODE", "crash")
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(supervisor_app.sys, "frozen", True, raising=False)
+
+    assert supervisor_app._runtime_log_mode() == "crash"
+
+
 def test_prepare_run_log_dir_sets_env_and_latest_pointer(tmp_path, monkeypatch):
     """Verify prepare run log dir sets env and latest pointer behavior."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)

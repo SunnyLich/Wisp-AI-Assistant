@@ -43,8 +43,11 @@ class EnvUtilsTests(unittest.TestCase):
 
     def test_parse_tool_modes_keeps_only_valid_overrides(self):
         """Verify parse tool modes keeps only valid overrides behavior."""
-        parsed = parse_tool_modes(" alpha:on, beta:MODEL ,bad-entry, gamma:off ,:on")
-        self.assertEqual(parsed, {"alpha": "on", "beta": "model", "gamma": "off"})
+        parsed = parse_tool_modes(" alpha:on, beta:MODEL ,bad-entry, gamma:off ,mcp_server.example:off,:on")
+        self.assertEqual(
+            parsed,
+            {"alpha": "on", "beta": "model", "gamma": "off", "mcp_server.example": "off"},
+        )
         self.assertEqual(parse_tool_modes(None), {})
         self.assertEqual(parse_tool_modes(""), {})
 
@@ -52,15 +55,20 @@ class EnvUtilsTests(unittest.TestCase):
         # "off" is a real override (it can force a context tool off), so it
         # must survive the round trip; junk modes are dropped.
         """Verify format tool modes round trips behavior."""
-        modes = {"beta": "model", "alpha": "on", "gamma": "off", "junk": "maybe"}
+        modes = {
+            "beta": "model",
+            "alpha": "on",
+            "gamma": "off",
+            "mcp_server.example": "off",
+            "junk": "maybe",
+        }
         text = format_tool_modes(modes)
-        self.assertEqual(text, "alpha:on,beta:model,gamma:off")
+        self.assertEqual(text, "alpha:on,beta:model,gamma:off,mcp_server.example:off")
         self.assertEqual(
             parse_tool_modes(text),
-            {"alpha": "on", "beta": "model", "gamma": "off"},
+            {"alpha": "on", "beta": "model", "gamma": "off", "mcp_server.example": "off"},
         )
 
 
 if __name__ == "__main__":
     unittest.main()
-

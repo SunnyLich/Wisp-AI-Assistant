@@ -471,7 +471,7 @@ def test_settings_status_messages_translate_nested_values(monkeypatch):
 
 def test_kokoro_install_progress_text_classifies_pip_output():
     """Verify raw pip output becomes short progress phases for the Settings UI."""
-    from ui.settings_panel.dialog import _kokoro_install_progress_text
+    from ui.settings_panel.dialog import _kokoro_install_progress_text, _optional_install_progress_text
 
     assert _kokoro_install_progress_text("Collecting kokoro>=0.9.4") == (
         "Installing Kokoro: resolving packages."
@@ -481,6 +481,9 @@ def test_kokoro_install_progress_text_classifies_pip_output():
     )
     assert _kokoro_install_progress_text("Installing collected packages: kokoro") == (
         "Installing Kokoro: installing packages."
+    )
+    assert _optional_install_progress_text("Collecting elevenlabs", "ElevenLabs") == (
+        "Installing ElevenLabs: resolving packages."
     )
 
 
@@ -633,7 +636,6 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
         assert "\u81ea\u52d5\uff08\u6709 GPU \u6642\u4f7f\u7528\uff09" in all_combo_texts
         assert any("API \u5bc6\u9470\u6703\u4fdd\u5b58\u5230\u7cfb\u7d71\u9470\u5319\u4e32" in text for text in label_texts)
         assert "+ \u65b0\u589e\u547c\u53eb\u5feb\u6377\u9375" in button_texts
-        assert any("\u6c92\u6709<b>\u95dc\u9375\u5b57</b>\u7684\u5de5\u5177" in text for text in label_texts)
         assert "\u6a21\u578b\u8def\u7531" in label_texts
         assert "\u9078\u64c7\u6bcf\u500b\u7528\u9014\u4f7f\u7528\u54ea\u500b\u5df2\u5132\u5b58\u6191\u8b49\u548c\u6a21\u578b\u3002" in label_texts
         assert "<small><b>\u63d0\u4f9b\u8005</b></small>" in label_texts
@@ -1220,7 +1222,6 @@ def test_settings_tabs_use_app_first_order_without_memory_tab():
             "TTS / Voice",
             "Keybinds",
             "Prompts",
-            "Tools",
             "Advanced",
         ]
         advanced_tab = dialog._tabs.widget(dialog._tab_base_names.index("Advanced"))
@@ -2205,13 +2206,26 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
             "context_screenshot",
             "tool_overrides",
         }
+        sb = dialog._snip_block
+        assert set(sb) >= {
+            "context_ambient",
+            "context_documents_mode",
+            "context_browser_mode",
+            "context_github_mode",
+            "context_memory_mode",
+            "context_screenshot",
+            "file_access",
+            "tool_overrides",
+        }
+        assert sb["context_screenshot"].currentData() == "off"
+        assert not sb["context_screenshot"].isEnabled()
         tools_buttons = [
             b
             for b in dialog.findChildren(QPushButton)
             if b.text() in {"Allowed tools…", "允许的工具…", "允許的工具…"}
         ]
-        # One per caller block plus one for the voice block.
-        assert len(tools_buttons) == len(dialog._caller_blocks) + 1
+        # One per caller block plus snip and voice.
+        assert len(tools_buttons) == len(dialog._caller_blocks) + 2
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -2311,23 +2325,25 @@ def test_tool_access_dialog_round_trips_overrides():
         combos = dlg._combos
         assert {
             "list_files", "read_file", "create_file", "edit_file", "write_file",
-            "mcp_example_echo",
+            "mcp_server.example", "mcp_example_echo",
         } <= set(combos)
         assert {
             "web_search", "get_context", "retrieve_website", "git_status", "git_diff",
             "github_repo", "github_issue", "memory_search", "capture_screen",
         }.isdisjoint(combos)
-        assert combos["read_file"].currentData() == "model"
+        assert combos["read_file"].currentData() == "on"
         assert combos["create_file"].currentData() == "off"
-        assert combos["mcp_example_echo"].currentData() == "off"
+        assert combos["mcp_server.example"].currentData() == "on"
+        assert combos["mcp_example_echo"].currentData() == ""
 
         # Selectors left matching their defaults store nothing; explicit
         # deviations round-trip. Hidden context-tool overrides are dropped.
         combos["edit_file"].setCurrentIndex(combos["edit_file"].findData("on"))
+        combos["mcp_server.example"].setCurrentIndex(combos["mcp_server.example"].findData("off"))
         combos["mcp_example_echo"].setCurrentIndex(combos["mcp_example_echo"].findData("on"))
         result = dlg.selected_overrides()
-        assert result["read_file"] == "model"
         assert result["edit_file"] == "on"
+        assert result["mcp_server.example"] == "off"
         assert result["mcp_example_echo"] == "on"
         assert "github_repo" not in result
     finally:

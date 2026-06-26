@@ -67,8 +67,8 @@ class AddonManagerDialog(QDialog):
         root.addWidget(title)
 
         subtitle = QLabel(
-            t("Addons are Python packages in the <code>addons/</code> folder. "
-              "Each addon runs in its own host process.")
+            t("Addons are Python packages in the add-ons folder. "
+              "Portable builds create this folder next to Wisp.exe when possible.")
         )
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("font-size: 9pt; opacity: 0.7;")
@@ -384,6 +384,7 @@ class AddonManagerDialog(QDialog):
     def _open_addons_folder():
         """Open addons folder."""
         from core.system.paths import ADDONS_DIR
+        ADDONS_DIR.mkdir(parents=True, exist_ok=True)
         path = str(ADDONS_DIR)
         if sys.platform == "win32":
             os.startfile(path)

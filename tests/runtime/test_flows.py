@@ -119,6 +119,22 @@ def voice_config(row: dict[str, Any]):
         config.TTS_PROVIDER = old_tts
 
 
+@contextmanager
+def snip_config(row: dict[str, Any]):
+    """Temporarily set the region-snip caller context."""
+    old_row = dict(getattr(config, "SNIP_CALLER", {}))
+    old_tts = getattr(config, "TTS_PROVIDER", "none")
+    config.SNIP_CALLER.clear()
+    config.SNIP_CALLER.update(row)
+    config.TTS_PROVIDER = "none"
+    try:
+        yield
+    finally:
+        config.SNIP_CALLER.clear()
+        config.SNIP_CALLER.update(old_row)
+        config.TTS_PROVIDER = old_tts
+
+
 def make_flow(
     *,
     native: FakeWorker | None = None,
@@ -792,8 +808,8 @@ def test_context_modes_map_to_auto_documents_and_allowed_tools():
     assert query["frontload_tools"] == []
 
 
-def test_context_tool_overrides_do_not_fight_context_modes():
-    """Verify context controls own context-fetch tools."""
+def test_context_tool_off_overrides_suppress_context_mode_grants():
+    """Verify explicit off overrides suppress named context-mode tools."""
     caller = {
         "context_documents_mode": "model",
         "context_browser_mode": "model",
@@ -810,13 +826,23 @@ def test_context_tool_overrides_do_not_fight_context_modes():
         },
     }
 
-    assert tool_modes.tool_overrides(caller) == {"my_tool": "on"}
+    assert tool_modes.tool_overrides(caller) == {
+        "get_context": "off",
+        "web_search": "off",
+        "git_status": "off",
+        "memory_search": "off",
+        "capture_screen": "off",
+        "my_tool": "on",
+    }
     allowed = tool_modes.allowed_model_tools(caller)
-    assert "get_context.documents" in allowed
-    assert "web_search" in allowed
-    assert "git_status" in allowed
-    assert "memory_search" in allowed
-    assert tool_modes.screenshot_tool_allowed(caller) is True
+    assert "get_context.documents" not in allowed
+    assert "get_context.browser" not in allowed
+    assert "web_search" not in allowed
+    assert "git_status" not in allowed
+    assert "git_diff" in allowed
+    assert "memory_search" not in allowed
+    assert "memory_save" in allowed
+    assert tool_modes.screenshot_tool_allowed(caller) is False
 
 
 def test_document_model_mode_preview_does_not_inject_active_document():
@@ -1896,6 +1922,7 @@ def test_tts_speaks_completed_segments_before_full_reply_done():
     synth_texts = [call["params"]["text"] for call in audio.calls_for("audio.tts.synthesize")]
     assert synth_texts == [first, second]
     assert len(audio.calls_for("audio.play_file")) == 2
+    assert ui.calls_for("ui.reply.track_speech")
     assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == f"{first} {second}"
 
 
@@ -2743,6 +2770,59 @@ def test_snip_region_captures_file_and_queries_with_image():
     assert chat_params["image_base64"] == query["screenshot_b64"]
 
 
+def test_snip_region_uses_snip_context_without_extra_screenshot_tool():
+    """Verify snip has caller-style context while keeping screenshot context off."""
+    image_bytes = b"snip image"
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(image_bytes)
+        image_path = Path(tmp.name)
+
+    rows = [
+        {
+            "paste_back": True,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "model",
+            "context_clipboard": False,
+        }
+    ]
+    snip = {
+        "paste_back": False,
+        "context_ambient": True,
+        "context_clipboard": True,
+        "context_documents_mode": "off",
+        "context_browser_mode": "model",
+        "context_github_mode": "off",
+        "context_memory_mode": "off",
+        "context_screenshot": "off",
+        "file_access": "off",
+        "tools": {},
+    }
+    native = FakeWorker(
+        {
+            "native.capture.region": lambda _params: {"ok": True, "path": str(image_path)},
+            "native.context.snapshot": context_handler(selected="", clipboard="clip text"),
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("snip reply")})
+    try:
+        with caller_config(rows), snip_config(snip):
+            _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+            ui.emit("ui.snip.region", {"x": 1, "y": 2, "width": 3, "height": 4})
+            ui.emit("ui.intent.chosen", {"custom": "What is this?"})
+    finally:
+        image_path.unlink(missing_ok=True)
+
+    query = brain.last_call("brain.query")["params"]
+    assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
+    assert query["allow_screenshot_tool"] is False
+    assert query["use_tools"] is True
+    assert "web_search" in query["allowed_tools"]
+    assert "[Clipboard]\nclip text" in query["ambient_text"]
+
+
 def test_voice_flow_records_transcribes_and_queries():
     """Verify voice flow records transcribes and queries behavior."""
     rows = [
@@ -2923,6 +3003,43 @@ def test_voice_flow_includes_enabled_addon_model_tools():
 
     query = brain.last_call("brain.query")["params"]
     assert query["use_tools"] is True
+    assert "mcp_example_add" in query["allowed_tools"]
+    assert "mcp_example_echo" not in query["allowed_tools"]
+
+
+def test_voice_flow_applies_mcp_server_tool_group_overrides():
+    """Verify MCP server-level overrides expand to the server's individual tools."""
+    voice_row = {
+        "label": "Voice",
+        "paste_back": False,
+        "context_ambient": True,
+        "context_clipboard": False,
+        "context_documents_mode": "off",
+        "context_browser_mode": "off",
+        "context_github_mode": "off",
+        "context_memory_mode": "off",
+        "context_screenshot": "off",
+        "tools": {"mcp_server.example": "off", "mcp_example_add": "on"},
+    }
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "voice prompt"}})
+    brain = FakeWorker(
+        {
+            "brain.addons.tools": lambda _params: {
+                "tools": [
+                    {"name": "mcp_example_echo", "description": "[MCP:example] Echo back text."},
+                    {"name": "mcp_example_add", "description": "[MCP:example] Add numbers."},
+                ]
+            },
+        },
+        stream_handlers={"brain.query": query_stream("voice reply")},
+    )
+    with voice_config(voice_row):
+        _flow, native, _ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
+        native.emit("native.hotkey", {"kind": "voice_start"})
+        native.emit("native.hotkey", {"kind": "voice_stop"})
+
+    query = brain.last_call("brain.query")["params"]
     assert "mcp_example_add" in query["allowed_tools"]
     assert "mcp_example_echo" not in query["allowed_tools"]
 

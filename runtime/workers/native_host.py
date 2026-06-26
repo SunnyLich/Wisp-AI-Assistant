@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from runtime.bootstrap import repo_root
+from runtime.bootstrap import data_root, repo_root
 from runtime.service_host import run_host
 
 IS_MAC = sys.platform == "darwin"
@@ -40,7 +40,7 @@ class _HotkeyHelper:
         self._stop_stale_helpers()
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
-        env.setdefault("WISP_REPO_ROOT", str(repo_root()))
+        env.setdefault("WISP_REPO_ROOT", str(data_root()))
         if addon_hotkeys:
             env["WISP_ADDON_HOTKEYS"] = json.dumps(addon_hotkeys)
         self.proc = subprocess.Popen(

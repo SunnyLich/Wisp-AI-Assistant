@@ -6,12 +6,14 @@ CLEAN=false
 SKIP_INSTALL=false
 YES=false
 USE_GLOBAL_PYTHON=false
+USE_DEV_VENV=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --clean)    CLEAN=true ;;
         --skip-install) SKIP_INSTALL=true ;;
         --yes|-y)   YES=true ;;
+        --use-dev-venv) USE_DEV_VENV=true ;;
         --use-global-python) USE_GLOBAL_PYTHON=true ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -20,7 +22,11 @@ done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-VENV_DIR="$ROOT/.venv"
+if $USE_DEV_VENV; then
+    VENV_DIR="$ROOT/.venv"
+else
+    VENV_DIR="$ROOT/.venv-build"
+fi
 VENV_PYTHON="$VENV_DIR/bin/python"
 if [ ! -s "$ROOT/.python-version" ]; then
     echo "ERROR: .python-version is required and must contain a Python version like 3.12 or 3.12.13." >&2
@@ -92,6 +98,16 @@ python_matches_want() {
     [ "$version" = "$WANT" ] || [[ "$WANT" =~ ^[0-9]+\.[0-9]+$ && "$version" == "$WANT".* ]]
 }
 
+ensure_pip() {
+    if "$1" -m pip --version >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "pip is missing from $1; bootstrapping it with ensurepip..." >&2
+    "$1" -m ensurepip --upgrade
+    "$1" -m pip --version >/dev/null 2>&1
+}
+
 find_expected_python() {
     for cmd in "python$WANT_MM" python3 python; do
         if command -v "$cmd" >/dev/null 2>&1 && python_matches_want "$(command -v "$cmd")"; then
@@ -100,6 +116,33 @@ find_expected_python() {
         fi
     done
     return 1
+}
+
+find_uv() {
+    local candidate
+    for candidate in uv "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            command -v "$candidate"
+            return 0
+        elif [[ -x "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ensure_uv() {
+    local uv
+    uv="$(find_uv || true)"
+    if [[ -n "$uv" ]]; then
+        echo "$uv"
+        return 0
+    fi
+
+    echo "No local Python $WANT found; installing uv to provision it..." >&2
+    curl -LsSf https://astral.sh/uv/install.sh | sh >&2
+    find_uv
 }
 
 confirm() {
@@ -111,15 +154,20 @@ confirm() {
 
 if ! $USE_GLOBAL_PYTHON; then
     if [[ ! -x "$VENV_PYTHON" ]]; then
-        if confirm "Project virtual environment not found at $VENV_DIR. Create it now?"; then
+        if confirm "Build virtual environment not found at $VENV_DIR. Create it now?"; then
             CREATE_PYTHON="$(find_expected_python || true)"
-            if [[ -z "$CREATE_PYTHON" ]]; then
-                echo "Could not find Python $WANT to create the project virtual environment." >&2
-                exit 1
+            if [[ -n "$CREATE_PYTHON" ]]; then
+                "$CREATE_PYTHON" -m venv "$VENV_DIR"
+            else
+                UV="$(ensure_uv || true)"
+                if [[ -z "$UV" ]]; then
+                    echo "Could not find or install uv. Install Python $WANT or uv manually, then rerun this script." >&2
+                    exit 1
+                fi
+                "$UV" venv --seed --python "$WANT" "$VENV_DIR"
             fi
-            "$CREATE_PYTHON" -m venv "$VENV_DIR"
         else
-            echo "Build cancelled: project .venv is required unless you pass --use-global-python." >&2
+            echo "Build cancelled: $VENV_DIR is required unless you pass --use-global-python." >&2
             exit 1
         fi
     fi
@@ -127,7 +175,7 @@ if ! $USE_GLOBAL_PYTHON; then
     HAVE_VERSION="$(python_version "$PYTHON")"
     if ! python_matches_want "$PYTHON"; then
         echo "$PYTHON is Python $HAVE_VERSION, but Wisp packaging is pinned to Python $WANT." >&2
-        echo "Rebuild .venv with scripts/setup_dev.sh or rerun the launcher with Python $WANT installed." >&2
+        echo "Rebuild $VENV_DIR with Python $WANT installed." >&2
         exit 1
     fi
 else
@@ -168,6 +216,7 @@ fi
 
 if ! $SKIP_INSTALL; then
     if confirm "Install/update Python packages in $PYTHON before building?"; then
+        ensure_pip "$PYTHON"
         "$PYTHON" -m pip install --upgrade pip
         "$PYTHON" -m pip install -r "$REQUIREMENTS_FILE" -r "$BUILD_REQUIREMENTS_FILE"
     else

@@ -235,8 +235,7 @@ class AddonManager:
         self.shutdown_hosts()
         self._mods = []
         if not self._dir.exists():
-            log.debug("[addons] dir %s does not exist; skipping.", self._dir)
-            return
+            self._dir.mkdir(parents=True, exist_ok=True)
         for child in sorted(p for p in self._dir.iterdir() if p.is_dir()):
             self._load_addon(child)
 

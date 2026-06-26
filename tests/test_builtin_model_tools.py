@@ -24,11 +24,9 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("retrieve_website", names)
 
     def test_git_and_github_tools_surface_for_relevant_prompt(self):
-        # These tools are keyword-gated (see tool_keywords.json): an empty prompt
-        # excludes them, but a relevant prompt brings them back.
-        """Verify git and github tools surface for relevant prompt behavior."""
+        """Verify git and github tools surface without prompt keyword routing."""
         empty = {schema["name"] for schema in llm._get_tool_schemas("")}
-        self.assertTrue(self._GIT_TOOLS.isdisjoint(empty))
+        self.assertTrue(self._GIT_TOOLS <= empty)
 
         relevant = {
             schema["name"]
@@ -183,9 +181,7 @@ class BuiltinModelToolsTests(unittest.TestCase):
         )
 
     def test_pinned_tools_bypass_keyword_filter(self):
-        # git_status is keyword-gated, so an unrelated prompt drops it even when
-        # allowed — unless it is pinned ("On" in the per-caller tool list).
-        """Verify pinned tools bypass keyword filter behavior."""
+        """Verify allowed tools do not depend on prompt wording."""
         filtered = {
             schema["name"]
             for schema in llm._get_tool_schemas("hello", allowed_tools=["git_status"])
@@ -199,11 +195,11 @@ class BuiltinModelToolsTests(unittest.TestCase):
             )
         }
 
-        self.assertNotIn("git_status", filtered)
+        self.assertIn("git_status", filtered)
         self.assertIn("git_status", pinned)
 
     def test_pinned_tools_bypass_keyword_filter_openai_format(self):
-        """Verify pinned tools bypass keyword filter openai format behavior."""
+        """Verify allowed tools do not depend on prompt wording in OpenAI format."""
         pinned = {
             (schema.get("function") or {}).get("name")
             for schema in llm._get_openai_tool_schemas(
@@ -331,7 +327,7 @@ class BuiltinModelToolsTests(unittest.TestCase):
 
         self.assertNotIn("edit_file", default_names)
         self.assertIn("edit_file", model_names)
-        self.assertNotIn("edit_file", irrelevant_names)
+        self.assertIn("edit_file", irrelevant_names)
         self.assertIn("edit_file", pinned_names)
 
     def test_local_file_tools_execute_with_scope_and_approval(self):

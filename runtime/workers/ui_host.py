@@ -1811,6 +1811,7 @@ class QtProtocolHost:
         self._addon_settings_dialogs: dict[str, Any] = {}
         self._addon_log_dialogs: dict[str, Any] = {}
         self._status_dialogs: list[Any] = []
+        self._runtime_status_dialog = None
         self._agent_run_dialog: MacAgentRunDialog | None = None
         self._agent_history_dialog: MacAgentHistoryDialog | None = None
         from core.conversation_store import store as conversation_store
@@ -1992,6 +1993,8 @@ class QtProtocolHost:
             return self._reply_thinking()
         if method == "ui.reply.listening":
             return self._reply_listening()
+        if method == "ui.reply.track_speech":
+            return self._reply_track_speech()
         if method == "ui.reply.start_reveal":
             return self._reply_start_reveal()
         if method == "ui.reply.schedule_words":
@@ -2008,6 +2011,8 @@ class QtProtocolHost:
             return self._health_show(**params)
         if method == "ui.privacy.report":
             return self._privacy_report(**params)
+        if method == "ui.runtime_status.show":
+            return self._runtime_status_show(**params)
         if method == "ui.reply.chunk":
             return self._reply_chunk(**params)
         if method == "ui.reply.done":
@@ -2117,6 +2122,9 @@ class QtProtocolHost:
             )
             self._overlay_signals.show_addon_manager.connect(
                 lambda: self.emit("ui.addons.open_requested", {})
+            )
+            self._overlay_signals.show_runtime_status.connect(
+                lambda: self.emit("ui.runtime_status.open_requested", {})
             )
             self._overlay_signals.show_agent_task.connect(
                 lambda: self.emit("ui.agent.task_requested", {})
@@ -2316,6 +2324,11 @@ class QtProtocolHost:
         """Handle reply listening for qt protocol host."""
         self._ensure_bubble().show_listening(text or None)
         return {"listening": True}
+
+    def _reply_track_speech(self) -> dict[str, Any]:
+        """Anchor the bubble to upcoming speech before playback starts."""
+        self._ensure_bubble().start_speech_tracking()
+        return {"tracking": True}
 
     def _reply_start_reveal(self) -> dict[str, Any]:
         """Handle reply start reveal for qt protocol host."""
@@ -3350,6 +3363,74 @@ class QtProtocolHost:
         box.finished.connect(_forget)
         box.open()
 
+    def _runtime_status_text(self, workers: list[dict[str, Any]] | None = None, log_dir: str = "") -> str:
+        """Format supervisor and worker status for a terminal-like diagnostics view."""
+        lines = [f"Wisp runtime status - {time.strftime('%Y-%m-%d %H:%M:%S')}"]
+        if log_dir:
+            lines.append(f"Log directory: {log_dir}")
+        lines.append("")
+        for worker in workers or []:
+            name = str(worker.get("name") or "worker")
+            module = str(worker.get("module") or "")
+            pid = worker.get("pid")
+            alive = "running" if worker.get("alive") else "stopped"
+            lines.append(f"[{name}] {alive} pid={pid or '-'}")
+            if module:
+                lines.append(f"module={module}")
+            stderr_tail = str(worker.get("stderr_tail") or "").strip()
+            if stderr_tail:
+                lines.append("recent stderr:")
+                lines.append(stderr_tail)
+            lines.append("")
+        return "\n".join(lines).rstrip() or "No runtime status available."
+
+    def _runtime_status_show(self, workers: list[dict[str, Any]] | None = None, log_dir: str = "") -> dict[str, Any]:
+        """Show or refresh the runtime status diagnostics window."""
+        from PySide6.QtCore import QTimer, Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTextEdit, QVBoxLayout
+
+        body = self._runtime_status_text(workers, log_dir)
+
+        def _open() -> None:
+            dialog = self._runtime_status_dialog
+            text = None
+            if dialog is not None and dialog.isVisible():
+                text = dialog.findChild(QTextEdit)
+            if dialog is None or not dialog.isVisible() or text is None:
+                dialog = QDialog()
+                dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+                dialog.setWindowTitle(t("Runtime Status"))
+                from ui.shared.window_utils import enable_standard_window_controls
+                enable_standard_window_controls(dialog)
+                root = QVBoxLayout(dialog)
+                root.setContentsMargins(16, 16, 16, 16)
+                root.setSpacing(10)
+                text = QTextEdit()
+                text.setReadOnly(True)
+                text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+                root.addWidget(text, 1)
+                footer = QHBoxLayout()
+                refresh = QPushButton(t("Refresh"))
+                refresh.clicked.connect(lambda: self.emit("ui.runtime_status.open_requested", {}))
+                close = QPushButton(t("Close"))
+                close.clicked.connect(dialog.close)
+                footer.addWidget(refresh)
+                footer.addStretch()
+                footer.addWidget(close)
+                root.addLayout(footer)
+                dialog.resize(760, 520)
+                dialog.destroyed.connect(lambda _obj=None: setattr(self, "_runtime_status_dialog", None))
+                self._runtime_status_dialog = dialog
+            text.setPlainText(body)
+            text.moveCursor(QTextCursor.MoveOperation.End)
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+
+        QTimer.singleShot(0, _open)
+        return {"queued": True, "count": len(workers or [])}
+
     def _health_show(self, rows: list[dict[str, Any]] | None = None, title: str = "") -> dict[str, Any]:
         """Show live setup/health rows in a dismissible window."""
         from PySide6.QtCore import QTimer
@@ -3428,7 +3509,6 @@ class QtProtocolHost:
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtWidgets import (
             QDialog,
-            QFileDialog,
             QFrame,
             QHBoxLayout,
             QLabel,
@@ -3460,7 +3540,10 @@ class QtProtocolHost:
         root.addWidget(title)
 
         subtitle = QLabel(
-            t("Addons are Python packages in the addons/ folder. Each addon runs in its own host process.")
+            t(
+                "Addons are Python packages in the add-ons folder. "
+                "Portable builds create this folder next to Wisp.exe when possible."
+            )
         )
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("font-size: 9pt; opacity: 0.7;")
@@ -3491,7 +3574,11 @@ class QtProtocolHost:
         footer = QHBoxLayout()
         if addons_dir:
             open_btn = QPushButton(t("Open addons folder"))
-            open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(addons_dir)))
+            def _open_addons_dir() -> None:
+                Path(addons_dir).mkdir(parents=True, exist_ok=True)
+                QDesktopServices.openUrl(QUrl.fromLocalFile(addons_dir))
+
+            open_btn.clicked.connect(_open_addons_dir)
             footer.addWidget(open_btn)
             install_btn = QPushButton(t("Install archive"))
             install_btn.clicked.connect(lambda: self._install_addon_archive_dialog())

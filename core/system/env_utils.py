@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -64,13 +65,14 @@ def env_file_access_mode(name: str, default: str = "off") -> str:
 
 
 # Per-caller tool override modes:
-#   "on"    — tool is always offered to the model for this caller
-#   "model" — offered subject to the per-prompt keyword filter (Tools tab)
+#   "on"    — tool is offered to the model for this caller
+#   "model" — legacy spelling for "on"; kept for old settings files
 #   "off"   — never offered
 # Context-fetch tools are governed by context controls, not this mapping.
-# Tools absent from the mapping follow their default (off for installed/plugin
-# tools, Local files dropdown for file tools).
+# Tools absent from the mapping follow their default (enabled for addon tools,
+# Local files dropdown for file tools).
 TOOL_OVERRIDE_MODES = ("on", "model", "off")
+MCP_SERVER_OVERRIDE_PREFIX = "mcp_server."
 CONTEXT_GOVERNED_TOOL_NAMES = {
     "web_search",
     "get_context",
@@ -84,6 +86,42 @@ CONTEXT_GOVERNED_TOOL_NAMES = {
     "memory_search",
     "capture_screen",
 }
+
+
+def safe_mcp_server_id(server_name: str) -> str:
+    """Return the stable id used for MCP server-level tool overrides."""
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", str(server_name or "").strip())
+    return cleaned or "server"
+
+
+def mcp_server_override_key(server_name: str) -> str:
+    """Return the synthetic override key for one MCP server group."""
+    return f"{MCP_SERVER_OVERRIDE_PREFIX}{safe_mcp_server_id(server_name)}"
+
+
+def is_mcp_server_override_key(name: str) -> bool:
+    """Return True when an override name targets an MCP server group."""
+    return str(name or "").startswith(MCP_SERVER_OVERRIDE_PREFIX)
+
+
+def mcp_server_id_from_tool(name: str, description: str = "") -> str | None:
+    """Infer the MCP server id for a bridge-exposed tool.
+
+    The bridge descriptions start with ``[MCP:<server>]``. The fallback handles
+    older payloads that only preserved the generated ``mcp_<server>_<tool>``
+    name; it is intentionally best-effort because underscores make that form
+    ambiguous.
+    """
+    match = re.match(r"^\[MCP:([^\]]+)\]", str(description or "").strip())
+    if match:
+        return safe_mcp_server_id(match.group(1))
+    text = str(name or "")
+    if not text.startswith("mcp_"):
+        return None
+    parts = text.split("_", 2)
+    if len(parts) >= 3 and parts[1]:
+        return safe_mcp_server_id(parts[1])
+    return None
 
 
 def parse_tool_modes(value: str | None) -> dict[str, str]:

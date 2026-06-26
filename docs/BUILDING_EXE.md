@@ -9,12 +9,20 @@ From PowerShell in the project root:
 .\tools\build_exe.ps1 -Clean
 ```
 
-The script uses the project `.venv` by default. If `.venv` does not exist, it
-creates it automatically, then checks dependencies and installs anything that is
-missing or out of date — no prompts. Already-satisfied packages are skipped.
-Builds must use Python `3.12`, matching `.python-version`; the script stops
-with a clear message if the selected `.venv` or global Python does not match
-that Python minor line.
+The script uses a dedicated `.venv-build` environment by default. If
+`.venv-build` does not exist, it creates it automatically. The script first
+looks for a local Python matching `.python-version`; if none is available, it
+installs/uses `uv` to provision that Python for `.venv-build`, seeding `pip` in
+the new environment. If an existing `.venv-build` is missing `pip`, the script
+bootstraps it with `ensurepip` before installing dependencies. It then checks
+dependencies and installs anything that is missing or out of date — no prompts.
+Already-satisfied packages are skipped. Builds must use Python `3.12`, matching
+`.python-version`; the script stops with a clear message if the selected build
+environment or global Python does not match that Python minor line.
+
+Keep the normal `.venv` for development and tests. The separate build
+environment keeps local experiments, optional GPU packages, and developer tools
+out of portable release bundles unless you intentionally opt into them.
 
 (`-Yes` is still accepted for backward compatibility but no longer does anything,
 since auto-install is now the default.)
@@ -32,19 +40,35 @@ Use `-SkipInstall` if dependencies are already installed:
 ```
 
 Use `-UseGlobalPython` only if you intentionally want to build outside the
-project virtual environment.
+build virtual environment. Use `-UseDevVenv` on Windows, or `--use-dev-venv` on
+Linux/macOS, only when you intentionally want PyInstaller to build from the
+developer `.venv`.
 
 Notes:
 
 - API keys are not bundled. Users should enter them in Settings so they are saved to the OS keychain.
 - `.env.example` is bundled as a template, but your local `.env` is not included.
+- Portable builds create an `addons` folder next to `Wisp.exe` when that folder
+  is writable. Drop addon folders there, or use **Addon Manager > Install
+  archive/folder**. If the executable lives in a read-only install location,
+  Wisp falls back to the user data addon folder shown by **Open addons folder**.
 - The packaged executable starts the same supervisor worker runtime as the
   launchers.
-- Addon dependency environments in packaged builds require `uv`. Place `uv.exe`
-  at `bin\uv.exe` or `tools\uv.exe` before building and PyInstaller will bundle
-  it into `dist\Wisp\bin\uv.exe`.
-- If packaging fails on a missing optional dependency, install it into `.venv` and rerun the script.
-- On Windows, if the repo path is long enough to trip the OS path limit during `elevenlabs` install, the build script now skips that optional package instead of failing the whole build. The packaged app will still build, but the ElevenLabs TTS provider will be unavailable unless you enable Windows long paths and reinstall dependencies.
+- Packaged no-console runs keep runtime logs under `build_logs/`; the latest
+  folder is written to `build_logs/latest_wisp_runtime.txt`. From the tray menu,
+  open `Runtime Status` to see worker pids, running/stopped state, and recent
+  worker stderr without launching from a terminal.
+- Runtime package installs in packaged builds require `uv`. This includes addon
+  dependency environments and Settings > Voice installs for optional TTS
+  packages such as Kokoro or ElevenLabs. Place `uv.exe` at `bin\uv.exe` or
+  `tools\uv.exe` before building and PyInstaller will bundle it with Wisp.
+- If packaging fails on a missing required dependency, rerun without
+  `-SkipInstall` so the build script can install it into `.venv-build`.
+- On Windows, if the repo path is long enough to trip the OS path limit during
+  `elevenlabs` install, the build script skips that optional package instead of
+  failing the whole build. The packaged app still builds. Users who select the
+  ElevenLabs TTS provider will see an in-app warning and can install ElevenLabs
+  from Settings > Voice into Wisp's user-writable optional packages folder.
 
 ## Cross-Platform Release Builds
 

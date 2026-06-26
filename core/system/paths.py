@@ -38,6 +38,26 @@ def _bundle_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _executable_root() -> Path | None:
+    """Return the app executable folder for packaged builds."""
+    if not getattr(sys, "frozen", False):
+        return None
+    executable = Path(sys.executable).resolve()
+    return executable.parent if executable.name else None
+
+
+def _writable_dir(path: Path) -> bool:
+    """Return whether *path* can be created and written to."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".wisp-write-test"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
 def _repo_root() -> Path:
     """Return the repo root in dev mode; user data dir when frozen."""
     override = os.environ.get("WISP_REPO_ROOT")
@@ -50,6 +70,27 @@ def _repo_root() -> Path:
         d.mkdir(parents=True, exist_ok=True)
         return d
     return Path(__file__).resolve().parents[2]
+
+
+def _addons_dir() -> Path:
+    """
+    Return the user-installable addon folder.
+
+    Packaged zip/onedir builds are portable by default when their executable
+    folder is writable, so addons live next to Wisp.exe. Installed/read-only
+    locations fall back to the normal user data root.
+    """
+    override = os.environ.get("WISP_ADDONS_DIR")
+    if override:
+        d = Path(override).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    exe_root = _executable_root()
+    if exe_root is not None:
+        portable_addons = exe_root / "addons"
+        if _writable_dir(portable_addons):
+            return portable_addons
+    return REPO_ROOT / "addons"
 
 
 # ---------------------------------------------------------------------------
@@ -83,5 +124,4 @@ CHAT_ATTACHMENTS_DIR = CHATS_DIR / "attachments"
 TOOLS_INSTALLED_DIR = REPO_ROOT / "tools" / "installed"
 MODEL_TOOLS_DIR     = REPO_ROOT / "model_tools"
 MODEL_FILE_ACCESS_DIR = REPO_ROOT / "model_files"
-ADDONS_DIR          = REPO_ROOT / "addons"
-TOOL_KEYWORDS_FILE  = REPO_ROOT / "tool_keywords.json"
+ADDONS_DIR          = _addons_dir()

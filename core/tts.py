@@ -275,11 +275,14 @@ def _stream_cartesia(text_chunks: Iterable[str],
 def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
     """Stream elevenlabs."""
     try:
+        from core import optional_deps
+
+        optional_deps.add_optional_packages_to_path()
         sdk_clients.install_proxy_guard()
         from elevenlabs.client import ElevenLabs  # type: ignore
     except ImportError as exc:
         raise RuntimeError(
-            "ElevenLabs support is not installed in this build. Enable Windows long paths and reinstall dependencies to bundle it."
+            "ElevenLabs support is not installed. Open Settings > Voice and click Install ElevenLabs, or rebuild from a shorter path."
         ) from exc
 
     with ssl_init_lock():
@@ -689,6 +692,9 @@ def test_connection(
         if provider == "elevenlabs":
             if not elevenlabs_api_key:
                 raise ValueError("ELEVENLABS_API_KEY is not configured.")
+            from core import optional_deps
+
+            optional_deps.add_optional_packages_to_path()
             sdk_clients.install_proxy_guard()
             from elevenlabs.client import ElevenLabs  # type: ignore
 

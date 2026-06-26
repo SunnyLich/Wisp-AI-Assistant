@@ -2,13 +2,15 @@
 # PyInstaller specification for the Windows Wisp executable bundle.
 
 from pathlib import Path
+import sys
 import PySide6
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 # LiteParse ships a loose pdfium.dll that its native extension loads at
 # runtime; PyInstaller's dependency scanner does not pick it up, so collect
 # the package's data/binaries explicitly or the frozen app panics on parse.
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
+LANGUAGE_TAGS_DATAS, LANGUAGE_TAGS_BINARIES, LANGUAGE_TAGS_HIDDENIMPORTS = collect_all("language_tags")
 
 def _repo_root() -> Path:
     start = Path(SPECPATH).resolve()
@@ -20,7 +22,14 @@ def _repo_root() -> Path:
 
 
 ROOT = _repo_root()
+sys.path.insert(0, str(ROOT / "runtime" / "brain"))
 PYSIDE6_ROOT = Path(PySide6.__file__).resolve().parent
+RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
+BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
+PIP_HIDDENIMPORTS = collect_submodules("pip")
+MODULE_MODE_HIDDENIMPORTS = [
+    "core.addon_host",
+]
 QT_RUNTIME_DLLS = [
     (str(path), "PySide6")
     for pattern in (
@@ -46,13 +55,13 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
-    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES + UV_BINARIES,
+    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),
-    ] + LITEPARSE_DATAS,
+    ] + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS,
     hiddenimports=[
         "pynput.keyboard._win32",
         "pynput.mouse._win32",
@@ -62,7 +71,7 @@ a = Analysis(
         "win32process",
         "comtypes",
         "comtypes.client",
-    ] + LITEPARSE_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

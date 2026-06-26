@@ -13,6 +13,12 @@ addons/
     __init__.py
 ```
 
+In a portable packaged build, Wisp creates this `addons/` folder next to
+`Wisp.exe` when that location is writable. If the executable is installed in a
+read-only location, use **Addon Manager -> Open addons folder** to open the
+fallback user-writable addon directory. You can also install a `.wisp`/`.zip`
+archive or unpacked addon folder from the Addon Manager.
+
 Addons run in a dedicated Python subprocess, one process per addon. That means a
 crash, import failure, or slow hook is isolated from the brain worker and from
 other addons.
