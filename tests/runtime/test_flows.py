@@ -489,7 +489,7 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
         {
             "paste_back": False,
             "context_ambient": True,
-            "context_documents": True,
+            "context_documents_mode": "auto",
             "context_tools": True,
             "context_browser_mode": "model",
             "context_github_mode": "model",
