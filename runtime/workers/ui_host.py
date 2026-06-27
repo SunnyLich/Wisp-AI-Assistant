@@ -259,6 +259,7 @@ class QtFreezeWatchdog:
         self._cooldown = max(self._threshold, float(os.environ.get("WISP_UI_FREEZE_LOG_COOLDOWN_SECONDS", "10.0")))
         self._last_beat = time.monotonic()
         self._last_log = 0.0
+        self._grace_until = 0.0
         self._last_drain_ticks = -1
         self._drain_progress = time.monotonic()
         self._last_ipc_log = 0.0
@@ -274,6 +275,17 @@ class QtFreezeWatchdog:
     def beat(self) -> None:
         """Handle beat for qt freeze watchdog."""
         self._last_beat = time.monotonic()
+
+    def expect_slow(self, seconds: float) -> None:
+        """Grant a one-off grace window for a deliberately slow main-thread op.
+
+        A handler calls this immediately before a known-heavy *synchronous* build
+        (e.g. first construction of the chat window). The background thread reads
+        ``_grace_until`` while the main thread is blocked, so an expected cold-start
+        stall is not mistaken for a real event-loop freeze. Genuine freezes outside
+        a grace window still trip at the normal threshold.
+        """
+        self._grace_until = time.monotonic() + max(0.0, float(seconds))
 
     def stop(self) -> None:
         """Stop the freeze-watchdog timer and its background thread."""
@@ -295,6 +307,10 @@ class QtFreezeWatchdog:
 
             # Case 1: the Qt event loop itself is frozen (heartbeat stopped).
             if stalled_for >= self._threshold:
+                if now < self._grace_until:
+                    # A handler announced an expected slow operation (e.g. building
+                    # the chat window). Hold off until the grace window elapses.
+                    continue
                 if now - self._last_log >= self._cooldown:
                     self._last_log = now
                     self._write_report("ui_freeze", "event_loop_frozen", stalled_for, status)
@@ -3280,23 +3296,33 @@ class QtProtocolHost:
             return {"shown": True, "reused": True}
         start_new = force_new or not self._all_conversations
         from core.conversation_store import store as conversation_store
-        self._chat = ChatWindow(
-            conversations=self._all_conversations,
-            send_fn=self._make_chat_send_fn(),
-            start_new=start_new,
-            projects=conversation_store.load_projects(),
-            active_project_id=self._active_project_id,
-            on_project_change=self._set_active_project,
-            on_new_project=self._create_project,
-            persist_fn=self._persist_conversations,
-            active_idx=self._active_conversation_idx,
-            on_select=self._set_active_conversation,
-            on_context_preview=lambda payload: self.emit("ui.chat.context_preview", payload),
-        )
-        self._chat.destroyed.connect(lambda: setattr(self, "_chat", None))
-        self._chat.show()
-        self._chat.raise_()
-        self._chat.activateWindow()
+        # First chat-window construction is a heavy, deliberately synchronous
+        # main-thread build (cold imports + widgets + conversation/project load).
+        # Warn the watchdog so a cold-start stall isn't logged as a real freeze.
+        watchdog = getattr(self, "_watchdog", None)
+        if watchdog is not None:
+            watchdog.expect_slow(10.0)
+        try:
+            self._chat = ChatWindow(
+                conversations=self._all_conversations,
+                send_fn=self._make_chat_send_fn(),
+                start_new=start_new,
+                projects=conversation_store.load_projects(),
+                active_project_id=self._active_project_id,
+                on_project_change=self._set_active_project,
+                on_new_project=self._create_project,
+                persist_fn=self._persist_conversations,
+                active_idx=self._active_conversation_idx,
+                on_select=self._set_active_conversation,
+                on_context_preview=lambda payload: self.emit("ui.chat.context_preview", payload),
+            )
+            self._chat.destroyed.connect(lambda: setattr(self, "_chat", None))
+            self._chat.show()
+            self._chat.raise_()
+            self._chat.activateWindow()
+        finally:
+            if watchdog is not None:
+                watchdog.beat()
         return {"shown": True, "reused": False}
 
     def _chat_context_preview(
