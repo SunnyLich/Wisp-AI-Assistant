@@ -153,6 +153,8 @@ def prewarm():
     if config.TTS_PROVIDER.lower() == "cartesia":
         _get_cartesia_ws()
     elif config.TTS_PROVIDER.lower() == "kokoro":
+        if not kokoro_installed():
+            return
         for chunk in _stream_kokoro("ok"):
             if chunk:
                 break
@@ -277,7 +279,7 @@ def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
     try:
         from core import optional_deps
 
-        optional_deps.add_optional_packages_to_path()
+        optional_deps.add_optional_packages_to_path(prepend=True)
         sdk_clients.install_proxy_guard()
         from elevenlabs.client import ElevenLabs  # type: ignore
     except ImportError as exc:
@@ -306,6 +308,16 @@ def _stream_elevenlabs(text: str) -> Generator[bytes, None, None]:
 # ------------------------------------------------------------------
 # Kokoro local library
 # ------------------------------------------------------------------
+
+def kokoro_installed() -> bool:
+    """Return whether the optional Kokoro package can be imported."""
+    try:
+        from core import optional_deps
+
+        return optional_deps.is_importable("kokoro")
+    except Exception:
+        return False
+
 
 def _reset_kokoro_pipeline() -> None:
     """Discard the cached Kokoro pipeline so language changes apply."""
@@ -399,29 +411,41 @@ def _build_kokoro_pipeline(KPipeline, *, lang_code: str, device: str):
     return pipeline, effective_device
 
 
+def _import_kokoro_pipeline():
+    """Import Kokoro's pipeline from bundled or user-installed optional packages."""
+    try:
+        from core import optional_deps
+
+        optional_deps.add_optional_packages_to_path(prepend=True)
+        from kokoro import KPipeline  # type: ignore
+
+        return KPipeline
+    except ImportError as exc:
+        raise RuntimeError(
+            "Kokoro support is not installed. Open Settings > Voice and click Install Kokoro."
+        ) from exc
+
+
 def _get_kokoro_pipeline():
     """Return a cached Kokoro pipeline for the configured language code."""
     global _kokoro_pipeline, _kokoro_pipeline_lang, _kokoro_pipeline_device
     lang_code = (getattr(config, "KOKORO_LANG_CODE", "a") or "a").strip()
-    device = _resolve_kokoro_device()
     if not _kokoro_lock.acquire(timeout=_KOKORO_LOCK_TIMEOUT_SECONDS):
         raise RuntimeError("Kokoro is still warming up. Try again when local speech is ready.")
     try:
-        if (
-            _kokoro_pipeline is None
-            or _kokoro_pipeline_lang != lang_code
-            or _kokoro_pipeline_device != device
-        ):
-            try:
-                _kokoro_diag("Importing kokoro.KPipeline")
-                from kokoro import KPipeline  # type: ignore
-                _kokoro_diag("Imported kokoro.KPipeline")
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Kokoro support is not installed. Run: python -m pip install kokoro>=0.9.4 soundfile"
-                ) from exc
+        if _kokoro_pipeline is None or _kokoro_pipeline_lang != lang_code:
+            KPipeline = _import_kokoro_pipeline()
+            device = _resolve_kokoro_device()
             _kokoro_pipeline, device = _build_kokoro_pipeline(KPipeline, lang_code=lang_code, device=device)
             _kokoro_pipeline_lang = lang_code
+            _kokoro_pipeline_device = device
+            return _kokoro_pipeline
+        device = _resolve_kokoro_device()
+        if (
+            _kokoro_pipeline_device != device
+        ):
+            KPipeline = _import_kokoro_pipeline()
+            _kokoro_pipeline, device = _build_kokoro_pipeline(KPipeline, lang_code=lang_code, device=device)
             _kokoro_pipeline_device = device
         return _kokoro_pipeline
     finally:
@@ -694,7 +718,7 @@ def test_connection(
                 raise ValueError("ELEVENLABS_API_KEY is not configured.")
             from core import optional_deps
 
-            optional_deps.add_optional_packages_to_path()
+            optional_deps.add_optional_packages_to_path(prepend=True)
             sdk_clients.install_proxy_guard()
             from elevenlabs.client import ElevenLabs  # type: ignore
 

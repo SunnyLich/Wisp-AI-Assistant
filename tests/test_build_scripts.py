@@ -188,6 +188,14 @@ class BuildScriptTests(unittest.TestCase):
                 self.assertIn("LANGUAGE_TAGS_BINARIES", spec)
                 self.assertIn("LANGUAGE_TAGS_HIDDENIMPORTS", spec)
 
+    def test_specs_bundle_stdlib_needed_by_runtime_installed_audio_packages(self) -> None:
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertIn("OPTIONAL_RUNTIME_HIDDENIMPORTS", spec)
+                for module in ("cProfile", "pickletools", "pstats", "timeit"):
+                    self.assertIn(f'"{module}"', spec)
+
 
 if __name__ == "__main__":
     unittest.main()

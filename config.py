@@ -2,14 +2,13 @@
 config.py — Central configuration loaded from .env
 """
 import os
+import sys
 from dotenv import dotenv_values, load_dotenv
 from core import secret_store
 from core.system.env_utils import (
     env_bool, env_file_access_mode, env_float, env_int, env_screenshot_mode,
     normalize_file_access_mode, parse_tool_modes,
 )
-from core.system.paths import FILLER_AUDIO_DIR as DEFAULT_FILLER_AUDIO_DIR
-from core.system.paths import USER_FILLER_AUDIO_DIR as DEFAULT_USER_FILLER_AUDIO_DIR
 from core.system.paths import REPO_ROOT, MODEL_FILE_ACCESS_DIR, MODEL_TOOLS_DIR
 from core.settings_model import (
     AppSettings,
@@ -24,12 +23,14 @@ from core.prompt_i18n import (
     CALLER_TEMPLATE_FIELDS as _CALLER_TEMPLATE_FIELDS,
     DEFAULT_SYSTEM_PROMPT_UTILITY,
     LEGACY_TOOL_PROMPT_SENTENCE as _LEGACY_TOOL_PROMPT_SENTENCE,
+    SYSTEM_PROMPT_UTILITY_TEMPLATES as _SYSTEM_PROMPT_UTILITY_TEMPLATES,
     assistant_language_instruction as _assistant_language_instruction,
     caller_intent_template as _caller_intent_template,
     default_caller_intents,
     intent_template_language as _intent_template_language,
     localize_chat_elaborate_prompt_if_default,
     localize_intent_if_default,
+    localize_system_prompt_utility_if_default,
 )
 
 _ENV_FILE = REPO_ROOT / ".env"
@@ -81,28 +82,39 @@ DEFAULT_TOOL_FILE_BLOCKED_GLOBS = [
 ]
 
 # Static constants — not .env-configurable; do not belong in _load_config().
-FILLER_AUDIO_DIR = str(DEFAULT_FILLER_AUDIO_DIR)
-# Writable companion dir that holds filler clips synthesised in the user's
-# chosen TTS voice. Loaded alongside the bundled WAVs.
-USER_FILLER_AUDIO_DIR = str(DEFAULT_USER_FILLER_AUDIO_DIR)
-FILLER_MAX_DURATION_MS = 1000   # filler clips must be < 1s
 LATENCY_TARGET_MS = 1500
 LATENCY_CEILING_MS = 3000
 
 # --- Caller rows ---
 # Each "caller" is a hotkey that shows the WASD intent picker.
 # Stored as CALLER_COUNT + CALLER_N_* env vars (1-indexed).
+def _platform_default_hotkey(windows: str, other: str) -> str:
+    """Return a default hotkey that avoids common app-quit bindings off Windows."""
+    return windows if sys.platform == "win32" else other
+
+
+def _caller_default_hotkey(index: int) -> str:
+    """Return the platform-aware built-in caller hotkey for a row index."""
+    defaults = (
+        ("ctrl+q", "ctrl+alt+space"),
+        ("ctrl+shift+q", "ctrl+alt+shift+space"),
+    )
+    if 0 <= index < len(defaults):
+        return _platform_default_hotkey(*defaults[index])
+    return ""
+
+
 _CALLER_DEFAULTS: list[dict] = [
     {
-        "hotkey": "ctrl+q",
+        "hotkey": _caller_default_hotkey(0),
         "label": "General",
         "paste_back": False,
         "custom_key": "s",
         "custom_label": "",
-        "context_ambient": True,
-        "context_documents": True,
+        "context_ambient": False,
+        "context_documents": False,
         "context_tools": False,
-        "context_documents_mode": "auto",
+        "context_documents_mode": "off",
         "context_browser_mode": "off",
         "context_github_mode": "off",
         "context_memory_mode": "on",
@@ -112,12 +124,12 @@ _CALLER_DEFAULTS: list[dict] = [
         "intents": default_caller_intents(0),
     },
     {
-        "hotkey": "ctrl+shift+q",
+        "hotkey": _caller_default_hotkey(1),
         "label": "Rewrite & Paste",
         "paste_back": True,
         "custom_key": "s",
         "custom_label": "",
-        "context_ambient": True,
+        "context_ambient": False,
         "context_documents": False,
         "context_tools": False,
         "context_documents_mode": "off",
@@ -136,7 +148,7 @@ _PROFILE_DEFAULTS: list[dict] = [
         "id": "default",
         "label": "Default",
         "context": {
-            "documents": "auto",
+            "documents": "off",
             "browser": "off",
             "github": "off",
             "memory": "on",
@@ -468,14 +480,13 @@ def tool_turn_budget(profile_id: str | None = None) -> ToolTurnBudgets:
     return resolve_profile(profile_id).tools
 
 
-# Voice (push-to-talk) context defaults mirror the General caller so existing
-# behavior — voice used to borrow caller 1's config — is unchanged by default.
+# Voice (push-to-talk) context defaults mirror the memory-only General caller.
 _VOICE_DEFAULTS: dict = {
     "label": "Voice",
     "paste_back": False,
-    "context_ambient": True,
+    "context_ambient": False,
     "context_clipboard": False,
-    "context_documents_mode": "auto",
+    "context_documents_mode": "off",
     "context_browser_mode": "off",
     "context_github_mode": "off",
     "context_memory_mode": "on",
@@ -487,9 +498,9 @@ _VOICE_DEFAULTS: dict = {
 _SNIP_DEFAULTS: dict = {
     "label": "Snip screen region",
     "paste_back": False,
-    "context_ambient": True,
+    "context_ambient": False,
     "context_clipboard": False,
-    "context_documents_mode": "auto",
+    "context_documents_mode": "off",
     "context_browser_mode": "off",
     "context_github_mode": "off",
     "context_memory_mode": "on",
@@ -659,7 +670,7 @@ def _load_caller_rows() -> list[dict]:
         profile_documents_mode = str(
             profile_defaults.get("context_documents_mode")
             or default.get("context_documents_mode")
-            or "auto"
+            or "off"
         )
         profile_browser_mode = str(
             profile_defaults.get("context_browser_mode")
@@ -713,12 +724,12 @@ def _load_caller_rows() -> list[dict]:
         tools = parse_tool_modes(os.getenv(f"CALLER_{n}_TOOLS"))
         rows.append({
             "profile":    profile_id,
-            "hotkey":     os.getenv(f"CALLER_{n}_HOTKEY",     default.get("hotkey", "")),
+            "hotkey":     os.getenv(f"CALLER_{n}_HOTKEY",     _caller_default_hotkey(i) or default.get("hotkey", "")),
             "label":      os.getenv(f"CALLER_{n}_LABEL",      default.get("label", "")),
             "paste_back": env_bool(f"CALLER_{n}_PASTE_BACK", bool(default.get("paste_back", False))),
             "custom_key": os.getenv(f"CALLER_{n}_CUSTOM_KEY", default.get("custom_key", "s")),
             "custom_label": os.getenv(f"CALLER_{n}_CUSTOM_LABEL", default.get("custom_label", "")),
-            "context_ambient": env_bool(f"CALLER_{n}_CONTEXT_AMBIENT", bool(default.get("context_ambient", True))),
+            "context_ambient": env_bool(f"CALLER_{n}_CONTEXT_AMBIENT", bool(default.get("context_ambient", False))),
             "context_documents": documents_mode == "auto",
             "context_tools": any(m == "model" for m in (documents_mode, browser_mode, github_mode, memory_mode)),
             "context_documents_mode": documents_mode,
@@ -767,7 +778,9 @@ def _load_config() -> None:
     global CARTESIA_API_KEY, ELEVENLABS_API_KEY, TTS_CUSTOM_API_KEY
     global CUSTOM_API_KEY, CUSTOM_BASE_URL
     global DEEPSEEK_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY
-    global XAI_API_KEY, TOGETHER_API_KEY, CEREBRAS_API_KEY
+    global XAI_API_KEY, TOGETHER_API_KEY, CEREBRAS_API_KEY, ZAI_API_KEY
+    global NVIDIA_API_KEY, SAMBANOVA_API_KEY, GITHUB_MODELS_API_KEY, HUGGINGFACE_API_KEY
+    global CHUTES_API_KEY, VERCEL_API_KEY, FIREWORKS_API_KEY, COHERE_API_KEY, AI21_API_KEY, NEBIUS_API_KEY
     global LLM_PROVIDER, LLM_MODEL, LLM_FALLBACKS
     global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, TOOL_LLM_MODEL
     global CHAT_REASONING_EFFORT, CHAT_TOOL_TRACE_UI
@@ -783,7 +796,7 @@ def _load_config() -> None:
     global GPT_SOVITS_TEXT_SPLIT_METHOD, GPT_SOVITS_BATCH_SIZE, GPT_SOVITS_SPEED_FACTOR
     global GPT_SOVITS_SEED, GPT_SOVITS_TIMEOUT_SECONDS
     global KOKORO_VOICE, KOKORO_LANG_CODE, KOKORO_DEVICE, KOKORO_SPEED, KOKORO_SAMPLE_RATE, KOKORO_SPLIT_PATTERN
-    global THEME_MODE, DARK_MODE, ICON_AUTO_HIDE, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
+    global THEME_MODE, DARK_MODE, ICON_AUTO_HIDE, START_ON_LOGIN, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
     global TRUST_PRIVACY_MODE
     global APP_LANGUAGE, ASSISTANT_LANGUAGE
     global THEME_DARK_BG, THEME_DARK_SURFACE, THEME_DARK_TEXT, THEME_DARK_ACCENT
@@ -829,9 +842,20 @@ def _load_config() -> None:
     XAI_API_KEY       = secret_store.get_secret("XAI_API_KEY")
     TOGETHER_API_KEY  = secret_store.get_secret("TOGETHER_API_KEY")
     CEREBRAS_API_KEY  = secret_store.get_secret("CEREBRAS_API_KEY")
+    ZAI_API_KEY       = secret_store.get_secret("ZAI_API_KEY")
+    NVIDIA_API_KEY    = secret_store.get_secret("NVIDIA_API_KEY")
+    SAMBANOVA_API_KEY = secret_store.get_secret("SAMBANOVA_API_KEY")
+    GITHUB_MODELS_API_KEY = secret_store.get_secret("GITHUB_MODELS_API_KEY")
+    HUGGINGFACE_API_KEY = secret_store.get_secret("HUGGINGFACE_API_KEY")
+    CHUTES_API_KEY    = secret_store.get_secret("CHUTES_API_KEY")
+    VERCEL_API_KEY    = secret_store.get_secret("VERCEL_API_KEY")
+    FIREWORKS_API_KEY = secret_store.get_secret("FIREWORKS_API_KEY")
+    COHERE_API_KEY    = secret_store.get_secret("COHERE_API_KEY")
+    AI21_API_KEY      = secret_store.get_secret("AI21_API_KEY")
+    NEBIUS_API_KEY    = secret_store.get_secret("NEBIUS_API_KEY")
 
     # --- LLM ---
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")    # groq | openai | anthropic | google | chatgpt | copilot
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")    # groq | openai | anthropic | google | chatgpt | copilot | zai | custom
     LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-5.5")
     LLM_FALLBACKS = os.getenv("LLM_FALLBACKS", "")
 
@@ -913,6 +937,7 @@ def _load_config() -> None:
     THEME_LIGHT_ACCENT    = os.getenv("THEME_LIGHT_ACCENT",  "#5856d6")
     # ICON_AUTO_HIDE (formerly DOLL_AUTO_HIDE) — old key still honored for back-compat.
     ICON_AUTO_HIDE        = env_bool("ICON_AUTO_HIDE", env_bool("DOLL_AUTO_HIDE", False))
+    START_ON_LOGIN        = env_bool("START_ON_LOGIN", False)
     APP_LANGUAGE          = os.getenv("APP_LANGUAGE", "")
     ASSISTANT_LANGUAGE    = os.getenv("ASSISTANT_LANGUAGE", "")
     CHAT_AUTO_ELABORATE   = env_bool("CHAT_AUTO_ELABORATE", False)
@@ -930,7 +955,7 @@ def _load_config() -> None:
     HOTKEY_ADD_CONTEXT   = os.getenv("HOTKEY_ADD_CONTEXT",   "alt+q")
     HOTKEY_CLEAR_CONTEXT = os.getenv("HOTKEY_CLEAR_CONTEXT", "alt+w")
     HOTKEY_SNIP          = os.getenv("HOTKEY_SNIP",          "ctrl+alt+q")
-    HOTKEY_READ_SELECTION_ALOUD = os.getenv("HOTKEY_READ_SELECTION_ALOUD", "")
+    HOTKEY_READ_SELECTION_ALOUD = os.getenv("HOTKEY_READ_SELECTION_ALOUD", "f7")
     HOTKEY_VOICE         = os.getenv("HOTKEY_VOICE",         "f9")
     # Push-to-talk dictation: hold to transcribe straight into the focused text
     # field (no assistant). Set empty to disable. DICTATE_MODE: "raw" pastes the
@@ -946,8 +971,8 @@ def _load_config() -> None:
         env_int("INTENT_OVERLAY_TIMEOUT_MS", 60000),
     )
 
-    SNIP_CONTEXT_AMBIENT   = env_bool("SNIP_CONTEXT_AMBIENT",   True)
-    SNIP_CONTEXT_DOCUMENTS = env_bool("SNIP_CONTEXT_DOCUMENTS", True)
+    SNIP_CONTEXT_AMBIENT   = env_bool("SNIP_CONTEXT_AMBIENT",   False)
+    SNIP_CONTEXT_DOCUMENTS = env_bool("SNIP_CONTEXT_DOCUMENTS", False)
     SNIP_CONTEXT_TOOLS     = env_bool("SNIP_CONTEXT_TOOLS",     False)
 
     # --- Context and tool budgets ---
@@ -1092,6 +1117,10 @@ def _load_config() -> None:
     SYSTEM_PROMPT_UTILITY = SYSTEM_PROMPT_UTILITY.replace(
         _LEGACY_TOOL_PROMPT_SENTENCE, ""
     ).strip()
+    SYSTEM_PROMPT_UTILITY = localize_system_prompt_utility_if_default(
+        SYSTEM_PROMPT_UTILITY,
+        ASSISTANT_LANGUAGE,
+    )
     SETTINGS = AppSettings.from_config(globals())
 
 

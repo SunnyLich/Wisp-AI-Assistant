@@ -18,7 +18,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 import config
-from core import tts, audio
+from core import tts
 from core.llm_clients import client as llm
 
 
@@ -32,14 +32,8 @@ def run_latency_test(user_text: str, image_base64: str | None = None):
 
     t_start = time.perf_counter()
 
-    # 1. Filler audio — plays immediately, non-blocking
-    print("[0] Playing filler audio (non-blocking)…")
-    audio.play_filler()
-    t_filler = time.perf_counter()
-    print(f"    filler dispatched in {(t_filler - t_start)*1000:.0f} ms")
-
-    # 2. LLM + TTS pipelined: feed LLM chunks directly into TTS as they arrive
-    print("\n[1+2] LLM → TTS pipelined…")
+    # 1. LLM + TTS pipelined: feed LLM chunks directly into TTS as they arrive
+    print("\n[1] LLM → TTS pipelined…")
     import queue
     import threading
 

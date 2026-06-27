@@ -20,11 +20,24 @@ sys.path.insert(0, str(ROOT / "runtime" / "brain"))
 
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 LANGUAGE_TAGS_DATAS, LANGUAGE_TAGS_BINARIES, LANGUAGE_TAGS_HIDDENIMPORTS = collect_all("language_tags")
+# faster_whisper's Silero VAD model (faster_whisper/assets/silero_vad_v6.onnx)
+# is a loose data file the import scanner misses; STT loads it on every
+# transcribe and the frozen app raises NO_SUCHFILE without it. The .onnx ships
+# in faster_whisper's universal wheel, so this gap is identical on every OS.
+FASTER_WHISPER_DATAS, FASTER_WHISPER_BINARIES, FASTER_WHISPER_HIDDENIMPORTS = collect_all("faster_whisper")
 RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
 BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
 PIP_HIDDENIMPORTS = collect_submodules("pip")
 MODULE_MODE_HIDDENIMPORTS = [
     "core.addon_host",
+]
+# Runtime-installed audio packages are invisible to PyInstaller analysis.
+# Torch (used by Kokoro) imports timeit while it initializes.
+OPTIONAL_RUNTIME_HIDDENIMPORTS = [
+    "cProfile",
+    "pickletools",
+    "pstats",
+    "timeit",
 ]
 UV_BINARIES = [
     (str(path), "bin")
@@ -41,19 +54,19 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
-    binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + UV_BINARIES,
+    binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + FASTER_WHISPER_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),
-    ] + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS,
+    ] + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS + FASTER_WHISPER_DATAS,
     hiddenimports=[
         "pynput.keyboard._darwin",
         "pynput.mouse._darwin",
         "AppKit",
         "Quartz",
-    ] + MODULE_MODE_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

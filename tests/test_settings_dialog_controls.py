@@ -3,6 +3,7 @@
 import os
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -287,11 +288,13 @@ def test_app_tab_exposes_assistant_language_setting():
         assert "APP_LANGUAGE" in dialog._fields
         assert "ASSISTANT_LANGUAGE" in dialog._fields
         assert "TRUST_PRIVACY_MODE" in dialog._fields
+        assert "START_ON_LOGIN" in dialog._fields
         labels = {label.text() for label in tab.findChildren(QLabel)}
         checkboxes = {checkbox.text() for checkbox in tab.findChildren(QCheckBox)}
         assert "App language" in labels
         assert "Assistant language" in labels
         assert "Trust/privacy mode" in checkboxes
+        assert "Start Wisp when you sign in" in checkboxes
         app_values = {
             dialog._fields["APP_LANGUAGE"].itemData(i)
             for i in range(dialog._fields["APP_LANGUAGE"].count())
@@ -471,7 +474,14 @@ def test_settings_status_messages_translate_nested_values(monkeypatch):
 
 def test_kokoro_install_progress_text_classifies_pip_output():
     """Verify raw pip output becomes short progress phases for the Settings UI."""
-    from ui.settings_panel.dialog import _kokoro_install_progress_text, _optional_install_progress_text
+    from ui.settings_panel.dialog import (
+        _kokoro_install_progress_text,
+        _optional_install_elapsed_text,
+        _optional_install_failure_detail,
+        _optional_install_log_path,
+        _optional_install_no_output_timeout_seconds,
+        _optional_install_progress_text,
+    )
 
     assert _kokoro_install_progress_text("Collecting kokoro>=0.9.4") == (
         "Installing Kokoro: resolving packages."
@@ -485,6 +495,21 @@ def test_kokoro_install_progress_text_classifies_pip_output():
     assert _optional_install_progress_text("Collecting elevenlabs", "ElevenLabs") == (
         "Installing ElevenLabs: resolving packages."
     )
+    assert _kokoro_install_progress_text("Building wheel for misaki") == (
+        "Installing Kokoro: working - installer is still running."
+    )
+    assert _optional_install_failure_detail([
+        "[notice] A new pip is available",
+        "ERROR: Could not find a version that satisfies the requirement kokoro>=0.9.4",
+    ]) == (
+        "Last installer message: ERROR: Could not find a version that satisfies the requirement kokoro>=0.9.4"
+    )
+    log_path = _optional_install_log_path("Kokoro", Path("python_packages"))
+    assert log_path.name == "kokoro-install.log"
+    assert _optional_install_elapsed_text("Kokoro", 600, 600, log_path) == (
+        f"Installing Kokoro: still running for 10m 00s; no installer output for 10m 00s. Log: {log_path}."
+    )
+    assert _optional_install_no_output_timeout_seconds() == 300
 
 
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
@@ -1154,6 +1179,7 @@ def test_reset_page_key_mapping_is_scoped():
     assert "BUBBLE_FONT_SIZE" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "BUBBLE_SCROLL_ENABLED" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "BUBBLE_SCROLL_SNAP_DELAY_MS" in SettingsDialog._reset_env_keys_for_page("Advanced", env)
+    assert "START_ON_LOGIN" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "APP_LANGUAGE" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "ASSISTANT_LANGUAGE" in SettingsDialog._reset_env_keys_for_page("App", env)
     assert "CHAT_AUTO_ELABORATE" not in SettingsDialog._reset_env_keys_for_page("App", env)
@@ -1233,8 +1259,8 @@ def test_settings_tabs_use_app_first_order_without_memory_tab():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_custom_provider_is_model_route_option_without_api_key_table_row():
-    """Verify custom provider is model route option without api key table row behavior."""
+def test_custom_provider_is_model_route_and_api_key_table_option():
+    """Verify custom provider is available for both model routes and API key rows."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1254,8 +1280,10 @@ def test_custom_provider_is_model_route_option_without_api_key_table_row():
         dialog._fields["CUSTOM_API_KEY"].setText("not-a-real-key")
         assert dialog._effective_secret_value_from_provider("custom") == "not-a-real-key"
 
-        api_key_row = dialog._add_api_key_row()
-        assert api_key_row["provider"].findText("custom") == -1
+        api_key_row = dialog._add_api_key_row("custom")
+        assert api_key_row["provider"].findData("custom") >= 0
+        assert api_key_row["provider"].currentData() == "custom"
+        assert "custom endpoint" in api_key_row["key"].placeholderText()
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -1282,7 +1310,52 @@ def test_copilot_is_api_key_provider_option(monkeypatch):
         assert api_key_row["provider"].currentData() == "copilot"
         assert "github_pat_" in api_key_row["key"].placeholderText()
         assert dialog._copilot_status_lbl is not None
-        assert "API Keys" in dialog._warning_headers
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_zai_is_api_key_and_model_route_option():
+    """Verify native OpenAI-compatible providers are available in Settings provider lists."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    provider_ids = {
+        "zai",
+        "nvidia",
+        "sambanova",
+        "github_models",
+        "huggingface",
+        "chutes",
+        "vercel",
+        "fireworks",
+        "cohere",
+        "ai21",
+        "nebius",
+    }
+
+    try:
+        for provider in provider_ids:
+            api_key_row = dialog._add_api_key_row(provider)
+            assert api_key_row["provider"].findData(provider) >= 0
+            assert api_key_row["provider"].currentData() == provider
+
+        options = dialog._get_api_key_display_options()
+        assert provider_ids <= {provider for _label, provider in options}
+
+        model_values = []
+        for rows in dialog._model_section_rows.values():
+            for row in rows:
+                for provider in provider_ids:
+                    idx = row["api_key_combo"].findData(provider)
+                    if idx >= 0:
+                        model_values.append(row["api_key_combo"].itemData(idx))
+        assert provider_ids <= set(model_values)
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -1663,7 +1736,7 @@ def test_settings_apply_clears_dirty_before_showing_save_warning(monkeypatch):
     from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
     import config
-    from core import filler_bake, tts
+    from core import tts
     from core.llm_clients import client as llm_client
     from ui.settings_panel import dialog as settings_dialog
     from ui.settings_panel.dialog import SettingsDialog, _get, _set
@@ -1704,7 +1777,6 @@ def test_settings_apply_clears_dirty_before_showing_save_warning(monkeypatch):
         monkeypatch.setattr(llm_client, "reset_clients", lambda: None)
         monkeypatch.setattr(tts, "reset_connections", lambda: None)
         monkeypatch.setattr(theme, "apply_app_theme", lambda: None)
-        monkeypatch.setattr(filler_bake, "bake_in_background", lambda: None)
         monkeypatch.setattr(settings_dialog, "_read_env", lambda: {"ASSISTANT_LANGUAGE": new_language})
         monkeypatch.setattr(QMessageBox, "open", fake_open)
 
@@ -1779,7 +1851,7 @@ def test_settings_apply_real_save_clears_dirty_after_language_change(monkeypatch
     from PySide6.QtWidgets import QApplication, QPushButton
 
     import config
-    from core import filler_bake, tts
+    from core import tts
     from core.llm_clients import client as llm_client
     from ui.settings_panel import dialog as settings_dialog
     from ui.settings_panel.dialog import SettingsDialog, _set
@@ -1802,7 +1874,6 @@ def test_settings_apply_real_save_clears_dirty_after_language_change(monkeypatch
         monkeypatch.setattr(llm_client, "reset_clients", lambda: None)
         monkeypatch.setattr(tts, "reset_connections", lambda: None)
         monkeypatch.setattr(theme, "apply_app_theme", lambda: None)
-        monkeypatch.setattr(filler_bake, "bake_in_background", lambda: None)
 
         for index, block in enumerate(dialog._caller_blocks, 1):
             block["hotkey"].setText(f"ctrl+alt+{index}")

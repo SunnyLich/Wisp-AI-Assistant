@@ -1,23 +1,22 @@
-# Locked macOS dependency set used to reproduce Wisp development and packaging environments.
 annotated-doc==0.0.4
     # via typer
 annotated-types==0.7.0
     # via pydantic
-anthropic==0.105.2
+anthropic==0.112.0
     # via -r requirements.txt
-anyio==4.13.0
+anyio==4.14.1
     # via
     #   anthropic
     #   cartesia
     #   httpx
     #   openai
-av==17.0.1
+av==17.1.0
     # via faster-whisper
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
     # via -r requirements.txt
 cartesia==3.2.0
     # via -r requirements.txt
-certifi==2026.5.20
+certifi==2026.6.17
     # via
     #   httpcore
     #   httpx
@@ -28,13 +27,13 @@ cffi==2.0.0
     #   soundfile
 charset-normalizer==3.4.7
     # via requests
-click==8.4.1
+click==8.4.2
     # via
     #   huggingface-hub
     #   typer
 coloredlogs==15.0.1
     # via onnxruntime
-ctranslate2==4.7.2
+ctranslate2==4.8.0
     # via faster-whisper
 defusedxml==0.7.1
     # via odfpy
@@ -45,23 +44,23 @@ distro==1.9.0
     #   openai
 docstring-parser==0.18.0
     # via anthropic
-elevenlabs==2.51.0
+elevenlabs==2.54.0
     # via -r requirements.txt
 et-xmlfile==2.0.0
     # via openpyxl
 faster-whisper==1.2.1
     # via -r requirements.txt
-filelock==3.29.1
+filelock==3.29.4
     # via huggingface-hub
 flatbuffers==25.12.19
     # via onnxruntime
-fsspec==2026.4.0
+fsspec==2026.6.0
     # via huggingface-hub
-github-copilot-sdk==1.0.0
+github-copilot-sdk==1.0.4
     # via -r requirements.txt
 h11==0.16.0
     # via httpcore
-hf-xet==1.5.0
+hf-xet==1.5.1
     # via huggingface-hub
 httpcore==1.0.9
     # via httpx
@@ -70,9 +69,10 @@ httpx==0.28.1
     #   anthropic
     #   cartesia
     #   elevenlabs
+    #   github-copilot-sdk
     #   huggingface-hub
     #   openai
-huggingface-hub==1.17.0
+huggingface-hub==1.21.0
     # via
     #   faster-whisper
     #   tokenizers
@@ -97,7 +97,7 @@ keyboard==0.13.5
     # via -r requirements.txt
 keyring==25.7.0
     # via -r requirements.txt
-liteparse==2.0.5
+liteparse==2.2.1
     # via -r requirements.txt
 lxml==6.1.1
     # via
@@ -115,7 +115,7 @@ mpmath==1.3.0
     # via sympy
 mss==10.2.0
     # via -r requirements.txt
-numpy==2.4.6
+numpy==2.5.0
     # via
     #   -r requirements.txt
     #   ctranslate2
@@ -125,7 +125,7 @@ odfpy==1.4.1
     # via -r requirements.txt
 onnxruntime==1.23.2
     # via faster-whisper
-openai==2.41.0
+openai==2.44.0
     # via -r requirements.txt
 openpyxl==3.1.5
     # via -r requirements.txt
@@ -137,7 +137,7 @@ pillow==12.2.0
     # via
     #   -r requirements.txt
     #   python-pptx
-protobuf==6.33.6
+protobuf==7.35.1
     # via onnxruntime
 psutil==7.2.2
     # via -r requirements.txt
@@ -158,9 +158,9 @@ pygments==2.20.0
     # via rich
 pynput==1.8.2
     # via -r requirements.txt
-pyobjc==12.2
+pyobjc==12.2.1
     # via keyboard
-pyobjc-core==12.2
+pyobjc-core==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-addressbook
@@ -198,21 +198,21 @@ pyobjc-core==12.2
     #   pyobjc-framework-syncservices
     #   pyobjc-framework-systemconfiguration
     #   pyobjc-framework-webkit
-pyobjc-framework-addressbook==12.2
+pyobjc-framework-addressbook==12.2.1
     # via pyobjc
-pyobjc-framework-applescriptkit==12.2
+pyobjc-framework-applescriptkit==12.2.1
     # via pyobjc
-pyobjc-framework-applicationservices==12.2
+pyobjc-framework-applicationservices==12.2.1
     # via
     #   pynput
     #   pyobjc
-pyobjc-framework-automator==12.2
+pyobjc-framework-automator==12.2.1
     # via pyobjc
-pyobjc-framework-carbon==12.2
+pyobjc-framework-carbon==12.2.1
     # via pyobjc
-pyobjc-framework-cfnetwork==12.2
+pyobjc-framework-cfnetwork==12.2.1
     # via pyobjc
-pyobjc-framework-cocoa==12.2
+pyobjc-framework-cocoa==12.2.1
     # via
     #   -r requirements.txt
     #   pyobjc
@@ -247,84 +247,84 @@ pyobjc-framework-cocoa==12.2
     #   pyobjc-framework-syncservices
     #   pyobjc-framework-systemconfiguration
     #   pyobjc-framework-webkit
-pyobjc-framework-coreaudio==12.2
+pyobjc-framework-coreaudio==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-coreaudiokit
-pyobjc-framework-coreaudiokit==12.2
+pyobjc-framework-coreaudiokit==12.2.1
     # via pyobjc
-pyobjc-framework-coredata==12.2
+pyobjc-framework-coredata==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-syncservices
-pyobjc-framework-coremidi==12.2
+pyobjc-framework-coremidi==12.2.1
     # via pyobjc
-pyobjc-framework-coreservices==12.2
+pyobjc-framework-coreservices==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-launchservices
     #   pyobjc-framework-searchkit
-pyobjc-framework-coretext==12.2
+pyobjc-framework-coretext==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-applicationservices
-pyobjc-framework-discrecording==12.2
+pyobjc-framework-discrecording==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-discrecordingui
-pyobjc-framework-discrecordingui==12.2
+pyobjc-framework-discrecordingui==12.2.1
     # via pyobjc
-pyobjc-framework-diskarbitration==12.2
+pyobjc-framework-diskarbitration==12.2.1
     # via pyobjc
-pyobjc-framework-dvdplayback==12.2
+pyobjc-framework-dvdplayback==12.2.1
     # via pyobjc
-pyobjc-framework-exceptionhandling==12.2
+pyobjc-framework-exceptionhandling==12.2.1
     # via pyobjc
-pyobjc-framework-fsevents==12.2
+pyobjc-framework-fsevents==12.2.1
     # via pyobjc-framework-coreservices
-pyobjc-framework-installerplugins==12.2
+pyobjc-framework-installerplugins==12.2.1
     # via pyobjc
-pyobjc-framework-iobluetooth==12.2
+pyobjc-framework-iobluetooth==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-iobluetoothui
-pyobjc-framework-iobluetoothui==12.2
+pyobjc-framework-iobluetoothui==12.2.1
     # via pyobjc
-pyobjc-framework-latentsemanticmapping==12.2
+pyobjc-framework-latentsemanticmapping==12.2.1
     # via pyobjc
-pyobjc-framework-launchservices==12.2
+pyobjc-framework-launchservices==12.2.1
     # via pyobjc
-pyobjc-framework-osakit==12.2
+pyobjc-framework-osakit==12.2.1
     # via pyobjc
-pyobjc-framework-preferencepanes==12.2
+pyobjc-framework-preferencepanes==12.2.1
     # via pyobjc
-pyobjc-framework-quartz==12.2
+pyobjc-framework-quartz==12.2.1
     # via
     #   -r requirements.txt
     #   pynput
     #   pyobjc
     #   pyobjc-framework-applicationservices
     #   pyobjc-framework-coretext
-pyobjc-framework-screensaver==12.2
+pyobjc-framework-screensaver==12.2.1
     # via pyobjc
-pyobjc-framework-searchkit==12.2
+pyobjc-framework-searchkit==12.2.1
     # via pyobjc
-pyobjc-framework-security==12.2
+pyobjc-framework-security==12.2.1
     # via
     #   pyobjc
     #   pyobjc-framework-securityfoundation
     #   pyobjc-framework-securityinterface
-pyobjc-framework-securityfoundation==12.2
+pyobjc-framework-securityfoundation==12.2.1
     # via pyobjc
-pyobjc-framework-securityinterface==12.2
+pyobjc-framework-securityinterface==12.2.1
     # via pyobjc
-pyobjc-framework-syncservices==12.2
+pyobjc-framework-syncservices==12.2.1
     # via pyobjc
-pyobjc-framework-systemconfiguration==12.2
+pyobjc-framework-systemconfiguration==12.2.1
     # via pyobjc
-pyobjc-framework-webkit==12.2
+pyobjc-framework-webkit==12.2.1
     # via pyobjc
-pypdf==6.12.2
+pypdf==6.14.2
     # via -r requirements.txt
 pyperclip==1.11.0
     # via -r requirements.txt
@@ -354,7 +354,7 @@ requests==2.34.2
     #   elevenlabs
 rich==15.0.0
     # via typer
-setuptools==81.0.0
+setuptools==82.0.1
     # via ctranslate2
 shellingham==1.5.4
     # via typer
@@ -374,15 +374,15 @@ sniffio==1.3.1
     #   openai
 sounddevice==0.5.5
     # via -r requirements.txt
-soundfile==0.13.1
+soundfile==0.14.0
     # via -r requirements.txt
 soupsieve==2.8.4
     # via beautifulsoup4
 sympy==1.14.0
     # via onnxruntime
-tokenizers==0.22.2
+tokenizers==0.23.1
     # via faster-whisper
-tqdm==4.67.3
+tqdm==4.68.3
     # via
     #   faster-whisper
     #   huggingface-hub
@@ -402,6 +402,7 @@ typing-extensions==4.15.0
     #   pydantic-core
     #   python-docx
     #   python-pptx
+    #   soundfile
     #   typing-inspection
 typing-inspection==0.4.2
     # via pydantic

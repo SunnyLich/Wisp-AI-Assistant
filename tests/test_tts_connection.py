@@ -123,6 +123,15 @@ class TtsConnectionTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("KOKORO_VOICE", message)
 
+    def test_kokoro_prewarm_skips_when_not_installed(self):
+        """Verify Kokoro prewarm stays quiet until the optional package exists."""
+        import config
+
+        with patch.object(config, "TTS_PROVIDER", "kokoro"), \
+             patch("core.tts.kokoro_installed", return_value=False), \
+             patch("core.tts._stream_kokoro", side_effect=AssertionError("unexpected Kokoro warmup")):
+            self.assertIsNone(tts.prewarm())
+
     def test_kokoro_connection_uses_local_pipeline(self):
         """Verify Kokoro connection uses the local Python pipeline."""
         calls = []

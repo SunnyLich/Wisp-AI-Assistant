@@ -61,6 +61,7 @@ if [ -z "$PYTHON" ]; then
 fi
 
 uv pip compile requirements.txt \
+  --upgrade \
   --no-header \
   --python "$PYTHON" \
   --python-version "$WANT_MM" \

@@ -13,15 +13,15 @@ Use these two rules for new code:
    or its narrow aliases, `ssl_init_lock()` and `keychain_lock()`.
 
 The same native-init lock is shared by LLM clients, TTS clients, model listing,
-settings probes, memory summaries, online search, filler audio baking, and OAuth
-keychain storage. This prevents two cold worker threads from initializing
+settings probes, memory summaries, online search, and OAuth keychain storage.
+This prevents two cold worker threads from initializing
 OpenSSL/Security at the same time after a fresh install or dependency rebuild.
 
 Known protected boundaries:
 
 - `core.audio` and `core.stt`: sounddevice stream open/start/stop/close.
-  In-process macOS playback, filler prewarm, TTS prewarm, and STT prewarm are
-  disabled in safe mode; set `WISP_MACOS_ENABLE_AUDIO=1` only when validating
+  In-process macOS playback, TTS prewarm, and STT prewarm are disabled in safe
+  mode; set `WISP_MACOS_ENABLE_AUDIO=1` only when validating
   CoreAudio stability, or `WISP_MACOS_ENABLE_STT_PREWARM=1` for STT-only warmup.
 - `core.capture` and `core.context_fetcher`: screen capture uses macOS'
   out-of-process `screencapture` helper instead of in-process `mss`.
@@ -31,8 +31,8 @@ Known protected boundaries:
 - `core.capture`, `core.context_fetcher`, and paste-back in `main`: macOS
   clipboard reads/writes use `pbpaste`/`pbcopy` instead of pyperclip.
 - `core.hotkeys` and `ui.intent_overlay`: no pynput global event tap on macOS.
-- `core.llm_clients.client`, `core.tts`, `core.filler_bake`,
-  `core.memory_store.store`, and `core.context_fetcher`: SDK client creation.
+- `core.llm_clients.client`, `core.tts`, `core.memory_store.store`, and
+  `core.context_fetcher`: SDK client creation.
 - `core.secret_store` and `core.auth.*`: keyring/keychain access.
 - `core.context_fetcher.start_fs_watcher()`: disabled in macOS safe mode; when
   explicitly enabled it uses watchdog polling instead of the native FSEvents

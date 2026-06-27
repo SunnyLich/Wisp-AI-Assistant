@@ -194,48 +194,5 @@ class AudioStreamTests(unittest.TestCase):
         self.assertEqual(done, [1])
 
 
-class FillerPrecacheTests(unittest.TestCase):
-    """Test case for filler precache tests behavior."""
-    def test_prewarm_decodes_wavs_into_memory(self):
-        """Verify prewarm decodes wavs into memory behavior."""
-        fake_clip = (np.zeros(4, dtype=np.float32), 44100)
-        fake_sf = mock.Mock()
-        fake_sf.read.return_value = fake_clip
-        with mock.patch.dict(audio.macos_safety.os.environ, {"WISP_MACOS_ENABLE_AUDIO": "1"}), \
-             mock.patch.object(audio, "_load_soundfile_if_allowed", return_value=fake_sf), \
-             mock.patch.object(audio.os.path, "isdir", side_effect=lambda path: path == config.FILLER_AUDIO_DIR), \
-             mock.patch.object(audio.os, "listdir", return_value=["a.wav", "b.txt", "c.WAV"]):
-            audio.prewarm_filler()
-        # Only the two .wav files are decoded; the .txt is ignored.
-        self.assertEqual(fake_sf.read.call_count, 2)
-        self.assertEqual(len(audio._filler_clips), 2)
-        self.assertTrue(audio._filler_loaded)
-
-    def test_play_filler_uses_cached_clip_without_disk_read(self):
-        """Verify play filler uses cached clip without disk read behavior."""
-        audio._filler_clips = [(np.zeros(4, dtype=np.float32), 44100)]
-        audio._filler_loaded = True
-
-        class SyncThread:
-            """Test case for sync thread behavior."""
-            def __init__(self, target=None, args=(), **kw):
-                """Initialize the sync thread instance."""
-                self._target, self._args = target, args
-
-            def start(self):
-                """Verify start behavior."""
-                self._target(*self._args)
-
-        played = []
-        with mock.patch.dict(audio.macos_safety.os.environ, {"WISP_MACOS_ENABLE_AUDIO": "1"}), \
-             mock.patch.object(audio.threading, "Thread", SyncThread), \
-             mock.patch.object(audio.sd, "play", side_effect=lambda *a, **k: played.append(a)), \
-             mock.patch.object(audio.sd, "wait"), \
-             mock.patch.object(audio.sf, "read", side_effect=AssertionError("disk read on hotkey path")):
-            audio.play_filler()
-
-        self.assertEqual(len(played), 1)  # cached clip was played, no sf.read
-
-
 if __name__ == "__main__":
     unittest.main()

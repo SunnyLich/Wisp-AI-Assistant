@@ -24,6 +24,17 @@ def _secret_for_provider(config: Any, provider: str) -> str:
         "xai": "XAI_API_KEY",
         "together": "TOGETHER_API_KEY",
         "cerebras": "CEREBRAS_API_KEY",
+        "zai": "ZAI_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
+        "sambanova": "SAMBANOVA_API_KEY",
+        "github_models": "GITHUB_MODELS_API_KEY",
+        "huggingface": "HUGGINGFACE_API_KEY",
+        "chutes": "CHUTES_API_KEY",
+        "vercel": "VERCEL_API_KEY",
+        "fireworks": "FIREWORKS_API_KEY",
+        "cohere": "COHERE_API_KEY",
+        "ai21": "AI21_API_KEY",
+        "nebius": "NEBIUS_API_KEY",
         "custom": "CUSTOM_API_KEY",
     }
     key_name = mapping.get(provider.lower(), "")
@@ -121,16 +132,6 @@ def run_setup_check() -> list[dict[str, str]]:
             "status": _status(bool(enabled_hotkeys)),
             "message": f"{len(enabled_hotkeys)} hotkeys configured.",
             "recommendation": "" if enabled_hotkeys else recommendation_for("hotkey conflict"),
-        }
-    )
-
-    privacy_enabled = bool(getattr(config, "TRUST_PRIVACY_MODE", True))
-    rows.append(
-        {
-            "name": "Privacy redaction",
-            "status": _status(privacy_enabled, warning=True),
-            "message": "Privacy redaction is on." if privacy_enabled else "Privacy redaction is off.",
-            "recommendation": "" if privacy_enabled else "Recommendation: turn on Trust/privacy mode before sending sensitive context.",
         }
     )
     return rows

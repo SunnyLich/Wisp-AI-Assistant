@@ -692,6 +692,33 @@ def test_read_selection_aloud_single_word_failure_finishes_reading_bubble(monkey
     assert ui.last_call("ui.reply.notice")["params"]["text"] == "Could not read selected text aloud."
 
 
+def test_closing_read_aloud_bubble_stops_tts_without_failure_notice(monkeypatch):
+    """Closing the reading bubble is an intentional stop, not a TTS failure."""
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="stop reading this")})
+    holder: dict[str, FlowController] = {}
+
+    def stop_during_playback(_params):
+        holder["flow"].stop_reply_bubble()
+        return {"played": False, "stopped": True}
+
+    audio = FakeWorker(
+        {
+            "audio.tts.synthesize": lambda _params: {"path": "selection.wav", "provider": "fake"},
+            "audio.play_file": stop_during_playback,
+            "audio.stop": lambda _params: {"stopped": True},
+        }
+    )
+    flow, _native, ui, _brain, _audio = make_flow(native=native, audio=audio)
+    holder["flow"] = flow
+
+    flow.read_selection_aloud()
+
+    assert audio.calls_for("audio.stop")
+    assert ui.calls_for("ui.reply.reset")
+    assert not ui.calls_for("ui.reply.notice")
+
+
 def test_read_selection_aloud_synthesizes_next_chunk_while_first_plays(monkeypatch):
     """Verify long read-aloud selections synthesize one chunk ahead."""
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)

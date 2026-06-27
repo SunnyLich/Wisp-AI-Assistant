@@ -1,7 +1,7 @@
 # Temporary Plan: App Context Cleanup
 
-This is a working plan for making App context reliable enough for Ctrl+Q and
-Ctrl+Shift+Q before adding a deeper editor integration. It is intentionally
+This is a working plan for making App context reliable enough for the general
+and rewrite hotkeys before adding a deeper editor integration. It is intentionally
 temporary: once the implementation settles, fold the useful parts into the
 developer docs and remove this file.
 
@@ -11,7 +11,7 @@ developer docs and remove this file.
   source context.
 - Prefer the text area or document surface the user actually cares about.
 - Keep context from different apps clearly separated in preview and in prompts.
-- Preserve Ctrl+Shift+Q's target selection semantics: the selected text is
+- Preserve the rewrite hotkey's target selection semantics: the selected text is
   visible to the model as the target, while external app/document context stays
   separately labeled as source material.
 - Fail closed when context quality is poor. No app context is better than
@@ -110,7 +110,7 @@ Implementation sketch:
   - `[demo.py - Visual Studio Code]`
   - or `--- BEGIN ACTIVE DOCUMENT: ... ---` for a grouped block.
 - Make preview labels and prompt labels derive from the same normalized labels.
-- Ensure Ctrl+Shift+Q rewrite context keeps the target selection in its own
+- Ensure rewrite context keeps the target selection in its own
   `TARGET SELECTION` block while external app/source text stays in separate
   source blocks.
 - Add debug-only source labels to logs, but never log full source text.
@@ -201,7 +201,7 @@ Tests:
 
 1. Open Notepad with selected text: `Text1`.
 2. Open VS Code/Cursor with a different document containing `Text 2`.
-3. Trigger Ctrl+Shift+Q.
+3. Trigger the rewrite hotkey.
 4. Use custom prompt: `Replace Text1 with the entirety of Text 2 from VS Code`.
 5. Confirm the intent overlay preview shows VS Code content, not chrome.
 6. Confirm the model replaces the Notepad selection, not the VS Code buffer and
@@ -213,7 +213,7 @@ Tests:
 
 - No known VS Code chrome dump is sent to the model as app context.
 - Intent preview reflects the same cleaned context sent to the prompt.
-- Ctrl+Shift+Q can copy content from a non-target app into the selected target
+- The rewrite hotkey can copy content from a non-target app into the selected target
   text.
 - Clipboard is restored after paste-back.
 - Unsafe unanchored paste-back is refused when a captured range exists but

@@ -839,7 +839,7 @@ Assertions:
 
 - Late chunks from stale generation ids are ignored by bubble, chat, audio, and
   memory recording.
-- Cancel stops TTS/filler audio and leaves hotkeys usable.
+- Cancel stops TTS audio and leaves hotkeys usable.
 - Switching conversations cannot append the old answer to the new conversation.
 - Error/cancel/done states restore composer buttons, overlay state, and icon
   visibility.

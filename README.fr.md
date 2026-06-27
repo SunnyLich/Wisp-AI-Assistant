@@ -28,7 +28,7 @@ Wisp vous offre une IA pilotée par raccourcis clavier qui peut lire votre séle
 
 Wisp est conçu pour les moments où ouvrir une application de chat briserait votre flux de travail.
 
-Sélectionnez du texte, appuyez sur `Ctrl+Q`, appuyez sur une touche d'intention, et Wisp interroge votre modèle configuré avec uniquement les sources de contexte que vous avez activées. Les réponses s'affichent en flux dans une bulle compacte à côté de l'icône flottante. Si le TTS est activé, la réponse est prononcée à mesure qu'elle arrive.
+Sélectionnez du texte, appuyez sur le raccourci général, appuyez sur une touche d'intention, et Wisp interroge votre modèle configuré avec uniquement les sources de contexte que vous avez activées. Les réponses s'affichent en flux dans une bulle compacte à côté de l'icône flottante. Si le TTS est activé, la réponse est prononcée à mesure qu'elle arrive.
 
 | Au lieu de... | Wisp vous permet de... |
 | --- | --- |
@@ -47,7 +47,7 @@ Sélectionnez du texte, appuyez sur `Ctrl+Q`, appuyez sur une touche d'intention
 - **Capture de contexte** — Wisp peut lire le texte sélectionné, le texte du presse-papiers, l'interface utilisateur ciblée, les documents ouverts, le contenu du navigateur, les fichiers récents et des captures d'écran optionnelles.
 - **Voix entrée et sortie** — STT local via faster-whisper, plus TTS neuronal local sur l'appareil (Kokoro et clonage vocal GPT-SoVITS) ou voix cloud/compatibles (Cartesia, ElevenLabs, OpenAI, tout serveur compatible OpenAI), avec TTS désactivé par défaut.
 - **Captures visuelles** — tracez une région avec `Ctrl+Alt+Q` et envoyez la capture d'écran à un modèle de vision.
-- **Réécriture et collage** — utilisez `Ctrl+Shift+Q` pour réécrire le texte sélectionné avec le contexte capturé et coller le résultat dans le champ actif.
+- **Réécriture et collage** — utilisez le raccourci de réécriture pour réécrire le texte sélectionné avec le contexte capturé et coller le résultat dans le champ actif.
 - **Apportez votre propre fournisseur** — Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, XAI, Together, Cerebras, serveurs compatibles OpenAI personnalisés, GitHub Copilot, et plus.
 - **Mémoire locale** — une mémoire à court et long terme optionnelle est stockée localement, avec un visualiseur pour modifier ou supprimer des faits.
 - **Extensions** — étendez Wisp avec des hooks, des actions de barre d'état, des paramètres, des outils appelables par le modèle, des intentions et des raccourcis.
@@ -61,7 +61,7 @@ Sélectionnez du texte, appuyez sur `Ctrl+Q`, appuyez sur une touche d'intention
 
 ![Démo de réécriture contextuelle Wisp](ReadMe%203rd%20Demo.gif)
 
-**Réécriture contextuelle :** Wisp peut rassembler un contexte d'application utile sans prendre de capture d'écran, donc le modèle sait sur quoi vous travaillez. Puis `Ctrl+Shift+Q` réécrit uniquement le texte sélectionné et colle le remplacement là où vous travailliez.
+**Réécriture contextuelle :** Wisp peut rassembler un contexte d'application utile sans prendre de capture d'écran, donc le modèle sait sur quoi vous travaillez. Puis le raccourci de réécriture réécrit uniquement le texte sélectionné et vise le collage dans le champ d'origine capturé au moment du raccourci.
 
 ![Démo de tâche multi-agent Wisp](ReadMe%204th%20Demo.gif)
 
@@ -84,9 +84,9 @@ Exemples de flux :
 
 | Moment | Action | Résultat |
 | --- | --- | --- |
-| Vous voulez une explication du texte sélectionné | Sélectionnez le texte, appuyez sur `Ctrl+Q`, puis choisissez `W` (Qu'est-ce que c'est ?) ou `A` (Expliquer simplement) | Wisp explique la sélection dans la superposition |
-| Vous voulez réécrire une phrase | Sélectionnez d'abord la phrase, appuyez sur `Ctrl+Shift+Q`, puis choisissez `W`, `A` ou `D` pour la grammaire, la simplification ou le ton | Wisp réécrit le texte sélectionné et peut le recoller |
-| Vous devez poser votre propre question | Appuyez sur `Ctrl+Q`, appuyez sur `S`, tapez l'invite, puis appuyez sur Entrée | Wisp envoie votre invite personnalisée avec tout le contexte activé pour cet appelant |
+| Vous voulez une explication du texte sélectionné | Sélectionnez le texte, appuyez sur le raccourci général, puis choisissez `W` (Qu'est-ce que c'est ?) ou `A` (Expliquer simplement) | Wisp explique la sélection dans la superposition |
+| Vous voulez réécrire une phrase | Sélectionnez d'abord la phrase, appuyez sur le raccourci de réécriture, puis choisissez `W`, `A` ou `D` pour la grammaire, la simplification ou le ton | Wisp réécrit le texte sélectionné et peut le recoller |
+| Vous devez poser votre propre question | Appuyez sur le raccourci général, appuyez sur `S`, tapez l'invite, puis appuyez sur Entrée | Wisp envoie votre invite personnalisée avec tout le contexte activé pour cet appelant |
 | Un élément d'interface ou une image est déroutant | Appuyez sur `Ctrl+Alt+Q`, tracez une boîte, puis choisissez une intention ou une invite personnalisée | Wisp envoie la capture à un modèle de vision |
 | Vous voulez interroger le modèle par voix | Maintenez `F9`, parlez, puis relâchez | Wisp transcrit votre voix et l'envoie comme requête de modèle |
 | Vous voulez dicter dans une autre application | Maintenez `F8`, parlez, puis relâchez | Wisp transcrit votre discours directement dans le champ de texte ciblé |
@@ -148,7 +148,7 @@ Start Wisp Debug.sh
 
 ## Configuration
 
-Utilisez la fenêtre Paramètres pour la configuration normale. Elle peut stocker les clés de fournisseur, choisir les routes de modèle, configurer la voix, exécuter une vérification de configuration, expliquer les fonctionnalités optionnelles manquantes, et afficher des avertissements pour les capacités de modèle non supportées.
+Utilisez la fenêtre Paramètres pour la configuration normale. Elle peut stocker les clés de fournisseur, choisir les routes de modèle, configurer la voix, exécuter une vérification de configuration, expliquer les fonctionnalités optionnelles manquantes, et afficher des avertissements pour les capacités de modèle non supportées. Les clés fournisseur et les tokens OAuth sont enregistrés dans le trousseau du système : Gestionnaire d'identifiants Windows, Trousseau macOS ou Secret Service/KWallet sous Linux, pas dans un fichier de configuration en clair.
 
 Pour les builds de source et les configurations avancées, `.env.example` documente les clés de configuration disponibles. Vous n'avez généralement pas besoin de les modifier manuellement.
 
@@ -178,13 +178,14 @@ Les niveaux gratuits sont limités en débit et changent souvent, donc ajoutez a
 
 | Raccourci | Action |
 | --- | --- |
-| `Ctrl+Q` | Ouvrir le sélecteur d'intention général |
-| `Ctrl+Shift+Q` | Ouvrir le sélecteur d'intention de réécriture/collage |
+| `Ctrl+Q` sous Windows, `Ctrl+Alt+Space` sous macOS/Linux | Ouvrir le sélecteur d'intention général |
+| `Ctrl+Shift+Q` sous Windows, `Ctrl+Alt+Shift+Space` sous macOS/Linux | Ouvrir le sélecteur d'intention de réécriture/collage |
 | `Ctrl+Alt+Q` | Tracer une capture d'écran pour la vision |
 | `Alt+Q` | Ajouter la sélection actuelle au tampon de contexte |
 | `Alt+W` | Vider le tampon de contexte |
 | Maintenir `F9` | Enregistrer la voix, transcrire et interroger |
 | Maintenir `F8` | Dictée directe dans le champ de texte ciblé |
+| `F7` | Lire le texte sélectionné à voix haute |
 | `W` / `A` / `D` | Déclencher les lignes d'intention intégrées |
 | `S` | Mode d'invite personnalisée |
 | `Échap` | Annuler le sélecteur |
@@ -216,13 +217,14 @@ Une extension peut s'accrocher à Wisp à plusieurs points :
 
 Si vous pouvez l'écrire en Python et qu'il s'adapte à l'un des points de hook ci-dessus, vous pouvez le connecter à la même superposition pilotée par raccourcis que vous utilisez déjà.
 
-Wisp est fourni avec une extension **pont MCP** (`addons/mcp_bridge`) : indiquez n'importe quels serveurs [Model Context Protocol](https://modelcontextprotocol.io) dans son `servers.json` et elle expose toute leur boîte à outils au modèle en tant qu'outils Wisp, de sorte que n'importe quel serveur MCP devient appelable depuis l'overlay. Voir le [Guide des extensions](addons/README.md) pour le contrat complet de manifeste et de hook, ou la page **Extensions** sur le [site de documentation Wisp](Wisp%20Website/Wisp%20Docs.html).
+Wisp est fourni avec une extension **pont MCP** (`addons/mcp_bridge`) : indiquez n'importe quels serveurs [Model Context Protocol](https://modelcontextprotocol.io) dans son `servers.json` et elle expose toute leur boîte à outils au modèle en tant qu'outils Wisp, de sorte que n'importe quel serveur MCP devient appelable depuis la superposition. Voir le [Guide des extensions](addons/README.md) pour le contrat complet de manifeste et de hook, ou la page **Extensions** sur le [site de documentation Wisp](Wisp%20Website/Wisp%20Docs.html).
 
 ## Confidentialité et contrôle
 
 Wisp est conçu comme un assistant de bureau local. Le stockage reste sur votre machine, et les requêtes vont directement au fournisseur de modèle ou au serveur local que vous configurez.
 
 - Les données locales restent locales : les paramètres, les chats, la mémoire, les rapports de confidentialité et la configuration sont stockés sur votre machine.
+- Les clés fournisseur et les tokens OAuth sont stockés dans le trousseau du système : le stockage sécurisé de mots de passe intégré à Windows, macOS ou votre bureau Linux.
 - Les requêtes de modèle vont directement de votre machine au fournisseur ou serveur local que vous avez configuré.
 - Votre fournisseur de modèle configuré reçoit uniquement l'invite que vous envoyez et les sources de contexte sélectionnées ou activées pour cet appelant.
 - Wisp peut inspecter le contexte disponible localement pour afficher des estimations de tokens, la disponibilité et les comptes de suppression de confidentialité avant que vous envoyiez. Prévisualiser une source ne l'envoie pas au fournisseur de modèle ni ne la sauvegarde en tant que chat/mémoire.

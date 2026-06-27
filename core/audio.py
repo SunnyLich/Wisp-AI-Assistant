@@ -1,16 +1,11 @@
 """
 core/audio.py — Audio playback engine.
 
-Two responsibilities:
-  1. Filler audio: instantly plays a random pre-cached WAV on hotkey press
-     to mask LLM+TTS latency and provide sub-50ms acoustic feedback.
-  2. Streaming TTS playback: plays PCM chunks from core.tts as they arrive.
+Streams TTS playback by playing PCM chunks from core.tts as they arrive.
 """
 from __future__ import annotations
 
-import os
 import queue
-import random
 import threading
 
 import numpy as np
@@ -27,9 +22,7 @@ def _macos_audio_enabled() -> bool:
     return macos_safety.audio_enabled()
 
 _SD_IMPORT_ERROR: Exception | None = None
-_SF_IMPORT_ERROR: ImportError | None = None
 _sd_loaded = False
-_sf_loaded = False
 
 
 def _raise_sounddevice_unavailable() -> None:
@@ -81,16 +74,7 @@ class _MissingSoundDevice:
         _raise_sounddevice_unavailable()
 
 
-class _MissingSoundFile:
-    """Model missing sound file."""
-    @staticmethod
-    def read(*args, **kwargs):  # noqa: ANN002, ANN003
-        """Raise: the soundfile library is unavailable."""
-        raise ModuleNotFoundError("soundfile is required for filler audio decoding") from _SF_IMPORT_ERROR
-
-
 sd = _MissingSoundDevice()
-sf = _MissingSoundFile()
 
 
 def _load_sounddevice_if_allowed():
@@ -110,26 +94,8 @@ def _load_sounddevice_if_allowed():
     return sd
 
 
-def _load_soundfile_if_allowed():
-    """Load soundfile if allowed."""
-    global sf, _SF_IMPORT_ERROR, _sf_loaded
-    if _sf_loaded:
-        return sf
-    if not _macos_audio_enabled():
-        return sf
-    try:
-        import soundfile as _sf
-        sf = _sf
-    except ImportError as exc:
-        _SF_IMPORT_ERROR = exc
-    finally:
-        _sf_loaded = True
-    return sf
-
-
 if _macos_audio_enabled():
     _load_sounddevice_if_allowed()
-    _load_soundfile_if_allowed()
 
 # Tracks the currently-playing TTS stream so stop() can abort it from any thread.
 _playback_lock = threading.Lock()
@@ -218,93 +184,12 @@ def _volume_adjust_pcm(chunk: bytes, dtype: str, volume: float) -> bytes:
 
 
 # ------------------------------------------------------------------
-# Filler audio
-# ------------------------------------------------------------------
-
-# Decoded filler clips kept in memory so the hotkey path does zero disk I/O.
-_filler_clips: list[tuple[np.ndarray, int]] = []   # (samples, samplerate)
-_filler_loaded = False
-
-
-def prewarm_filler() -> None:
-    """Decode all filler WAVs into memory once so play_filler() never touches
-    disk on the latency-critical hotkey path. Safe to call repeatedly.
-
-    Loads from both the bundled assets dir and the user-data dir (where
-    TTS-baked voice-matched clips live), so a user with a Cartesia voice gets
-    a mix of stock + voice-matched fillers."""
-    if not _macos_audio_enabled():
-        return
-    global _filler_clips, _filler_loaded
-    sf_mod = _load_soundfile_if_allowed()
-    clips: list[tuple[np.ndarray, int]] = []
-    dirs = [config.FILLER_AUDIO_DIR, getattr(config, "USER_FILLER_AUDIO_DIR", "")]
-    for d in dirs:
-        if not d or not os.path.isdir(d):
-            continue
-        for f in os.listdir(d):
-            if not f.lower().endswith(".wav"):
-                continue
-            try:
-                data, samplerate = sf_mod.read(os.path.join(d, f), dtype="float32")
-                clips.append((data, samplerate))
-            except Exception as e:
-                print(f"[audio] filler precache error for {f}: {e}")
-    _filler_clips = clips
-    _filler_loaded = True
-
-
-def play_filler():
-    """
-    Play a random pre-decoded filler clip instantly (non-blocking).
-    Safe to call from any thread.
-    """
-    if not _macos_audio_enabled():
-        return
-    if not _filler_loaded:
-        prewarm_filler()
-    if not _filler_clips:
-        return  # no filler files available, skip silently
-
-    data, samplerate = random.choice(_filler_clips)
-    threading.Thread(target=_play_clip, args=(data, samplerate), daemon=True).start()
-
-
-def _play_clip(data: np.ndarray, samplerate: int):
-    """Handle play clip for audio."""
-    try:
-        sd_mod = _load_sounddevice_if_allowed()
-        # sd.play opens and starts a PortAudio output stream, so it must run on
-        # the main thread (see _run_on_main): opening it on this worker thread
-        # segfaults inside CoreAudio under Qt's Cocoa run loop, exactly like the
-        # TTS stream below.
-        #
-        # sd.wait() is NOT safe to call here: in this sounddevice version it does
-        # `self.event.wait()` then `self.stream.close()` (see
-        # _CallbackContext.wait), so it would tear the CoreAudio stream down from
-        # this worker thread — the same off-main hazard as opening it. Instead
-        # capture the callback context atomically with the play() call (on main),
-        # block on its completion event here (a plain flag wait, safe off-main),
-        # then hop the close back onto the main thread.
-        def _start():
-            """Start playback on the main thread and return its callback context."""
-            sd_mod.play(data, samplerate)
-            return sd_mod._last_callback  # the _CallbackContext play() just created
-        ctx = _run_on_main(_start)
-        if ctx is not None:
-            ctx.event.wait()  # ~<1s; blocks only on a flag, no native call
-            _run_on_main(lambda: ctx.stream.close(ignore_errors=True))
-    except Exception as e:
-        print(f"[audio] filler playback error: {e}")
-
-
-# ------------------------------------------------------------------
 # Streaming TTS playback
 # ------------------------------------------------------------------
 
-# Every native PortAudio handle (filler clip, TTS output stream) must be opened
-# and torn down on the GUI main thread; doing it on a worker thread segfaults
-# inside CoreAudio while Qt's Cocoa run loop owns the process.
+# Every native PortAudio handle must be opened and torn down on the GUI main
+# thread; doing it on a worker thread segfaults inside CoreAudio while Qt's
+# Cocoa run loop owns the process.
 # set_main_thread_runner is re-exported so existing callers register the runner
 # the same way; stt.py and macOS capture paths share the same runner.
 _run_on_main = _main_thread.run_on_main
@@ -391,17 +276,6 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
     # (ElevenLabs 22050 Hz int16, Cartesia 44100 Hz float32, OpenAI 24000 Hz
     # int16, …) plays correctly, regardless of which was used last.
     sample_rate, channels, dtype = tts_module.playback_format(provider)
-
-    # macOS CoreAudio segfaults when two PortAudio streams are open on the same
-    # device at once. The filler clip (play_filler -> sd.play) is still playing
-    # when we get here, so stop it before opening the TTS output stream. sd.stop()
-    # tears down that PortAudio stream, so it must run on the main thread too (see
-    # _run_on_main). Harmless on Windows/Linux (just ends the filler a few ms
-    # early, which is desired).
-    try:
-        _run_on_main(sd_mod.stop)
-    except Exception:
-        pass
 
     def _open_stream():
         """Open stream."""

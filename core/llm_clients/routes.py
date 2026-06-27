@@ -13,6 +13,17 @@ XAI_BASE_URL            = "https://api.x.ai/v1"
 TOGETHER_BASE_URL       = "https://api.together.ai/v1"
 CEREBRAS_BASE_URL       = "https://api.cerebras.ai/v1"
 OLLAMA_BASE_URL         = "http://localhost:11434/v1"
+ZAI_BASE_URL            = "https://api.z.ai/api/paas/v4"
+NVIDIA_BASE_URL         = "https://integrate.api.nvidia.com/v1"
+SAMBANOVA_BASE_URL      = "https://api.sambanova.ai/v1"
+GITHUB_MODELS_BASE_URL  = "https://models.github.ai/inference"
+HUGGINGFACE_BASE_URL    = "https://router.huggingface.co/v1"
+CHUTES_BASE_URL         = "https://llm.chutes.ai/v1"
+VERCEL_BASE_URL         = "https://ai-gateway.vercel.sh/v1"
+FIREWORKS_BASE_URL      = "https://api.fireworks.ai/inference/v1"
+COHERE_BASE_URL         = "https://api.cohere.ai/compatibility/v1"
+AI21_BASE_URL           = "https://api.ai21.com/studio/v1"
+NEBIUS_BASE_URL         = "https://api.studio.nebius.com/v1"
 
 
 def api_key_for(provider: str) -> str:
@@ -44,6 +55,28 @@ def api_key_for(provider: str) -> str:
         return config.TOGETHER_API_KEY
     if p == "cerebras":
         return config.CEREBRAS_API_KEY
+    if p == "zai":
+        return config.ZAI_API_KEY
+    if p == "nvidia":
+        return config.NVIDIA_API_KEY
+    if p == "sambanova":
+        return config.SAMBANOVA_API_KEY
+    if p == "github_models":
+        return config.GITHUB_MODELS_API_KEY
+    if p == "huggingface":
+        return config.HUGGINGFACE_API_KEY
+    if p == "chutes":
+        return config.CHUTES_API_KEY
+    if p == "vercel":
+        return config.VERCEL_API_KEY
+    if p == "fireworks":
+        return config.FIREWORKS_API_KEY
+    if p == "cohere":
+        return config.COHERE_API_KEY
+    if p == "ai21":
+        return config.AI21_API_KEY
+    if p == "nebius":
+        return config.NEBIUS_API_KEY
     if p == "ollama":
         return "ollama-local"   # no real key required
     return ""
@@ -78,6 +111,28 @@ def credential_source_for_provider(provider: str) -> str:
         return secret_store.secret_source("TOGETHER_API_KEY")
     if p == "cerebras":
         return secret_store.secret_source("CEREBRAS_API_KEY")
+    if p == "zai":
+        return secret_store.secret_source("ZAI_API_KEY")
+    if p == "nvidia":
+        return secret_store.secret_source("NVIDIA_API_KEY")
+    if p == "sambanova":
+        return secret_store.secret_source("SAMBANOVA_API_KEY")
+    if p == "github_models":
+        return secret_store.secret_source("GITHUB_MODELS_API_KEY")
+    if p == "huggingface":
+        return secret_store.secret_source("HUGGINGFACE_API_KEY")
+    if p == "chutes":
+        return secret_store.secret_source("CHUTES_API_KEY")
+    if p == "vercel":
+        return secret_store.secret_source("VERCEL_API_KEY")
+    if p == "fireworks":
+        return secret_store.secret_source("FIREWORKS_API_KEY")
+    if p == "cohere":
+        return secret_store.secret_source("COHERE_API_KEY")
+    if p == "ai21":
+        return secret_store.secret_source("AI21_API_KEY")
+    if p == "nebius":
+        return secret_store.secret_source("NEBIUS_API_KEY")
     if p == "ollama":
         return "local"
     return "none"

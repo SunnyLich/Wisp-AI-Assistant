@@ -757,6 +757,17 @@ class LlmFallbackTests(unittest.TestCase):
         expected = {
             "deepseek": "https://api.deepseek.com",
             "together": "https://api.together.ai/v1",
+            "zai": "https://api.z.ai/api/paas/v4",
+            "nvidia": "https://integrate.api.nvidia.com/v1",
+            "sambanova": "https://api.sambanova.ai/v1",
+            "github_models": "https://models.github.ai/inference",
+            "huggingface": "https://router.huggingface.co/v1",
+            "chutes": "https://llm.chutes.ai/v1",
+            "vercel": "https://ai-gateway.vercel.sh/v1",
+            "fireworks": "https://api.fireworks.ai/inference/v1",
+            "cohere": "https://api.cohere.ai/compatibility/v1",
+            "ai21": "https://api.ai21.com/studio/v1",
+            "nebius": "https://api.studio.nebius.com/v1",
         }
 
         for provider, base_url in expected.items():

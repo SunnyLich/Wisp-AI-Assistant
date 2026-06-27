@@ -13,7 +13,6 @@ Key UX moves
 
 Intent shortcuts. ctrl+u + arrow keys map to common query types what is this, how do I fix this, etc. Like vim verbs for AI queries — skips prompt-writing for the most common cases.
 Input modalities. Highlighted text and screen snippets (Win+Shift+S style) as primary inputs.
-Filler audio. Short canned phrases (hm..., let me think..., about that...) play immediately on hotkey to mask LLMTTS latency and add personality. Must be under 1s and overlap with real response generating in the background — otherwise it adds time instead of hiding it.
 Visual feedback on the icon. The icon animates the moment the hotkey is pressed (eyes look up, bounce, etc.). Perceived latency is mostly about did the system register me, not raw response time.
 Personality toggle. Cutepersonality mode opt-in; utility default for the hate-it crowd.
 
@@ -21,7 +20,6 @@ Technical decisions
 
 No local model — too slow for the quality needed.
 Streaming end-to-end. Cloud LLM with fast TTFT (Groq Llama, Claude, or GPT) plus low-latency streaming TTS (Cartesia ~75ms, ElevenLabs ~300-500ms).
-Pre-cached filler audio as local wav files. Plays instantly on hotkey for sub-50ms acoustic feedback. Randomize from 5-10 variants so it doesn't grate.
 Latency budget. 1.5-2s end-to-end to first real audio is the target. 3s is the ceiling — above that the friction is back.
 
 First build priority

@@ -116,6 +116,13 @@ def main() -> int:
         logging.info("Wisp runtime logs: %s", log_dir)
     else:
         logging.info("Wisp runtime logs are off; crash logs will be written only if startup ends abruptly.")
+    try:
+        import config
+        from core.system.autostart import sync_start_on_login
+
+        sync_start_on_login(bool(getattr(config, "START_ON_LOGIN", False)))
+    except Exception:
+        logging.warning("Could not sync launch-at-login setting", exc_info=True)
     if not single_instance.acquire():
         logging.warning("Another Wisp instance is already running; exiting.")
         return 2

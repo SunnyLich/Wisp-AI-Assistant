@@ -3099,8 +3099,8 @@ Continuer ?</translation>
       <translation>finalisation</translation>
     </message>
     <message>
-      <source>working - see terminal for full pip log</source>
-      <translation>travail en cours - consultez le terminal pour le journal pip complet</translation>
+      <source>working - installer is still running</source>
+      <translation>travail en cours - le programme d'installation est toujours en cours</translation>
     </message>
     <message>
       <source>Wisp wants permission to modify a local file.</source>
@@ -3302,8 +3302,8 @@ Continuer ?</translation>
       <translation>Taille approximative de la mémoire à court terme avant le résumé de la conversation récente.</translation>
     </message>
     <message>
-      <source>Words per minute used to reveal text while generated speech is playing.</source>
-      <translation>Mots par minute utilisés pour révéler le texte pendant la lecture de la voix générée.</translation>
+      <source>Words per minute used for the normal bubble reveal, including TTS providers without word timestamps.</source>
+      <translation>Mots par minute utilisés pour la révélation normale de la bulle, y compris pour les fournisseurs TTS sans timestamps par mot.</translation>
     </message>
     <message>
       <source>Words per minute used when showing text without generated speech.</source>
@@ -3714,12 +3714,34 @@ Continuer ?</translation>
       <translation>Récupère à la demande le texte lisible complet d’une URL de page web précise. À utiliser lorsque l’utilisateur demande un site/une page et que l’aperçu passif du navigateur est manquant, partiel, obsolète ou insuffisant.</translation>
     </message>
     <message>
-      <source>This provider does not send real word timestamps. The highlighted word is approximate and may not match the speech exactly.</source>
-      <translation>Ce fournisseur n’envoie pas de véritables horodatages mot par mot. Le mot surligné est approximatif et peut ne pas correspondre exactement à la parole.</translation>
+      <source>This provider does not send real word timestamps. The bubble uses normal reveal speed instead of audio-synced word highlighting.</source>
+      <translation>Ce fournisseur n’envoie pas de véritables timestamps par mot. La bulle utilise la vitesse normale de révélation au lieu d’un surlignage synchronisé avec l’audio.</translation>
     </message>
     <message>
       <source>Custom</source>
       <translation>Personnalise</translation>
     </message>
+    <message>
+      <source>Start Wisp when you sign in</source>
+      <translation>Démarrer Wisp à la connexion</translation>
+    </message>
+    <message>
+      <source>Launch Wisp automatically after you sign in to this computer.</source>
+      <translation>Lance Wisp automatiquement après votre connexion à cet ordinateur.</translation>
+    </message>
+    <message>
+      <source>Could not update startup setting</source>
+      <translation>Impossible de mettre à jour le réglage de démarrage</translation>
+    </message>
+    <message>
+      <source>Your preference was saved, but Wisp could not update the operating system startup entry:
+
+{error}</source>
+      <translation>Votre préférence a été enregistrée, mais Wisp n’a pas pu mettre à jour l’entrée de démarrage du système :
+
+{error}</translation>
+    </message>
   </context>
 </TS>
+
+

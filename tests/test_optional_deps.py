@@ -67,3 +67,56 @@ def test_optional_deps_frozen_install_explains_missing_uv(monkeypatch, tmp_path)
 
     assert "uv was not bundled" in message
     assert "rebuild Wisp" in message
+
+
+def test_optional_deps_install_env_sets_uv_http_timeout(monkeypatch):
+    """Optional installs should not hang indefinitely on a silent uv network fetch."""
+    from core import optional_deps
+
+    monkeypatch.delenv("UV_HTTP_TIMEOUT", raising=False)
+
+    env = optional_deps.pip_install_env()
+
+    assert env["PIP_DISABLE_PIP_VERSION_CHECK"] == "1"
+    assert env["UV_HTTP_TIMEOUT"] == "60"
+
+
+def test_optional_packages_precede_bundled_packages(monkeypatch, tmp_path):
+    """A target install must resolve its own dependency versions as one layer."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    target.mkdir()
+    path = str(target)
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_deps.sys, "path", ["bundle", path, "stdlib"])
+
+    optional_deps.add_optional_packages_to_path(prepend=True)
+
+    assert optional_deps.sys.path == [path, "bundle", "stdlib"]
+
+
+def test_optional_packages_preserve_bundled_precedence_by_default(monkeypatch, tmp_path):
+    """Non-provider workers should not load duplicate target dependencies first."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    target.mkdir()
+    path = str(target)
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_deps.sys, "path", ["bundle", "stdlib"])
+    monkeypatch.setattr(optional_deps.site, "addsitedir", lambda value: optional_deps.sys.path.append(value))
+
+    optional_deps.add_optional_packages_to_path()
+
+    assert optional_deps.sys.path == ["bundle", "stdlib", path]
+
+
+def test_kokoro_install_includes_persistent_english_g2p_model():
+    """The target install must avoid spaCy downloading into the frozen runtime."""
+    from core import optional_deps
+
+    assert optional_deps.KOKORO_INSTALL_PACKAGES[:2] == ["kokoro>=0.9.4", "soundfile"]
+    assert optional_deps.KOKORO_INSTALL_PACKAGES[2].endswith(
+        "/en_core_web_sm-3.8.0-py3-none-any.whl"
+    )

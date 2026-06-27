@@ -3099,8 +3099,8 @@ Continuar?</translation>
       <translation>finalizando</translation>
     </message>
     <message>
-      <source>working - see terminal for full pip log</source>
-      <translation>trabajando - consulta la terminal para ver el registro completo de pip</translation>
+      <source>working - installer is still running</source>
+      <translation>trabajando - el instalador sigue en ejecucion</translation>
     </message>
     <message>
       <source>Wisp wants permission to modify a local file.</source>
@@ -3302,8 +3302,8 @@ Continuar?</translation>
       <translation>Tamaño aproximado de la memoria a corto plazo antes de resumir la conversación reciente.</translation>
     </message>
     <message>
-      <source>Words per minute used to reveal text while generated speech is playing.</source>
-      <translation>Palabras por minuto usadas para revelar texto mientras se reproduce la voz generada.</translation>
+      <source>Words per minute used for the normal bubble reveal, including TTS providers without word timestamps.</source>
+      <translation>Palabras por minuto usadas para el revelado normal de la burbuja, incluidos los proveedores TTS sin marcas de tiempo por palabra.</translation>
     </message>
     <message>
       <source>Words per minute used when showing text without generated speech.</source>
@@ -3714,12 +3714,34 @@ Continuar?</translation>
       <translation>Obtiene bajo demanda el texto legible completo de una URL de página web específica. Úsalo cuando el usuario pregunte por un sitio/página y la vista previa pasiva del navegador falte, esté incompleta, desactualizada o no sea suficiente.</translation>
     </message>
     <message>
-      <source>This provider does not send real word timestamps. The highlighted word is approximate and may not match the speech exactly.</source>
-      <translation>Este proveedor no envía marcas de tiempo reales por palabra. La palabra resaltada es aproximada y puede no coincidir exactamente con la voz.</translation>
+      <source>This provider does not send real word timestamps. The bubble uses normal reveal speed instead of audio-synced word highlighting.</source>
+      <translation>Este proveedor no envía marcas de tiempo reales por palabra. La burbuja usa la velocidad normal de revelado en lugar de resaltado sincronizado con el audio.</translation>
     </message>
     <message>
       <source>Custom</source>
       <translation>Personalizado</translation>
     </message>
+    <message>
+      <source>Start Wisp when you sign in</source>
+      <translation>Iniciar Wisp al iniciar sesión</translation>
+    </message>
+    <message>
+      <source>Launch Wisp automatically after you sign in to this computer.</source>
+      <translation>Inicia Wisp automáticamente después de iniciar sesión en este equipo.</translation>
+    </message>
+    <message>
+      <source>Could not update startup setting</source>
+      <translation>No se pudo actualizar el ajuste de inicio</translation>
+    </message>
+    <message>
+      <source>Your preference was saved, but Wisp could not update the operating system startup entry:
+
+{error}</source>
+      <translation>Tu preferencia se guardó, pero Wisp no pudo actualizar la entrada de inicio del sistema operativo:
+
+{error}</translation>
+    </message>
   </context>
 </TS>
+
+

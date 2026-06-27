@@ -50,11 +50,31 @@ def test_tts_synthesize_uses_provider_pcm_format_for_kokoro(monkeypatch):
     assert result["provider"] == "kokoro"
     assert result["sample_rate"] == 24_000
     assert result["bytes"] == samples.nbytes
-    assert result["word_timestamps"]["words"] == ["hello", "local", "voice"]
-    assert result["word_timestamps"]["estimated"] is True
+    assert result["word_timestamps"]["words"] == []
+    assert result["word_timestamps"]["estimated"] is False
     with wave.open(result["path"], "rb") as wf:
         assert wf.getframerate() == 24_000
         assert wf.readframes(wf.getnframes()) == samples.tobytes()
+
+
+def test_tts_synthesize_provider_none_skips_tts_stream(monkeypatch):
+    """Disabled TTS should return an empty WAV without loading the provider stack."""
+    import config
+    from core import tts
+
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setattr(
+        tts,
+        "stream_audio_from_chunks",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected TTS stream")),
+    )
+
+    result = audio_host.tts_synthesize("hello with tts disabled")
+
+    assert result["provider"] == "none"
+    assert result["bytes"] == 0
+    with wave.open(result["path"], "rb") as wf:
+        assert wf.getnframes() == 0
 
 
 def test_audio_prewarm_reports_local_warmup_events(monkeypatch):
@@ -66,6 +86,7 @@ def test_audio_prewarm_reports_local_warmup_events(monkeypatch):
     events: list[tuple[str, dict]] = []
     stt_calls: list[bool] = []
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: stt_calls.append(wait))
     monkeypatch.setattr(tts, "prewarm", lambda: None)
     audio_host.set_event_sink(lambda name, data, _req_id: events.append((name, data)))
@@ -90,6 +111,7 @@ def test_audio_prewarm_reports_component_progress(monkeypatch):
 
     events: list[tuple[str, dict]] = []
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: None)
     monkeypatch.setattr(tts, "prewarm", lambda: None)
     audio_host.set_event_sink(lambda name, data, _req_id: events.append((name, data)))
@@ -107,6 +129,29 @@ def test_audio_prewarm_reports_component_progress(monkeypatch):
     assert progress.index(("tts", "started")) < progress.index(("tts", "ok"))
 
 
+def test_audio_prewarm_skips_missing_kokoro(monkeypatch):
+    """Selecting Kokoro should not attempt TTS warmup until Kokoro is installed."""
+    import config
+    from core import tts
+    from core.macos_helper import handlers as stt_handlers
+
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: False)
+    monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: None)
+    monkeypatch.setattr(tts, "prewarm", lambda: (_ for _ in ()).throw(AssertionError("unexpected tts prewarm")))
+    audio_host.set_event_sink(lambda name, data, _req_id: events.append((name, data)))
+
+    result = audio_host.audio_prewarm()
+
+    assert result == {"stt": "ok", "tts": "skipped"}
+    assert events[0] == (
+        "audio.warmup.started",
+        {"items": ["stt"], "provider": "kokoro", "reason": "startup"},
+    )
+    assert events[-1][1]["ok"] is True
+
+
 def test_audio_prewarm_warms_stt_and_tts_in_parallel(monkeypatch):
     """Local voice should start warming before STT finishes."""
     import config
@@ -118,6 +163,7 @@ def test_audio_prewarm_warms_stt_and_tts_in_parallel(monkeypatch):
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
     monkeypatch.setattr(config, "KOKORO_DEVICE", "cpu", raising=False)
     monkeypatch.setattr(config, "STT_DEVICE", "cpu", raising=False)
+    monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
 
     def stt_prewarm(wait=False):
         calls.append(f"stt-start:{wait}")
@@ -147,6 +193,7 @@ def test_audio_prewarm_serializes_kokoro_cuda_warmup(monkeypatch):
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
     monkeypatch.setattr(config, "KOKORO_DEVICE", "cuda", raising=False)
     monkeypatch.setattr(config, "STT_DEVICE", "auto", raising=False)
+    monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: calls.append(f"stt:{wait}"))
     monkeypatch.setattr(tts, "prewarm", lambda: calls.append("tts"))
 
@@ -191,6 +238,30 @@ def test_tts_synthesize_raises_while_local_voice_is_warming(monkeypatch):
             audio_host.tts_synthesize("hello")
     finally:
         audio_host._set_local_tts_warmup(warming=False, ready=False)
+
+
+def test_tts_synthesize_retries_directly_after_stale_local_warmup(monkeypatch):
+    """A stale worker warmup flag should not block every local TTS request forever."""
+    import config
+    from core import tts
+
+    samples = np.array([0, 1200, -1200, 2400], dtype="<i2")
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_LOCAL_TTS_WARMUP_STALE_SECONDS", -1.0)
+    monkeypatch.setattr(tts, "playback_format", lambda provider: (24_000, 1, "int16"))
+    monkeypatch.setattr(
+        tts,
+        "stream_audio_from_chunks",
+        lambda chunks, on_word_timestamps=None: iter([samples.tobytes()]),
+    )
+    audio_host._set_local_tts_warmup(warming=True, ready=False)
+    try:
+        result = audio_host.tts_synthesize("hello")
+    finally:
+        audio_host._set_local_tts_warmup(warming=False, ready=False)
+
+    assert result["provider"] == "kokoro"
+    assert result["bytes"] == samples.nbytes
 
 
 def test_tts_synthesize_raises_when_provider_returns_no_audio(monkeypatch):

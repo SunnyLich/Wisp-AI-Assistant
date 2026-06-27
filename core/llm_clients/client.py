@@ -37,6 +37,17 @@ from core.llm_clients.routes import (
     TOGETHER_BASE_URL as _TOGETHER_BASE_URL,
     CEREBRAS_BASE_URL as _CEREBRAS_BASE_URL,
     OLLAMA_BASE_URL as _OLLAMA_BASE_URL,
+    ZAI_BASE_URL as _ZAI_BASE_URL,
+    NVIDIA_BASE_URL as _NVIDIA_BASE_URL,
+    SAMBANOVA_BASE_URL as _SAMBANOVA_BASE_URL,
+    GITHUB_MODELS_BASE_URL as _GITHUB_MODELS_BASE_URL,
+    HUGGINGFACE_BASE_URL as _HUGGINGFACE_BASE_URL,
+    CHUTES_BASE_URL as _CHUTES_BASE_URL,
+    VERCEL_BASE_URL as _VERCEL_BASE_URL,
+    FIREWORKS_BASE_URL as _FIREWORKS_BASE_URL,
+    COHERE_BASE_URL as _COHERE_BASE_URL,
+    AI21_BASE_URL as _AI21_BASE_URL,
+    NEBIUS_BASE_URL as _NEBIUS_BASE_URL,
     api_key_for as _api_key_for,
     credential_source_for_provider as _credential_source_for_provider,
     parse_model_fallbacks as _parse_model_fallbacks,
@@ -44,6 +55,7 @@ from core.llm_clients.routes import (
     normalize_model_for_provider as _normalize_model_for_provider,
 )
 from core.llm_clients.logging_utils import log_event
+from core.llm_clients.logging_utils import log_context as _log_context
 from core.llm_clients.messages import (
     build_contextual_user_text as _build_contextual_user_text,
     build_openai_messages as _build_openai_messages,
@@ -55,6 +67,32 @@ from core.llm_clients.prompt_guidance import (
     with_memory_search_note as _with_memory_search_note,
     with_screenshot_note as _with_screenshot_note,
     with_tools_note as _with_tools_note,
+)
+from core.llm_clients.routing import (
+    _ROUTE_COOLDOWN_SECONDS,
+    _route_cooldowns,
+    _route_cooldowns_lock,
+    _route_key,
+    _is_route_cooling,
+    _mark_route_cooling,
+    _is_quota_error,
+    _is_transient_route_error,
+    _route_failure_summary,
+)
+from core.llm_clients.model_quirks import (
+    _model_accepts_images,
+    _model_rejects_custom_sampling,
+    _apply_sampling,
+    _model_uses_max_completion_tokens,
+    _apply_max_output,
+)
+from core.llm_clients.documents import (
+    _ambient_document_max_chars,
+    _tool_document_max_chars,
+    _normalize_pdf_text,
+    _read_pdf_text,
+    _read_document_file,
+    _read_document_paths,
 )
 from dataclasses import dataclass, field
 from typing import Callable, Generator
@@ -87,189 +125,6 @@ def _rewrite_result_chunk(text: str) -> StreamTextChunk:
 def _thought_chunk(text: str) -> StreamTextChunk:
     """Return a reasoning/thought chunk that is visible but not final answer text."""
     return StreamTextChunk(text, kind="thought")
-
-
-def _log_context(
-    reason: str,
-    text: str,
-    max_line: int = 120,
-    max_lines: int = 12,
-    max_chars: int = 1200,
-) -> None:
-    """Log a compact preview of a context block for debugging."""
-
-    def _trim(line: str) -> str:
-        """Handle trim for LLM clients client."""
-        return line if len(line) <= max_line else line[:max_line] + "-¦"
-
-    lines = [_trim(l) for l in text.splitlines() if l.strip()]
-    truncated = False
-
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        truncated = True
-
-    body = "\n  ".join(lines) if lines else "[empty]"
-    if len(body) > max_chars:
-        body = body[:max_chars].rstrip() + "-¦"
-        truncated = True
-    if truncated and body != "[empty]":
-        body += "\n  [preview truncated]"
-
-    log_event(
-        "llm.context_preview",
-        f"Context preview for {reason}:\n  {body}",
-        reason=reason,
-        preview=body,
-        truncated=truncated,
-    )
-
-
-def _ambient_document_max_chars() -> int:
-    """Handle ambient document max chars for LLM clients client."""
-    return config.get_settings().context.ambient_document_max_chars
-
-
-def _tool_document_max_chars() -> int:
-    """Handle tool document max chars for LLM clients client."""
-    return config.get_settings().context.tool_document_max_chars
-
-
-def _normalize_pdf_text(s: str) -> str:
-    """Collapse layout whitespace from PDF text.
-
-    LiteParse pads its output with horizontal spacing used for visual
-    layout, which carries no extra content but multiplies the token count
-    sent to the LLM. Collapsing intra-line whitespace yields the same text
-    pypdf would, at a fraction of the tokens.
-    """
-    import re
-    lines = []
-    for line in s.splitlines():
-        line = re.sub(r"[ \t]+", " ", line).strip()
-        if line:
-            lines.append(line)
-    return "\n".join(lines)
-
-
-def _read_pdf_text(path: str, max_chars: int) -> str:
-    """Extract PDF text, preferring LiteParse (fast, native) over pypdf."""
-    parts: list[str] = []
-    total = 0
-    try:
-        import liteparse  # type: ignore
-    except ImportError:
-        liteparse = None
-    if liteparse is not None:
-        try:
-            # LiteParse parses every page up front, so cap pages to roughly
-            # what max_chars can hold (with a buffer for sparse pages) instead
-            # of parsing the whole document just to truncate the output.
-            page_cap = max(8, max_chars // 500 + 5)
-            lp = liteparse.LiteParse(ocr_enabled=False, quiet=True, max_pages=page_cap)
-            result = lp.parse(path)
-            for i in range(1, result.num_pages + 1):
-                page = result.get_page(i)
-                page_text = _normalize_pdf_text(page.text) if page and page.text else ""
-                if page_text:
-                    parts.append(f"[Page {i}]\n{page_text}")
-                    total += len(page_text)
-                    if total > max_chars:
-                        break
-            return "\n\n".join(parts)
-        except Exception:
-            parts.clear()
-    # Fallback: pure-Python pypdf (slower, no native dependency).
-    import pypdf  # type: ignore
-    reader = pypdf.PdfReader(path)
-    for i, page in enumerate(reader.pages, 1):
-        page_text = (page.extract_text() or "").strip()
-        if page_text:
-            parts.append(f"[Page {i}]\n{page_text}")
-            total += len(page_text)
-            if total > max_chars:
-                break
-    return "\n\n".join(parts)
-
-
-def _read_document_file(path: str, max_chars: int | None = None) -> str:
-    """Read a local document file and return its plain text."""
-    import os
-    if max_chars is None:
-        max_chars = _ambient_document_max_chars()
-    ext = os.path.splitext(path)[1].lower()
-    try:
-        if ext == ".docx":
-            from docx import Document  # type: ignore
-            doc = Document(path)
-            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        elif ext in (".xlsx", ".xls"):
-            import openpyxl  # type: ignore
-            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-            parts = []
-            for sheet in wb.worksheets:
-                parts.append(f"[Sheet: {sheet.title}]")
-                for row in sheet.iter_rows(values_only=True):
-                    cells = [str(c) for c in row if c is not None]
-                    if cells:
-                        parts.append("\t".join(cells))
-            text = "\n".join(parts)
-        elif ext == ".pptx":
-            from pptx import Presentation  # type: ignore
-            prs = Presentation(path)
-            parts = []
-            for i, slide in enumerate(prs.slides, 1):
-                parts.append(f"[Slide {i}]")
-                for shape in slide.shapes:
-                    if shape.has_text_frame:
-                        for para in shape.text_frame.paragraphs:
-                            line = para.text.strip()
-                            if line:
-                                parts.append(line)
-            text = "\n".join(parts)
-        elif ext == ".pdf":
-            text = _read_pdf_text(path, max_chars)
-        elif ext in (".odt", ".ods", ".odp"):
-            from odf import text as odf_text, teletype  # type: ignore
-            from odf.opendocument import load as odf_load  # type: ignore
-            doc = odf_load(path)
-            paragraphs = doc.getElementsByType(odf_text.P)
-            text = "\n".join(
-                teletype.extractText(p) for p in paragraphs
-                if teletype.extractText(p).strip()
-            )
-        elif ext in (".txt", ".md", ".csv", ".py", ".js", ".ts",
-                     ".json", ".xml", ".html", ".log"):
-            with open(path, encoding="utf-8", errors="replace") as f:
-                text = f.read()
-        else:
-            return f"File type {ext!r} is not supported for reading."
-        if len(text) > max_chars:
-            text = text[:max_chars] + "\n[-¦truncated]"
-        # Redact sensitive data before the text reaches the LLM.
-        from core.context_fetcher import _redact  # noqa: PLC0415
-        text = _redact(text)
-        _log_context(f"tool: read_document -” read {path!r}", text)
-        return text
-    except Exception as e:
-        return f"Failed to read {path!r}: {e}"
-
-
-def _read_document_paths(
-    paths: list[str],
-    max_chars_per_doc: int | None = None,
-) -> str:
-    """Read multiple local document files and join readable results."""
-    import os
-
-    if max_chars_per_doc is None:
-        max_chars_per_doc = _ambient_document_max_chars()
-    parts: list[str] = []
-    for path in paths:
-        text = _read_document_file(path, max_chars=max_chars_per_doc)
-        if text and not text.startswith(("Could not", "File type", "Failed to")):
-            parts.append(f"[{os.path.basename(path)}]\n{text}")
-    return "\n\n".join(parts)
 
 
 def _execute_get_context(inputs: dict) -> str:
@@ -937,84 +792,6 @@ def _looks_like_screenshot_tool_request(text: str) -> bool:
         )
     )
     return visual_word and request_word
-
-
-# Substrings of model names known to accept image input. Best-effort only, used
-# for a settings-time heads-up; unknown models are treated as text-only so we err
-# toward warning. This never gates runtime behavior.
-_VISION_MODEL_HINTS = (
-    "gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "chatgpt-4o",
-    "o1", "o3", "o4",
-    "claude", "sonnet", "opus", "haiku",
-    "gemini",
-    "pixtral", "mistral-small-3", "mistral-medium",
-    "llama-3.2-11b", "llama-3.2-90b", "llama-4", "scout", "maverick",
-    "qwen-vl", "qwen2-vl", "qwen2.5-vl", "qwen3-vl",
-    "internvl", "phi-3.5-vision", "phi-4-multimodal",
-    "grok-2-vision", "grok-4",
-    "vision", "-vl", "multimodal",
-)
-
-
-def _model_accepts_images(model: str) -> bool:
-    """Handle model accepts images for LLM clients client."""
-    m = (model or "").strip().lower()
-    return any(hint in m for hint in _VISION_MODEL_HINTS)
-
-
-# Model substrings whose providers reject any non-default sampling value
-# (temperature / top_p): GPT-5 family + OpenAI o-series reasoning models, and the
-# newest Claude models (Opus 4.7+, Fable), which removed those parameters. For
-# these we omit temperature and let the model use its default.
-_NO_CUSTOM_SAMPLING_HINTS = (
-    "gpt-5", "o1", "o3", "o4",
-    "opus-4-7", "opus-4-8", "fable",
-)
-
-
-def _model_rejects_custom_sampling(model: str) -> bool:
-    """Handle model rejects custom sampling for LLM clients client."""
-    m = (model or "").strip().lower()
-    return any(hint in m for hint in _NO_CUSTOM_SAMPLING_HINTS)
-
-
-def _apply_sampling(kwargs: dict, model: str, temperature: float | None) -> dict:
-    """Add ``temperature`` only when the model accepts a custom one.
-
-    Comply with each model's rules up front: GPT-5/o-series and the newest Claude
-    models only accept their default sampling value and 400 on anything else, so
-    we omit it for them. Models that do accept it keep the requested value. The
-    reactive drop-and-retry on the OpenAI-compatible route remains the backstop
-    for any model not covered by the hint list above.
-    """
-    if temperature is not None and not _model_rejects_custom_sampling(model):
-        kwargs["temperature"] = temperature
-    return kwargs
-
-
-# OpenAI's GPT-5 family and o-series reasoning models reject ``max_tokens`` and
-# require ``max_completion_tokens``. Only OpenAI serves these model names, so the
-# substring match is effectively provider-scoped.
-_MAX_COMPLETION_TOKENS_HINTS = ("gpt-5", "o1", "o3", "o4")
-
-
-def _model_uses_max_completion_tokens(model: str) -> bool:
-    """Handle model uses max completion tokens for LLM clients client."""
-    m = (model or "").strip().lower()
-    return any(hint in m for hint in _MAX_COMPLETION_TOKENS_HINTS)
-
-
-def _apply_max_output(kwargs: dict, model: str, value) -> dict:
-    """Set the output-token cap under the field name the model accepts.
-
-    GPT-5 / o-series want ``max_completion_tokens``; everything else takes
-    ``max_tokens``. Complying up front avoids a 400 + retry round-trip.
-    """
-    if value is None:
-        return kwargs
-    key = "max_completion_tokens" if _model_uses_max_completion_tokens(model) else "max_tokens"
-    kwargs[key] = value
-    return kwargs
 
 
 def screenshot_capability_warnings(
@@ -1718,89 +1495,8 @@ _TEST_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
 # How many times the OpenAI SDK may retry the *same* model inside one call.
 _OPENAI_MAX_RETRIES = 1
 
-# Route circuit breaker: when a route returns 429/5xx/no-content, it is parked for this many
-# seconds so subsequent turns skip straight to the fallback instead of
-# re-probing an exhausted model on every reply. After it expires the route is
-# tried again (some retries, not an infinite skip).
-_ROUTE_COOLDOWN_SECONDS = 300.0
 import time as _time
-_route_cooldowns: dict[tuple[str, str], float] = {}
-_route_cooldowns_lock = _threading.Lock()
 _codex_client_lock = _threading.Lock()
-
-
-def _route_key(provider: str, model: str) -> tuple[str, str]:
-    """Handle route key for LLM clients client."""
-    return ((provider or "").lower(), model or "")
-
-
-def _is_route_cooling(provider: str, model: str) -> bool:
-    """Return whether route cooling is true."""
-    key = _route_key(provider, model)
-    with _route_cooldowns_lock:
-        until = _route_cooldowns.get(key)
-        if until is None:
-            return False
-        if _time.time() >= until:
-            _route_cooldowns.pop(key, None)
-            return False
-        return True
-
-
-def _mark_route_cooling(provider: str, model: str, seconds: float = _ROUTE_COOLDOWN_SECONDS) -> None:
-    """Handle mark route cooling for LLM clients client."""
-    with _route_cooldowns_lock:
-        _route_cooldowns[_route_key(provider, model)] = _time.time() + seconds
-
-
-def _is_quota_error(exc: Exception) -> bool:
-    """True for 429 / rate-limit / quota-exhausted errors worth a cooldown."""
-    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-    if status == 429:
-        return True
-    name = type(exc).__name__.lower()
-    if "ratelimit" in name:
-        return True
-    text = str(exc).lower()
-    return "429" in text or "quota" in text or "rate limit" in text or "rate_limit" in text
-
-
-def _is_transient_route_error(exc: Exception) -> bool:
-    """True for provider-side temporary failures worth trying/skipping fallback."""
-    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-    if status in {429, 500, 502, 503, 504}:
-        return True
-    text = str(exc).lower()
-    return any(
-        marker in text
-        for marker in (
-            "429",
-            "500",
-            "502",
-            "503",
-            "504",
-            "quota",
-            "rate limit",
-            "rate_limit",
-            "unavailable",
-            "high demand",
-            "temporarily",
-            "try again later",
-        )
-    )
-
-
-def _route_failure_summary(
-    kind: str,
-    attempts: list[tuple[str, str, Exception | str]],
-    last_exc: Exception,
-) -> RuntimeError:
-    """Handle route failure summary for LLM clients client."""
-    details = []
-    for provider, model, err in attempts:
-        details.append(f"{provider}/{model}: {err}")
-    joined = "; ".join(details)
-    return RuntimeError(f"All {kind} model routes failed. Tried {joined}")
 
 
 def reset_clients() -> None:
@@ -1917,7 +1613,9 @@ _CHAT_DEFAULT_MAX_TOKENS = 4096
 # All providers that go through the OpenAI-compatible chat completions API.
 _OPENAI_COMPAT_PROVIDER_SET = frozenset({
     "groq", "openai", "google",
-    "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "ollama",
+    "deepseek", "openrouter", "mistral", "xai", "together", "cerebras", "zai",
+    "nvidia", "sambanova", "github_models", "huggingface", "chutes", "vercel",
+    "fireworks", "cohere", "ai21", "nebius", "ollama",
     "custom",
 })
 
@@ -1931,6 +1629,17 @@ _OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str]] = {
     "xai":        ("XAI_API_KEY",        _XAI_BASE_URL),
     "together":   ("TOGETHER_API_KEY",   _TOGETHER_BASE_URL),
     "cerebras":   ("CEREBRAS_API_KEY",   _CEREBRAS_BASE_URL),
+    "zai":        ("ZAI_API_KEY",        _ZAI_BASE_URL),
+    "nvidia":     ("NVIDIA_API_KEY",     _NVIDIA_BASE_URL),
+    "sambanova":  ("SAMBANOVA_API_KEY",  _SAMBANOVA_BASE_URL),
+    "github_models": ("GITHUB_MODELS_API_KEY", _GITHUB_MODELS_BASE_URL),
+    "huggingface": ("HUGGINGFACE_API_KEY", _HUGGINGFACE_BASE_URL),
+    "chutes":     ("CHUTES_API_KEY",     _CHUTES_BASE_URL),
+    "vercel":     ("VERCEL_API_KEY",     _VERCEL_BASE_URL),
+    "fireworks":  ("FIREWORKS_API_KEY",  _FIREWORKS_BASE_URL),
+    "cohere":     ("COHERE_API_KEY",     _COHERE_BASE_URL),
+    "ai21":       ("AI21_API_KEY",       _AI21_BASE_URL),
+    "nebius":     ("NEBIUS_API_KEY",     _NEBIUS_BASE_URL),
     "ollama":     (None,                 _OLLAMA_BASE_URL),
 }
 

@@ -13,6 +13,11 @@ from core.system.paths import REPO_ROOT
 
 
 OPTIONAL_PACKAGES_DIR = REPO_ROOT / "python_packages"
+KOKORO_EN_MODEL_URL = (
+    "https://github.com/explosion/spacy-models/releases/download/"
+    "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+)
+KOKORO_INSTALL_PACKAGES = ["kokoro>=0.9.4", "soundfile", KOKORO_EN_MODEL_URL]
 
 
 def _is_frozen() -> bool:
@@ -47,15 +52,22 @@ def _find_uv() -> str:
     return shutil.which("uv") or ""
 
 
-def add_optional_packages_to_path() -> None:
-    """Make user-installed optional packages importable in the current process."""
+def add_optional_packages_to_path(*, prepend: bool = False) -> None:
+    """Add user packages, optionally preferring their dependency layer."""
     path = str(OPTIONAL_PACKAGES_DIR)
-    if path in sys.path:
-        return
     try:
         OPTIONAL_PACKAGES_DIR.mkdir(parents=True, exist_ok=True)
-        site.addsitedir(path)
+        if path not in sys.path:
+            site.addsitedir(path)
     except Exception:
+        pass
+
+    if prepend:
+        # ``site.addsitedir`` appends after PyInstaller's bundled importer. A
+        # runtime-installed provider needs its matching dependency versions as
+        # one layer, but only opt-in consumers should override bundled modules.
+        while path in sys.path:
+            sys.path.remove(path)
         sys.path.insert(0, path)
 
 
@@ -109,4 +121,5 @@ def pip_install_env() -> dict[str, str]:
     """Return an environment for optional dependency installs."""
     env = os.environ.copy()
     env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+    env.setdefault("UV_HTTP_TIMEOUT", "60")
     return env

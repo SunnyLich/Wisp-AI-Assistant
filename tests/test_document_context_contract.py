@@ -198,9 +198,12 @@ def test_odt_reader_extracts_paragraph_text(tmp_path):
 def test_pdf_reader_dispatches_to_pdf_text_extractor(tmp_path, monkeypatch):
     """Verify pdf reader dispatches to pdf text extractor behavior."""
     from core.llm_clients import client as llm
+    from core.llm_clients import documents
 
     path = tmp_path / "sample.pdf"
     path.write_bytes(b"%PDF-1.4\n% test placeholder\n")
-    monkeypatch.setattr(llm, "_read_pdf_text", lambda p, _max_chars: f"PDF text from {Path(p).name}")
+    # PDF extraction lives in core.llm_clients.documents (re-exported via client);
+    # patch it at the seam where read_document_file resolves it.
+    monkeypatch.setattr(documents, "_read_pdf_text", lambda p, _max_chars: f"PDF text from {Path(p).name}")
 
     assert "PDF text from sample.pdf" in llm.read_document_file(str(path))

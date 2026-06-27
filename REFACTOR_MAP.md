@@ -1,6 +1,25 @@
 # Refactor Map — value vs. risk, no edits yet
 
-_Generated as an assessment pass. Nothing in the codebase was changed to produce this._
+_Generated as an assessment pass._
+
+## Progress (last updated this session)
+
+**Done & test-verified (uncommitted):**
+- ✅ Item 1 — deleted dead `core/system/app_platform.py` (16 LOC). _Note: leaves the Windows taskbar-identity feature dormant; it was already never called._
+- ✅ Item 2 — new `core/system/safe.py` (`swallow`/`safe` helpers + `tests/test_safe.py`); applied `swallow()` to 27 silent `except: pass` blocks in `context_fetcher.py` (−53 lines).
+- ◑ Item 3 — `client.py` decomposition, 3 of ~5 slices done. **5,906 → 5,591 lines.** Extracted, all re-exported from `client.py` so the public API + `mock.patch` targets are unchanged:
+  - `core/llm_clients/documents.py` (151) — document/PDF reading; also moved `_log_context` → `logging_utils.py`.
+  - `core/llm_clients/model_quirks.py` (83) — image/sampling/max-token model flags.
+  - `core/llm_clients/routing.py` (90) — failover/cooldown (shared `_route_cooldowns` state kept as one object via re-export).
+
+**Method that works (for resuming):** AST-detect, line-slice to preserve bytes (client.py has a **UTF-8 BOM → read/write with `utf-8-sig`**); re-export the full moved surface; fix any test whose `mock.patch` seam moved with the code; run full suite after each slice.
+
+**Remaining item-3 slices (hardest tier — do one at a time):** `provider_schemas` (per-provider tool-schema builders ×3) and `tool_execution` (the `_execute_*` bodies, coupled to tool registry/config/screenshot + the test-patched `stream_response`/`_check_route_config_with_credentials`).
+
+**Known unrelated red:** `tests/runtime/test_flows.py::test_query_flow_streams_reply_and_adds_chat_conversation_with_context` is a pre-existing **order-dependent** test (fails standalone at HEAD; needs another file to first pollute cached global config `context_documents_mode="auto"`). Not caused by this refactor.
+
+---
+
 
 ## The honest headline
 

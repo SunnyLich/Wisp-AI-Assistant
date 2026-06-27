@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import threading
 import time
 import wave
@@ -21,6 +20,8 @@ _warmup_lock = threading.Lock()
 _local_tts_warming = False
 _local_tts_ready = False
 _local_tts_error = ""
+_local_tts_warmup_started_at: float | None = None
+_LOCAL_TTS_WARMUP_STALE_SECONDS = 30.0
 
 
 def _local_tts_provider(provider: str) -> bool:
@@ -30,12 +31,28 @@ def _local_tts_provider(provider: str) -> bool:
 
 def _prewarm_tts_provider(provider: str) -> bool:
     """Return whether provider has useful startup TTS work."""
-    return provider in ("cartesia", "kokoro")
+    if provider == "cartesia":
+        return True
+    if provider == "kokoro":
+        return _kokoro_prewarm_available()
+    return False
+
+
+def _kokoro_prewarm_available() -> bool:
+    """Return whether Kokoro can be warmed in this process."""
+    try:
+        from core import tts
+
+        return tts.kokoro_installed()
+    except Exception:
+        return False
 
 
 def _serialize_audio_warmup(provider: str) -> bool:
     """Return whether local warmups should avoid concurrent native GPU init."""
     if provider != "kokoro":
+        return False
+    if not _kokoro_prewarm_available():
         return False
     try:
         import config
@@ -57,9 +74,10 @@ def _warmup_items(provider: str) -> list[str]:
 
 def _set_local_tts_warmup(*, warming: bool, ready: bool | None = None, error: str = "") -> None:
     """Track whether local TTS is warming or ready."""
-    global _local_tts_warming, _local_tts_ready, _local_tts_error
+    global _local_tts_warming, _local_tts_ready, _local_tts_error, _local_tts_warmup_started_at
     with _warmup_lock:
         _local_tts_warming = warming
+        _local_tts_warmup_started_at = time.monotonic() if warming else None
         if ready is not None:
             _local_tts_ready = ready
         _local_tts_error = error
@@ -67,8 +85,21 @@ def _set_local_tts_warmup(*, warming: bool, ready: bool | None = None, error: st
 
 def _local_tts_is_warming() -> bool:
     """Return whether a local TTS warmup is currently holding the model."""
+    global _local_tts_warming, _local_tts_error, _local_tts_warmup_started_at
     with _warmup_lock:
-        return _local_tts_warming and not _local_tts_ready
+        if not _local_tts_warming or _local_tts_ready:
+            return False
+        started_at = _local_tts_warmup_started_at
+        if started_at is None:
+            return True
+        age = time.monotonic() - started_at
+        if age <= _LOCAL_TTS_WARMUP_STALE_SECONDS:
+            return True
+        _local_tts_warming = False
+        _local_tts_warmup_started_at = None
+        _local_tts_error = f"Local TTS warmup exceeded {_LOCAL_TTS_WARMUP_STALE_SECONDS:.0f}s; synthesis will retry directly."
+    print(f"[audio] {_local_tts_error}", flush=True)
+    return False
 
 
 def _warm_local_audio(
@@ -131,6 +162,10 @@ def _warm_local_audio(
             status = f"error: {type(exc).__name__}: {exc}"
             if is_local_tts:
                 _set_local_tts_warmup(warming=False, ready=False, error=status)
+                try:
+                    tts._kokoro_diag(f"Kokoro warmup failed: {status}")
+                except Exception:
+                    pass
         _set_result("tts", status)
         if on_progress is not None:
             on_progress("tts", status)
@@ -295,15 +330,6 @@ def _write_empty_wav(path: Path, *, sample_rate: int = 22_050) -> dict[str, Any]
     return {"path": str(path), "sample_rate": sample_rate, "bytes": 0, "provider": "none"}
 
 
-def _estimated_word_timestamps(text: str, duration_ms: int) -> dict[str, list]:
-    """Estimate word timings for providers that do not emit timestamps."""
-    words = re.findall(r"\S+", text.strip())
-    if not words or duration_ms <= 0:
-        return {"words": [], "start_ms": [], "estimated": True}
-    step = duration_ms / max(1, len(words))
-    return {"words": words, "start_ms": [int(i * step) for i in range(len(words))], "estimated": True}
-
-
 def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
     """Synthesize text into a WAV file and return its path."""
     if not text.strip():
@@ -317,21 +343,24 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
             wf.writeframes(b"\x00\x00" * 1024)
         return {"path": str(path), "sample_rate": 22_050, "bytes": 2048, "provider": "fake"}
 
-    import numpy as np
-
     import config
-    from core import tts
 
     provider = config.TTS_PROVIDER.lower()
     if _local_tts_provider(provider) and _local_tts_is_warming():
         raise RuntimeError("Local TTS is still warming up. Try again when local speech is ready.")
     print(f"[audio] tts.synthesize provider={provider!r} text={text[:40]!r}", flush=True)
 
+    path = _output_dir() / f"tts-{int(time.time() * 1000)}.wav"
+    if provider == "none":
+        return _write_empty_wav(path)
+
+    from core import tts
+
     def _synth() -> tuple[list[bytes], list[str], list[int]]:
-        # Capture Cartesia word timestamps alongside the PCM so the UI can lock
-        # the word highlight to the spoken voice instead of a fixed-WPM estimate.
-        # Only Cartesia emits these; other providers leave the lists empty. Fresh
-        # lists per call so a retry can't accumulate duplicate timestamps.
+        # Capture real provider word timestamps alongside the PCM so the UI can
+        # lock the word highlight to the spoken voice. Providers without real
+        # timestamps leave the lists empty; the bubble then uses normal reveal
+        # speed instead of pretending to have audio-synced timings.
         """Handle synth for runtime workers audio host."""
         words: list[str] = []
         start_ms: list[int] = []
@@ -366,23 +395,21 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
         if expects_audio and not chunks:
             raise RuntimeError(f"{provider} returned no audio")
 
-    path = _output_dir() / f"tts-{int(time.time() * 1000)}.wav"
-    if provider == "none" or not chunks:
+    if not chunks:
         return _write_empty_wav(path)
 
     sample_rate, _channels, dtype = tts.playback_format(provider)
     if dtype == "int16":
         pcm_i16 = b"".join(chunks)
     else:
+        import numpy as np
+
         audio_f32 = np.frombuffer(b"".join(chunks), dtype=np.float32)
         audio_f32 = np.nan_to_num(audio_f32)
         audio_f32 = np.clip(audio_f32, -1.0, 1.0)
         pcm_i16 = (audio_f32 * 32767.0).astype("<i2").tobytes()
 
-    duration_ms = int((len(pcm_i16) / 2) / sample_rate * 1000) if sample_rate else 0
     word_timestamps = {"words": words, "start_ms": start_ms, "estimated": False}
-    if not words:
-        word_timestamps = _estimated_word_timestamps(text, duration_ms)
 
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(1)
@@ -461,6 +488,14 @@ HANDLERS = {
 
 def main() -> int:
     """Handle main for runtime workers audio host."""
+    # Import TTS on the worker main thread so threaded IPC handlers do not pay
+    # the first import cost while the host is blocked in its request loop.
+    import config
+    from core import tts as _tts
+
+    if config.TTS_PROVIDER.lower() == "kokoro" and _tts.kokoro_installed():
+        _tts._import_kokoro_pipeline()
+
     return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink, threaded=True)
 
 

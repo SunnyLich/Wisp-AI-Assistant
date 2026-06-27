@@ -79,6 +79,7 @@ class UiSettings:
     """Store ui settings configuration data."""
     app_language: str
     assistant_language: str
+    start_on_login: bool
     bubble_width: int
     bubble_lines: int
     bubble_font_size: int
@@ -185,6 +186,7 @@ class AppSettings:
             ui=UiSettings(
                 app_language=str(values.get("APP_LANGUAGE", "")),
                 assistant_language=str(values.get("ASSISTANT_LANGUAGE", "")),
+                start_on_login=_copy_bool(values.get("START_ON_LOGIN"), False),
                 bubble_width=int(values.get("BUBBLE_WIDTH", 0)),
                 bubble_lines=int(values.get("BUBBLE_LINES", 0)),
                 bubble_font_size=int(values.get("BUBBLE_FONT_SIZE", 0)),

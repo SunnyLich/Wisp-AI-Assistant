@@ -143,6 +143,69 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_assistant_language_localizes_default_system_prompt(self):
+        """Built-in system prompt follows the assistant language setting."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in ("ASSISTANT_LANGUAGE", "SYSTEM_PROMPT_UTILITY"):
+                    os.environ.pop(key, None)
+                os.environ["ASSISTANT_LANGUAGE"] = "Spanish"
+                config.reload()
+
+            self.assertIn("Eres Wisp", config.SYSTEM_PROMPT_UTILITY)
+            self.assertNotIn("You are Wisp", config.SYSTEM_PROMPT_UTILITY)
+            self.assertIn("Respond in Spanish", config.get_system_prompt())
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_assistant_language_localizes_saved_english_default_system_prompt(self):
+        """Saved old English default system prompts are still treated as built in."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in ("ASSISTANT_LANGUAGE", "SYSTEM_PROMPT_UTILITY"):
+                    os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "French",
+                    "SYSTEM_PROMPT_UTILITY": config.DEFAULT_SYSTEM_PROMPT_UTILITY,
+                })
+                config.reload()
+
+            self.assertIn("Tu es Wisp", config.SYSTEM_PROMPT_UTILITY)
+            self.assertNotIn("You are Wisp", config.SYSTEM_PROMPT_UTILITY)
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_assistant_language_preserves_custom_system_prompt(self):
+        """Custom system prompts should not be overwritten by language templates."""
+        previous = {
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in ("ASSISTANT_LANGUAGE", "SYSTEM_PROMPT_UTILITY"):
+                    os.environ.pop(key, None)
+                os.environ.update({
+                    "ASSISTANT_LANGUAGE": "Spanish",
+                    "SYSTEM_PROMPT_UTILITY": "Use my custom operating rules.",
+                })
+                config.reload()
+
+            self.assertEqual(config.SYSTEM_PROMPT_UTILITY, "Use my custom operating rules.")
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_assistant_language_localizes_default_caller_intents(self):
         """Built-in caller intents follow the assistant language setting."""
         previous = {
@@ -245,12 +308,20 @@ class ConfigEnvTests(unittest.TestCase):
 
         self.assertEqual(set(config._CALLER_INTENT_TEMPLATES), set(expected_response_names))
         self.assertEqual(set(config._ASSISTANT_RESPONSE_LANGUAGE_NAMES), set(expected_response_names))
+        self.assertEqual(set(config._SYSTEM_PROMPT_UTILITY_TEMPLATES), set(expected_response_names))
 
         for language, response_name in expected_response_names.items():
             localized = config.localize_intent_if_default(0, 0, {}, language)
             template = config._CALLER_INTENT_TEMPLATES[language][0][0]
             self.assertEqual(localized["label"], template["label"])
             self.assertEqual(localized["prompt"], template["prompt"])
+            self.assertEqual(
+                config.localize_system_prompt_utility_if_default(
+                    config.DEFAULT_SYSTEM_PROMPT_UTILITY,
+                    language,
+                ),
+                config._SYSTEM_PROMPT_UTILITY_TEMPLATES[language],
+            )
             self.assertIn(
                 f"Respond in {response_name}",
                 config._assistant_language_instruction(language),
@@ -340,6 +411,26 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_start_on_login_loads_from_env(self):
+        """Verify launch-at-login setting loads from env."""
+        previous = {
+            "START_ON_LOGIN": getattr(config, "START_ON_LOGIN", False),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"START_ON_LOGIN": "true"},
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertTrue(config.START_ON_LOGIN)
+            self.assertTrue(config.get_settings().ui.start_on_login)
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_local_file_access_settings_load_from_env(self):
         """Verify local file access settings load from env behavior."""
         previous = {
@@ -425,13 +516,13 @@ class ConfigEnvTests(unittest.TestCase):
             config.SETTINGS = previous["SETTINGS"]
 
     def test_read_selection_aloud_hotkey_loads_from_env(self):
-        """Verify read-selection-aloud hotkey defaults blank and can be configured."""
+        """Verify read-selection-aloud hotkey defaults to F7 and can be configured."""
         previous = getattr(config, "HOTKEY_READ_SELECTION_ALOUD", "")
         try:
             with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("HOTKEY_READ_SELECTION_ALOUD", None)
                 config.reload()
-            self.assertEqual(config.HOTKEY_READ_SELECTION_ALOUD, "")
+            self.assertEqual(config.HOTKEY_READ_SELECTION_ALOUD, "f7")
 
             with patch("config.load_dotenv"), patch.dict(
                 os.environ,
@@ -626,6 +717,64 @@ class ConfigEnvTests(unittest.TestCase):
         "VOICE_TOOLS",
     )
 
+    def test_default_general_caller_uses_memory_only_context(self):
+        """Verify default general caller starts with only memory context."""
+        previous_rows = list(config.CALLER_ROWS)
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in (
+                    "CALLER_COUNT",
+                    "CALLER_1_CONTEXT_AMBIENT",
+                    "CALLER_1_CONTEXT_CLIPBOARD",
+                    "CALLER_1_CONTEXT_DOCUMENTS",
+                    "CALLER_1_CONTEXT_DOCUMENTS_MODE",
+                    "CALLER_1_CONTEXT_BROWSER_MODE",
+                    "CALLER_1_CONTEXT_GITHUB_MODE",
+                    "CALLER_1_CONTEXT_MEMORY_MODE",
+                    "CALLER_1_CONTEXT_SCREENSHOT",
+                    "CALLER_1_CONTEXT_TOOLS",
+                ):
+                    os.environ.pop(key, None)
+                config.reload()
+
+            row = config.CALLER_ROWS[0]
+            self.assertEqual(row["hotkey"], config._caller_default_hotkey(0))
+            self.assertFalse(row["context_ambient"])
+            self.assertFalse(row["context_clipboard"])
+            self.assertEqual(row["context_documents_mode"], "off")
+            self.assertEqual(row["context_browser_mode"], "off")
+            self.assertEqual(row["context_github_mode"], "off")
+            self.assertEqual(row["context_memory_mode"], "on")
+            self.assertEqual(row["context_screenshot"], "off")
+            self.assertFalse(row["context_tools"])
+        finally:
+            config.CALLER_ROWS[:] = previous_rows
+
+    def test_default_caller_hotkeys_are_platform_specific(self):
+        """Verify non-Windows defaults avoid common Ctrl+Q quit bindings."""
+        previous_rows = list(config.CALLER_ROWS)
+        with patch.object(config.sys, "platform", "win32"):
+            self.assertEqual(config._caller_default_hotkey(0), "ctrl+q")
+            self.assertEqual(config._caller_default_hotkey(1), "ctrl+shift+q")
+        for platform in ("darwin", "linux"):
+            with patch.object(config.sys, "platform", platform):
+                self.assertEqual(config._caller_default_hotkey(0), "ctrl+alt+space")
+                self.assertEqual(config._caller_default_hotkey(1), "ctrl+alt+shift+space")
+        try:
+            with patch("config.load_dotenv"), patch.object(config.sys, "platform", "darwin"), patch.dict(
+                os.environ,
+                {},
+                clear=False,
+            ):
+                for key in ("CALLER_COUNT", "CALLER_1_HOTKEY", "CALLER_2_HOTKEY"):
+                    os.environ.pop(key, None)
+                config.reload()
+
+            self.assertEqual(config.CALLER_ROWS[0]["hotkey"], "ctrl+alt+space")
+            self.assertEqual(config.CALLER_ROWS[1]["hotkey"], "ctrl+alt+shift+space")
+        finally:
+            config.CALLER_ROWS[:] = previous_rows
+
     def test_voice_caller_defaults_mirror_general_caller(self):
         """Verify voice caller defaults mirror general caller behavior."""
         previous = dict(config.VOICE_CALLER)
@@ -636,8 +785,8 @@ class ConfigEnvTests(unittest.TestCase):
                 config.reload()
 
             voice = config.VOICE_CALLER
-            self.assertTrue(voice["context_ambient"])
-            self.assertEqual(voice["context_documents_mode"], "auto")
+            self.assertFalse(voice["context_ambient"])
+            self.assertEqual(voice["context_documents_mode"], "off")
             self.assertEqual(voice["context_browser_mode"], "off")
             self.assertEqual(voice["context_github_mode"], "off")
             self.assertEqual(voice["context_memory_mode"], "on")
@@ -647,6 +796,46 @@ class ConfigEnvTests(unittest.TestCase):
         finally:
             config.VOICE_CALLER.clear()
             config.VOICE_CALLER.update(previous)
+
+    def test_snip_defaults_use_memory_only_extra_context(self):
+        """Verify screen snip only adds memory by default."""
+        previous = {
+            "SNIP_CONTEXT_AMBIENT": config.SNIP_CONTEXT_AMBIENT,
+            "SNIP_CONTEXT_DOCUMENTS": config.SNIP_CONTEXT_DOCUMENTS,
+            "SNIP_CALLER": dict(config.SNIP_CALLER),
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                for key in (
+                    "SNIP_CONTEXT_AMBIENT",
+                    "SNIP_CONTEXT_CLIPBOARD",
+                    "SNIP_CONTEXT_DOCUMENTS",
+                    "SNIP_CONTEXT_DOCUMENTS_MODE",
+                    "SNIP_CONTEXT_BROWSER_MODE",
+                    "SNIP_CONTEXT_GITHUB_MODE",
+                    "SNIP_CONTEXT_MEMORY_MODE",
+                    "SNIP_CONTEXT_SCREENSHOT",
+                    "SNIP_CONTEXT_TOOLS",
+                ):
+                    os.environ.pop(key, None)
+                config.reload()
+
+            self.assertFalse(config.SNIP_CONTEXT_AMBIENT)
+            self.assertFalse(config.SNIP_CONTEXT_DOCUMENTS)
+            snip = config.SNIP_CALLER
+            self.assertFalse(snip["context_ambient"])
+            self.assertFalse(snip["context_clipboard"])
+            self.assertEqual(snip["context_documents_mode"], "off")
+            self.assertEqual(snip["context_browser_mode"], "off")
+            self.assertEqual(snip["context_github_mode"], "off")
+            self.assertEqual(snip["context_memory_mode"], "on")
+            self.assertEqual(snip["context_screenshot"], "off")
+            self.assertFalse(snip["context_tools"])
+        finally:
+            config.SNIP_CONTEXT_AMBIENT = previous["SNIP_CONTEXT_AMBIENT"]
+            config.SNIP_CONTEXT_DOCUMENTS = previous["SNIP_CONTEXT_DOCUMENTS"]
+            config.SNIP_CALLER.clear()
+            config.SNIP_CALLER.update(previous["SNIP_CALLER"])
 
     def test_memory_context_mode_accepts_legacy_auto_alias(self):
         """Verify legacy memory auto mode loads as on."""

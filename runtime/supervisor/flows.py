@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import base64
 import itertools
 import logging
 import os
 import queue
 import re
-import sys
 import threading
 import time
 from collections.abc import Callable
@@ -17,7 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from core.system.env_utils import mcp_server_id_from_tool, mcp_server_override_key
-from runtime.supervisor import tool_modes
+from runtime.supervisor import flow_context, flow_estimates, flow_utils, tool_modes
 from ui.i18n import t
 
 log = logging.getLogger("wisp.runtime.flows")
@@ -44,18 +42,6 @@ _BROWSER_APP_NAMES = {
     "opera",
     "vivaldi",
 }
-_LOCAL_FILE_ACTION_RE = re.compile(
-    r"\b(?:append|change|create|edit|fix|modify|patch|replace|save|update|write)\b",
-    re.IGNORECASE,
-)
-_LOCAL_FILE_TARGET_RE = re.compile(
-    r"\b(?:file|folder|local\s+file|path|project|workspace)\b",
-    re.IGNORECASE,
-)
-_LOCAL_FILE_PATH_RE = re.compile(
-    r"(?:[A-Za-z]:[\\/][^\s]+|[^\s]+\.(?:cfg|css|csv|html|ini|js|json|log|md|py|toml|ts|txt|xml|yaml|yml))",
-    re.IGNORECASE,
-)
 _AUDIO_CONFIG_KEYS = {
     "TTS_PROVIDER",
     "CARTESIA_VOICE_ID",
@@ -99,123 +85,11 @@ _AUDIO_CONFIG_KEYS = {
 }
 
 
-def _file_context_text(items: list | None) -> str:
-    """Build hidden follow-up context for recent local-file tools."""
-    normalized: list[dict[str, Any]] = []
-    for raw in items or []:
-        if not isinstance(raw, dict):
-            continue
-        item = {
-            "tool": str(raw.get("tool") or ""),
-            "path": str(raw.get("path") or ""),
-            "relative_path": str(raw.get("relative_path") or ""),
-            "ok": bool(raw.get("ok")),
-            "message": str(raw.get("message") or ""),
-        }
-        if item["tool"] and item["path"] and item not in normalized:
-            normalized.append(item)
-    if not normalized:
-        return ""
-    lines = [
-        "[Conversation File Context]",
-        "Recent local file tool context for this conversation. Use these exact paths when the user refers to a prior file.",
-    ]
-    for item in normalized[-8:]:
-        status = "ok" if item.get("ok") else "failed"
-        label = f"{item.get('tool')} ({status}): {item.get('path')}"
-        rel = item.get("relative_path") or ""
-        if rel and rel != item.get("path"):
-            label += f" [relative: {rel}]"
-        message = str(item.get("message") or "").strip()
-        if message:
-            label += f" - {message}"
-        lines.append(f"- {label}")
-    return "\n".join(lines)
-
-
-def _normalized_tool_context(raw: Any) -> dict[str, Any]:
-    """Normalize persisted conversation tool grants."""
-    if not isinstance(raw, dict):
-        return {}
-
-    def _str_list(value: Any) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        out: list[str] = []
-        for item in value:
-            text = str(item or "").strip()
-            if text and text not in out:
-                out.append(text)
-        return out
-
-    mode = str(raw.get("file_access_mode") or "").strip().lower()
-    if mode not in {"off", "read", "ask", "auto"}:
-        mode = ""
-    ctx = {
-        "allowed_tools": _str_list(raw.get("allowed_tools")),
-        "pinned_tools": _str_list(raw.get("pinned_tools")),
-        "file_access_mode": mode,
-    }
-    if not ctx["allowed_tools"] and not ctx["pinned_tools"] and not ctx["file_access_mode"]:
-        return {}
-    return ctx
-
-
-def _all_context_off_policy() -> dict[str, Any]:
-    return {
-        "context_ambient": False,
-        "context_documents": False,
-        "context_tools": False,
-        "context_documents_mode": "off",
-        "context_browser_mode": "off",
-        "context_github_mode": "off",
-        "context_memory_mode": "off",
-        "context_screenshot": "off",
-        "context_clipboard": False,
-        "_context_selection_enabled": False,
-        "file_access": "off",
-        "tools": {},
-    }
-
-
-def _normalized_context_policy(raw: Any) -> dict[str, Any]:
-    """Normalize a caller-like context policy from the chat UI."""
-    if not isinstance(raw, dict):
-        return {}
-
-    def _mode(value: Any, default: str = "off") -> str:
-        mode = str(value or default or "off").strip().lower()
-        if mode == "on":
-            return "auto"
-        return mode if mode in {"off", "auto", "model"} else default
-
-    tools = raw.get("tools")
-    policy = _all_context_off_policy()
-    policy.update(
-        {
-            "context_ambient": bool(raw.get("context_ambient", False)),
-            "context_documents_mode": tool_modes.context_mode(raw, "documents"),
-            "context_browser_mode": tool_modes.context_mode(raw, "browser"),
-            "context_github_mode": tool_modes.context_mode(raw, "github"),
-            "context_memory_mode": tool_modes.context_mode(raw, "memory"),
-            "context_screenshot": _mode(raw.get("context_screenshot"), "off"),
-            "context_clipboard": bool(raw.get("context_clipboard", False)),
-            "file_access": tool_modes.local_file_access_mode(raw),
-            "tools": dict(tools) if isinstance(tools, dict) else {},
-        }
-    )
-    policy["context_documents"] = policy["context_documents_mode"] == "auto"
-    policy["context_tools"] = any(
-        policy[key] == "model"
-        for key in (
-            "context_documents_mode",
-            "context_browser_mode",
-            "context_github_mode",
-            "context_memory_mode",
-        )
-    )
-    policy["_context_selection_enabled"] = bool(raw.get("_context_selection_enabled", False))
-    return policy
+_file_context_text = flow_context.file_context_text
+_normalized_tool_context = flow_context.normalized_tool_context
+_all_context_off_policy = flow_context.all_context_off_policy
+_normalized_context_policy = flow_context.normalized_context_policy
+json_safe_dumps = flow_utils.json_safe_dumps
 
 
 class WorkerLike(Protocol):
@@ -1032,7 +906,7 @@ class FlowController:
         self._safe_call(self.audio, "audio.stop", timeout=5.0)
         self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
         self._safe_call(self.ui, "ui.reply.reading", {"text": text}, timeout=30.0)
-        if not self._read_aloud_text(text, generation=gen):
+        if not self._read_aloud_text(text, generation=gen) and not self._reply_bubble_cancelled(gen):
             self._notice(t("Could not read selected text aloud."))
 
     def clear_context(self) -> None:
@@ -2403,15 +2277,12 @@ class FlowController:
     @staticmethod
     def _paste_shortcut() -> str:
         """Paste shortcut."""
-        return "Cmd+V" if sys.platform == "darwin" else "Ctrl+V"
+        return flow_utils.paste_shortcut()
 
     @staticmethod
     def _is_local_file_request(prompt: str) -> bool:
         """Return True when a paste-back prompt is really asking for disk edits."""
-        text = str(prompt or "")
-        if not _LOCAL_FILE_ACTION_RE.search(text):
-            return False
-        return bool(_LOCAL_FILE_TARGET_RE.search(text) or _LOCAL_FILE_PATH_RE.search(text))
+        return flow_utils.is_local_file_request(prompt)
 
     def _native_notify(self, title: str, message: str) -> None:
         """Best-effort system notification (keeps status out of the reply bubble)."""
@@ -2611,12 +2482,7 @@ class FlowController:
     @staticmethod
     def _friendly_error(exc: Exception) -> str:
         """Handle friendly error for flow controller."""
-        text = str(exc).strip() or type(exc).__name__
-        for prefix in ("ValueError: ", "RuntimeError: "):
-            if text.startswith(prefix):
-                text = text[len(prefix):].strip()
-                break
-        return text
+        return flow_utils.friendly_error(exc)
 
     def _caller(self, caller_idx: int) -> dict[str, Any]:
         """Handle caller for flow controller."""
@@ -3454,103 +3320,37 @@ class FlowController:
     @staticmethod
     def _estimate_context_tokens(text: str) -> int:
         """Fast token estimate for context preview chips."""
-        cjk = 0
-        for ch in text or "":
-            code = ord(ch)
-            if (
-                0x3040 <= code <= 0x30FF
-                or 0x3400 <= code <= 0x4DBF
-                or 0x4E00 <= code <= 0x9FFF
-                or 0xAC00 <= code <= 0xD7AF
-                or 0xFF00 <= code <= 0xFFEF
-            ):
-                cjk += 1
-        return max(0, round(cjk * 0.85 + (len(text or "") - cjk) / 4))
+        return flow_estimates.estimate_context_tokens(text)
 
     @classmethod
     def _token_label(cls, text: str) -> str:
         """Return a compact token estimate label."""
-        tokens = cls._estimate_context_tokens(text)
-        if tokens <= 0:
-            return "0 tok"
-        if tokens >= 1000:
-            return f"~{tokens / 1000:.1f}k tok"
-        return f"~{tokens} tok"
+        return flow_estimates.token_label(text)
 
     @staticmethod
     def _deferred_token_label() -> str:
         """Return the token label for context fetched after the picker."""
-        return "? tok"
+        return flow_estimates.deferred_token_label()
 
     @staticmethod
     def _image_size_from_b64(data: str | None) -> tuple[int, int] | None:
         """Best-effort PNG/JPEG dimension read for screenshot token estimates."""
-        if not data:
-            return None
-        try:
-            raw = base64.b64decode(data, validate=False)
-        except Exception:
-            return None
-        if len(raw) >= 24 and raw.startswith(b"\x89PNG\r\n\x1a\n"):
-            return int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
-        if len(raw) >= 4 and raw[:2] == b"\xff\xd8":
-            idx = 2
-            while idx + 9 < len(raw):
-                if raw[idx] != 0xFF:
-                    idx += 1
-                    continue
-                marker = raw[idx + 1]
-                idx += 2
-                if marker in {0xD8, 0xD9}:
-                    continue
-                if idx + 2 > len(raw):
-                    break
-                size = int.from_bytes(raw[idx:idx + 2], "big")
-                if size < 2 or idx + size > len(raw):
-                    break
-                if 0xC0 <= marker <= 0xC3 and idx + 7 < len(raw):
-                    return int.from_bytes(raw[idx + 5:idx + 7], "big"), int.from_bytes(raw[idx + 3:idx + 5], "big")
-                idx += size
-        return None
+        return flow_estimates.image_size_from_b64(data)
 
     @classmethod
     def _image_size_token_label(cls, size: tuple[int, int] | None) -> str:
         """Return a rough token estimate for an image of known dimensions."""
-        if not size:
-            return cls._deferred_token_label()
-        width, height = size
-        if width <= 0 or height <= 0:
-            return cls._deferred_token_label()
-        scale = min(1.0, 2048 / max(width, height))
-        width = max(1, round(width * scale))
-        height = max(1, round(height * scale))
-        if min(width, height) > 768:
-            scale = 768 / min(width, height)
-            width = max(1, round(width * scale))
-            height = max(1, round(height * scale))
-        tiles = max(1, ((width + 511) // 512) * ((height + 511) // 512))
-        tokens = 85 + 170 * tiles
-        if tokens >= 1000:
-            return f"~{tokens / 1000:.1f}k tok"
-        return f"~{tokens} tok"
+        return flow_estimates.image_size_token_label(size)
 
     @classmethod
     def _image_token_label(cls, data: str | None) -> str:
         """Return a rough token estimate for image input."""
-        return cls._image_size_token_label(cls._image_size_from_b64(data))
+        return flow_estimates.image_token_label(data)
 
     @classmethod
     def _screen_token_label(cls, context: dict[str, Any]) -> str:
         """Return screenshot token estimate from screen metadata."""
-        raw = context.get("screen_size") if isinstance(context, dict) else {}
-        if not isinstance(raw, dict):
-            return cls._deferred_token_label()
-        try:
-            width = int(raw.get("width") or 0)
-            height = int(raw.get("height") or 0)
-        except (TypeError, ValueError):
-            return cls._deferred_token_label()
-        return cls._image_size_token_label((width, height))
+        return flow_estimates.screen_token_label(context)
 
     def _intent_context_keys(self) -> str:
         """Return eight unique overlay-local context toggle keys."""
@@ -3912,8 +3712,7 @@ class FlowController:
     @staticmethod
     def _short(text: str, n: int = 24) -> str:
         """Handle short for flow controller."""
-        flat = " ".join((text or "").split())
-        return (flat[: n - 1] + "...") if len(flat) > n else flat
+        return flow_utils.short(text, n)
 
     def _context_summary_badges(
         self,
@@ -3997,12 +3796,7 @@ class FlowController:
     @staticmethod
     def _file_b64(path: str | Path | None) -> str | None:
         """Handle file b64 for flow controller."""
-        if not path:
-            return None
-        p = Path(path)
-        if not p.exists():
-            return None
-        return base64.b64encode(p.read_bytes()).decode("ascii")
+        return flow_estimates.file_b64(path)
 
     def _tts_enabled(self) -> bool:
         """Handle TTS enabled for flow controller."""
@@ -4258,8 +4052,8 @@ class FlowController:
                 # Buffer Cartesia word timestamps in the bubble *before* playback
                 # starts. start_word_reveal â€” fired by the audio.playback.started
                 # event below â€” drains them anchored to the real audio clock, so
-                # the word highlight tracks the spoken voice instead of a fixed
-                # 170-WPM guess. Do NOT call ui.reply.start_reveal here: it would
+                # the word highlight tracks the spoken voice instead of the
+                # normal bubble reveal speed. Do NOT call ui.reply.start_reveal here: it would
                 # anchor the reveal to synth-completion (before audio is audible)
                 # and the playback-started reveal would then cancel it.
                 wts = result.get("word_timestamps") if isinstance(result, dict) else None
@@ -4288,13 +4082,3 @@ class FlowController:
                 self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
                 self._set_idle()
             return False
-
-
-def json_safe_dumps(value: Any) -> str:
-    """Handle json safe dumps for runtime supervisor flows."""
-    import json
-
-    try:
-        return json.dumps(value, ensure_ascii=True)
-    except TypeError:
-        return str(value)

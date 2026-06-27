@@ -3099,8 +3099,8 @@ Continue?</source>
       <translation>正在完成安装</translation>
     </message>
     <message>
-      <source>working - see terminal for full pip log</source>
-      <translation>正在处理 - 完整 pip 日志请查看终端</translation>
+      <source>working - installer is still running</source>
+      <translation>安装程序仍在运行</translation>
     </message>
     <message>
       <source>Wisp wants permission to modify a local file.</source>
@@ -3302,8 +3302,8 @@ Continue?</source>
       <translation>最近对话被总结前的近似短期记忆大小。</translation>
     </message>
     <message>
-      <source>Words per minute used to reveal text while generated speech is playing.</source>
-      <translation>播放生成语音时用于显示文本的每分钟词数。</translation>
+      <source>Words per minute used for the normal bubble reveal, including TTS providers without word timestamps.</source>
+      <translation>普通气泡显示使用的每分钟词数，也适用于没有逐词时间戳的 TTS 提供方。</translation>
     </message>
     <message>
       <source>Words per minute used when showing text without generated speech.</source>
@@ -3714,12 +3714,34 @@ Continue?</source>
       <translation>按需获取特定网页 URL 的完整可读文本。当用户询问网站/页面，而被动浏览器预览缺失、不完整、过期或不够充分时使用。</translation>
     </message>
     <message>
-      <source>This provider does not send real word timestamps. The highlighted word is approximate and may not match the speech exactly.</source>
-      <translation>此提供者不会发送真实的逐词时间戳。高亮的词只是近似，可能无法与语音完全匹配。</translation>
+      <source>This provider does not send real word timestamps. The bubble uses normal reveal speed instead of audio-synced word highlighting.</source>
+      <translation>此提供方不会发送真实的逐词时间戳。气泡会使用普通显示速度，而不是音频同步逐词高亮。</translation>
     </message>
     <message>
       <source>Custom</source>
       <translation>自定义</translation>
     </message>
+    <message>
+      <source>Start Wisp when you sign in</source>
+      <translation>登录时启动 Wisp</translation>
+    </message>
+    <message>
+      <source>Launch Wisp automatically after you sign in to this computer.</source>
+      <translation>登录这台电脑后自动启动 Wisp。</translation>
+    </message>
+    <message>
+      <source>Could not update startup setting</source>
+      <translation>无法更新启动设置</translation>
+    </message>
+    <message>
+      <source>Your preference was saved, but Wisp could not update the operating system startup entry:
+
+{error}</source>
+      <translation>你的偏好已保存，但 Wisp 无法更新操作系统启动项：
+
+{error}</translation>
+    </message>
   </context>
 </TS>
+
+

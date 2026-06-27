@@ -54,6 +54,7 @@ def test_get_settings_returns_typed_snapshot():
                 "BUBBLE_SCROLL_ENABLED": "false",
                 "BUBBLE_SCROLL_SNAP_DELAY_MS": "1800",
                 "TRUST_PRIVACY_MODE": "true",
+                "START_ON_LOGIN": "true",
             },
             clear=False,
         ):
@@ -68,6 +69,7 @@ def test_get_settings_returns_typed_snapshot():
         assert settings.ui.bubble_font_size == 14
         assert settings.ui.bubble_scroll_enabled is False
         assert settings.ui.bubble_scroll_snap_delay_ms == 1800
+        assert settings.ui.start_on_login is True
         assert settings.privacy.trust_privacy_mode is True
         assert settings.callers.callers[0]["label"] == "Typed"
         assert settings.callers.voice["context_memory_mode"] == "model"
@@ -159,8 +161,14 @@ def test_default_profile_preserves_legacy_second_caller_defaults():
             config.reload()
 
         row = config.CALLER_ROWS[1]
+        default_profile = config.resolve_profile("default")
 
         assert config.ACTIVE_PROFILE == "default"
+        assert default_profile.caller_defaults["context_documents_mode"] == "off"
+        assert config.CALLER_ROWS[0]["context_ambient"] is False
+        assert config.CALLER_ROWS[0]["context_documents_mode"] == "off"
+        assert config.CALLER_ROWS[0]["context_memory_mode"] == "on"
+        assert row["context_ambient"] is False
         assert row["context_documents_mode"] == "off"
         assert row["context_memory_mode"] == "off"
     finally:

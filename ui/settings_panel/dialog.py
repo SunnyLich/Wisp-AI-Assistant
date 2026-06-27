@@ -13,9 +13,11 @@ import logging
 import subprocess
 import threading
 import re
+import time
 from contextlib import contextmanager
+from pathlib import Path
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
     QPushButton, QTabWidget, QWidget, QFrame, QGroupBox, QMessageBox,
     QScrollArea, QSizePolicy, QCompleter, QInputDialog, QMenu, QSlider,
@@ -28,11 +30,11 @@ from core.system.env_utils import (
     parse_tool_modes,
 )
 import ui.settings_panel.env as settings_env
+from ui.settings_panel import context_controls
 from ui.settings_panel.hotkey_capture import HotkeyCaptureEdit
 from ui.settings_panel.helpers import (
     NoScrollCombo as _NoScrollCombo,
     WarningHeaderLabel as _WarningHeaderLabel,
-    context_mode_combo as _context_mode_combo,
     expanding_form_layout as _expanding_form_layout,
     parse_fallback_rows,
 )
@@ -57,8 +59,8 @@ _TTS_TIMESTAMPLESS_PROVIDERS = {
     "kokoro",
 }
 _TTS_TIMING_NOTICE = (
-    "This provider does not send real word timestamps. The highlighted word is approximate "
-    "and may not match the speech exactly."
+    "This provider does not send real word timestamps. The bubble uses normal reveal speed "
+    "instead of audio-synced word highlighting."
 )
 
 
@@ -138,88 +140,6 @@ _CHAT_REASONING_EFFORT_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Medium", "medium"),
     ("High", "high"),
 )
-
-_FILE_ACCESS_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("Off", "off"),
-    ("Read only", "read"),
-    ("Ask before writing", "ask"),
-    ("Write automatically", "auto"),
-)
-
-
-class _BooleanContextCombo(_NoScrollCombo):
-    """Two-state context dropdown that preserves the old checkbox API."""
-
-    def __init__(self, checked: bool = False) -> None:
-        super().__init__()
-        self.addItem("Off", "false")
-        self.addItem("On", "true")
-        self.setChecked(checked)
-
-    def isChecked(self) -> bool:  # noqa: N802 - checkbox compatibility
-        return str(self.currentData()).lower() == "true"
-
-    def setChecked(self, checked: bool) -> None:  # noqa: N802 - checkbox compatibility
-        idx = self.findData("true" if checked else "false")
-        self.setCurrentIndex(idx if idx >= 0 else 0)
-
-
-class _AppContextCombo(_NoScrollCombo):
-    """Single App-context dropdown backed by ambient + open-docs settings."""
-
-    _AMBIENT_ROLE = int(Qt.ItemDataRole.UserRole) + 1
-
-    def __init__(self, ambient: bool = True, documents_mode: str = "auto") -> None:
-        super().__init__()
-        self.addItem("Off", "off")
-        self.setItemData(0, False, self._AMBIENT_ROLE)
-        self.addItem("On", "off")
-        self.setItemData(1, True, self._AMBIENT_ROLE)
-        self.addItem("On + open docs", "auto")
-        self.setItemData(2, True, self._AMBIENT_ROLE)
-        self.addItem("Let model decide", "model")
-        self.setItemData(3, True, self._AMBIENT_ROLE)
-        self.set_state(ambient, documents_mode)
-
-    def isChecked(self) -> bool:  # noqa: N802 - checkbox compatibility
-        return bool(self.itemData(self.currentIndex(), self._AMBIENT_ROLE))
-
-    def setChecked(self, checked: bool) -> None:  # noqa: N802 - checkbox compatibility
-        self.set_state(checked, str(self.currentData() or "off"))
-
-    def set_state(self, ambient: bool, documents_mode: str) -> None:
-        """Select the combined item for ambient app context + documents mode."""
-        mode = (documents_mode or "off").strip().lower()
-        if mode == "on":
-            mode = "auto"
-        if not ambient:
-            target = 0
-        elif mode == "model":
-            target = 3
-        elif mode == "auto":
-            target = 2
-        else:
-            target = 1
-        self.setCurrentIndex(target)
-
-    def findData(  # noqa: N802 - Qt override shape
-        self,
-        data,
-        role: int = int(Qt.ItemDataRole.UserRole),
-        flags: Qt.MatchFlag = Qt.MatchFlag.MatchExactly,
-    ) -> int:
-        """Pick the docs-mode item while preserving current ambient state."""
-        if role == int(Qt.ItemDataRole.UserRole) and str(data).lower() == "off":
-            wants_ambient = self.isChecked()
-            for index in range(self.count()):
-                if (
-                    str(self.itemData(index, role)).lower() == "off"
-                    and bool(self.itemData(index, self._AMBIENT_ROLE)) == wants_ambient
-                ):
-                    return index
-            return 1 if wants_ambient else 0
-        return super().findData(data, role, flags)
-
 
 _SETTINGS_PRESET_KEY = "WISP_SETTINGS_PRESET"
 _PRESET_ENV_PREFIX = "WISP_PRESET_"
@@ -1602,25 +1522,10 @@ class SettingsDialog(QDialog):
         api_keys_cv.addLayout(akw)
         add_key_btn.clicked.connect(lambda: self._add_api_key_row())
 
-        api_keys_cv.addWidget(_sep(visible=True))
-        copilot_hdr = QLabel("GitHub Copilot")
-        copilot_hdr.setStyleSheet("font-weight: 600;")
-        api_keys_cv.addWidget(copilot_hdr)
-        api_keys_cv.addWidget(_desc_label(
-            "",
-            "Choose GitHub Copilot in the provider list above, then paste a fine-grained PAT with Copilot Requests: Read-only.",
-        ))
         self._copilot_status_lbl = QLabel()
         self._copilot_status_lbl.setWordWrap(True)
-        self._set_status_label(self._copilot_status_lbl, None, "Checking status...")
-        api_keys_cv.addWidget(self._copilot_status_lbl)
-        copilot_row = self._button_row(
-            ("Test token / SDK", self._copilot_test_token),
-            ("Clear token",      self._copilot_clear_token),
-        )
-        cp_btns = copilot_row.findChildren(QPushButton)
-        self._copilot_test_btn, self._copilot_clear_btn = cp_btns[0], cp_btns[1]
-        api_keys_cv.addWidget(copilot_row)
+        self._copilot_test_btn = QPushButton()
+        self._copilot_clear_btn = QPushButton()
         credentials_layout.addWidget(api_keys_card)
 
         # ── CUSTOM PROVIDER card ──────────────────────────────────────────
@@ -1835,7 +1740,9 @@ class SettingsDialog(QDialog):
         provider_combo = self._combo(
             ["groq", "openai", "anthropic", "google", "deepseek",
              "openrouter", "mistral", "xai", "together", "cerebras",
-             "ollama", "copilot"],
+             "zai", "nvidia", "sambanova", "github_models", "huggingface",
+             "chutes", "vercel", "fireworks", "cohere", "ai21", "nebius",
+             "ollama", "custom", "copilot"],
             provider,
         )
         provider_combo.setMinimumWidth(120)
@@ -1885,6 +1792,8 @@ class SettingsDialog(QDialog):
             key_edit.setPlaceholderText(t("stored in keychain") if stored else t("github_pat_… (not saved to .env)"))
         elif provider == "ollama":
             key_edit.setPlaceholderText(t("not required"))
+        elif provider == "custom":
+            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("custom endpoint API key"))
         else:
             key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
 
@@ -1902,8 +1811,6 @@ class SettingsDialog(QDialog):
         options: list[tuple[str, str]] = []
         for row in self._api_key_rows:
             provider = _get(row["provider"])
-            if provider == "custom":
-                continue
             alias = row["alias"].text().strip()
             label = t(_PROVIDER_LABELS.get(provider, provider))
             display = f"{label} ({alias})" if alias else label
@@ -1912,7 +1819,8 @@ class SettingsDialog(QDialog):
         options.append((t(_PROVIDER_LABELS.get("chatgpt", "ChatGPT Plus/Pro (OAuth subscription)")), "chatgpt"))
         if not any(provider == "copilot" for _display, provider in options):
             options.append((t(_PROVIDER_LABELS.get("copilot", "GitHub Copilot") + " (keychain token)"), "copilot"))
-        options.append((t(_PROVIDER_LABELS.get("custom", "Custom (OpenAI-compatible)")), "custom"))
+        if not any(provider == "custom" for _display, provider in options):
+            options.append((t(_PROVIDER_LABELS.get("custom", "Custom (OpenAI-compatible)")), "custom"))
         return options
 
     def _refresh_model_api_key_combos(self) -> None:
@@ -2182,6 +2090,19 @@ class SettingsDialog(QDialog):
         ("xAI (Grok)",   "https://api.x.ai/v1",                  "grok-3", ""),
         ("Together AI",  "https://api.together.xyz/v1",          "meta-llama/Llama-3-70b-chat-hf", ""),
         ("Cerebras",     "https://api.cerebras.ai/v1",           "llama-3.3-70b", ""),
+        ("Z.AI / GLM",   "https://api.z.ai/api/paas/v4",         "glm-4.7-flash", ""),
+        ("NVIDIA",       "https://integrate.api.nvidia.com/v1",  "meta/llama-3.3-70b-instruct", ""),
+        ("SambaNova",    "https://api.sambanova.ai/v1",          "Meta-Llama-3.1-8B-Instruct", ""),
+        ("GitHub Models", "https://models.github.ai/inference",  "openai/gpt-4.1-mini", ""),
+        ("Hugging Face", "https://router.huggingface.co/v1",     "meta-llama/Llama-3.1-8B-Instruct", ""),
+        ("Chutes",       "https://llm.chutes.ai/v1",             "deepseek-ai/DeepSeek-V3-0324", ""),
+        ("Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", "openai/gpt-4o-mini", ""),
+        ("Fireworks",    "https://api.fireworks.ai/inference/v1", "accounts/fireworks/models/llama-v3p1-8b-instruct", ""),
+        ("Cohere",       "https://api.cohere.ai/compatibility/v1", "command-r-plus", ""),
+        ("AI21",         "https://api.ai21.com/studio/v1",       "jamba-large", ""),
+        ("Nebius",       "https://api.studio.nebius.com/v1",     "meta-llama/Meta-Llama-3.1-8B-Instruct", ""),
+        ("Cloudflare Workers AI", "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1", "@cf/meta/llama-3.1-8b-instruct", ""),
+        ("Baseten",      "https://model-{model_id}.api.baseten.co/environments/production/sync/v1", "model-name", ""),
         ("Ollama (local)", "http://localhost:11434/v1",           "llama3", "ollama"),
         ("LM Studio (local)", "http://localhost:1234/v1",        "local-model", ""),
     ]
@@ -2950,8 +2871,11 @@ class SettingsDialog(QDialog):
         return self._optional_package_installed("elevenlabs")
 
     def _kokoro_installed(self) -> bool:
-        """Return True when the optional Kokoro package is importable."""
-        return self._optional_package_installed("kokoro")
+        """Return True when Kokoro and its English G2P model are importable."""
+        return all(
+            self._optional_package_installed(module_name)
+            for module_name in ("kokoro", "en_core_web_sm")
+        )
 
     def _refresh_elevenlabs_install_status(self) -> None:
         """Refresh ElevenLabs install button and status copy."""
@@ -2989,6 +2913,8 @@ class SettingsDialog(QDialog):
 
     def _install_kokoro(self) -> None:
         """Confirm and install optional Kokoro dependencies into Wisp's Python."""
+        from core import optional_deps
+
         if self._kokoro_installed():
             self._refresh_kokoro_install_status()
             return
@@ -3000,7 +2926,7 @@ class SettingsDialog(QDialog):
         volume = _get(self._fields["TTS_VOLUME"]).strip() or "1.0"
         message = t(
             "Wisp will install Kokoro into its user-writable optional packages folder.\n\n"
-            "Packages: kokoro>=0.9.4, soundfile\n"
+            "Packages: kokoro>=0.9.4, soundfile, English speech model\n"
             "Estimated storage: up to about 2 GB if speech dependencies are missing; less if they are already installed. "
             "First use may also download the Kokoro model cache.\n\n"
             "Current Kokoro settings:\n"
@@ -3033,7 +2959,7 @@ class SettingsDialog(QDialog):
         self._install_optional_tts_package(
             test_key="kokoro_install",
             display_name="Kokoro",
-            packages=["kokoro>=0.9.4", "soundfile"],
+            packages=list(optional_deps.KOKORO_INSTALL_PACKAGES),
             button_attr="_kokoro_install_btn",
             status_attr="_kokoro_install_status_lbl",
             success_message="Kokoro installed. Click Test TTS to download/load the voice.",
@@ -3104,12 +3030,51 @@ class SettingsDialog(QDialog):
             from core import optional_deps
 
             command = optional_deps.pip_install_command(packages)
+            log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
             log_prefix = f"[{display_name.lower()} install]"
             print(f"{log_prefix} Running: {' '.join(command)}", flush=True)
             _settings_log.info("Installing %s with command: %s", display_name, command)
-            _progress(f"Installing {display_name}: starting installer.")
+            _progress(f"Installing {display_name}: starting installer. Log: {log_path}")
             tail: list[str] = []
-            last_progress = f"Installing {display_name}: starting installer."
+            last_progress = f"Installing {display_name}: starting installer. Log: {log_path}"
+            started_at = time.monotonic()
+            last_output_at = {"value": started_at}
+            stop_heartbeat = threading.Event()
+            no_output_timeout = _optional_install_no_output_timeout_seconds()
+            stopped_reason = {"value": ""}
+
+            def _write_log(line: str) -> None:
+                try:
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    with log_path.open("a", encoding="utf-8") as handle:
+                        handle.write(line.rstrip() + "\n")
+                except Exception:
+                    pass
+
+            def _heartbeat() -> None:
+                while not stop_heartbeat.wait(20.0):
+                    elapsed = int(time.monotonic() - started_at)
+                    quiet = int(time.monotonic() - last_output_at["value"])
+                    _progress(_optional_install_elapsed_text(display_name, elapsed, quiet, log_path))
+                    if no_output_timeout > 0 and quiet >= no_output_timeout and process.poll() is None:
+                        reason = (
+                            f"Installer produced no output for {_format_duration(quiet)} "
+                            f"after: {tail[-1] if tail else 'starting installer'}"
+                        )
+                        stopped_reason["value"] = reason
+                        _write_log(f"{log_prefix} {reason}; stopping installer.")
+                        _progress(f"Installing {display_name}: stalled; stopping installer. Log: {log_path}.")
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except Exception:
+                            try:
+                                process.kill()
+                            except Exception:
+                                pass
+                        return
+
+            _write_log(f"{log_prefix} Running: {' '.join(command)}")
             try:
                 process = subprocess.Popen(
                     command,
@@ -3122,31 +3087,41 @@ class SettingsDialog(QDialog):
             except Exception as exc:
                 print(f"{log_prefix} Failed to start installer: {exc}", flush=True)
                 _settings_log.exception("%s install could not start installer", display_name)
+                _write_log(f"{log_prefix} Failed to start installer: {exc}")
                 return False, f"{display_name} install failed: {exc}"
             assert process.stdout is not None
             print(f"{log_prefix} installer started with pid {process.pid}", flush=True)
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                print(f"{log_prefix} {line}", flush=True)
-                _settings_log.info("%s install: %s", display_name, line)
-                tail.append(line)
-                tail = tail[-30:]
-                progress_message = _optional_install_progress_text(line, display_name)
-                if progress_message != last_progress:
-                    _progress(progress_message)
-                    last_progress = progress_message
-            returncode = process.wait()
+            _write_log(f"{log_prefix} installer started with pid {process.pid}")
+            threading.Thread(target=_heartbeat, daemon=True, name=f"{display_name.lower()}-install-heartbeat").start()
+            try:
+                for raw_line in process.stdout:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    last_output_at["value"] = time.monotonic()
+                    print(f"{log_prefix} {line}", flush=True)
+                    _write_log(f"{log_prefix} {line}")
+                    _settings_log.info("%s install: %s", display_name, line)
+                    tail.append(line)
+                    tail = tail[-30:]
+                    progress_message = _optional_install_progress_text(line, display_name)
+                    if progress_message != last_progress:
+                        _progress(progress_message)
+                        last_progress = progress_message
+                returncode = process.wait()
+            finally:
+                stop_heartbeat.set()
             if returncode == 0:
                 importlib.invalidate_caches()
                 optional_deps.add_optional_packages_to_path()
                 print(f"{log_prefix} Completed successfully.", flush=True)
+                _write_log(f"{log_prefix} Completed successfully.")
                 return True, success_message
-            detail = "\n".join(tail).strip()
-            if len(detail) > 800:
-                detail = detail[-800:]
-            return False, f"{display_name} install failed: {detail or 'installer exited with an error.'}"
+            detail = _optional_install_failure_detail(tail)
+            if stopped_reason["value"]:
+                detail = stopped_reason["value"]
+            _write_log(f"{log_prefix} Failed with exit code {returncode}: {detail}")
+            return False, f"{display_name} install failed: {detail}"
 
         def _worker() -> None:
             try:
@@ -3421,49 +3396,12 @@ class SettingsDialog(QDialog):
                 break
         return "".join(keys)
 
-    def _context_source_block(self, label: str, key_index: int, *controls: QWidget) -> QFrame:
-        """Create a compact context source block with the overlay key embedded."""
-        frame = QFrame()
-        frame.setObjectName("contextSourceBlock")
-        frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet(
-            """
-            QFrame#contextSourceBlock {
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-            }
-            QFrame#contextSourceBlock QLabel {
-                border: none;
-                background: transparent;
-            }
-            """
-        )
-        frame.setMinimumSize(160, 112)
-        frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        box = QVBoxLayout(frame)
-        box.setContentsMargins(8, 6, 8, 6)
-        box.setSpacing(3)
-        title = QLabel(t(label))
-        title.setStyleSheet("font-weight: 600;")
-        box.addWidget(title)
-        if key_index >= 0:
-            keys = self._intent_context_keys()
-            key_text = keys[key_index] if key_index < len(keys) else ""
-            key_label = QLabel(f"{t('Keys:')} {key_text}")
-            key_label.setStyleSheet("color: palette(placeholder-text);")
-            box.addWidget(key_label)
-        for control in controls:
-            control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            box.addWidget(control)
-        box.addStretch()
-        return frame
-
     def _build_context_controls(
         self,
         *,
-        context_ambient: bool = True,
+        context_ambient: bool = False,
         context_clipboard: bool = False,
-        context_documents_mode: str = "auto",
+        context_documents_mode: str = "off",
         context_browser_mode: str = "off",
         context_github_mode: str = "off",
         context_memory_mode: str = "on",
@@ -3476,112 +3414,19 @@ class SettingsDialog(QDialog):
         Returns (row_widget, controls) where controls holds the ambient checkbox
         and the five mode combos keyed exactly like the caller block dict.
         """
-        context_row = QWidget()
-        context_h = QGridLayout(context_row)
-        context_h.setContentsMargins(0, 0, 0, 0)
-        context_h.setHorizontalSpacing(8)
-        context_h.setVerticalSpacing(6)
-        app_tip = (
-            "App context:\n"
-            "Off - do not include nearby app/window context or open documents.\n"
-            "On - include nearby app/window context only.\n"
-            "On + open docs - include nearby app/window context and read supported open documents.\n"
-            "Let model decide - include nearby app/window context and expose an open-document tool."
+        return context_controls.build_context_controls(
+            intent_context_keys=self._intent_context_keys(),
+            on_changed=self._schedule_warning_marker_refresh,
+            context_ambient=context_ambient,
+            context_clipboard=context_clipboard,
+            context_documents_mode=context_documents_mode,
+            context_browser_mode=context_browser_mode,
+            context_github_mode=context_github_mode,
+            context_memory_mode=context_memory_mode,
+            context_screenshot=context_screenshot,
+            file_access=file_access,
+            screenshot_enabled=screenshot_enabled,
         )
-        clipboard_tip = (
-            "Clipboard:\n"
-            "Off - do not include clipboard text.\n"
-            "On - include clipboard text with this query."
-        )
-        browser_tip = (
-            "Browser/Web:\n"
-            "Off — no web/browser tools.\n"
-            "On — read the current browser page before sending the prompt.\n"
-            "Let model decide — expose web search and browser page fetch tools."
-        )
-        github_tip = (
-            "Git/GitHub:\n"
-            "Off — no git or GitHub tools.\n"
-            "On — read local git status and diff before sending the prompt.\n"
-            "Let model decide — expose git status/diff and GitHub repo/issue tools."
-        )
-        memory_tip = (
-            "Memory:\n"
-            "Off — do not use stored facts for this caller.\n"
-            "On — fetch relevant stored facts before sending the prompt.\n"
-            "Let model decide — expose a memory search tool during the answer."
-        )
-        screenshot_tip = (
-            "Screenshot of your screen:\n"
-            "• Off — never capture.\n"
-            "• On — capture at hotkey time and send it with the query.\n"
-            "• Let model decide — expose a screenshot tool during the answer."
-        )
-        file_tip = (
-            "Local files:\n"
-            "Off - do not expose file tools.\n"
-            "Read only - allow listing and reading configured folders.\n"
-            "Ask before writing - show a diff before edits or creates.\n"
-            "Write automatically - apply edits without asking."
-        )
-        app_combo = _AppContextCombo(context_ambient, context_documents_mode)
-        app_combo.setToolTip(app_tip)
-        clipboard_combo = _BooleanContextCombo(context_clipboard)
-        clipboard_combo.setToolTip(clipboard_tip)
-        browser_combo = _context_mode_combo(context_browser_mode, allow_auto=True)
-        github_combo = _context_mode_combo(context_github_mode, allow_auto=True)
-        memory_combo = _context_mode_combo(context_memory_mode, allow_auto=True, on_value="on")
-        memory_combo.setProperty("legacy_auto_means_on", True)
-        screenshot_combo = _context_mode_combo(context_screenshot, allow_auto=True)
-        if not screenshot_enabled:
-            _set(screenshot_combo, "off")
-            screenshot_combo.setEnabled(False)
-        file_combo = _NoScrollCombo()
-        for label, value in _FILE_ACCESS_OPTIONS:
-            file_combo.addItem(t(label), value)
-        _set(file_combo, normalize_file_access_mode(file_access))
-        title = QLabel(t("Context"))
-        title.setStyleSheet("font-weight: 600; color: palette(placeholder-text);")
-        context_h.addWidget(title, 0, 0, 1, 4)
-        context_h.addWidget(self._context_source_block("App", 0, app_combo), 1, 0)
-        context_h.addWidget(self._context_source_block("Browser/Web", 1, browser_combo), 1, 1)
-        context_h.addWidget(self._context_source_block("Clipboard", 3, clipboard_combo), 1, 2)
-        context_h.addWidget(self._context_source_block("Screenshot", 4, screenshot_combo), 1, 3)
-        context_h.addWidget(self._context_source_block("Git/GitHub", 5, github_combo), 2, 0)
-        context_h.addWidget(self._context_source_block("Memory", 6, memory_combo), 2, 1)
-        context_h.addWidget(self._context_source_block("Local files", 7, file_combo), 2, 2)
-        for column in range(4):
-            context_h.setColumnStretch(column, 1)
-        browser_combo.setToolTip(browser_tip)
-        github_combo.setToolTip(github_tip)
-        memory_combo.setToolTip(memory_tip)
-        screenshot_combo.setToolTip(screenshot_tip)
-        if not screenshot_enabled:
-            screenshot_combo.setToolTip(
-                "Region snips already attach the selected image; extra screenshot context is disabled."
-            )
-        file_combo.setToolTip(file_tip)
-        controls = {
-            "context_ambient": app_combo,
-            "context_clipboard": clipboard_combo,
-            "context_documents_mode": app_combo,
-            "context_browser_mode": browser_combo,
-            "context_github_mode": github_combo,
-            "context_memory_mode": memory_combo,
-            "context_screenshot": screenshot_combo,
-            "file_access": file_combo,
-        }
-        for combo in (
-            app_combo,
-            clipboard_combo,
-            browser_combo,
-            github_combo,
-            memory_combo,
-            screenshot_combo,
-            file_combo,
-        ):
-            combo.currentIndexChanged.connect(lambda _: self._schedule_warning_marker_refresh())
-        return context_row, controls
 
     def _open_tool_access_dialog(self, blk: dict, method_label: str) -> None:
         """Open the per-method Allowed Tools dialog and store the result on blk."""
@@ -3618,9 +3463,9 @@ class SettingsDialog(QDialog):
         paste_back: bool = False,
         custom_key: str = "s",
         custom_label: str = "",
-        context_ambient: bool = True,
+        context_ambient: bool = False,
         context_clipboard: bool = False,
-        context_documents: bool = True,
+        context_documents: bool = False,
         context_tools: bool = False,
         context_documents_mode: str | None = None,
         context_browser_mode: str = "off",
@@ -3937,6 +3782,10 @@ class SettingsDialog(QDialog):
         self._fields["ICON_AUTO_HIDE"].setToolTip(
             "Hide the floating icon when Wisp is idle, then show it again while listening or responding."
         )
+        self._fields["START_ON_LOGIN"] = QCheckBox(t("Start Wisp when you sign in"))
+        self._fields["START_ON_LOGIN"].setToolTip(
+            t("Launch Wisp automatically after you sign in to this computer.")
+        )
         app_language = _NoScrollCombo()
         for label, value in LANGUAGE_OPTIONS:
             app_language.addItem(t(label), value)
@@ -3947,6 +3796,7 @@ class SettingsDialog(QDialog):
             assistant_language.addItem(t(label), value)
         assistant_language_tip = "Preferred response language. System default leaves the prompt unchanged."
         self._fields["ASSISTANT_LANGUAGE"] = assistant_language
+        assistant_language.currentIndexChanged.connect(self._on_assistant_language_changed)
 
         self._fields["ICON_SIZE"] = QLineEdit()
         self._fields["ICON_SIZE"].setPlaceholderText(t("e.g. 60"))
@@ -3992,6 +3842,7 @@ class SettingsDialog(QDialog):
         f.addRow(_tooltip_label("Accent color", theme_color_tip), _accent_row)
         f.addRow("", self._fields["TRUST_PRIVACY_MODE"])
         f.addRow("", self._fields["ICON_AUTO_HIDE"])
+        f.addRow("", self._fields["START_ON_LOGIN"])
         f.addRow(_tooltip_label("App language", app_language_tip), self._fields["APP_LANGUAGE"])
         f.addRow(_tooltip_label("Assistant language", assistant_language_tip), self._fields["ASSISTANT_LANGUAGE"])
         f.addRow(_sep(), _sep())
@@ -4204,6 +4055,49 @@ class SettingsDialog(QDialog):
         if field is not None:
             field.setVisible(visible)
 
+    def _on_assistant_language_changed(self, *_args) -> None:
+        """Refresh model-facing built-in prompts when the assistant language changes."""
+        if getattr(self, "_loading_values", False):
+            return
+        import config as cfg
+
+        assistant_language = _get(self._fields["ASSISTANT_LANGUAGE"])
+        chat_field = self._fields.get("CHAT_ELABORATE_PROMPT")
+        if chat_field is not None:
+            _set(
+                chat_field,
+                cfg.localize_chat_elaborate_prompt_if_default(
+                    _get(chat_field),
+                    assistant_language,
+                ),
+            )
+
+        system_field = self._fields.get("SYSTEM_PROMPT_UTILITY")
+        if system_field is not None:
+            _set(
+                system_field,
+                cfg.localize_system_prompt_utility_if_default(
+                    _get(system_field),
+                    assistant_language,
+                ),
+            )
+
+        for i, blk in enumerate(getattr(self, "_caller_blocks", [])):
+            for j, row in enumerate(blk.get("intent_rows", [])):
+                intent = cfg.localize_intent_if_default(
+                    i,
+                    j,
+                    {
+                        "key": _get(row["key"]),
+                        "label": _get(row["label"]),
+                        "prompt": _get(row["prompt"]),
+                    },
+                    assistant_language,
+                )
+                row["key"].setText(str(intent.get("key", "")))
+                row["label"].setText(str(intent.get("label", "")))
+                _set(row["prompt"], str(intent.get("prompt", "")))
+
     def _tab_advanced(self) -> QWidget:
         """Handle tab advanced for settings dialog."""
         scroll = QScrollArea()
@@ -4304,7 +4198,7 @@ class SettingsDialog(QDialog):
         timing_f.setContentsMargins(0, 0, 0, 0)
         self._fields["BUBBLE_REVEAL_WPM"] = QLineEdit()
         self._fields["BUBBLE_REVEAL_WPM"].setPlaceholderText("e.g. 170")
-        reveal_wpm_tip = "Words per minute used to reveal text while generated speech is playing."
+        reveal_wpm_tip = "Words per minute used for the normal bubble reveal, including TTS providers without word timestamps."
         self._fields["BUBBLE_HOLD_REVEAL_WPM"] = QLineEdit()
         self._fields["BUBBLE_HOLD_REVEAL_WPM"].setPlaceholderText("e.g. 480")
         hold_reveal_wpm_tip = "Words per minute used when showing text without generated speech."
@@ -4866,6 +4760,17 @@ class SettingsDialog(QDialog):
             ("xai",        "XAI_API_KEY"),
             ("together",   "TOGETHER_API_KEY"),
             ("cerebras",   "CEREBRAS_API_KEY"),
+            ("zai",        "ZAI_API_KEY"),
+            ("nvidia",     "NVIDIA_API_KEY"),
+            ("sambanova",  "SAMBANOVA_API_KEY"),
+            ("github_models", "GITHUB_MODELS_API_KEY"),
+            ("huggingface", "HUGGINGFACE_API_KEY"),
+            ("chutes",     "CHUTES_API_KEY"),
+            ("vercel",     "VERCEL_API_KEY"),
+            ("fireworks",  "FIREWORKS_API_KEY"),
+            ("cohere",     "COHERE_API_KEY"),
+            ("ai21",       "AI21_API_KEY"),
+            ("nebius",     "NEBIUS_API_KEY"),
         ]
         for provider, key_name in _LLM_KEY_MAP:
             if self._secret_configured_fast(key_name):
@@ -5029,7 +4934,7 @@ class SettingsDialog(QDialog):
         sb = self._snip_block
         legacy_snip_documents = self._env.get(
             "SNIP_CONTEXT_DOCUMENTS",
-            str(sc.get("context_documents", getattr(cfg, "SNIP_CONTEXT_DOCUMENTS", True))),
+            str(sc.get("context_documents", getattr(cfg, "SNIP_CONTEXT_DOCUMENTS", False))),
         ).lower() == "true"
         legacy_snip_tools = self._env.get(
             "SNIP_CONTEXT_TOOLS",
@@ -5041,7 +4946,7 @@ class SettingsDialog(QDialog):
             or ("auto" if legacy_snip_documents else ("model" if legacy_snip_tools else "off")),
         )
         sb["context_ambient"].setChecked(
-            self._env.get("SNIP_CONTEXT_AMBIENT", str(sc.get("context_ambient", True))).lower() == "true"
+            self._env.get("SNIP_CONTEXT_AMBIENT", str(sc.get("context_ambient", False))).lower() == "true"
         )
         sb["context_clipboard"].setChecked(
             self._env.get("SNIP_CONTEXT_CLIPBOARD", str(sc.get("context_clipboard", False))).lower() == "true"
@@ -5125,7 +5030,7 @@ class SettingsDialog(QDialog):
                 ))
             legacy_documents = self._env.get(
                 f"CALLER_{n}_CONTEXT_DOCUMENTS",
-                str(cr.get("context_documents", True)),
+                str(cr.get("context_documents", False)),
             ).lower() == "true"
             legacy_tools = self._env.get(
                 f"CALLER_{n}_CONTEXT_TOOLS",
@@ -5164,7 +5069,7 @@ class SettingsDialog(QDialog):
                 paste_back = self._env.get(f"CALLER_{n}_PASTE_BACK", str(cr.get("paste_back", False))).lower() == "true",
                 custom_key = self._env.get(f"CALLER_{n}_CUSTOM_KEY", cr.get("custom_key", "s")),
                 custom_label = self._env.get(f"CALLER_{n}_CUSTOM_LABEL", cr.get("custom_label", "")),
-                context_ambient = self._env.get(f"CALLER_{n}_CONTEXT_AMBIENT", str(cr.get("context_ambient", True))).lower() == "true",
+                context_ambient = self._env.get(f"CALLER_{n}_CONTEXT_AMBIENT", str(cr.get("context_ambient", False))).lower() == "true",
                 context_clipboard = self._env.get(f"CALLER_{n}_CONTEXT_CLIPBOARD", str(cr.get("context_clipboard", False))).lower() == "true",
                 context_documents = documents_mode == "auto",
                 context_tools = any(mode == "model" for mode in (documents_mode, browser_mode, github_mode, memory_mode)),
@@ -5185,14 +5090,14 @@ class SettingsDialog(QDialog):
         _set(self._fields["DICTATE_MODE"], self._env.get("DICTATE_MODE", cfg.DICTATE_MODE))
         vb = self._voice_block
         vb["context_ambient"].setChecked(
-            self._env.get("VOICE_CONTEXT_AMBIENT", str(vc.get("context_ambient", True))).lower() == "true"
+            self._env.get("VOICE_CONTEXT_AMBIENT", str(vc.get("context_ambient", False))).lower() == "true"
         )
         vb["context_clipboard"].setChecked(
             self._env.get("VOICE_CONTEXT_CLIPBOARD", str(vc.get("context_clipboard", False))).lower() == "true"
         )
         _set(
             vb["context_documents_mode"],
-            self._env.get("VOICE_CONTEXT_DOCUMENTS_MODE", vc.get("context_documents_mode") or "auto"),
+            self._env.get("VOICE_CONTEXT_DOCUMENTS_MODE", vc.get("context_documents_mode") or "off"),
         )
         _set(
             vb["context_browser_mode"],
@@ -5246,6 +5151,10 @@ class SettingsDialog(QDialog):
         self._theme_shown_mode = ""
         self._show_theme_template(self._theme_edit_mode())
         self._fields["ICON_AUTO_HIDE"].setChecked(auto_hide)  # type: ignore
+        self._fields["START_ON_LOGIN"].setChecked(  # type: ignore
+            self._env.get("START_ON_LOGIN", str(getattr(cfg, "START_ON_LOGIN", False))).lower()
+            == "true"
+        )
         self._fields["TRUST_PRIVACY_MODE"].setChecked(
             self._env.get("TRUST_PRIVACY_MODE", str(getattr(cfg, "TRUST_PRIVACY_MODE", True))).lower()
             == "true"
@@ -5312,7 +5221,10 @@ class SettingsDialog(QDialog):
         _set(self._fields["TTS_PLAYBACK_RATE"], self._env.get("TTS_PLAYBACK_RATE", str(cfg.TTS_PLAYBACK_RATE)))
         _set(self._fields["TTS_HOLD_PLAYBACK_RATE"], self._env.get("TTS_HOLD_PLAYBACK_RATE", str(cfg.TTS_HOLD_PLAYBACK_RATE)))
 
-        util_val = self._env.get("SYSTEM_PROMPT_UTILITY", cfg.SYSTEM_PROMPT_UTILITY)
+        util_val = cfg.localize_system_prompt_utility_if_default(
+            self._env.get("SYSTEM_PROMPT_UTILITY", cfg.SYSTEM_PROMPT_UTILITY),
+            assistant_language,
+        )
         self._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(util_val)  # type: ignore
         self._refresh_capability_warning_markers()
         self._loading_values = False
@@ -5913,15 +5825,6 @@ class SettingsDialog(QDialog):
                 apply_app_theme()
                 self._apply_dialog_theme()
                 localize_widget_tree(self)
-                # Silently (re)bake voice-matched filler clips for the now-current
-                # TTS settings. No-ops when the cache already matches the voice id
-                # or when TTS is disabled. Background thread so Apply stays snappy
-                # and the user is never prompted.
-                try:
-                    from core import filler_bake
-                    filler_bake.bake_in_background()
-                except Exception:
-                    pass
                 if self._on_apply:
                     new_env = _read_env()
                     changed_keys = sorted(
@@ -6026,7 +5929,7 @@ class SettingsDialog(QDialog):
             },
             "App": {
                 "THEME_MODE", "DARK_MODE", "TRUST_PRIVACY_MODE",
-                "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE",
+                "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE", "START_ON_LOGIN",
                 "THEME_DARK_BG", "THEME_DARK_SURFACE", "THEME_DARK_TEXT", "THEME_DARK_ACCENT",
                 "THEME_LIGHT_BG", "THEME_LIGHT_SURFACE", "THEME_LIGHT_TEXT", "THEME_LIGHT_ACCENT",
                 "APP_LANGUAGE", "ASSISTANT_LANGUAGE",
@@ -6172,7 +6075,9 @@ class SettingsDialog(QDialog):
             "This will permanently:\n"
             "• DELETE every API key from your OS keychain "
             "(Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, "
-            "xAI, Together, Cerebras, Cartesia, ElevenLabs, custom)\n"
+            "xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, "
+            "Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, "
+            "Cartesia, ElevenLabs, custom)\n"
             "• ERASE all saved settings (models, hotkeys, prompts, theme, "
             "callers, and everything else in your .env)\n"
             "• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)\n\n"
@@ -6325,6 +6230,11 @@ class SettingsDialog(QDialog):
             assistant_language,
         )
         _set(self._fields["CHAT_ELABORATE_PROMPT"], chat_elaborate_prompt)
+        system_prompt_utility = cfg.localize_system_prompt_utility_if_default(
+            self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore[attr-defined]
+            assistant_language,
+        )
+        _set(self._fields["SYSTEM_PROMPT_UTILITY"], system_prompt_utility)
 
         vals = {
             "LLM_PROVIDER":      llm_p,
@@ -6404,6 +6314,7 @@ class SettingsDialog(QDialog):
             "THEME_MODE":       self._fields["THEME_MODE"].currentData(),  # type: ignore[attr-defined]
             "TRUST_PRIVACY_MODE": str(self._fields["TRUST_PRIVACY_MODE"].isChecked()),  # type: ignore
             "ICON_AUTO_HIDE":    str(self._fields["ICON_AUTO_HIDE"].isChecked()),  # type: ignore
+            "START_ON_LOGIN": str(self._fields["START_ON_LOGIN"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
             "CHAT_ELABORATE_PROMPT": chat_elaborate_prompt,
             "APP_LANGUAGE": _get(self._fields["APP_LANGUAGE"]),
@@ -6427,7 +6338,7 @@ class SettingsDialog(QDialog):
             ),
             "TTS_PLAYBACK_RATE": _get(self._fields["TTS_PLAYBACK_RATE"]),
             "TTS_HOLD_PLAYBACK_RATE": _get(self._fields["TTS_HOLD_PLAYBACK_RATE"]),
-            "SYSTEM_PROMPT_UTILITY": self._fields["SYSTEM_PROMPT_UTILITY"].toPlainText(),  # type: ignore
+            "SYSTEM_PROMPT_UTILITY": system_prompt_utility,
         }
         vals.update(self._snip_context_values())
         vals.update(theme_vals)
@@ -6534,11 +6445,26 @@ class SettingsDialog(QDialog):
         # The Chat model is combined with the Main LLM, so purge any stale
         # CHAT_LLM_* keys a previous version may have written.
         vals.update(self._preset_values_to_persist(vals))
+        startup_error = ""
+        try:
+            from core.system.autostart import sync_start_on_login
+
+            sync_start_on_login(str(vals.get("START_ON_LOGIN", "")).lower() == "true")
+        except Exception as exc:  # noqa: BLE001 - settings still save; startup can be retried.
+            startup_error = str(exc) or type(exc).__name__
         _write_env(
             vals,
             remove_keys=set(secret_store.API_KEY_NAMES)
             | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS", "TOOL_FILE_MODE"},
         )
+        if startup_error:
+            QMessageBox.warning(
+                self,
+                t("Could not update startup setting"),
+                t(
+                    "Your preference was saved, but Wisp could not update the operating system startup entry:\n\n{error}"
+                ).format(error=startup_error),
+            )
 
         # Honor the user's choices, but warn if their model setup probably can't
         # serve them (screenshot → vision; tools → tool-calling provider).
@@ -6564,6 +6490,17 @@ _PROVIDER_KEY_NAMES: dict[str, str] = {
     "xai":        "XAI_API_KEY",
     "together":   "TOGETHER_API_KEY",
     "cerebras":   "CEREBRAS_API_KEY",
+    "zai":        "ZAI_API_KEY",
+    "nvidia":     "NVIDIA_API_KEY",
+    "sambanova":  "SAMBANOVA_API_KEY",
+    "github_models": "GITHUB_MODELS_API_KEY",
+    "huggingface": "HUGGINGFACE_API_KEY",
+    "chutes":     "CHUTES_API_KEY",
+    "vercel":     "VERCEL_API_KEY",
+    "fireworks":  "FIREWORKS_API_KEY",
+    "cohere":     "COHERE_API_KEY",
+    "ai21":       "AI21_API_KEY",
+    "nebius":     "NEBIUS_API_KEY",
     "custom":     "CUSTOM_API_KEY",
     # ollama: no key
 }
@@ -6581,6 +6518,17 @@ _MODEL_HINTS: dict[str, str] = {
     "xai":        "e.g. grok-3",
     "together":   "e.g. meta-llama/Llama-3-70b-chat-hf",
     "cerebras":   "e.g. llama-3.3-70b",
+    "zai":        "e.g. glm-4.7-flash",
+    "nvidia":     "e.g. meta/llama-3.3-70b-instruct",
+    "sambanova":  "e.g. Meta-Llama-3.1-8B-Instruct",
+    "github_models": "e.g. openai/gpt-4.1-mini",
+    "huggingface": "e.g. meta-llama/Llama-3.1-8B-Instruct",
+    "chutes":     "e.g. deepseek-ai/DeepSeek-V3-0324",
+    "vercel":     "e.g. openai/gpt-4o-mini",
+    "fireworks":  "e.g. accounts/fireworks/models/llama-v3p1-8b-instruct",
+    "cohere":     "e.g. command-r-plus",
+    "ai21":       "e.g. jamba-large",
+    "nebius":     "e.g. meta-llama/Meta-Llama-3.1-8B-Instruct",
     "ollama":     "e.g. llama3  (model pulled locally)",
     "custom":     "model name for your custom endpoint",
 }
@@ -6665,6 +6613,59 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "llama3.1-8b",
         "qwen-3-32b",
     ],
+    "zai": [
+        "glm-4.7-flash",
+        "glm-5.2",
+    ],
+    "nvidia": [
+        "meta/llama-3.3-70b-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        "mistralai/mixtral-8x7b-instruct-v0.1",
+    ],
+    "sambanova": [
+        "Meta-Llama-3.1-8B-Instruct",
+        "Meta-Llama-3.1-70B-Instruct",
+        "Meta-Llama-3.3-70B-Instruct",
+    ],
+    "github_models": [
+        "openai/gpt-4.1-mini",
+        "openai/gpt-4o-mini",
+        "meta/Llama-3.3-70B-Instruct",
+    ],
+    "huggingface": [
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "Qwen/Qwen2.5-72B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.3",
+    ],
+    "chutes": [
+        "deepseek-ai/DeepSeek-V3-0324",
+        "Qwen/Qwen3-32B",
+        "meta-llama/Llama-3.3-70B-Instruct",
+    ],
+    "vercel": [
+        "openai/gpt-4o-mini",
+        "anthropic/claude-3-5-haiku",
+        "xai/grok-3-mini",
+    ],
+    "fireworks": [
+        "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "accounts/fireworks/models/mixtral-8x7b-instruct",
+    ],
+    "cohere": [
+        "command-r-plus",
+        "command-r",
+        "command-a-03-2025",
+    ],
+    "ai21": [
+        "jamba-large",
+        "jamba-mini",
+    ],
+    "nebius": [
+        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "meta-llama/Meta-Llama-3.1-70B-Instruct",
+        "Qwen/Qwen2.5-72B-Instruct",
+    ],
     "ollama": [
         "llama3",
         "llama3:70b",
@@ -6689,6 +6690,17 @@ _PROVIDER_LABELS: dict[str, str] = {
     "xai":        "xAI (Grok)",
     "together":   "Together AI",
     "cerebras":   "Cerebras",
+    "zai":        "Z.AI / GLM",
+    "nvidia":     "NVIDIA",
+    "sambanova":  "SambaNova",
+    "github_models": "GitHub Models",
+    "huggingface": "Hugging Face",
+    "chutes":     "Chutes",
+    "vercel":     "Vercel AI Gateway",
+    "fireworks":  "Fireworks",
+    "cohere":     "Cohere",
+    "ai21":       "AI21",
+    "nebius":     "Nebius",
     "ollama":     "Ollama (local)",
     "custom":     "Custom (OpenAI-compatible)",
     "cartesia":   "Cartesia",
@@ -6862,8 +6874,70 @@ def _optional_install_progress_text(line: str, display_name: str) -> str:
     elif "successfully installed" in lower:
         detail = "finalizing"
     else:
-        detail = "working - see terminal for full installer log"
+        detail = "working - installer is still running"
     return f"Installing {display_name}: {detail}."
+
+
+def _optional_install_elapsed_text(display_name: str, elapsed_seconds: int, quiet_seconds: int, log_path: Path) -> str:
+    """Return a heartbeat status while an optional dependency install is running."""
+    elapsed = _format_duration(elapsed_seconds)
+    if quiet_seconds >= 60:
+        detail = f"still running for {elapsed}; no installer output for {_format_duration(quiet_seconds)}. Log: {log_path}"
+    else:
+        detail = f"still running for {elapsed}. Log: {log_path}"
+    return f"Installing {display_name}: {detail}."
+
+
+def _optional_install_log_path(display_name: str, optional_packages_dir: Path) -> Path:
+    """Return a writable installer log path for optional dependency installs."""
+    root = os.environ.get("WISP_RUN_LOG_DIR")
+    if root:
+        base = Path(root).expanduser() / "installers"
+    else:
+        base = optional_packages_dir / "_logs"
+    slug = re.sub(r"[^a-z0-9]+", "-", display_name.lower()).strip("-") or "optional-package"
+    return base / f"{slug}-install.log"
+
+
+def _optional_install_no_output_timeout_seconds() -> int:
+    """Return how long an optional installer may be silent before Wisp stops it."""
+    raw = os.environ.get("WISP_OPTIONAL_INSTALL_NO_OUTPUT_TIMEOUT_SECONDS", "300")
+    try:
+        return max(0, int(float(raw)))
+    except (TypeError, ValueError):
+        return 300
+
+
+def _format_duration(seconds: int) -> str:
+    """Format a short elapsed duration."""
+    seconds = max(0, int(seconds))
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def _optional_install_failure_detail(lines: list[str]) -> str:
+    """Return a compact failure detail from installer output."""
+    for line in reversed(lines):
+        text = _collapse_spaces(line)
+        if not text:
+            continue
+        lower = text.lower()
+        if lower.startswith("[notice]"):
+            continue
+        if len(text) > 500:
+            text = text[-500:]
+        return f"Last installer message: {text}"
+    return "Installer exited with an error before reporting details."
+
+
+def _collapse_spaces(text: str) -> str:
+    """Collapse whitespace from subprocess output."""
+    return " ".join(str(text or "").split())
 
 
 def _translate_status_message(message: str) -> str:
