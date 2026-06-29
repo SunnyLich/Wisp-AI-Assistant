@@ -97,7 +97,7 @@ keyboard==0.13.5
     # via -r requirements.txt
 keyring==25.7.0
     # via -r requirements.txt
-liteparse==2.2.1
+liteparse==2.3.0
     # via -r requirements.txt
 lxml==6.1.1
     # via

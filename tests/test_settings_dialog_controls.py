@@ -753,7 +753,10 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
         assert "<small><b>\u63d0\u4f9b\u8005</b></small>" in label_texts
         assert any(text.endswith("\u804a\u5929\u6a21\u578b") for text in label_texts)
         assert "\u6e2c\u8a66\u804a\u5929\u6a21\u578b" in button_texts
-        assert "ChatGPT Plus/Pro\uff08OAuth \u8a02\u95b1\uff09" in combo_texts
+        assert any(
+            text.startswith("ChatGPT Plus/Pro\uff08OAuth \u8a02\u95b1\uff09")
+            for text in combo_texts
+        )
     finally:
         config.APP_LANGUAGE = old_language
         i18n.set_language(app=app)

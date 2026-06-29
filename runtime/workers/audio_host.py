@@ -488,14 +488,6 @@ HANDLERS = {
 
 def main() -> int:
     """Handle main for runtime workers audio host."""
-    # Import TTS on the worker main thread so threaded IPC handlers do not pay
-    # the first import cost while the host is blocked in its request loop.
-    import config
-    from core import tts as _tts
-
-    if config.TTS_PROVIDER.lower() == "kokoro" and _tts.kokoro_installed():
-        _tts._import_kokoro_pipeline()
-
     return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink, threaded=True)
 
 

@@ -72,4 +72,4 @@ jobs:
         run: python -m compileall -q core ui runtime config.py
 
       - name: Run test suite
-        run: pytest -q -k "not platform_macos"
+        run: pytest -ra --tb=short -k "not platform_macos"

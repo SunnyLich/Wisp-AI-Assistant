@@ -31,6 +31,36 @@ def _run_log_dir(monkeypatch, request):
         pass
 
 
+def test_main_starts_ipc_before_loading_tts_stack(monkeypatch):
+    """The supervisor ping must be available before slow local TTS imports."""
+    import builtins
+
+    calls: list[dict[str, object]] = []
+    real_import = builtins.__import__
+
+    def fake_run_host(**kwargs):
+        calls.append(kwargs)
+        return 0
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "config" or name == "core.tts" or (name == "core" and "tts" in fromlist):
+            raise AssertionError(f"startup imported {name!r} before IPC host")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(audio_host, "run_host", fake_run_host)
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    assert audio_host.main() == 0
+    assert calls == [
+        {
+            "role": "audio",
+            "handlers": audio_host.HANDLERS,
+            "event_sink_setter": audio_host.set_event_sink,
+            "threaded": True,
+        }
+    ]
+
+
 def test_tts_synthesize_uses_provider_pcm_format_for_kokoro(monkeypatch):
     """Kokoro streams int16 PCM, so the audio worker must not parse it as float32."""
     import config
