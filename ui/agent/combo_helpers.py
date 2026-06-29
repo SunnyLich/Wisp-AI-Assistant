@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QComboBox
 
-from ui.i18n import t
+from ui.i18n import COMBO_I18N_SOURCE_ROLE, t
 
-I18N_SOURCE_ROLE = 0x0100 + 1
+I18N_SOURCE_ROLE = COMBO_I18N_SOURCE_ROLE
 AGENT_ROLE_OPTIONS = (
     "Coordinator",
     "Planner",

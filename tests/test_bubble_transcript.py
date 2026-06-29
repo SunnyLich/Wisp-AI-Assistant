@@ -102,7 +102,7 @@ def test_final_only_reply_starts_visible_at_beginning():
     text = (
         "I don't have the previous file-operation details in this chat, so I can't safely make a change yet. "
         "Please resend the requested change and the target file path under: "
-        r"`C:\Users\sunny\Documents\GitHub-CodeBase\Python-AI-assistant-overlay\model_files`"
+        r"`C:\Users\TestUser\Documents\ExampleProject\model_files`"
     )
 
     try:
@@ -258,7 +258,7 @@ def test_windows_paths_are_breakable_bubble_units():
     from ui.bubble import SpeechBubble
 
     units = SpeechBubble._wrap_units(
-        r"C:\Users\sunny\Documents\GitHub-CodeBase\Python-AI-assistant-overlay\model_files"
+        r"C:\Users\TestUser\Documents\ExampleProject\model_files"
     )
 
     assert len(units) > 1

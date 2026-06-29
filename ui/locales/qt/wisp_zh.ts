@@ -3810,6 +3810,62 @@ Continue?</source>
       <translation>正在检查……</translation>
     </message>
     <message>
+      <source>Apply update</source>
+      <translation>应用更新</translation>
+    </message>
+    <message>
+      <source>Apply the downloaded update and restart Wisp.</source>
+      <translation>应用已下载的更新并重启 Wisp。</translation>
+    </message>
+    <message>
+      <source>Update check failed: {error}</source>
+      <translation>检查更新失败：{error}</translation>
+    </message>
+    <message>
+      <source>Version {version} is available.</source>
+      <translation>版本 {version} 可用。</translation>
+    </message>
+    <message>
+      <source>Version {version} is available, but no {platform} build was published.</source>
+      <translation>版本 {version} 可用，但未发布 {platform} 构建。</translation>
+    </message>
+    <message>
+      <source>Update download failed: {error}</source>
+      <translation>下载更新失败：{error}</translation>
+    </message>
+    <message>
+      <source>Update downloaded. Apply it when you are ready to restart Wisp.</source>
+      <translation>更新已下载。准备重启 Wisp 时即可应用。</translation>
+    </message>
+    <message>
+      <source>Apply the downloaded update now?</source>
+      <translation>现在应用已下载的更新吗？</translation>
+    </message>
+    <message>
+      <source>Wisp will close, install the update, and restart.</source>
+      <translation>Wisp 将关闭、安装更新并重启。</translation>
+    </message>
+    <message>
+      <source>Apply and restart</source>
+      <translation>应用并重启</translation>
+    </message>
+    <message>
+      <source>Not now</source>
+      <translation>暂不</translation>
+    </message>
+    <message>
+      <source>Applying...</source>
+      <translation>正在应用……</translation>
+    </message>
+    <message>
+      <source>Applying update. Wisp will restart shortly.</source>
+      <translation>正在应用更新。Wisp 即将重启。</translation>
+    </message>
+    <message>
+      <source>Could not apply update: {error}</source>
+      <translation>无法应用更新：{error}</translation>
+    </message>
+    <message>
       <source>Could not erase the settings file:
 {error}</source>
       <translation>无法删除设置文件：

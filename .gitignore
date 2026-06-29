@@ -13,11 +13,14 @@ private/
 secrets.*
 
 # Local/generated assets
-doll/
-tmp_debug_agent/
-model_files/
-addon_data/
-.understand-anything/
+/doll/
+/tmp_debug_agent/
+/model_files/
+/addon_data/
+/python_packages/
+/.understand-anything/
+/.agents/
+/.codex/
 
 # Local planning docs (living, not for VCS)
 MACOS_NATIVE_PLAN.md
@@ -26,19 +29,22 @@ AUTO_AGENT_TOOL_CAPABILITY_PLAN.md
 docs/OS_TEST_CHECKLIST.md
 Wisp Website/
 # Memory (vector store + fallback JSON; contains personal user data)
-memory/
+memory/*
+!memory/
 !memory/.gitkeep
 
 # Persisted chat history + project definitions (personal user data)
-chats/
+/chats/
 
 # Python
 __pycache__/
 .pytest_cache/
 .pytest-tmp/
+.pytest-tmp-*/
 .pytest_tmp/
 .tmp/
 .tmp_pytest/
+.tmp_bytest/
 .mypy_cache/
 .ruff_cache/
 .uv-cache/

@@ -41,7 +41,8 @@ _LANGUAGE_ALIASES = {
 _SUPPORTED_LANGUAGES = {"en", "zh", "zh-Hant", "es", "fr"}
 _QT_CONTEXT = "Wisp"
 _QT_LOCALES_DIR = Path(__file__).with_name("locales") / "qt"
-_COMBO_ORIGINAL_TEXT_ROLE = 0x0100 + 1000
+COMBO_I18N_SOURCE_ROLE = 0x0100 + 1000
+_COMBO_ORIGINAL_TEXT_ROLE = COMBO_I18N_SOURCE_ROLE
 
 _qt_translator: Any = None
 _qt_translator_language = ""

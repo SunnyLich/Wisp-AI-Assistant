@@ -3810,6 +3810,62 @@ Continuar?</translation>
       <translation>Comprobando...</translation>
     </message>
     <message>
+      <source>Apply update</source>
+      <translation>Aplicar actualización</translation>
+    </message>
+    <message>
+      <source>Apply the downloaded update and restart Wisp.</source>
+      <translation>Aplica la actualización descargada y reinicia Wisp.</translation>
+    </message>
+    <message>
+      <source>Update check failed: {error}</source>
+      <translation>Error al buscar actualizaciones: {error}</translation>
+    </message>
+    <message>
+      <source>Version {version} is available.</source>
+      <translation>La versión {version} está disponible.</translation>
+    </message>
+    <message>
+      <source>Version {version} is available, but no {platform} build was published.</source>
+      <translation>La versión {version} está disponible, pero no se publicó una compilación para {platform}.</translation>
+    </message>
+    <message>
+      <source>Update download failed: {error}</source>
+      <translation>Error al descargar la actualización: {error}</translation>
+    </message>
+    <message>
+      <source>Update downloaded. Apply it when you are ready to restart Wisp.</source>
+      <translation>Actualización descargada. Aplícala cuando estés listo para reiniciar Wisp.</translation>
+    </message>
+    <message>
+      <source>Apply the downloaded update now?</source>
+      <translation>¿Aplicar ahora la actualización descargada?</translation>
+    </message>
+    <message>
+      <source>Wisp will close, install the update, and restart.</source>
+      <translation>Wisp se cerrará, instalará la actualización y se reiniciará.</translation>
+    </message>
+    <message>
+      <source>Apply and restart</source>
+      <translation>Aplicar y reiniciar</translation>
+    </message>
+    <message>
+      <source>Not now</source>
+      <translation>Ahora no</translation>
+    </message>
+    <message>
+      <source>Applying...</source>
+      <translation>Aplicando...</translation>
+    </message>
+    <message>
+      <source>Applying update. Wisp will restart shortly.</source>
+      <translation>Aplicando la actualización. Wisp se reiniciará en breve.</translation>
+    </message>
+    <message>
+      <source>Could not apply update: {error}</source>
+      <translation>No se pudo aplicar la actualización: {error}</translation>
+    </message>
+    <message>
       <source>Could not erase the settings file:
 {error}</source>
       <translation>No se pudo borrar el archivo de configuración:

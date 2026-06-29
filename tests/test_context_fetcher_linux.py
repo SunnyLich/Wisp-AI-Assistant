@@ -28,7 +28,7 @@ def linux_context_fetcher():
 def test_kwrite_window_resolves_open_file_by_pid(linux_context_fetcher, monkeypatch):
     """Verify kwrite window resolves open file by pid behavior."""
     cf = linux_context_fetcher
-    path = "/home/alvinli/Documents/Summary.txt"
+    path = "/home/sampleuser/Documents/Summary.txt"
     win = cf.WindowInfo(
         title="Summary.txt \u2014 KWrite",
         process_name="Summary.txt \u2014 KWrite",
@@ -45,7 +45,7 @@ def test_kwrite_window_resolves_open_file_by_pid(linux_context_fetcher, monkeypa
 def test_kate_process_title_resolves_open_file_by_pid(linux_context_fetcher, monkeypatch):
     """Verify kate process title resolves open file by pid behavior."""
     cf = linux_context_fetcher
-    path = "/home/alvinli/Documents/Notes.md"
+    path = "/home/sampleuser/Documents/Notes.md"
     win = cf.WindowInfo(title="Notes.md", process_name="kate", pid=202)
 
     monkeypatch.setattr(cf, "_linux_open_files_for_pid", lambda _pid: [path])

@@ -90,7 +90,9 @@ The workflow builds:
 After all platform jobs finish, the workflow creates or updates a draft GitHub
 Release and uploads `wisp-release-manifest.json`. The Settings update button
 uses that manifest to find the newest build for the current platform, verify
-the SHA256 hash, and open the downloaded installer/archive.
+the SHA256 hash, download the matching artifact, and then apply it through a
+small helper process when the user chooses **Apply update**. The helper waits
+for Wisp to exit, replaces the packaged app folder, and restarts Wisp.
 
 Manual platform build entry points:
 

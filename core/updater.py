@@ -7,8 +7,10 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -212,3 +214,191 @@ def download_update(asset: UpdateAsset, target_dir: Path | None = None, timeout:
         tmp_path.unlink(missing_ok=True)
         raise
     return destination
+
+
+def _quoted_ps(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _quoted_sh(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def install_root() -> Path:
+    """Return the packaged app root that should be replaced by an update."""
+    if not getattr(sys, "frozen", False):
+        raise UpdateError("Automatic update apply is only available in packaged Wisp builds.")
+
+    executable = Path(sys.executable).resolve()
+    if sys.platform == "darwin":
+        for parent in executable.parents:
+            if parent.suffix == ".app":
+                return parent
+    return executable.parent
+
+
+def _archive_root_name(path: Path) -> str:
+    lower = path.name.lower()
+    if lower.endswith(".tar.gz") or lower.endswith(".tgz"):
+        return "Wisp"
+    if lower.endswith(".zip"):
+        try:
+            with zipfile.ZipFile(path) as archive:
+                roots = {
+                    part
+                    for name in archive.namelist()
+                    if (part := name.strip("/").split("/", 1)[0])
+                }
+        except zipfile.BadZipFile as exc:
+            raise UpdateError(f"Update archive is not a valid zip file: {exc}") from exc
+        if len(roots) == 1:
+            return next(iter(roots))
+    return "Wisp.app" if sys.platform == "darwin" else "Wisp"
+
+
+def _write_windows_apply_script(update_path: Path, root: Path, restart_target: Path, pid: int) -> Path:
+    script_path = UPDATE_DOWNLOAD_DIR / f"apply-wisp-update-{pid}.ps1"
+    archive_root = _archive_root_name(update_path)
+    script = f"""$ErrorActionPreference = "Stop"
+$pidToWait = {pid}
+$archive = {_quoted_ps(str(update_path))}
+$installRoot = {_quoted_ps(str(root))}
+$restartTarget = {_quoted_ps(str(restart_target))}
+$archiveRootName = {_quoted_ps(archive_root)}
+$workRoot = Join-Path (Split-Path -LiteralPath $archive -Parent) ("apply-" + [guid]::NewGuid().ToString())
+$extractRoot = Join-Path $workRoot "extract"
+$backupRoot = "$installRoot.previous-update"
+
+function Restore-Backup {{
+    if ((Test-Path -LiteralPath $backupRoot) -and -not (Test-Path -LiteralPath $installRoot)) {{
+        Rename-Item -LiteralPath $backupRoot -NewName (Split-Path -Leaf $installRoot)
+    }}
+}}
+
+try {{
+    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+    try {{ Wait-Process -Id $pidToWait -Timeout 90 -ErrorAction SilentlyContinue }} catch {{ }}
+    Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
+    $candidate = Join-Path $extractRoot $archiveRootName
+    if (-not (Test-Path -LiteralPath $candidate)) {{
+        $dirs = @(Get-ChildItem -LiteralPath $extractRoot -Directory)
+        if ($dirs.Count -eq 1) {{
+            $candidate = $dirs[0].FullName
+        }} else {{
+            throw "Could not find the extracted Wisp app folder."
+        }}
+    }}
+    if (Test-Path -LiteralPath $backupRoot) {{
+        Remove-Item -LiteralPath $backupRoot -Recurse -Force
+    }}
+    Rename-Item -LiteralPath $installRoot -NewName (Split-Path -Leaf $backupRoot)
+    Move-Item -LiteralPath $candidate -Destination $installRoot
+    Start-Process -FilePath $restartTarget -WorkingDirectory (Split-Path -LiteralPath $restartTarget -Parent)
+    Start-Sleep -Seconds 5
+    Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+}} catch {{
+    Restore-Backup
+    $log = Join-Path (Split-Path -LiteralPath $archive -Parent) "apply-update-error.log"
+    $_ | Out-String | Set-Content -LiteralPath $log
+    exit 1
+}}
+"""
+    script_path.write_text(script, encoding="utf-8")
+    return script_path
+
+
+def _write_posix_apply_script(update_path: Path, root: Path, restart_target: Path, pid: int) -> Path:
+    script_path = UPDATE_DOWNLOAD_DIR / f"apply-wisp-update-{pid}.sh"
+    archive_root = _archive_root_name(update_path)
+    opener = f"open {_quoted_sh(str(root))}" if sys.platform == "darwin" else f"{_quoted_sh(str(restart_target))} >/dev/null 2>&1 &"
+    if update_path.name.lower().endswith((".tar.gz", ".tgz")):
+        extract_command = 'tar -xzf "$archive" -C "$extract_root"'
+    else:
+        extract_command = 'if command -v ditto >/dev/null 2>&1; then ditto -x -k "$archive" "$extract_root"; else unzip -q "$archive" -d "$extract_root"; fi'
+    script = f"""#!/bin/sh
+set -eu
+pid_to_wait={pid}
+archive={_quoted_sh(str(update_path))}
+install_root={_quoted_sh(str(root))}
+restart_target={_quoted_sh(str(restart_target))}
+archive_root_name={_quoted_sh(archive_root)}
+work_root="$(dirname "$archive")/apply-$(date +%s)-$$"
+extract_root="$work_root/extract"
+backup_root="$install_root.previous-update"
+
+restore_backup() {{
+    if [ -d "$backup_root" ] && [ ! -e "$install_root" ]; then
+        mv "$backup_root" "$install_root"
+    fi
+}}
+
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_backup; echo "Wisp update apply failed." > "$(dirname "$archive")/apply-update-error.log"; fi; exit "$rc"' EXIT
+mkdir -p "$extract_root"
+while kill -0 "$pid_to_wait" 2>/dev/null; do
+    sleep 1
+done
+{extract_command}
+candidate="$extract_root/$archive_root_name"
+if [ ! -e "$candidate" ]; then
+    candidate="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+fi
+if [ -z "$candidate" ] || [ ! -e "$candidate" ]; then
+    echo "Could not find the extracted Wisp app folder." > "$(dirname "$archive")/apply-update-error.log"
+    exit 1
+fi
+rm -rf "$backup_root"
+mv "$install_root" "$backup_root"
+mv "$candidate" "$install_root"
+{opener}
+sleep 5
+rm -rf "$backup_root" "$work_root"
+"""
+    script_path.write_text(script, encoding="utf-8")
+    script_path.chmod(0o700)
+    return script_path
+
+
+def apply_update(update_path: Path, pid: int | None = None) -> Path:
+    """Start a detached helper that applies an update after Wisp exits."""
+    update_path = Path(update_path).resolve()
+    if not update_path.exists():
+        raise UpdateError("Downloaded update file is no longer available.")
+    root = install_root()
+    restart_target = Path(sys.executable).resolve()
+    wait_pid = pid or os.getpid()
+    UPDATE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    if sys.platform == "win32":
+        script_path = _write_windows_apply_script(update_path, root, restart_target, wait_pid)
+        creationflags = 0
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        if hasattr(subprocess, "DETACHED_PROCESS"):
+            creationflags |= subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+        subprocess.Popen(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=creationflags,
+        )
+    else:
+        script_path = _write_posix_apply_script(update_path, root, restart_target, wait_pid)
+        subprocess.Popen(
+            [str(script_path)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    return script_path

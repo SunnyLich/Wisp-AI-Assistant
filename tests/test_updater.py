@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import sys
+import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from core import updater
 
 
@@ -57,3 +61,51 @@ def test_download_update_verifies_sha256(tmp_path: Path) -> None:
 
     assert downloaded.name == "Wisp-test-linux-x64.tar.gz"
     assert downloaded.read_bytes() == b"wisp update"
+
+
+def test_apply_update_rejects_source_checkout(tmp_path: Path) -> None:
+    update = tmp_path / "Wisp-test.zip"
+    update.write_bytes(b"not used")
+
+    with pytest.raises(updater.UpdateError, match="packaged Wisp builds"):
+        updater.apply_update(update, pid=123)
+
+
+def test_apply_update_writes_windows_helper_without_running_it(monkeypatch, tmp_path: Path) -> None:
+    update = tmp_path / "Wisp-test-windows-x64.zip"
+    with zipfile.ZipFile(update, "w") as archive:
+        archive.writestr("Wisp/Wisp.exe", "new exe")
+
+    executable = tmp_path / "CurrentWisp" / "Wisp.exe"
+    executable.parent.mkdir()
+    executable.write_text("current exe", encoding="utf-8")
+    updates_dir = tmp_path / "updates"
+    launched: dict[str, object] = {}
+
+    def fake_popen(cmd, **kwargs):
+        launched["cmd"] = cmd
+        launched["kwargs"] = kwargs
+        return SimpleNamespace(pid=456)
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(updater, "UPDATE_DOWNLOAD_DIR", updates_dir)
+    monkeypatch.setattr(updater.subprocess, "Popen", fake_popen)
+
+    script = updater.apply_update(update, pid=123)
+
+    assert script.exists()
+    assert script.parent == updates_dir
+    script_text = script.read_text(encoding="utf-8")
+    assert "Wait-Process -Id $pidToWait" in script_text
+    assert "Expand-Archive" in script_text
+    assert "$archiveRootName = 'Wisp'" in script_text
+    assert launched["cmd"][:5] == [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+    ]
+    assert launched["cmd"][-1] == str(script)

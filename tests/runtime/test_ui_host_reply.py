@@ -714,7 +714,7 @@ def test_active_history_includes_context_and_attachment_refs() -> None:
         "id": "att_1",
         "kind": "image",
         "source": "external_path",
-        "path": r"C:\Users\sunny\Downloads\shot.png",
+        "path": r"C:\Users\TestUser\Downloads\shot.png",
         "name": "shot.png",
         "mime": "image/png",
     }

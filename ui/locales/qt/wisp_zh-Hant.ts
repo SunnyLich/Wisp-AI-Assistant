@@ -3813,6 +3813,62 @@ Continue?</source>
       <translation>正在檢查……</translation>
     </message>
     <message>
+      <source>Apply update</source>
+      <translation>套用更新</translation>
+    </message>
+    <message>
+      <source>Apply the downloaded update and restart Wisp.</source>
+      <translation>套用已下載的更新並重新啟動 Wisp。</translation>
+    </message>
+    <message>
+      <source>Update check failed: {error}</source>
+      <translation>檢查更新失敗：{error}</translation>
+    </message>
+    <message>
+      <source>Version {version} is available.</source>
+      <translation>版本 {version} 可用。</translation>
+    </message>
+    <message>
+      <source>Version {version} is available, but no {platform} build was published.</source>
+      <translation>版本 {version} 可用，但尚未發布 {platform} 建置。</translation>
+    </message>
+    <message>
+      <source>Update download failed: {error}</source>
+      <translation>下載更新失敗：{error}</translation>
+    </message>
+    <message>
+      <source>Update downloaded. Apply it when you are ready to restart Wisp.</source>
+      <translation>更新已下載。準備重新啟動 Wisp 時即可套用。</translation>
+    </message>
+    <message>
+      <source>Apply the downloaded update now?</source>
+      <translation>現在套用已下載的更新嗎？</translation>
+    </message>
+    <message>
+      <source>Wisp will close, install the update, and restart.</source>
+      <translation>Wisp 將關閉、安裝更新並重新啟動。</translation>
+    </message>
+    <message>
+      <source>Apply and restart</source>
+      <translation>套用並重新啟動</translation>
+    </message>
+    <message>
+      <source>Not now</source>
+      <translation>暫不</translation>
+    </message>
+    <message>
+      <source>Applying...</source>
+      <translation>正在套用……</translation>
+    </message>
+    <message>
+      <source>Applying update. Wisp will restart shortly.</source>
+      <translation>正在套用更新。Wisp 即將重新啟動。</translation>
+    </message>
+    <message>
+      <source>Could not apply update: {error}</source>
+      <translation>無法套用更新：{error}</translation>
+    </message>
+    <message>
       <source>Could not erase the settings file:
 {error}</source>
       <translation>無法刪除設定檔：

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
     QPushButton, QTabWidget, QWidget, QFrame, QGroupBox, QMessageBox,
     QScrollArea, QSizePolicy, QCompleter, QInputDialog, QMenu, QSlider,
+    QApplication,
 )
 from PySide6.QtCore import Qt, QTimer, QObject, Signal
 from PySide6.QtGui import QFont
@@ -38,7 +39,7 @@ from ui.settings_panel.helpers import (
     expanding_form_layout as _expanding_form_layout,
     parse_fallback_rows,
 )
-from ui.i18n import LANGUAGE_OPTIONS, localize_widget_tree, t
+from ui.i18n import COMBO_I18N_SOURCE_ROLE, LANGUAGE_OPTIONS, localize_widget_tree, t
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 ENV_PATH = settings_env.ENV_PATH
@@ -2488,7 +2489,7 @@ class SettingsDialog(QDialog):
         stt_model.setProperty("allow_custom_saved_value", True)
         for label, model, translation_key in _STT_MODEL_OPTIONS:
             stt_model.addItem(label, model)
-            stt_model.setItemData(stt_model.count() - 1, translation_key, 0x0100 + 1)
+            stt_model.setItemData(stt_model.count() - 1, translation_key, COMBO_I18N_SOURCE_ROLE)
         stt_model_tip = (
             "Local faster-whisper model. small is a good first upgrade for Chinese; "
             "medium/large-v3 are heavier."
@@ -3931,12 +3932,15 @@ class SettingsDialog(QDialog):
         scroll.setWidget(outer_w)
         return scroll
 
-    def _set_update_status(self, message: str, state: str | None = None) -> None:
+    def _set_update_status(self, message: str, state: str | None = None, **format_args: object) -> None:
         """Update the Settings updater status label."""
         label = getattr(self, "_update_status_lbl", None)
         if label is None:
             return
-        label.setText(t(message))
+        text = t(message)
+        if format_args:
+            text = text.format(**format_args)
+        label.setText(text)
         if state == "ok":
             label.setStyleSheet("color: #80c080;")
         elif state == "error":
@@ -3951,8 +3955,8 @@ class SettingsDialog(QDialog):
         mode = getattr(self, "_update_mode", "check")
         if mode == "download":
             self._download_available_update()
-        elif mode == "open":
-            self._open_downloaded_update()
+        elif mode == "apply":
+            self._apply_downloaded_update()
         else:
             self._check_for_updates()
 
@@ -3999,7 +4003,7 @@ class SettingsDialog(QDialog):
         if error:
             self._update_mode = "check"
             self._update_btn.setText(t("Check for updates"))
-            self._set_update_status(f"Update check failed: {error}", "error")
+            self._set_update_status("Update check failed: {error}", "error", error=error)
             return
 
         update_available = bool(getattr(result, "update_available", False))
@@ -4009,7 +4013,7 @@ class SettingsDialog(QDialog):
             self._update_check_result = result
             self._update_mode = "download"
             self._update_btn.setText(t("Download update"))
-            self._set_update_status(f"Version {latest_version} is available.", "ok")
+            self._set_update_status("Version {version} is available.", "ok", version=latest_version)
             return
 
         from core import updater
@@ -4018,7 +4022,12 @@ class SettingsDialog(QDialog):
             platform_key = updater.normalized_platform_key()
             self._update_mode = "check"
             self._update_btn.setText(t("Check for updates"))
-            self._set_update_status(f"Version {latest_version} is available, but no {platform_key} build was published.", "warn")
+            self._set_update_status(
+                "Version {version} is available, but no {platform} build was published.",
+                "warn",
+                version=latest_version,
+                platform=platform_key,
+            )
             return
 
         self._update_mode = "check"
@@ -4064,34 +4073,51 @@ class SettingsDialog(QDialog):
         if error:
             self._update_mode = "download" if self._update_check_result is not None else "check"
             self._update_btn.setText(t("Download update") if self._update_mode == "download" else t("Check for updates"))
-            self._set_update_status(f"Update download failed: {error}", "error")
+            self._set_update_status("Update download failed: {error}", "error", error=error)
             return
 
         from pathlib import Path
 
         self._update_download_path = Path(str(path))
-        self._update_mode = "open"
-        self._update_btn.setText(t("Open update"))
-        self._set_update_status(f"Downloaded update: {self._update_download_path}", "ok")
+        self._update_mode = "apply"
+        self._update_btn.setText(t("Apply update"))
+        self._update_btn.setToolTip(t("Apply the downloaded update and restart Wisp."))
+        self._set_update_status("Update downloaded. Apply it when you are ready to restart Wisp.", "ok")
 
-    def _open_downloaded_update(self) -> None:
-        """Open the downloaded update artifact with the platform shell."""
+    def _apply_downloaded_update(self) -> None:
+        """Apply the downloaded update via a helper process and quit Wisp."""
         path = self._update_download_path
         if path is None or not path.exists():
             self._update_mode = "check"
             self._update_btn.setText(t("Check for updates"))
             self._set_update_status("Downloaded update file is no longer available.", "error")
             return
+
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Icon.Question)
+        confirm.setWindowTitle(t("Apply update"))
+        confirm.setText(t("Apply the downloaded update now?"))
+        confirm.setInformativeText(t("Wisp will close, install the update, and restart."))
+        confirm.setStandardButtons(QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes)
+        confirm.button(QMessageBox.StandardButton.Yes).setText(t("Apply and restart"))
+        confirm.button(QMessageBox.StandardButton.Cancel).setText(t("Not now"))
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            self._set_update_status("Update downloaded. Apply it when you are ready to restart Wisp.", "ok")
+            return
+
         try:
-            if sys.platform == "win32":
-                os.startfile(path)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(path)])
-            else:
-                subprocess.Popen(["xdg-open", str(path)])
-            self._set_update_status("Update opened. Close Wisp before installing if prompted.", "ok")
+            from core import updater
+
+            updater.apply_update(path)
+            self._update_mode = "apply"
+            self._update_btn.setEnabled(False)
+            self._update_btn.setText(t("Applying..."))
+            self._set_update_status("Applying update. Wisp will restart shortly.", "ok")
+            app = QApplication.instance()
+            if app is not None:
+                QTimer.singleShot(250, app.quit)
         except Exception as exc:  # noqa: BLE001 - surface launcher issues in Settings
-            self._set_update_status(f"Could not open update: {exc}", "error")
+            self._set_update_status("Could not apply update: {error}", "error", error=exc)
 
     def _update_chat_elaborate_prompt_visibility(self, checked: bool | None = None) -> None:
         """Show the elaborate prompt field only when auto-elaborate is enabled."""

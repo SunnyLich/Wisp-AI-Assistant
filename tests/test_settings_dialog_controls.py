@@ -395,6 +395,39 @@ def test_app_tab_exposes_update_controls():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_update_download_switches_button_to_apply(tmp_path):
+    """Verify a downloaded update is applied from Settings instead of just opened."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog, _UpdateSignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._update_signal_carriers = []
+    tab = SettingsDialog._tab_app(dialog)
+
+    try:
+        carrier = _UpdateSignals()
+        dialog._update_signal_carriers.append(carrier)
+        downloaded = tmp_path / "Wisp-test-windows-x64.zip"
+        downloaded.write_bytes(b"fake")
+
+        SettingsDialog._finish_update_download(dialog, carrier, str(downloaded), "")
+
+        update_button = tab.findChild(QPushButton, "settingsUpdateButton")
+        assert update_button is not None
+        assert update_button.text() == t("Apply update")
+        assert dialog._update_mode == "apply"
+        assert dialog._update_download_path == downloaded
+    finally:
+        tab.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_localize_widget_tree_uses_app_language(monkeypatch):
     """Verify localize widget tree uses app language behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -707,7 +740,6 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
         assert "\u5225\u540d\uff08\u9078\u586b\uff09" in placeholder_texts
         assert "\u81ea\u8a02\u63d0\u4f9b\u8005".upper() in label_texts
         assert any("\u4efb\u4f55\u76f8\u5bb9 OpenAI" in text for text in label_texts)
-        assert "\u6e2c\u8a66\u81ea\u8a02" in button_texts
         assert "\u8a9e\u97f3\u8f49\u6587\u5b57".upper() in label_texts
         assert any("\u6309\u4f4f\u8aaa\u8a71\u8f49\u5beb\u4f7f\u7528\u7684 Whisper" in text for text in label_texts)
         assert "\u88dd\u7f6e" in label_texts

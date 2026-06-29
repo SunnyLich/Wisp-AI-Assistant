@@ -35,11 +35,11 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         with patch.object(
             self.cf,
             "_win_open_files_for_pid",
-            return_value=[r"C:\Users\sunny\Documents\Notes.txt"],
+            return_value=[r"C:\Users\TestUser\Documents\Notes.txt"],
         ), patch.object(self.cf, "_fetch_recent_files", return_value=[]):
             resolved = self.cf._resolve_doc_path(win)
 
-        self.assertEqual(resolved, r"C:\Users\sunny\Documents\Notes.txt")
+        self.assertEqual(resolved, r"C:\Users\TestUser\Documents\Notes.txt")
 
     def test_resolve_doc_path_strips_modified_marker(self):
         """Verify resolve doc path strips modified marker behavior."""
@@ -52,11 +52,11 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         with patch.object(
             self.cf,
             "_win_open_files_for_pid",
-            return_value=[r"C:\Users\sunny\Documents\Notes.txt"],
+            return_value=[r"C:\Users\TestUser\Documents\Notes.txt"],
         ), patch.object(self.cf, "_fetch_recent_files", return_value=[]):
             resolved = self.cf._resolve_doc_path(win)
 
-        self.assertEqual(resolved, r"C:\Users\sunny\Documents\Notes.txt")
+        self.assertEqual(resolved, r"C:\Users\TestUser\Documents\Notes.txt")
 
     def test_extract_doc_name_supports_localized_notepad_title(self):
         """Verify extract doc name supports localized notepad title behavior."""
@@ -99,11 +99,11 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         with patch.object(
             self.cf,
             "_win_open_files_for_pid",
-            return_value=[r"C:\Users\sunny\Documents\Report.pdf"],
+            return_value=[r"C:\Users\TestUser\Documents\Report.pdf"],
         ), patch.object(self.cf, "_fetch_recent_files", return_value=[]):
             resolved = self.cf._resolve_doc_path(win)
 
-        self.assertEqual(resolved, r"C:\Users\sunny\Documents\Report.pdf")
+        self.assertEqual(resolved, r"C:\Users\TestUser\Documents\Report.pdf")
 
     def test_pdf_xchange_editor_title_resolves_open_pdf_path_without_extension(self):
         """Verify pdf xchange editor title resolves open pdf path without extension behavior."""
@@ -116,11 +116,11 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         with patch.object(
             self.cf,
             "_win_open_files_for_pid",
-            return_value=[r"C:\Users\sunny\Documents\laptop walmart invoice.pdf"],
+            return_value=[r"C:\Users\TestUser\Documents\laptop walmart invoice.pdf"],
         ), patch.object(self.cf, "_fetch_recent_files", return_value=[]):
             resolved = self.cf._resolve_doc_path(win)
 
-        self.assertEqual(resolved, r"C:\Users\sunny\Documents\laptop walmart invoice.pdf")
+        self.assertEqual(resolved, r"C:\Users\TestUser\Documents\laptop walmart invoice.pdf")
 
     def test_open_document_window_texts_use_localized_notepad_hotkey_window(self):
         """Verify open document window texts use localized notepad hotkey window behavior."""
@@ -155,9 +155,9 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
         def open_files(pid: int) -> list[str]:
             """Verify open files behavior."""
             if pid == 101:
-                return [r"C:\Users\sunny\Documents\Summary.txt"]
+                return [r"C:\Users\TestUser\Documents\Summary.txt"]
             if pid == 202:
-                return [r"C:\Users\sunny\Documents\Budget.xlsx"]
+                return [r"C:\Users\TestUser\Documents\Budget.xlsx"]
             return []
 
         with patch.object(self.cf, "_win_open_files_for_pid", side_effect=open_files), \
@@ -165,7 +165,7 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
              patch.object(self.cf, "_fetch_recent_files", return_value=[]):
             paths = self.cf.get_all_open_document_paths(active_window=active)
 
-        self.assertEqual(paths, [r"C:\Users\sunny\Documents\Budget.xlsx"])
+        self.assertEqual(paths, [r"C:\Users\TestUser\Documents\Budget.xlsx"])
 
     def test_open_document_window_texts_prioritize_passed_unsaved_calc_window(self):
         """Verify open document window texts prioritize passed unsaved calc window behavior."""
