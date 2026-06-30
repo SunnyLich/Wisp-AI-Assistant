@@ -59,7 +59,20 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("Upload Windows release asset", workflow)
         self.assertIn("Upload Linux release asset", workflow)
         self.assertIn("Upload macOS release asset", workflow)
-        self.assertIn('gh release upload "$GITHUB_REF_NAME" release-assets/wisp-release-manifest.json --clobber', workflow)
+        self.assertIn("--checksums-out release-assets/SHA256SUMS.txt", workflow)
+        self.assertIn(
+            'gh release upload "$GITHUB_REF_NAME" release-assets/wisp-release-manifest.json release-assets/SHA256SUMS.txt --clobber',
+            workflow,
+        )
+
+    def test_build_workflow_sanitizes_manual_artifact_branch_names(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn("$safeRef = $env:GITHUB_REF_NAME -replace", workflow)
+        self.assertIn("Wisp-$safeRef-windows-x64.zip", workflow)
+        self.assertIn('safe_ref="${GITHUB_REF_NAME//\\//-}"', workflow)
+        self.assertIn("Wisp-${safe_ref}-linux-x64.tar.gz", workflow)
+        self.assertIn("Wisp-${safe_ref}-macos-${arch}.zip", workflow)
 
 
 if __name__ == "__main__":

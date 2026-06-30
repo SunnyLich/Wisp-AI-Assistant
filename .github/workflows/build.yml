@@ -59,7 +59,9 @@ jobs:
 
       - name: Package Windows artifact
         shell: pwsh
-        run: Compress-Archive -Path dist\Wisp -DestinationPath "dist\Wisp-${{ github.ref_name }}-windows-x64.zip" -Force
+        run: |
+          $safeRef = $env:GITHUB_REF_NAME -replace '[\\/]', '-'
+          Compress-Archive -Path dist\Wisp -DestinationPath "dist\Wisp-$safeRef-windows-x64.zip" -Force
 
       - name: Upload Windows release asset
         if: startsWith(github.ref, 'refs/tags/v')
@@ -109,7 +111,9 @@ jobs:
         run: ./tools/build_exe.sh --clean --yes
 
       - name: Package Linux artifact
-        run: tar -czf "dist/Wisp-${GITHUB_REF_NAME}-linux-x64.tar.gz" -C dist Wisp
+        run: |
+          safe_ref="${GITHUB_REF_NAME//\//-}"
+          tar -czf "dist/Wisp-${safe_ref}-linux-x64.tar.gz" -C dist Wisp
 
       - name: Upload Linux release asset
         if: startsWith(github.ref, 'refs/tags/v')
@@ -155,7 +159,8 @@ jobs:
         run: |
           arch="$(uname -m)"
           if [ "$arch" = "x86_64" ]; then arch="x64"; fi
-          ditto -c -k --keepParent dist/Wisp.app "dist/Wisp-${GITHUB_REF_NAME}-macos-${arch}.zip"
+          safe_ref="${GITHUB_REF_NAME//\//-}"
+          ditto -c -k --keepParent dist/Wisp.app "dist/Wisp-${safe_ref}-macos-${arch}.zip"
 
       - name: Upload macOS release asset
         if: startsWith(github.ref, 'refs/tags/v')
@@ -206,9 +211,10 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --tag "$GITHUB_REF_NAME" \
             --out release-assets/wisp-release-manifest.json \
+            --checksums-out release-assets/SHA256SUMS.txt \
             $(find release-assets -type f ! -name "wisp-release-manifest.json" -print)
 
       - name: Upload release manifest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" release-assets/wisp-release-manifest.json --clobber
+        run: gh release upload "$GITHUB_REF_NAME" release-assets/wisp-release-manifest.json release-assets/SHA256SUMS.txt --clobber

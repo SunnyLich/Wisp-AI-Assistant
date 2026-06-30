@@ -15,6 +15,8 @@ Wisp gives you hotkey-driven AI that can read your selection, clipboard, app, br
 
 **Languages:** English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Français](README.fr.md) | [Español](README.es.md)
 
+**Website:** [Wisp Docs](https://sunnylich.github.io/Python-AI-assistant-overlay/)
+
 [Quick start](#quick-start) | [What it does](#what-wisp-does) | [Demos](#demos) | [Configuration](#configuration) | [Free APIs](#free-model-api-sources) | [Privacy](#privacy-and-control)
 
 ![Wisp Ctrl+Q demo](ReadMe%201st%20Demo.gif)
@@ -109,6 +111,18 @@ Use this if you want the app without cloning the repo or managing Python depende
 | Windows | `Wisp-<tag>-windows-x64.zip` | `Wisp.exe` |
 | macOS | `Wisp-<tag>-macos-<arch>.zip` | `Wisp.app` |
 | Linux | `Wisp-<tag>-linux-x64.tar.gz` | `Wisp` |
+
+Release pages include `SHA256SUMS.txt` so you can verify the archive after
+download. On Windows, run:
+
+```powershell
+Get-FileHash .\Wisp-<tag>-windows-x64.zip -Algorithm SHA256
+```
+
+Compare the hash with the matching line in `SHA256SUMS.txt`. Windows may still
+show a SmartScreen warning for unsigned builds from an independent open-source
+publisher; the checksum confirms the file matches the release asset uploaded by
+the project.
 
 ### Option 2: Repo Launcher
 

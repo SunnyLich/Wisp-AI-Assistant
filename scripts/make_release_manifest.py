@@ -55,17 +55,27 @@ def build_manifest(asset_paths: list[Path], repo: str, tag: str) -> dict:
     }
 
 
+def build_checksums(asset_paths: list[Path]) -> str:
+    """Build a sha256sum-compatible checksum listing for release assets."""
+    lines = [f"{_sha256(path)}  {path.name}" for path in sorted(asset_paths, key=lambda item: item.name)]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, help="GitHub repository, e.g. owner/name")
     parser.add_argument("--tag", required=True, help="Release tag, e.g. v0.6 or v0.6.1")
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--checksums-out", type=Path, help="Optional SHA256SUMS.txt output path")
     parser.add_argument("assets", nargs="+", type=Path)
     args = parser.parse_args()
 
     manifest = build_manifest(args.assets, repo=args.repo, tag=args.tag)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.checksums_out:
+        args.checksums_out.parent.mkdir(parents=True, exist_ok=True)
+        args.checksums_out.write_text(build_checksums(args.assets), encoding="utf-8")
     return 0
 
 

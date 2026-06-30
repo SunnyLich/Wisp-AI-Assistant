@@ -91,11 +91,12 @@ The workflow builds:
 - Linux: `Wisp-<tag>-linux-x64.tar.gz`
 
 After all platform jobs finish, the workflow creates or updates a draft GitHub
-Release and uploads `wisp-release-manifest.json`. The Settings update button
-uses that manifest to find the newest build for the current platform, verify
-the SHA256 hash, download the matching artifact, and then apply it through a
-small helper process when the user chooses **Apply update**. The helper waits
-for Wisp to exit, replaces the packaged app folder, and restarts Wisp.
+Release and uploads `wisp-release-manifest.json` plus `SHA256SUMS.txt`. The
+Settings update button uses the manifest to find the newest build for the
+current platform, verify the SHA256 hash, download the matching artifact, and
+then apply it through a small helper process when the user chooses **Apply
+update**. Users can compare downloaded archives against `SHA256SUMS.txt` from
+the release page before unpacking them.
 
 Manual platform build entry points:
 

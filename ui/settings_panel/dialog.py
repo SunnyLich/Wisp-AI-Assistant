@@ -4252,10 +4252,13 @@ class SettingsDialog(QDialog):
             self._update_mode = "apply"
             self._update_btn.setEnabled(False)
             self._update_btn.setText(t("Applying..."))
-            self._set_update_status("Applying update. Wisp will restart shortly.", "ok")
+            self._set_update_status(
+                "Applying update. Wisp will close now; installing and reopening can take a few minutes.",
+                "ok",
+            )
             app = QApplication.instance()
             if app is not None:
-                QTimer.singleShot(250, app.quit)
+                QTimer.singleShot(1500, app.quit)
         except Exception as exc:  # noqa: BLE001 - surface launcher issues in Settings
             self._set_update_status("Could not apply update: {error}", "error", error=exc)
 

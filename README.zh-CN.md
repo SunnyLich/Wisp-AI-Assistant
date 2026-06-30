@@ -15,6 +15,8 @@ Wisp 为您提供快捷键驱动的 AI，能够读取您的选中内容、剪贴
 
 **语言：** [English](README.md) | 简体中文 | [繁體中文](README.zh-TW.md) | [Français](README.fr.md) | [Español](README.es.md)
 
+**网站：** [Wisp 文档](https://sunnylich.github.io/Python-AI-assistant-overlay/)
+
 [快速开始](#快速开始) | [功能介绍](#wisp-的功能) | [演示](#演示) | [配置](#配置) | [免费 API](#免费模型-api-来源) | [隐私](#隐私与控制)
 
 ![Wisp Ctrl+Q 演示](ReadMe%201st%20Demo.gif)
