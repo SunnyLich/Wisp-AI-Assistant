@@ -15,6 +15,8 @@ Wisp gives you hotkey-driven AI that can read your selection, clipboard, app, br
 
 **Languages:** English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Français](README.fr.md) | [Español](README.es.md)
 
+**Website:** [Wisp Docs](https://sunnylich.github.io/Python-AI-assistant-overlay/)
+
 [Quick start](#quick-start) | [What it does](#what-wisp-does) | [Demos](#demos) | [Configuration](#configuration) | [Free APIs](#free-model-api-sources) | [Privacy](#privacy-and-control)
 
 ![Wisp Ctrl+Q demo](ReadMe%201st%20Demo.gif)
