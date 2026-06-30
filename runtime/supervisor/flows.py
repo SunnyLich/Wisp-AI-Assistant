@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import itertools
 import logging
 import os
@@ -42,8 +43,18 @@ _BROWSER_APP_NAMES = {
     "opera",
     "vivaldi",
 }
+_SELECTED_PATH_TEXT_EXTS = {
+    ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".yaml",
+    ".yml", ".csv", ".html", ".htm", ".css", ".xml", ".sh", ".bat", ".ps1",
+    ".c", ".cpp", ".h", ".java", ".rs", ".go", ".rb", ".php", ".sql",
+    ".toml", ".ini", ".cfg", ".conf", ".log",
+}
+_SELECTED_PATH_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+_SELECTED_PATH_DOCUMENT_EXTS = {".docx", ".pdf", ".xlsx", ".xls", ".pptx", ".odt", ".ods", ".odp"}
+_SELECTED_PATH_TEXT_BYTES = 51_200
 _AUDIO_CONFIG_KEYS = {
     "TTS_PROVIDER",
+    "TTS_SPEAK_REPLIES",
     "CARTESIA_VOICE_ID",
     "ELEVENLABS_VOICE_ID",
     "ELEVENLABS_MODEL",
@@ -226,6 +237,7 @@ class FlowController:
         self._current_generation = 0
         self._context_buffer: list[str] = []
         self._drop_context_items: list[dict[str, Any]] = []
+        self._pending_context_capture: dict[str, Any] | None = None
         self._last_reply = ""
         self._last_privacy_report: dict[str, Any] = {}
         self._active_agent_stream_id: Any = None
@@ -246,6 +258,13 @@ class FlowController:
         self.ui.on_event("ui.request_snip", self._on_request_snip)
         self.ui.on_event("ui.intent.chosen", self._on_intent_chosen)
         self.ui.on_event("ui.intent.cancelled", self._on_intent_cancelled)
+        self.ui.on_event("ui.intent.snip.requested", self._on_intent_snip_requested)
+        self.ui.on_event("ui.intent.snip.region", self._on_intent_snip_region)
+        self.ui.on_event("ui.intent.snip.cancelled", self._on_intent_snip_cancelled)
+        self.ui.on_event("ui.intent.selection.requested", self._on_intent_selection_requested)
+        self.ui.on_event("ui.chat.snip.region", self._on_chat_snip_region)
+        self.ui.on_event("ui.chat.snip.cancelled", self._on_chat_snip_cancelled)
+        self.ui.on_event("ui.chat.selection.requested", self._on_chat_selection_requested)
         self.ui.on_event("ui.snip.region", self._on_snip_region)
         self.ui.on_event("ui.snip.cancelled", self._on_snip_cancelled)
         self.ui.on_event("ui.context.dropped", self._on_context_dropped)
@@ -373,12 +392,48 @@ class FlowController:
     def _on_intent_cancelled(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle intent cancelled events."""
         with self._lock:
+            pending_capture = dict(self._pending_context_capture or {})
+        if pending_capture.get("surface") == "intent":
+            return
+        with self._lock:
             pending = self._pending
             self._pending = None
         if pending is not None:
             pending.context_ready.set()
         self._new_generation()
         self._set_idle()
+
+    def _on_intent_snip_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle screenshot-chip snip requests from an open intent picker."""
+        choices = list((data or {}).get("context_choices") or [])
+        custom_text = str((data or {}).get("custom_text") or "")
+        self._schedule(self.intent_snip_requested, choices, custom_text)
+
+    def _on_intent_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle a selected screenshot-chip snip region."""
+        self._schedule(self.intent_snip_region_selected, data or {})
+
+    def _on_intent_snip_cancelled(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle cancellation of a screenshot-chip snip."""
+        self._schedule(self.intent_snip_cancelled)
+
+    def _on_intent_selection_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle selection capture requests from an open intent picker."""
+        choices = list((data or {}).get("context_choices") or [])
+        custom_text = str((data or {}).get("custom_text") or "")
+        self._schedule(self.intent_selection_capture_requested, choices, custom_text)
+
+    def _on_chat_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle a selected chat screenshot snip region."""
+        self._schedule(self.chat_snip_region_selected, data or {})
+
+    def _on_chat_snip_cancelled(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle cancellation of a chat screenshot snip."""
+        self._schedule(self.chat_snip_cancelled)
+
+    def _on_chat_selection_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle selection capture requests from the chat window."""
+        self._schedule(self.chat_selection_capture_requested)
 
     def _on_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle snip region events."""
@@ -753,6 +808,7 @@ class FlowController:
             initial_context = self._context_snapshot(
                 caller,
                 include_browser=False,
+                include_selected_paths=True,
                 preview_context_sources=True,
             )
         except Exception:
@@ -846,6 +902,172 @@ class FlowController:
             timeout=30.0,
         )
 
+    def intent_snip_requested(
+        self,
+        context_choices: list[dict[str, Any]] | None = None,
+        custom_text: str = "",
+    ) -> None:
+        """Mark the current intent as waiting for a user-selected screenshot."""
+        with self._lock:
+            pending = self._pending
+            if pending is None:
+                return
+            pending.caller = self._apply_intent_context_choices(
+                pending.caller,
+                context_choices or [],
+            )
+            pending.caller["context_screenshot"] = "auto"
+            pending.caller["_context_screenshot_enabled"] = True
+            has_screenshot = bool(pending.screenshot_b64)
+            pending.caller["_context_screenshot_requires_snip"] = not has_screenshot
+            if not has_screenshot:
+                pending.screenshot_b64 = None
+            pending.screenshot_tool_b64 = None
+            self._pending = pending
+            self._pending_context_capture = {
+                "surface": "intent",
+                "source": "screenshot",
+                "custom_text": str(custom_text or ""),
+            }
+
+    def intent_snip_region_selected(self, region: dict[str, Any]) -> None:
+        """Attach a selected snip to the current pending intent."""
+        result = self.native.call("native.capture.region", {"region": region}, timeout=30.0)
+        path = result.get("path") if isinstance(result, dict) else ""
+        screenshot_b64 = self._file_b64(path) if path else None
+        with self._lock:
+            pending = self._pending
+            if pending is None:
+                return
+            capture = dict(self._pending_context_capture or {})
+            custom_text = str(capture.get("custom_text") or "")
+            if capture.get("source") == "screenshot":
+                self._pending_context_capture = None
+            pending.screenshot_b64 = screenshot_b64
+            pending.screenshot_tool_b64 = None
+            pending.caller["context_screenshot"] = "auto" if screenshot_b64 else "off"
+            pending.caller["_context_screenshot_enabled"] = bool(screenshot_b64)
+            pending.caller["_context_screenshot_requires_snip"] = False
+            self._pending = pending
+        context_items = self._intent_context_items(pending)
+        if not screenshot_b64:
+            for item in context_items:
+                if item.get("id") == "screenshot":
+                    item["force_state"] = True
+        self._restore_intent_after_context_capture(pending, custom_text, context_items)
+
+    def intent_snip_cancelled(self) -> None:
+        """Return the screenshot chip to Off after a cancelled intent snip."""
+        with self._lock:
+            pending = self._pending
+            if pending is None:
+                return
+            capture = dict(self._pending_context_capture or {})
+            custom_text = str(capture.get("custom_text") or "")
+            if capture.get("source") == "screenshot":
+                self._pending_context_capture = None
+            pending.screenshot_b64 = None
+            pending.screenshot_tool_b64 = None
+            pending.caller["context_screenshot"] = "off"
+            pending.caller["_context_screenshot_enabled"] = False
+            pending.caller["_context_screenshot_requires_snip"] = False
+            self._pending = pending
+        context_items = self._intent_context_items(pending)
+        for item in context_items:
+            if item.get("id") == "screenshot":
+                item["force_state"] = True
+        self._restore_intent_after_context_capture(pending, custom_text, context_items)
+
+    def intent_selection_capture_requested(
+        self,
+        context_choices: list[dict[str, Any]] | None = None,
+        custom_text: str = "",
+    ) -> None:
+        """Capture selected text or paths for intent after the next user selection."""
+        with self._lock:
+            pending = self._pending
+            if pending is None:
+                return
+            pending.caller = self._apply_intent_context_choices(
+                pending.caller,
+                context_choices or [],
+            )
+            pending.caller["_context_selection_enabled"] = False
+            self._pending = pending
+            self._pending_context_capture = {
+                "surface": "intent",
+                "source": "selection",
+                "custom_text": str(custom_text or ""),
+            }
+            capture = dict(self._pending_context_capture)
+        self._notice("Select text or files/folders.")
+        self._complete_selection_after_user_selects(capture)
+
+    def chat_selection_capture_requested(self) -> None:
+        """Capture selected text or paths for chat after the next user selection."""
+        with self._lock:
+            self._pending_context_capture = {"surface": "chat", "source": "selection"}
+            capture = dict(self._pending_context_capture)
+        self._notice("Select text or files/folders.")
+        self._complete_selection_after_user_selects(capture)
+
+    def _complete_selection_after_user_selects(self, capture: dict[str, Any]) -> None:
+        """Capture Selection automatically after the user finishes selecting."""
+        try:
+            context = self.native.call(
+                "native.context.await_selection",
+                {
+                    "timeout": 30.0,
+                    "settle_ms": 100,
+                    "include_clipboard": True,
+                    "include_selected_paths": True,
+                },
+                timeout=35.0,
+            ) or {}
+        except Exception:
+            log.exception("interactive selection capture failed")
+            context = {}
+        if not context:
+            context = self._context_snapshot({"context_clipboard": True}, include_selected_paths=True)
+        with self._lock:
+            if self._pending_context_capture != capture:
+                return
+        paths = self._selected_paths_from_context(context)
+        selected_text = str(context.get("selected_text") or "").strip()
+        clipboard_text = str(context.get("clipboard_text") or "").strip()
+        text = selected_text or ("" if paths else clipboard_text)
+        self._complete_selection_capture(text, capture, paths)
+
+    def chat_snip_region_selected(self, region: dict[str, Any]) -> None:
+        """Attach a selected snip image to the chat composer."""
+        result = self.native.call("native.capture.region", {"region": region}, timeout=30.0)
+        path = result.get("path") if isinstance(result, dict) else ""
+        screenshot_b64 = self._file_b64(path) if path else None
+        if not screenshot_b64:
+            self.chat_snip_cancelled()
+            return
+        self._safe_call(
+            self.ui,
+            "ui.chat.capture_context",
+            {
+                "name": "Screenshot",
+                "content": screenshot_b64,
+                "item_type": "image",
+                "source": "screenshot",
+            },
+            timeout=30.0,
+        )
+        self._notice("Screenshot captured.")
+
+    def chat_snip_cancelled(self) -> None:
+        """Return the chat Screenshot chip to Off after a cancelled snip."""
+        self._safe_call(
+            self.ui,
+            "ui.chat.capture_cancelled",
+            {"source": "screenshot"},
+            timeout=30.0,
+        )
+
     def intent_chosen(self, prompt: str, context_choices: list[dict[str, Any]] | None = None) -> None:
         """Handle intent chosen for flow controller."""
         with self._lock:
@@ -873,8 +1095,19 @@ class FlowController:
 
     def add_context(self) -> None:
         """Add context."""
-        context = self._context_snapshot({"context_clipboard": True})
-        text = str(context.get("selected_text") or context.get("clipboard_text") or "").strip()
+        with self._lock:
+            pending_capture = dict(self._pending_context_capture or {})
+        context = self._context_snapshot(
+            {"context_clipboard": True},
+            include_selected_paths=pending_capture.get("source") == "selection",
+        )
+        paths = self._selected_paths_from_context(context)
+        selected_text = str(context.get("selected_text") or "").strip()
+        clipboard_text = str(context.get("clipboard_text") or "").strip()
+        text = selected_text or ("" if paths else clipboard_text)
+        if pending_capture.get("source") == "selection":
+            self._complete_selection_capture(text, pending_capture, paths)
+            return
         if not text:
             self._notice("No selected text or clipboard text to add.")
             return
@@ -885,6 +1118,124 @@ class FlowController:
         name = "Selection"
         self._drop_context_items.append({"name": name, "content": text, "type": "text"})
         self._fire(self.ui, "ui.context.add_item", {"name": name, "item_type": "text"})
+
+    def _complete_selection_capture(
+        self,
+        text: str,
+        capture: dict[str, Any],
+        paths: list[str] | None = None,
+    ) -> None:
+        """Complete a pending interactive selection capture."""
+        surface = str(capture.get("surface") or "")
+        selected_paths = self._selected_paths_from_context({"selected_paths": paths or []})
+        if not text and not selected_paths:
+            with self._lock:
+                if self._pending_context_capture == capture:
+                    self._pending_context_capture = None
+            if surface == "intent":
+                self._restore_intent_after_selection_capture("", str(capture.get("custom_text") or ""))
+            elif surface == "chat":
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.capture_cancelled",
+                    {"source": "selection"},
+                    timeout=30.0,
+                )
+            self._notice("No selected text, clipboard text, or selected files found.")
+            return
+
+        with self._lock:
+            self._pending_context_capture = None
+        if surface == "intent":
+            self._restore_intent_after_selection_capture(
+                text,
+                str(capture.get("custom_text") or ""),
+                selected_paths,
+            )
+        elif surface == "chat":
+            payload = {
+                "name": "Selection",
+                "content": text,
+                "item_type": "text",
+                "source": "selection",
+            }
+            if selected_paths:
+                payload["paths"] = selected_paths
+            self._safe_call(self.ui, "ui.chat.capture_context", payload, timeout=30.0)
+        else:
+            if text:
+                self._drop_context_items.append({"name": "Selection", "content": text, "type": "text"})
+                self._fire(self.ui, "ui.context.add_item", {"name": "Selection", "item_type": "text"})
+            else:
+                for item in self._path_context_items(selected_paths):
+                    self._drop_context_items.append(item)
+                    self._fire(
+                        self.ui,
+                        "ui.context.add_item",
+                        {
+                            "name": str(item.get("name") or "Selection"),
+                            "item_type": str(item.get("type") or "file"),
+                        },
+                    )
+        self._notice("Selection captured.")
+
+    def _restore_intent_after_selection_capture(
+        self,
+        text: str,
+        custom_text: str = "",
+        paths: list[str] | None = None,
+    ) -> None:
+        """Restore the intent picker after an out-of-band selection capture."""
+        selected_paths = self._selected_paths_from_context({"selected_paths": paths or []})
+        with self._lock:
+            pending = self._pending
+            if pending is None:
+                return
+            if text:
+                pending.context["selected_text"] = text
+            else:
+                pending.context.pop("selected_text", None)
+            if selected_paths:
+                pending.context["selected_paths"] = selected_paths
+            else:
+                pending.context.pop("selected_paths", None)
+            if text or selected_paths:
+                pending.caller["_context_selection_enabled"] = True
+            else:
+                pending.caller["_context_selection_enabled"] = False
+            self._pending = pending
+        self._safe_call(
+            self.ui,
+            "ui.show_intent",
+            {
+                "caller_idx": pending.caller_idx,
+                "target_hwnd": pending.intent_target_pid,
+                "context_items": self._intent_context_items(pending),
+                "initial_custom_text": custom_text,
+                "focus_overlay": True,
+            },
+            timeout=30.0,
+        )
+
+    def _restore_intent_after_context_capture(
+        self,
+        pending: PendingInvocation,
+        custom_text: str = "",
+        context_items: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Reopen the intent picker after an interactive context capture."""
+        self._safe_call(
+            self.ui,
+            "ui.show_intent",
+            {
+                "caller_idx": pending.caller_idx,
+                "target_hwnd": pending.intent_target_pid,
+                "context_items": context_items or self._intent_context_items(pending),
+                "initial_custom_text": str(custom_text or ""),
+                "focus_overlay": True,
+            },
+            timeout=30.0,
+        )
 
     def read_selection_aloud(self) -> None:
         """Speak the currently selected text without sending it to a model."""
@@ -913,6 +1264,8 @@ class FlowController:
         """Clear context."""
         self._context_buffer.clear()
         self._drop_context_items.clear()
+        with self._lock:
+            self._pending_context_capture = None
         # The panel visibly empties (ui.context.clear), so no bubble notice.
         self._safe_call(self.ui, "ui.context.clear", timeout=30.0)
 
@@ -998,6 +1351,25 @@ class FlowController:
                 screenshot_b64=self._voice_screenshot_b64,
             )
             self._voice_screenshot_b64 = None
+            if self._voice_review_transcript_enabled():
+                pending.context_ready.set()
+                self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
+                with self._lock:
+                    self._pending = pending
+                self._safe_call(
+                    self.ui,
+                    "ui.show_intent",
+                    {
+                        "caller_idx": 0,
+                        "target_hwnd": 0,
+                        "context_items": self._intent_context_items(pending),
+                        "initial_custom_text": text,
+                        "focus_overlay": True,
+                    },
+                    timeout=30.0,
+                )
+                self._set_idle()
+                return
             self._safe_call(self.ui, "ui.reply.transcript", {"text": text}, timeout=30.0)
             self._mark_voice_idle()
             self._query(text, pending, preserve_reply_bubble=True)
@@ -1221,6 +1593,11 @@ class FlowController:
                 )
             elif event == "reply.done":
                 done_seen = True
+                self._emit_file_context_progress(
+                    list((payload or {}).get("file_context") or []),
+                    chat_request_id=request_id,
+                    include_bubble=False,
+                )
                 self._safe_call(
                     self.ui,
                     "ui.chat.done",
@@ -1280,17 +1657,6 @@ class FlowController:
             log.exception("failed to fetch active project for chat")
 
         try:
-            if chat_params.get("use_tools"):
-                self._safe_call(
-                    self.ui,
-                    "ui.chat.chunk",
-                    {
-                        "request_id": request_id,
-                        "text": t("Using tools..."),
-                        "is_progress": True,
-                    },
-                    timeout=30.0,
-                )
             result = self._brain_call_with_events(
                 "brain.chat",
                 chat_params,
@@ -1299,6 +1665,11 @@ class FlowController:
             )
             if not done_seen:
                 text = str((result or {}).get("text") or "")
+                self._emit_file_context_progress(
+                    list((result or {}).get("file_context") or []),
+                    chat_request_id=request_id,
+                    include_bubble=False,
+                )
                 if text:
                     self._safe_call(
                         self.ui,
@@ -1881,7 +2252,7 @@ class FlowController:
         done_seen = False
         first_chunk_seen = False
         streamed_reply_parts: list[str] = []
-        tts_segmenter = _TtsSegmentBuffer() if self._tts_enabled() else None
+        tts_segmenter = _TtsSegmentBuffer() if self._tts_replies_enabled() else None
         early_chat_index: int | None = None
         try:
             from core.assistant_text import ThoughtStreamParser
@@ -1921,10 +2292,14 @@ class FlowController:
                             self._queue_tts_segment(gen, tts_segment)
             elif event == "reply.done":
                 done_seen = True
+                self._emit_file_context_progress(
+                    list((payload or {}).get("file_context") or []),
+                    conversation_index=early_chat_index,
+                )
                 text_done = str((payload or {}).get("text") or "")
                 if text_done:
                     self._last_reply = text_done
-                if not (self._tts_enabled() and text_done):
+                if not (self._tts_replies_enabled() and text_done):
                     self._on_reply_done(payload)
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
@@ -1972,13 +2347,6 @@ class FlowController:
             log.exception("failed to begin chat conversation before query")
         try:
             log.info("query brain call started")
-            if params.get("use_tools"):
-                self._safe_call(
-                    self.ui,
-                    "ui.reply.chunk",
-                    {"text": t("Using tools..."), "is_progress": True},
-                    timeout=30.0,
-                )
             result = self._brain_call_with_events(
                 "brain.query",
                 params,
@@ -2016,6 +2384,8 @@ class FlowController:
             self._reply_thought_parser = None
         text = str((result or {}).get("text") or "")
         file_context = list((result or {}).get("file_context") or [])
+        if not done_seen:
+            self._emit_file_context_progress(file_context, conversation_index=early_chat_index)
         privacy_report = (result or {}).get("privacy_report") if isinstance(result, dict) else None
         self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
         self._last_reply = text
@@ -2091,7 +2461,7 @@ class FlowController:
             )
         if bubble_cancelled:
             self._set_idle()
-        elif self._is_current(gen) and text and self._tts_enabled():
+        elif self._is_current(gen) and text and self._tts_replies_enabled():
             if not self._tts_sequence_is_active():
                 self._speak_text(text, generation=gen)
         elif text and "".join(streamed_reply_parts) != text:
@@ -2528,6 +2898,12 @@ class FlowController:
             return config.effective_caller(dict(voice))
         return self._caller(0)
 
+    def _voice_review_transcript_enabled(self) -> bool:
+        """Return whether F9 should review the transcript in the intent picker."""
+        import config
+
+        return bool(getattr(config, "VOICE_REVIEW_TRANSCRIPT", False))
+
     def _snip_caller(self) -> dict[str, Any]:
         """Context/tool config for region snips, while reusing caller 1's prompts."""
         import config
@@ -2618,6 +2994,7 @@ class FlowController:
         caller: dict[str, Any],
         *,
         include_browser: bool = True,
+        include_selected_paths: bool = False,
         preview_context_sources: bool = False,
     ) -> dict[str, Any]:
         # The browser-page fetch is a ~2-3s network read (requests.get). Keep it
@@ -2633,6 +3010,7 @@ class FlowController:
                 "include_clipboard": bool(caller.get("context_clipboard", False))
                 or preview_context_sources,
                 "include_selection": True,
+                "include_selected_paths": bool(include_selected_paths),
                 "include_browser_content": include_browser and browser_auto,
                 "include_browser_url": browser_auto or preview_context_sources,
                 # Paste-back callers capture the focused text element so the rewrite
@@ -2976,6 +3354,8 @@ class FlowController:
         context = pending.context or {}
         ambient_parts: list[str] = []
         buffered_items, drop_items = self._consume_context_extras()
+        if caller.get("_context_selection_enabled", True):
+            drop_items.extend(self._path_context_items(context.get("selected_paths")))
         screenshot_b64 = pending.screenshot_b64
         screenshot_tool_b64: str | None = pending.screenshot_tool_b64
         if caller.get("_context_screenshot_enabled") is False:
@@ -2984,6 +3364,7 @@ class FlowController:
         elif (
             not screenshot_b64
             and str(caller.get("context_screenshot") or "").strip().lower() == "auto"
+            and not caller.get("_context_screenshot_requires_snip")
         ):
             screenshot_b64 = self._capture_fullscreen_b64()
         allow_screenshot_tool = self._screenshot_tool_allowed(caller)
@@ -3476,6 +3857,60 @@ class FlowController:
             return flat
         return flat[: max(0, limit - 3)].rstrip() + "..."
 
+    def _file_context_progress_texts(self, file_context: list[dict[str, Any]] | None) -> list[str]:
+        """Return one-line, display-only summaries for local file tool use."""
+        texts: list[str] = []
+        seen: set[tuple[str, str, bool]] = set()
+        for raw in file_context or []:
+            if not isinstance(raw, dict):
+                continue
+            tool = str(raw.get("tool") or "").strip()
+            path = str(raw.get("relative_path") or raw.get("path") or "").strip()
+            ok = bool(raw.get("ok"))
+            if not tool or not path:
+                continue
+            key = (tool, path, ok)
+            if key in seen:
+                continue
+            seen.add(key)
+            if not ok:
+                texts.append(t("Tool failed: {tool}: {path}").format(tool=tool, path=path))
+            elif tool == "read_file":
+                texts.append(t("Read file: {path}").format(path=path))
+            elif tool == "list_files":
+                texts.append(t("Listed files: {path}").format(path=path))
+            else:
+                texts.append(t("Used {tool}: {path}").format(tool=tool, path=path))
+        return texts
+
+    def _emit_file_context_progress(
+        self,
+        file_context: list[dict[str, Any]] | None,
+        *,
+        chat_request_id: str = "",
+        conversation_index: int | None = None,
+        include_bubble: bool = True,
+    ) -> None:
+        """Display local-file tool summaries without adding them to reply text."""
+        for text in self._file_context_progress_texts(file_context):
+            payload = {"text": text, "is_progress": True, "is_thought": True}
+            if include_bubble:
+                self._safe_call(self.ui, "ui.reply.chunk", payload, timeout=30.0)
+            if chat_request_id:
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.chunk",
+                    {"request_id": chat_request_id, **payload},
+                    timeout=30.0,
+                )
+            elif conversation_index is not None:
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.chunk",
+                    {"conversation_index": conversation_index, **payload},
+                    timeout=30.0,
+                )
+
     @staticmethod
     def _with_privacy_warning(warning: str, redactions: int) -> str:
         """Append detected-and-censored privacy detail to a context warning."""
@@ -3534,6 +3969,19 @@ class FlowController:
         browser_deferred = browser_requested and not context.get("browser_content")
 
         selected_text = str(context.get("selected_text") or "")
+        selected_paths = self._selected_paths_from_context(context)
+        selected_path_items = self._path_context_items(selected_paths)
+        selected_path_parts: list[str] = []
+        for item in selected_path_items:
+            name = str(item.get("name") or "Selected file")
+            if str(item.get("type") or "") == "image":
+                selected_path_parts.append(f"[Image file]\n{name}")
+            else:
+                selected_path_parts.append(f"[{name}]\n{self._content_to_text(item.get('content'))}".strip())
+        selected_path_text = "\n\n".join(part for part in selected_path_parts if part.strip())
+        selected_context_text = "\n\n".join(
+            part for part in (selected_text, selected_path_text) if part.strip()
+        )
         clipboard_text = str(context.get("clipboard_text") or "")
         github_mode = self._context_mode(caller, "github")
         memory_mode = self._context_mode(caller, "memory")
@@ -3548,7 +3996,7 @@ class FlowController:
         )
         app_redactions = self._redaction_count(active_text)
         browser_redactions = self._redaction_count(browser_text)
-        selected_redactions = self._redaction_count(selected_text)
+        selected_redactions = self._redaction_count(selected_context_text)
         clipboard_redactions = self._redaction_count(clipboard_text)
         app_preview = self._context_preview_text(active_document_text or active_text)
         if app_source_previews:
@@ -3560,7 +4008,7 @@ class FlowController:
                 or context.get("browser_app")
                 or "Browser page text may be fetched after you send the prompt."
             )
-        selected_preview = self._context_preview_text(selected_text)
+        selected_preview = self._context_preview_text(selected_context_text)
         clipboard_preview = self._context_preview_text(clipboard_text)
 
         screenshot_state = "on" if (screenshot_mode == "auto" or (pending and pending.screenshot_b64)) else (
@@ -3609,16 +4057,16 @@ class FlowController:
                 "id": "selection",
                 "key": keys[2],
                 "label": "Selection",
-                "available": bool(selected_text),
-                "state": "on" if selected_text else "off",
-                "tokens": self._token_label(selected_text) if selected_text else "",
+                "available": True,
+                "state": "on" if selected_context_text else "off",
+                "tokens": self._token_label(selected_context_text) if selected_context_text else "",
                 "preview": selected_preview,
                 "privacy_count": selected_redactions,
                 "warning": self._with_privacy_warning(
                     self._context_warning(
-                        self._estimate_context_tokens(selected_text),
-                        available=bool(selected_text),
-                    ) if selected_text else "",
+                        self._estimate_context_tokens(selected_context_text),
+                        available=bool(selected_context_text),
+                    ) if selected_context_text else "",
                     selected_redactions,
                 ),
             },
@@ -3761,6 +4209,70 @@ class FlowController:
         """Handle short for flow controller."""
         return flow_utils.short(text, n)
 
+    @staticmethod
+    def _selected_paths_from_context(context: dict[str, Any]) -> list[str]:
+        """Return normalized selected file/folder paths from a native snapshot."""
+        raw_paths = context.get("selected_paths") if isinstance(context, dict) else []
+        if not isinstance(raw_paths, list):
+            return []
+        seen: set[str] = set()
+        paths: list[str] = []
+        for raw in raw_paths:
+            path = str(raw or "").strip()
+            if not path:
+                continue
+            try:
+                key = os.path.normcase(str(Path(path).expanduser().resolve(strict=False)))
+            except Exception:
+                key = os.path.normcase(os.path.abspath(path))
+            if key in seen:
+                continue
+            seen.add(key)
+            paths.append(path)
+        return paths
+
+    @staticmethod
+    def _path_context_items(paths: Any) -> list[dict[str, Any]]:
+        """Build dropped-context items for explicitly selected file/folder paths."""
+        selected_paths = FlowController._selected_paths_from_context({"selected_paths": paths or []})
+        items: list[dict[str, Any]] = []
+        for raw_path in selected_paths:
+            path = Path(raw_path).expanduser()
+            path_text = str(path)
+            name = path.name or path_text
+            ext = path.suffix.lower()
+            if path.is_dir():
+                items.append({"name": name, "content": f"[Folder: {path_text}]", "type": "file"})
+                continue
+            if ext in _SELECTED_PATH_IMAGE_EXTS:
+                try:
+                    content = base64.b64encode(path.read_bytes()).decode("ascii")
+                    items.append({"name": name, "content": content, "type": "image"})
+                except OSError:
+                    items.append({"name": name, "content": f"[Image file: {path_text}]", "type": "file"})
+                continue
+            if ext in _SELECTED_PATH_TEXT_EXTS or ext == "":
+                try:
+                    content = path.read_bytes()[:_SELECTED_PATH_TEXT_BYTES].decode("utf-8", errors="replace")
+                    items.append({"name": name, "content": content, "type": "text"})
+                except OSError:
+                    items.append({"name": name, "content": f"[File: {path_text}]", "type": "file"})
+                continue
+            if ext in _SELECTED_PATH_DOCUMENT_EXTS:
+                try:
+                    from core.llm_clients.client import read_document_file
+
+                    content = str(read_document_file(path_text) or "").strip()
+                except Exception:
+                    content = ""
+                if content:
+                    items.append({"name": name, "content": content, "type": "text"})
+                else:
+                    items.append({"name": name, "content": f"[File: {path_text}]", "type": "file"})
+                continue
+            items.append({"name": name, "content": f"[File: {path_text}]", "type": "file"})
+        return items
+
     def _context_summary_badges(
         self,
         *,
@@ -3850,6 +4362,12 @@ class FlowController:
         import config
 
         return str(getattr(config, "TTS_PROVIDER", "none")).strip().lower() != "none"
+
+    def _tts_replies_enabled(self) -> bool:
+        """Return whether assistant replies should be spoken automatically."""
+        import config
+
+        return self._tts_enabled() and bool(getattr(config, "TTS_SPEAK_REPLIES", False))
 
     def _tts_sequence_is_active(self) -> bool:
         """Return whether a segmented TTS queue owns playback state."""

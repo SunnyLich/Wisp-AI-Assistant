@@ -102,6 +102,70 @@ def test_paste_text_refuses_windows_unanchored_fallback_when_focus_token_fails(m
     assert result["keystroke_sent"] is False
 
 
+def test_context_snapshot_explorer_selection_uses_paths_not_text(monkeypatch):
+    """Verify Explorer selection capture uses file paths directly."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "Explorer", "pid": 42, "window_id": 777, "bundle_id": ""},
+    )
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": "previous clipboard"})
+    monkeypatch.setattr(native_host, "selected_paths", lambda: [r"C:\Users\sunny\Desktop\note.txt"])
+    calls: list[bool] = []
+
+    def fake_selected_text(*, allow_clipboard_fallback: bool = True) -> str:
+        calls.append(allow_clipboard_fallback)
+        return ""
+
+    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=True,
+        include_selection=True,
+        include_selected_paths=True,
+    )
+
+    assert calls == []
+    assert snapshot["selected_paths"] == [r"C:\Users\sunny\Desktop\note.txt"]
+    assert snapshot["selected_text"] == ""
+    assert snapshot["clipboard_text"] == "previous clipboard"
+
+
+def test_context_snapshot_text_app_selection_uses_text_not_paths(monkeypatch):
+    """Verify non-shell selection capture uses selected text directly."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "Untitled - Notepad", "process_name": "notepad.exe", "pid": 42, "window_id": 777},
+    )
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": "clipboard text"})
+    monkeypatch.setattr(native_host, "selected_paths", lambda: pytest.fail("text app should not read paths"))
+    calls: list[bool] = []
+
+    def fake_selected_text(*, allow_clipboard_fallback: bool = True) -> str:
+        calls.append(allow_clipboard_fallback)
+        return "selected text"
+
+    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=True,
+        include_selection=True,
+        include_selected_paths=True,
+    )
+
+    assert calls == [True]
+    assert snapshot["selected_text"] == "selected text"
+    assert snapshot["selected_paths"] == []
+    assert snapshot["clipboard_text"] == "clipboard text"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_win_context_window_skips_wisp_foreground(monkeypatch):
     """Verify win context window skips wisp foreground behavior."""
@@ -125,7 +189,7 @@ def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
         "_active_app",
         lambda: {"name": "Chrome", "pid": 42, "window_id": 777, "bundle_id": ""},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda: "")
+    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
 
     calls: list[int] = []
@@ -165,7 +229,7 @@ def test_context_snapshot_reads_background_browser_when_foreground_is_document(m
         "_active_app",
         lambda: {"name": "Untitled 1 \u2014 LibreOffice Calc", "pid": 42, "window_id": 111, "bundle_id": ""},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda: "")
+    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
 
     background_browser = context_fetcher.WindowInfo(
@@ -203,7 +267,7 @@ def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
         "_active_app",
         lambda: {"name": "TextEdit", "pid": 101, "bundle_id": "com.apple.TextEdit"},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda: "")
+    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
 
     rows = [

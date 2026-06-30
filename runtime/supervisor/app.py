@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import runpy
+import shutil
 import signal
 import sys
 import threading
@@ -20,6 +21,9 @@ from runtime.bootstrap import (
 )
 from runtime.supervisor.flows import FlowController
 from runtime.supervisor.ipc import WispSupervisor
+
+RUNTIME_LOG_RETENTION_DAYS = 7
+_RUNTIME_LOG_DIR_PREFIXES = ("wisp_runtime_", "wisp_crash_")
 
 
 def _dispatch_module_mode() -> None:
@@ -45,6 +49,58 @@ def _runtime_log_mode() -> str:
     return "crash"
 
 
+def _prune_runtime_logs(log_root: Path | None = None, *, now: float | None = None) -> int:
+    """Remove Wisp runtime log artifacts older than the retention window."""
+    root = log_root if log_root is not None else repo_root() / "build_logs"
+    if not root.is_dir():
+        return 0
+    cutoff = (time.time() if now is None else now) - (RUNTIME_LOG_RETENTION_DAYS * 24 * 60 * 60)
+    removed = 0
+
+    def expired(path: Path) -> bool:
+        """Return True when *path* is older than the retention cutoff."""
+        try:
+            return path.stat().st_mtime < cutoff
+        except OSError:
+            return False
+
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return 0
+
+    for child in children:
+        try:
+            if child.is_dir() and child.name.startswith(_RUNTIME_LOG_DIR_PREFIXES) and expired(child):
+                shutil.rmtree(child)
+                removed += 1
+        except OSError:
+            continue
+
+    ui_root = root / "ui_runtime"
+    if ui_root.is_dir():
+        try:
+            ui_children = list(ui_root.iterdir())
+        except OSError:
+            ui_children = []
+        for child in ui_children:
+            try:
+                if expired(child):
+                    if child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
+                    removed += 1
+            except OSError:
+                continue
+        try:
+            ui_root.rmdir()
+        except OSError:
+            pass
+
+    return removed
+
+
 def _prepare_run_log_dir(*, reason: str = "runtime", expose_to_workers: bool = True) -> Path:
     """Create a runtime log directory when debug logs or crash logs are needed."""
     configured = os.environ.get("WISP_RUN_LOG_DIR")
@@ -52,6 +108,7 @@ def _prepare_run_log_dir(*, reason: str = "runtime", expose_to_workers: bool = T
         path = Path(configured)
     else:
         root = repo_root()
+        _prune_runtime_logs(root / "build_logs")
         prefix = "wisp_runtime" if reason == "runtime" else "wisp_crash"
         path = root / "build_logs" / f"{prefix}_{time.strftime('%Y%m%d-%H%M%S')}"
         if expose_to_workers:
@@ -110,6 +167,7 @@ def main() -> int:
     suppress_console_ctrl_c()
     install_crash_diagnostics()
     log_mode = _runtime_log_mode()
+    _prune_runtime_logs()
     log_dir = _prepare_run_log_dir() if log_mode == "debug" else None
     _configure_logging(log_dir)
     if log_dir is not None:

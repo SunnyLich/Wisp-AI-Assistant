@@ -2399,6 +2399,18 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Fournisseur TTS</translation>
     </message>
     <message>
+      <source>Speak assistant replies automatically</source>
+      <translation>Lire automatiquement les réponses de l’assistant à voix haute</translation>
+    </message>
+    <message>
+      <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
+      <translation>Lorsque cette option est désactivée, les voix configurées restent disponibles pour lire la sélection à voix haute et tester le TTS.</translation>
+    </message>
+    <message>
+      <source>Auto-speak replies</source>
+      <translation>Lecture auto des réponses</translation>
+    </message>
+    <message>
       <source>TTS hold speed</source>
       <translation>Vitesse TTS maintenue</translation>
     </message>
@@ -2629,6 +2641,14 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
     <message>
       <source>Voice (hold to talk)</source>
       <translation>Voix (maintenir pour parler)</translation>
+    </message>
+    <message>
+      <source>Review transcript and context before asking</source>
+      <translation>Vérifier la transcription et le contexte avant de demander</translation>
+    </message>
+    <message>
+      <source>After F9 transcription, open the intent overlay with the transcript in the custom prompt field.</source>
+      <translation>Après la transcription avec F9, ouvre la superposition d’intention avec la transcription dans le champ de prompt personnalisé.</translation>
     </message>
     <message>
       <source>Waiting</source>
@@ -4294,6 +4314,102 @@ Continuer ?</translation>
     <message>
       <source>Didn't catch any speech. Hold the key down while you speak, then release.</source>
       <translation>Aucune parole détectée. Maintenez la touche enfoncée pendant que vous parlez, puis relâchez-la.</translation>
+    </message>
+    <message>
+      <source>Voice &amp; API key</source>
+      <translation>Voix et clé API</translation>
+    </message>
+    <message>
+      <source>Updates</source>
+      <translation>Mises à jour</translation>
+    </message>
+    <message>
+      <source>Choose profile</source>
+      <translation>Choisir un profil</translation>
+    </message>
+    <message>
+      <source>Rename profile</source>
+      <translation>Renommer le profil</translation>
+    </message>
+    <message>
+      <source>Rename profile...</source>
+      <translation>Renommer le profil...</translation>
+    </message>
+    <message>
+      <source>Change the display name for a saved custom profile.</source>
+      <translation>Modifie le nom affiché d'un profil personnalisé enregistré.</translation>
+    </message>
+    <message>
+      <source>Delete profile</source>
+      <translation>Supprimer le profil</translation>
+    </message>
+    <message>
+      <source>Delete profile...</source>
+      <translation>Supprimer le profil...</translation>
+    </message>
+    <message>
+      <source>Delete a saved custom profile.</source>
+      <translation>Supprime un profil personnalisé enregistré.</translation>
+    </message>
+    <message>
+      <source>Delete {profile} profile?</source>
+      <translation>Supprimer le profil {profile} ?</translation>
+    </message>
+    <message>
+      <source>{profile} profile deleted.</source>
+      <translation>Profil {profile} supprimé.</translation>
+    </message>
+    <message>
+      <source>{profile} profile renamed.</source>
+      <translation>Profil {profile} renommé.</translation>
+    </message>
+    <message>
+      <source>Status check timed out. Sign-in may still work; try again or restart Wisp.</source>
+      <translation>La vérification de l’état a expiré. La connexion peut encore fonctionner ; réessayez ou redémarrez Wisp.</translation>
+    </message>
+    <message>
+      <source>Click and drag to select a region  -  ESC to cancel</source>
+      <translation>Cliquez et faites glisser pour sélectionner une région  -  Échap pour annuler</translation>
+    </message>
+    <message>
+      <source>Rectangle</source>
+      <translation>Rectangle</translation>
+    </message>
+    <message>
+      <source>Full screen</source>
+      <translation>Plein écran</translation>
+    </message>
+    <message>
+      <source>Select text or files/folders.</source>
+      <translation>Sélectionnez du texte ou des fichiers/dossiers.</translation>
+    </message>
+    <message>
+      <source>Screenshot captured.</source>
+      <translation>Capture d’écran capturée.</translation>
+    </message>
+    <message>
+      <source>No selected text, clipboard text, or selected files found.</source>
+      <translation>Aucun texte sélectionné, texte du presse-papiers ni fichier sélectionné trouvé.</translation>
+    </message>
+    <message>
+      <source>Selection captured.</source>
+      <translation>Sélection capturée.</translation>
+    </message>
+    <message>
+      <source>Read file: {path}</source>
+      <translation>Fichier lu : {path}</translation>
+    </message>
+    <message>
+      <source>Listed files: {path}</source>
+      <translation>Fichiers listés : {path}</translation>
+    </message>
+    <message>
+      <source>Used {tool}: {path}</source>
+      <translation>{tool} utilisé : {path}</translation>
+    </message>
+    <message>
+      <source>Tool failed: {tool}: {path}</source>
+      <translation>Échec de l’outil : {tool} : {path}</translation>
     </message>
   </context>
 </TS>

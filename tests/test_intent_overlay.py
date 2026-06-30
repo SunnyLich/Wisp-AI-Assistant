@@ -181,6 +181,52 @@ def test_intent_overlay_auto_custom_prompt_keeps_first_typed_key(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_prefilled_custom_prompt_keeps_context_keys(monkeypatch):
+    """A prefilled voice prompt should not steal context toggle keys."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    chosen: list[tuple[str, str]] = []
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        context_items=[{"id": "memory", "key": "1", "label": "Memory", "state": "off"}],
+        initial_custom_text="voice prompt",
+        focus_overlay=True,
+    )
+    overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
+    try:
+        overlay._enter_prefilled_custom_mode()
+
+        assert overlay._prefilled_custom_mode is True
+        assert overlay._custom_mode is False
+        assert overlay._input_line.text() == "voice prompt"
+        assert overlay._input_line.isHidden() is False
+
+        overlay.keyPressEvent(
+            QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_1, Qt.KeyboardModifier.NoModifier, "1")
+        )
+        assert overlay.context_choices()[0]["state"] == "on"
+
+        overlay.keyPressEvent(
+            QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+        )
+        assert chosen == [("S", "voice prompt")]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_cancel_if_focus_leaves(monkeypatch):
     """Verify clicking away cancels a pending custom prompt."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -550,6 +596,63 @@ def test_intent_overlay_cycles_context_chip(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_screenshot_chip_requests_snip_when_enabled_from_off(qapp):
+    """Verify turning Screenshot on asks for a snip instead of silently capturing."""
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[{"id": "screenshot", "key": "5", "label": "Screenshot", "state": "off"}]
+    )
+    requested: list[bool] = []
+    overlay.screenshot_snip_requested.connect(lambda: requested.append(True))
+    try:
+        assert overlay._cycle_context_key("5") is True
+        qapp.processEvents()
+
+        assert overlay.context_choices()[0]["state"] == "on"
+        assert requested == [True]
+
+        assert overlay._cycle_context_key("5") is True
+        qapp.processEvents()
+
+        assert overlay.context_choices()[0]["state"] == "off"
+        assert requested == [True]
+    finally:
+        overlay.close()
+        qapp.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_context_item_force_state_overrides_user_touched_choice(qapp):
+    """Verify a cancelled snip can force Screenshot back off."""
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[{"id": "screenshot", "key": "5", "label": "Screenshot", "state": "off"}]
+    )
+    try:
+        assert overlay._cycle_context_key("5") is True
+        assert overlay.context_choices()[0]["state"] == "on"
+        assert overlay.context_choices()[0]["touched"] is True
+
+        overlay.update_context_items([
+            {
+                "id": "screenshot",
+                "key": "5",
+                "label": "Screenshot",
+                "state": "off",
+                "force_state": True,
+            }
+        ])
+
+        assert overlay.context_choices()[0]["state"] == "off"
+        assert overlay.context_choices()[0]["touched"] is False
+    finally:
+        overlay.close()
+        qapp.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_conversation_choice_toggles_new_and_continue():
     """Verify the intent overlay exposes the selected conversation mode."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -803,8 +906,8 @@ def test_apply_intent_context_choices_updates_caller_policy():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_selection_context_chip_cannot_stay_on_when_unavailable(qapp):
-    """Verify unavailable Selection metadata clears stale overlay state."""
+def test_selection_context_chip_can_start_capture_when_empty(qapp):
+    """Verify empty Selection metadata does not block the capture chip."""
     from ui.intent_overlay import IntentOverlay
 
     overlay = IntentOverlay(
@@ -831,14 +934,18 @@ def test_selection_context_chip_cannot_stay_on_when_unavailable(qapp):
             }
         ])
         selection = overlay.context_choices()[0]
-        assert selection["state"] == "off"
+        assert selection["state"] == "on"
         assert selection["touched"] is False
         assert selection["tokens"] == ""
 
         assert overlay._cycle_context_key("3") is True
         selection = overlay.context_choices()[0]
         assert selection["state"] == "off"
-        assert selection["touched"] is False
+        assert selection["touched"] is True
+        assert overlay._cycle_context_key("3") is True
+        selection = overlay.context_choices()[0]
+        assert selection["state"] == "on"
+        assert selection["touched"] is True
     finally:
         overlay.close()
         qapp.processEvents()

@@ -94,6 +94,7 @@ class UiSettings:
 class AudioSettings:
     """Store audio settings configuration data."""
     tts_provider: str
+    tts_speak_replies: bool
     tts_playback_rate: float
     tts_hold_playback_rate: float
     tts_volume: float
@@ -198,6 +199,7 @@ class AppSettings:
             ),
             audio=AudioSettings(
                 tts_provider=str(values.get("TTS_PROVIDER", "")),
+                tts_speak_replies=_copy_bool(values.get("TTS_SPEAK_REPLIES"), False),
                 tts_playback_rate=float(values.get("TTS_PLAYBACK_RATE", 1.0)),
                 tts_hold_playback_rate=float(values.get("TTS_HOLD_PLAYBACK_RATE", 1.0)),
                 tts_volume=float(values.get("TTS_VOLUME", 1.0)),

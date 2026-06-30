@@ -1,5 +1,6 @@
 """Tests for macos py test app logging."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,49 @@ def test_prepare_run_log_dir_respects_existing_env(tmp_path, monkeypatch):
 
     assert log_dir == configured
     assert configured.is_dir()
+
+
+def test_prune_runtime_logs_removes_wisp_logs_older_than_retention(tmp_path):
+    """Verify runtime log pruning removes only expired Wisp log artifacts."""
+    log_root = tmp_path / "build_logs"
+    old_runtime = log_root / "wisp_runtime_20260101-010101"
+    old_crash = log_root / "wisp_crash_20260101-010101"
+    fresh_runtime = log_root / "wisp_runtime_20260108-010101"
+    unrelated = log_root / "app_workflow_tests_20260101"
+    ui_log = log_root / "ui_runtime" / "ui_freeze_20260101-010101.log"
+    for path in (old_runtime, old_crash, fresh_runtime, unrelated, ui_log.parent):
+        path.mkdir(parents=True, exist_ok=True)
+    for path in (old_runtime, old_crash, fresh_runtime, unrelated):
+        (path / "sample.log").write_text("log\n", encoding="utf-8")
+    ui_log.write_text("ui log\n", encoding="utf-8")
+
+    now = 1_800_000_000.0
+    cutoff = now - (supervisor_app.RUNTIME_LOG_RETENTION_DAYS * 24 * 60 * 60)
+    old_time = cutoff - 1
+    for path in (old_runtime, old_crash, unrelated, ui_log):
+        os.utime(path, (old_time, old_time))
+    os.utime(fresh_runtime, (cutoff, cutoff))
+
+    assert supervisor_app._prune_runtime_logs(log_root, now=now) == 3
+    assert not old_runtime.exists()
+    assert not old_crash.exists()
+    assert not ui_log.exists()
+    assert fresh_runtime.exists()
+    assert unrelated.exists()
+
+
+def test_prepare_run_log_dir_prunes_expired_runtime_logs(tmp_path, monkeypatch):
+    """Verify automatic run log setup prunes old Wisp runtime logs."""
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
+    old_runtime = tmp_path / "build_logs" / "wisp_runtime_20260101-010101"
+    old_runtime.mkdir(parents=True)
+    os.utime(old_runtime, (0, 0))
+
+    log_dir = supervisor_app._prepare_run_log_dir()
+
+    assert log_dir.exists()
+    assert not old_runtime.exists()
 
 
 def test_main_exits_when_single_instance_lock_is_held(tmp_path, monkeypatch):

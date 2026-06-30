@@ -152,6 +152,17 @@ confirm() {
     [[ "$answer" =~ ^[Yy](es)?$ ]]
 }
 
+clean_build_outputs() {
+    rm -rf \
+        "$ROOT/build" \
+        "$ROOT/dist" \
+        "$ROOT/.pytest_cache" \
+        "$ROOT/.pytest-tmp" \
+        "$ROOT/.pytest_tmp" \
+        "$ROOT/.tmp_pytest"
+    find "$ROOT" -maxdepth 1 -type d -name '.pytest-tmp-*' -exec rm -rf {} +
+}
+
 if ! $USE_GLOBAL_PYTHON; then
     if [[ ! -x "$VENV_PYTHON" ]]; then
         if confirm "Build virtual environment not found at $VENV_DIR. Create it now?"; then
@@ -211,7 +222,7 @@ if [[ -f "$DIST_BIN" ]]; then
 fi
 
 if $CLEAN; then
-    rm -rf "$ROOT/build" "$ROOT/dist"
+    clean_build_outputs
 fi
 
 if ! $SKIP_INSTALL; then

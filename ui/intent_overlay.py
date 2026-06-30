@@ -252,6 +252,8 @@ class IntentOverlay(QWidget):
     """Model intent overlay."""
     intent_chosen = Signal(str, str)
     cancelled     = Signal()
+    screenshot_snip_requested = Signal()
+    selection_capture_requested = Signal(str)
     _raw_key      = Signal(str)
 
     def __init__(
@@ -262,6 +264,8 @@ class IntentOverlay(QWidget):
         conversation_options: list[dict] | None = None,
         project_options: list[dict] | None = None,
         active_project_id: str | None = None,
+        initial_custom_text: str = "",
+        focus_overlay: bool = False,
         parent=None,
     ):
         """Initialize the intent overlay instance."""
@@ -324,8 +328,12 @@ class IntentOverlay(QWidget):
         self._hovered: int | None = None
         self._row_rects: list[QRect] = []
         self._handled = False
+        self._suppress_hide_cancel = False
         self._selection_pending_idx: int | None = None
         self._custom_mode = False
+        self._prefilled_custom_mode = False
+        self._initial_custom_text = str(initial_custom_text or "").strip()
+        self._focus_overlay_requested = bool(focus_overlay)
         self._was_activated = False   # macOS: dismiss on focus-out once activated
         self._kb_hook = None
         self._input_grabbed_keyboard = False
@@ -446,6 +454,10 @@ class IntentOverlay(QWidget):
     def context_choices(self) -> list[dict]:
         """Return the current per-prompt context source states."""
         return [dict(item) for item in self._context_items]
+
+    def current_custom_text(self) -> str:
+        """Return the currently typed custom prompt text, if any."""
+        return self._input_line.text().strip()
 
     def _base_height(self) -> int:
         """Return the picker height for the current rows and context previews."""
@@ -572,12 +584,7 @@ class IntentOverlay(QWidget):
             next_item.setdefault("default_state", next_item.get("state", "off"))
             next_item.setdefault("touched", False)
             current = current_by_id.get(str(next_item.get("id") or ""))
-            if (
-                str(next_item.get("id") or "") == "selection"
-                and next_item.get("available") is False
-            ):
-                next_item["state"] = "off"
-                next_item["touched"] = False
+            if next_item.pop("force_state", False):
                 refreshed.append(next_item)
                 continue
             if current is not None:
@@ -601,10 +608,10 @@ class IntentOverlay(QWidget):
         if next_h == self._normal_h:
             return
         self._normal_h = next_h
-        if self._custom_mode:
+        if self._prompt_input_visible():
             next_h += _INPUT_EXTRA
         self.setFixedSize(_W, next_h)
-        if self._custom_mode:
+        if self._prompt_input_visible():
             self._input_line.setGeometry(
                 _PAD_H, self._normal_h - 20, _W - _PAD_H * 2, 34
             )
@@ -705,7 +712,7 @@ class IntentOverlay(QWidget):
             y += preview_h
 
         # ESC hint
-        if self._custom_mode:
+        if self._prompt_input_visible():
             esc_y = y + _INPUT_EXTRA + 4
         else:
             esc_y = y + 4
@@ -984,13 +991,7 @@ class IntentOverlay(QWidget):
 
     def _cycle_context_item(self, item: dict) -> None:
         """Cycle one context source through its explicit prompt states."""
-        if str(item.get("id") or "") == "selection" and item.get("available") is False:
-            item["state"] = "off"
-            item["touched"] = False
-            self._note_interaction()
-            self._resize_for_context_preview()
-            self.update()
-            return
+        item_id = str(item.get("id") or "")
         state = str(item.get("state") or "off").lower()
         if state == "auto":
             item["state"] = "off"
@@ -1002,6 +1003,10 @@ class IntentOverlay(QWidget):
         self._note_interaction()
         self._resize_for_context_preview()
         self.update()
+        if item_id == "screenshot" and state == "off" and item["state"] == "on":
+            QTimer.singleShot(0, self.screenshot_snip_requested.emit)
+        if item_id == "selection" and state == "off" and item["state"] == "on":
+            QTimer.singleShot(0, lambda: self.selection_capture_requested.emit(self.current_custom_text()))
 
     def _context_item_at(self, pos: QPoint) -> dict | None:
         """Return the context chip under a mouse position."""
@@ -1281,6 +1286,7 @@ class IntentOverlay(QWidget):
     def _enter_custom_mode(self, *, drop_trigger_key: bool = True):
         """Handle enter custom mode for intent overlay."""
         self._custom_mode = True
+        self._prefilled_custom_mode = False
         self._debug("enter-custom-before")
         self._timer.stop()
         new_h = self._normal_h + _INPUT_EXTRA
@@ -1296,6 +1302,28 @@ class IntentOverlay(QWidget):
         self._debug("enter-custom-after")
         for delay_ms in (25, 75, 150):
             QTimer.singleShot(delay_ms, self._focus_custom_input)
+
+    def _enter_prefilled_custom_mode(self) -> None:
+        """Show a custom prompt value while keeping picker shortcut focus."""
+        if self._handled or self._custom_mode or self._prefilled_custom_mode:
+            return
+        if not self._initial_custom_text:
+            return
+        self._prefilled_custom_mode = True
+        new_h = self._normal_h + _INPUT_EXTRA
+        self.setFixedSize(_W, new_h)
+        self._move_to_screen_center(new_h)
+        self._input_line.setGeometry(
+            _PAD_H, self._normal_h - 20, _W - _PAD_H * 2, 34
+        )
+        self._input_line.setText(self._initial_custom_text)
+        self._input_line.show()
+        self.update()
+        self._focus_overlay()
+
+    def _prompt_input_visible(self) -> bool:
+        """Return whether the custom prompt input is visible below the rows."""
+        return bool(self._custom_mode or self._prefilled_custom_mode)
 
     def _focus_custom_input(self) -> None:
         """Focus custom input."""
@@ -1416,6 +1444,13 @@ class IntentOverlay(QWidget):
         self._debug_key("overlay-keypress", event)
         if self._custom_mode:
             super().keyPressEvent(event)
+            return
+        if self._prefilled_custom_mode and event.key() in {
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+        }:
+            self._fire_custom()
+            event.accept()
             return
         key_map: dict[Qt.Key, int] = {}
         for i, row in enumerate(self._rows):
@@ -1547,7 +1582,12 @@ class IntentOverlay(QWidget):
             listener.daemon = True
             listener.start()
             self._kb_hook = listener
-        if self._auto_custom_mode is not None:
+        if self._initial_custom_text:
+            QTimer.singleShot(0, self._enter_prefilled_custom_mode)
+            if _IS_WIN or self._focus_overlay_requested:
+                for delay_ms in (25, 75, 150):
+                    QTimer.singleShot(delay_ms, self._focus_overlay)
+        elif self._auto_custom_mode is not None:
             QTimer.singleShot(0, self._enter_auto_custom_mode)
         elif _IS_WIN:
             for delay_ms in (25, 75, 150):
@@ -1587,8 +1627,17 @@ class IntentOverlay(QWidget):
 
     def hideEvent(self, event):
         """Treat unexpected hides as cancellation so the icon returns idle."""
+        if self._suppress_hide_cancel:
+            self._suppress_hide_cancel = False
+            super().hideEvent(event)
+            return
         self._cancel_if_unhandled()
         super().hideEvent(event)
+
+    def hide_without_cancel(self) -> None:
+        """Hide temporarily for an interactive capture without cancelling."""
+        self._suppress_hide_cancel = True
+        self.hide()
 
     def close_without_cancel(self) -> None:
         """Close an internally superseded picker without emitting cancelled."""

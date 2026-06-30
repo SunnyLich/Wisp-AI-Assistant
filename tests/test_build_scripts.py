@@ -60,7 +60,7 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"', shell)
         self.assertIn('echo "ERROR: $name is required for packaging."', shell)
         self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"'), shell.index('"$CREATE_PYTHON" -m venv'))
-        self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"'), shell.index('rm -rf "$ROOT/build" "$ROOT/dist"'))
+        self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"'), shell.index("clean_build_outputs"))
 
     def test_windows_build_warns_loudly_when_elevenlabs_is_skipped(self) -> None:
         powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
@@ -109,8 +109,31 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('echo "ERROR: $name must contain files for packaging."', shell)
         first_shell_packaging_check = shell.index('require_file "$SPEC" "packaging/$SPEC_NAME"')
         self.assertLess(first_shell_packaging_check, shell.index('"$CREATE_PYTHON" -m venv'))
-        self.assertLess(first_shell_packaging_check, shell.index('rm -rf "$ROOT/build" "$ROOT/dist"'))
+        self.assertLess(first_shell_packaging_check, shell.index("clean_build_outputs"))
         self.assertLess(first_shell_packaging_check, shell.index('"$PYTHON" -m pip install'))
+
+    def test_build_clean_removes_pytest_temp_roots(self) -> None:
+        powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
+        linux = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
+        macos = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
+
+        self.assertIn("function Clear-BuildOutputs", powershell)
+        self.assertIn('".pytest_cache"', powershell)
+        self.assertIn('".pytest-tmp"', powershell)
+        self.assertIn('".pytest_tmp"', powershell)
+        self.assertIn('".tmp_pytest"', powershell)
+        self.assertIn('Filter ".pytest-tmp-*"', powershell)
+        self.assertIn("Clear-BuildOutputs", powershell)
+
+        for script in (linux, macos):
+            with self.subTest(script=script[:32]):
+                self.assertIn("clean_build_outputs()", script)
+                self.assertIn('"$ROOT/.pytest_cache"', script)
+                self.assertIn('"$ROOT/.pytest-tmp"', script)
+                self.assertIn('"$ROOT/.pytest_tmp"', script)
+                self.assertIn('"$ROOT/.tmp_pytest"', script)
+                self.assertIn("find \"$ROOT\" -maxdepth 1 -type d -name '.pytest-tmp-*'", script)
+                self.assertIn("clean_build_outputs", script)
 
     def test_build_docs_describe_python_minor_version_requirement(self) -> None:
         docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
@@ -164,6 +187,17 @@ class BuildScriptTests(unittest.TestCase):
             with self.subTest(spec=spec_name):
                 spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
                 self.assertIn('pyproject.toml', spec)
+
+    def test_specs_bundle_mcp_bridge_as_default_addon(self) -> None:
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertIn('ROOT / "addons" / "mcp_bridge"', spec)
+                self.assertIn('"addons/mcp_bridge"', spec)
+
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+        self.assertIn("MCP Bridge addon is bundled", docs)
+        self.assertIn("servers.json", docs)
 
     def test_specs_bundle_runtime_worker_modules_for_frozen_module_dispatch(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):

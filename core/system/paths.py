@@ -102,6 +102,7 @@ _BUNDLE = _bundle_root()           # read-only bundled files
 
 ASSETS_DIR       = _BUNDLE / "assets"
 DOLL_ASSETS_DIR  = ASSETS_DIR / "doll"
+BUNDLED_ADDONS_DIR = _BUNDLE / "addons"
 UPDATE_DOWNLOAD_DIR = _user_data_dir() / "updates"
 
 # Single-instance lock. Lives in the user-data dir (not the repo / bundle) so a

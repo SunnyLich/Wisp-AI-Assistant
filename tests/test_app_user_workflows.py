@@ -1008,7 +1008,7 @@ def test_context_disabled_sources_preview_and_os_native_contract_workflow(
         "_active_app",
         lambda: {"name": "TextEdit", "pid": 101, "bundle_id": "com.apple.TextEdit"},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda: "")
+    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
     monkeypatch.setattr(
         "core.platform.macos_native.list_document_windows",

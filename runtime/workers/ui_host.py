@@ -200,6 +200,48 @@ def _translate_notice_text(text: str) -> str:
     return "\n".join(_translate_notice_line(line) if line else line for line in lines)
 
 
+def _is_speech_status_notice(text: str) -> bool:
+    """Return True for non-error STT/TTS warmup/readiness notices."""
+    lowered = " ".join(str(text or "").lower().split())
+    if not lowered or "failed" in lowered or "error:" in lowered:
+        return False
+    status_terms = ("ready", "warming up", "warmup", "still warming")
+    speech_terms = (
+        "tts",
+        "stt",
+        "speech recognition",
+        "speech model",
+        "local speech",
+        "local voice",
+    )
+    return any(term in lowered for term in status_terms) and any(
+        term in lowered for term in speech_terms
+    )
+
+
+def _bubble_has_active_prompt_reply(bubble: Any) -> bool:
+    """Whether replacing the bubble would interrupt an active prompt reply."""
+    if bubble is None:
+        return False
+    active = bool(
+        getattr(bubble, "_thinking", False)
+        or getattr(bubble, "_transcript_preview", False)
+        or (
+            int(getattr(bubble, "_reply_chunk_count", 0) or 0) > 0
+            and bool(getattr(bubble, "_full_text", ""))
+        )
+    )
+    if not active:
+        return False
+    is_visible = getattr(bubble, "isVisible", None)
+    if callable(is_visible):
+        try:
+            return bool(is_visible())
+        except Exception:
+            return True
+    return True
+
+
 def _live_file_approval_summary(params: dict[str, Any]) -> tuple[str, str, str]:
     """Return action, path, and display text for live file approvals."""
     details = params.get("details") if isinstance(params.get("details"), dict) else {}
@@ -2063,6 +2105,10 @@ class QtProtocolHost:
             return self._chat_error(**params)
         if method == "ui.chat.context_preview":
             return self._chat_context_preview(**params)
+        if method == "ui.chat.capture_context":
+            return self._chat_capture_context(**params)
+        if method == "ui.chat.capture_cancelled":
+            return self._chat_capture_cancelled(**params)
         if method == "ui.chat.add_conversation":
             return self._chat_add_conversation(**params)
         if method == "ui.chat.begin_conversation":
@@ -2225,6 +2271,8 @@ class QtProtocolHost:
         caller_idx: int = 0,
         target_hwnd: int = 0,
         context_items: list[dict[str, Any]] | None = None,
+        initial_custom_text: str = "",
+        focus_overlay: bool = False,
     ) -> dict[str, Any]:
         """Show intent."""
         from ui.intent_overlay import IntentOverlay
@@ -2239,6 +2287,8 @@ class QtProtocolHost:
             conversation_options=self._intent_conversation_options(),
             project_options=self._intent_project_options(),
             active_project_id=self._intent_active_project_id(),
+            initial_custom_text=initial_custom_text,
+            focus_overlay=focus_overlay,
         )
         def _chosen(intent: str, custom: str) -> None:
             overlay = self._intent
@@ -2259,6 +2309,36 @@ class QtProtocolHost:
             )
 
         self._intent.intent_chosen.connect(_chosen)
+        def _request_screenshot_snip() -> None:
+            overlay = self._intent
+            custom_text = overlay.current_custom_text() if overlay else ""
+            self.emit(
+                "ui.intent.snip.requested",
+                {
+                    "caller_idx": caller_idx,
+                    "context_choices": overlay.context_choices() if overlay else [],
+                    "custom_text": custom_text,
+                },
+            )
+            if overlay is not None:
+                overlay.hide_without_cancel()
+            self._show_snip(event_prefix="ui.intent.snip", app_region=self._snip_app_region(target_hwnd))
+
+        self._intent.screenshot_snip_requested.connect(_request_screenshot_snip)
+        def _request_selection_capture(custom_text: str = "") -> None:
+            overlay = self._intent
+            self.emit(
+                "ui.intent.selection.requested",
+                {
+                    "caller_idx": caller_idx,
+                    "context_choices": overlay.context_choices() if overlay else [],
+                    "custom_text": str(custom_text or ""),
+                },
+            )
+            if overlay is not None:
+                overlay.hide_without_cancel()
+
+        self._intent.selection_capture_requested.connect(_request_selection_capture)
         def _cancelled() -> None:
             self._apply_cancelled_intent_conversation_choice(self._intent)
             self.emit("ui.intent.cancelled", {"caller_idx": caller_idx})
@@ -2291,7 +2371,11 @@ class QtProtocolHost:
             return {"updated": False, "reason": "closed"}
         return {"updated": True}
 
-    def _show_snip(self) -> dict[str, Any]:
+    def _show_snip(
+        self,
+        event_prefix: str = "ui.snip",
+        app_region: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
         """Show snip."""
         from ui.snip_overlay import SnipOverlay
 
@@ -2309,11 +2393,11 @@ class QtProtocolHost:
                 pass
             self._snip = None
         t_closed = time.monotonic()
-        snip = SnipOverlay()
+        snip = SnipOverlay(app_region=app_region)
         t_built = time.monotonic()
         self._snip = snip
-        snip.region_selected.connect(lambda region: self.emit("ui.snip.region", region))
-        snip.cancelled.connect(lambda: self.emit("ui.snip.cancelled", {}))
+        snip.region_selected.connect(lambda region: self.emit(f"{event_prefix}.region", region))
+        snip.cancelled.connect(lambda: self.emit(f"{event_prefix}.cancelled", {}))
         # Identity-guard the clear so a previous overlay's deferred destroyed
         # signal can't null out a newer one's reference.
         snip.destroyed.connect(
@@ -2322,6 +2406,7 @@ class QtProtocolHost:
         snip.show()
         snip.raise_()
         snip.activateWindow()
+        snip.focus_for_capture()
         t_shown = time.monotonic()
         print(
             f"[snip.timing] close_old={t_closed - t0:.2f}s build={t_built - t_closed:.2f}s "
@@ -2330,6 +2415,110 @@ class QtProtocolHost:
             flush=True,
         )
         return {"shown": True}
+
+    def _snip_app_region(self, target_hwnd: int = 0) -> dict[str, int] | None:
+        """Best-effort app/window bounds for the snip overlay App mode."""
+        if sys.platform == "win32":
+            return self._win_snip_app_region(target_hwnd)
+        if sys.platform == "darwin":
+            return self._mac_snip_app_region()
+        return None
+
+    def _win_snip_app_region(self, target_hwnd: int = 0) -> dict[str, int] | None:
+        """Return a Windows mss-compatible region for a target or top external window."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            hwnd = int(target_hwnd or 0)
+            if not self._win_is_capture_window(hwnd):
+                hwnd = self._win_top_external_window()
+            if not hwnd:
+                return None
+            rect = wintypes.RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return None
+            width = int(rect.right - rect.left)
+            height = int(rect.bottom - rect.top)
+            if width <= 4 or height <= 4:
+                return None
+            return {"left": int(rect.left), "top": int(rect.top), "width": width, "height": height}
+        except Exception:
+            return None
+
+    def _win_is_capture_window(self, hwnd: int) -> bool:
+        """Return whether hwnd looks like a user app window, not Wisp chrome."""
+        if sys.platform != "win32" or not hwnd:
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            if not user32.IsWindow(hwnd) or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+                return False
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if int(pid.value or 0) == os.getpid():
+                return False
+            length = int(user32.GetWindowTextLengthW(hwnd) or 0)
+            return length > 0
+        except Exception:
+            return False
+
+    def _win_top_external_window(self) -> int:
+        """Return the top visible non-Wisp window on Windows."""
+        if sys.platform != "win32":
+            return 0
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            gw_hwndnext = 2
+            hwnd = int(user32.GetTopWindow(0) or 0)
+            seen: set[int] = set()
+            while hwnd and len(seen) < 200:
+                if hwnd in seen:
+                    break
+                seen.add(hwnd)
+                if self._win_is_capture_window(hwnd):
+                    return hwnd
+                hwnd = int(user32.GetWindow(hwnd, gw_hwndnext) or 0)
+        except Exception:
+            return 0
+        return 0
+
+    def _mac_snip_app_region(self) -> dict[str, int] | None:
+        """Return the frontmost non-Wisp macOS window bounds, if available."""
+        if sys.platform != "darwin":
+            return None
+        try:
+            import Quartz  # type: ignore
+
+            windows = Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionOnScreenOnly,
+                Quartz.kCGNullWindowID,
+            ) or []
+            own_pid = os.getpid()
+            for row in windows:
+                try:
+                    if int(row.get("kCGWindowOwnerPID") or 0) == own_pid:
+                        continue
+                    if int(row.get("kCGWindowLayer") or 0) != 0:
+                        continue
+                    bounds = row.get("kCGWindowBounds") or {}
+                    left = int(round(float(bounds.get("X") or 0)))
+                    top = int(round(float(bounds.get("Y") or 0)))
+                    width = int(round(float(bounds.get("Width") or 0)))
+                    height = int(round(float(bounds.get("Height") or 0)))
+                    if width > 4 and height > 4:
+                        return {"left": left, "top": top, "width": width, "height": height}
+                except Exception:
+                    continue
+        except Exception:
+            return None
+        return None
 
     def _overlay_state(self, state: str = "idle") -> dict[str, Any]:
         """Handle overlay state for qt protocol host."""
@@ -2389,7 +2578,11 @@ class QtProtocolHost:
         collapsed = " | ".join(part for part in str(text or "").splitlines() if part)
         log.info("bubble notice: %s", collapsed or "(empty)")
         translated = _translate_notice_text(text)
-        self._ensure_bubble().show_notice(translated, timeout_ms=timeout_ms)
+        bubble = self._ensure_bubble()
+        if _is_speech_status_notice(text) and _bubble_has_active_prompt_reply(bubble):
+            log.info("suppressed speech status notice during active reply: %s", collapsed or "(empty)")
+            return {"shown": False, "text": translated, "reason": "active_reply"}
+        bubble.show_notice(translated, timeout_ms=timeout_ms)
         return {"shown": True, "text": translated}
 
     def _reply_transcript(self, text: str = "") -> dict[str, Any]:
@@ -3347,6 +3540,7 @@ class QtProtocolHost:
                 active_idx=self._active_conversation_idx,
                 on_select=self._set_active_conversation,
                 on_context_preview=lambda payload: self.emit("ui.chat.context_preview", payload),
+                on_context_capture=self._chat_context_capture_requested,
             )
             self._chat.destroyed.connect(lambda: setattr(self, "_chat", None))
             self._chat.show()
@@ -3356,6 +3550,20 @@ class QtProtocolHost:
             if watchdog is not None:
                 watchdog.beat()
         return {"shown": True, "reused": False}
+
+    def _chat_context_capture_requested(self, payload: dict[str, Any]) -> None:
+        """Route chat context-chip interactive capture requests."""
+        source = str((payload or {}).get("source") or "")
+        if source == "screenshot":
+            self.emit("ui.chat.snip.requested", dict(payload or {}))
+            if self._chat is not None:
+                self._chat.hide()
+            self._show_snip(event_prefix="ui.chat.snip", app_region=self._snip_app_region())
+            return
+        if source == "selection":
+            self.emit("ui.chat.selection.requested", dict(payload or {}))
+            if self._chat is not None:
+                self._chat.hide()
 
     def _chat_context_preview(
         self,
@@ -3367,6 +3575,42 @@ class QtProtocolHost:
             return {"updated": False, "reason": "no_chat"}
         self._chat.update_context_preview(str(preview_id or ""), context_items or [])
         return {"updated": True}
+
+    def _chat_capture_context(
+        self,
+        name: str = "",
+        content: str = "",
+        item_type: str = "text",
+        source: str = "",
+        paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Attach interactively captured context to the visible chat composer."""
+        self._show_chat(force_new=False)
+        if not self._chat_is_visible():
+            return {"attached": False, "reason": "no_chat"}
+        result = self._chat.attach_captured_context(
+            name=name,
+            content=content,
+            item_type=item_type,
+            source=source,
+            paths=paths or [],
+        )
+        self._chat.show()
+        self._chat.raise_()
+        self._chat.activateWindow()
+        return result if isinstance(result, dict) else {"attached": bool(result)}
+
+    def _chat_capture_cancelled(self, source: str = "") -> dict[str, Any]:
+        """Reset a chat context chip after an interactive capture was cancelled."""
+        if self._chat is not None and not self._chat_is_visible():
+            self._show_chat(force_new=False)
+        if not self._chat_is_visible():
+            return {"cancelled": False, "reason": "no_chat"}
+        result = self._chat.cancel_context_capture(source=source)
+        self._chat.show()
+        self._chat.raise_()
+        self._chat.activateWindow()
+        return result if isinstance(result, dict) else {"cancelled": bool(result)}
 
     def _show_settings(self, extra_tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Show settings."""

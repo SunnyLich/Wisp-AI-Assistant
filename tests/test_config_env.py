@@ -534,6 +534,32 @@ class ConfigEnvTests(unittest.TestCase):
         finally:
             config.HOTKEY_READ_SELECTION_ALOUD = previous
 
+    def test_tts_speak_replies_loads_from_env(self):
+        """Verify TTS provider setup does not imply auto-speaking replies."""
+        previous = {
+            "TTS_SPEAK_REPLIES": getattr(config, "TTS_SPEAK_REPLIES", False),
+            "SETTINGS": getattr(config, "SETTINGS", None),
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("TTS_SPEAK_REPLIES", None)
+                config.reload()
+            self.assertFalse(config.TTS_SPEAK_REPLIES)
+            self.assertFalse(config.SETTINGS.audio.tts_speak_replies)
+
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"TTS_SPEAK_REPLIES": "true"},
+                clear=False,
+            ):
+                config.reload()
+            self.assertTrue(config.TTS_SPEAK_REPLIES)
+            self.assertTrue(config.SETTINGS.audio.tts_speak_replies)
+        finally:
+            config.TTS_SPEAK_REPLIES = previous["TTS_SPEAK_REPLIES"]
+            if previous["SETTINGS"] is not None:
+                config.SETTINGS = previous["SETTINGS"]
+
     def test_audio_chunk_settings_load_from_env(self):
         """Verify TTS/STT chunk tuning settings load from env."""
         previous = {
@@ -796,6 +822,25 @@ class ConfigEnvTests(unittest.TestCase):
         finally:
             config.VOICE_CALLER.clear()
             config.VOICE_CALLER.update(previous)
+
+    def test_voice_review_transcript_loads_from_env(self):
+        """Verify F9 review mode defaults off and can be enabled."""
+        previous = getattr(config, "VOICE_REVIEW_TRANSCRIPT", False)
+        try:
+            with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("VOICE_REVIEW_TRANSCRIPT", None)
+                config.reload()
+            self.assertFalse(config.VOICE_REVIEW_TRANSCRIPT)
+
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"VOICE_REVIEW_TRANSCRIPT": "true"},
+                clear=False,
+            ):
+                config.reload()
+            self.assertTrue(config.VOICE_REVIEW_TRANSCRIPT)
+        finally:
+            config.VOICE_REVIEW_TRANSCRIPT = previous
 
     def test_snip_defaults_use_no_extra_context(self):
         """Verify screen snip adds no extra context by default (memory off)."""

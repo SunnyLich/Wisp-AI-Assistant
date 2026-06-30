@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -22,11 +23,12 @@ from typing import Any
 
 from core import addon_runtime
 from core import addon_store
-from core.system.paths import ADDONS_DIR, REPO_ROOT
+from core.system.paths import ADDONS_DIR, BUNDLED_ADDONS_DIR, REPO_ROOT
 
 log = logging.getLogger("wisp.addons")
 
 _HOST_TIMEOUT_SECONDS = 2.0
+_DEFAULT_BUNDLED_ADDONS = ("mcp_bridge",)
 
 
 def _terminal(event: str) -> None:
@@ -224,9 +226,11 @@ class AddonHostProcess:
 
 class AddonManager:
     """Coordinate addon manager behavior."""
-    def __init__(self, addons_dir: Path | None = None):
+    def __init__(self, addons_dir: Path | None = None, bundled_addons_dir: Path | None = None):
         """Initialize the addon manager instance."""
         self._dir = addons_dir or ADDONS_DIR
+        self._bundled_addons_dir = bundled_addons_dir or BUNDLED_ADDONS_DIR
+        self._seed_bundled_defaults = bundled_addons_dir is not None or _same_path(self._dir, ADDONS_DIR)
         self._mods: list[LoadedAddon] = []  # compatibility name used by callers/tests
         self._tool_registry: Any = None
 
@@ -236,8 +240,29 @@ class AddonManager:
         self._mods = []
         if not self._dir.exists():
             self._dir.mkdir(parents=True, exist_ok=True)
+        self._seed_default_addons()
         for child in sorted(p for p in self._dir.iterdir() if p.is_dir()):
             self._load_addon(child)
+
+    def _seed_default_addons(self) -> None:
+        """Copy bundled default addons into the writable addon folder when absent."""
+        if not self._seed_bundled_defaults:
+            return
+        bundled_root = self._bundled_addons_dir
+        if not bundled_root.exists():
+            return
+        for folder_name in _DEFAULT_BUNDLED_ADDONS:
+            source = bundled_root / folder_name
+            target = self._dir / folder_name
+            if not source.is_dir() or target.exists():
+                continue
+            try:
+                if source.resolve() == target.resolve():
+                    continue
+                shutil.copytree(source, target)
+                _terminal(f"seeded default addon {folder_name}")
+            except Exception:
+                log.error("[addons] Failed to seed bundled addon %s:\n%s", folder_name, traceback.format_exc())
 
     def _load_addon(self, folder: Path) -> None:
         """Load addon."""
@@ -890,6 +915,14 @@ def _first_existing(*paths: Path) -> Path | None:
         if path.exists():
             return path
     return None
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    """Return whether two paths point at the same filesystem location."""
+    try:
+        return left.resolve() == right.resolve()
+    except Exception:
+        return left == right
 
 
 def _load_toml(path: Path) -> dict[str, Any]:

@@ -63,6 +63,7 @@ _TTS_TIMING_NOTICE = (
     "This provider does not send real word timestamps. The bubble uses normal reveal speed "
     "instead of audio-synced word highlighting."
 )
+_AUTH_STATUS_TIMEOUT_MS = 7000
 
 
 # Sentinel data value for the "Custom / enter manually…" model combo entry.
@@ -297,6 +298,7 @@ class SettingsDialog(QDialog):
         self._pending_test_progress_lock = threading.Lock()
         self._pending_status_results: list[tuple[int, str, object, str]] = []
         self._pending_status_results_lock = threading.Lock()
+        self._pending_status_attrs: set[str] = set()
         self._running_test_tokens: set[tuple[str, int]] = set()
         self._latest_test_token: dict[str, int] = {}
         self._last_save_warnings: list[str] = []
@@ -664,11 +666,18 @@ class SettingsDialog(QDialog):
         if saved_profiles:
             menu.addSeparator()
             for index, profile_id, label in saved_profiles:
-                action = menu.addAction(t("Use saved profile: {profile}").format(profile=label))
+                action = menu.addAction(label)
                 action.setToolTip(t("Load this custom profile into Settings."))
                 action.triggered.connect(
                     lambda _checked=False, slot=index: self._apply_saved_profile(slot)
                 )
+            menu.addSeparator()
+            rename_action = menu.addAction(t("Rename profile..."))
+            rename_action.setToolTip(t("Change the display name for a saved custom profile."))
+            rename_action.triggered.connect(self._rename_custom_profile)
+            delete_action = menu.addAction(t("Delete profile..."))
+            delete_action.setToolTip(t("Delete a saved custom profile."))
+            delete_action.triggered.connect(self._delete_custom_profile)
         menu.addSeparator()
         create_action = menu.addAction(t("Create custom profile..."))
         create_action.setToolTip(t("Save the current model, context, and budget settings as a reusable profile."))
@@ -698,6 +707,59 @@ class SettingsDialog(QDialog):
             label = str(self._env.get(f"PROFILE_{index}_LABEL", "") or profile_id).strip()
             entries.append((index, profile_id, label))
         return entries
+
+    def _choose_saved_profile_slot(self, title: str, prompt: str) -> tuple[int, str, str] | None:
+        """Return a saved custom profile chosen by the user."""
+        entries = self._saved_custom_profile_entries()
+        if not entries:
+            return None
+        if len(entries) == 1:
+            return entries[0]
+        labels = [label for _slot, _profile_id, label in entries]
+        duplicates = {label for label in labels if labels.count(label) > 1}
+        choices = [
+            f"{label} ({profile_id})" if label in duplicates else label
+            for _slot, profile_id, label in entries
+        ]
+        choice, accepted = QInputDialog.getItem(
+            self,
+            title,
+            prompt,
+            choices,
+            0,
+            False,
+        )
+        if not accepted:
+            return None
+        try:
+            return entries[choices.index(choice)]
+        except ValueError:
+            return None
+
+    def _profile_env_slot_values(self, slot: int) -> dict[str, str]:
+        """Return all PROFILE_N_* values for an env slot without the slot prefix."""
+        prefix = f"PROFILE_{slot}_"
+        return {
+            key[len(prefix):]: value
+            for key, value in self._env.items()
+            if key.startswith(prefix)
+        }
+
+    def _rewrite_custom_profiles(self, profiles: list[dict[str, str]]) -> None:
+        """Persist custom profiles compactly as PROFILE_1..PROFILE_N."""
+        remove_keys = {
+            key
+            for key in self._env
+            if re.match(r"^PROFILE_\d+_", key)
+        }
+        remove_keys.add("PROFILE_COUNT")
+        vals: dict[str, str] = {"PROFILE_COUNT": str(len(profiles))}
+        for index, profile in enumerate(profiles, start=1):
+            vals.update({f"PROFILE_{index}_{key}": value for key, value in profile.items()})
+        _write_env(vals, remove_keys=remove_keys)
+        for key in remove_keys:
+            self._env.pop(key, None)
+        self._env.update(vals)
 
     @staticmethod
     def _profile_id(raw: str, default: str = "custom") -> str:
@@ -805,6 +867,69 @@ class SettingsDialog(QDialog):
         self._schedule_dirty_refresh()
         self._status_lbl.setText(
             t("{profile} profile created. Review changes, then Apply to use it.").format(profile=label)
+        )
+
+    def _rename_custom_profile(self) -> None:
+        """Rename a saved custom profile display label."""
+        chosen = self._choose_saved_profile_slot(t("Rename profile"), t("Choose profile"))
+        if chosen is None:
+            return
+        slot, profile_id, old_label = chosen
+        label, accepted = QInputDialog.getText(
+            self,
+            t("Rename profile"),
+            t("Profile name"),
+            QLineEdit.EchoMode.Normal,
+            old_label,
+        )
+        label = str(label or "").strip()
+        if not accepted or not label or label == old_label:
+            return
+        vals = {f"PROFILE_{slot}_LABEL": label}
+        _write_env(vals)
+        self._env.update(vals)
+        self._refresh_profiles_menu()
+        self._schedule_dirty_refresh()
+        self._status_lbl.setText(
+            t("{profile} profile renamed.").format(profile=label)
+        )
+
+    def _delete_custom_profile(self) -> None:
+        """Delete a saved custom profile."""
+        chosen = self._choose_saved_profile_slot(t("Delete profile"), t("Choose profile"))
+        if chosen is None:
+            return
+        slot, profile_id, label = chosen
+        answer = QMessageBox.question(
+            self,
+            t("Delete profile"),
+            t("Delete {profile} profile?").format(profile=label),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        profiles = [
+            self._profile_env_slot_values(index)
+            for index, _pid, _label in self._saved_custom_profile_entries()
+            if index != slot
+        ]
+        remove_keys: set[str] = set()
+        if str(self._env.get("ACTIVE_PROFILE", "") or "") == profile_id:
+            remove_keys.add("ACTIVE_PROFILE")
+            self._env.pop("ACTIVE_PROFILE", None)
+        if str(self._env.get("SETTINGS_PROFILE", "") or "") == profile_id:
+            remove_keys.add("SETTINGS_PROFILE")
+            self._env.pop("SETTINGS_PROFILE", None)
+        if str(getattr(self, "_pending_active_profile", "") or "") == profile_id:
+            self._pending_active_profile = ""
+        self._rewrite_custom_profiles(profiles)
+        if remove_keys:
+            _write_env({}, remove_keys=remove_keys)
+        self._refresh_profiles_menu()
+        self._schedule_dirty_refresh()
+        self._status_lbl.setText(
+            t("{profile} profile deleted.").format(profile=label)
         )
 
     def _profile_values_from_env_slot(self, slot: int) -> dict[str, str]:
@@ -2449,11 +2574,19 @@ class SettingsDialog(QDialog):
         self._fields["TTS_PROVIDER"].currentIndexChanged.connect(
             lambda *_: self._update_tts_provider_fields()
         )
+        self._fields["TTS_SPEAK_REPLIES"] = QCheckBox(t("Speak assistant replies automatically"))
+        tts_speak_replies_tip = (
+            "When off, configured voices are still available for read-selection-aloud and Test TTS."
+        )
         pf_w = QWidget()
         pf = _expanding_form_layout(pf_w)
         pf.setContentsMargins(0, 0, 0, 0)
         pf.setSpacing(8)
         pf.addRow(_tooltip_label("TTS Provider", tts_provider_tip), self._fields["TTS_PROVIDER"])
+        pf.addRow(
+            _tooltip_label("Auto-speak replies", tts_speak_replies_tip),
+            self._fields["TTS_SPEAK_REPLIES"],
+        )
         self._tts_timing_notice_lbl = QLabel(t(_TTS_TIMING_NOTICE))
         self._tts_timing_notice_lbl.setObjectName("ttsTimingNotice")
         self._tts_timing_notice_lbl.setWordWrap(True)
@@ -3257,6 +3390,13 @@ class SettingsDialog(QDialog):
         )
         voice_note.setWordWrap(True)
         voice_cv.addWidget(voice_note)
+        self._fields["VOICE_REVIEW_TRANSCRIPT"] = QCheckBox(
+            t("Review transcript and context before asking")
+        )
+        self._fields["VOICE_REVIEW_TRANSCRIPT"].setToolTip(
+            t("After F9 transcription, open the intent overlay with the transcript in the custom prompt field.")
+        )
+        voice_cv.addWidget(self._fields["VOICE_REVIEW_TRANSCRIPT"])
 
         voice_hdr = QWidget()
         voice_hdr_h = QHBoxLayout(voice_hdr)
@@ -4924,6 +5064,13 @@ class SettingsDialog(QDialog):
             self._fields[name].setPlaceholderText(t(status))  # type: ignore[attr-defined]
 
         _set(self._fields["TTS_PROVIDER"], self._env.get("TTS_PROVIDER", cfg.TTS_PROVIDER))
+        _set(
+            self._fields["TTS_SPEAK_REPLIES"],
+            self._env.get(
+                "TTS_SPEAK_REPLIES",
+                str(getattr(cfg, "TTS_SPEAK_REPLIES", False)),
+            ),
+        )
         _set(self._fields["CARTESIA_VOICE_ID"], self._env.get("CARTESIA_VOICE_ID", ""))
         _set(self._fields["ELEVENLABS_VOICE_ID"], self._env.get("ELEVENLABS_VOICE_ID", cfg.ELEVENLABS_VOICE_ID))
         _set(self._fields["ELEVENLABS_MODEL"], self._env.get("ELEVENLABS_MODEL", cfg.ELEVENLABS_MODEL))
@@ -5162,6 +5309,13 @@ class SettingsDialog(QDialog):
         # Voice (push-to-talk) block
         vc = dict(getattr(cfg, "VOICE_CALLER", {}) or {})
         _set(self._fields["HOTKEY_VOICE"], self._env.get("HOTKEY_VOICE", vc.get("hotkey", cfg.HOTKEY_VOICE)))
+        _set(
+            self._fields["VOICE_REVIEW_TRANSCRIPT"],
+            self._env.get(
+                "VOICE_REVIEW_TRANSCRIPT",
+                str(getattr(cfg, "VOICE_REVIEW_TRANSCRIPT", False)),
+            ),
+        )
         _set(self._fields["HOTKEY_DICTATE"], self._env.get("HOTKEY_DICTATE", cfg.HOTKEY_DICTATE))
         _set(self._fields["DICTATE_MODE"], self._env.get("DICTATE_MODE", cfg.DICTATE_MODE))
         vb = self._voice_block
@@ -5359,6 +5513,7 @@ class SettingsDialog(QDialog):
         """Cancel status refresh."""
         self._status_refresh_token += 1
         self._status_refresh_running = False
+        self._pending_status_attrs = set()
         with self._pending_status_results_lock:
             self._pending_status_results.clear()
         if self._status_result_timer.isActive():
@@ -5387,56 +5542,99 @@ class SettingsDialog(QDialog):
         self._status_refresh_token += 1
         token = self._status_refresh_token
         self._status_refresh_running = True
+        self._pending_status_attrs = {
+            "_chatgpt_status_lbl",
+            "_github_status_lbl",
+            "_copilot_status_lbl",
+        }
         for attr in ("_chatgpt_status_lbl", "_github_status_lbl", "_copilot_status_lbl"):
             label = getattr(self, attr, None)
             if isinstance(label, QLabel):
                 self._set_status_label(label, None, "Checking status...")
         if not self._status_result_timer.isActive():
             self._status_result_timer.start()
+        QTimer.singleShot(_AUTH_STATUS_TIMEOUT_MS, lambda tok=token: self._expire_status_refresh(tok))
 
-        def _worker() -> None:
-            """Handle worker for settings dialog."""
+        def _chatgpt_worker() -> None:
+            """Read ChatGPT sign-in status without blocking other providers."""
             try:
-                try:
-                    from core.auth import chatgpt as chatgpt_auth
+                from core.auth import chatgpt as chatgpt_auth
 
-                    tokens = chatgpt_auth.get_tokens()
-                    if tokens:
-                        aid = tokens.get("account_id") or ""
-                        label = "Logged in" + (f" - account {aid[:8]}..." if aid else "")
-                        self._queue_status_result(token, "_chatgpt_status_lbl", True, label)
-                    else:
-                        self._queue_status_result(token, "_chatgpt_status_lbl", None, "Not logged in")
-                except Exception as exc:
-                    self._queue_status_result(token, "_chatgpt_status_lbl", False, f"Error reading status: {exc}")
+                tokens = chatgpt_auth.get_tokens()
+                if tokens:
+                    aid = tokens.get("account_id") or ""
+                    label = "Logged in" + (f" - account {aid[:8]}..." if aid else "")
+                    self._queue_status_result(token, "_chatgpt_status_lbl", True, label)
+                else:
+                    self._queue_status_result(token, "_chatgpt_status_lbl", None, "Not logged in")
+            except Exception as exc:
+                self._queue_status_result(token, "_chatgpt_status_lbl", False, f"Error reading status: {exc}")
 
-                try:
-                    from core.auth import github as github_auth
+        def _github_worker() -> None:
+            """Read GitHub sign-in status without waiting on ChatGPT/Copilot."""
+            try:
+                from core.auth import github as github_auth
 
-                    tokens = github_auth.get_tokens()
-                    if tokens:
-                        login = (tokens.get("user") or {}).get("login") or ""
-                        scopes = tokens.get("scope") or ""
-                        label = "Logged in" + (f" as {login}" if login else "")
-                        if scopes:
-                            label += f"\nScopes: {scopes}"
-                        self._queue_status_result(token, "_github_status_lbl", True, label)
-                    else:
-                        self._queue_status_result(token, "_github_status_lbl", None, "Not logged in")
-                except Exception as exc:
-                    self._queue_status_result(token, "_github_status_lbl", False, f"Error reading status: {exc}")
+                tokens = github_auth.get_tokens()
+                if tokens:
+                    login = (tokens.get("user") or {}).get("login") or ""
+                    scopes = tokens.get("scope") or ""
+                    label = "Logged in" + (f" as {login}" if login else "")
+                    if scopes:
+                        label += f"\nScopes: {scopes}"
+                    self._queue_status_result(token, "_github_status_lbl", True, label)
+                else:
+                    self._queue_status_result(token, "_github_status_lbl", None, "Not logged in")
+            except Exception as exc:
+                self._queue_status_result(token, "_github_status_lbl", False, f"Error reading status: {exc}")
 
-                try:
-                    from core.auth import copilot_auth
+        def _copilot_worker() -> None:
+            """Read Copilot token status independently."""
+            try:
+                from core.auth import copilot_auth
 
-                    stored, message = copilot_auth.token_status()
-                    self._queue_status_result(token, "_copilot_status_lbl", bool(stored), message)
-                except Exception as exc:
-                    self._queue_status_result(token, "_copilot_status_lbl", False, f"Keychain error: {exc}")
-            finally:
-                self._queue_status_result(token, "__done__", None, "")
+                stored, message = copilot_auth.token_status()
+                self._queue_status_result(token, "_copilot_status_lbl", bool(stored), message)
+            except Exception as exc:
+                self._queue_status_result(token, "_copilot_status_lbl", False, f"Keychain error: {exc}")
 
-        threading.Thread(target=_worker, daemon=True, name="settings-status-refresh").start()
+        for name, worker in (
+            ("settings-status-chatgpt", _chatgpt_worker),
+            ("settings-status-github", _github_worker),
+            ("settings-status-copilot", _copilot_worker),
+        ):
+            threading.Thread(target=worker, daemon=True, name=name).start()
+
+    def _expire_status_refresh(self, token: int) -> None:
+        """Replace stuck open-time auth checks with an actionable status."""
+        if token != self._status_refresh_token or not self._status_refresh_running:
+            return
+        with self._pending_status_results_lock:
+            queued = [item for item in self._pending_status_results if item[0] == token]
+            self._pending_status_results = [
+                item for item in self._pending_status_results if item[0] != token
+            ]
+        for _token, attr, ok, message in queued:
+            if attr not in self._pending_status_attrs:
+                continue
+            label = getattr(self, attr, None)
+            if isinstance(label, QLabel):
+                self._set_status_label(label, ok, message)
+            self._pending_status_attrs.discard(attr)
+        if not self._pending_status_attrs:
+            self._status_refresh_running = False
+            if self._status_result_timer.isActive():
+                self._status_result_timer.stop()
+            return
+        message = t("Status check timed out. Sign-in may still work; try again or restart Wisp.")
+        for attr in tuple(self._pending_status_attrs):
+            label = getattr(self, attr, None)
+            if isinstance(label, QLabel):
+                self._set_status_label(label, False, message)
+        self._pending_status_attrs = set()
+        self._status_refresh_running = False
+        if self._status_result_timer.isActive():
+            self._status_result_timer.stop()
 
     def _drain_status_results(self) -> None:
         """Handle drain status results for settings dialog."""
@@ -5449,12 +5647,14 @@ class SettingsDialog(QDialog):
         for token, attr, ok, message in pending:
             if token != self._status_refresh_token:
                 continue
-            if attr == "__done__":
-                self._status_refresh_running = False
+            if attr not in self._pending_status_attrs:
                 continue
             label = getattr(self, attr, None)
             if isinstance(label, QLabel):
                 self._set_status_label(label, ok, message)
+            self._pending_status_attrs.discard(attr)
+        if not self._pending_status_attrs:
+            self._status_refresh_running = False
         if not self._status_refresh_running and not pending:
             self._status_result_timer.stop()
 
@@ -6043,7 +6243,7 @@ class SettingsDialog(QDialog):
                 "COPILOT_CLI_URL", "COPILOT_CLI_PATH",
             },
             "TTS / Voice": {
-                "TTS_PROVIDER", "CARTESIA_VOICE_ID",
+                "TTS_PROVIDER", "TTS_SPEAK_REPLIES", "CARTESIA_VOICE_ID",
                 "ELEVENLABS_VOICE_ID", "ELEVENLABS_MODEL",
                 "OPENAI_TTS_VOICE", "OPENAI_TTS_MODEL",
                 "TTS_CUSTOM_BASE_URL", "TTS_CUSTOM_VOICE", "TTS_CUSTOM_MODEL", "TTS_CUSTOM_SAMPLE_RATE",
@@ -6399,6 +6599,7 @@ class SettingsDialog(QDialog):
             "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS": _get(self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"]),
             "CHAT_REASONING_EFFORT": _get(self._fields["CHAT_REASONING_EFFORT"]),
             "TTS_PROVIDER":      _get(self._fields["TTS_PROVIDER"]),
+            "TTS_SPEAK_REPLIES": _get(self._fields["TTS_SPEAK_REPLIES"]),
             "CARTESIA_VOICE_ID": _get(self._fields["CARTESIA_VOICE_ID"]),
             "ELEVENLABS_VOICE_ID": _get(self._fields["ELEVENLABS_VOICE_ID"]),
             "ELEVENLABS_MODEL":  _get(self._fields["ELEVENLABS_MODEL"]),
@@ -6513,6 +6714,7 @@ class SettingsDialog(QDialog):
         vb = self._voice_block
         vals.update({
             "HOTKEY_VOICE": _get(self._fields["HOTKEY_VOICE"]),
+            "VOICE_REVIEW_TRANSCRIPT": _get(self._fields["VOICE_REVIEW_TRANSCRIPT"]),
             "HOTKEY_DICTATE": _get(self._fields["HOTKEY_DICTATE"]),
             "DICTATE_MODE": _get(self._fields["DICTATE_MODE"]),
             "VOICE_CONTEXT_AMBIENT": str(vb["context_ambient"].isChecked()),
@@ -6978,6 +7180,8 @@ def _set(widget, value: str):
         widget.setText(value)
     elif isinstance(widget, QTextEdit):
         widget.setPlainText(value)
+    elif isinstance(widget, QCheckBox):
+        widget.setChecked(str(value).strip().lower() in {"1", "true", "yes", "on"})
     elif isinstance(widget, QSlider):
         try:
             if "." in str(value):
@@ -6998,6 +7202,8 @@ def _get(widget) -> str:
         return widget.text()
     elif isinstance(widget, QTextEdit):
         return widget.toPlainText()
+    elif isinstance(widget, QCheckBox):
+        return str(widget.isChecked())
     elif isinstance(widget, QSlider):
         return f"{widget.value() / 100:.2f}".rstrip("0").rstrip(".")
     return ""

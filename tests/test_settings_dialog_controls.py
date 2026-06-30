@@ -1207,6 +1207,127 @@ def test_cancel_async_ui_updates_stops_test_and_auth_timers():
     assert dialog._github_auth_poll_timer.stopped is True
 
 
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_open_status_refresh_starts_independent_auth_workers(monkeypatch):
+    """Verify one stuck auth provider cannot block all sign-in status labels."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    class FakeTimer:
+        """Small QTimer stand-in for status refresh tests."""
+        def __init__(self) -> None:
+            self.started = False
+
+        def isActive(self):
+            return self.started
+
+        def start(self):
+            self.started = True
+
+        def stop(self):
+            self.started = False
+
+    class FakeThread:
+        """Capture worker thread names without running auth imports."""
+        def __init__(self, target=None, daemon=False, name="") -> None:
+            self.target = target
+            self.daemon = daemon
+            self.name = name
+
+        def start(self):
+            started.append(self.name)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    started: list[str] = []
+    single_shots: list[tuple[int, object]] = []
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._disposing = False
+    dialog._status_refresh_token = 0
+    dialog._status_refresh_running = False
+    dialog._pending_status_results = []
+    dialog._pending_status_results_lock = threading.Lock()
+    dialog._status_result_timer = FakeTimer()
+    dialog._chatgpt_status_lbl = QLabel()
+    dialog._github_status_lbl = QLabel()
+    dialog._copilot_status_lbl = QLabel()
+    monkeypatch.setattr("ui.settings_panel.dialog.threading.Thread", FakeThread)
+    monkeypatch.setattr(
+        "ui.settings_panel.dialog.QTimer.singleShot",
+        staticmethod(lambda ms, callback: single_shots.append((ms, callback))),
+    )
+
+    try:
+        SettingsDialog._schedule_open_status_refresh(dialog)
+
+        assert started == [
+            "settings-status-chatgpt",
+            "settings-status-github",
+            "settings-status-copilot",
+        ]
+        assert dialog._status_refresh_running is True
+        assert dialog._pending_status_attrs == {
+            "_chatgpt_status_lbl",
+            "_github_status_lbl",
+            "_copilot_status_lbl",
+        }
+        assert dialog._chatgpt_status_lbl.text() == "Checking status..."
+        assert dialog._github_status_lbl.text() == "Checking status..."
+        assert single_shots
+    finally:
+        for label in (dialog._chatgpt_status_lbl, dialog._github_status_lbl, dialog._copilot_status_lbl):
+            label.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_auth_status_timeout_replaces_stuck_checking_labels():
+    """Verify packaged-app auth status hangs recover to a visible timeout."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    class FakeTimer:
+        """Small QTimer stand-in for timeout tests."""
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def isActive(self):
+            return True
+
+        def stop(self):
+            self.stopped = True
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._status_refresh_token = 7
+    dialog._status_refresh_running = True
+    dialog._pending_status_attrs = {"_chatgpt_status_lbl", "_github_status_lbl"}
+    dialog._pending_status_results = [
+        (7, "_chatgpt_status_lbl", True, "Logged in"),
+        (99, "_github_status_lbl", True, "stale"),
+    ]
+    dialog._pending_status_results_lock = threading.Lock()
+    dialog._status_result_timer = FakeTimer()
+    dialog._chatgpt_status_lbl = QLabel("Checking status...")
+    dialog._github_status_lbl = QLabel("Checking status...")
+    try:
+        SettingsDialog._expire_status_refresh(dialog, 7)
+
+        assert dialog._chatgpt_status_lbl.text() == "Logged in"
+        assert "timed out" in dialog._github_status_lbl.text()
+        assert dialog._pending_status_attrs == set()
+        assert dialog._status_refresh_running is False
+        assert dialog._pending_status_results == [(99, "_github_status_lbl", True, "stale")]
+        assert dialog._status_result_timer.stopped is True
+    finally:
+        dialog._chatgpt_status_lbl.deleteLater()
+        dialog._github_status_lbl.deleteLater()
+        app.processEvents()
+
+
 def test_ui_host_skips_direct_stt_reset_thread(monkeypatch):
     """Verify ui host skips direct stt reset thread behavior."""
     from ui.settings_panel.dialog import SettingsDialog
@@ -2197,6 +2318,106 @@ def test_settings_can_create_custom_profile(tmp_path, monkeypatch):
         assert "ACTIVE_PROFILE" not in saved
         assert "SETTINGS_PROFILE" not in saved
         assert dialog._pending_active_profile == "local-research"
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_profiles_menu_shows_saved_profile_names_without_prefix(tmp_path, monkeypatch):
+    """Verify saved profile menu entries are plain names."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import ui.settings_panel.dialog as settings_dialog
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join([
+            "PROFILE_COUNT=2",
+            "PROFILE_1_ID=new",
+            "PROFILE_1_LABEL=New",
+            "PROFILE_2_ID=new-2",
+            "PROFILE_2_LABEL=New 2",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    menu = None
+    try:
+        menu = dialog._build_profiles_menu(dialog)
+        action_texts = [action.text() for action in menu.actions() if action.text()]
+
+        assert "New" in action_texts
+        assert "New 2" in action_texts
+        assert all(not text.startswith("Use saved profile") for text in action_texts)
+        assert "Rename profile..." in action_texts
+        assert "Delete profile..." in action_texts
+    finally:
+        if menu is not None:
+            menu.deleteLater()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_can_rename_and_delete_custom_profile(tmp_path, monkeypatch):
+    """Verify custom profiles are manageable after creation."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
+
+    import ui.settings_panel.dialog as settings_dialog
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join([
+            "PROFILE_COUNT=1",
+            "PROFILE_1_ID=new",
+            "PROFILE_1_LABEL=New",
+            "PROFILE_1_CONTEXT_BROWSER_MAX_CHARS=111",
+            "ACTIVE_PROFILE=new",
+            "SETTINGS_PROFILE=new",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("Renamed", True))
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        dialog._pending_active_profile = "new"
+        dialog._rename_custom_profile()
+        saved = settings_env.read_settings_env()
+
+        assert saved["PROFILE_1_ID"] == "new"
+        assert saved["PROFILE_1_LABEL"] == "Renamed"
+        assert saved["PROFILE_1_CONTEXT_BROWSER_MAX_CHARS"] == "111"
+
+        dialog._delete_custom_profile()
+        saved = settings_env.read_settings_env()
+
+        assert saved["PROFILE_COUNT"] == "0"
+        assert "PROFILE_1_ID" not in saved
+        assert "PROFILE_1_LABEL" not in saved
+        assert "PROFILE_1_CONTEXT_BROWSER_MAX_CHARS" not in saved
+        assert "ACTIVE_PROFILE" not in saved
+        assert "SETTINGS_PROFILE" not in saved
+        assert dialog._pending_active_profile == ""
     finally:
         dialog.deleteLater()
         app.processEvents()

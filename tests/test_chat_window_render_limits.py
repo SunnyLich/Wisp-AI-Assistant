@@ -952,3 +952,49 @@ def test_chat_attachment_button_path_feeds_next_message_context(tmp_path):
     finally:
         window.close()
         app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_captured_selected_path_shows_and_feeds_next_message_context(tmp_path):
+    """Verify captured file selection appears in chat and feeds the next model turn."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    captured = []
+    note = tmp_path / "selected-note.txt"
+    note.write_text("captured selected file context", encoding="utf-8")
+    conversations = [{"messages": []}]
+
+    def send_fn(messages):
+        captured.append(messages)
+        yield "ok"
+
+    window = ChatWindow(conversations, send_fn)
+    try:
+        result = window.attach_captured_context(
+            name="Selection",
+            content="",
+            item_type="text",
+            source="selection",
+            paths=[str(note)],
+        )
+        assert result["attached"] is True
+        assert window._attachment_label is not None
+        assert window._attachment_label.isVisible()
+        assert note.name in window._attachment_label.toolTip()
+
+        window._send("what do you see")
+        for _ in range(20):
+            app.processEvents()
+            if captured:
+                break
+
+        assert captured
+        assert "captured selected file context" in captured[0][-1]["content"]
+        user_message = conversations[0]["messages"][0]
+        assert user_message["attachments"][0]["source"] == "external_path"
+        assert user_message["attachments"][0]["path"] == str(note)
+    finally:
+        window.close()
+        app.processEvents()

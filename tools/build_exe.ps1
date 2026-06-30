@@ -243,6 +243,25 @@ function Test-LongPathRisk {
     return $KnownLongWheelPath.Length -ge 240
 }
 
+function Clear-BuildOutputs {
+    $CleanPaths = @(
+        "build",
+        "dist",
+        ".pytest_cache",
+        ".pytest-tmp",
+        ".pytest_tmp",
+        ".tmp_pytest"
+    )
+    foreach ($CleanPath in $CleanPaths) {
+        Remove-Item -LiteralPath (Join-Path $Root $CleanPath) -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Get-ChildItem -LiteralPath $Root -Directory -Force -Filter ".pytest-tmp-*" -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+}
+
 function New-BuildRequirementsFile {
     param([string]$SourcePath)
 
@@ -278,8 +297,7 @@ if (Test-Path $DistExe) {
 }
 
 if ($Clean) {
-    Remove-Item -LiteralPath (Join-Path $Root "build") -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $Root "dist") -Recurse -Force -ErrorAction SilentlyContinue
+    Clear-BuildOutputs
 }
 
 if (-not $SkipInstall) {

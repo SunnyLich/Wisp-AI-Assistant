@@ -186,7 +186,7 @@ def test_chat_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch)
     assert result["text"] == "Done."
     assert _chunks(events) == ["Checking the file first.", "Done."]
     progress = [data for event, data in events if event == "reply.chunk" and data.get("is_progress")]
-    assert progress == [{"text": "Checking the file first.", "is_progress": True}]
+    assert progress == [{"text": "Checking the file first.", "is_progress": True, "is_thought": False}]
     assert [data for event, data in events if event == "reply.done"] == [{"text": "Done."}]
 
 

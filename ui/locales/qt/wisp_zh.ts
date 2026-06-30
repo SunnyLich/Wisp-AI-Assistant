@@ -2399,6 +2399,18 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>TTS 提供者</translation>
     </message>
     <message>
+      <source>Speak assistant replies automatically</source>
+      <translation>自动朗读助手回复</translation>
+    </message>
+    <message>
+      <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
+      <translation>关闭时，已配置的语音仍可用于朗读选中文本和测试 TTS。</translation>
+    </message>
+    <message>
+      <source>Auto-speak replies</source>
+      <translation>自动朗读回复</translation>
+    </message>
+    <message>
       <source>TTS hold speed</source>
       <translation>按住时朗读速度</translation>
     </message>
@@ -2629,6 +2641,14 @@ Let model decide — expose an open-document tool during the answer.</source>
     <message>
       <source>Voice (hold to talk)</source>
       <translation>语音（按住说话）</translation>
+    </message>
+    <message>
+      <source>Review transcript and context before asking</source>
+      <translation>提问前检查转写和上下文</translation>
+    </message>
+    <message>
+      <source>After F9 transcription, open the intent overlay with the transcript in the custom prompt field.</source>
+      <translation>F9 转写后，打开意图浮层，并将转写内容放入自定义提示词字段。</translation>
     </message>
     <message>
       <source>Waiting</source>
@@ -4294,6 +4314,102 @@ Continue?</source>
     <message>
       <source>Didn't catch any speech. Hold the key down while you speak, then release.</source>
       <translation>没有捕捉到语音。请按住按键说话，说完后松开。</translation>
+    </message>
+    <message>
+      <source>Voice &amp; API key</source>
+      <translation>语音与 API 密钥</translation>
+    </message>
+    <message>
+      <source>Updates</source>
+      <translation>更新</translation>
+    </message>
+    <message>
+      <source>Choose profile</source>
+      <translation>选择配置档</translation>
+    </message>
+    <message>
+      <source>Rename profile</source>
+      <translation>重命名配置档</translation>
+    </message>
+    <message>
+      <source>Rename profile...</source>
+      <translation>重命名配置档...</translation>
+    </message>
+    <message>
+      <source>Change the display name for a saved custom profile.</source>
+      <translation>更改已保存自定义配置档的显示名称。</translation>
+    </message>
+    <message>
+      <source>Delete profile</source>
+      <translation>删除配置档</translation>
+    </message>
+    <message>
+      <source>Delete profile...</source>
+      <translation>删除配置档...</translation>
+    </message>
+    <message>
+      <source>Delete a saved custom profile.</source>
+      <translation>删除已保存的自定义配置档。</translation>
+    </message>
+    <message>
+      <source>Delete {profile} profile?</source>
+      <translation>删除“{profile}”配置档？</translation>
+    </message>
+    <message>
+      <source>{profile} profile deleted.</source>
+      <translation>已删除“{profile}”配置档。</translation>
+    </message>
+    <message>
+      <source>{profile} profile renamed.</source>
+      <translation>已重命名“{profile}”配置档。</translation>
+    </message>
+    <message>
+      <source>Status check timed out. Sign-in may still work; try again or restart Wisp.</source>
+      <translation>状态检查超时。登录可能仍然可用；请重试或重启 Wisp。</translation>
+    </message>
+    <message>
+      <source>Click and drag to select a region  -  ESC to cancel</source>
+      <translation>点击并拖动以选择区域  -  ESC 取消</translation>
+    </message>
+    <message>
+      <source>Rectangle</source>
+      <translation>矩形</translation>
+    </message>
+    <message>
+      <source>Full screen</source>
+      <translation>全屏</translation>
+    </message>
+    <message>
+      <source>Select text or files/folders.</source>
+      <translation>选择文本或文件/文件夹。</translation>
+    </message>
+    <message>
+      <source>Screenshot captured.</source>
+      <translation>截图已捕获。</translation>
+    </message>
+    <message>
+      <source>No selected text, clipboard text, or selected files found.</source>
+      <translation>未找到选中文本、剪贴板文本或选中的文件。</translation>
+    </message>
+    <message>
+      <source>Selection captured.</source>
+      <translation>选区已捕获。</translation>
+    </message>
+    <message>
+      <source>Read file: {path}</source>
+      <translation>已读取文件：{path}</translation>
+    </message>
+    <message>
+      <source>Listed files: {path}</source>
+      <translation>已列出文件：{path}</translation>
+    </message>
+    <message>
+      <source>Used {tool}: {path}</source>
+      <translation>已使用 {tool}：{path}</translation>
+    </message>
+    <message>
+      <source>Tool failed: {tool}: {path}</source>
+      <translation>工具失败：{tool}：{path}</translation>
     </message>
   </context>
 </TS>

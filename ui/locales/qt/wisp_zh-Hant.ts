@@ -2399,6 +2399,18 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>TTS 提供者</translation>
     </message>
     <message>
+      <source>Speak assistant replies automatically</source>
+      <translation>自動朗讀助理回覆</translation>
+    </message>
+    <message>
+      <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
+      <translation>關閉時，已設定的語音仍可用於朗讀選取文字和測試 TTS。</translation>
+    </message>
+    <message>
+      <source>Auto-speak replies</source>
+      <translation>自動朗讀回覆</translation>
+    </message>
+    <message>
       <source>TTS hold speed</source>
       <translation>按住時朗讀速度</translation>
     </message>
@@ -2629,6 +2641,14 @@ Let model decide — expose an open-document tool during the answer.</source>
     <message>
       <source>Voice (hold to talk)</source>
       <translation>語音（按住說話）</translation>
+    </message>
+    <message>
+      <source>Review transcript and context before asking</source>
+      <translation>提問前檢查轉錄和上下文</translation>
+    </message>
+    <message>
+      <source>After F9 transcription, open the intent overlay with the transcript in the custom prompt field.</source>
+      <translation>F9 轉錄後，開啟意圖浮層，並將轉錄內容放入自訂提示詞欄位。</translation>
     </message>
     <message>
       <source>Waiting</source>
@@ -4297,6 +4317,102 @@ Continue?</source>
     <message>
       <source>Didn't catch any speech. Hold the key down while you speak, then release.</source>
       <translation>沒有捕捉到語音。請按住按鍵說話，說完後放開。</translation>
+    </message>
+    <message>
+      <source>Voice &amp; API key</source>
+      <translation>語音與 API 金鑰</translation>
+    </message>
+    <message>
+      <source>Updates</source>
+      <translation>更新</translation>
+    </message>
+    <message>
+      <source>Choose profile</source>
+      <translation>選擇設定檔</translation>
+    </message>
+    <message>
+      <source>Rename profile</source>
+      <translation>重新命名設定檔</translation>
+    </message>
+    <message>
+      <source>Rename profile...</source>
+      <translation>重新命名設定檔...</translation>
+    </message>
+    <message>
+      <source>Change the display name for a saved custom profile.</source>
+      <translation>變更已儲存自訂設定檔的顯示名稱。</translation>
+    </message>
+    <message>
+      <source>Delete profile</source>
+      <translation>刪除設定檔</translation>
+    </message>
+    <message>
+      <source>Delete profile...</source>
+      <translation>刪除設定檔...</translation>
+    </message>
+    <message>
+      <source>Delete a saved custom profile.</source>
+      <translation>刪除已儲存的自訂設定檔。</translation>
+    </message>
+    <message>
+      <source>Delete {profile} profile?</source>
+      <translation>刪除「{profile}」設定檔？</translation>
+    </message>
+    <message>
+      <source>{profile} profile deleted.</source>
+      <translation>已刪除「{profile}」設定檔。</translation>
+    </message>
+    <message>
+      <source>{profile} profile renamed.</source>
+      <translation>已重新命名「{profile}」設定檔。</translation>
+    </message>
+    <message>
+      <source>Status check timed out. Sign-in may still work; try again or restart Wisp.</source>
+      <translation>狀態檢查逾時。登入可能仍可使用；請重試或重新啟動 Wisp。</translation>
+    </message>
+    <message>
+      <source>Click and drag to select a region  -  ESC to cancel</source>
+      <translation>點擊並拖曳以選擇區域  -  ESC 取消</translation>
+    </message>
+    <message>
+      <source>Rectangle</source>
+      <translation>矩形</translation>
+    </message>
+    <message>
+      <source>Full screen</source>
+      <translation>全螢幕</translation>
+    </message>
+    <message>
+      <source>Select text or files/folders.</source>
+      <translation>選取文字或檔案/資料夾。</translation>
+    </message>
+    <message>
+      <source>Screenshot captured.</source>
+      <translation>截圖已擷取。</translation>
+    </message>
+    <message>
+      <source>No selected text, clipboard text, or selected files found.</source>
+      <translation>找不到選取文字、剪貼簿文字或選取的檔案。</translation>
+    </message>
+    <message>
+      <source>Selection captured.</source>
+      <translation>選取內容已擷取。</translation>
+    </message>
+    <message>
+      <source>Read file: {path}</source>
+      <translation>已讀取檔案：{path}</translation>
+    </message>
+    <message>
+      <source>Listed files: {path}</source>
+      <translation>已列出檔案：{path}</translation>
+    </message>
+    <message>
+      <source>Used {tool}: {path}</source>
+      <translation>已使用 {tool}：{path}</translation>
+    </message>
+    <message>
+      <source>Tool failed: {tool}: {path}</source>
+      <translation>工具失敗：{tool}：{path}</translation>
     </message>
   </context>
 </TS>

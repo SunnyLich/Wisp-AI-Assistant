@@ -55,6 +55,124 @@ def test_notice_text_translates_known_bubble_messages(monkeypatch) -> None:
     )
 
 
+def test_speech_status_notice_does_not_replace_active_reply() -> None:
+    """Speech warmup/readiness notices must not overwrite model reply bubbles."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        _thinking = False
+        _transcript_preview = False
+        _reply_chunk_count = 1
+        _full_text = "Actual model reply"
+
+        def __init__(self) -> None:
+            self.notices = []
+
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style API
+            return True
+
+        def show_notice(self, text: str, timeout_ms: int = 12000) -> None:
+            self.notices.append((text, timeout_ms))
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_notice("Local voice is ready.", timeout_ms=6000)
+
+    assert result == {"shown": False, "text": "Local voice is ready.", "reason": "active_reply"}
+    assert bubble.notices == []
+
+
+def test_speech_status_notice_does_not_replace_pending_transcript() -> None:
+    """Warmup notices should not make the first model token append to status text."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        _thinking = False
+        _transcript_preview = True
+        _reply_chunk_count = 0
+        _full_text = "Heard: summarize this"
+
+        def __init__(self) -> None:
+            self.notices = []
+
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style API
+            return True
+
+        def show_notice(self, text: str, timeout_ms: int = 12000) -> None:
+            self.notices.append((text, timeout_ms))
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_notice("Warming up speech recognition...", timeout_ms=0)
+
+    assert result["shown"] is False
+    assert result["reason"] == "active_reply"
+    assert bubble.notices == []
+
+
+def test_speech_status_notice_does_not_replace_thinking_reply() -> None:
+    """Warmup notices should not become the prefix for the first model token."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        _thinking = True
+        _transcript_preview = False
+        _reply_chunk_count = 0
+        _full_text = ""
+
+        def __init__(self) -> None:
+            self.notices = []
+
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style API
+            return True
+
+        def show_notice(self, text: str, timeout_ms: int = 12000) -> None:
+            self.notices.append((text, timeout_ms))
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_notice("STT/TTS is warming up", timeout_ms=0)
+
+    assert result["shown"] is False
+    assert result["reason"] == "active_reply"
+    assert bubble.notices == []
+
+
+def test_speech_warmup_failure_notice_still_shows_during_reply() -> None:
+    """Actual speech warmup failures remain visible instead of being suppressed."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        _thinking = False
+        _transcript_preview = False
+        _reply_chunk_count = 1
+        _full_text = "Actual model reply"
+
+        def __init__(self) -> None:
+            self.notices = []
+
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style API
+            return True
+
+        def show_notice(self, text: str, timeout_ms: int = 12000) -> None:
+            self.notices.append((text, timeout_ms))
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_notice("Local speech warmup failed: tts: missing model", timeout_ms=6000)
+
+    assert result == {"shown": True, "text": "Local speech warmup failed: tts: missing model"}
+    assert bubble.notices == [("Local speech warmup failed: tts: missing model", 6000)]
+
+
 def test_memory_proxy_accepts_project_scope() -> None:
     """Verify UI memory proxy forwards project-scoped add/update payloads."""
     from runtime.workers.ui_host import MemoryProxy

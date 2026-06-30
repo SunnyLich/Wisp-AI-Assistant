@@ -637,7 +637,7 @@ def clipboard_set(text: str = "") -> dict[str, Any]:
     return {"ok": bool(ok)}
 
 
-def selected_text() -> str:
+def selected_text(*, allow_clipboard_fallback: bool = True) -> str:
     """Handle selected text for runtime workers native host."""
     if IS_MAC:
         # Prefer Accessibility: reading AXSelectedText injects no keystrokes. The
@@ -651,15 +651,126 @@ def selected_text() -> str:
         ax = _ax_selected_text()
         if ax is not None:
             return ax.strip()
+        if not allow_clipboard_fallback:
+            return ""
         from core.platform import macos_native
 
         return macos_native.get_selected_text() or ""
     try:
-        from core.capture import get_selected_text
+        if allow_clipboard_fallback:
+            from core.capture import get_selected_text
 
-        return get_selected_text() or ""
+            return get_selected_text() or ""
+        if IS_WIN:
+            from core.capture import _get_selected_text_uia
+
+            return (_get_selected_text_uia() or "").strip()
+        from core.capture import _get_primary_selection_linux
+
+        return (_get_primary_selection_linux() or "").strip()
     except Exception:
         return ""
+
+
+def _windows_clipboard_file_paths() -> list[str]:
+    """Return CF_HDROP paths from the Windows clipboard, if present."""
+    if not IS_WIN:
+        return []
+    try:
+        import win32clipboard  # type: ignore
+
+        try:
+            import win32con  # type: ignore
+
+            cf_hdrop = int(getattr(win32con, "CF_HDROP", 15))
+        except Exception:
+            cf_hdrop = 15
+        win32clipboard.OpenClipboard()
+        try:
+            if not win32clipboard.IsClipboardFormatAvailable(cf_hdrop):
+                return []
+            data = win32clipboard.GetClipboardData(cf_hdrop)
+        finally:
+            win32clipboard.CloseClipboard()
+        if isinstance(data, (list, tuple)):
+            return [str(path) for path in data if str(path or "").strip()]
+    except Exception:
+        return []
+    return []
+
+
+def _mac_clipboard_file_paths() -> list[str]:
+    """Return file URLs from the macOS pasteboard, if present."""
+    if not IS_MAC:
+        return []
+    try:
+        import AppKit  # type: ignore
+
+        pb = AppKit.NSPasteboard.generalPasteboard()
+        options = {AppKit.NSPasteboardURLReadingFileURLsOnlyKey: True}
+        urls = pb.readObjectsForClasses_options_([AppKit.NSURL], options) or []
+        paths: list[str] = []
+        for url in urls:
+            try:
+                if bool(url.isFileURL()):
+                    path = str(url.path() or "").strip()
+                    if path:
+                        paths.append(path)
+            except Exception:
+                continue
+        return paths
+    except Exception:
+        return []
+
+
+def selected_paths() -> list[str]:
+    """Capture selected files/folders from the foreground shell via Copy."""
+    previous_text = clipboard_get().get("text", "")
+    paths: list[str] = []
+    try:
+        from core.platform_utils import COPY_COMBO, send_keys
+
+        send_keys(COPY_COMBO)
+        deadline = time.monotonic() + (0.60 if IS_WIN else 0.35)
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+            paths = _windows_clipboard_file_paths() if IS_WIN else _mac_clipboard_file_paths()
+            if paths:
+                break
+    except Exception:
+        paths = []
+    finally:
+        try:
+            clipboard_set(str(previous_text or ""))
+        except Exception:
+            pass
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for path in paths:
+        normalized = str(path or "").strip()
+        key = os.path.normcase(os.path.abspath(normalized)) if normalized else ""
+        if normalized and key not in seen:
+            seen.add(key)
+            unique.append(normalized)
+    return unique
+
+
+def _selection_source_kind(active: dict[str, Any]) -> str:
+    """Return the likely selected-context kind for the foreground app."""
+    name = str((active or {}).get("name") or "").strip().lower()
+    process = str((active or {}).get("process_name") or "").strip().lower()
+    bundle = str((active or {}).get("bundle_id") or "").strip().lower()
+    shell_names = {
+        "explorer.exe",
+        "explorer",
+        "finder",
+        "file explorer",
+        "windows explorer",
+    }
+    if process in shell_names or name in shell_names or bundle == "com.apple.finder":
+        return "paths"
+    return "text"
 
 
 def _screen_size() -> dict[str, int]:
@@ -693,6 +804,7 @@ def _screen_size() -> dict[str, int]:
 def context_snapshot(
     include_clipboard: bool = True,
     include_selection: bool = True,
+    include_selected_paths: bool = False,
     include_browser_content: bool = False,
     include_browser_url: bool = False,
     capture_focus: bool = False,
@@ -707,6 +819,7 @@ def context_snapshot(
         "active_app": active,
         "document_window": document_window,
         "selected_text": "",
+        "selected_paths": [],
         "clipboard_text": "",
         "browser_url": "",
         "browser_hwnd": 0,
@@ -725,15 +838,20 @@ def context_snapshot(
     # in place via Accessibility even if focus has since moved.
     if capture_focus:
         snapshot["focus_token"] = _capture_focus()
-    sel_dt = clip_dt = br_dt = 0.0
-    if include_selection:
+    sel_dt = path_dt = clip_dt = br_dt = 0.0
+    selection_kind = _selection_source_kind(active) if include_selected_paths else "text"
+    if include_selection and selection_kind != "paths":
         _s = time.monotonic()
-        snapshot["selected_text"] = selected_text()
+        snapshot["selected_text"] = selected_text(allow_clipboard_fallback=True)
         sel_dt = time.monotonic() - _s
     if include_clipboard:
         _s = time.monotonic()
         snapshot["clipboard_text"] = clipboard_get()["text"]
         clip_dt = time.monotonic() - _s
+    if include_selected_paths and selection_kind == "paths":
+        _s = time.monotonic()
+        snapshot["selected_paths"] = selected_paths()
+        path_dt = time.monotonic() - _s
     if include_browser_content:
         _s = time.monotonic()
         try:
@@ -798,13 +916,97 @@ def context_snapshot(
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s
     print(
-        f"[context.snapshot] active_app={t_app - t0:.2f}s selected={sel_dt:.2f}s "
+        f"[context.snapshot] active_app={t_app - t0:.2f}s selected={sel_dt:.2f}s paths={path_dt:.2f}s "
         f"clipboard={clip_dt:.2f}s browser={br_dt:.2f}s total={time.monotonic() - t0:.2f}s "
         f"(app={active.get('name')!r} hwnd={active.get('window_id') or 0} "
-        f"sel_len={len(snapshot['selected_text'])} url={'y' if snapshot['browser_url'] else 'n'})",
+        f"selection_kind={selection_kind} sel_len={len(snapshot['selected_text'])} "
+        f"paths={len(snapshot['selected_paths'])} url={'y' if snapshot['browser_url'] else 'n'})",
         flush=True,
     )
     return snapshot
+
+
+def await_selection_context(
+    timeout: float = 30.0,
+    settle_ms: int = 250,
+    include_clipboard: bool = True,
+    include_selected_paths: bool = True,
+) -> dict[str, Any]:
+    """Wait for a mouse or keyboard selection gesture to finish, then capture once."""
+    deadline = time.monotonic() + max(0.5, float(timeout or 30.0))
+    released = threading.Event()
+    mouse_listener = None
+    keyboard_listener = None
+    modifiers: set[str] = set()
+    saw_select_all = False
+    try:
+        from pynput import keyboard, mouse  # type: ignore
+
+        def _on_click(_x, _y, _button, pressed):
+            if not pressed:
+                released.set()
+                return False
+            return None
+
+        def _key_name(key: Any) -> str:
+            try:
+                return str(key.char or "").lower()
+            except Exception:
+                return str(key).lower()
+
+        def _on_press(key):
+            nonlocal saw_select_all
+            name = _key_name(key)
+            if "ctrl" in name or "cmd" in name:
+                modifiers.add("mod")
+            elif "shift" in name:
+                modifiers.add("shift")
+            elif name == "a" and "mod" in modifiers:
+                saw_select_all = True
+            return None
+
+        def _on_release(key):
+            nonlocal saw_select_all
+            name = _key_name(key)
+            if saw_select_all and (name == "a" or "ctrl" in name or "cmd" in name):
+                released.set()
+                return False
+            if "shift" in modifiers and ("left" in name or "right" in name or "up" in name or "down" in name):
+                released.set()
+                return False
+            if "ctrl" in name or "cmd" in name:
+                modifiers.discard("mod")
+            elif "shift" in name:
+                modifiers.discard("shift")
+            return None
+
+        mouse_listener = mouse.Listener(on_click=_on_click)
+        keyboard_listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
+        mouse_listener.start()
+        keyboard_listener.start()
+        released.wait(max(0.0, deadline - time.monotonic()))
+    except Exception:
+        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+    finally:
+        try:
+            if mouse_listener is not None:
+                mouse_listener.stop()
+        except Exception:
+            pass
+        try:
+            if keyboard_listener is not None:
+                keyboard_listener.stop()
+        except Exception:
+            pass
+    time.sleep(max(0, int(settle_ms or 0)) / 1000.0)
+    return context_snapshot(
+        include_clipboard=bool(include_clipboard),
+        include_selection=True,
+        include_selected_paths=bool(include_selected_paths),
+        include_browser_content=False,
+        include_browser_url=False,
+        capture_focus=False,
+    )
 
 
 def context_browser_content(url: str = "", hwnd: int = 0, app: str = "") -> dict[str, Any]:
@@ -1459,6 +1661,7 @@ HANDLERS = {
     "native.hotkeys.stop": hotkeys_stop,
     "native.hotkeys.reload": hotkeys_reload,
     "native.context.snapshot": context_snapshot,
+    "native.context.await_selection": await_selection_context,
     "native.context.browser_content": context_browser_content,
     "native.capture.fullscreen": capture_fullscreen,
     "native.capture.region": capture_region,

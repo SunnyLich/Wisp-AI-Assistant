@@ -60,6 +60,7 @@ a = Analysis(
     binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + FASTER_WHISPER_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
+        (str(ROOT / "addons" / "mcp_bridge"), "addons/mcp_bridge"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),

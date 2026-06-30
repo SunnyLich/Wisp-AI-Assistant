@@ -2399,6 +2399,18 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
       <translation>Proveedor TTS</translation>
     </message>
     <message>
+      <source>Speak assistant replies automatically</source>
+      <translation>Leer automáticamente las respuestas del asistente en voz alta</translation>
+    </message>
+    <message>
+      <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
+      <translation>Si está desactivado, las voces configuradas siguen disponibles para leer la selección en voz alta y Probar TTS.</translation>
+    </message>
+    <message>
+      <source>Auto-speak replies</source>
+      <translation>Leer respuestas automáticamente</translation>
+    </message>
+    <message>
       <source>TTS hold speed</source>
       <translation>Velocidad TTS al mantener</translation>
     </message>
@@ -2629,6 +2641,14 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
     <message>
       <source>Voice (hold to talk)</source>
       <translation>Voz (mantener para hablar)</translation>
+    </message>
+    <message>
+      <source>Review transcript and context before asking</source>
+      <translation>Revisar transcripción y contexto antes de preguntar</translation>
+    </message>
+    <message>
+      <source>After F9 transcription, open the intent overlay with the transcript in the custom prompt field.</source>
+      <translation>Después de transcribir con F9, abre la superposición de intención con la transcripción en el campo de prompt personalizado.</translation>
     </message>
     <message>
       <source>Waiting</source>
@@ -4294,6 +4314,102 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
     <message>
       <source>Didn't catch any speech. Hold the key down while you speak, then release.</source>
       <translation>No se captó ninguna voz. Mantén pulsada la tecla mientras hablas y luego suéltala.</translation>
+    </message>
+    <message>
+      <source>Voice &amp; API key</source>
+      <translation>Voz y clave de API</translation>
+    </message>
+    <message>
+      <source>Updates</source>
+      <translation>Actualizaciones</translation>
+    </message>
+    <message>
+      <source>Choose profile</source>
+      <translation>Elegir perfil</translation>
+    </message>
+    <message>
+      <source>Rename profile</source>
+      <translation>Renombrar perfil</translation>
+    </message>
+    <message>
+      <source>Rename profile...</source>
+      <translation>Renombrar perfil...</translation>
+    </message>
+    <message>
+      <source>Change the display name for a saved custom profile.</source>
+      <translation>Cambia el nombre visible de un perfil personalizado guardado.</translation>
+    </message>
+    <message>
+      <source>Delete profile</source>
+      <translation>Eliminar perfil</translation>
+    </message>
+    <message>
+      <source>Delete profile...</source>
+      <translation>Eliminar perfil...</translation>
+    </message>
+    <message>
+      <source>Delete a saved custom profile.</source>
+      <translation>Elimina un perfil personalizado guardado.</translation>
+    </message>
+    <message>
+      <source>Delete {profile} profile?</source>
+      <translation>¿Eliminar el perfil {profile}?</translation>
+    </message>
+    <message>
+      <source>{profile} profile deleted.</source>
+      <translation>Perfil {profile} eliminado.</translation>
+    </message>
+    <message>
+      <source>{profile} profile renamed.</source>
+      <translation>Perfil {profile} renombrado.</translation>
+    </message>
+    <message>
+      <source>Status check timed out. Sign-in may still work; try again or restart Wisp.</source>
+      <translation>La comprobación de estado agotó el tiempo. Es posible que el inicio de sesión siga funcionando; inténtalo de nuevo o reinicia Wisp.</translation>
+    </message>
+    <message>
+      <source>Click and drag to select a region  -  ESC to cancel</source>
+      <translation>Haz clic y arrastra para seleccionar una región  -  ESC para cancelar</translation>
+    </message>
+    <message>
+      <source>Rectangle</source>
+      <translation>Rectángulo</translation>
+    </message>
+    <message>
+      <source>Full screen</source>
+      <translation>Pantalla completa</translation>
+    </message>
+    <message>
+      <source>Select text or files/folders.</source>
+      <translation>Selecciona texto o archivos/carpetas.</translation>
+    </message>
+    <message>
+      <source>Screenshot captured.</source>
+      <translation>Captura de pantalla capturada.</translation>
+    </message>
+    <message>
+      <source>No selected text, clipboard text, or selected files found.</source>
+      <translation>No se encontró texto seleccionado, texto del portapapeles ni archivos seleccionados.</translation>
+    </message>
+    <message>
+      <source>Selection captured.</source>
+      <translation>Selección capturada.</translation>
+    </message>
+    <message>
+      <source>Read file: {path}</source>
+      <translation>Archivo leído: {path}</translation>
+    </message>
+    <message>
+      <source>Listed files: {path}</source>
+      <translation>Archivos listados: {path}</translation>
+    </message>
+    <message>
+      <source>Used {tool}: {path}</source>
+      <translation>Se usó {tool}: {path}</translation>
+    </message>
+    <message>
+      <source>Tool failed: {tool}: {path}</source>
+      <translation>La herramienta falló: {tool}: {path}</translation>
     </message>
   </context>
 </TS>

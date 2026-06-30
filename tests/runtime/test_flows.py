@@ -94,13 +94,16 @@ def caller_config(rows: list[dict[str, Any]]):
     """Verify caller config behavior."""
     old_rows = list(config.CALLER_ROWS)
     old_tts = getattr(config, "TTS_PROVIDER", "none")
+    old_tts_speak_replies = getattr(config, "TTS_SPEAK_REPLIES", False)
     config.CALLER_ROWS[:] = rows
     config.TTS_PROVIDER = "none"
+    config.TTS_SPEAK_REPLIES = False
     try:
         yield
     finally:
         config.CALLER_ROWS[:] = old_rows
         config.TTS_PROVIDER = old_tts
+        config.TTS_SPEAK_REPLIES = old_tts_speak_replies
 
 
 @contextmanager
@@ -108,15 +111,21 @@ def voice_config(row: dict[str, Any]):
     """Verify voice config behavior."""
     old_row = dict(getattr(config, "VOICE_CALLER", {}))
     old_tts = getattr(config, "TTS_PROVIDER", "none")
+    old_tts_speak_replies = getattr(config, "TTS_SPEAK_REPLIES", False)
+    old_voice_review_transcript = getattr(config, "VOICE_REVIEW_TRANSCRIPT", False)
     config.VOICE_CALLER.clear()
     config.VOICE_CALLER.update(row)
     config.TTS_PROVIDER = "none"
+    config.TTS_SPEAK_REPLIES = False
+    config.VOICE_REVIEW_TRANSCRIPT = False
     try:
         yield
     finally:
         config.VOICE_CALLER.clear()
         config.VOICE_CALLER.update(old_row)
         config.TTS_PROVIDER = old_tts
+        config.TTS_SPEAK_REPLIES = old_tts_speak_replies
+        config.VOICE_REVIEW_TRANSCRIPT = old_voice_review_transcript
 
 
 @contextmanager
@@ -124,15 +133,18 @@ def snip_config(row: dict[str, Any]):
     """Temporarily set the region-snip caller context."""
     old_row = dict(getattr(config, "SNIP_CALLER", {}))
     old_tts = getattr(config, "TTS_PROVIDER", "none")
+    old_tts_speak_replies = getattr(config, "TTS_SPEAK_REPLIES", False)
     config.SNIP_CALLER.clear()
     config.SNIP_CALLER.update(row)
     config.TTS_PROVIDER = "none"
+    config.TTS_SPEAK_REPLIES = False
     try:
         yield
     finally:
         config.SNIP_CALLER.clear()
         config.SNIP_CALLER.update(old_row)
         config.TTS_PROVIDER = old_tts
+        config.TTS_SPEAK_REPLIES = old_tts_speak_replies
 
 
 def make_flow(
@@ -152,7 +164,13 @@ def make_flow(
     return flow, native, ui, brain, audio
 
 
-def context_handler(selected: str = "selected", clipboard: str = "", pid: int = 42, focus_token: int = 0):
+def context_handler(
+    selected: str = "selected",
+    clipboard: str = "",
+    pid: int = 42,
+    focus_token: int = 0,
+    selected_paths: list[str] | None = None,
+):
     """Verify context handler behavior."""
     def handler(params: dict[str, Any]) -> dict[str, Any]:
         """Verify handler behavior."""
@@ -161,6 +179,8 @@ def context_handler(selected: str = "selected", clipboard: str = "", pid: int = 
             "clipboard_text": clipboard,
             "active_app": {"name": "Notes", "pid": pid, "bundle_id": "com.apple.Notes"},
         }
+        if params.get("include_selected_paths"):
+            result["selected_paths"] = list(selected_paths or [])
         # Mirror the native worker: a paste-back caller asks to capture the
         # focused element and gets a token back for AX in-place write.
         if params.get("capture_focus"):
@@ -294,6 +314,7 @@ def test_caller_hotkey_captures_selection_before_intent_steals_focus():
         order.append("snapshot")
         assert params["include_selection"] is True
         assert params["include_clipboard"] is True
+        assert params["include_selected_paths"] is True
         return {
             "selected_text": "selected before picker",
             "clipboard_text": "original clipboard",
@@ -320,8 +341,52 @@ def test_caller_hotkey_captures_selection_before_intent_steals_focus():
     assert chips["selection"]["tokens"].startswith("~")
 
 
-def test_intent_selection_chip_is_unavailable_without_selected_text():
-    """Verify empty selection is not shown as an enabled context cost."""
+def test_caller_hotkey_captures_selected_file_before_intent_steals_focus(tmp_path):
+    """Verify Explorer/Finder-selected files are captured before the picker focuses."""
+    picked = tmp_path / "already-selected.md"
+    picked.write_text("already selected file body", encoding="utf-8")
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "file_access": "off",
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(
+                selected="",
+                clipboard="stale clipboard",
+                selected_paths=[str(picked)],
+            )
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config(rows):
+        flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"prompt": "what is selected?", "context_choices": []})
+
+    snapshot = native.calls_for("native.context.snapshot")[0]["params"]
+    assert snapshot["include_selected_paths"] is True
+    shown = ui.calls_for("ui.intent.context_items")[-1]["params"]
+    chips = {item["id"]: item for item in shown["context_items"]}
+    assert chips["selection"]["state"] == "on"
+    assert "already-selected.md" in chips["selection"]["preview"]
+    assert chips["selection"]["tokens"].startswith("~")
+    params = brain.last_call("brain.query")["params"]
+    assert params["file_access_mode"] == "off"
+    assert "already selected file body" in params["ambient_text"]
+    assert "stale clipboard" not in params["ambient_text"]
+
+
+def test_intent_selection_chip_can_start_capture_without_selected_text():
+    """Verify empty selection can still be toggled to start capture."""
     rows = [
         {
             "paste_back": False,
@@ -342,7 +407,7 @@ def test_intent_selection_chip_is_unavailable_without_selected_text():
         item["id"]: item
         for item in ui.last_call("ui.show_intent")["params"]["context_items"]
     }
-    assert chips["selection"]["available"] is False
+    assert chips["selection"]["available"] is True
     assert chips["selection"]["state"] == "off"
     assert chips["selection"]["tokens"] == ""
 
@@ -518,8 +583,8 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert "[Buffered context]" in query["ambient_text"]
     assert "[Dropped context]" in query["ambient_text"]
     chunks = [c["params"] for c in ui.calls_for("ui.reply.chunk")]
-    assert chunks[0] == {"text": "Using tools...", "is_progress": True}
-    assert [c["text"] for c in chunks[1:]] == ["he", "llo"]
+    assert not any(c.get("is_progress") for c in chunks)
+    assert [c["text"] for c in chunks] == ["he", "llo"]
     assert ui.calls_for("ui.reply.done")
     chat_params = ui.last_call("ui.chat.add_conversation")["params"]
     assert chat_params["assistant"] == "hello"
@@ -963,7 +1028,7 @@ def test_query_with_tools_uses_longer_brain_timeout():
     assert query["use_tools"] is True
     assert query["file_access_mode"] == "ask"
     assert brain.last_call("brain.query")["timeout"] == 300.0
-    assert ui.calls_for("ui.reply.chunk")[0]["params"] == {"text": "Using tools...", "is_progress": True}
+    assert not any(call["params"].get("is_progress") for call in ui.calls_for("ui.reply.chunk"))
     assert set(query["allowed_tools"]) >= {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 
 
@@ -1888,6 +1953,41 @@ def test_no_tts_reply_done_lets_wpm_reveal_drain():
     assert all(call["params"] == {"flush": False} for call in done_calls)
 
 
+def test_configured_tts_provider_does_not_auto_speak_replies_without_opt_in():
+    """Configured TTS should remain available for F7 without speaking every reply."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("a spoken-capable reply")})
+    audio = FakeWorker(
+        handlers={
+            "audio.tts.synthesize": lambda _params: {"path": "reply.wav"},
+            "audio.play_file": lambda _params: {"played": True, "stopped": False},
+        }
+    )
+    with caller_config(rows):
+        config.TTS_PROVIDER = "cartesia"
+        config.TTS_SPEAK_REPLIES = False
+        _flow, native, _ui, _brain, audio = make_flow(native=native, brain=brain, audio=audio)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        _ui.emit("ui.intent.chosen", {"custom": "tell me"})
+
+    assert not audio.calls_for("audio.tts.synthesize")
+    assert not audio.calls_for("audio.play_file")
+
+
 def test_tts_speaks_completed_segments_before_full_reply_done():
     """Verify TTS starts after the first stable segment, before final reply.done."""
     first = "This is the first completed spoken part with enough detail to start audio now."
@@ -1941,6 +2041,7 @@ def test_tts_speaks_completed_segments_before_full_reply_done():
     ]
     with caller_config(rows):
         config.TTS_PROVIDER = "cartesia"
+        config.TTS_SPEAK_REPLIES = True
         _flow, _native, ui, _brain, audio = make_flow(native=native, brain=brain, audio=audio)
         native.emit("native.hotkey", {"kind": "caller", "index": 0})
         ui.emit("ui.intent.chosen", {"custom": "tell me"})
@@ -2045,6 +2146,7 @@ def test_tts_speaks_short_progress_before_final_answer():
     ]
     with caller_config(rows):
         config.TTS_PROVIDER = "cartesia"
+        config.TTS_SPEAK_REPLIES = True
         _flow, _native, ui, _brain, audio = make_flow(native=native, brain=brain, audio=audio)
         native.emit("native.hotkey", {"kind": "caller", "index": 0})
         ui.emit("ui.intent.chosen", {"custom": "edit"})
@@ -2305,6 +2407,362 @@ def test_screenshot_toggled_on_later_captures_at_send_time():
     query = brain.last_call("brain.query")["params"]
     assert len(native.calls_for("native.capture.fullscreen")) == 1
     assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
+
+
+def test_screenshot_chip_snip_attaches_region_to_current_intent():
+    """Verify Screenshot chip snips keep the active caller and attach the region image."""
+    image_bytes = b"intent screenshot snip"
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(image_bytes)
+        image_path = Path(tmp.name)
+
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected=""),
+            "native.capture.region": lambda _params: {"ok": True, "path": str(image_path)},
+            "native.capture.fullscreen": lambda _params: pytest.fail("unexpected fullscreen capture"),
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("vision reply")})
+    try:
+        with caller_config(rows):
+            _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+            native.emit("native.hotkey", {"kind": "caller", "index": 0})
+            ui.emit(
+                "ui.intent.snip.requested",
+                {
+                    "custom_text": "look at this area",
+                    "context_choices": [
+                        {"id": "screenshot", "state": "on", "default_state": "off", "touched": True}
+                    ],
+                },
+            )
+            ui.emit("ui.intent.snip.region", {"left": 10, "top": 20, "width": 300, "height": 200})
+            ui.emit(
+                "ui.intent.chosen",
+                {
+                    "custom": "look at this area",
+                    "context_choices": [
+                        {"id": "screenshot", "state": "on", "default_state": "off", "touched": True}
+                    ],
+                },
+            )
+    finally:
+        image_path.unlink(missing_ok=True)
+
+    assert native.last_call("native.capture.region")["params"]["region"]["width"] == 300
+    restored = ui.last_call("ui.show_intent")["params"]
+    assert restored["initial_custom_text"] == "look at this area"
+    restored_chips = {item["id"]: item for item in restored["context_items"]}
+    assert restored_chips["screenshot"]["state"] == "on"
+    query = brain.last_call("brain.query")["params"]
+    assert query["intent_prompt"] == "look at this area"
+    assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
+    assert not native.calls_for("native.capture.fullscreen")
+
+
+def test_cancelled_screenshot_chip_snip_does_not_capture_fullscreen():
+    """Verify backing out of a Screenshot-chip snip leaves screenshots off."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected=""),
+            "native.capture.fullscreen": lambda _params: pytest.fail("unexpected fullscreen capture"),
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("reply")})
+    with caller_config(rows):
+        _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit(
+            "ui.intent.snip.requested",
+            {
+                "context_choices": [
+                    {"id": "screenshot", "state": "on", "default_state": "off", "touched": True}
+                ],
+            },
+        )
+        ui.emit("ui.intent.snip.cancelled", {})
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "custom": "answer without image",
+                "context_choices": [
+                    {"id": "screenshot", "state": "off", "default_state": "off", "touched": False}
+                ],
+            },
+        )
+
+    query = brain.last_call("brain.query")["params"]
+    assert query["screenshot_b64"] is None
+    assert not native.calls_for("native.capture.fullscreen")
+    shown = ui.last_call("ui.show_intent")["params"]
+    chips = {item["id"]: item for item in shown["context_items"]}
+    assert chips["screenshot"]["state"] == "off"
+    assert chips["screenshot"]["force_state"] is True
+
+
+def test_chat_screenshot_chip_snip_attaches_image_without_file_permission():
+    """Verify chat Screenshot On attaches the snipped image to the composer."""
+    image_bytes = b"chat screenshot snip"
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(image_bytes)
+        image_path = Path(tmp.name)
+
+    native = FakeWorker(
+        {
+            "native.capture.region": lambda _params: {"ok": True, "path": str(image_path)},
+        }
+    )
+    try:
+        _flow, native, ui, _brain, _audio = make_flow(native=native)
+        ui.emit("ui.chat.snip.region", {"left": 4, "top": 5, "width": 80, "height": 90})
+    finally:
+        image_path.unlink(missing_ok=True)
+
+    assert native.last_call("native.capture.region")["params"]["region"]["height"] == 90
+    attached = ui.last_call("ui.chat.capture_context")["params"]
+    assert attached["source"] == "screenshot"
+    assert attached["item_type"] == "image"
+    assert attached["name"] == "Screenshot"
+    assert attached["content"] == base64.b64encode(image_bytes).decode("ascii")
+
+
+def test_chat_selection_capture_waits_for_user_selection_without_file_permission():
+    """Verify chat Selection On attaches the next selected text."""
+    native = FakeWorker({"native.context.await_selection": context_handler(selected="picked text")})
+    _flow, native, ui, _brain, _audio = make_flow(native=native)
+
+    ui.emit("ui.chat.selection.requested", {})
+
+    attached = ui.last_call("ui.chat.capture_context")["params"]
+    assert attached == {
+        "name": "Selection",
+        "content": "picked text",
+        "item_type": "text",
+        "source": "selection",
+    }
+    capture = native.last_call("native.context.await_selection")["params"]
+    assert capture["include_clipboard"] is True
+
+
+def test_chat_file_tool_summary_is_progress_not_reply_text():
+    """Verify file tool summaries are shown separately from assistant reply text."""
+    def chat_handler(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        payload = {
+            "text": "real answer",
+            "file_context": [
+                {
+                    "tool": "read_file",
+                    "path": r"C:\repo\notes.md",
+                    "relative_path": "notes.md",
+                    "ok": True,
+                    "message": "120 chars",
+                }
+            ],
+        }
+        on_event("reply.done", payload, 1)
+        return payload
+
+    brain = FakeWorker(stream_handlers={"brain.chat": chat_handler})
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.chat.request",
+        {
+            "request_id": "chat-1",
+            "messages": [{"role": "user", "content": "what is in notes?"}],
+            "context_policy": {"file_access": "read"},
+        },
+    )
+
+    chunks = [call["params"] for call in ui.calls_for("ui.chat.chunk")]
+    summary = next(item for item in chunks if item.get("text") == "Read file: notes.md")
+    assert summary["request_id"] == "chat-1"
+    assert summary["is_progress"] is True
+    assert summary["is_thought"] is True
+    done = ui.last_call("ui.chat.done")["params"]
+    assert done["text"] == "real answer"
+
+
+def test_intent_selection_capture_restores_picker_with_selected_text():
+    """Verify intent Selection On hides, captures the next selection, then restores."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected=""),
+            "native.context.await_selection": context_handler(selected="intent picked text"),
+        }
+    )
+    with caller_config(rows):
+        _flow, native, ui, _brain, _audio = make_flow(native=native)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit(
+            "ui.intent.selection.requested",
+            {
+                "custom_text": "keep my draft",
+                "context_choices": [
+                    {"id": "selection", "state": "on", "default_state": "off", "touched": True}
+                ],
+            },
+        )
+
+    shown = ui.last_call("ui.show_intent")["params"]
+    assert shown["initial_custom_text"] == "keep my draft"
+    chips = {item["id"]: item for item in shown["context_items"]}
+    assert chips["selection"]["state"] == "on"
+    assert chips["selection"]["tokens"].startswith("~")
+
+
+def test_intent_selection_capture_ignores_lifecycle_cancel_while_hidden():
+    """Verify temporary hidden Selection capture does not cancel the pending intent."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    ui_ref: dict[str, FakeWorker] = {}
+
+    def await_selection(params: dict[str, Any]) -> dict[str, Any]:
+        ui_ref["ui"].emit("ui.intent.cancelled", {})
+        return context_handler(selected="picked after hide")(params)
+
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected=""),
+            "native.context.await_selection": await_selection,
+        }
+    )
+    with caller_config(rows):
+        _flow, native, ui, _brain, _audio = make_flow(native=native)
+        ui_ref["ui"] = ui
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit(
+            "ui.intent.selection.requested",
+            {
+                "custom_text": "selection draft",
+                "context_choices": [
+                    {"id": "selection", "state": "on", "default_state": "off", "touched": True}
+                ],
+            },
+        )
+
+    shown = ui.last_call("ui.show_intent")["params"]
+    assert shown["initial_custom_text"] == "selection draft"
+    chips = {item["id"]: item for item in shown["context_items"]}
+    assert chips["selection"]["state"] == "on"
+    assert chips["selection"]["preview"] == "picked after hide"
+
+
+def test_chat_selection_capture_attaches_selected_paths_without_file_permission(tmp_path):
+    """Verify chat Selection capture accepts selected Explorer/Finder paths."""
+    picked = tmp_path / "notes.md"
+    picked.write_text("selected file text", encoding="utf-8")
+    native = FakeWorker(
+        {
+            "native.context.await_selection": context_handler(
+                selected="",
+                clipboard="stale clipboard time 2026-06-29T17:55:39-06:00",
+                selected_paths=[str(picked)],
+            )
+        }
+    )
+    _flow, native, ui, _brain, _audio = make_flow(native=native)
+
+    ui.emit("ui.chat.selection.requested", {})
+
+    capture = native.last_call("native.context.await_selection")["params"]
+    assert capture["include_selected_paths"] is True
+    attached = ui.last_call("ui.chat.capture_context")["params"]
+    assert attached["source"] == "selection"
+    assert attached["paths"] == [str(picked)]
+    assert attached["content"] == ""
+    assert "stale clipboard" not in attached["content"]
+    assert "file_access" not in attached
+
+
+def test_intent_selection_capture_uses_selected_paths_without_file_permission(tmp_path):
+    """Verify intent Selection capture sends selected file content as context."""
+    picked = tmp_path / "notes.md"
+    picked.write_text("selected file text", encoding="utf-8")
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents": False,
+            "context_tools": False,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "file_access": "off",
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(
+                selected="",
+                clipboard="stale clipboard time 2026-06-29T17:55:39-06:00",
+                selected_paths=[str(picked)],
+            )
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config(rows):
+        _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        ui.emit(
+            "ui.intent.selection.requested",
+            {
+                "custom_text": "keep my draft",
+                "context_choices": [
+                    {"id": "selection", "state": "on", "default_state": "off", "touched": True}
+                ],
+            },
+        )
+        ui.emit("ui.intent.chosen", {"prompt": "summarize", "context_choices": []})
+
+    snapshot = native.calls_for("native.context.snapshot")[-1]["params"]
+    assert snapshot["include_selected_paths"] is True
+    shown = ui.calls_for("ui.show_intent")[-1]["params"]
+    chips = {item["id"]: item for item in shown["context_items"]}
+    assert chips["selection"]["state"] == "on"
+    assert "notes.md" in chips["selection"]["preview"]
+    params = brain.last_call("brain.query")["params"]
+    assert params["file_access_mode"] == "off"
+    assert "selected file text" in params["ambient_text"]
+    assert "stale clipboard" not in params["ambient_text"]
 
 
 def test_caller_screenshot_precaptures_before_intent_overlay(monkeypatch):
@@ -2879,6 +3337,49 @@ def test_voice_flow_records_transcribes_and_queries():
     assert chat_params["assistant"] == "voice reply"
 
 
+def test_voice_review_transcript_opens_intent_overlay_before_query():
+    """F9 can review the transcript and per-request context before querying."""
+    voice_row = {
+        "label": "Voice",
+        "paste_back": False,
+        "context_ambient": False,
+        "context_clipboard": False,
+        "context_documents_mode": "off",
+        "context_browser_mode": "off",
+        "context_github_mode": "off",
+        "context_memory_mode": "on",
+        "context_screenshot": "off",
+        "tools": {},
+    }
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "voice prompt"}})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("voice reply")})
+    with voice_config(voice_row):
+        config.VOICE_REVIEW_TRANSCRIPT = True
+        _flow, native, ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
+        native.emit("native.hotkey", {"kind": "voice_start"})
+        native.emit("native.hotkey", {"kind": "voice_stop"})
+
+        assert audio.calls_for("audio.record.stop_transcribe")
+        assert not brain.calls_for("brain.query")
+        show = ui.last_call("ui.show_intent")["params"]
+        assert show["initial_custom_text"] == "voice prompt"
+        assert show["focus_overlay"] is True
+        assert any(item["id"] == "memory" and item["state"] == "on" for item in show["context_items"])
+
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "custom": "voice prompt",
+                "context_choices": [{"id": "memory", "state": "off", "default_state": "on", "touched": True}],
+            },
+        )
+
+    query = brain.last_call("brain.query")["params"]
+    assert query["intent_prompt"] == "voice prompt"
+    assert query["memory_enabled"] is False
+
+
 def test_voice_start_starts_recording_before_context_capture():
     """Verify voice start starts recording before context capture behavior."""
     audio = FakeWorker()
@@ -3419,7 +3920,7 @@ def test_chat_request_streams_through_brain_chat():
     assert brain.last_call("brain.chat")["params"]["messages"][0]["content"] == "hi"
     chunks = [c["params"] for c in ui.calls_for("ui.chat.chunk")]
     progress_chunks = [c for c in chunks if c.get("is_progress")]
-    assert [c["text"] for c in progress_chunks] in ([], ["Using tools..."])
+    assert [c["text"] for c in progress_chunks] == []
     assert [c["text"] for c in chunks if not c.get("is_progress")] == ["ch", "at reply"]
     done_params = ui.last_call("ui.chat.done")["params"]
     assert done_params["request_id"] == "chat-1"
@@ -3870,11 +4371,7 @@ def test_chat_request_inherits_first_caller_file_tools():
     assert params["use_tools"] is True
     assert params["file_access_mode"] == "ask"
     assert brain.last_call("brain.chat")["timeout"] == 300.0
-    assert ui.calls_for("ui.chat.chunk")[0]["params"] == {
-        "request_id": "chat-1",
-        "text": "Using tools...",
-        "is_progress": True,
-    }
+    assert not any(call["params"].get("is_progress") for call in ui.calls_for("ui.chat.chunk"))
     assert set(params["allowed_tools"]) >= {"list_files", "read_file", "create_file", "edit_file", "write_file"}
     assert set(params["pinned_tools"]) >= {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 

@@ -250,6 +250,57 @@ def test_addon_manifest_accepts_cp1252_punctuation(tmp_path, monkeypatch):
     assert ord(summary["description"][3]) == 0x2014
 
 
+def test_manager_seeds_bundled_default_addons_when_missing(tmp_path, monkeypatch):
+    """Verify bundled default addons are copied into the writable addon folder."""
+    bundled_root = tmp_path / "bundle" / "addons"
+    bundled_addon = bundled_root / "mcp_bridge"
+    bundled_addon.mkdir(parents=True)
+    (bundled_addon / "addon.toml").write_text("[addon]\nid = 'mcp-bridge'\nname = 'MCP Bridge'\n", encoding="utf-8")
+    (bundled_addon / "__init__.py").write_text("", encoding="utf-8")
+    (bundled_addon / "servers.json").write_text('{"servers": []}', encoding="utf-8")
+
+    store_path = tmp_path / "addons.json"
+    monkeypatch.setattr(addon_store, "_STORE_PATH", store_path)
+    monkeypatch.setattr(am.addon_store, "_STORE_PATH", store_path)
+    addon_store.set_enabled("mcp-bridge", False)
+
+    addons_dir = tmp_path / "runtime" / "addons"
+    manager = am.AddonManager(addons_dir, bundled_addons_dir=bundled_root)
+    manager.load_all()
+
+    assert (addons_dir / "mcp_bridge" / "addon.toml").exists()
+    assert (addons_dir / "mcp_bridge" / "servers.json").read_text(encoding="utf-8") == '{"servers": []}'
+    assert manager.summaries()[0]["id"] == "mcp-bridge"
+    assert manager.summaries()[0]["enabled"] is False
+
+
+def test_manager_does_not_overwrite_existing_default_addon(tmp_path, monkeypatch):
+    """Verify seeded default addons preserve existing user configuration."""
+    bundled_root = tmp_path / "bundle" / "addons"
+    bundled_addon = bundled_root / "mcp_bridge"
+    bundled_addon.mkdir(parents=True)
+    (bundled_addon / "addon.toml").write_text("[addon]\nid = 'mcp-bridge'\nname = 'MCP Bridge'\n", encoding="utf-8")
+    (bundled_addon / "__init__.py").write_text("", encoding="utf-8")
+    (bundled_addon / "servers.json").write_text('{"servers": []}', encoding="utf-8")
+
+    addons_dir = tmp_path / "runtime" / "addons"
+    existing_addon = addons_dir / "mcp_bridge"
+    existing_addon.mkdir(parents=True)
+    (existing_addon / "addon.toml").write_text("[addon]\nid = 'mcp-bridge'\nname = 'MCP Bridge'\n", encoding="utf-8")
+    (existing_addon / "__init__.py").write_text("", encoding="utf-8")
+    (existing_addon / "servers.json").write_text('{"servers": [{"name": "custom"}]}', encoding="utf-8")
+
+    store_path = tmp_path / "addons.json"
+    monkeypatch.setattr(addon_store, "_STORE_PATH", store_path)
+    monkeypatch.setattr(am.addon_store, "_STORE_PATH", store_path)
+    addon_store.set_enabled("mcp-bridge", False)
+
+    manager = am.AddonManager(addons_dir, bundled_addons_dir=bundled_root)
+    manager.load_all()
+
+    assert (existing_addon / "servers.json").read_text(encoding="utf-8") == '{"servers": [{"name": "custom"}]}'
+
+
 def test_approved_addon_with_missing_environment_needs_install(tmp_path, monkeypatch):
     """Verify approved addon with missing environment needs install behavior."""
     monkeypatch.setattr(addon_runtime, "ADDON_ENVS_DIR", tmp_path / "addon_envs")

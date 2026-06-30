@@ -866,6 +866,7 @@ class ChatWindow(QWidget):
         active_idx: int | None = None,
         on_select=None,
         on_context_preview=None,
+        on_context_capture=None,
     ):
         """
         Args:
@@ -888,6 +889,8 @@ class ChatWindow(QWidget):
                            conversation, so the app can retarget hotkey prompts.
             on_context_preview: Callable(payload) invoked to refresh token
                            estimates for visible context controls.
+            on_context_capture: Callable(payload) invoked when a context chip
+                           needs an interactive capture before it can turn on.
         """
         super().__init__()
         _refresh_chat_palette()  # match the active light/dark theme on open
@@ -898,6 +901,7 @@ class ChatWindow(QWidget):
         self._send_fn = send_fn
         self._on_select = on_select
         self._on_context_preview = on_context_preview
+        self._on_context_capture = on_context_capture
         self._projects = list(projects or [])
         if not any(p.get("id") == _GENERAL_PROJECT_ID for p in self._projects):
             self._projects.insert(0, {"id": _GENERAL_PROJECT_ID, "name": t("General")})
@@ -2094,11 +2098,87 @@ class ChatWindow(QWidget):
             return
         conv = self._conversations[self._active_idx]
         policy = _ensure_conversation_context_policy(conv)
+        current = _policy_state(policy, source)
+        if source in {"selection", "screenshot"} and current == "off" and state == "on":
+            if callable(self._on_context_capture):
+                self._on_context_capture(
+                    {
+                        "source": source,
+                        "conversation_index": self._active_idx,
+                        "context_policy": deepcopy(policy),
+                    }
+                )
+                return
         conv["context_policy"] = _apply_policy_state(policy, source, state)
         _touch_conversation(conv)
         self._update_context_chip(chip, source, _policy_state(conv["context_policy"], source))
         self._persist()
         self.request_context_preview()
+
+    def attach_captured_context(
+        self,
+        name: str = "",
+        content: str = "",
+        item_type: str = "text",
+        source: str = "",
+        paths: list[str] | None = None,
+    ) -> dict:
+        """Attach interactively captured context to the next outgoing chat turn."""
+        if not (0 <= self._active_idx < len(self._conversations)):
+            return {"attached": False, "reason": "no_conversation"}
+        selected_paths = [str(path or "").strip() for path in (paths or []) if str(path or "").strip()]
+        label = str(name or "Context")
+        kind = str(item_type or "text")
+        body = str(content or "")
+        attached_any = False
+        if selected_paths:
+            attached_any = self._add_attachment_paths(selected_paths)
+        if not body and not attached_any:
+            return {"attached": False, "reason": "empty"}
+        if body and kind == "image":
+            if self._pending_attachment_image_b64 is None:
+                self._pending_attachment_image_b64 = body
+            else:
+                self._pending_attachment_context = "\n\n".join(
+                    part
+                    for part in (
+                        self._pending_attachment_context,
+                        f"[Attached image: {label}]",
+                    )
+                    if part.strip()
+            )
+            if label not in self._pending_attachment_labels:
+                self._pending_attachment_labels.append(label)
+            attached_any = True
+        elif body:
+            attached_any = self._add_attachment_items([(label, body, kind)]) or attached_any
+
+        conv = self._conversations[self._active_idx]
+        policy = _ensure_conversation_context_policy(conv)
+        if source == "selection":
+            conv["context_policy"] = _apply_policy_state(policy, "selection", "on")
+        elif source == "screenshot":
+            conv["context_policy"] = _apply_policy_state(policy, "screenshot", "on")
+        _touch_conversation(conv)
+        self._refresh_attachment_label()
+        self._refresh_context_controls()
+        self._persist()
+        self.request_context_preview()
+        return {"attached": True}
+
+    def cancel_context_capture(self, source: str = "") -> dict:
+        """Return a chip to Off after its interactive capture was cancelled."""
+        if not (0 <= self._active_idx < len(self._conversations)):
+            return {"cancelled": False, "reason": "no_conversation"}
+        conv = self._conversations[self._active_idx]
+        policy = _ensure_conversation_context_policy(conv)
+        if source in {"selection", "screenshot"}:
+            conv["context_policy"] = _apply_policy_state(policy, source, "off")
+            _touch_conversation(conv)
+            self._refresh_context_controls()
+            self._persist()
+            self.request_context_preview()
+        return {"cancelled": True}
 
     # ------------------------------------------------------------------ Bubbles
 

@@ -142,6 +142,17 @@ confirm() {
     [[ "$answer" =~ ^[Yy](es)?$ ]]
 }
 
+clean_build_outputs() {
+    rm -rf \
+        "$ROOT/build" \
+        "$ROOT/dist" \
+        "$ROOT/.pytest_cache" \
+        "$ROOT/.pytest-tmp" \
+        "$ROOT/.pytest_tmp" \
+        "$ROOT/.tmp_pytest"
+    find "$ROOT" -maxdepth 1 -type d -name '.pytest-tmp-*' -exec rm -rf {} +
+}
+
 require_file "$REQUIREMENTS_FILE" "requirements.txt"
 require_file "$MACOS_LOCK_FILE" "requirements-macos.lock"
 require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.txt"
@@ -187,7 +198,7 @@ else
 fi
 
 if $CLEAN; then
-    rm -rf "$ROOT/build" "$ROOT/dist"
+    clean_build_outputs
 fi
 
 if ! $SKIP_INSTALL; then

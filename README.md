@@ -28,13 +28,13 @@ Wisp gives you hotkey-driven AI that can read your selection, clipboard, app, br
 
 Wisp is for the moments when opening a chat app would break your flow.
 
-Highlight text, press the general hotkey, hit one intent key, and Wisp asks your configured model with only the context sources you enabled. Replies stream into a compact bubble next to the floating icon. If TTS is enabled, the answer is spoken as it arrives.
+Highlight text, press the general hotkey, hit one intent key, and Wisp asks your configured model with only the context sources you enabled. Replies stream into a compact bubble next to the floating icon. Configure TTS for read-aloud, or enable auto-speak replies if you want answers spoken as they arrive.
 
 | Instead of... | Wisp lets you... |
 | --- | --- |
 | Copying text into a separate chat window | Ask from the app you are already using |
 | Rewriting the same prompts again and again | Bind prompts to hotkeys and intent rows |
-| Reading long responses every time | Hear the answer through streaming TTS |
+| Reading long responses every time | Use `F7` to read selected text aloud, or opt into streaming spoken replies |
 | Explaining what is on screen manually | Capture selection, clipboard, documents, browser pages, and screen snippets |
 | Trusting a remote assistant with storage | Keep memory and configuration on your machine |
 
@@ -46,7 +46,7 @@ Highlight text, press the general hotkey, hit one intent key, and Wisp asks your
 - **Highly customizable** - every hotkey, intent key, prompt, context source, paste-back behavior, model route, voice setting, and bubble dimension can be changed.
 - **Approachable GUI** - Settings, setup checks, privacy reports, memory tools, and model warnings explain what is happening without requiring you to read the code.
 - **Context capture** - Wisp can read selected text, clipboard text, focused UI, open documents, browser content, recent files, and optional screenshots, so it does not have to rely on screen grabs alone.
-- **Voice in and out** - local STT via faster-whisper, plus on-device neural TTS (Kokoro, and GPT-SoVITS voice cloning) or cloud/compatible voices (Cartesia, ElevenLabs, OpenAI, any OpenAI-compatible server), with TTS off by default.
+- **Voice in and out** - local STT via faster-whisper, plus on-device neural TTS (Kokoro, and GPT-SoVITS voice cloning) or cloud/compatible voices (Cartesia, ElevenLabs, OpenAI, any OpenAI-compatible server), with TTS and auto-spoken replies off by default.
 - **Vision snips** - draw a region with `Ctrl+Alt+Q` and send the screenshot to a vision model.
 - **Rewrite and paste** - use the rewrite hotkey to rewrite selected text with captured context and paste the result back into the active field.
 - **Bring your own provider** - Groq, Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Mistral, XAI, Together, Cerebras, Z.AI / GLM, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, custom OpenAI-compatible servers, GitHub Copilot, and more.
@@ -77,7 +77,7 @@ highlight text, choose context, or draw a snip
   -> pick an intent or type a custom prompt
   -> send directly to your configured model provider
   -> stream model reply
-  -> show bubble + optional TTS
+  -> show bubble + optional auto-speak TTS
   -> optionally store useful memory locally
 ```
 
