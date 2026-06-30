@@ -932,12 +932,9 @@ def test_elaborate_prompt_field_follows_auto_elaborate_checkbox():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    import config
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
-    old_language = getattr(config, "APP_LANGUAGE", "")
-    config.APP_LANGUAGE = ""
     dialog = SettingsDialog()
 
     try:
@@ -957,7 +954,6 @@ def test_elaborate_prompt_field_follows_auto_elaborate_checkbox():
         assert field.isHidden()
         assert label is not None and label.isHidden()
     finally:
-        config.APP_LANGUAGE = old_language
         dialog.deleteLater()
         app.processEvents()
 
@@ -968,12 +964,9 @@ def test_llm_tab_hides_advanced_chat_harness_controls_until_expanded():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
-    import config
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
-    old_language = getattr(config, "APP_LANGUAGE", "")
-    config.APP_LANGUAGE = ""
     dialog = SettingsDialog()
 
     try:
@@ -1005,7 +998,6 @@ def test_llm_tab_hides_advanced_chat_harness_controls_until_expanded():
 
         assert dialog._fields["CHAT_REASONING_EFFORT"].isVisible()
     finally:
-        config.APP_LANGUAGE = old_language
         dialog.deleteLater()
         app.processEvents()
 
