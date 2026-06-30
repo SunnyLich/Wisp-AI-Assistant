@@ -77,6 +77,9 @@ jobs:
     name: Tests (${{ matrix.os }})
     needs: verify-locks
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONFAULTHANDLER: "1"
+      QT_QPA_PLATFORM: offscreen
     strategy:
       fail-fast: false
       matrix:
@@ -118,4 +121,4 @@ jobs:
         run: python -m compileall -q core ui runtime config.py
 
       - name: Run test suite
-        run: pytest -ra --tb=short -k "not platform_macos"
+        run: python -X faulthandler -m pytest -ra --tb=short -k "not platform_macos"

@@ -1040,3 +1040,35 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
   "Ctrl Q on Windows; Ctrl Alt Space on macOS/Linux": "<kbd>Ctrl Q</kbd>（Windows）；<kbd>Ctrl Alt Space</kbd>（macOS/Linux）",
   "Fast hosted open-model inference": "快速的托管開放模型推理",
 });
+
+/* Drift fixes from June 30 website refresh. */
+Object.assign(I18N.reg['zh-Hant'].tr, {
+  "core/context_fetcher.py and the native worker collect context at hotkey time, before the overlay can become the foreground app. The caller's policy decides which sources are included immediately and which are exposed as tools for the model to fetch on demand.":
+    "<code>core/context_fetcher.py</code> 和 native worker 會在按下快捷鍵時擷取情境，也就是在覆蓋介面成為前景視窗之前。呼叫器的政策會決定哪些來源要立即附上，哪些來源要以工具形式提供給模型按需擷取。",
+  "Active window": "作用中視窗",
+  "Title, process name, exe path, window handle, and browser URL when available": "標題、程序名稱、執行檔路徑、視窗控制代碼，以及可用時的瀏覽器 URL",
+  "Selection": "選取內容",
+  "Selected text captured from the target app before the overlay opens": "覆蓋介面開啟前，從目標應用程式擷取的選取文字",
+  "All platforms, app dependent": "所有平台，視應用程式而定",
+  "Open documents": "開啟的文件",
+  "Resolved document paths and visible document text where supported": "支援時解析出的文件路徑與可見文件文字",
+  "All platforms, strongest on Windows/macOS": "所有平台；Windows/macOS 支援最完整",
+  "Current tab URL and page text, either up front or through a model tool": "目前分頁 URL 與頁面文字，可預先附上或透過模型工具擷取",
+  "A screenshot captured at hotkey time, or a screenshot tool exposed to vision-capable routes": "快捷鍵觸發當下擷取的螢幕截圖，或提供給支援視覺路由的截圖工具",
+  "Memory, Git/GitHub, files": "記憶、Git/GitHub、檔案",
+  "Local memory facts, repo context, GitHub context, or local file access according to caller policy": "依呼叫器政策提供的本機記憶事實、儲存庫情境、GitHub 情境或本機檔案存取",
+
+  "Caller modes": "呼叫器模式",
+  "Most context sources can be Off, On, or Let model decide. On attaches the source before the request. Let model decide exposes a tool so the model can fetch that source only if it needs it. File access has its own modes: off, read only, ask before writing, or write automatically.":
+    "大多數情境來源都可以設為「關閉」、「開啟」或「讓模型決定」。「開啟」會在送出請求前附上該來源；「讓模型決定」會公開一個工具，讓模型只在需要時擷取該來源。檔案存取則有自己的模式：關閉、唯讀、寫入前詢問，或自動寫入。",
+  "The intent overlay and chat window use the same context-policy shape, so the chips you see before sending match the sources Wisp is allowed to send or expose.":
+    "意圖覆蓋介面和聊天視窗使用相同的情境政策格式，因此你在送出前看到的情境晶片，會對應到 Wisp 被允許傳送或公開的來源。",
+  "When browser context is enabled, Wisp can fetch the active browser tab, parse HTML with beautifulsoup4, and strip nav/header/footer boilerplate. Private/local URLs are skipped. If the caller uses model-decidable browser context, the page is fetched only when the model calls the context tool.":
+    "啟用瀏覽器情境時，Wisp 可以擷取作用中的瀏覽器分頁、用 <code>beautifulsoup4</code> 解析 HTML，並移除導覽列、頁首與頁尾等樣板內容。私人或本機 URL 會被略過。如果呼叫器使用可由模型決定的瀏覽器情境，頁面只會在模型呼叫情境工具時才被擷取。",
+
+  "Read selected text aloud": "朗讀選取文字",
+  "Press F7 to read the current selection aloud with the configured TTS provider. This is separate from model replies: it does not send a query, does not save chat, and is useful when you want Wisp to read text from the app you are already using.":
+    "按下 <kbd>F7</kbd> 可使用已設定的 TTS 供應商朗讀目前選取內容。這和模型回覆是分開的：它不會送出查詢、不會儲存聊天；當你希望 Wisp 朗讀目前應用程式中的文字時很有用。",
+  "Auto-spoken replies are opt-in. Wisp can stream answers into the bubble silently by default, or speak them as they arrive when you enable reply auto-speak in Settings.":
+    "自動朗讀回覆是選用功能。Wisp 預設可以安靜地將答案串流到泡泡中；若你在設定中啟用回覆自動朗讀，它也可以在答案抵達時同步唸出來。"
+});

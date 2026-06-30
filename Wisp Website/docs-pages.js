@@ -41,51 +41,6 @@ const DOCS_PAGES = {
 </table>`
 },
 
-'whats-new': {
-  title: 'What changed recently',
-  sub: 'User-facing functionality added or reshaped in the last week.',
-  toc: ['headline','context','rewrite','voice','addons','updates','developer'],
-  html: `
-<h2 id="headline">June 30, 2026 snapshot</h2>
-<p>The last week was mostly an architecture and stability push, but several pieces changed how Wisp feels and what the website should promise. This page calls out the user-visible changes rather than listing internal bug fixes.</p>
-<table>
-  <thead><tr><th>Area</th><th>What changed</th><th>Where to read next</th></tr></thead>
-  <tbody>
-    <tr><td>Context control</td><td>Callers now use a richer context grid: attach sources up front, let the model fetch them on demand, or keep them off. Tool access is managed separately from context sources.</td><td><a onclick="navigate('callers')">Callers</a></td></tr>
-    <tr><td>Rewrite flow</td><td>Rewrite/paste now streams a visible bubble response and targets paste-back at the original field captured when the hotkey was pressed.</td><td><a onclick="navigate('overlay')">Overlay</a></td></tr>
-    <tr><td>Chat continuity</td><td>The full chat window can continue from overlay-captured context and keeps previous conversations available locally.</td><td><a onclick="navigate('overview')">Overview</a></td></tr>
-    <tr><td>Voice behavior</td><td>Read-aloud is separate from auto-spoken replies: <kbd>F7</kbd> reads selected text, while reply auto-speak remains opt-in.</td><td><a onclick="navigate('voice')">Voice mode</a></td></tr>
-    <tr><td>Add-ons</td><td>The bundled MCP bridge add-on exposes configured Model Context Protocol servers as model-callable Wisp tools.</td><td><a onclick="navigate('addons')">Add-ons</a></td></tr>
-    <tr><td>Updates</td><td>Packaged builds can check GitHub Releases, download the matching artifact, verify it, and apply it through a helper that restarts Wisp.</td><td><a onclick="navigate('installation')">Installation</a></td></tr>
-  </tbody>
-</table>
-
-<hr />
-<h2 id="context">Context and tools</h2>
-<p>Context controls are no longer a simple ambient/documents/screenshot set. App, browser/web, clipboard, screenshot, Git/GitHub, memory, and local files each have clearer modes. When a source is set to <strong>Let model decide</strong>, Wisp exposes a tool so the model can fetch it only if the answer needs it.</p>
-<p>Allowed tools are separate from context controls. That means a caller can include, for example, browser context up front while still denying local file tools, or allow MCP/add-on tools while keeping screenshots off.</p>
-
-<hr />
-<h2 id="rewrite">Rewrite and paste-back</h2>
-<p>The rewrite caller is still built for selected text, but the behavior is easier to trust: Wisp keeps the rewrite visible in the bubble and pastes back to the field that was active when the hotkey started, instead of relying on where focus happens to be after the overlay opens.</p>
-
-<hr />
-<h2 id="voice">Voice defaults</h2>
-<p>Voice output is more explicit. TTS and auto-spoken replies are off by default. Use <kbd>F7</kbd> for selected-text read-aloud, <kbd>F9</kbd> for push-to-talk model queries, and <kbd>F8</kbd> for direct dictation into the focused field.</p>
-
-<hr />
-<h2 id="addons">Add-ons and MCP</h2>
-<p>The older reference add-on has been replaced in the docs by the shipped <strong>MCP bridge</strong>. Configure servers in <code>addons/mcp_bridge/servers.json</code>, and Wisp exposes their tools through the normal add-on/tool permission path.</p>
-
-<hr />
-<h2 id="updates">Packaged updates</h2>
-<p>Release builds now publish platform artifacts and a <code>wisp-release-manifest.json</code>. Settings can check that manifest, download the artifact for the current platform, verify its SHA256 hash, and apply it when you choose <strong>Apply update</strong>.</p>
-
-<hr />
-<h2 id="developer">Install and build behavior</h2>
-<p>Source launchers and CI now install from platform-specific lock files: <code>requirements-windows.lock</code>, <code>requirements-macos.lock</code>, and <code>requirements-linux.lock</code>. Local packaging uses a separate <code>.venv-build</code> by default so development experiments stay out of portable release bundles.</p>`
-},
-
 'technical-demos': {
   title: 'Technical Demos',
   sub: 'Real runs of Wisp capturing context, rewriting text, and driving longer agent tasks.',
@@ -2029,7 +1984,6 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 const NAV_TREE = [
   { section: 'Getting Started', pages: [
     { id: 'overview',      label: 'Overview' },
-    { id: 'whats-new',     label: 'What changed recently', tag: 'new' },
     { id: 'technical-demos', label: 'Technical demos'},
     { id: 'installation',  label: 'Installation' },
     { id: 'quickstart',    label: 'Quick start' },
