@@ -16,7 +16,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from core.system.paths import UPDATE_DOWNLOAD_DIR
+from core.system.paths import SINGLE_INSTANCE_LOCK, UPDATE_DOWNLOAD_DIR
 
 DEFAULT_MANIFEST_URL = (
     "https://github.com/SunnyLich/Python-AI-assistant-overlay/"
@@ -264,6 +264,7 @@ $pidToWait = {pid}
 $archive = {_quoted_ps(str(update_path))}
 $installRoot = {_quoted_ps(str(root))}
 $restartTarget = {_quoted_ps(str(restart_target))}
+$singleInstanceLock = {_quoted_ps(str(SINGLE_INSTANCE_LOCK))}
 $archiveRootName = {_quoted_ps(archive_root)}
 $workRoot = Join-Path (Split-Path -LiteralPath $archive -Parent) ("apply-" + [guid]::NewGuid().ToString())
 $extractRoot = Join-Path $workRoot "extract"
@@ -275,9 +276,188 @@ function Restore-Backup {{
     }}
 }}
 
-try {{
-    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+function Initialize-InstallerUi {{
+    try {{
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        $script:form = New-Object System.Windows.Forms.Form
+        $script:form.Text = "Wisp Update"
+        $script:form.Width = 440
+        $script:form.Height = 190
+        $script:form.StartPosition = "CenterScreen"
+        $script:form.FormBorderStyle = "FixedDialog"
+        $script:form.MaximizeBox = $false
+        $script:form.MinimizeBox = $true
+        $script:form.TopMost = $true
+        try {{
+            $script:form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($restartTarget)
+        }} catch {{ }}
+
+        $title = New-Object System.Windows.Forms.Label
+        $title.Text = "Updating Wisp"
+        $title.Font = New-Object System.Drawing.Font($title.Font.FontFamily, 12, [System.Drawing.FontStyle]::Bold)
+        $title.Left = 20
+        $title.Top = 18
+        $title.Width = 380
+        $title.Height = 26
+        $script:form.Controls.Add($title)
+
+        $script:statusLabel = New-Object System.Windows.Forms.Label
+        $script:statusLabel.Text = "Preparing update..."
+        $script:statusLabel.Left = 20
+        $script:statusLabel.Top = 54
+        $script:statusLabel.Width = 390
+        $script:statusLabel.Height = 34
+        $script:form.Controls.Add($script:statusLabel)
+
+        $script:progress = New-Object System.Windows.Forms.ProgressBar
+        $script:progress.Left = 20
+        $script:progress.Top = 95
+        $script:progress.Width = 390
+        $script:progress.Height = 18
+        $script:progress.Style = "Marquee"
+        $script:progress.MarqueeAnimationSpeed = 35
+        $script:form.Controls.Add($script:progress)
+
+        $script:closeButton = New-Object System.Windows.Forms.Button
+        $script:closeButton.Text = "Close"
+        $script:closeButton.Left = 320
+        $script:closeButton.Top = 122
+        $script:closeButton.Width = 90
+        $script:closeButton.Visible = $false
+        $script:closeButton.Add_Click({{ $script:form.Close() }})
+        $script:form.Controls.Add($script:closeButton)
+
+        $script:form.Show()
+        [System.Windows.Forms.Application]::DoEvents()
+    }} catch {{
+        $script:form = $null
+    }}
+}}
+
+function Update-InstallerStatus {{
+    param([string]$Message)
+    try {{
+        if ($script:statusLabel -ne $null) {{
+            $script:statusLabel.Text = $Message
+            [System.Windows.Forms.Application]::DoEvents()
+        }}
+    }} catch {{ }}
+}}
+
+function Finish-InstallerUi {{
+    param(
+        [string]$Message,
+        [bool]$Failed
+    )
+    try {{
+        if ($script:form -eq $null) {{
+            return
+        }}
+        if ($script:progress -ne $null) {{
+            $script:progress.Style = "Blocks"
+            $script:progress.MarqueeAnimationSpeed = 0
+            $script:progress.Value = $(if ($Failed) {{ 0 }} else {{ 100 }})
+        }}
+        if ($script:statusLabel -ne $null) {{
+            $script:statusLabel.Text = $Message
+        }}
+        if ($Failed) {{
+            $script:form.TopMost = $false
+            $script:closeButton.Visible = $true
+            $script:form.Activate()
+            while ($script:form.Visible) {{
+                [System.Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 100
+            }}
+        }} else {{
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 500
+            $script:form.Close()
+        }}
+    }} catch {{ }}
+}}
+
+function Test-WispLockReleased {{
+    $stream = $null
+    try {{
+        $parent = Split-Path -LiteralPath $singleInstanceLock -Parent
+        if ($parent -and -not (Test-Path -LiteralPath $parent)) {{
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        }}
+        $stream = [System.IO.File]::Open($singleInstanceLock, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::ReadWrite)
+        $stream.Lock(0, 1)
+        $stream.Unlock(0, 1)
+        return $true
+    }} catch {{
+        return $false
+    }} finally {{
+        if ($stream -ne $null) {{
+            $stream.Dispose()
+        }}
+    }}
+}}
+
+function Wait-For-WispExit {{
+    Update-InstallerStatus "Waiting for Wisp to close..."
     try {{ Wait-Process -Id $pidToWait -Timeout 90 -ErrorAction SilentlyContinue }} catch {{ }}
+    $deadline = (Get-Date).AddMinutes(5)
+    while ((Get-Date) -lt $deadline) {{
+        if (Test-WispLockReleased) {{
+            Start-Sleep -Seconds 1
+            return
+        }}
+        Start-Sleep -Seconds 1
+    }}
+    throw "Timed out waiting for Wisp to exit before applying the update."
+}}
+
+function Find-NewVersionHelper {{
+    param([string]$CandidateRoot)
+    $relativePaths = @(
+        "_internal\\assets\\updater\\windows_apply_update.ps1",
+        "assets\\updater\\windows_apply_update.ps1",
+        "updater\\windows_apply_update.ps1"
+    )
+    foreach ($relativePath in $relativePaths) {{
+        $helper = Join-Path $CandidateRoot $relativePath
+        if (Test-Path -LiteralPath $helper -PathType Leaf) {{
+            return $helper
+        }}
+    }}
+    return $null
+}}
+
+function Invoke-NewVersionHelper {{
+    param(
+        [string]$Helper,
+        [string]$Candidate
+    )
+    $delegatedHelper = Join-Path (Split-Path -LiteralPath $archive -Parent) ("apply-new-wisp-update-" + [guid]::NewGuid().ToString() + ".ps1")
+    Copy-Item -LiteralPath $Helper -Destination $delegatedHelper -Force
+    Update-InstallerStatus "Starting the newer installer..."
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $delegatedHelper `
+        -Archive $archive `
+        -InstallRoot $installRoot `
+        -Candidate $Candidate `
+        -RestartTarget $restartTarget `
+        -BackupRoot $backupRoot `
+        -WorkRoot $workRoot `
+        -SingleInstanceLock $singleInstanceLock
+    $exitCode = $LASTEXITCODE
+    Remove-Item -LiteralPath $delegatedHelper -Force -ErrorAction SilentlyContinue
+    if ($exitCode -ne 0) {{
+        throw "The newer Wisp installer failed with exit code $exitCode."
+    }}
+}}
+
+Initialize-InstallerUi
+
+try {{
+    Update-InstallerStatus "Preparing update files..."
+    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+    Wait-For-WispExit
+    Update-InstallerStatus "Extracting the downloaded update..."
     Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
     $candidate = Join-Path $extractRoot $archiveRootName
     if (-not (Test-Path -LiteralPath $candidate)) {{
@@ -288,19 +468,29 @@ try {{
             throw "Could not find the extracted Wisp app folder."
         }}
     }}
+    $newVersionHelper = Find-NewVersionHelper $candidate
+    if ($newVersionHelper) {{
+        Invoke-NewVersionHelper -Helper $newVersionHelper -Candidate $candidate
+        Finish-InstallerUi "Wisp has been updated and reopened." $false
+        exit 0
+    }}
+    Update-InstallerStatus "Replacing the old Wisp files..."
     if (Test-Path -LiteralPath $backupRoot) {{
         Remove-Item -LiteralPath $backupRoot -Recurse -Force
     }}
     Rename-Item -LiteralPath $installRoot -NewName (Split-Path -Leaf $backupRoot)
     Move-Item -LiteralPath $candidate -Destination $installRoot
+    Update-InstallerStatus "Reopening Wisp..."
     Start-Process -FilePath $restartTarget -WorkingDirectory (Split-Path -LiteralPath $restartTarget -Parent)
     Start-Sleep -Seconds 5
     Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Finish-InstallerUi "Wisp has been updated and reopened." $false
 }} catch {{
     Restore-Backup
     $log = Join-Path (Split-Path -LiteralPath $archive -Parent) "apply-update-error.log"
     $_ | Out-String | Set-Content -LiteralPath $log
+    Finish-InstallerUi "Wisp update failed. Details were saved to $log" $true
     exit 1
 }}
 """
@@ -322,10 +512,12 @@ pid_to_wait={pid}
 archive={_quoted_sh(str(update_path))}
 install_root={_quoted_sh(str(root))}
 restart_target={_quoted_sh(str(restart_target))}
+single_instance_lock={_quoted_sh(str(SINGLE_INSTANCE_LOCK))}
 archive_root_name={_quoted_sh(archive_root)}
 work_root="$(dirname "$archive")/apply-$(date +%s)-$$"
 extract_root="$work_root/extract"
 backup_root="$install_root.previous-update"
+error_log="$(dirname "$archive")/apply-update-error.log"
 
 restore_backup() {{
     if [ -d "$backup_root" ] && [ ! -e "$install_root" ]; then
@@ -333,18 +525,37 @@ restore_backup() {{
     fi
 }}
 
-trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_backup; echo "Wisp update apply failed." > "$(dirname "$archive")/apply-update-error.log"; fi; exit "$rc"' EXIT
+wait_for_wisp_exit() {{
+    while kill -0 "$pid_to_wait" 2>/dev/null; do
+        sleep 1
+    done
+    if command -v flock >/dev/null 2>&1; then
+        deadline=$(( $(date +%s) + 300 ))
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            mkdir -p "$(dirname "$single_instance_lock")"
+            if (
+                flock -n 9
+            ) 9>"$single_instance_lock"; then
+                sleep 1
+                return 0
+            fi
+            sleep 1
+        done
+        echo "Timed out waiting for Wisp to exit before applying the update." > "$error_log"
+        exit 1
+    fi
+}}
+
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_backup; if [ ! -s "$error_log" ]; then echo "Wisp update apply failed." > "$error_log"; fi; fi; exit "$rc"' EXIT
 mkdir -p "$extract_root"
-while kill -0 "$pid_to_wait" 2>/dev/null; do
-    sleep 1
-done
+wait_for_wisp_exit
 {extract_command}
 candidate="$extract_root/$archive_root_name"
 if [ ! -e "$candidate" ]; then
     candidate="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
 fi
 if [ -z "$candidate" ] || [ ! -e "$candidate" ]; then
-    echo "Could not find the extracted Wisp app folder." > "$(dirname "$archive")/apply-update-error.log"
+    echo "Could not find the extracted Wisp app folder." > "$error_log"
     exit 1
 fi
 rm -rf "$backup_root"
@@ -359,6 +570,16 @@ rm -rf "$backup_root" "$work_root"
     return script_path
 
 
+def _update_wait_pid(pid: int | None = None) -> int:
+    """Return the process the helper should wait for before replacing files."""
+    if pid is not None:
+        return pid
+    supervisor_pid = str(os.environ.get("WISP_SUPERVISOR_PID") or "").strip()
+    if supervisor_pid.isdigit() and int(supervisor_pid) > 0:
+        return int(supervisor_pid)
+    return os.getpid()
+
+
 def apply_update(update_path: Path, pid: int | None = None) -> Path:
     """Start a detached helper that applies an update after Wisp exits."""
     update_path = Path(update_path).resolve()
@@ -366,7 +587,7 @@ def apply_update(update_path: Path, pid: int | None = None) -> Path:
         raise UpdateError("Downloaded update file is no longer available.")
     root = install_root()
     restart_target = Path(sys.executable).resolve()
-    wait_pid = pid or os.getpid()
+    wait_pid = _update_wait_pid(pid)
     UPDATE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     if sys.platform == "win32":
@@ -380,6 +601,7 @@ def apply_update(update_path: Path, pid: int | None = None) -> Path:
             [
                 "powershell",
                 "-NoProfile",
+                "-STA",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
