@@ -46,3 +46,17 @@ def test_release_manifest_rejects_non_version_tag(tmp_path: Path) -> None:
             repo="SunnyLich/Python-AI-assistant-overlay",
             tag="latest",
         )
+
+
+def test_build_checksums_lists_release_assets_by_name(tmp_path: Path) -> None:
+    windows_asset = tmp_path / "Wisp-v0.6.1-windows-x64.zip"
+    linux_asset = tmp_path / "Wisp-v0.6.1-linux-x64.tar.gz"
+    windows_asset.write_bytes(b"windows")
+    linux_asset.write_bytes(b"linux")
+
+    checksums = make_release_manifest.build_checksums([windows_asset, linux_asset])
+
+    assert checksums == (
+        f"{make_release_manifest._sha256(linux_asset)}  {linux_asset.name}\n"
+        f"{make_release_manifest._sha256(windows_asset)}  {windows_asset.name}\n"
+    )
