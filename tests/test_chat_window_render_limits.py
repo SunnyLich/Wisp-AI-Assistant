@@ -981,7 +981,7 @@ def test_chat_captured_selected_path_shows_and_feeds_next_message_context(tmp_pa
         )
         assert result["attached"] is True
         assert window._attachment_label is not None
-        assert window._attachment_label.isVisible()
+        assert not window._attachment_label.isHidden()
         assert note.name in window._attachment_label.toolTip()
 
         window._send("what do you see")

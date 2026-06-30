@@ -596,6 +596,13 @@ class IntentOverlay(QWidget):
                         next_item.get("default_state", next_item.get("state", "off")),
                     )
                     next_item["touched"] = True
+                elif (
+                    str(next_item.get("id") or "") in {"selection", "screenshot"}
+                    and str(current.get("state") or "").lower() == "on"
+                    and str(next_item.get("state") or "").lower() == "off"
+                    and not bool(next_item.get("available", True))
+                ):
+                    next_item["state"] = "on"
             refreshed.append(next_item)
         self._context_items = refreshed
         self._warning_rects = []

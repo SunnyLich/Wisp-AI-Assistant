@@ -25,7 +25,7 @@ class GitHubWorkflowTests(unittest.TestCase):
             with self.subTest(workflow=workflow.name):
                 if workflow.name == "ci.yml":
                     self.assertIn('python-version: "3.12"', text)
-                    self.assertNotIn('python-version-file: ".python-version"', text)
+                    self.assertIn('python-version-file: ".python-version"', text)
                 else:
                     self.assertIn('python-version-file: ".python-version"', text)
 
@@ -47,7 +47,10 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("publish-release:", workflow)
         self.assertIn("scripts/make_release_manifest.py", workflow)
         self.assertIn("wisp-release-manifest.json", workflow)
-        self.assertIn('gh release upload "$GITHUB_REF_NAME" --clobber', workflow)
+        self.assertIn("Upload Windows release asset", workflow)
+        self.assertIn("Upload Linux release asset", workflow)
+        self.assertIn("Upload macOS release asset", workflow)
+        self.assertIn('gh release upload "$GITHUB_REF_NAME" release-assets/wisp-release-manifest.json --clobber', workflow)
 
 
 if __name__ == "__main__":
