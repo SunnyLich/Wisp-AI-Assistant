@@ -48,5 +48,6 @@ has not changed.
 
 CI installs from lock files. Lock verification compiles under the committed
 locks as constraints so routine checks do not upgrade floating dependency
-ranges; intentional refreshes happen through
+ranges, then compares the normalized package pins without `uv`'s explanatory
+comments. Intentional refreshes happen through
 `scripts/compile_dependency_locks.sh`.

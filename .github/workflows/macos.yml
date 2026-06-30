@@ -70,6 +70,9 @@ jobs:
 
       - name: Verify macOS lock is reproducible
         run: |
+          normalize_lock() {
+            sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$1"
+          }
           tmp_lock="$(mktemp)"
           python_minor="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
           uv pip compile requirements.txt \
@@ -79,10 +82,13 @@ jobs:
             --python-platform aarch64-apple-darwin \
             --constraint requirements-macos.lock \
             --output-file "$tmp_lock"
-          diff -u requirements-macos.lock "$tmp_lock"
+          diff -u <(normalize_lock requirements-macos.lock) <(normalize_lock "$tmp_lock")
 
       - name: Verify tooling locks are reproducible
         run: |
+          normalize_lock() {
+            sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$1"
+          }
           dev_lock="$(mktemp)"
           build_lock="$(mktemp)"
           python_minor="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
@@ -92,14 +98,14 @@ jobs:
             --python-version "$python_minor" \
             --constraint requirements-dev.lock \
             --output-file "$dev_lock"
-          diff -u requirements-dev.lock "$dev_lock"
+          diff -u <(normalize_lock requirements-dev.lock) <(normalize_lock "$dev_lock")
           uv pip compile requirements-build.txt \
             --universal \
             --no-header \
             --python-version "$python_minor" \
             --constraint requirements-build.lock \
             --output-file "$build_lock"
-          diff -u requirements-build.lock "$build_lock"
+          diff -u <(normalize_lock requirements-build.lock) <(normalize_lock "$build_lock")
 
       - name: Install locked dependencies
         run: |

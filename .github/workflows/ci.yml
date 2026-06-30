@@ -52,6 +52,9 @@ jobs:
 
       - name: Verify Windows/Linux runtime locks are reproducible
         run: |
+          normalize_lock() {
+            sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$1"
+          }
           windows_lock="$(mktemp)"
           linux_lock="$(mktemp)"
           python_minor="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
@@ -61,14 +64,14 @@ jobs:
             --python-platform x86_64-pc-windows-msvc \
             --constraint requirements-windows.lock \
             --output-file "$windows_lock"
-          diff -u requirements-windows.lock "$windows_lock"
+          diff -u <(normalize_lock requirements-windows.lock) <(normalize_lock "$windows_lock")
           uv pip compile requirements.txt \
             --no-header \
             --python-version "$python_minor" \
             --python-platform x86_64-manylinux_2_34 \
             --constraint requirements-linux.lock \
             --output-file "$linux_lock"
-          diff -u requirements-linux.lock "$linux_lock"
+          diff -u <(normalize_lock requirements-linux.lock) <(normalize_lock "$linux_lock")
 
   test:
     name: Tests (${{ matrix.os }})
