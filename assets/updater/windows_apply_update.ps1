@@ -9,11 +9,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ErrorLog = Join-Path (Split-Path -LiteralPath $Archive -Parent) "apply-update-error.log"
+$ArchiveParent = [System.IO.Path]::GetDirectoryName($Archive)
+$RestartParent = [System.IO.Path]::GetDirectoryName($RestartTarget)
+$InstallRootLeaf = [System.IO.Path]::GetFileName($InstallRoot)
+$BackupRootLeaf = [System.IO.Path]::GetFileName($BackupRoot)
+$ErrorLog = Join-Path $ArchiveParent "apply-update-error.log"
 
 function Restore-Backup {
     if ((Test-Path -LiteralPath $BackupRoot) -and -not (Test-Path -LiteralPath $InstallRoot)) {
-        Rename-Item -LiteralPath $BackupRoot -NewName (Split-Path -Leaf $InstallRoot)
+        Rename-Item -LiteralPath $BackupRoot -NewName $InstallRootLeaf
     }
 }
 
@@ -24,9 +28,9 @@ try {
     if (Test-Path -LiteralPath $BackupRoot) {
         Remove-Item -LiteralPath $BackupRoot -Recurse -Force
     }
-    Rename-Item -LiteralPath $InstallRoot -NewName (Split-Path -Leaf $BackupRoot)
+    Rename-Item -LiteralPath $InstallRoot -NewName $BackupRootLeaf
     Move-Item -LiteralPath $Candidate -Destination $InstallRoot
-    Start-Process -FilePath $RestartTarget -WorkingDirectory (Split-Path -LiteralPath $RestartTarget -Parent)
+    Start-Process -FilePath $RestartTarget -WorkingDirectory $RestartParent
     Start-Sleep -Seconds 5
     Remove-Item -LiteralPath $BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $WorkRoot -Recurse -Force -ErrorAction SilentlyContinue

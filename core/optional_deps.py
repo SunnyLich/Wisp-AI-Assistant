@@ -93,12 +93,6 @@ def is_importable(module_name: str) -> bool:
 
 def system_cuda_available() -> bool:
     """Return whether the host appears to have an NVIDIA CUDA device."""
-    try:
-        import ctranslate2  # type: ignore
-
-        return int(ctranslate2.get_cuda_device_count()) > 0
-    except Exception:
-        pass
     nvidia_smi = shutil.which("nvidia-smi")
     if not nvidia_smi:
         return False

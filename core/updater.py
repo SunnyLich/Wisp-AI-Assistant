@@ -266,13 +266,17 @@ $installRoot = {_quoted_ps(str(root))}
 $restartTarget = {_quoted_ps(str(restart_target))}
 $singleInstanceLock = {_quoted_ps(str(SINGLE_INSTANCE_LOCK))}
 $archiveRootName = {_quoted_ps(archive_root)}
-$workRoot = Join-Path (Split-Path -LiteralPath $archive -Parent) ("apply-" + [guid]::NewGuid().ToString())
+$archiveParent = [System.IO.Path]::GetDirectoryName($archive)
+$restartParent = [System.IO.Path]::GetDirectoryName($restartTarget)
+$installRootLeaf = [System.IO.Path]::GetFileName($installRoot)
+$workRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("WispUpdate-" + [guid]::NewGuid().ToString("N"))
 $extractRoot = Join-Path $workRoot "extract"
 $backupRoot = "$installRoot.previous-update"
+$backupRootLeaf = [System.IO.Path]::GetFileName($backupRoot)
 
 function Restore-Backup {{
     if ((Test-Path -LiteralPath $backupRoot) -and -not (Test-Path -LiteralPath $installRoot)) {{
-        Rename-Item -LiteralPath $backupRoot -NewName (Split-Path -Leaf $installRoot)
+        Rename-Item -LiteralPath $backupRoot -NewName $installRootLeaf
     }}
 }}
 
@@ -381,7 +385,7 @@ function Finish-InstallerUi {{
 function Test-WispLockReleased {{
     $stream = $null
     try {{
-        $parent = Split-Path -LiteralPath $singleInstanceLock -Parent
+        $parent = [System.IO.Path]::GetDirectoryName($singleInstanceLock)
         if ($parent -and -not (Test-Path -LiteralPath $parent)) {{
             New-Item -ItemType Directory -Force -Path $parent | Out-Null
         }}
@@ -433,7 +437,7 @@ function Invoke-NewVersionHelper {{
         [string]$Helper,
         [string]$Candidate
     )
-    $delegatedHelper = Join-Path (Split-Path -LiteralPath $archive -Parent) ("apply-new-wisp-update-" + [guid]::NewGuid().ToString() + ".ps1")
+    $delegatedHelper = Join-Path $archiveParent ("apply-new-wisp-update-" + [guid]::NewGuid().ToString() + ".ps1")
     Copy-Item -LiteralPath $Helper -Destination $delegatedHelper -Force
     Update-InstallerStatus "Starting the newer installer..."
     & powershell -NoProfile -ExecutionPolicy Bypass -File $delegatedHelper `
@@ -458,7 +462,8 @@ try {{
     New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
     Wait-For-WispExit
     Update-InstallerStatus "Extracting the downloaded update..."
-    Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($archive, $extractRoot)
     $candidate = Join-Path $extractRoot $archiveRootName
     if (-not (Test-Path -LiteralPath $candidate)) {{
         $dirs = @(Get-ChildItem -LiteralPath $extractRoot -Directory)
@@ -478,17 +483,17 @@ try {{
     if (Test-Path -LiteralPath $backupRoot) {{
         Remove-Item -LiteralPath $backupRoot -Recurse -Force
     }}
-    Rename-Item -LiteralPath $installRoot -NewName (Split-Path -Leaf $backupRoot)
+    Rename-Item -LiteralPath $installRoot -NewName $backupRootLeaf
     Move-Item -LiteralPath $candidate -Destination $installRoot
     Update-InstallerStatus "Reopening Wisp..."
-    Start-Process -FilePath $restartTarget -WorkingDirectory (Split-Path -LiteralPath $restartTarget -Parent)
+    Start-Process -FilePath $restartTarget -WorkingDirectory $restartParent
     Start-Sleep -Seconds 5
     Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
     Finish-InstallerUi "Wisp has been updated and reopened." $false
 }} catch {{
     Restore-Backup
-    $log = Join-Path (Split-Path -LiteralPath $archive -Parent) "apply-update-error.log"
+    $log = Join-Path $archiveParent "apply-update-error.log"
     $_ | Out-String | Set-Content -LiteralPath $log
     Finish-InstallerUi "Wisp update failed. Details were saved to $log" $true
     exit 1
@@ -595,8 +600,8 @@ def apply_update(update_path: Path, pid: int | None = None) -> Path:
         creationflags = 0
         if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
             creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-        if hasattr(subprocess, "DETACHED_PROCESS"):
-            creationflags |= subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
         subprocess.Popen(
             [
                 "powershell",

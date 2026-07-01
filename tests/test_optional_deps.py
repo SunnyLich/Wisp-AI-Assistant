@@ -156,3 +156,25 @@ def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "cpu"
     assert "torch" not in optional_deps.kokoro_install_packages("auto")
+
+
+def test_system_cuda_available_does_not_import_ctranslate2(monkeypatch):
+    """Settings must not import native ML libraries while deciding Kokoro install mode."""
+    from core import optional_deps
+
+    def fail_import(name, *args, **kwargs):
+        if name == "ctranslate2":
+            raise AssertionError("ctranslate2 should not be imported for CUDA probing")
+        return original_import(name, *args, **kwargs)
+
+    original_import = __import__
+    monkeypatch.setattr("builtins.__import__", fail_import)
+    monkeypatch.setattr(optional_deps.shutil, "which", lambda name: "nvidia-smi" if name == "nvidia-smi" else "")
+
+    class Result:
+        returncode = 0
+        stdout = "GPU 0: NVIDIA Test GPU"
+
+    monkeypatch.setattr(optional_deps.subprocess, "run", lambda *args, **kwargs: Result())
+
+    assert optional_deps.system_cuda_available() is True

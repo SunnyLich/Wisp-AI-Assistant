@@ -108,8 +108,12 @@ def test_apply_update_writes_windows_helper_without_running_it(monkeypatch, tmp_
     assert "Starting the newer installer..." in script_text
     assert "Test-WispLockReleased" in script_text
     assert "$singleInstanceLock" in script_text
+    assert "Split-Path -LiteralPath" not in script_text
+    assert "$archiveParent = [System.IO.Path]::GetDirectoryName($archive)" in script_text
+    assert "$workRoot = Join-Path ([System.IO.Path]::GetTempPath())" in script_text
     assert "Wait-For-WispExit" in script_text
-    assert "Expand-Archive" in script_text
+    assert "Expand-Archive" not in script_text
+    assert "[System.IO.Compression.ZipFile]::ExtractToDirectory($archive, $extractRoot)" in script_text
     assert "$archiveRootName = 'Wisp'" in script_text
     assert launched["cmd"][:6] == [
         "powershell",
@@ -120,6 +124,11 @@ def test_apply_update_writes_windows_helper_without_running_it(monkeypatch, tmp_
         "-File",
     ]
     assert launched["cmd"][-1] == str(script)
+    creationflags = int(launched["kwargs"]["creationflags"])
+    if hasattr(updater.subprocess, "CREATE_NO_WINDOW"):
+        assert creationflags & updater.subprocess.CREATE_NO_WINDOW
+    if hasattr(updater.subprocess, "DETACHED_PROCESS"):
+        assert not (creationflags & updater.subprocess.DETACHED_PROCESS)
 
 
 def test_apply_update_writes_posix_helper_with_lock_wait(monkeypatch, tmp_path: Path) -> None:
@@ -186,5 +195,6 @@ def test_windows_new_version_helper_asset_is_bundled() -> None:
     assert helper.exists()
     text = helper.read_text(encoding="utf-8")
     assert "[Parameter(Mandatory = $true)][string]$Candidate" in text
+    assert "Split-Path -LiteralPath" not in text
     assert "Move-Item -LiteralPath $Candidate -Destination $InstallRoot" in text
     assert "Start-Process -FilePath $RestartTarget" in text
