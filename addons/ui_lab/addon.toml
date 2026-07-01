@@ -1,0 +1,25 @@
+# Exercises chat/bubble UI extension surfaces without external dependencies.
+[addon]
+id = "ui-lab"
+name = "UI Lab"
+version = "1.0.0"
+description = "Developer addon that annotates chat words and exposes harmless UI/tool surfaces for manual testing."
+entry = "__init__.py"
+api_version = "1"
+priority = 90
+
+[permissions]
+response = "read"
+tools = true
+ui = ["tray", "settings", "intents", "notifications", "text_annotations"]
+
+[[intents]]
+id = "ui-lab-demo-reply"
+key = "u"
+label = "UI lab"
+hint = "Ask for a reply containing annotation trigger words."
+prompt = "Reply with one short paragraph that includes the words bubble, chat, style, select, right-click, code, **bold**, and UI Lab."
+
+[[notifications]]
+title = "UI Lab"
+message = "UI Lab addon loaded. Chat annotation triggers: bubble, chat, style, select, right-click, code."

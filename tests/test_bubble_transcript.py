@@ -85,6 +85,54 @@ def test_notice_bubble_close_is_dismiss_only():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_reading_prefix_is_not_counted_as_spoken_highlight():
+    """The read-aloud label should display without becoming spoken/highlighted text."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = ""
+    bubble = SpeechBubble()
+    highlights: list[tuple[str, int, bool]] = []
+    bubble.set_highlight_callback(lambda text, count, finished: highlights.append((text, count, finished)))
+
+    try:
+        bubble.show_reading("read this aloud")
+
+        assert bubble._full_text == "Reading: read this aloud"
+        assert bubble._pending_words == ["read", "this", "aloud"]
+        assert bubble._revealed_count == 0
+
+        bubble.start_word_reveal()
+        bubble._advance_highlight()
+
+        highlighted_words = [
+            word
+            for line in bubble._all_line_segments
+            for word, _bold, reply_idx, is_thought, _space_before in line
+            if (
+                not is_thought
+                and reply_idx is not None
+                and reply_idx >= bubble._highlight_index_offset
+                and reply_idx < bubble._highlight_index_offset + bubble._revealed_count
+            )
+        ]
+
+        assert bubble._full_text == "Reading: read this aloud"
+        assert highlights[-1] == ("read this aloud", 1, False)
+        assert "Reading:" not in highlighted_words
+        assert highlighted_words == ["read"]
+    finally:
+        config.APP_LANGUAGE = old_language
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_final_only_reply_starts_visible_at_beginning():
     """Verify all-at-once replies show the beginning before reveal advances."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

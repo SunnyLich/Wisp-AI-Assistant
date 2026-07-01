@@ -265,16 +265,18 @@ def test_audio_warmup_events_surface_user_notices():
     audio.emit("audio.warmup.started", {"items": ["stt", "tts"], "provider": "kokoro"})
     audio.emit("audio.warmup.progress", {"item": "stt", "status": "started", "items": ["stt", "tts"]})
     audio.emit("audio.warmup.progress", {"item": "stt", "status": "ok", "items": ["stt", "tts"]})
+    audio.emit("audio.warmup.progress", {"item": "tts", "status": "preparing for 5s", "items": ["stt", "tts"]})
     audio.emit(
         "audio.warmup.done",
         {"items": ["stt", "tts"], "provider": "kokoro", "ok": True, "result": {"stt": "ok", "tts": "ok"}},
     )
 
     notices = [call["params"]["text"] for call in ui.calls_for("ui.reply.notice")]
-    assert "Warming up local voice and speech recognition..." in notices
-    assert "Warming up speech recognition..." in notices
-    assert "Speech recognition is ready. Warming up local voice..." in notices
-    assert "Local voice and speech recognition are ready." in notices
+    assert notices == [
+        "Preparing local voice... for 5s",
+        "Local voice and speech recognition are ready.",
+    ]
+    assert ui.calls_for("ui.reply.notice")[0]["params"]["key"] == "audio-warmup"
 
 
 def test_audio_warmup_failure_surfaces_user_notice():
@@ -4148,6 +4150,43 @@ def test_chat_request_forwards_file_context_metadata():
     done_params = ui.last_call("ui.chat.done")["params"]
     assert done_params["text"] == "done"
     assert done_params["file_context"] == file_context
+
+
+def test_chat_request_forwards_addon_text_annotations():
+    """Verify chat request forwards display-only addon annotations to the UI."""
+    seen_roles = []
+
+    def annotations_handler(params):
+        payload = params.get("payload") or {}
+        role = str(payload.get("role") or "")
+        seen_roles.append(role)
+        return {
+            "annotations": [
+                {
+                    "id": f"{role}-mark",
+                    "start": 0,
+                    "end": min(2, len(str(payload.get("text") or ""))),
+                    "kind": "highlight",
+                }
+            ]
+        }
+
+    def chat_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event("reply.done", {"text": "done"}, 1)
+        return {"text": "done"}
+
+    brain = FakeWorker(
+        handlers={"brain.addons.text_annotations": annotations_handler},
+        stream_handlers={"brain.chat": chat_stream},
+    )
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit("ui.chat.request", {"request_id": "chat-1", "messages": [{"role": "user", "content": "hi"}]})
+
+    done_params = ui.last_call("ui.chat.done")["params"]
+    assert seen_roles == ["user", "assistant"]
+    assert done_params["user_annotations"][0]["id"] == "user-mark"
+    assert done_params["annotations"][0]["id"] == "assistant-mark"
 
 
 def test_chat_request_reuses_conversation_tool_context():

@@ -3119,6 +3119,38 @@ Continuar?</translation>
       <translation>Instalando Kokoro: {detail}.</translation>
     </message>
     <message>
+      <source>Installing ElevenLabs: {detail}.</source>
+      <translation>Instalando ElevenLabs: {detail}.</translation>
+    </message>
+    <message>
+      <source>Installing ElevenLabs...</source>
+      <translation>Instalando ElevenLabs...</translation>
+    </message>
+    <message>
+      <source>ElevenLabs install failed: {message}</source>
+      <translation>La instalacion de ElevenLabs fallo: {message}</translation>
+    </message>
+    <message>
+      <source>Installer log</source>
+      <translation>Registro del instalador</translation>
+    </message>
+    <message>
+      <source>Installer output will appear here.</source>
+      <translation>La salida del instalador aparecera aqui.</translation>
+    </message>
+    <message>
+      <source>Installer opened in a terminal window. It will close automatically when it finishes.</source>
+      <translation>El instalador se abrio en una ventana de terminal. Se cerrara automaticamente cuando termine.</translation>
+    </message>
+    <message>
+      <source>Installer window launched. You can close Settings; leave the terminal open until it finishes.</source>
+      <translation>Ventana del instalador abierta. Puedes cerrar Configuracion; deja la terminal abierta hasta que termine.</translation>
+    </message>
+    <message>
+      <source>starting installer</source>
+      <translation>iniciando instalador</translation>
+    </message>
+    <message>
       <source>starting pip</source>
       <translation>iniciando pip</translation>
     </message>
@@ -3145,6 +3177,26 @@ Continuar?</translation>
     <message>
       <source>working - installer is still running</source>
       <translation>trabajando - el instalador sigue en ejecucion</translation>
+    </message>
+    <message>
+      <source>still running for {elapsed}; no installer output for {quiet}</source>
+      <translation>sigue en ejecucion desde hace {elapsed}; sin salida del instalador durante {quiet}</translation>
+    </message>
+    <message>
+      <source>still running for {elapsed}</source>
+      <translation>sigue en ejecucion desde hace {elapsed}</translation>
+    </message>
+    <message>
+      <source>preparing local voice assets for {elapsed}</source>
+      <translation>preparando recursos de voz locales durante {elapsed}</translation>
+    </message>
+    <message>
+      <source>stalled; stopping installer</source>
+      <translation>atascado; deteniendo el instalador</translation>
+    </message>
+    <message>
+      <source>completed successfully</source>
+      <translation>completado correctamente</translation>
     </message>
     <message>
       <source>Wisp wants permission to modify a local file.</source>
@@ -3227,8 +3279,20 @@ Continuar?</translation>
       <translation>Instalar soporte GPU para Kokoro</translation>
     </message>
     <message>
-      <source>Kokoro is installed, but the selected GPU device needs a CUDA-enabled Torch install.</source>
-      <translation>Kokoro está instalado, pero el dispositivo GPU seleccionado necesita una instalación de Torch con CUDA.</translation>
+      <source>Repair Kokoro install</source>
+      <translation>Reparar instalación de Kokoro</translation>
+    </message>
+    <message>
+      <source>Kokoro GPU support is not installed.</source>
+      <translation>El soporte GPU de Kokoro no está instalado.</translation>
+    </message>
+    <message>
+      <source>Kokoro install needs repair.</source>
+      <translation>La instalación de Kokoro necesita reparación.</translation>
+    </message>
+    <message>
+      <source>Kokoro install is incomplete. Reinstall Kokoro.</source>
+      <translation>La instalación de Kokoro está incompleta. Reinstala Kokoro.</translation>
     </message>
     <message>
       <source>Kokoro is installed with CPU support.</source>
@@ -3237,6 +3301,10 @@ Continuar?</translation>
     <message>
       <source>Kokoro is installed with GPU support ({device}).</source>
       <translation>Kokoro está instalado con soporte de GPU ({device}).</translation>
+    </message>
+    <message>
+      <source>Kokoro is installed{suffix}. GPU availability is checked when you test or use voice.</source>
+      <translation>Kokoro esta instalado{suffix}. La disponibilidad de GPU se comprobara cuando pruebes o uses la voz.</translation>
     </message>
     <message>
       <source>Kokoro is installed with CPU-only Torch. Auto detected a CUDA-capable system, but Kokoro will use CPU until GPU support is installed.</source>
@@ -3311,6 +3379,18 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
     <message>
       <source>Kokoro installed and local voice is ready.</source>
       <translation>Kokoro está instalado y la voz local está lista.</translation>
+    </message>
+    <message>
+      <source>Kokoro installed, but Torch verification failed: {message}</source>
+      <translation>Kokoro está instalado, pero falló la verificación de Torch: {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro installed, but runtime verification failed: {message}</source>
+      <translation>Kokoro está instalado, pero falló la verificación en tiempo de ejecución: {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro installed, but CUDA Torch verification failed.</source>
+      <translation>Kokoro está instalado, pero falló la verificación de CUDA Torch.</translation>
     </message>
     <message>
       <source>Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.</source>
@@ -4515,4 +4595,3 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
     </message>
   </context>
 </TS>
-

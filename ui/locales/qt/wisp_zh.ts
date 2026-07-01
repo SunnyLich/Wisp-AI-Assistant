@@ -3119,6 +3119,38 @@ Continue?</source>
       <translation>正在安装 Kokoro：{detail}。</translation>
     </message>
     <message>
+      <source>Installing ElevenLabs: {detail}.</source>
+      <translation>正在安装 ElevenLabs：{detail}。</translation>
+    </message>
+    <message>
+      <source>Installing ElevenLabs...</source>
+      <translation>正在安装 ElevenLabs...</translation>
+    </message>
+    <message>
+      <source>ElevenLabs install failed: {message}</source>
+      <translation>ElevenLabs 安装失败：{message}</translation>
+    </message>
+    <message>
+      <source>Installer log</source>
+      <translation>安装日志</translation>
+    </message>
+    <message>
+      <source>Installer output will appear here.</source>
+      <translation>安装器输出会显示在这里。</translation>
+    </message>
+    <message>
+      <source>Installer opened in a terminal window. It will close automatically when it finishes.</source>
+      <translation>安装程序已在终端窗口中打开。完成后会自动关闭。</translation>
+    </message>
+    <message>
+      <source>Installer window launched. You can close Settings; leave the terminal open until it finishes.</source>
+      <translation>安装器窗口已打开。你可以关闭设置；请让终端保持打开直到安装完成。</translation>
+    </message>
+    <message>
+      <source>starting installer</source>
+      <translation>正在启动安装器</translation>
+    </message>
+    <message>
       <source>starting pip</source>
       <translation>正在启动 pip</translation>
     </message>
@@ -3145,6 +3177,26 @@ Continue?</source>
     <message>
       <source>working - installer is still running</source>
       <translation>安装程序仍在运行</translation>
+    </message>
+    <message>
+      <source>still running for {elapsed}; no installer output for {quiet}</source>
+      <translation>已运行 {elapsed}；安装器已有 {quiet} 没有输出</translation>
+    </message>
+    <message>
+      <source>still running for {elapsed}</source>
+      <translation>已运行 {elapsed}</translation>
+    </message>
+    <message>
+      <source>preparing local voice assets for {elapsed}</source>
+      <translation>正在准备本地语音资源，已用 {elapsed}</translation>
+    </message>
+    <message>
+      <source>stalled; stopping installer</source>
+      <translation>安装器无响应；正在停止</translation>
+    </message>
+    <message>
+      <source>completed successfully</source>
+      <translation>已成功完成</translation>
     </message>
     <message>
       <source>Wisp wants permission to modify a local file.</source>
@@ -3227,8 +3279,20 @@ Continue?</source>
       <translation>安装 Kokoro GPU 支持</translation>
     </message>
     <message>
-      <source>Kokoro is installed, but the selected GPU device needs a CUDA-enabled Torch install.</source>
-      <translation>Kokoro 已安装，但所选 GPU 设备需要安装启用 CUDA 的 Torch。</translation>
+      <source>Repair Kokoro install</source>
+      <translation>修复 Kokoro 安装</translation>
+    </message>
+    <message>
+      <source>Kokoro GPU support is not installed.</source>
+      <translation>Kokoro GPU 支持未安装。</translation>
+    </message>
+    <message>
+      <source>Kokoro install needs repair.</source>
+      <translation>Kokoro 安装需要修复。</translation>
+    </message>
+    <message>
+      <source>Kokoro install is incomplete. Reinstall Kokoro.</source>
+      <translation>Kokoro 安装不完整。请重新安装 Kokoro。</translation>
     </message>
     <message>
       <source>Kokoro is installed with CPU support.</source>
@@ -3237,6 +3301,10 @@ Continue?</source>
     <message>
       <source>Kokoro is installed with GPU support ({device}).</source>
       <translation>Kokoro 已安装 GPU 支持（{device}）。</translation>
+    </message>
+    <message>
+      <source>Kokoro is installed{suffix}. GPU availability is checked when you test or use voice.</source>
+      <translation>Kokoro 已安装{suffix}。GPU 可用性会在你测试或使用语音时检查。</translation>
     </message>
     <message>
       <source>Kokoro is installed with CPU-only Torch. Auto detected a CUDA-capable system, but Kokoro will use CPU until GPU support is installed.</source>
@@ -3311,6 +3379,18 @@ Continue?</source>
     <message>
       <source>Kokoro installed and local voice is ready.</source>
       <translation>Kokoro 已安装，本地语音已准备好。</translation>
+    </message>
+    <message>
+      <source>Kokoro installed, but Torch verification failed: {message}</source>
+      <translation>Kokoro 已安装，但 Torch 验证失败：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro installed, but runtime verification failed: {message}</source>
+      <translation>Kokoro 已安装，但运行时验证失败：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro installed, but CUDA Torch verification failed.</source>
+      <translation>Kokoro 已安装，但 CUDA Torch 验证失败。</translation>
     </message>
     <message>
       <source>Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.</source>
@@ -4515,4 +4595,3 @@ Continue?</source>
     </message>
   </context>
 </TS>
-

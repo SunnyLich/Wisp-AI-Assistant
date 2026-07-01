@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import os
 import shutil
 import site
@@ -10,10 +11,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-from core.system.paths import REPO_ROOT
+from core.system.paths import REPO_ROOT, USER_DATA_DIR
 
 
-OPTIONAL_PACKAGES_DIR = REPO_ROOT / "python_packages"
+def _optional_packages_dir() -> Path:
+    """Return the shared user-writable optional dependency install directory."""
+    override = os.environ.get("WISP_OPTIONAL_PACKAGES_DIR")
+    if override:
+        return Path(override).expanduser()
+    return USER_DATA_DIR / "python_packages"
+
+
+OPTIONAL_PACKAGES_DIR = _optional_packages_dir()
 KOKORO_EN_MODEL_URL = (
     "https://github.com/explosion/spacy-models/releases/download/"
     "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
@@ -21,13 +30,12 @@ KOKORO_EN_MODEL_URL = (
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
 KOKORO_BASE_INSTALL_PACKAGES = ["kokoro>=0.9.4", "soundfile", KOKORO_EN_MODEL_URL]
 KOKORO_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
-KOKORO_GPU_INSTALL_PACKAGES = [
-    "--upgrade",
-    "--extra-index-url",
+KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
+    "--index-url",
     PYTORCH_CUDA_WHEEL_INDEX,
     "torch",
-    *KOKORO_BASE_INSTALL_PACKAGES,
 ]
+KOKORO_GPU_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
 
 
 def _is_frozen() -> bool:
@@ -91,6 +99,14 @@ def is_importable(module_name: str) -> bool:
         return False
 
 
+def subprocess_no_window_kwargs() -> dict[str, object]:
+    """Return subprocess kwargs that suppress helper console windows on Windows."""
+    if sys.platform != "win32":
+        return {}
+    creationflags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0) or 0)
+    return {"creationflags": creationflags} if creationflags else {}
+
+
 def system_cuda_available() -> bool:
     """Return whether the host appears to have an NVIDIA CUDA device."""
     nvidia_smi = shutil.which("nvidia-smi")
@@ -101,8 +117,11 @@ def system_cuda_available() -> bool:
             [nvidia_smi, "-L"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
+            **subprocess_no_window_kwargs(),
         )
     except Exception:
         return False
@@ -121,9 +140,14 @@ def kokoro_install_mode_for_device(device: str | None) -> str:
 
 def kokoro_install_packages(device: str | None) -> list[str]:
     """Return packages/flags for the selected Kokoro device install."""
-    if kokoro_install_mode_for_device(device) == "gpu":
-        return list(KOKORO_GPU_INSTALL_PACKAGES)
     return list(KOKORO_BASE_INSTALL_PACKAGES)
+
+
+def kokoro_torch_install_packages(device: str | None) -> list[str]:
+    """Return an optional first install phase for Kokoro's Torch backend."""
+    if kokoro_install_mode_for_device(device) == "gpu":
+        return list(KOKORO_GPU_TORCH_INSTALL_PACKAGES)
+    return []
 
 
 def kokoro_torch_status() -> dict[str, object]:
@@ -137,12 +161,19 @@ def kokoro_torch_status() -> dict[str, object]:
         "cuda_available": False,
         "device": "",
         "error": "",
+        "valid": False,
     }
     try:
         import torch  # type: ignore
 
         status["installed"] = True
-        status["version"] = str(getattr(torch, "__version__", "") or "")
+        status["origin"] = str(getattr(torch, "__file__", "") or "")
+        version = str(getattr(torch, "__version__", "") or "")
+        if not version or not hasattr(torch, "cuda"):
+            status["error"] = "Torch import is incomplete."
+            return status
+        status["valid"] = True
+        status["version"] = version
         status["cuda_version"] = str(getattr(getattr(torch, "version", None), "cuda", "") or "")
         cuda_available = bool(torch.cuda.is_available())
         status["cuda_available"] = cuda_available
@@ -156,7 +187,137 @@ def kokoro_torch_status() -> dict[str, object]:
     return status
 
 
-def pip_install_command(packages: list[str]) -> list[str]:
+def kokoro_torch_status_subprocess() -> dict[str, object]:
+    """Return Torch status from a short-lived process so DLLs are not pinned."""
+    return _optional_probe_status(
+        "torch-status",
+        {
+            "installed": False,
+            "version": "",
+            "cuda_version": "",
+            "cuda_available": False,
+            "device": "",
+            "error": "",
+            "valid": False,
+            "subprocess": True,
+        },
+    )
+
+
+def _optional_probe_status(probe: str, default: dict[str, object]) -> dict[str, object]:
+    """Run an optional dependency probe in a short-lived process."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "runtime.workers.optional_deps_probe",
+                probe,
+                str(OPTIONAL_PACKAGES_DIR),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+            cwd=str(REPO_ROOT),
+            env=pip_install_env(),
+            **subprocess_no_window_kwargs(),
+        )
+        text = (result.stdout or "").strip().splitlines()
+        if result.returncode != 0 or not text:
+            detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+            status = dict(default)
+            status["error"] = detail[:500] or f"{probe} subprocess failed."
+            return status
+        data = json.loads(text[-1])
+        if isinstance(data, dict):
+            return data
+        status = dict(default)
+        status["error"] = f"{probe} subprocess returned invalid JSON."
+        return status
+    except Exception as exc:
+        status = dict(default)
+        status["error"] = f"{type(exc).__name__}: {exc}"
+        return status
+
+
+def kokoro_torch_status_fast() -> dict[str, object]:
+    """Return cheap Torch package metadata for Settings without importing Torch."""
+    add_optional_packages_to_path(prepend=True)
+    importlib.invalidate_caches()
+    status: dict[str, object] = {
+        "installed": False,
+        "version": "",
+        "cuda_version": "",
+        "cuda_available": False,
+        "device": "",
+        "error": "",
+        "fast": True,
+        "valid": False,
+    }
+    try:
+        spec = importlib.util.find_spec("torch")
+        if spec is None:
+            return status
+        status["installed"] = True
+        origin = str(getattr(spec, "origin", "") or "")
+        status["origin"] = origin
+        if not origin or not origin.replace("\\", "/").endswith("/torch/__init__.py"):
+            status["error"] = "Torch install looks incomplete."
+            return status
+        try:
+            from importlib import metadata
+
+            status["version"] = metadata.version("torch")
+        except Exception:
+            status["version"] = ""
+        status["valid"] = bool(status["version"])
+        version = str(status.get("version") or "").lower()
+        status["cuda_version"] = "unknown" if any(marker in version for marker in ("+cu", "cuda", "cu12", "cu11")) else ""
+    except Exception as exc:
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status
+
+
+def kokoro_runtime_import_status() -> dict[str, object]:
+    """Return whether Kokoro's runtime import path is usable."""
+    add_optional_packages_to_path(prepend=True)
+    importlib.invalidate_caches()
+    status: dict[str, object] = {
+        "installed": False,
+        "valid": False,
+        "origin": "",
+        "error": "",
+    }
+    try:
+        from kokoro import KPipeline  # type: ignore
+
+        status["installed"] = True
+        status["valid"] = KPipeline is not None
+        spec = importlib.util.find_spec("kokoro")
+        status["origin"] = str(getattr(spec, "origin", "") or "")
+    except Exception as exc:
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status
+
+
+def kokoro_runtime_import_status_subprocess() -> dict[str, object]:
+    """Return Kokoro runtime import status without pinning native modules."""
+    return _optional_probe_status(
+        "kokoro-runtime-status",
+        {
+            "installed": False,
+            "valid": False,
+            "origin": "",
+            "error": "",
+            "subprocess": True,
+        },
+    )
+
+
+def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list[str]:
     """Return a command that installs packages into Wisp's optional dir."""
     if _is_frozen():
         uv = _find_uv()
@@ -177,6 +338,7 @@ def pip_install_command(packages: list[str]) -> list[str]:
             f"{sys.version_info.major}.{sys.version_info.minor}",
             "--target",
             str(OPTIONAL_PACKAGES_DIR),
+            *(["--reinstall"] if reinstall else []),
             *packages,
         ]
     return [
@@ -188,6 +350,7 @@ def pip_install_command(packages: list[str]) -> list[str]:
         "--progress-bar=raw",
         "--target",
         str(OPTIONAL_PACKAGES_DIR),
+        *(["--upgrade", "--force-reinstall"] if reinstall else []),
         *packages,
     ]
 
@@ -196,5 +359,7 @@ def pip_install_env() -> dict[str, str]:
     """Return an environment for optional dependency installs."""
     env = os.environ.copy()
     env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("UV_HTTP_TIMEOUT", "60")
     return env

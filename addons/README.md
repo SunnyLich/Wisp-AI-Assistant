@@ -103,6 +103,12 @@ when the addon has `ui = ["intents"]`. Notifications declared with
 surfaces that want to display them, with a Wisp notice fallback where native
 toasts are unavailable.
 
+Bubble text that needs a UI-only label should use the host/UI event
+`ui.reply.labeled_text` with `{"label": "...", "text": "..."}`. Wisp renders it
+as `Label: text`, but the label is display chrome: it is excluded from reply
+text, read-position counts, and TTS word highlighting. Built-in read-aloud uses
+the same convention for `Reading: ...`.
+
 Addon hotkeys declared with `[[hotkeys]]` require `hotkeys = true`. A hotkey can
 return a prompt directly from the manifest, or dynamic `get_hotkeys()` callbacks
 can return dictionaries such as `{"prompt": "..."}`, `{"message": "..."}`,

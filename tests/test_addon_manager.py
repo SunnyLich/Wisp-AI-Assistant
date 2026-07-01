@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import time
 import textwrap
@@ -211,6 +212,45 @@ def test_text_annotation_hook_requires_explicit_permission_and_sanitizes(tmp_pat
     assert annotations[1]["color"] == "#ffd166"
     assert all(item["message_id"] == "m1" for item in annotations)
     assert all(item["conversation_id"] == "c1" for item in annotations)
+    manager.on_shutdown()
+
+
+def test_ui_lab_addon_exercises_chat_annotation_surfaces(tmp_path, monkeypatch):
+    """The bundled UI Lab addon should expose safe chat styling annotations."""
+    addons_dir = tmp_path / "addons"
+    addons_dir.mkdir()
+    shutil.copytree(Path("addons/ui_lab"), addons_dir / "ui_lab")
+    monkeypatch.setattr(addon_store, "_STORE_PATH", tmp_path / "addons.json")
+    monkeypatch.setattr(am.addon_store, "_STORE_PATH", tmp_path / "addons.json")
+
+    manager = am.AddonManager(addons_dir)
+    manager.load_all()
+
+    annotations = manager.get_text_annotations(
+        {
+            "text": "Try bubble chat style select right-click code in Wisp.",
+            "message_id": "m-ui-lab",
+            "conversation_id": "c-ui-lab",
+            "surface": "chat",
+            "role": "assistant",
+        }
+    )
+
+    ids = {item["id"] for item in annotations}
+    assert {
+        "ui-lab-bubble",
+        "ui-lab-chat",
+        "ui-lab-style",
+        "ui-lab-select",
+        "ui-lab-right-click",
+        "ui-lab-code",
+        "ui-lab-extra",
+    } <= ids
+    assert {item["source"] for item in annotations} == {"addon:ui-lab"}
+    assert all(item["message_id"] == "m-ui-lab" for item in annotations)
+
+    manager.set_setting("ui-lab", "enabled", "false")
+    assert manager.get_text_annotations({"text": "bubble chat", "surface": "chat"}) == []
     manager.on_shutdown()
 
 

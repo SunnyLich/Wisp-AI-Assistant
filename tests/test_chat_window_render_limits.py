@@ -570,6 +570,50 @@ def test_chat_window_reports_initial_active_conversation():
 
 
 @pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_message_menu_can_copy_selected_text(monkeypatch):
+    """Right-click message menu should expose selected-text actions when text is selected."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    import config
+    from ui.chat_window import ChatWindow, _MessageTextView
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = ""
+    conversations = [{"messages": [{"role": "assistant", "content": "hello world"}]}]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    captured = []
+
+    def fake_popup(self, pos):
+        """Capture the menu that would be shown."""
+        captured.append((self, pos, list(self.actions())))
+        return None
+
+    monkeypatch.setattr(QMenu, "popup", fake_popup)
+    try:
+        view = window.findChild(_MessageTextView)
+        assert view is not None
+        cursor = view.document().find("hello")
+        assert not cursor.isNull()
+        view.setTextCursor(cursor)
+
+        window._open_message_menu(0, 0, view.parentWidget())
+
+        assert captured
+        actions = [action for action in captured[0][2] if not action.isSeparator()]
+        copy_action = next(action for action in actions if action.text() == "Copy selected text")
+        copy_action.trigger()
+
+        assert QApplication.clipboard().text() == "hello"
+        assert [action.text() for action in actions][1:] == ["Branch from here", "Rewind current chat to here"]
+    finally:
+        config.APP_LANGUAGE = old_language
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
 def test_chat_window_selection_notice_names_continued_chat():
     """Verify switching chats shows which conversation will continue."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -754,6 +798,36 @@ def test_chat_window_persists_returned_tool_context():
 
         assert conversations[0]["tool_context"] == tool_context
         assert conversations[0]["messages"][-1]["tool_context"] == tool_context
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_window_persists_returned_text_annotations():
+    """Verify addon annotation metadata is stored with direct chat turns."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [{"messages": [{"role": "user", "content": "bubble"}]}]
+    user_annotations = [{"start": 0, "end": 6, "kind": "underline"}]
+    assistant_annotations = [{"start": 0, "end": 4, "kind": "highlight"}]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+    try:
+        window._current_user_message = conversations[0]["messages"][0]
+        window._current_ai_text = "done"
+        window._current_ai_reply_text = "done"
+        window._on_metadata(
+            {
+                "user_annotations": user_annotations,
+                "annotations": assistant_annotations,
+            }
+        )
+        window._on_finished()
+
+        assert conversations[0]["messages"][0]["annotations"] == user_annotations
+        assert conversations[0]["messages"][-1]["annotations"] == assistant_annotations
     finally:
         window.close()
         app.processEvents()

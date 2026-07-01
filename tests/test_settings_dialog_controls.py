@@ -222,6 +222,227 @@ def test_tts_voice_tab_does_not_import_stt_stack():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_open_defers_tts_install_status_checks(monkeypatch):
+    """Opening Settings should not probe optional TTS packages until Voice is opened."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_optional_package_installed",
+        staticmethod(lambda module_name: calls.append(module_name) or False),
+    )
+
+    dialog = SettingsDialog()
+    try:
+        assert calls == []
+        assert dialog._kokoro_install_status_lbl.text() == ""
+        assert dialog._elevenlabs_install_status_lbl.text() == ""
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_voice_tab_starts_deferred_tts_status_check(monkeypatch):
+    """Selecting TTS / Voice should trigger the deferred install-status refresh."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_refresh_tts_optional_install_status",
+        lambda self, **_kwargs: calls.append("refresh"),
+    )
+
+    dialog = SettingsDialog()
+    try:
+        assert calls == []
+        dialog._tabs.setCurrentIndex(dialog._tts_tab_index)
+        app.processEvents()
+        assert calls == ["refresh"]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_voice_status_check_runs_once_per_dialog(monkeypatch):
+    """Voice install-status checks should run at most once per Settings window."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog, _set
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    calls: list[str] = []
+
+    def fake_refresh(self):
+        if self._tts_install_status_running or self._tts_install_status_checked:
+            return
+        self._tts_install_status_checked = True
+        calls.append("refresh")
+
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", fake_refresh)
+
+    dialog = SettingsDialog()
+    try:
+        dialog._tabs.setCurrentIndex(dialog._tts_tab_index)
+        app.processEvents()
+        assert calls == ["refresh"]
+
+        dialog._tabs.setCurrentIndex(0)
+        dialog._tabs.setCurrentIndex(dialog._tts_tab_index)
+        _set(dialog._fields["TTS_PROVIDER"], "kokoro")
+        _set(dialog._fields["KOKORO_DEVICE"], "cuda")
+        app.processEvents()
+
+        assert calls == ["refresh"]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
+    """Optional TTS installs should launch a standalone terminal in source builds."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    launched: dict[str, object] = {}
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.setattr(dialog_mod, "_launch_terminal_command", lambda command, **kwargs: launched.update(command=command, **kwargs) or True)
+    monkeypatch.setattr(dialog_mod.sys, "frozen", False, raising=False)
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+
+    try:
+        ok = SettingsDialog._try_launch_external_optional_tts_install(
+            dialog,
+            test_key="kokoro_install",
+            display_name="Kokoro",
+            packages=["kokoro>=0.9.4"],
+            button_attr="_kokoro_install_btn",
+            status_attr="_kokoro_install_status_lbl",
+            external_plan_extra={"post_install": "kokoro_prepare", "kokoro_voice": "af_heart"},
+        )
+
+        assert ok is True
+        assert launched["title"] == "Wisp Kokoro installer"
+        command = launched["command"]
+        assert isinstance(command, list)
+        assert command[-2] == "--plan"
+        plan = Path(command[-1]).read_text(encoding="utf-8")
+        assert '"kokoro>=0.9.4"' in plan
+        assert '"post_install": "kokoro_prepare"' in plan
+        assert "close automatically" in dialog._kokoro_install_status_lbl.text()
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        app.processEvents()
+
+
+def test_optional_install_terminal_closes_on_windows(monkeypatch, tmp_path):
+    """Windows terminal installs should close when the installer command exits."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    launched: dict[str, object] = {}
+    monkeypatch.setattr(dialog_mod.sys, "platform", "win32")
+    monkeypatch.setattr(dialog_mod.subprocess, "CREATE_NEW_CONSOLE", 16, raising=False)
+    monkeypatch.setattr(
+        dialog_mod.subprocess,
+        "Popen",
+        lambda command, **kwargs: launched.update(command=command, **kwargs),
+    )
+
+    ok = dialog_mod._launch_terminal_command(
+        ["python", "-m", "installer"],
+        cwd=tmp_path,
+        title="Wisp installer",
+    )
+
+    assert ok is True
+    assert launched["command"][:3] == ["cmd.exe", "/V:ON", "/C"]
+    cmdline = launched["command"][-1]
+    assert "python -m installer" in cmdline
+    assert "/K" not in launched["command"]
+    assert "pause" not in cmdline.lower()
+    assert launched["creationflags"] == 16
+
+
+def test_optional_install_terminal_auto_closes_on_macos(monkeypatch, tmp_path):
+    """macOS terminal installs should close the Terminal window after completion."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    launched: dict[str, object] = {}
+    monkeypatch.setattr(dialog_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        dialog_mod.subprocess,
+        "Popen",
+        lambda command, **kwargs: launched.update(command=command, **kwargs),
+    )
+
+    ok = dialog_mod._launch_terminal_command(
+        ["python", "-m", "installer"],
+        cwd=tmp_path,
+        title="Wisp installer",
+    )
+
+    assert ok is True
+    assert launched["command"][:2] == ["osascript", "-e"]
+    script = launched["command"][2]
+    assert "exit" in script
+    assert "close (window of targetTab) saving no" in script
+    assert "Press Enter" not in script
+    assert "read -r" not in script
+    assert "read -n" not in script
+
+
+def test_optional_install_terminal_auto_closes_on_linux(monkeypatch, tmp_path):
+    """Linux terminal installs should let the terminal close when the command exits."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    launched: dict[str, object] = {}
+    monkeypatch.setattr(dialog_mod.sys, "platform", "linux")
+    monkeypatch.setattr(dialog_mod.shutil, "which", lambda name: "/usr/bin/x-terminal-emulator")
+    monkeypatch.setattr(
+        dialog_mod.subprocess,
+        "Popen",
+        lambda command, **kwargs: launched.update(command=command, **kwargs),
+    )
+
+    ok = dialog_mod._launch_terminal_command(
+        ["python", "-m", "installer"],
+        cwd=tmp_path,
+        title="Wisp installer",
+    )
+
+    assert ok is True
+    command = launched["command"]
+    assert command[:3] == ["x-terminal-emulator", "-e", "sh"]
+    shell_cmd = command[-1]
+    assert "python -m installer" in shell_cmd
+    assert "Press Enter" not in shell_cmd
+    assert "read -r -p" not in shell_cmd
+    assert "read -r" not in shell_cmd
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_technical_combo_options_translate_model_names_only():
     """Verify technical combo options translate model names only behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -559,6 +780,7 @@ def test_settings_status_messages_translate_nested_values(monkeypatch):
         "Microphone permission: {value}.": "\u9ea5\u514b\u98a8\u6b0a\u9650\uff1a{value}\u3002",
         "Installing Kokoro: {detail}.": "\u6b63\u5728\u5b89\u88dd Kokoro\uff1a{detail}\u3002",
         "downloading packages": "\u6b63\u5728\u4e0b\u8f09\u5957\u4ef6",
+        "still running for {elapsed}; no installer output for {quiet}": "\u5df2\u57f7\u884c {elapsed}\uff1b{quiet} \u6c92\u6709\u5b89\u88dd\u5668\u8f38\u51fa",
         "unavailable": "\u7121\u6cd5\u4f7f\u7528",
     }
     monkeypatch.setattr(dialog, "t", lambda text: translations.get(text, text))
@@ -573,6 +795,10 @@ def test_settings_status_messages_translate_nested_values(monkeypatch):
     assert (
         dialog._translate_status_message("Installing Kokoro: downloading packages.")
         == "\u6b63\u5728\u5b89\u88dd Kokoro\uff1a\u6b63\u5728\u4e0b\u8f09\u5957\u4ef6\u3002"
+    )
+    assert (
+        dialog._translate_status_message("Installing Kokoro: still running for 2m 40s; no installer output for 2m 40s.")
+        == "\u6b63\u5728\u5b89\u88dd Kokoro\uff1a\u5df2\u57f7\u884c 2m 40s\uff1b2m 40s \u6c92\u6709\u5b89\u88dd\u5668\u8f38\u51fa\u3002"
     )
 
 
@@ -610,10 +836,24 @@ def test_kokoro_install_progress_text_classifies_pip_output():
     )
     log_path = _optional_install_log_path("Kokoro", Path("python_packages"))
     assert log_path.name == "kokoro-install.log"
-    assert _optional_install_elapsed_text("Kokoro", 600, 600, log_path) == (
-        f"Installing Kokoro: still running for 10m 00s; no installer output for 10m 00s. Log: {log_path}."
+    assert _optional_install_elapsed_text("Kokoro", 600, 600) == (
+        "Installing Kokoro: still running for 10m 00s; no installer output for 10m 00s."
     )
-    assert _optional_install_no_output_timeout_seconds() == 300
+    assert _optional_install_no_output_timeout_seconds() == 0
+
+
+def test_optional_install_no_output_timeout_is_opt_in(monkeypatch):
+    """Silent optional installs should keep running unless a watchdog is configured."""
+    from ui.settings_panel.dialog import _optional_install_no_output_timeout_seconds
+
+    monkeypatch.delenv("WISP_OPTIONAL_INSTALL_NO_OUTPUT_TIMEOUT_SECONDS", raising=False)
+    assert _optional_install_no_output_timeout_seconds() == 0
+
+    monkeypatch.setenv("WISP_OPTIONAL_INSTALL_NO_OUTPUT_TIMEOUT_SECONDS", "1800")
+    assert _optional_install_no_output_timeout_seconds() == 1800
+
+    monkeypatch.setenv("WISP_OPTIONAL_INSTALL_NO_OUTPUT_TIMEOUT_SECONDS", "not-a-number")
+    assert _optional_install_no_output_timeout_seconds() == 0
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -635,7 +875,7 @@ def test_kokoro_status_warns_when_gpu_selected_but_cpu_torch_installed(monkeypat
     monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
     monkeypatch.setattr(
         SettingsDialog,
-        "_kokoro_torch_status",
+        "_kokoro_torch_status_fast",
         lambda self: {"cuda_available": False, "version": "2.12.1+cpu", "cuda_version": ""},
     )
 
@@ -644,12 +884,375 @@ def test_kokoro_status_warns_when_gpu_selected_but_cpu_torch_installed(monkeypat
 
         assert dialog._kokoro_install_btn.isEnabled()
         assert dialog._kokoro_install_btn.text() == "Install Kokoro GPU support"
-        assert "selected GPU device needs a CUDA-enabled Torch install" in dialog._kokoro_install_status_lbl.text()
+        assert dialog._kokoro_install_status_lbl.text() == "Kokoro GPU support is not installed."
     finally:
         dialog._kokoro_install_btn.deleteLater()
         dialog._kokoro_install_status_lbl.deleteLater()
         combo.deleteLater()
         app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_fast_status_defers_gpu_availability_check():
+    """Fast Voice-page status should not warn that Torch is CPU-only."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    combo = QComboBox()
+    combo.addItem("Auto (GPU if available)", "auto")
+    dialog._fields["KOKORO_DEVICE"] = combo
+
+    try:
+        SettingsDialog._apply_kokoro_install_status(
+            dialog,
+            installed=True,
+            mode="gpu",
+            torch_status={"fast": True, "installed": True, "version": "2.12.1+cu128"},
+            needs_gpu=False,
+        )
+
+        assert not dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_status_lbl.text() == "Kokoro is installed."
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_device_change_reuses_cached_status_without_rechecking(monkeypatch):
+    """Changing CPU/GPU/Auto should update Kokoro UI without another background check."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    dialog._tts_install_status_checked = True
+    dialog._tts_install_status_result = {
+        "ok": True,
+        "kokoro_installed": True,
+        "kokoro_torch_status": {
+            "installed": True,
+            "valid": True,
+            "cuda_available": False,
+            "version": "2.12.1+cpu",
+        },
+        "system_cuda_available": True,
+    }
+    combo = QComboBox()
+    combo.addItem("CPU", "cpu")
+    combo.addItem("GPU (CUDA)", "cuda")
+    dialog._fields["KOKORO_DEVICE"] = combo
+    refresh_calls = 0
+
+    def _refresh_again() -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+
+    monkeypatch.setattr(SettingsDialog, "_tts_page_is_current", lambda self: True)
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", lambda self: _refresh_again())
+
+    try:
+        combo.setCurrentIndex(1)
+        SettingsDialog._handle_kokoro_device_changed(dialog)
+
+        assert refresh_calls == 0
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Install Kokoro GPU support"
+        assert dialog._kokoro_install_status_lbl.text() == "Kokoro GPU support is not installed."
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_device_change_to_cuda_rechecks_fast_status(monkeypatch):
+    """Switching to CUDA must not reuse a metadata-only Torch status."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    dialog._tts_install_status_checked = True
+    dialog._tts_install_status_running = False
+    dialog._tts_install_status_result = {
+        "ok": True,
+        "kokoro_installed": True,
+        "kokoro_torch_status": {"fast": True, "installed": True, "valid": True, "version": "2.12.1+cpu"},
+        "system_cuda_available": True,
+    }
+    combo = QComboBox()
+    combo.addItem("CPU", "cpu")
+    combo.addItem("GPU (CUDA)", "cuda")
+    dialog._fields["KOKORO_DEVICE"] = combo
+    refresh_calls = 0
+
+    def _refresh_again() -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+
+    monkeypatch.setattr(SettingsDialog, "_tts_page_is_current", lambda self: True)
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", lambda self: _refresh_again())
+
+    try:
+        combo.setCurrentIndex(1)
+        SettingsDialog._handle_kokoro_device_changed(dialog)
+
+        assert refresh_calls == 1
+        assert dialog._tts_install_status_checked is False
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+def test_kokoro_fast_status_does_not_request_gpu_reinstall():
+    """Fast status is acceptable only when selected settings do not need CUDA."""
+    from ui.settings_panel.dialog import SettingsDialog
+
+    needs_gpu = SettingsDialog._kokoro_needs_gpu_install_from_status(
+        installed=True,
+        selected_device="cpu",
+        torch_status={"fast": True, "installed": True, "cuda_available": False},
+        system_cuda_available=True,
+    )
+
+    assert needs_gpu is False
+
+
+def test_kokoro_fast_status_requests_full_gpu_install_for_cuda():
+    """A metadata-only Torch check must not mark explicit CUDA as fully installed."""
+    from ui.settings_panel.dialog import SettingsDialog
+
+    needs_gpu = SettingsDialog._kokoro_needs_gpu_install_from_status(
+        installed=True,
+        selected_device="cuda",
+        torch_status={"fast": True, "installed": True, "cuda_available": False},
+        system_cuda_available=True,
+    )
+
+    assert needs_gpu is True
+
+
+def test_kokoro_broken_torch_status_requests_repair():
+    """A broken Torch layer should be shown as a repair, not a healthy install."""
+    from ui.settings_panel.dialog import SettingsDialog
+
+    needs_gpu = SettingsDialog._kokoro_needs_gpu_install_from_status(
+        installed=True,
+        selected_device="auto",
+        torch_status={"fast": True, "installed": True, "valid": False, "error": "Torch install looks incomplete."},
+        system_cuda_available=True,
+    )
+
+    assert needs_gpu is True
+
+
+def test_kokoro_background_cuda_status_uses_subprocess(monkeypatch):
+    """CUDA status refresh should avoid importing Torch in the Settings process."""
+    from core import optional_deps
+    from ui.settings_panel.dialog import SettingsDialog
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_torch_status_subprocess",
+        lambda: calls.append("subprocess") or {"installed": True, "valid": True, "cuda_available": False},
+    )
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    status = SettingsDialog._kokoro_torch_status(dialog)
+
+    assert calls == ["subprocess"]
+    assert status["cuda_available"] is False
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_refresh_status_does_not_run_full_torch_check(monkeypatch):
+    """Manual Kokoro status refresh should not freeze the UI with Torch verification."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    dialog._tts_install_status_result = None
+    combo = QComboBox()
+    combo.addItem("GPU (CUDA)", "cuda")
+    dialog._fields["KOKORO_DEVICE"] = combo
+    monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_torch_status",
+        lambda self: (_ for _ in ()).throw(AssertionError("full Torch status should not run")),
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_torch_status_fast",
+        lambda self: {"fast": True, "installed": True, "valid": True, "version": "2.12.1+cpu"},
+    )
+
+    try:
+        SettingsDialog._refresh_kokoro_install_status(dialog)
+
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Install Kokoro GPU support"
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_status_warns_when_install_is_incomplete():
+    """Settings should offer reinstall when Torch import is incomplete."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    combo = QComboBox()
+    combo.addItem("CPU", "cpu")
+    dialog._fields["KOKORO_DEVICE"] = combo
+
+    try:
+        SettingsDialog._apply_kokoro_install_status(
+            dialog,
+            installed=True,
+            mode="cpu",
+            torch_status={"installed": True, "valid": False, "error": "Torch import is incomplete."},
+            needs_gpu=False,
+        )
+
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Install Kokoro"
+        assert dialog._kokoro_install_status_lbl.text() == "Kokoro install is incomplete. Reinstall Kokoro."
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+def test_kokoro_post_install_fails_when_required_gpu_is_unavailable(monkeypatch):
+    """GPU Kokoro install should fail when Torch cannot see CUDA after install."""
+    from core import optional_deps
+    from core import tts
+    from ui.settings_panel.dialog import SettingsDialog
+
+    monkeypatch.setattr(tts, "prepare_kokoro_assets", lambda voice: {"voice": "voice.pt"})
+    monkeypatch.setattr(optional_deps, "kokoro_runtime_import_status_subprocess", lambda: {"valid": True})
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_torch_status_subprocess",
+        lambda: {"installed": True, "valid": True, "version": "2.12.1+cpu", "cuda_available": False},
+    )
+
+    ok, message = SettingsDialog._prepare_kokoro_after_install(
+        voice="af_heart",
+        require_gpu=True,
+        progress=lambda _message: None,
+        write_log=lambda _message: None,
+    )
+
+    assert ok is False
+    assert message == "Kokoro installed, but CUDA Torch verification failed."
+
+
+def test_kokoro_post_install_verifies_runtime_import(monkeypatch):
+    """Kokoro install should fail if runtime imports are broken after install."""
+    from core import optional_deps
+    from core import tts
+    from ui.settings_panel.dialog import SettingsDialog
+
+    monkeypatch.setattr(tts, "prepare_kokoro_assets", lambda voice: {"voice": "voice.pt"})
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_runtime_import_status_subprocess",
+        lambda: {"valid": False, "error": "AttributeError: module 'regex' has no attribute 'compile'"},
+    )
+
+    ok, message = SettingsDialog._prepare_kokoro_after_install(
+        voice="af_heart",
+        progress=lambda _message: None,
+        write_log=lambda _message: None,
+    )
+
+    assert ok is False
+    assert "runtime verification failed" in message
+    assert "regex" in message
+
+
+def test_kokoro_post_install_uses_subprocess_verification(monkeypatch):
+    """Inline post-install checks should not pin native Kokoro/Torch modules."""
+    from core import optional_deps
+    from core import tts
+    from ui.settings_panel.dialog import SettingsDialog
+
+    calls: list[str] = []
+    monkeypatch.setattr(tts, "prepare_kokoro_assets", lambda voice: {"voice": "voice.pt"})
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_runtime_import_status",
+        lambda: (_ for _ in ()).throw(AssertionError("direct Kokoro import should not run")),
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_torch_status",
+        lambda: (_ for _ in ()).throw(AssertionError("direct Torch import should not run")),
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_runtime_import_status_subprocess",
+        lambda: calls.append("runtime") or {"valid": True},
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_torch_status_subprocess",
+        lambda: calls.append("torch") or {"installed": True, "valid": True, "cuda_available": True},
+    )
+
+    ok, message = SettingsDialog._prepare_kokoro_after_install(
+        voice="af_heart",
+        require_gpu=True,
+        progress=lambda _message: None,
+        write_log=lambda _message: None,
+    )
+
+    assert ok is True
+    assert message == "Kokoro GPU support installed and local voice is ready."
+    assert calls == ["runtime", "torch"]
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -691,7 +1294,67 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
         SettingsDialog._install_kokoro(dialog)
 
         assert captured["packages"] == optional_deps.kokoro_install_packages("cuda")
-        assert "torch" in captured["packages"]
+        assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
+        assert "torch" in captured["pre_install_packages"]
+        assert "torch" not in captured["packages"]
+        assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
+    finally:
+        for widget in dialog._fields.values():
+            widget.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
+    """Clicking reinstall should start from metadata/cached status, not full Torch verification."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    device = QComboBox()
+    device.addItem("GPU (CUDA)", "cuda")
+    dialog._fields = {
+        "KOKORO_DEVICE": device,
+        "KOKORO_VOICE": QLineEdit("af_heart"),
+        "KOKORO_LANG_CODE": QLineEdit("a"),
+        "KOKORO_SPEED": QLineEdit("1.0"),
+        "KOKORO_SAMPLE_RATE": QLineEdit("24000"),
+        "TTS_VOLUME": QLineEdit("1.0"),
+    }
+    dialog._tts_install_status_result = None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_torch_status",
+        lambda self: (_ for _ in ()).throw(AssertionError("full Torch status should not run")),
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_torch_status_fast",
+        lambda self: {"fast": True, "installed": True, "valid": True, "version": "2.12.1+cpu"},
+    )
+    monkeypatch.setattr(
+        dialog_mod.QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    def fake_install(self, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(SettingsDialog, "_install_optional_tts_package", fake_install)
+
+    try:
+        SettingsDialog._install_kokoro(dialog)
+
+        assert captured["packages"] == []
+        assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():
@@ -1296,6 +1959,51 @@ def test_cancel_async_ui_updates_stops_test_and_auth_timers():
     assert dialog._test_result_timer.stopped is True
     assert dialog._auth_poll_timer.stopped is True
     assert dialog._github_auth_poll_timer.stopped is True
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_drain_test_progress_coalesces_timer_updates():
+    """Installer heartbeat updates should replace one status line, not replay every tick."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    class FakeTimer:
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def isActive(self):
+            return True
+
+        def stop(self):
+            self.stopped = True
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    label = QLabel()
+    dialog._kokoro_install_status_lbl = label
+    dialog._disposing = False
+    dialog._pending_test_progress = [
+        ("kokoro_install", 1, "Installing Kokoro: preparing local voice assets for 0s."),
+        ("kokoro_install", 1, "Installing Kokoro: preparing local voice assets for 20s."),
+    ]
+    dialog._pending_test_progress_lock = threading.Lock()
+    dialog._pending_test_results = []
+    dialog._pending_test_results_lock = threading.Lock()
+    dialog._latest_test_token = {"kokoro_install": 1}
+    dialog._running_test_tokens = {("kokoro_install", 1)}
+    dialog._test_result_timer = FakeTimer()
+
+    try:
+        SettingsDialog._drain_test_results(dialog)
+
+        assert label.text() == "Installing Kokoro: preparing local voice assets for 20s."
+        assert dialog._pending_test_progress == []
+        assert dialog._test_result_timer.stopped is False
+    finally:
+        label.deleteLater()
+        app.processEvents()
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")

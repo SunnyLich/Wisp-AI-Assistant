@@ -14,6 +14,7 @@ import gzip
 import json as _stdlib_json
 import os
 import ssl as _ssl
+import sys
 import threading as _threading
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
@@ -1878,12 +1879,45 @@ _openai_compat_stdlib_ssl_context = None
 _openai_compat_stdlib_ssl_context_lock = _threading.Lock()
 
 
+def _import_certifi_ignoring_broken_optional_layer():
+    """Import certifi, falling back if Wisp's optional package layer is broken."""
+    try:
+        import certifi
+
+        return certifi
+    except Exception as original_exc:
+        try:
+            from core import optional_deps
+
+            optional_path = str(optional_deps.OPTIONAL_PACKAGES_DIR.resolve())
+            removed = [
+                entry for entry in sys.path
+                if str(Path(entry or ".").resolve()) == optional_path
+            ]
+            if not removed:
+                raise
+            sys.modules.pop("certifi", None)
+            for entry in removed:
+                while entry in sys.path:
+                    sys.path.remove(entry)
+            try:
+                import certifi
+
+                return certifi
+            finally:
+                for entry in reversed(removed):
+                    if entry not in sys.path:
+                        sys.path.insert(0, entry)
+        except Exception:
+            raise original_exc
+
+
 def _get_openai_compat_stdlib_ssl_context():
     """Return a cached certifi-backed SSL context for urllib compatibility calls."""
     global _openai_compat_stdlib_ssl_context
     with _openai_compat_stdlib_ssl_context_lock:
         if _openai_compat_stdlib_ssl_context is None:
-            import certifi
+            certifi = _import_certifi_ignoring_broken_optional_layer()
 
             _openai_compat_stdlib_ssl_context = _ssl.create_default_context(cafile=certifi.where())
         return _openai_compat_stdlib_ssl_context

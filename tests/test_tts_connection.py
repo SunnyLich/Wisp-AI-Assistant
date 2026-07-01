@@ -132,6 +132,19 @@ class TtsConnectionTests(unittest.TestCase):
              patch("core.tts._stream_kokoro", side_effect=AssertionError("unexpected Kokoro warmup")):
             self.assertIsNone(tts.prewarm())
 
+    def test_kokoro_import_failure_suggests_reinstall(self):
+        """Broken Kokoro dependencies should produce a reinstall-oriented error."""
+        original_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "kokoro":
+                raise AttributeError("module 'regex' has no attribute 'compile'")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", fake_import):
+            with self.assertRaisesRegex(RuntimeError, "reinstall Kokoro"):
+                tts._import_kokoro_pipeline()
+
     def test_prepare_kokoro_assets_downloads_model_and_voice(self):
         """Verify Kokoro asset preparation fetches the model files before synthesis."""
         calls = []

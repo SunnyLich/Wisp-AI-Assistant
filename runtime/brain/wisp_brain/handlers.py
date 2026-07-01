@@ -602,6 +602,15 @@ def brain_addons_tools() -> dict[str, Any]:
     return {"tools": manager.model_tool_payloads()}
 
 
+@handler("brain.addons.text_annotations")
+def brain_addons_text_annotations(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return display-only text annotations from enabled addons."""
+    from core.system.paths import ADDONS_DIR
+
+    manager = _loaded_addon_manager(Path(ADDONS_DIR))
+    return {"annotations": manager.get_text_annotations(payload or {})}
+
+
 @handler("brain.addons.run_action")
 def brain_addons_run_action(addon_id: str = "", label: str = "") -> dict[str, Any]:
     """Run a loaded addon tray action by addon name/id and label."""

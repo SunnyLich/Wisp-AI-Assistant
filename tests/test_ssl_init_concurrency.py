@@ -21,9 +21,11 @@ import threading
 import time
 import types
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import config
+from core import optional_deps
 import core.system.native_locks as native_locks
 from core.system.native_locks import keychain_lock, native_init_lock, ssl_init_lock
 import core.tts as tts_module
@@ -306,6 +308,41 @@ class DynamicClientCachingTests(unittest.TestCase):
 
         self.assertEqual(build_calls, ["/tmp/cacert.pem"])
         self.assertEqual(handler_contexts, [context, context])
+
+    def test_stdlib_ssl_context_ignores_broken_optional_certifi(self):
+        """A broken optional certifi layer should not break urllib SSL setup."""
+        llm._openai_compat_stdlib_ssl_context = None
+        self.addCleanup(setattr, llm, "_openai_compat_stdlib_ssl_context", None)
+        context = object()
+        optional_path = "C:\\app\\python_packages"
+        original_path = list(sys.path)
+
+        class _FallbackCertifi(types.ModuleType):
+            """Test case for fallback certifi behavior."""
+            def where(self):
+                """Verify where behavior."""
+                return "/fallback/cacert.pem"
+
+        def fake_import(name, *args, **kwargs):
+            """Fail certifi import only while the optional layer is on sys.path."""
+            if name == "certifi" and optional_path in sys.path:
+                raise PermissionError("broken optional certifi")
+            if name == "certifi":
+                return _FallbackCertifi("certifi")
+            return original_import(name, *args, **kwargs)
+
+        def fake_create_default_context(*, cafile=None):
+            """Verify fallback certifi path is used."""
+            self.assertEqual(cafile, "/fallback/cacert.pem")
+            return context
+
+        original_import = __import__
+        sys.path.insert(0, optional_path)
+        self.addCleanup(lambda: setattr(sys, "path", original_path))
+        with mock.patch("builtins.__import__", fake_import), \
+             mock.patch.object(optional_deps, "OPTIONAL_PACKAGES_DIR", Path(optional_path)), \
+             mock.patch.object(llm._ssl, "create_default_context", fake_create_default_context):
+            self.assertIs(llm._get_openai_compat_stdlib_ssl_context(), context)
 
 
 class PrewarmTests(unittest.TestCase):

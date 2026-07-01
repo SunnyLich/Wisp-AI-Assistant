@@ -22,7 +22,7 @@ _local_tts_ready = False
 _local_tts_error = ""
 _local_tts_warmup_started_at: float | None = None
 _LOCAL_TTS_WARMUP_STALE_SECONDS = 3600.0
-_LOCAL_TTS_WARMUP_PROGRESS_SECONDS = 20.0
+_LOCAL_TTS_WARMUP_PROGRESS_SECONDS = 5.0
 
 
 def _local_tts_provider(provider: str) -> bool:
@@ -137,13 +137,15 @@ def _warm_local_audio(
             _set_local_tts_warmup(warming=True, ready=False)
         if on_progress is not None:
             on_progress("tts", "started")
+            if is_local_tts:
+                on_progress("tts", "preparing for 0s")
 
         def _progress_heartbeat() -> None:
             started = time.monotonic()
             while not stop_progress.wait(_LOCAL_TTS_WARMUP_PROGRESS_SECONDS):
                 elapsed = int(time.monotonic() - started)
                 if on_progress is not None:
-                    on_progress("tts", f"preparing local voice for {elapsed}s")
+                    on_progress("tts", f"preparing for {elapsed}s")
 
         if is_local_tts and on_progress is not None:
             threading.Thread(target=_progress_heartbeat, daemon=True, name="audio-tts-prewarm-progress").start()

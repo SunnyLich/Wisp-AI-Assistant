@@ -99,6 +99,7 @@ def _addons_dir() -> Path:
 
 REPO_ROOT = _repo_root()          # user-writable: .env, memory, addons
 _BUNDLE = _bundle_root()           # read-only bundled files
+USER_DATA_DIR = _user_data_dir()   # stable across repo/dev and packaged launches
 
 ASSETS_DIR       = _BUNDLE / "assets"
 DOLL_ASSETS_DIR  = ASSETS_DIR / "doll"

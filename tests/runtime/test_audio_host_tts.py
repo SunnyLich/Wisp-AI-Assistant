@@ -153,10 +153,12 @@ def test_audio_prewarm_reports_component_progress(monkeypatch):
         ("stt", "started"),
         ("stt", "ok"),
         ("tts", "started"),
+        ("tts", "preparing for 0s"),
         ("tts", "ok"),
     ])
     assert progress.index(("stt", "started")) < progress.index(("stt", "ok"))
     assert progress.index(("tts", "started")) < progress.index(("tts", "ok"))
+    assert progress.index(("tts", "preparing for 0s")) < progress.index(("tts", "ok"))
 
 
 def test_audio_prewarm_skips_missing_kokoro(monkeypatch):

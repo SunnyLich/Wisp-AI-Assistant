@@ -40,6 +40,7 @@ def test_notice_text_translates_known_bubble_messages(monkeypatch) -> None:
     translations = {
         "Addon folder installed.": "\u5916\u639b\u8cc7\u6599\u593e\u5df2\u5b89\u88dd\u3002",
         "Recommendation: open Addon Manager, inspect the addon diagnostics, then repair or disable it.": "\u5efa\u8b70\uff1a\u958b\u555f\u5916\u639b\u7ba1\u7406\u5668\uff0c\u6aa2\u67e5\u5916\u639b\u8a3a\u65b7\u8cc7\u8a0a\uff0c\u7136\u5f8c\u4fee\u5fa9\u6216\u505c\u7528\u5b83\u3002",
+        "Preparing local voice... {detail}": "\u6b63\u5728\u6e96\u5099\u672c\u6a5f\u8a9e\u97f3... {detail}",
         "Technical detail: ": "\u6280\u8853\u7d30\u7bc0\uff1a",
     }
     monkeypatch.setattr(ui_host, "t", lambda text: translations.get(text, text))
@@ -53,6 +54,48 @@ def test_notice_text_translates_known_bubble_messages(monkeypatch) -> None:
         "\u5efa\u8b70\uff1a\u958b\u555f\u5916\u639b\u7ba1\u7406\u5668\uff0c\u6aa2\u67e5\u5916\u639b\u8a3a\u65b7\u8cc7\u8a0a\uff0c\u7136\u5f8c\u4fee\u5fa9\u6216\u505c\u7528\u5b83\u3002\n"
         "\u6280\u8853\u7d30\u7bc0\uff1aaddon.json missing"
     )
+    assert ui_host._translate_notice_text("Preparing local voice... for 5s") == (
+        "\u6b63\u5728\u6e96\u5099\u672c\u6a5f\u8a9e\u97f3... for 5s"
+    )
+
+
+def test_keyed_notice_updates_respect_user_dismissal() -> None:
+    """Repeated warmup progress notices should not reopen after the user closes them."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        _thinking = False
+        _transcript_preview = False
+        _reply_chunk_count = 0
+        _full_text = ""
+
+        def __init__(self) -> None:
+            self.visible = False
+            self.notices = []
+
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style API
+            return self.visible
+
+        def show_notice(self, text: str, timeout_ms: int = 12000) -> None:
+            self.visible = True
+            self.notices.append((text, timeout_ms))
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    first = host._reply_notice("Preparing local voice... for 0s", timeout_ms=0, key="audio-warmup")
+    bubble.visible = False
+    second = host._reply_notice("Preparing local voice... for 5s", timeout_ms=0, key="audio-warmup")
+
+    assert first == {"shown": True, "text": "Preparing local voice... for 0s", "key": "audio-warmup"}
+    assert second == {
+        "shown": False,
+        "text": "Preparing local voice... for 5s",
+        "reason": "dismissed",
+        "key": "audio-warmup",
+    }
+    assert bubble.notices == [("Preparing local voice... for 0s", 0)]
 
 
 def test_speech_status_notice_does_not_replace_active_reply() -> None:
@@ -143,6 +186,12 @@ def test_speech_status_notice_does_not_replace_thinking_reply() -> None:
     assert result["reason"] == "active_reply"
     assert bubble.notices == []
 
+    result = host._reply_notice("Preparing local voice... for 5s", timeout_ms=0)
+
+    assert result["shown"] is False
+    assert result["reason"] == "active_reply"
+    assert bubble.notices == []
+
 
 def test_speech_warmup_failure_notice_still_shows_during_reply() -> None:
     """Actual speech warmup failures remain visible instead of being suppressed."""
@@ -204,12 +253,23 @@ class _Bubble:
     def __init__(self) -> None:
         self.chunks: list[tuple[str, bool]] = []
         self.progress: list[str] = []
+        self.labeled: list[tuple[str, str, int, bool]] = []
 
     def append_chunk(self, text: str, is_thought: bool = False) -> None:
         self.chunks.append((text, is_thought))
 
     def show_progress(self, text: str) -> None:
         self.progress.append(text)
+
+    def show_labeled_text(
+        self,
+        label: str,
+        text: str,
+        *,
+        timeout_ms: int = 0,
+        cancel_on_close: bool = True,
+    ) -> None:
+        self.labeled.append((label, text, timeout_ms, cancel_on_close))
 
 
 def test_reply_chunk_accepts_progress_metadata() -> None:
@@ -228,6 +288,31 @@ def test_reply_chunk_accepts_progress_metadata() -> None:
     # first real reply token replaces it.
     assert bubble.chunks == []
     assert bubble.progress == ["Reading files..."]
+
+
+def test_reply_labeled_text_keeps_label_out_of_reply_content() -> None:
+    """Addons and built-ins can show UI labels without making them reply text."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = _Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_labeled_text(
+        label="Tool",
+        text="Indexing files",
+        timeout_ms=2500,
+        cancel_on_close=False,
+    )
+
+    assert result == {
+        "shown": True,
+        "label": "Tool",
+        "text": "Indexing files",
+        "label_excluded_from_reply": True,
+    }
+    assert bubble.labeled == [("Tool", "Indexing files", 2500, False)]
+    assert bubble.chunks == []
 
 
 def test_ui_shutdown_message_closes_stdin_reader() -> None:
@@ -374,6 +459,31 @@ def test_chat_add_conversation_persists_file_context() -> None:
     assert host._all_conversations[0]["file_context"] == file_context
 
 
+def test_chat_add_conversation_persists_text_annotations() -> None:
+    """Verify addon text annotations are stored with chat messages."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = None
+    host._active_project_id = "general"
+    host._all_conversations = []
+    host._chat = None
+    host._persist_conversations = lambda: None  # type: ignore[attr-defined]
+    user_annotations = [{"start": 0, "end": 4, "kind": "underline"}]
+    assistant_annotations = [{"start": 0, "end": 4, "kind": "highlight"}]
+
+    host._chat_add_conversation(
+        user="test",
+        assistant="done",
+        user_annotations=user_annotations,
+        assistant_annotations=assistant_annotations,
+    )
+
+    messages = host._all_conversations[0]["messages"]
+    assert messages[0]["annotations"] == user_annotations
+    assert messages[1]["annotations"] == assistant_annotations
+
+
 def test_chat_begin_conversation_persists_user_then_final_appends_assistant() -> None:
     """Verify overlay prompts are recoverable before the assistant reply lands."""
     from runtime.workers.ui_host import QtProtocolHost
@@ -449,9 +559,45 @@ def test_chat_request_reuses_active_conversation_tool_context() -> None:
             "file_context": [],
             "tool_context": emitted[0][1]["tool_context"],
             "context_snippets": [],
+            "annotations": [],
+            "user_annotations": [],
         },
         {"type": "final", "text": "ok"},
     ]
+
+
+def test_chat_send_fn_forwards_annotation_metadata() -> None:
+    """Verify chat stream metadata carries addon text annotations."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = None
+    host._all_conversations = []
+    host._chat_request_ids = iter([1])
+    host._chat_streams = {}
+    import threading
+
+    host._chat_streams_lock = threading.Lock()
+    assistant_annotations = [{"start": 0, "end": 2, "kind": "highlight"}]
+    user_annotations = [{"start": 0, "end": 4, "kind": "underline"}]
+
+    def emit(event, payload):
+        request_id = payload["request_id"]
+        host._chat_done(
+            request_id=request_id,
+            text="ok",
+            annotations=assistant_annotations,
+            user_annotations=user_annotations,
+        )
+
+    host.emit = emit  # type: ignore[method-assign]
+
+    result = list(host._make_chat_send_fn()([{"role": "user", "content": "test"}]))
+
+    assert result[0]["type"] == "metadata"
+    assert result[0]["annotations"] == assistant_annotations
+    assert result[0]["user_annotations"] == user_annotations
+    assert result[-1] == {"type": "final", "text": "ok"}
 
 
 def test_selecting_chat_shows_overlay_continuation_notice() -> None:

@@ -2,7 +2,44 @@
 
 from __future__ import annotations
 
+import importlib
+import json
 import sys
+
+
+def test_optional_packages_default_to_shared_user_data_dir(monkeypatch, tmp_path):
+    """Repo/dev and packaged launches should share the optional package layer."""
+    import core.optional_deps as optional_deps
+    import core.system.paths as paths
+
+    appdata = tmp_path / "appdata"
+    repo_root = tmp_path / "repo"
+    with monkeypatch.context() as mp:
+        mp.setenv("APPDATA", str(appdata))
+        mp.setenv("WISP_REPO_ROOT", str(repo_root))
+        mp.delenv("WISP_OPTIONAL_PACKAGES_DIR", raising=False)
+        reloaded_paths = importlib.reload(paths)
+        reloaded_optional = importlib.reload(optional_deps)
+
+        assert reloaded_paths.REPO_ROOT == repo_root
+        assert reloaded_optional.OPTIONAL_PACKAGES_DIR == appdata / "Wisp" / "python_packages"
+
+    importlib.reload(paths)
+    importlib.reload(optional_deps)
+
+
+def test_optional_packages_dir_env_override(monkeypatch, tmp_path):
+    """Advanced users and tests can still isolate optional packages explicitly."""
+    import core.optional_deps as optional_deps
+
+    target = tmp_path / "custom-python-packages"
+    with monkeypatch.context() as mp:
+        mp.setenv("WISP_OPTIONAL_PACKAGES_DIR", str(target))
+        reloaded_optional = importlib.reload(optional_deps)
+
+        assert reloaded_optional.OPTIONAL_PACKAGES_DIR == target
+
+    importlib.reload(optional_deps)
 
 
 def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
@@ -18,8 +55,27 @@ def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
 
     assert command[:4] == [sys.executable, "-m", "pip", "install"]
     assert "--progress-bar=raw" in command
+    assert "--upgrade" not in command
+    assert "--force-reinstall" not in command
     assert command[command.index("--target") + 1] == str(target)
     assert command[-1] == "elevenlabs>=1.0.0"
+
+
+def test_optional_deps_dev_reinstall_can_force_replacement(monkeypatch, tmp_path):
+    """CUDA Torch upgrades can opt into replacement when the target is not loaded."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_deps.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(optional_deps.sys, "executable", sys.executable)
+
+    command = optional_deps.pip_install_command(["torch"], reinstall=True)
+
+    assert "--upgrade" in command
+    assert "--force-reinstall" in command
+    assert command[command.index("--target") + 1] == str(target)
+    assert command[-1] == "torch"
 
 
 def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
@@ -43,9 +99,33 @@ def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
 
     assert command[:3] == [str(uv), "pip", "install"]
     assert "-m" not in command
+    assert "--reinstall" not in command
     assert "--python-version" in command
     assert command[command.index("--target") + 1] == str(target)
     assert command[-2:] == ["kokoro>=0.9.4", "soundfile"]
+
+
+def test_optional_deps_frozen_reinstall_can_force_replacement(monkeypatch, tmp_path):
+    """Packaged CUDA Torch upgrades can opt into uv replacement mode."""
+    from core import optional_deps
+
+    suffix = ".exe" if sys.platform == "win32" else ""
+    bundle = tmp_path / "_internal"
+    uv = bundle / "bin" / f"uv{suffix}"
+    uv.parent.mkdir(parents=True)
+    uv.write_text("", encoding="utf-8")
+    target = tmp_path / "data" / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_deps, "REPO_ROOT", tmp_path / "data")
+    monkeypatch.setattr(optional_deps.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(optional_deps.sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setattr(optional_deps.sys, "executable", str(tmp_path / "Wisp.exe"))
+    monkeypatch.setattr(optional_deps.shutil, "which", lambda _name: "")
+
+    command = optional_deps.pip_install_command(["torch"], reinstall=True)
+
+    assert "--reinstall" in command
+    assert command[-1] == "torch"
 
 
 def test_optional_deps_frozen_install_explains_missing_uv(monkeypatch, tmp_path):
@@ -74,11 +154,54 @@ def test_optional_deps_install_env_sets_uv_http_timeout(monkeypatch):
     from core import optional_deps
 
     monkeypatch.delenv("UV_HTTP_TIMEOUT", raising=False)
+    monkeypatch.delenv("PYTHONUTF8", raising=False)
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
 
     env = optional_deps.pip_install_env()
 
     assert env["PIP_DISABLE_PIP_VERSION_CHECK"] == "1"
+    assert env["PYTHONUTF8"] == "1"
+    assert env["PYTHONIOENCODING"] == "utf-8"
     assert env["UV_HTTP_TIMEOUT"] == "60"
+
+
+def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_path):
+    """CUDA support repair should not require reinstalling Kokoro packages."""
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    log_path = tmp_path / "install.log"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "packages": [],
+                "pre_install_packages": ["--index-url", "https://download.pytorch.org/whl/cu128", "torch"],
+                "log_path": str(log_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_run_install_command",
+        lambda _log, _prefix, packages, reinstall=False: calls.append((packages, reinstall)) or 0,
+    )
+
+    assert optional_tts_installer.main() == 0
+    assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch"], True)]
+
+
+def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):
+    """Windows optional-dependency helpers should not flash console windows."""
+    from core import optional_deps
+
+    monkeypatch.setattr(optional_deps.sys, "platform", "win32")
+    monkeypatch.setattr(optional_deps.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    assert optional_deps.subprocess_no_window_kwargs() == {"creationflags": 0x08000000}
 
 
 def test_optional_packages_precede_bundled_packages(monkeypatch, tmp_path):
@@ -126,26 +249,28 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
     """GPU Kokoro installs must request CUDA Torch wheels explicitly."""
     from core import optional_deps
 
+    torch_packages = optional_deps.kokoro_torch_install_packages("cuda")
     packages = optional_deps.kokoro_install_packages("cuda")
 
-    assert packages[:4] == [
-        "--upgrade",
-        "--extra-index-url",
+    assert torch_packages == [
+        "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
         "torch",
     ]
     assert "kokoro>=0.9.4" in packages
+    assert "torch" not in packages
     assert any(str(item).endswith("/en_core_web_sm-3.8.0-py3-none-any.whl") for item in packages)
 
 
 def test_kokoro_auto_install_selects_gpu_when_cuda_detected(monkeypatch):
-    """Auto should install the GPU stack only when the host has CUDA."""
+    """Auto should install the GPU stack when the host has CUDA."""
     from core import optional_deps
 
     monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: True)
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "gpu"
-    assert "torch" in optional_deps.kokoro_install_packages("auto")
+    assert "torch" in optional_deps.kokoro_torch_install_packages("auto")
+    assert "torch" not in optional_deps.kokoro_install_packages("auto")
 
 
 def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
@@ -155,6 +280,7 @@ def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
     monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: False)
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "cpu"
+    assert optional_deps.kokoro_torch_install_packages("auto") == []
     assert "torch" not in optional_deps.kokoro_install_packages("auto")
 
 
@@ -175,6 +301,155 @@ def test_system_cuda_available_does_not_import_ctranslate2(monkeypatch):
         returncode = 0
         stdout = "GPU 0: NVIDIA Test GPU"
 
-    monkeypatch.setattr(optional_deps.subprocess, "run", lambda *args, **kwargs: Result())
+    captured: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(optional_deps.sys, "platform", "win32")
+    monkeypatch.setattr(optional_deps.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(optional_deps.subprocess, "run", fake_run)
 
     assert optional_deps.system_cuda_available() is True
+    assert captured["creationflags"] == 0x08000000
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"
+
+
+def test_kokoro_torch_status_fast_does_not_import_torch(monkeypatch):
+    """Settings page status should not import Torch just to display install state."""
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    def fail_import(name, *args, **kwargs):
+        if name == "torch":
+            raise AssertionError("torch should not be imported by fast status")
+        return original_import(name, *args, **kwargs)
+
+    original_import = __import__
+    monkeypatch.setattr("builtins.__import__", fail_import)
+    monkeypatch.setattr(
+        optional_deps.importlib.util,
+        "find_spec",
+        lambda name: SimpleNamespace(origin="C:/app/python_packages/torch/__init__.py") if name == "torch" else None,
+    )
+    monkeypatch.setattr("importlib.metadata.version", lambda name: "2.12.1+cu128")
+
+    status = optional_deps.kokoro_torch_status_fast()
+
+    assert status["installed"] is True
+    assert status["fast"] is True
+    assert status["valid"] is True
+    assert status["version"] == "2.12.1+cu128"
+
+
+def test_kokoro_torch_status_fast_flags_namespace_torch(monkeypatch):
+    """A namespace-only torch folder is not a usable PyTorch install."""
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    monkeypatch.setattr(
+        optional_deps.importlib.util,
+        "find_spec",
+        lambda name: SimpleNamespace(origin=None) if name == "torch" else None,
+    )
+
+    status = optional_deps.kokoro_torch_status_fast()
+
+    assert status["installed"] is True
+    assert status["valid"] is False
+    assert "incomplete" in status["error"]
+
+
+def test_kokoro_torch_status_subprocess_parses_status(monkeypatch):
+    """Full UI verification should happen in a short-lived process."""
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"installed": true, "valid": true, "cuda_available": true, "version": "2.11.0+cu128"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(optional_deps.subprocess, "run", fake_run)
+
+    status = optional_deps.kokoro_torch_status_subprocess()
+
+    assert status["cuda_available"] is True
+    assert status["version"] == "2.11.0+cu128"
+    assert captured["command"][:4] == [sys.executable, "-m", "runtime.workers.optional_deps_probe", "torch-status"]
+    assert captured["capture_output"] is True
+
+
+def test_kokoro_runtime_status_subprocess_parses_status(monkeypatch):
+    """Kokoro runtime verification should happen in a short-lived process."""
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"installed": true, "valid": true, "origin": "python_packages/kokoro/__init__.py"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(optional_deps.subprocess, "run", fake_run)
+
+    status = optional_deps.kokoro_runtime_import_status_subprocess()
+
+    assert status["valid"] is True
+    assert status["origin"].endswith("kokoro/__init__.py")
+    assert captured["command"][:4] == [
+        sys.executable,
+        "-m",
+        "runtime.workers.optional_deps_probe",
+        "kokoro-runtime-status",
+    ]
+
+
+def test_kokoro_torch_status_flags_incomplete_torch_import(monkeypatch):
+    """Full verification should reject a torch module without the PyTorch API."""
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(__file__="python_packages/torch"))
+
+    status = optional_deps.kokoro_torch_status()
+
+    assert status["installed"] is True
+    assert status["valid"] is False
+    assert "incomplete" in status["error"]
+
+
+def test_kokoro_runtime_import_status_flags_broken_dependency(monkeypatch):
+    """Kokoro verification should catch broken runtime dependencies like regex."""
+    from core import optional_deps
+
+    def fail_import(name, *args, **kwargs):
+        if name == "kokoro":
+            raise AttributeError("module 'regex' has no attribute 'compile'")
+        return original_import(name, *args, **kwargs)
+
+    original_import = __import__
+    monkeypatch.setattr("builtins.__import__", fail_import)
+
+    status = optional_deps.kokoro_runtime_import_status()
+
+    assert status["valid"] is False
+    assert "regex" in status["error"]

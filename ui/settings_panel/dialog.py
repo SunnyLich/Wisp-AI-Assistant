@@ -9,10 +9,13 @@ from __future__ import annotations
 import os
 import sys
 import importlib.util
+import json
 import logging
+import shutil
 import subprocess
 import threading
 import re
+import shlex
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -210,6 +213,11 @@ class _UpdateSignals(QObject):
     done = Signal(object, str)
 
 
+class _TtsInstallStatusSignals(QObject):
+    """Marshals optional TTS package status results back to the Qt main thread."""
+    done = Signal(int, object)
+
+
 def _read_env() -> dict[str, str]:
     """Read env."""
     old_path = settings_env.ENV_PATH
@@ -311,6 +319,12 @@ class SettingsDialog(QDialog):
         self._update_mode = "check"
         self._update_running = False
         self._update_signal_carriers: list[_UpdateSignals] = []
+        self._tts_tab_index = -1
+        self._tts_install_status_checked = False
+        self._tts_install_status_running = False
+        self._tts_install_status_token = 0
+        self._tts_install_status_result: dict[str, object] | None = None
+        self._tts_install_status_signal_carriers: list[_TtsInstallStatusSignals] = []
         self._tabs = None
         self._test_result_timer = QTimer(self)
         self._test_result_timer.setInterval(100)
@@ -327,6 +341,11 @@ class SettingsDialog(QDialog):
         self._refresh_search_index()
         self._schedule_open_status_refresh()
         fit_window_to_screen(self, preferred_width=760, preferred_height=720)
+
+    def _on_settings_tab_changed(self, index: int) -> None:
+        """Run page-specific deferred checks after the user opens that page."""
+        if index == getattr(self, "_tts_tab_index", -1):
+            self._refresh_tts_optional_install_status()
 
     def _save_api_keys_to_keychain(self) -> bool:
         """Persist every typed API key to the OS keychain, one at a time.
@@ -614,10 +633,11 @@ class SettingsDialog(QDialog):
         tabs.setElideMode(Qt.TextElideMode.ElideNone)
         tabs.addTab(self._tab_app(),       "App")
         tabs.addTab(self._tab_llm(),       "LLM")
-        tabs.addTab(self._tab_tts(),       "TTS / Voice")
+        self._tts_tab_index = tabs.addTab(self._tab_tts(), "TTS / Voice")
         tabs.addTab(self._tab_keybinds(),  "Keybinds")
         tabs.addTab(self._tab_prompt(),    "Prompts")
         tabs.addTab(self._tab_advanced(),  "Advanced")
+        tabs.currentChanged.connect(self._on_settings_tab_changed)
         self._tabs = tabs
         self._tab_base_names = [tabs.tabText(i) for i in range(tabs.count())]
         root.addWidget(tabs)
@@ -2796,7 +2816,7 @@ class SettingsDialog(QDialog):
             "Where local Kokoro TTS runs. Auto uses CUDA when Torch can see an NVIDIA GPU and falls back to CPU."
         )
         self._fields["KOKORO_DEVICE"] = kokoro_device
-        kokoro_device.currentIndexChanged.connect(lambda _idx: self._refresh_kokoro_install_status())
+        kokoro_device.currentIndexChanged.connect(lambda _idx: self._handle_kokoro_device_changed())
         self._fields["KOKORO_SPEED"] = QLineEdit()
         self._fields["KOKORO_SPEED"].setPlaceholderText("1.0")
         kokoro_speed_tip = "Speech speed multiplier. 1.0 is normal."
@@ -3011,8 +3031,16 @@ class SettingsDialog(QDialog):
         outer.addWidget(test_card)
 
         self._update_tts_provider_fields()
-        self._refresh_elevenlabs_install_status()
-        self._refresh_kokoro_install_status()
+        self._set_status_label(
+            self._elevenlabs_install_status_lbl,
+            None,
+            "",
+        )
+        self._set_status_label(
+            self._kokoro_install_status_lbl,
+            None,
+            "",
+        )
         outer.addStretch()
         scroll.setWidget(w)
         return scroll
@@ -3033,10 +3061,33 @@ class SettingsDialog(QDialog):
         if isinstance(notice, QLabel):
             notice.setVisible(provider in _TTS_TIMESTAMPLESS_PROVIDERS)
             notice.setText(t(_TTS_TIMING_NOTICE))
-        if provider == "kokoro":
-            self._refresh_kokoro_install_status()
-        elif provider == "elevenlabs":
-            self._refresh_elevenlabs_install_status()
+        if provider in {"kokoro", "elevenlabs"} and self._tts_page_is_current():
+            self._refresh_tts_optional_install_status()
+
+    def _tts_page_is_current(self) -> bool:
+        """Return whether the Settings dialog is currently showing TTS / Voice."""
+        tabs = getattr(self, "_tabs", None)
+        if not isinstance(tabs, QTabWidget):
+            return False
+        return tabs.currentIndex() == getattr(self, "_tts_tab_index", -1)
+
+    def _handle_kokoro_device_changed(self) -> None:
+        """Update Kokoro install UI after device changes without repeating checks."""
+        if not self._tts_page_is_current():
+            return
+        if not self._tts_install_status_checked:
+            self._refresh_tts_optional_install_status()
+            return
+        result = getattr(self, "_tts_install_status_result", None)
+        if isinstance(result, dict):
+            selected = _get(self._fields["KOKORO_DEVICE"]).strip().lower()
+            torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
+            needs_cuda_status = selected == "cuda" or (selected == "auto" and bool(result.get("system_cuda_available")))
+            if needs_cuda_status and bool(torch_status.get("fast")):
+                self._tts_install_status_checked = False
+                self._refresh_tts_optional_install_status()
+                return
+        self._apply_cached_kokoro_install_status()
 
     @staticmethod
     def _optional_package_installed(module_name: str) -> bool:
@@ -3077,7 +3128,7 @@ class SettingsDialog(QDialog):
         try:
             from core import optional_deps
 
-            return optional_deps.kokoro_torch_status()
+            return optional_deps.kokoro_torch_status_subprocess()
         except Exception as exc:  # noqa: BLE001
             return {
                 "installed": False,
@@ -3088,34 +3139,214 @@ class SettingsDialog(QDialog):
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
+    def _kokoro_torch_status_fast(self) -> dict[str, object]:
+        """Return Torch package metadata without importing or verifying Torch."""
+        try:
+            from core import optional_deps
+
+            return optional_deps.kokoro_torch_status_fast()
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "installed": False,
+                "version": "",
+                "cuda_version": "",
+                "cuda_available": False,
+                "device": "",
+                "error": f"{type(exc).__name__}: {exc}",
+                "fast": True,
+                "valid": False,
+            }
+
+    def _kokoro_install_snapshot(self) -> dict[str, object]:
+        """Return a non-blocking Kokoro install snapshot for UI decisions."""
+        installed = self._kokoro_installed()
+        selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
+        selected = selected_device.strip().lower()
+        result = getattr(self, "_tts_install_status_result", None)
+        if isinstance(result, dict) and result.get("ok"):
+            torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
+            system_has_cuda = bool(result.get("system_cuda_available"))
+            installed = bool(result.get("kokoro_installed"))
+        else:
+            torch_status = self._kokoro_torch_status_fast() if installed else {}
+            system_has_cuda = False
+        mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
+        needs_gpu = self._kokoro_needs_gpu_install_from_status(
+            installed=installed,
+            selected_device=selected_device,
+            torch_status=torch_status,
+            system_cuda_available=system_has_cuda,
+        )
+        needs_repair = bool(torch_status and (torch_status.get("error") or torch_status.get("valid") is False))
+        return {
+            "installed": installed,
+            "selected_device": selected_device,
+            "mode": mode,
+            "torch_status": torch_status,
+            "needs_gpu": needs_gpu,
+            "needs_repair": needs_repair,
+            "system_cuda_available": system_has_cuda,
+        }
+
     def _kokoro_needs_gpu_install(self) -> bool:
         """Return whether the selected Kokoro device needs CUDA Torch support."""
-        if not self._kokoro_installed():
+        return bool(self._kokoro_install_snapshot().get("needs_gpu"))
+
+    @staticmethod
+    def _kokoro_needs_gpu_install_from_status(
+        *,
+        installed: bool,
+        selected_device: str,
+        torch_status: dict[str, object],
+        system_cuda_available: bool,
+    ) -> bool:
+        """Return whether selected Kokoro settings need a CUDA Torch install."""
+        selected = selected_device.strip().lower()
+        if not installed or selected == "cpu" or bool(torch_status.get("cuda_available")):
             return False
-        selected = _get(self._fields["KOKORO_DEVICE"]).strip().lower()
-        if selected == "cpu":
+        if torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
+            if selected == "cuda":
+                return True
+            if selected == "auto":
+                return system_cuda_available
             return False
-        torch_status = self._kokoro_torch_status()
-        if bool(torch_status.get("cuda_available")):
+        if bool(torch_status.get("fast")) and bool(torch_status.get("installed")):
+            if selected == "cuda":
+                return True
+            if selected == "auto":
+                return system_cuda_available
             return False
         if selected == "cuda":
             return True
         if selected == "auto":
+            return system_cuda_available
+        return False
+
+    def _refresh_tts_optional_install_status(self) -> None:
+        """Check optional TTS package status in the background for the Voice page."""
+        if getattr(self, "_disposing", False):
+            return
+        if self._tts_install_status_running:
+            return
+        if self._tts_install_status_checked:
+            return
+        label_pairs = (
+            ("_elevenlabs_install_status_lbl", "Checking ElevenLabs install status..."),
+            ("_kokoro_install_status_lbl", "Checking Kokoro install status..."),
+        )
+        for attr, message in label_pairs:
+            label = getattr(self, attr, None)
+            if isinstance(label, QLabel):
+                self._set_status_label(label, None, message)
+        for attr in ("_elevenlabs_install_btn", "_kokoro_install_btn"):
+            button = getattr(self, attr, None)
+            if isinstance(button, QPushButton):
+                button.setEnabled(False)
+
+        self._tts_install_status_running = True
+        self._tts_install_status_token += 1
+        self._tts_install_status_result = None
+        token = self._tts_install_status_token
+        selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
+        carrier = _TtsInstallStatusSignals(self)
+        carrier.done.connect(self._finish_tts_optional_install_status)
+        self._tts_install_status_signal_carriers.append(carrier)
+
+        def _worker() -> None:
             try:
                 from core import optional_deps
 
-                return optional_deps.system_cuda_available()
-            except Exception:
-                return False
-        return False
+                elevenlabs_installed = self._optional_package_installed("elevenlabs")
+                kokoro_installed = all(
+                    self._optional_package_installed(module_name)
+                    for module_name in ("kokoro", "en_core_web_sm")
+                )
+                system_has_cuda = optional_deps.system_cuda_available()
+                selected = selected_device.strip().lower()
+                mode = "gpu" if selected == "auto" and system_has_cuda else (
+                    "gpu" if selected == "cuda" else "cpu"
+                )
+                needs_cuda_status = selected == "cuda" or (selected == "auto" and system_has_cuda)
+                torch_status = (
+                    optional_deps.kokoro_torch_status_subprocess()
+                    if kokoro_installed and needs_cuda_status
+                    else optional_deps.kokoro_torch_status_fast() if kokoro_installed else {}
+                )
+                needs_gpu = self._kokoro_needs_gpu_install_from_status(
+                    installed=kokoro_installed,
+                    selected_device=selected_device,
+                    torch_status=torch_status,
+                    system_cuda_available=system_has_cuda,
+                )
+                result: dict[str, object] = {
+                    "ok": True,
+                    "elevenlabs_installed": elevenlabs_installed,
+                    "kokoro_installed": kokoro_installed,
+                    "kokoro_mode": mode,
+                    "kokoro_torch_status": torch_status,
+                    "kokoro_needs_gpu": needs_gpu,
+                    "system_cuda_available": system_has_cuda,
+                }
+            except Exception as exc:  # noqa: BLE001
+                result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            carrier.done.emit(token, result)
 
-    def _refresh_elevenlabs_install_status(self) -> None:
-        """Refresh ElevenLabs install button and status copy."""
+        threading.Thread(target=_worker, daemon=True, name="settings-tts-install-status").start()
+
+    def _finish_tts_optional_install_status(self, token: int, result: object) -> None:
+        """Apply background optional TTS package status to the Voice page."""
+        if token != getattr(self, "_tts_install_status_token", 0) or getattr(self, "_disposing", False):
+            return
+        self._tts_install_status_running = False
+        self._tts_install_status_checked = True
+        if not isinstance(result, dict) or not result.get("ok"):
+            self._tts_install_status_result = None
+            message = f"Install status check failed: {result.get('error') if isinstance(result, dict) else result}"
+            for attr in ("_elevenlabs_install_status_lbl", "_kokoro_install_status_lbl"):
+                label = getattr(self, attr, None)
+                if isinstance(label, QLabel):
+                    self._set_test_status(label, False, message)
+            for attr in ("_elevenlabs_install_btn", "_kokoro_install_btn"):
+                button = getattr(self, attr, None)
+                if isinstance(button, QPushButton):
+                    button.setEnabled(True)
+            return
+        self._tts_install_status_result = dict(result)
+        self._apply_elevenlabs_install_status(bool(result.get("elevenlabs_installed")))
+        self._apply_cached_kokoro_install_status()
+
+    def _apply_cached_kokoro_install_status(self) -> bool:
+        """Reapply Kokoro install controls from the one Voice-page status check."""
+        result = getattr(self, "_tts_install_status_result", None)
+        if not isinstance(result, dict) or not result.get("ok"):
+            return False
+        selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
+        selected = selected_device.strip().lower()
+        system_has_cuda = bool(result.get("system_cuda_available"))
+        mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
+        torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
+        installed = bool(result.get("kokoro_installed"))
+        needs_gpu = self._kokoro_needs_gpu_install_from_status(
+            installed=installed,
+            selected_device=selected_device,
+            torch_status=torch_status,
+            system_cuda_available=system_has_cuda,
+        )
+        self._apply_kokoro_install_status(
+            installed=installed,
+            mode=mode,
+            torch_status=torch_status,
+            needs_gpu=needs_gpu,
+        )
+        return True
+
+    def _apply_elevenlabs_install_status(self, installed: bool) -> None:
+        """Apply ElevenLabs install state to the settings controls."""
         label = getattr(self, "_elevenlabs_install_status_lbl", None)
         button = getattr(self, "_elevenlabs_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
-        if self._elevenlabs_installed():
+        if installed:
             button.setEnabled(False)
             button.setText(t("ElevenLabs installed"))
             self._set_test_status(label, True, "ElevenLabs is installed.")
@@ -3128,36 +3359,39 @@ class SettingsDialog(QDialog):
                 "ElevenLabs is not installed. If the exe build skipped it because the build path was too long, install it here.",
             )
 
-    def _refresh_kokoro_install_status(self) -> None:
-        """Refresh Kokoro install button and status copy."""
+    def _refresh_elevenlabs_install_status(self) -> None:
+        """Refresh ElevenLabs install button and status copy."""
+        self._apply_elevenlabs_install_status(self._elevenlabs_installed())
+        self._tts_install_status_checked = True
+        self._tts_install_status_result = None
+
+    def _apply_kokoro_install_status(
+        self,
+        *,
+        installed: bool,
+        mode: str,
+        torch_status: dict[str, object],
+        needs_gpu: bool,
+    ) -> None:
+        """Apply Kokoro install state to the settings controls."""
         label = getattr(self, "_kokoro_install_status_lbl", None)
         button = getattr(self, "_kokoro_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
-        installed = self._kokoro_installed()
-        mode = self._kokoro_install_mode()
-        torch_status = self._kokoro_torch_status() if installed else {}
-        needs_gpu = self._kokoro_needs_gpu_install()
-        if installed and needs_gpu:
+        if installed and torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
+            button.setEnabled(True)
+            button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
+            self._set_test_status(label, "warn", "Kokoro install is incomplete. Reinstall Kokoro.")
+        elif installed and needs_gpu:
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support"))
-            selected = _get(self._fields["KOKORO_DEVICE"]).strip().lower()
-            if selected == "cuda":
-                self._set_test_status(
-                    label,
-                    "warn",
-                    "Kokoro is installed, but the selected GPU device needs a CUDA-enabled Torch install.",
-                )
-            else:
-                self._set_test_status(
-                    label,
-                    "warn",
-                    "Kokoro is installed with CPU-only Torch. Auto detected a CUDA-capable system, but Kokoro will use CPU until GPU support is installed.",
-                )
+            self._set_test_status(label, "warn", "Kokoro GPU support is not installed.")
         elif installed:
             button.setEnabled(False)
             button.setText(t("Kokoro installed"))
-            if bool(torch_status.get("cuda_available")):
+            if bool(torch_status.get("fast")):
+                self._set_test_status(label, True, "Kokoro is installed.")
+            elif bool(torch_status.get("cuda_available")):
                 device = str(torch_status.get("device") or "CUDA device")
                 self._set_test_status(label, True, f"Kokoro is installed with GPU support ({device}).")
             else:
@@ -3174,21 +3408,42 @@ class SettingsDialog(QDialog):
             else:
                 self._set_test_status(label, "warn", "Kokoro is not installed.")
 
+    def _refresh_kokoro_install_status(self) -> None:
+        """Refresh Kokoro install button and status copy."""
+        snapshot = self._kokoro_install_snapshot()
+        self._apply_kokoro_install_status(
+            installed=bool(snapshot.get("installed")),
+            mode=str(snapshot.get("mode") or "cpu"),
+            torch_status=snapshot.get("torch_status") if isinstance(snapshot.get("torch_status"), dict) else {},
+            needs_gpu=bool(snapshot.get("needs_gpu")),
+        )
+        self._tts_install_status_checked = True
+        self._tts_install_status_result = None
+
     def _install_kokoro(self) -> None:
         """Confirm and install optional Kokoro dependencies into Wisp's Python."""
         from core import optional_deps
 
-        installed = self._kokoro_installed()
-        needs_gpu = self._kokoro_needs_gpu_install()
-        if installed and not needs_gpu:
+        snapshot = self._kokoro_install_snapshot()
+        installed = bool(snapshot.get("installed"))
+        needs_gpu = bool(snapshot.get("needs_gpu"))
+        needs_repair = bool(snapshot.get("needs_repair"))
+        if installed and not needs_gpu and not needs_repair:
             self._refresh_kokoro_install_status()
             return
         voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
         lang_code = _get(self._fields["KOKORO_LANG_CODE"]).strip() or "a"
         device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
-        mode = optional_deps.kokoro_install_mode_for_device(device)
+        mode = str(snapshot.get("mode") or "cpu")
+        install_device = "cuda" if mode == "gpu" else "cpu"
+        pre_install_packages = optional_deps.kokoro_torch_install_packages(install_device)
+        packages = optional_deps.kokoro_install_packages(install_device)
+        if installed and needs_gpu and not needs_repair:
+            packages = []
         package_label = t(
-            "kokoro>=0.9.4, soundfile, CUDA-enabled Torch, English speech model"
+            "CUDA-enabled Torch"
+            if installed and needs_gpu and not needs_repair
+            else "kokoro>=0.9.4, soundfile, CUDA-enabled Torch, English speech model"
             if mode == "gpu"
             else "kokoro>=0.9.4, soundfile, English speech model"
         )
@@ -3242,7 +3497,8 @@ class SettingsDialog(QDialog):
         self._install_optional_tts_package(
             test_key="kokoro_install",
             display_name="Kokoro",
-            packages=optional_deps.kokoro_install_packages(device),
+            packages=packages,
+            pre_install_packages=pre_install_packages,
             button_attr="_kokoro_install_btn",
             status_attr="_kokoro_install_status_lbl",
             success_message=(
@@ -3251,8 +3507,15 @@ class SettingsDialog(QDialog):
                 else "Kokoro installed and local voice is ready."
             ),
             thread_name="kokoro-install",
+            external_plan_extra={
+                "post_install": "kokoro_prepare",
+                "kokoro_voice": voice,
+                "kokoro_require_gpu": mode == "gpu",
+                "pre_install_packages": pre_install_packages,
+            },
             post_install=lambda progress, write_log: self._prepare_kokoro_after_install(
                 voice=voice,
+                require_gpu=mode == "gpu",
                 progress=progress,
                 write_log=write_log,
             ),
@@ -3262,18 +3525,33 @@ class SettingsDialog(QDialog):
     def _prepare_kokoro_after_install(
         *,
         voice: str,
+        require_gpu: bool = False,
         progress: Callable[[str], None],
         write_log: Callable[[str], None],
     ) -> tuple[bool, str]:
         """Download Kokoro runtime assets after pip install succeeds."""
         try:
+            from core import optional_deps
             from core import tts
 
-            progress("Installing Kokoro: preparing local voice assets.")
+            progress("Installing Kokoro: preparing local voice assets for 0s.")
             write_log("[kokoro install] Preparing Kokoro model and voice assets.")
             paths = tts.prepare_kokoro_assets(voice=voice)
             for name, path in sorted(paths.items()):
                 write_log(f"[kokoro install] Prepared {name}: {path}")
+            runtime_status = optional_deps.kokoro_runtime_import_status_subprocess()
+            if runtime_status.get("error") or runtime_status.get("valid") is False:
+                detail = str(runtime_status.get("error") or "Kokoro runtime import failed.")
+                return False, f"Kokoro installed, but runtime verification failed: {detail}"
+            torch_status = optional_deps.kokoro_torch_status_subprocess()
+            if torch_status.get("error") or torch_status.get("valid") is False:
+                detail = str(torch_status.get("error") or "Torch verification failed.")
+                return False, f"Kokoro installed, but Torch verification failed: {detail}"
+            if require_gpu and not torch_status.get("cuda_available"):
+                write_log("[kokoro install] CUDA Torch verification failed.")
+                return False, "Kokoro installed, but CUDA Torch verification failed."
+            if require_gpu:
+                return True, "Kokoro GPU support installed and local voice is ready."
             return True, "Kokoro installed and local voice is ready."
         except Exception as exc:  # noqa: BLE001
             write_log(f"[kokoro install] Voice preparation failed: {type(exc).__name__}: {exc}")
@@ -3315,19 +3593,85 @@ class SettingsDialog(QDialog):
             thread_name="elevenlabs-install",
         )
 
+    def _try_launch_external_optional_tts_install(
+        self,
+        *,
+        test_key: str,
+        display_name: str,
+        packages: list[str],
+        pre_install_packages: list[str] | None = None,
+        button_attr: str,
+        status_attr: str,
+        external_plan_extra: dict[str, object] | None = None,
+    ) -> bool:
+        """Launch an optional TTS install in a separate terminal when possible."""
+        if os.environ.get("WISP_OPTIONAL_INSTALL_INLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+            return False
+        if getattr(sys, "frozen", False):
+            return False
+        status = getattr(self, status_attr, None)
+        button = getattr(self, button_attr, None)
+        if not isinstance(status, QLabel):
+            return False
+        try:
+            from core import optional_deps
+
+            root = Path(__file__).resolve().parents[2]
+            script_path = root / "scripts" / "optional_tts_installer.py"
+            if not script_path.exists():
+                return False
+            log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+            plan_path = log_path.with_suffix(".plan.json")
+            plan = {
+                "display_name": display_name,
+                "packages": packages,
+                "pre_install_packages": pre_install_packages or [],
+                "log_path": str(log_path),
+                **(external_plan_extra or {}),
+            }
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            command = [sys.executable, str(script_path), "--plan", str(plan_path)]
+            if not _launch_terminal_command(command, cwd=root, title=f"Wisp {display_name} installer"):
+                return False
+        except Exception as exc:  # noqa: BLE001
+            self._set_test_status(status, "warn", f"Installer window could not be opened; continuing inside Settings: {exc}")
+            return False
+
+        if isinstance(button, QPushButton):
+            button.setEnabled(False)
+            button.setText(t(f"Installing {display_name}..."))
+        self._set_test_pending(
+            status,
+            "Installer opened in a terminal window. It will close automatically when it finishes.",
+        )
+        return True
+
     def _install_optional_tts_package(
         self,
         *,
         test_key: str,
         display_name: str,
         packages: list[str],
+        pre_install_packages: list[str] | None = None,
         button_attr: str,
         status_attr: str,
         success_message: str,
         thread_name: str,
+        external_plan_extra: dict[str, object] | None = None,
         post_install: Callable[[Callable[[str], None], Callable[[str], None]], tuple[bool, str]] | None = None,
     ) -> None:
         """Install optional TTS packages into Wisp's user package folder."""
+        if self._try_launch_external_optional_tts_install(
+            test_key=test_key,
+            display_name=display_name,
+            packages=packages,
+            pre_install_packages=pre_install_packages,
+            button_attr=button_attr,
+            status_attr=status_attr,
+            external_plan_extra=external_plan_extra,
+        ):
+            return
         button = getattr(self, button_attr, None)
         if isinstance(button, QPushButton):
             button.setEnabled(False)
@@ -3347,19 +3691,16 @@ class SettingsDialog(QDialog):
             """Install optional packages with pip into Wisp's user package folder."""
             from core import optional_deps
 
-            command = optional_deps.pip_install_command(packages)
             log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
             log_prefix = f"[{display_name.lower()} install]"
-            print(f"{log_prefix} Running: {' '.join(command)}", flush=True)
-            _settings_log.info("Installing %s with command: %s", display_name, command)
-            _progress(f"Installing {display_name}: starting installer. Log: {log_path}")
             tail: list[str] = []
-            last_progress = f"Installing {display_name}: starting installer. Log: {log_path}"
+            last_progress = f"Installing {display_name}: starting installer."
             started_at = time.monotonic()
             last_output_at = {"value": started_at}
             stop_heartbeat = threading.Event()
             no_output_timeout = _optional_install_no_output_timeout_seconds()
             stopped_reason = {"value": ""}
+            current_process: dict[str, subprocess.Popen | None] = {"value": None}
 
             def _write_log(line: str) -> None:
                 try:
@@ -3373,15 +3714,16 @@ class SettingsDialog(QDialog):
                 while not stop_heartbeat.wait(20.0):
                     elapsed = int(time.monotonic() - started_at)
                     quiet = int(time.monotonic() - last_output_at["value"])
-                    _progress(_optional_install_elapsed_text(display_name, elapsed, quiet, log_path))
-                    if no_output_timeout > 0 and quiet >= no_output_timeout and process.poll() is None:
+                    _progress(_optional_install_elapsed_text(display_name, elapsed, quiet))
+                    process = current_process["value"]
+                    if no_output_timeout > 0 and process is not None and quiet >= no_output_timeout and process.poll() is None:
                         reason = (
                             f"Installer produced no output for {_format_duration(quiet)} "
                             f"after: {tail[-1] if tail else 'starting installer'}"
                         )
                         stopped_reason["value"] = reason
                         _write_log(f"{log_prefix} {reason}; stopping installer.")
-                        _progress(f"Installing {display_name}: stalled; stopping installer. Log: {log_path}.")
+                        _progress(f"Installing {display_name}: stalled; stopping installer.")
                         try:
                             process.terminate()
                             process.wait(timeout=5)
@@ -3392,46 +3734,68 @@ class SettingsDialog(QDialog):
                                 pass
                         return
 
-            _write_log(f"{log_prefix} Running: {' '.join(command)}")
-            try:
-                process = subprocess.Popen(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    env=optional_deps.pip_install_env(),
-                )
-            except Exception as exc:
-                print(f"{log_prefix} Failed to start installer: {exc}", flush=True)
-                _settings_log.exception("%s install could not start installer", display_name)
-                _write_log(f"{log_prefix} Failed to start installer: {exc}")
-                return False, f"{display_name} install failed: {exc}"
-            assert process.stdout is not None
-            print(f"{log_prefix} installer started with pid {process.pid}", flush=True)
-            _write_log(f"{log_prefix} installer started with pid {process.pid}")
+            commands = []
+            if pre_install_packages:
+                commands.append(("installing CUDA Torch", optional_deps.pip_install_command(pre_install_packages, reinstall=True)))
+            if packages:
+                commands.append(("installing packages", optional_deps.pip_install_command(packages)))
+            if not commands:
+                return False, f"No packages selected for {display_name} install."
+
             threading.Thread(target=_heartbeat, daemon=True, name=f"{display_name.lower()}-install-heartbeat").start()
+            returncode = 0
             try:
-                for raw_line in process.stdout:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    last_output_at["value"] = time.monotonic()
-                    print(f"{log_prefix} {line}", flush=True)
-                    _write_log(f"{log_prefix} {line}")
-                    _settings_log.info("%s install: %s", display_name, line)
-                    tail.append(line)
-                    tail = tail[-30:]
-                    progress_message = _optional_install_progress_text(line, display_name)
-                    if progress_message != last_progress:
-                        _progress(progress_message)
-                        last_progress = progress_message
-                returncode = process.wait()
+                for phase, command in commands:
+                    _progress(f"Installing {display_name}: {phase}.")
+                    print(f"{log_prefix} Running: {' '.join(command)}", flush=True)
+                    _settings_log.info("Installing %s with command: %s", display_name, command)
+                    _write_log(f"{log_prefix} Running: {' '.join(command)}")
+                    try:
+                        process = subprocess.Popen(
+                            command,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            bufsize=1,
+                            env=optional_deps.pip_install_env(),
+                            **optional_deps.subprocess_no_window_kwargs(),
+                        )
+                    except Exception as exc:
+                        print(f"{log_prefix} Failed to start installer: {exc}", flush=True)
+                        _settings_log.exception("%s install could not start installer", display_name)
+                        _write_log(f"{log_prefix} Failed to start installer: {exc}")
+                        return False, f"{display_name} install failed: {exc}"
+                    assert process.stdout is not None
+                    current_process["value"] = process
+                    print(f"{log_prefix} installer started with pid {process.pid}", flush=True)
+                    _write_log(f"{log_prefix} installer started with pid {process.pid}")
+                    for raw_line in process.stdout:
+                        line = raw_line.strip()
+                        if not line:
+                            continue
+                        last_output_at["value"] = time.monotonic()
+                        print(f"{log_prefix} {line}", flush=True)
+                        _write_log(f"{log_prefix} {line}")
+                        _settings_log.info("%s install: %s", display_name, line)
+                        tail.append(line)
+                        tail = tail[-30:]
+                        progress_message = _optional_install_progress_text(line, display_name)
+                        if progress_message != last_progress:
+                            _progress(progress_message)
+                            last_progress = progress_message
+                    returncode = process.wait()
+                    current_process["value"] = None
+                    if returncode != 0:
+                        break
             finally:
+                current_process["value"] = None
                 stop_heartbeat.set()
             if returncode == 0:
                 importlib.invalidate_caches()
                 optional_deps.add_optional_packages_to_path()
+                post_install_message = ""
                 if post_install is not None:
                     prepare_started_at = time.monotonic()
                     prepare_stop = threading.Event()
@@ -3441,7 +3805,7 @@ class SettingsDialog(QDialog):
                             elapsed = int(time.monotonic() - prepare_started_at)
                             _progress(
                                 f"Installing {display_name}: preparing local voice assets for "
-                                f"{_format_duration(elapsed)}. Log: {log_path}."
+                                f"{_format_duration(elapsed)}."
                             )
 
                     threading.Thread(
@@ -3455,13 +3819,16 @@ class SettingsDialog(QDialog):
                         prepare_stop.set()
                     if not ok:
                         return False, message
+                    post_install_message = message
                 print(f"{log_prefix} Completed successfully.", flush=True)
                 _write_log(f"{log_prefix} Completed successfully.")
-                return True, success_message
+                _progress(f"Installing {display_name}: completed successfully.")
+                return True, post_install_message or success_message
             detail = _optional_install_failure_detail(tail)
             if stopped_reason["value"]:
                 detail = stopped_reason["value"]
             _write_log(f"{log_prefix} Failed with exit code {returncode}: {detail}")
+            _progress(f"{display_name} install failed: {detail}")
             return False, f"{display_name} install failed: {detail}"
 
         def _worker() -> None:
@@ -5682,6 +6049,8 @@ class SettingsDialog(QDialog):
     def _cancel_async_ui_updates(self) -> None:
         """Cancel async ui updates."""
         self._cancel_status_refresh()
+        self._tts_install_status_token = int(getattr(self, "_tts_install_status_token", 0) or 0) + 1
+        self._tts_install_status_running = False
         self._running_test_tokens.clear()
         self._latest_test_token.clear()
         with self._pending_test_results_lock:
@@ -5858,7 +6227,10 @@ class SettingsDialog(QDialog):
         with self._pending_test_results_lock:
             pending = list(self._pending_test_results)
             self._pending_test_results.clear()
+        latest_progress: dict[tuple[str, int], str] = {}
         for test_key, token, message in progress:
+            latest_progress[(test_key, token)] = message
+        for (test_key, token), message in latest_progress.items():
             if self._latest_test_token.get(test_key) != token:
                 continue
             label = getattr(self, f"_{test_key}_status_lbl", None)
@@ -7431,6 +7803,27 @@ def _translate_status_value(value: str) -> str:
     return text
 
 
+def _translate_install_detail(detail: str) -> str:
+    """Translate dynamic optional-installer detail text while preserving values."""
+    text = str(detail or "")
+    dynamic_patterns: tuple[tuple[str, str], ...] = (
+        (
+            r"^still running for (?P<elapsed>.+); no installer output for (?P<quiet>.+)$",
+            "still running for {elapsed}; no installer output for {quiet}",
+        ),
+        (r"^still running for (?P<elapsed>.+)$", "still running for {elapsed}"),
+        (
+            r"^preparing local voice assets for (?P<elapsed>.+)$",
+            "preparing local voice assets for {elapsed}",
+        ),
+    )
+    for pattern, template in dynamic_patterns:
+        match = re.match(pattern, text)
+        if match:
+            return t(template).format(**match.groupdict())
+    return t(text)
+
+
 def _kokoro_install_progress_text(line: str) -> str:
     """Return a short user-facing install phase for a raw pip output line."""
     return _optional_install_progress_text(line, "Kokoro")
@@ -7459,13 +7852,13 @@ def _optional_install_progress_text(line: str, display_name: str) -> str:
     return f"Installing {display_name}: {detail}."
 
 
-def _optional_install_elapsed_text(display_name: str, elapsed_seconds: int, quiet_seconds: int, log_path: Path) -> str:
+def _optional_install_elapsed_text(display_name: str, elapsed_seconds: int, quiet_seconds: int) -> str:
     """Return a heartbeat status while an optional dependency install is running."""
     elapsed = _format_duration(elapsed_seconds)
     if quiet_seconds >= 60:
-        detail = f"still running for {elapsed}; no installer output for {_format_duration(quiet_seconds)}. Log: {log_path}"
+        detail = f"still running for {elapsed}; no installer output for {_format_duration(quiet_seconds)}"
     else:
-        detail = f"still running for {elapsed}. Log: {log_path}"
+        detail = f"still running for {elapsed}"
     return f"Installing {display_name}: {detail}."
 
 
@@ -7481,12 +7874,17 @@ def _optional_install_log_path(display_name: str, optional_packages_dir: Path) -
 
 
 def _optional_install_no_output_timeout_seconds() -> int:
-    """Return how long an optional installer may be silent before Wisp stops it."""
-    raw = os.environ.get("WISP_OPTIONAL_INSTALL_NO_OUTPUT_TIMEOUT_SECONDS", "300")
+    """Return how long an optional installer may be silent before Wisp stops it.
+
+    A value of 0 disables the watchdog. Python package installs can be silent
+    for several minutes while resolving or downloading large wheels, so the
+    default is to keep reporting elapsed time instead of killing the installer.
+    """
+    raw = os.environ.get("WISP_OPTIONAL_INSTALL_NO_OUTPUT_TIMEOUT_SECONDS", "0")
     try:
         return max(0, int(float(raw)))
     except (TypeError, ValueError):
-        return 300
+        return 0
 
 
 def _format_duration(seconds: int) -> str:
@@ -7521,6 +7919,52 @@ def _collapse_spaces(text: str) -> str:
     return " ".join(str(text or "").split())
 
 
+def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bool:
+    """Launch a command in a user-visible terminal window."""
+    try:
+        if sys.platform == "win32":
+            inner = subprocess.list2cmdline(command)
+            quoted_cwd = subprocess.list2cmdline([str(cwd)])
+            cmdline = (
+                f"title {title} & chcp 65001 > nul & cd /d {quoted_cwd} & "
+                f"{inner}"
+            )
+            flags = int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0) or 0)
+            subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], cwd=str(cwd), creationflags=flags)
+            return True
+        if sys.platform == "darwin":
+            command_text = f"cd {shlex.quote(str(cwd))}; {shlex.join(command)}; exit"
+            script = (
+                f"set commandText to {json.dumps(command_text)}\n"
+                "tell application \"Terminal\"\n"
+                "  set targetTab to do script commandText\n"
+                "  repeat while busy of targetTab\n"
+                "    delay 1\n"
+                "  end repeat\n"
+                "  try\n"
+                "    close (window of targetTab) saving no\n"
+                "  end try\n"
+                "end tell"
+            )
+            subprocess.Popen(["osascript", "-e", script], cwd=str(cwd))
+            return True
+        shell_cmd = f"cd {shlex.quote(str(cwd))}; {shlex.join(command)}"
+        terminal_candidates = (
+            ("x-terminal-emulator", ["x-terminal-emulator", "-e", "sh", "-lc", shell_cmd]),
+            ("gnome-terminal", ["gnome-terminal", "--", "sh", "-lc", shell_cmd]),
+            ("konsole", ["konsole", "-e", "sh", "-lc", shell_cmd]),
+            ("xfce4-terminal", ["xfce4-terminal", "-e", f"sh -lc {shlex.quote(shell_cmd)}"]),
+            ("xterm", ["xterm", "-e", "sh", "-lc", shell_cmd]),
+        )
+        for executable, terminal_command in terminal_candidates:
+            if shutil.which(executable):
+                subprocess.Popen(terminal_command, cwd=str(cwd))
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _translate_status_message(message: str) -> str:
     """Handle translate status message for UI settings panel dialog."""
     text = str(message or "")
@@ -7537,8 +7981,12 @@ def _translate_status_message(message: str) -> str:
         (r"^Microphone permission: (?P<value>.+)\.$", "Microphone permission: {value}."),
         (r"^LLM test failed: (?P<message>.+)$", "LLM test failed: {message}"),
         (r"^Kokoro install failed: (?P<message>.+)$", "Kokoro install failed: {message}"),
+        (r"^Kokoro installed, but runtime verification failed: (?P<message>.+)$", "Kokoro installed, but runtime verification failed: {message}"),
+        (r"^Kokoro installed, but Torch verification failed: (?P<message>.+)$", "Kokoro installed, but Torch verification failed: {message}"),
+        (r"^ElevenLabs install failed: (?P<message>.+)$", "ElevenLabs install failed: {message}"),
         (r"^Kokoro is installed with GPU support \((?P<device>.+)\)\.$", "Kokoro is installed with GPU support ({device})."),
         (r"^Installing Kokoro: (?P<detail>.+)\.$", "Installing Kokoro: {detail}."),
+        (r"^Installing ElevenLabs: (?P<detail>.+)\.$", "Installing ElevenLabs: {detail}."),
         (r"^LLM route uses (?P<provider>.+) but you are not logged in\.$", "LLM route uses {provider} but you are not logged in."),
     )
     for pattern, template in dynamic_patterns:
@@ -7550,7 +7998,7 @@ def _translate_status_message(message: str) -> str:
             if "value" in groups:
                 groups["value"] = _translate_status_value(groups["value"])
             if "detail" in groups:
-                groups["detail"] = t(groups["detail"])
+                groups["detail"] = _translate_install_detail(groups["detail"])
             return t(template).format(**groups)
     for prefix in (
         "Error reading status: ",

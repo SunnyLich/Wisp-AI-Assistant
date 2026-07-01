@@ -559,6 +559,11 @@ def _import_kokoro_pipeline():
         raise RuntimeError(
             "Kokoro support is not installed. Open Settings > Voice and click Install Kokoro."
         ) from exc
+    except Exception as exc:
+        _kokoro_diag(f"Kokoro import failed: {type(exc).__name__}: {exc}")
+        raise RuntimeError(
+            "Kokoro support failed to import. Open Settings > Voice and reinstall Kokoro."
+        ) from exc
 
 
 def _get_kokoro_pipeline():

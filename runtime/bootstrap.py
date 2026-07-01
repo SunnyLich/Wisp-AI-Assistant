@@ -82,9 +82,10 @@ def install_crash_diagnostics() -> None:
         if args.exc_type in (SystemExit, KeyboardInterrupt):
             return
         name = args.thread.name if args.thread else "<unknown>"
+        exc_traceback = getattr(args, "exc_traceback", None) or getattr(args, "exc_tb", None)
         sys.stderr.write(
             f"[crash] unhandled exception in thread {name}:\n"
-            + "".join(_traceback.format_exception(args.exc_type, args.exc_value, args.exc_tb))
+            + "".join(_traceback.format_exception(args.exc_type, args.exc_value, exc_traceback))
         )
         sys.stderr.flush()
 

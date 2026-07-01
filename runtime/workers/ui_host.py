@@ -175,6 +175,7 @@ _NOTICE_DYNAMIC_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^Couldn't start recording: (?P<message>.+)$", "Couldn't start recording: {message}"),
     (r"^Couldn't start dictation: (?P<message>.+)$", "Couldn't start dictation: {message}"),
     (r"^Could not read selected text: (?P<message>.+)$", "Could not read selected text: {message}"),
+    (r"^Preparing local voice\.\.\. (?P<detail>.+)$", "Preparing local voice... {detail}"),
     (r"^Local speech warmup failed: (?P<message>.+)$", "Local speech warmup failed: {message}"),
 )
 
@@ -205,7 +206,7 @@ def _is_speech_status_notice(text: str) -> bool:
     lowered = " ".join(str(text or "").lower().split())
     if not lowered or "failed" in lowered or "error:" in lowered:
         return False
-    status_terms = ("ready", "warming up", "warmup", "still warming")
+    status_terms = ("ready", "warming up", "warmup", "still warming", "preparing")
     speech_terms = (
         "tts",
         "stt",
@@ -2085,6 +2086,8 @@ class QtProtocolHost:
             return self._reply_transcript(**params)
         if method == "ui.reply.reading":
             return self._reply_reading(**params)
+        if method == "ui.reply.labeled_text":
+            return self._reply_labeled_text(**params)
         if method == "ui.voice.candidates":
             return self._voice_candidates(**params)
         if method == "ui.health.show":
@@ -2576,7 +2579,7 @@ class QtProtocolHost:
         self._ensure_bubble().schedule_words(words, start_ms)
         return {"scheduled": len(words)}
 
-    def _reply_notice(self, text: str = "", timeout_ms: int = 12000) -> dict[str, Any]:
+    def _reply_notice(self, text: str = "", timeout_ms: int = 12000, key: str = "") -> dict[str, Any]:
         """Handle reply notice for qt protocol host."""
         # Mirror whatever the bubble shows into the runtime log so notices and
         # errors aren't on-screen only. Log the untranslated source (collapsed to
@@ -2585,11 +2588,19 @@ class QtProtocolHost:
         log.info("bubble notice: %s", collapsed or "(empty)")
         translated = _translate_notice_text(text)
         bubble = self._ensure_bubble()
+        notice_key = str(key or "").strip()
+        if notice_key and getattr(self, "_active_notice_key", "") == notice_key and not bubble.isVisible():
+            log.info("suppressed dismissed keyed notice %s: %s", notice_key, collapsed or "(empty)")
+            return {"shown": False, "text": translated, "reason": "dismissed", "key": notice_key}
         if _is_speech_status_notice(text) and _bubble_has_active_prompt_reply(bubble):
             log.info("suppressed speech status notice during active reply: %s", collapsed or "(empty)")
             return {"shown": False, "text": translated, "reason": "active_reply"}
         bubble.show_notice(translated, timeout_ms=timeout_ms)
-        return {"shown": True, "text": translated}
+        if notice_key:
+            self._active_notice_key = notice_key
+        else:
+            self._active_notice_key = ""
+        return {"shown": True, "text": translated, "key": notice_key} if notice_key else {"shown": True, "text": translated}
 
     def _reply_transcript(self, text: str = "") -> dict[str, Any]:
         """Handle reply transcript for qt protocol host."""
@@ -2600,6 +2611,29 @@ class QtProtocolHost:
         """Show selected text that is being read aloud."""
         self._ensure_bubble().show_reading(text)
         return {"shown": bool((text or "").strip()), "text": text}
+
+    def _reply_labeled_text(
+        self,
+        label: str = "",
+        text: str = "",
+        timeout_ms: int = 0,
+        cancel_on_close: bool = True,
+    ) -> dict[str, Any]:
+        """Show labeled bubble text whose label is not counted as reply content."""
+        clean_text = str(text or "").strip()
+        clean_label = str(label or "").strip()
+        self._ensure_bubble().show_labeled_text(
+            clean_label,
+            clean_text,
+            timeout_ms=int(timeout_ms or 0),
+            cancel_on_close=bool(cancel_on_close),
+        )
+        return {
+            "shown": bool(clean_text),
+            "label": clean_label,
+            "text": clean_text,
+            "label_excluded_from_reply": True,
+        }
 
     def _voice_candidates(
         self,
@@ -2997,19 +3031,25 @@ class QtProtocolHost:
                         file_context = []
                         tool_context = {}
                         context_snippets = []
+                        annotations = []
+                        user_annotations = []
                         if isinstance(payload, dict):
                             final_text = str(payload.get("text") or "")
                             file_context = list(payload.get("file_context") or [])
                             tool_context = self._normalized_tool_context(payload.get("tool_context") or {})
                             context_snippets = list(payload.get("context_snippets") or [])
+                            annotations = list(payload.get("annotations") or [])
+                            user_annotations = list(payload.get("user_annotations") or [])
                         elif payload is not None:
                             final_text = str(payload)
-                        if file_context or tool_context or context_snippets:
+                        if file_context or tool_context or context_snippets or annotations or user_annotations:
                             yield {
                                 "type": "metadata",
                                 "file_context": file_context,
                                 "tool_context": tool_context,
                                 "context_snippets": context_snippets,
+                                "annotations": annotations,
+                                "user_annotations": user_annotations,
                             }
                         if final_text and final_text != streamed_text:
                             yield {"type": "final", "text": final_text}
@@ -3068,6 +3108,8 @@ class QtProtocolHost:
         file_context: list | None = None,
         tool_context: dict | None = None,
         context_snippets: list | None = None,
+        annotations: list | None = None,
+        user_annotations: list | None = None,
     ) -> dict[str, Any]:
         """Handle chat done for qt protocol host."""
         stream = self._chat_stream(request_id)
@@ -3080,6 +3122,8 @@ class QtProtocolHost:
                         "file_context": list(file_context or []),
                         "tool_context": self._normalized_tool_context(tool_context or {}),
                         "context_snippets": list(context_snippets or []),
+                        "annotations": list(annotations or []),
+                        "user_annotations": list(user_annotations or []),
                     },
                 )
             )
@@ -3272,6 +3316,8 @@ class QtProtocolHost:
         file_context: list | None = None,
         tool_context: dict | None = None,
         context_policy: dict | None = None,
+        user_annotations: list | None = None,
+        assistant_annotations: list | None = None,
         append_user: bool = True,
         conversation_index: int | None = None,
     ) -> dict[str, Any]:
@@ -3313,12 +3359,16 @@ class QtProtocolHost:
         context_text = str(context or "").strip()
         if context_text:
             user_msg["context"] = context_text
+        if user_annotations:
+            user_msg["annotations"] = list(user_annotations)
         assistant_msg = {
             "id": str(_uuid.uuid4()),
             "role": "assistant",
             "content": assistant,
             "created_at": now,
         }
+        if assistant_annotations:
+            assistant_msg["annotations"] = list(assistant_annotations)
         normalized_file_context = self._normalized_file_context(file_context or [])
         normalized_tool_context = self._normalized_tool_context(tool_context or {})
         if normalized_file_context:
@@ -3376,6 +3426,7 @@ class QtProtocolHost:
         image_base64: str | None = None,
         attachments: list | None = None,
         context_policy: dict | None = None,
+        user_annotations: list | None = None,
     ) -> dict[str, Any]:
         """Persist a user chat turn as soon as a prompt is submitted."""
         result = self._chat_add_conversation(
@@ -3385,6 +3436,7 @@ class QtProtocolHost:
             image_base64=image_base64,
             attachments=attachments,
             context_policy=context_policy,
+            user_annotations=user_annotations,
             append_user=True,
         )
         idx = self._active_conversation_idx

@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -928,6 +929,7 @@ class ChatWindow(QWidget):
         self._current_ai_reply_text = ""
         self._current_ai_segments: list[tuple[str, bool]] = []
         self._current_ai_parser: ThoughtStreamParser | None = None
+        self._current_ai_annotations: list[dict] = []
         self._current_file_context: list[dict] = []
         self._current_tool_context: dict = {}
         self._current_context_snippets: list[dict] = []
@@ -1467,6 +1469,7 @@ class ChatWindow(QWidget):
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
         self._current_ai_parser = ThoughtStreamParser()
+        self._current_ai_annotations = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
@@ -1503,6 +1506,7 @@ class ChatWindow(QWidget):
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
         self._current_ai_parser = None
+        self._current_ai_annotations = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
@@ -2303,6 +2307,17 @@ class ChatWindow(QWidget):
             f" border: 1px solid {_BORDER}; }}"
             f"QMenu::item:selected {{ background: {_SEL_BG}; }}"
         )
+        selected_text = ""
+        if anchor is not None:
+            text_view = anchor.findChild(_MessageTextView)
+            if isinstance(text_view, _MessageTextView):
+                selected_text = text_view.textCursor().selectedText().replace("\u2029", "\n").strip()
+        if selected_text:
+            menu.addAction(
+                t("Copy selected text"),
+                lambda text=selected_text: QApplication.clipboard().setText(text),
+            )
+            menu.addSeparator()
         menu.addAction(
             t("Branch from here"),
             lambda ci=conversation_index, mi=message_index: self._branch_from_message(ci, mi),
@@ -2675,6 +2690,7 @@ class ChatWindow(QWidget):
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
         self._current_ai_parser = ThoughtStreamParser()
+        self._current_ai_annotations = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
@@ -2777,6 +2793,11 @@ class ChatWindow(QWidget):
             self._current_file_context = _normalized_file_context(item.get("file_context") or [])
             self._current_tool_context = _normalized_tool_context(item.get("tool_context") or {})
             self._current_context_snippets = _normalized_context_snippets(item.get("context_snippets") or [])
+            self._current_ai_annotations = list(item.get("annotations") or [])
+            if self._current_user_message is not None:
+                user_annotations = list(item.get("user_annotations") or [])
+                if user_annotations:
+                    self._current_user_message["annotations"] = user_annotations
 
     def request_live_file_approval(self, request: dict) -> dict:
         """Show a file-tool approval request inline in the active chat."""
@@ -2947,6 +2968,8 @@ class ChatWindow(QWidget):
             stamp = _touch_conversation(conv)
             message = {"role": "assistant", "content": self._current_ai_reply_text, "created_at": stamp}
             _ensure_message_metadata(message, fallback_created_at=stamp)
+            if self._current_ai_annotations:
+                message["annotations"] = list(self._current_ai_annotations)
             if self._current_ai_text != self._current_ai_reply_text:
                 message["display_content"] = self._current_ai_text
             if self._current_file_context:
@@ -2961,11 +2984,21 @@ class ChatWindow(QWidget):
                     self._persist_fn()
                 except Exception:
                     pass
+            if self._current_ai_label is not None and self._current_ai_annotations:
+                display_text = _truncate_for_display(
+                    self._current_ai_reply_text,
+                    _CHAT_RENDER_CHAR_LIMIT,
+                    "chat display",
+                )
+                self._current_ai_label.setHtml(
+                    _assistant_text_to_html(display_text, annotations=self._current_ai_annotations)
+                )
         self._current_ai_label = None
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
         self._current_ai_parser = None
+        self._current_ai_annotations = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []

@@ -94,6 +94,9 @@ class SpeechBubble(QWidget):
         self._finishing = False   # True after finish() while WPM timer still draining words
         self._pending_words: list[str] = []
         self._revealed_count = 0
+        self._highlight_index_offset = 0
+        self._display_label_prefix = ""
+        self._highlight_callback_text = ""
         self._timestamp_mode = False      # True = driven by Cartesia timestamps
         self._audio_started = False       # True after first PCM chunk reaches playback
         self._speech_tracking_pending = False  # True after TTS is queued but before audio starts
@@ -383,6 +386,9 @@ class SpeechBubble(QWidget):
         self._reply_chunk_count = 0
         self._pending_words = []
         self._revealed_count = 0
+        self._highlight_index_offset = 0
+        self._display_label_prefix = ""
+        self._highlight_callback_text = ""
         self._manual_scroll_start = None
         self._reveal_mode = False
         self._audio_started = False
@@ -444,7 +450,7 @@ class SpeechBubble(QWidget):
             self._reveal_mode = True
             self._timestamp_mode = False
             self._revealed_count = 0
-            self._full_text = self._join_reveal_units(self._pending_words)
+            self._sync_full_text_from_pending_words()
             self._lines = []
             self._all_line_segments = []
             self._line_segments = []
@@ -511,7 +517,7 @@ class SpeechBubble(QWidget):
             return
         if word and self._revealed_count >= len(self._pending_words):
             self._pending_words.extend(self._reveal_units(word))
-            self._full_text = self._join_reveal_units(self._pending_words)
+            self._sync_full_text_from_pending_words()
         if self._revealed_count < len(self._pending_words):
             self._revealed_count += 1
         self._rewrap()
@@ -539,6 +545,9 @@ class SpeechBubble(QWidget):
             self._transcript_preview = False
             self._pending_words = []
             self._full_text = ""
+            self._highlight_index_offset = 0
+            self._display_label_prefix = ""
+            self._highlight_callback_text = ""
             self._revealed_count = 0
             self._manual_scroll_start = None
             self._reply_chunk_count = 0
@@ -557,6 +566,9 @@ class SpeechBubble(QWidget):
             self.update()
             return
         self._reply_chunk_count += 1
+        self._highlight_index_offset = 0
+        self._display_label_prefix = ""
+        self._highlight_callback_text = ""
         new_words = self._reveal_units(chunk)
         if new_words:
             # If this chunk starts mid-word (no leading space) and the previous
@@ -642,6 +654,9 @@ class SpeechBubble(QWidget):
         self._highlight_generation += 1
         self._pending_words = []
         self._revealed_count = 0
+        self._highlight_index_offset = 0
+        self._display_label_prefix = ""
+        self._highlight_callback_text = ""
         self._manual_scroll_start = None
         self._pre_audio_timestamps = []
         self._thinking = False
@@ -676,15 +691,33 @@ class SpeechBubble(QWidget):
         text = (text or "").strip()
         if not text:
             return
-        self._show_static_text(f"{t('Heard')}: {text}", timeout_ms=0, cancel_on_close=False)
+        self.show_labeled_text(t("Heard"), text, timeout_ms=0, cancel_on_close=False)
         self._transcript_preview = True
 
     def show_reading(self, text: str):
         """Show selected text being read aloud, with the normal stop affordance."""
-        text = (text or "").strip()
-        if not text:
+        self.show_labeled_text(t("Reading"), text, timeout_ms=0, cancel_on_close=True)
+
+    def show_labeled_text(
+        self,
+        label: str,
+        text: str,
+        *,
+        timeout_ms: int = 0,
+        cancel_on_close: bool = True,
+    ) -> None:
+        """Show ``Label: text`` while excluding the label from reply/highlight counts."""
+        body = (text or "").strip()
+        if not body:
             return
-        self._show_static_text(f"{t('Reading')}: {text}", timeout_ms=0, cancel_on_close=True)
+        label_text = (label or "").strip()
+        prefix = f"{label_text}: " if label_text else ""
+        self._show_static_text(
+            f"{prefix}{body}",
+            timeout_ms=timeout_ms,
+            cancel_on_close=cancel_on_close,
+            label_prefix=prefix,
+        )
 
     def show_progress(self, text: str):
         """Show a transient progress status (e.g. "Using tools...").
@@ -705,6 +738,7 @@ class SpeechBubble(QWidget):
         timeout_ms: int = 12000,
         actions: list[tuple[str, Callable[[], None]]] | None = None,
         cancel_on_close: bool = False,
+        label_prefix: str = "",
     ):
         """Show static text."""
         self._hide_timer.stop()
@@ -729,8 +763,17 @@ class SpeechBubble(QWidget):
             self._set_notice_action_size()
         else:
             self._restore_base_size()
-        self._pending_words = self._reveal_units(text)
-        self._revealed_count = len(self._pending_words)
+        prefix = str(label_prefix or "")
+        body_text = text
+        if prefix and text.startswith(prefix):
+            body_text = text[len(prefix):]
+        else:
+            prefix = ""
+        self._display_label_prefix = prefix
+        self._highlight_index_offset = len(self._reveal_units(prefix))
+        self._highlight_callback_text = body_text if prefix else ""
+        self._pending_words = self._reveal_units(body_text)
+        self._revealed_count = 0 if prefix else len(self._pending_words)
         self._full_text = text
         self._layout_action_buttons()
         self._rewrap()
@@ -752,7 +795,14 @@ class SpeechBubble(QWidget):
     def _emit_highlight(self, finished: bool = False):
         """Emit highlight."""
         if self._highlight_callback:
-            self._highlight_callback(self._full_text, self._revealed_count, finished)
+            text = self._highlight_callback_text or self._full_text
+            self._highlight_callback(text, self._revealed_count, finished)
+
+    def _sync_full_text_from_pending_words(self) -> None:
+        """Rebuild visible text from reveal units without counting the display prefix."""
+        body = self._join_reveal_units(self._pending_words)
+        self._highlight_callback_text = body if self._display_label_prefix else ""
+        self._full_text = f"{self._display_label_prefix}{body}" if self._display_label_prefix else body
 
     def _close_rect(self) -> QRect:
         """Return the top-right close/stop hit target inside the bubble body."""
@@ -943,7 +993,10 @@ class SpeechBubble(QWidget):
         if not reply_indexes:
             return max(0, len(lines) - visible_lines)
 
-        target_idx = min(self._revealed_count - 1, max(reply_indexes))
+        target_idx = min(
+            self._highlight_index_offset + self._revealed_count - 1,
+            max(reply_indexes),
+        )
         target_line = 0
         for line_idx, line in enumerate(lines):
             if any(reply_idx == target_idx for _word, _bold, reply_idx, _is_thought, _sb in line):
@@ -1213,7 +1266,12 @@ class SpeechBubble(QWidget):
                 for idx, (word, bold, word_idx, is_thought, space_before) in enumerate(line):
                     if idx and space_before:
                         x += self._space_w
-                    is_read = (not is_thought) and word_idx is not None and word_idx < self._revealed_count
+                    is_read = (
+                        not is_thought
+                        and word_idx is not None
+                        and word_idx >= self._highlight_index_offset
+                        and word_idx < self._highlight_index_offset + self._revealed_count
+                    )
                     font = self._bold_font if (bold and not is_thought) else self._font
                     fm = self._bold_fm if (bold and not is_thought) else self._fm
                     word_w = fm.horizontalAdvance(word)

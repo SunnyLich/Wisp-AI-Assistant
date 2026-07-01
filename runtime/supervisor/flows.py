@@ -592,12 +592,9 @@ class FlowController:
         items = set((data or {}).get("items") or [])
         if not items:
             return
-        if "tts" in items and "stt" in items:
-            text = "Warming up local voice and speech recognition..."
-        elif "tts" in items:
-            text = "Warming up local voice..."
-        else:
-            text = "Warming up local speech recognition..."
+        if "tts" in items:
+            return
+        text = "Warming up local speech recognition..."
         self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 0}, timeout=30.0)
 
     def _on_audio_warmup_progress(self, data: dict[str, Any], _req_id: Any = None) -> None:
@@ -607,8 +604,12 @@ class FlowController:
         items = set((data or {}).get("items") or [])
         if item not in {"stt", "tts"} or not status:
             return
+        if "tts" in items and item == "stt":
+            return
         label = "speech recognition" if item == "stt" else "local voice"
         if status == "started":
+            if item == "tts":
+                return
             text = f"Warming up {label}..."
             self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 0}, timeout=30.0)
             return
@@ -617,10 +618,9 @@ class FlowController:
                 self.ui,
                 "ui.reply.notice",
                 {
-                    "text": t("Preparing local voice... {detail}").format(
-                        detail=status.removeprefix("preparing ")
-                    ),
+                    "text": f"Preparing local voice... {status.removeprefix('preparing ')}",
                     "timeout_ms": 0,
+                    "key": "audio-warmup",
                 },
                 timeout=30.0,
             )
@@ -633,9 +633,6 @@ class FlowController:
                 timeout=30.0,
             )
             return
-        if status == "ok" and item == "stt" and "tts" in items:
-            text = "Speech recognition is ready. Warming up local voice..."
-            self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 0}, timeout=30.0)
 
     def _on_audio_warmup_done(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Tell the user local speech warmup finished."""
@@ -1588,10 +1585,13 @@ class FlowController:
             return
 
         done_seen = False
+        done_payload: dict[str, Any] = {}
+        user_text = self._latest_message_text(messages, role="user")
+        user_annotations = self._chat_text_annotations(user_text, role="user")
 
         def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
             """Handle event events."""
-            nonlocal done_seen
+            nonlocal done_seen, done_payload
             if event == "reply.chunk":
                 self._safe_call(
                     self.ui,
@@ -1606,22 +1606,11 @@ class FlowController:
                 )
             elif event == "reply.done":
                 done_seen = True
+                done_payload = dict(payload or {}) if isinstance(payload, dict) else {}
                 self._emit_file_context_progress(
                     list((payload or {}).get("file_context") or []),
                     chat_request_id=request_id,
                     include_bubble=False,
-                )
-                self._safe_call(
-                    self.ui,
-                    "ui.chat.done",
-                    {
-                        "request_id": request_id,
-                        "text": str((payload or {}).get("text") or ""),
-                        "file_context": list((payload or {}).get("file_context") or []),
-                        "tool_context": tool_context,
-                        "context_snippets": context_snippets,
-                    },
-                    timeout=30.0,
                 )
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
@@ -1676,10 +1665,13 @@ class FlowController:
                 timeout=self._interactive_llm_timeout_seconds(chat_params),
                 on_event=on_event,
             )
+            final_payload = done_payload if done_seen else (result if isinstance(result, dict) else {})
+            text = str((final_payload or {}).get("text") or "")
+            file_context = list((final_payload or {}).get("file_context") or [])
+            annotations = self._chat_text_annotations(text, role="assistant")
             if not done_seen:
-                text = str((result or {}).get("text") or "")
                 self._emit_file_context_progress(
-                    list((result or {}).get("file_context") or []),
+                    file_context,
                     chat_request_id=request_id,
                     include_bubble=False,
                 )
@@ -1690,18 +1682,20 @@ class FlowController:
                         {"request_id": request_id, "text": text},
                         timeout=30.0,
                     )
-                self._safe_call(
-                    self.ui,
-                    "ui.chat.done",
-                    {
-                        "request_id": request_id,
-                        "text": text,
-                        "file_context": list((result or {}).get("file_context") or []),
-                        "tool_context": tool_context,
-                        "context_snippets": context_snippets,
-                    },
-                    timeout=30.0,
-                )
+            self._safe_call(
+                self.ui,
+                "ui.chat.done",
+                {
+                    "request_id": request_id,
+                    "text": text,
+                    "file_context": file_context,
+                    "tool_context": tool_context,
+                    "context_snippets": context_snippets,
+                    "annotations": annotations,
+                    "user_annotations": user_annotations,
+                },
+                timeout=30.0,
+            )
         except Exception as exc:  # noqa: BLE001
             log.exception("chat request failed")
             self._safe_call(
@@ -2340,6 +2334,7 @@ class FlowController:
             log.exception("failed to fetch active conversation history")
 
         context_policy = params.pop("context_policy", {})
+        user_annotations = self._chat_text_annotations(prompt, role="user")
         try:
             begin_result = self._safe_call(
                 self.ui,
@@ -2349,6 +2344,7 @@ class FlowController:
                     "context": chat_context,
                     "image_base64": params.get("screenshot_b64"),
                     "context_policy": context_policy,
+                    "user_annotations": user_annotations,
                 },
                 timeout=30.0,
             )
@@ -2402,6 +2398,7 @@ class FlowController:
         privacy_report = (result or {}).get("privacy_report") if isinstance(result, dict) else None
         self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
         self._last_reply = text
+        assistant_annotations = self._chat_text_annotations(text, role="assistant")
         bubble_cancelled = self._reply_bubble_cancelled(gen)
         if early_chat_index is not None:
             self._safe_call(
@@ -2418,6 +2415,7 @@ class FlowController:
                             "file_access_mode": params.get("file_access_mode") or "",
                         }
                     ),
+                    "annotations": assistant_annotations,
                 },
                 timeout=30.0,
             )
@@ -2446,6 +2444,8 @@ class FlowController:
                     "file_context": file_context,
                     "tool_context": tool_context,
                     "context_policy": context_policy,
+                    "user_annotations": user_annotations if early_chat_index is None else [],
+                    "assistant_annotations": assistant_annotations,
                     "append_user": early_chat_index is None,
                     "conversation_index": early_chat_index,
                 },
@@ -2589,6 +2589,8 @@ class FlowController:
                         "assistant": visible_text,
                         "context": chat_context,
                         "context_policy": query_params.get("context_policy") or {},
+                        "user_annotations": self._chat_text_annotations(prompt, role="user"),
+                        "assistant_annotations": self._chat_text_annotations(visible_text, role="assistant"),
                     },
                 timeout=30.0,
             )
@@ -3644,6 +3646,41 @@ class FlowController:
             if name and name not in {tool["name"] for tool in payloads}:
                 payloads.append({"name": name, "description": description})
         return payloads
+
+    def _chat_text_annotations(self, text: str, *, role: str) -> list[dict[str, Any]]:
+        """Return display-only chat annotations from the brain-owned addon manager."""
+        text = str(text or "")
+        if not text.strip():
+            return []
+        payload = {
+            "text": text,
+            "surface": "chat",
+            "role": str(role or ""),
+        }
+        try:
+            result = self._safe_call(
+                self.brain,
+                "brain.addons.text_annotations",
+                {"payload": payload},
+                timeout=3.0,
+            ) or {}
+        except Exception:
+            return []
+        annotations = result.get("annotations") if isinstance(result, dict) else []
+        if not isinstance(annotations, list):
+            return []
+        return [item for item in annotations if isinstance(item, dict)]
+
+    @staticmethod
+    def _latest_message_text(messages: list, *, role: str) -> str:
+        """Return the newest message content matching role."""
+        target = str(role or "").lower()
+        for item in reversed(messages or []):
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("role") or "").lower() == target:
+                return str(item.get("content") or "")
+        return ""
 
     def _chat_tool_policy(self, caller: dict[str, Any]) -> tuple[list[str], list[str], str]:
         """Return chat tool grants from the visible chat/caller policy."""
