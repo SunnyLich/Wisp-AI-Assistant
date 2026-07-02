@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 NO_RECORD_MARKER = "error: uninstall-no-record-file"
@@ -108,6 +110,49 @@ def _recovery_spec(args: list[str], output: str) -> str:
     return ""
 
 
+def _metadata_roots() -> list[Path]:
+    roots: list[Path] = []
+    candidates = [
+        sysconfig.get_path("purelib"),
+        sysconfig.get_path("platlib"),
+        *sys.path,
+    ]
+    for raw_path in candidates:
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        if path.name not in {"site-packages", "dist-packages"}:
+            continue
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved.is_dir() and resolved not in roots:
+            roots.append(resolved)
+    return roots
+
+
+def _metadata_dir_matches_package(path: Path, package_name: str) -> bool:
+    if path.suffix != ".dist-info":
+        return False
+    normalized_stem = _normalize_name(path.name.removesuffix(".dist-info"))
+    return normalized_stem == package_name or normalized_stem.startswith(f"{package_name}-")
+
+
+def _remove_broken_metadata_dirs(package_name: str) -> int:
+    removed = 0
+    for root in _metadata_roots():
+        for metadata_dir in root.iterdir():
+            if not metadata_dir.is_dir() or not _metadata_dir_matches_package(metadata_dir, package_name):
+                continue
+            if (metadata_dir / "RECORD").exists():
+                continue
+            print(f"Removing broken package metadata without RECORD: {metadata_dir}", flush=True)
+            shutil.rmtree(metadata_dir)
+            removed += 1
+    return removed
+
+
 def _run_pip_install(args: list[str]) -> tuple[int, str]:
     command = [sys.executable, "-m", "pip", "install", *args]
     process = subprocess.Popen(
@@ -158,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Stopped after {MAX_RECOVERY_ATTEMPTS} metadata repairs.", flush=True)
             return returncode
 
+        _remove_broken_metadata_dirs(package_name)
         if _run_recovery(spec) != 0:
             return returncode
         repaired.add(package_name)
