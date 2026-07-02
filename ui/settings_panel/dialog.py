@@ -3440,12 +3440,13 @@ class SettingsDialog(QDialog):
         packages = optional_deps.kokoro_install_packages(install_device)
         if installed and needs_gpu and not needs_repair:
             packages = []
-        package_label = t(
-            "CUDA-enabled Torch"
+        base_package_label = f"{optional_deps.KOKORO_PACKAGE}, {optional_deps.SOUNDFILE_PACKAGE}"
+        package_label = (
+            t("CUDA-enabled Torch")
             if installed and needs_gpu and not needs_repair
-            else "kokoro>=0.9.4, soundfile, CUDA-enabled Torch, English speech model"
+            else f"{base_package_label}, {t('CUDA-enabled Torch')}, {t('English speech model')}"
             if mode == "gpu"
-            else "kokoro>=0.9.4, soundfile, English speech model"
+            else f"{base_package_label}, {t('English speech model')}"
         )
         storage_note = t(
             "The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. "
@@ -3566,13 +3567,15 @@ class SettingsDialog(QDialog):
         if self._elevenlabs_installed():
             self._refresh_elevenlabs_install_status()
             return
+        from core import optional_deps
+
         message = t(
             "Wisp will install ElevenLabs support into its user-writable optional packages folder.\n\n"
-            "Package: elevenlabs>=1.0.0\n\n"
+            "Package: {package}\n\n"
             "Use this when the packaged exe skipped ElevenLabs because the build path was too long. "
             "The install may need internet access and will survive Wisp rebuilds.\n\n"
             "Continue?"
-        )
+        ).format(package=optional_deps.ELEVENLABS_PACKAGE)
         answer = QMessageBox.question(
             self,
             t("Install ElevenLabs"),
@@ -3586,7 +3589,7 @@ class SettingsDialog(QDialog):
         self._install_optional_tts_package(
             test_key="elevenlabs_install",
             display_name="ElevenLabs",
-            packages=["elevenlabs>=1.0.0"],
+            packages=[optional_deps.ELEVENLABS_PACKAGE],
             button_attr="_elevenlabs_install_btn",
             status_attr="_elevenlabs_install_status_lbl",
             success_message="ElevenLabs installed. Add your API key, then click Test TTS.",

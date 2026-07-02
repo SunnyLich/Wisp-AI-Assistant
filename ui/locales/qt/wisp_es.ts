@@ -3335,6 +3335,14 @@ Continuar?</translation>
       <translation>kokoro&gt;=0.9.4, soundfile, Torch con CUDA, modelo de voz en inglés</translation>
     </message>
     <message>
+      <source>CUDA-enabled Torch</source>
+      <translation>Torch con CUDA</translation>
+    </message>
+    <message>
+      <source>English speech model</source>
+      <translation>modelo de voz en inglés</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, English speech model</source>
       <translation>kokoro&gt;=0.9.4, soundfile, modelo de voz en inglés</translation>
     </message>
@@ -4268,6 +4276,26 @@ Continue?</source>
 Paquete: elevenlabs&gt;=1.0.0
 
 Usa esto cuando el exe empaquetado haya omitido ElevenLabs porque la ruta de compilación era demasiado larga. La instalación puede necesitar acceso a internet y se conservará tras las recompilaciones de Wisp.
+
+¿Continuar?</translation>
+    </message>
+    <message>
+      <source>Package: {package}</source>
+      <translation>Paquete: {package}</translation>
+    </message>
+    <message>
+      <source>Wisp will install ElevenLabs support into its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp instalará el soporte de ElevenLabs en su carpeta de paquetes opcionales escribible por el usuario.
+
+Paquete: {package}
+
+Usa esto cuando el exe empaquetado haya omitido ElevenLabs porque la ruta de compilación era demasiado larga. La instalación puede necesitar acceso a internet y sobrevivirá a reconstrucciones de Wisp.
 
 ¿Continuar?</translation>
     </message>

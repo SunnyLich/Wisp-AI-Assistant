@@ -3335,6 +3335,14 @@ Continue?</source>
       <translation>kokoro&gt;=0.9.4、soundfile、启用 CUDA 的 Torch、英语语音模型</translation>
     </message>
     <message>
+      <source>CUDA-enabled Torch</source>
+      <translation>启用 CUDA 的 Torch</translation>
+    </message>
+    <message>
+      <source>English speech model</source>
+      <translation>英语语音模型</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, English speech model</source>
       <translation>kokoro&gt;=0.9.4、soundfile、英语语音模型</translation>
     </message>
@@ -4266,6 +4274,26 @@ Continue?</source>
       <translation>Wisp 会将 ElevenLabs 支持安装到其用户可写的可选包文件夹中。
 
 包：elevenlabs&gt;=1.0.0
+
+当打包的 exe 因构建路径过长而跳过 ElevenLabs 时可使用此功能。安装可能需要联网，并会在 Wisp 重新构建后保留。
+
+是否继续？</translation>
+    </message>
+    <message>
+      <source>Package: {package}</source>
+      <translation>包：{package}</translation>
+    </message>
+    <message>
+      <source>Wisp will install ElevenLabs support into its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 会将 ElevenLabs 支持安装到其用户可写的可选包文件夹中。
+
+包：{package}
 
 当打包的 exe 因构建路径过长而跳过 ElevenLabs 时可使用此功能。安装可能需要联网，并会在 Wisp 重新构建后保留。
 

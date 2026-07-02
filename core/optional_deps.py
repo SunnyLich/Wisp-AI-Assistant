@@ -28,12 +28,26 @@ KOKORO_EN_MODEL_URL = (
     "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 )
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
-KOKORO_BASE_INSTALL_PACKAGES = ["kokoro>=0.9.4", "soundfile", KOKORO_EN_MODEL_URL]
+OPTIONAL_AI_COMPAT_PACKAGES = [
+    "protobuf==6.33.2",
+    "tokenizers==0.23.0",
+    "setuptools==81.0.0",
+]
+KOKORO_PACKAGE = "kokoro==0.9.4"
+SOUNDFILE_PACKAGE = "soundfile==0.14.0"
+ELEVENLABS_PACKAGE = "elevenlabs==2.55.0"
+KOKORO_BASE_INSTALL_PACKAGES = [
+    KOKORO_PACKAGE,
+    SOUNDFILE_PACKAGE,
+    *OPTIONAL_AI_COMPAT_PACKAGES,
+    KOKORO_EN_MODEL_URL,
+]
 KOKORO_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
 KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
     "--index-url",
     PYTORCH_CUDA_WHEEL_INDEX,
-    "torch",
+    "torch==2.12.0",
+    *OPTIONAL_AI_COMPAT_PACKAGES,
 ]
 KOKORO_GPU_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
 

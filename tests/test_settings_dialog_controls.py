@@ -336,7 +336,7 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
             dialog,
             test_key="kokoro_install",
             display_name="Kokoro",
-            packages=["kokoro>=0.9.4"],
+            packages=["kokoro==0.9.4"],
             button_attr="_kokoro_install_btn",
             status_attr="_kokoro_install_status_lbl",
             external_plan_extra={"post_install": "kokoro_prepare", "kokoro_voice": "af_heart"},
@@ -348,7 +348,7 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
         assert isinstance(command, list)
         assert command[-2] == "--plan"
         plan = Path(command[-1]).read_text(encoding="utf-8")
-        assert '"kokoro>=0.9.4"' in plan
+        assert '"kokoro==0.9.4"' in plan
         assert '"post_install": "kokoro_prepare"' in plan
         assert "close automatically" in dialog._kokoro_install_status_lbl.text()
     finally:
@@ -847,7 +847,7 @@ def test_kokoro_install_progress_text_classifies_pip_output():
         _optional_install_progress_text,
     )
 
-    assert _kokoro_install_progress_text("Collecting kokoro>=0.9.4") == (
+    assert _kokoro_install_progress_text("Collecting kokoro==0.9.4") == (
         "Installing Kokoro: resolving packages."
     )
     assert _kokoro_install_progress_text("Downloading torch-2.9.0.whl") == (
@@ -864,9 +864,9 @@ def test_kokoro_install_progress_text_classifies_pip_output():
     )
     assert _optional_install_failure_detail([
         "[notice] A new pip is available",
-        "ERROR: Could not find a version that satisfies the requirement kokoro>=0.9.4",
+        "ERROR: Could not find a version that satisfies the requirement kokoro==0.9.4",
     ]) == (
-        "Last installer message: ERROR: Could not find a version that satisfies the requirement kokoro>=0.9.4"
+        "Last installer message: ERROR: Could not find a version that satisfies the requirement kokoro==0.9.4"
     )
     log_path = _optional_install_log_path("Kokoro", Path("python_packages"))
     assert log_path.name == "kokoro-install.log"
@@ -1329,8 +1329,8 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
 
         assert captured["packages"] == optional_deps.kokoro_install_packages("cuda")
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
-        assert "torch" in captured["pre_install_packages"]
-        assert "torch" not in captured["packages"]
+        assert "torch==2.12.0" in captured["pre_install_packages"]
+        assert "torch==2.12.0" not in captured["packages"]
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():

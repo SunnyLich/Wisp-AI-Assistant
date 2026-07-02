@@ -13,7 +13,7 @@ github-copilot-sdk>=0.1.0 # GitHub Copilot SDK bridge (imports as copilot)
 
 # --- TTS ---
 cartesia[websockets]>=3.0.2  # Cartesia streaming TTS (~75ms TTFT); [websockets] extra required for WebSocket streaming
-elevenlabs>=1.0.0         # alternative TTS provider exposed in Settings
+elevenlabs==2.55.0        # alternative TTS provider exposed in Settings
 
 # --- Audio ---
 sounddevice>=0.5.5        # audio output + microphone input
@@ -45,3 +45,10 @@ python-pptx>=1.0.0        # read .pptx files for read_active_document tool
 pypdf>=5.0.0              # read .pdf files (fallback when liteparse unavailable)
 liteparse>=2.0.0         # fast native PDF text extraction (PDFium); pypdf is the fallback
 odfpy>=1.4.1              # read LibreOffice .odt/.ods/.odp files
+
+# --- Shared compatibility pins ---
+# These are pulled transitively by STT/runtime packages but must stay compatible
+# with optional local AI packages that may already share the source checkout venv.
+protobuf==6.33.2          # opentelemetry-proto requires protobuf<7,>=5
+tokenizers==0.23.0        # transformers 5.x currently requires tokenizers<=0.23.0
+setuptools==81.0.0        # torch 2.12 requires setuptools<82

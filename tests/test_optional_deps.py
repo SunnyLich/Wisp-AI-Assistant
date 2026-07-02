@@ -53,14 +53,14 @@ def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
     monkeypatch.setattr(optional_deps.sys, "frozen", False, raising=False)
     monkeypatch.setattr(optional_deps.sys, "executable", sys.executable)
 
-    command = optional_deps.pip_install_command(["elevenlabs>=1.0.0"])
+    command = optional_deps.pip_install_command([optional_deps.ELEVENLABS_PACKAGE])
 
     assert command[:4] == [sys.executable, "-m", "pip", "install"]
     assert "--progress-bar=raw" in command
     assert "--upgrade" not in command
     assert "--force-reinstall" not in command
     assert command[command.index("--target") + 1] == str(target)
-    assert command[-1] == "elevenlabs>=1.0.0"
+    assert command[-1] == optional_deps.ELEVENLABS_PACKAGE
 
 
 def test_optional_deps_dev_reinstall_can_force_replacement(monkeypatch, tmp_path):
@@ -97,14 +97,17 @@ def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
     monkeypatch.setattr(optional_deps.sys, "executable", str(tmp_path / "Wisp.exe"))
     monkeypatch.setattr(optional_deps.shutil, "which", lambda _name: "")
 
-    command = optional_deps.pip_install_command(["kokoro>=0.9.4", "soundfile"])
+    command = optional_deps.pip_install_command([
+        optional_deps.KOKORO_PACKAGE,
+        optional_deps.SOUNDFILE_PACKAGE,
+    ])
 
     assert command[:3] == [str(uv), "pip", "install"]
     assert "-m" not in command
     assert "--reinstall" not in command
     assert "--python-version" in command
     assert command[command.index("--target") + 1] == str(target)
-    assert command[-2:] == ["kokoro>=0.9.4", "soundfile"]
+    assert command[-2:] == [optional_deps.KOKORO_PACKAGE, optional_deps.SOUNDFILE_PACKAGE]
 
 
 def test_optional_deps_frozen_reinstall_can_force_replacement(monkeypatch, tmp_path):
@@ -141,7 +144,7 @@ def test_optional_deps_frozen_install_explains_missing_uv(monkeypatch, tmp_path)
     monkeypatch.setattr(optional_deps.shutil, "which", lambda _name: "")
 
     try:
-        optional_deps.pip_install_command(["kokoro>=0.9.4"])
+        optional_deps.pip_install_command([optional_deps.KOKORO_PACKAGE])
     except RuntimeError as exc:
         message = str(exc)
     else:
@@ -178,7 +181,7 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
             {
                 "display_name": "Kokoro",
                 "packages": [],
-                "pre_install_packages": ["--index-url", "https://download.pytorch.org/whl/cu128", "torch"],
+                "pre_install_packages": ["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.12.0"],
                 "log_path": str(log_path),
             }
         ),
@@ -193,7 +196,7 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
     )
 
     assert optional_tts_installer.main() == 0
-    assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch"], True)]
+    assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.12.0"], True)]
 
 
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):
@@ -241,8 +244,16 @@ def test_kokoro_install_includes_persistent_english_g2p_model():
     """The target install must avoid spaCy downloading into the frozen runtime."""
     from core import optional_deps
 
-    assert optional_deps.KOKORO_INSTALL_PACKAGES[:2] == ["kokoro>=0.9.4", "soundfile"]
-    assert optional_deps.KOKORO_INSTALL_PACKAGES[2].endswith(
+    assert optional_deps.KOKORO_INSTALL_PACKAGES[:2] == [
+        optional_deps.KOKORO_PACKAGE,
+        optional_deps.SOUNDFILE_PACKAGE,
+    ]
+    assert optional_deps.OPTIONAL_AI_COMPAT_PACKAGES == [
+        "protobuf==6.33.2",
+        "tokenizers==0.23.0",
+        "setuptools==81.0.0",
+    ]
+    assert optional_deps.KOKORO_INSTALL_PACKAGES[-1].endswith(
         "/en_core_web_sm-3.8.0-py3-none-any.whl"
     )
 
@@ -257,10 +268,11 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
     assert torch_packages == [
         "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
-        "torch",
+        "torch==2.12.0",
+        *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
     ]
-    assert "kokoro>=0.9.4" in packages
-    assert "torch" not in packages
+    assert optional_deps.KOKORO_PACKAGE in packages
+    assert "torch==2.12.0" not in packages
     assert any(str(item).endswith("/en_core_web_sm-3.8.0-py3-none-any.whl") for item in packages)
 
 
@@ -271,8 +283,8 @@ def test_kokoro_auto_install_selects_gpu_when_cuda_detected(monkeypatch):
     monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: True)
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "gpu"
-    assert "torch" in optional_deps.kokoro_torch_install_packages("auto")
-    assert "torch" not in optional_deps.kokoro_install_packages("auto")
+    assert "torch==2.12.0" in optional_deps.kokoro_torch_install_packages("auto")
+    assert "torch==2.12.0" not in optional_deps.kokoro_install_packages("auto")
 
 
 def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
@@ -283,7 +295,7 @@ def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "cpu"
     assert optional_deps.kokoro_torch_install_packages("auto") == []
-    assert "torch" not in optional_deps.kokoro_install_packages("auto")
+    assert "torch==2.12.0" not in optional_deps.kokoro_install_packages("auto")
 
 
 def test_system_cuda_available_does_not_import_ctranslate2(monkeypatch):
