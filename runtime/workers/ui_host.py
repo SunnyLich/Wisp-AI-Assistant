@@ -2502,6 +2502,8 @@ class QtProtocolHost:
         """Return the frontmost non-Wisp macOS window bounds, if available."""
         if sys.platform != "darwin":
             return None
+        if os.environ.get("WISP_MACOS_UI_QUARTZ_SNIP_APP_REGION") != "1":
+            return None
         try:
             import Quartz  # type: ignore
 

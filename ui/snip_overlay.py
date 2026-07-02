@@ -48,6 +48,7 @@ class SnipOverlay(QWidget):
         self._virtual_origin = vg.topLeft()
 
         self._t_created = time.monotonic()
+        self._closed = False
         self._first_paint_logged = False
         self._origin: QPoint | None = None
         self._mode = "area"
@@ -264,6 +265,8 @@ class SnipOverlay(QWidget):
 
     def focus_for_capture(self) -> None:
         """Make the snip overlay the immediate keyboard and mouse target."""
+        if self._closed or not self.isVisible():
+            return
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
@@ -278,6 +281,7 @@ class SnipOverlay(QWidget):
 
     def _unhook(self):
         """Handle unhook for snip overlay."""
+        self._closed = True
         try:
             self.releaseKeyboard()
         except Exception:
@@ -286,3 +290,8 @@ class SnipOverlay(QWidget):
             self.releaseMouse()
         except Exception:
             pass
+
+    def closeEvent(self, event):  # noqa: N802
+        """Release native grabs before Qt destroys the overlay."""
+        self._unhook()
+        super().closeEvent(event)

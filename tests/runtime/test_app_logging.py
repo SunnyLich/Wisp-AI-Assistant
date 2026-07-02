@@ -228,6 +228,87 @@ def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
     assert not (tmp_path / "build_logs").exists()
 
 
+def test_main_restarts_ui_worker_after_nonzero_exit(tmp_path, monkeypatch):
+    """Verify an unexpected UI worker exit is restarted before app shutdown."""
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
+    monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: True)
+    instances = []
+
+    class FakeWorker:
+        """Fake worker that records restart and call activity."""
+        def __init__(self):
+            """Initialize the fake worker."""
+            self.exit_handlers = []
+            self.calls = []
+            self.restart_calls = 0
+
+        def on_exit(self, handler):
+            """Store exit handler."""
+            self.exit_handlers.append(handler)
+
+        def on_event(self, _event, _handler):
+            """Ignore event handlers."""
+            pass
+
+        def call(self, method, _params=None, *, timeout=30.0, wait=True):
+            """Record calls and return a fake response."""
+            self.calls.append({"method": method, "timeout": timeout, "wait": wait})
+            return {"started": True, "pong": method == "ui.ping"}
+
+        def restart(self):
+            """Record restart requests."""
+            self.restart_calls += 1
+
+    class FakeSupervisor:
+        """Fake supervisor."""
+        def __init__(self):
+            """Initialize fake supervisor."""
+            self.workers = {
+                "native": FakeWorker(),
+                "ui": FakeWorker(),
+                "brain": FakeWorker(),
+                "audio": FakeWorker(),
+            }
+            self.shutdown_called = False
+            instances.append(self)
+
+        def start_all(self):
+            """No-op start."""
+            return {}
+
+        def shutdown(self):
+            """Record shutdown."""
+            self.shutdown_called = True
+
+    class FakeFlowController:
+        """Fake flow controller that simulates a crash followed by a clean exit."""
+        def __init__(self, *, native, ui, brain, audio):
+            """Initialize fake flow controller."""
+            self.ui = ui
+
+        def start(self):
+            """Emit UI crash and later clean exit."""
+            for handler in list(self.ui.exit_handlers):
+                handler(9)
+                handler(0)
+
+        def start_hotkeys(self):
+            """No-op hotkeys."""
+            return {"started": True}
+
+    monkeypatch.setattr(supervisor_app, "WispSupervisor", FakeSupervisor)
+    monkeypatch.setattr(supervisor_app, "FlowController", FakeFlowController)
+
+    assert supervisor_app.main() == 0
+    ui = instances[0].workers["ui"]
+    assert ui.restart_calls == 1
+    assert [call["method"] for call in ui.calls] == ["ui.ping", "ui.reply.notice"]
+    assert instances[0].shutdown_called is True
+    assert not list((tmp_path / "build_logs").glob("wisp_crash_*/supervisor-crash.log"))
+
+
 def test_main_writes_crash_log_when_ui_worker_exits_nonzero(tmp_path, monkeypatch):
     """Verify normal mode writes logs only after an abrupt UI worker exit."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)

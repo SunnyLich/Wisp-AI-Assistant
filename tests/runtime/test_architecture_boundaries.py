@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from runtime.boundaries import ROLE_FORBIDDEN_PREFIXES
+from runtime.boundaries import ROLE_FORBIDDEN_PREFIXES, loaded_forbidden
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,6 +40,15 @@ def test_ui_host_does_not_import_native_audio_or_ml_at_module_top():
     ]
     for needle in forbidden:
         assert needle not in imports
+
+
+def test_ui_boundary_forbids_pynput_native_keyboard_hooks():
+    """Verify UI worker boundaries reject native keyboard hook modules."""
+    assert "pynput" in ROLE_FORBIDDEN_PREFIXES["ui"]
+    assert loaded_forbidden("ui", ["pynput", "pynput.keyboard"]) == [
+        "pynput",
+        "pynput.keyboard",
+    ]
 
 
 def test_overlay_does_not_import_core_audio():

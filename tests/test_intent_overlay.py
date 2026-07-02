@@ -865,6 +865,47 @@ def test_intent_overlay_dedupes_raw_and_qt_context_key(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
+    """Verify Linux overlay-local shortcuts do not start a second native listener."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import builtins
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        """Fail if showing the overlay tries to import pynput."""
+        if name == "pynput" or name.startswith("pynput."):
+            raise AssertionError("Linux intent overlay should rely on Qt key events")
+        return original_import(name, *args, **kwargs)
+
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        context_items=[{"id": "browser", "key": "2", "label": "Browser", "state": "on"}],
+    )
+    try:
+        overlay.show()
+        app.processEvents()
+
+        assert overlay._kb_hook is None
+        assert overlay._cycle_context_key("2") is True
+        assert overlay.context_choices()[0]["state"] == "off"
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_apply_intent_context_choices_updates_caller_policy():
     """Verify overlay context choices become real per-prompt caller policy."""
     from runtime.supervisor.flows import FlowController

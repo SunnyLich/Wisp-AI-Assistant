@@ -1562,33 +1562,13 @@ class IntentOverlay(QWidget):
                 except Exception:
                     pass
             self._kb_hook = hooks
-        elif _IS_MAC:
-            # No global keyboard hook on macOS: pynput's Listener installs a
-            # CGEventTap that decodes keystrokes via main-thread-only HIToolbox
-            # APIs on its own thread, which trace-traps (SIGTRAP). This Popup has
-            # StrongFocus and we just activated it, so Qt delivers keys straight
-            # to keyPressEvent on the main thread — and the custom-input QLineEdit
-            # keeps working (grabKeyboard would have stolen its keystrokes).
+        else:
+            # Keep overlay-local keys in Qt on Unix-like desktops. A second
+            # pynput listener inside the UI process is fragile in frozen Linux
+            # builds, especially across X11/Wayland focus changes while the
+            # intent popup is being clicked or resized.
             self._kb_hook = None
             self.setFocus(Qt.FocusReason.PopupFocusReason)
-        else:
-            from pynput import keyboard as _kb  # type: ignore
-
-            def _on_press(key):
-                """Handle press events."""
-                if self._closed:
-                    return
-                try:
-                    name = key.char if (hasattr(key, "char") and key.char) else key.name
-                except AttributeError:
-                    return
-                if name:
-                    self._raw_key.emit(name.lower())
-
-            listener = _kb.Listener(on_press=_on_press)
-            listener.daemon = True
-            listener.start()
-            self._kb_hook = listener
         if self._initial_custom_text:
             QTimer.singleShot(0, self._enter_prefilled_custom_mode)
             if _IS_WIN or self._focus_overlay_requested:
@@ -1597,6 +1577,9 @@ class IntentOverlay(QWidget):
         elif self._auto_custom_mode is not None:
             QTimer.singleShot(0, self._enter_auto_custom_mode)
         elif _IS_WIN:
+            for delay_ms in (25, 75, 150):
+                QTimer.singleShot(delay_ms, self._focus_overlay)
+        elif not _IS_MAC:
             for delay_ms in (25, 75, 150):
                 QTimer.singleShot(delay_ms, self._focus_overlay)
 

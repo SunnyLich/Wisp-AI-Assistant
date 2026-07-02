@@ -14,6 +14,7 @@ ROLE_FORBIDDEN_PREFIXES: dict[str, tuple[str, ...]] = {
         "Quartz",
         "objc",
         "pyobjc",
+        "pynput",
         "sounddevice",
         "soundfile",
         "faster_whisper",

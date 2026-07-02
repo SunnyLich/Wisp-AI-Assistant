@@ -387,6 +387,30 @@ def test_chat_add_conversation_stamps_metadata() -> None:
     assert conv["messages"][1]["created_at"] == conv["created_at"]
 
 
+def test_macos_snip_app_region_avoids_ui_quartz_by_default(monkeypatch) -> None:
+    """The UI worker should not import Quartz just to preselect Snip's App mode."""
+    import builtins
+
+    from runtime.workers import ui_host
+    from runtime.workers.ui_host import QtProtocolHost
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        """Fail if the default macOS path imports Quartz."""
+        if name == "Quartz" or name.startswith("Quartz."):
+            raise AssertionError("UI worker should not import Quartz by default")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(ui_host.sys, "platform", "darwin")
+    monkeypatch.delenv("WISP_MACOS_UI_QUARTZ_SNIP_APP_REGION", raising=False)
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+
+    assert host._mac_snip_app_region() is None
+
+
 def test_chat_add_conversation_selects_new_chat_when_window_is_open() -> None:
     """Verify externally created chats become visible in an open chat window."""
     from types import SimpleNamespace

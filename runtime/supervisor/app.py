@@ -195,10 +195,35 @@ def main() -> int:
     def _stop_when_ui_exits(returncode=None) -> None:
         """Stop when ui exits."""
         nonlocal abrupt_reason
-        logging.info("UI worker exited with code %s; shutting down Wisp", returncode)
-        if returncode not in (0, None):
+        logging.info("UI worker exited with code %s", returncode)
+        if returncode in (0, None):
+            logging.info("UI worker exited cleanly; shutting down Wisp")
+            stop.set()
+            return
+        if ui_worker is None or not hasattr(ui_worker, "restart"):
             abrupt_reason = f"UI worker exited with code {returncode}"
-        stop.set()
+            stop.set()
+            return
+        try:
+            logging.warning("UI worker crashed with code %s; restarting it", returncode)
+            ui_worker.restart()
+            ui_worker.call("ui.ping", timeout=30.0)
+            try:
+                ui_worker.call(
+                    "ui.reply.notice",
+                    {
+                        "text": "Wisp recovered after the UI restarted.",
+                        "timeout_ms": 6000,
+                    },
+                    timeout=10.0,
+                )
+            except Exception:
+                logging.debug("Could not show UI restart notice", exc_info=True)
+            logging.info("UI worker restarted after crash")
+        except Exception:
+            logging.exception("UI worker restart failed; shutting down Wisp")
+            abrupt_reason = f"UI worker exited with code {returncode}"
+            stop.set()
 
     for sig_name in ("SIGINT", "SIGTERM"):
         sig = getattr(signal, sig_name, None)
