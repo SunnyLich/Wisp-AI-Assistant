@@ -7,14 +7,22 @@ Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
 from collections.abc import Callable
-from PySide6.QtWidgets import QWidget, QApplication
+import html
+
+from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEdit, QToolTip, QWidget
 from PySide6.QtCore import Qt, QTimer, QElapsedTimer, QRect
 from PySide6.QtGui import (
     QPainter, QColor, QFont, QFontMetrics,
-    QBrush, QPen, QPainterPath,
+    QBrush, QPen, QPainterPath, QTextCursor,
 )
 import config
 from ui.i18n import t
+from ui.text_annotations import (
+    TextAnnotation,
+    annotations_for_subrange,
+    compose_annotated_slices,
+    normalize_range_annotations,
+)
 
 _DOTS_COLOR   = QColor(140, 140, 165)
 _PAD          = 12
@@ -27,8 +35,13 @@ _ICON_W       = 80
 _ICON_H       = 80
 _ICON_MARGIN  = 20
 _HIDE_DELAY    = 3_500   # fallback ms after finish() before hiding
+_AUTO_HIDE_RESUME_MIN_MS = 1_500
 _CLOSE_SIZE    = 18
 _CLOSE_MARGIN  = 6
+_FAST_FORWARD_W = _CLOSE_SIZE
+_FAST_FORWARD_H = _CLOSE_SIZE
+_FAST_FORWARD_MARGIN = _CLOSE_MARGIN
+_CONTROL_GUTTER_W = _CLOSE_SIZE
 _ACTION_H      = 26
 _ACTION_GAP    = 8
 _ACTION_ROW_H  = 36
@@ -49,6 +62,144 @@ def _color(value: str, fallback: QColor) -> QColor:
             return QColor(fallback)
     qcolor = QColor(raw)
     return qcolor if qcolor.isValid() else QColor(fallback)
+
+
+def _css_color(color: QColor) -> str:
+    """Return a QSS-safe hex color for a QColor."""
+    if color.alpha() < 255:
+        return color.name(QColor.NameFormat.HexArgb)
+    return color.name()
+
+
+def _bubble_annotation_attrs(annotation: TextAnnotation) -> str:
+    """Return sanitized optional attributes for one floating-bubble annotation."""
+    attrs: list[str] = []
+    if annotation.tooltip:
+        attrs.append(f'title="{html.escape(annotation.tooltip, quote=True)}"')
+    return " ".join(attrs)
+
+
+class _BubbleTextView(QTextBrowser):
+    """Selectable text layer embedded inside the painted speech bubble."""
+
+    def __init__(self, parent: "SpeechBubble"):
+        """Initialize the selectable text surface."""
+        super().__init__(parent)
+        self._press_pos = None
+        self._dragged = False
+        self._tooltip_annotations: list[TextAnnotation] = []
+        self.setReadOnly(True)
+        self.setOpenLinks(False)
+        self.setMouseTracking(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.document().setDocumentMargin(0)
+        self.setStyleSheet("QTextBrowser { background: transparent; border: none; padding: 0; }")
+
+    def set_annotation_tooltips(self, annotations: list[TextAnnotation]) -> None:
+        """Store document-position tooltip annotations for hover handling."""
+        self._tooltip_annotations = [item for item in annotations if item.tooltip]
+
+    def mousePressEvent(self, event):  # noqa: N802
+        """Track whether a text press becomes a selection drag."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+            self._dragged = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        """Let drags select text without involving the bubble shell."""
+        if self._press_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            if (event.position().toPoint() - self._press_pos).manhattanLength() > QApplication.startDragDistance():
+                self._dragged = True
+        if not event.buttons():
+            tooltip = self._tooltip_at_position(self.cursorForPosition(event.position().toPoint()).position())
+            if tooltip:
+                QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
+            else:
+                QToolTip.hideText()
+        super().mouseMoveEvent(event)
+
+    def enterEvent(self, event):  # noqa: N802
+        """Keep the parent bubble visible while text is being inspected."""
+        parent = self.parent()
+        if hasattr(parent, "_pause_auto_hide"):
+            parent._pause_auto_hide()  # type: ignore[attr-defined]
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        """Hide annotation tooltips when leaving bubble text."""
+        QToolTip.hideText()
+        parent = self.parent()
+        if hasattr(parent, "_resume_auto_hide"):
+            parent._resume_auto_hide()  # type: ignore[attr-defined]
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        """Preserve click-to-open-chat for simple clicks in the text area."""
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            parent = self.parent()
+            if (
+                not self._dragged
+                and not self.textCursor().hasSelection()
+                and hasattr(parent, "_text_view_clicked")
+            ):
+                parent._text_view_clicked()  # type: ignore[attr-defined]
+            self._press_pos = None
+            self._dragged = False
+
+    def wheelEvent(self, event):  # noqa: N802
+        """Route wheel scrolling to the bubble's read-position scroller."""
+        parent = self.parent()
+        if hasattr(parent, "wheelEvent"):
+            parent.wheelEvent(event)  # type: ignore[attr-defined]
+        else:
+            super().wheelEvent(event)
+
+    def contextMenuEvent(self, event):  # noqa: N802
+        """Offer document-like copy actions for selected or full bubble text."""
+        parent = self.parent()
+        selected = self.textCursor().selectedText().replace("\u2029", "\n").strip()
+        full = str(getattr(parent, "_full_text", "") or "").strip()
+        menu = QMenu(self)
+        if selected:
+            menu.addAction(t("Copy selected text"), lambda text=selected: QApplication.clipboard().setText(text))
+            addon_actions = parent._text_context_actions(selected, full) if hasattr(parent, "_text_context_actions") else []
+            if addon_actions:
+                for item in addon_actions:
+                    label = str(item.get("label") or "").strip()
+                    action = str(item.get("action") or "").strip()
+                    text = str(item.get("text") or "")
+                    if label and action == "copy" and text:
+                        menu.addAction(label, lambda value=text: QApplication.clipboard().setText(value))
+                    elif label and action == "label_editor":
+                        match = str(item.get("match") or selected)
+                        menu.addAction(label, lambda value=match: parent._edit_ui_lab_label(value))
+                    elif label and action == "delete_label":
+                        match = str(item.get("match") or selected)
+                        menu.addAction(label, lambda value=match: parent._delete_ui_lab_label(value))
+            menu.addSeparator()
+        if full:
+            menu.addAction(t("Copy full bubble text"), lambda text=full: QApplication.clipboard().setText(text))
+        if menu.actions():
+            if hasattr(parent, "_pause_auto_hide"):
+                parent._pause_auto_hide()  # type: ignore[attr-defined]
+                menu.aboutToHide.connect(parent._resume_auto_hide)  # type: ignore[attr-defined]
+            menu.popup(event.globalPos())
+
+    def _tooltip_at_position(self, position: int) -> str:
+        for annotation in self._tooltip_annotations:
+            if annotation.start <= position < annotation.end:
+                return annotation.tooltip
+        return ""
 
 
 class SpeechBubble(QWidget):
@@ -82,11 +233,14 @@ class SpeechBubble(QWidget):
         self._lines: list[str] = []
         self._all_line_segments: list[list[tuple[str, bool, int | None, bool, bool]]] = []
         self._line_segments: list[list[tuple[str, bool, int | None, bool, bool]]] = []
+        self._reply_annotations: list[TextAnnotation] = []
+        self._text_view_tooltips: list[TextAnnotation] = []
         self._thinking = False
         self._transcript_preview = False
         self._dot_count = 1
         self._last_chunk_ended_with_space = True  # guards mid-word chunk merging
         self._manual_scroll_start: int | None = None
+        self._visible_start_line = 0
         self._reply_chunk_count = 0
 
         # Read-position mode (syncs highlighting to audio playback speed)
@@ -104,13 +258,19 @@ class SpeechBubble(QWidget):
         self._pre_audio_timestamps: list[tuple] = []  # batches that arrived before audio start
         self._speed_boosting = False
         self._highlight_generation = 0
+        self._auto_hide_holds = 0
+        self._auto_hide_pending_ms: int | None = None
+        self._hide_timer_elapsed = QElapsedTimer()
 
         # Derive size from config
         screen = QApplication.primaryScreen().availableGeometry()
         self._bubble_w = config.BUBBLE_WIDTH
-        self._text_w = self._bubble_w - _PAD * 2 - _CLOSE_SIZE
+        self._text_w = self._bubble_w - _PAD * 2 - _CONTROL_GUTTER_W
         self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+        self._text_view = _BubbleTextView(self)
+        self._text_view.hide()
+        self._sync_text_view_geometry()
 
         # Position: left of icon, vertically centered with it
         icon_sz = config.ICON_SIZE
@@ -145,17 +305,19 @@ class SpeechBubble(QWidget):
         # Drag support
         self._drag_offset = None          # QPoint while dragging
         self._press_pos = None            # global press position (click vs drag)
-        self._press_timer = QElapsedTimer()  # measures press duration (click vs hold-to-speed)
+        self._press_timer = QElapsedTimer()  # measures press duration (click vs hold)
         self._dragged = False             # True once the press moved past the click threshold
         self._close_hover = False
         self._close_pressed = False
+        self._fast_forward_hover = False
+        self._fast_forward_pressed = False
         self._notice_actions: list[tuple[str, Callable[[], None]]] = []
         self._action_rects: list[QRect] = []
         self._action_hover = -1
         self._action_pressed = -1
         self._companion_callback = None   # called with new QPoint after each drag move
         self._hide_callback = None        # called when this widget hides (for icon sync)
-        self._speed_callback = None       # called with True while hold-to-speed is active
+        self._speed_callback = None       # called with True while fast-forward is held
         self._click_callback = None       # called on a click (no drag) — opens the chat window
         self._highlight_callback = None   # called(reply_text, revealed_count, finished)
         self._stop_callback = None        # called when the user clicks the close/stop affordance
@@ -174,7 +336,7 @@ class SpeechBubble(QWidget):
         self._hide_callback = fn
 
     def set_speed_callback(self, fn):
-        """Register callback(enabled: bool) for hold-to-speed state."""
+        """Register callback(enabled: bool) for fast-forward hold state."""
         self._speed_callback = fn
 
     def set_click_callback(self, fn):
@@ -197,7 +359,7 @@ class SpeechBubble(QWidget):
         """Apply live bubble size/line/speed settings after config.reload()."""
         self._apply_font()
         self._bubble_w = config.BUBBLE_WIDTH
-        self._text_w = self._bubble_w - _PAD * 2 - _CLOSE_SIZE
+        self._text_w = self._bubble_w - _PAD * 2 - _CONTROL_GUTTER_W
         self._bubble_h = _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
         self._bubble_color = _color(config.BUBBLE_COLOR, QColor(28, 28, 36, 220))
@@ -210,6 +372,8 @@ class SpeechBubble(QWidget):
             self._scroll_snap_timer.stop()
         if self._full_text:
             self._rewrap()
+        self._sync_text_view_geometry()
+        self._sync_text_view()
         self.update()
 
     def _apply_font(self) -> None:
@@ -233,6 +397,11 @@ class SpeechBubble(QWidget):
         if self._hide_callback:
             self._hide_callback()
 
+    def enterEvent(self, event):  # noqa: N802
+        """Pause auto-hide while the user is inspecting the bubble."""
+        self._pause_auto_hide()
+        super().enterEvent(event)
+
     def icon_pos_for_bubble(self, bubble_pos, icon_size: int):
         """Given this bubble's top-left position, return where the icon should sit."""
         from PySide6.QtCore import QPoint
@@ -254,7 +423,12 @@ class SpeechBubble(QWidget):
                 event.accept()
                 self.update()
                 return
-            self._set_speed_boost(True)
+            if self._fast_forward_enabled() and self._fast_forward_rect().contains(event.position().toPoint()):
+                self._fast_forward_pressed = True
+                self._set_speed_boost(True)
+                event.accept()
+                self.update()
+                return
             self._press_pos = event.globalPosition().toPoint()
             self._press_timer.restart()
             self._dragged = False
@@ -271,7 +445,14 @@ class SpeechBubble(QWidget):
         if hovering_close != self._close_hover:
             self._close_hover = hovering_close
             self.update()
-        if self._close_pressed:
+        hovering_fast_forward = (
+            self._fast_forward_enabled()
+            and self._fast_forward_rect().contains(event.position().toPoint())
+        )
+        if hovering_fast_forward != self._fast_forward_hover:
+            self._fast_forward_hover = hovering_fast_forward
+            self.update()
+        if self._close_pressed or self._fast_forward_pressed:
             event.accept()
             return
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
@@ -309,9 +490,14 @@ class SpeechBubble(QWidget):
                 event.accept()
                 self.update()
                 return
-            self._set_speed_boost(False)
+            if self._fast_forward_pressed:
+                self._fast_forward_pressed = False
+                self._set_speed_boost(False)
+                event.accept()
+                self.update()
+                return
             # A click = pressed, didn't drag, and released quickly. A longer press
-            # is the hold-to-speed gesture and must not open the chat window.
+            # is an intentional hold and must not open the chat window.
             was_click = (
                 self._drag_offset is not None
                 and not self._dragged
@@ -335,8 +521,10 @@ class SpeechBubble(QWidget):
     def leaveEvent(self, event):  # noqa: N802
         """Clear hover state when the pointer leaves the bubble."""
         self._close_hover = False
+        self._fast_forward_hover = False
         self._action_hover = -1
         self.update()
+        self._resume_auto_hide()
         super().leaveEvent(event)
 
     def wheelEvent(self, event):  # noqa: N802
@@ -381,6 +569,7 @@ class SpeechBubble(QWidget):
         self._lines = [f"\u25cf {message}"]
         self._all_line_segments = []
         self._line_segments = [[(message, False, None, False, False)]]
+        self._reply_annotations = []
         self._thinking = False
         self._transcript_preview = False
         self._reply_chunk_count = 0
@@ -399,6 +588,7 @@ class SpeechBubble(QWidget):
         self._reveal_timer.stop()
         self._dot_timer.stop()
         self._hide_timer.stop()
+        self._sync_text_view()
         self.show()
         self.raise_()
         self.update()
@@ -413,6 +603,7 @@ class SpeechBubble(QWidget):
         self._lines = []
         self._all_line_segments = []
         self._line_segments = []
+        self._reply_annotations = []
         self._thinking = True
         self._transcript_preview = False
         self._reply_chunk_count = 0
@@ -431,6 +622,7 @@ class SpeechBubble(QWidget):
         self._reveal_timer.stop()
         self._hide_timer.stop()
         self._dot_timer.start()
+        self._sync_text_view()
         self.show()
         self.raise_()
         self.update()
@@ -454,6 +646,7 @@ class SpeechBubble(QWidget):
             self._lines = []
             self._all_line_segments = []
             self._line_segments = []
+            self._reply_annotations = []
             self._apply_reveal_speed()
             self._reveal_timer.start()
         elif not self._reveal_mode:
@@ -534,7 +727,7 @@ class SpeechBubble(QWidget):
         else:
             self._emit_highlight(finished=False)
 
-    def append_chunk(self, chunk: str, is_thought: bool = False):
+    def append_chunk(self, chunk: str, is_thought: bool = False, annotations: object = None):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
         if not chunk:
             return
@@ -554,6 +747,7 @@ class SpeechBubble(QWidget):
             self._lines = []
             self._all_line_segments = []
             self._line_segments = []
+            self._reply_annotations = []
         if self._thinking:
             self._thinking = False
             self._dot_timer.stop()
@@ -581,7 +775,10 @@ class SpeechBubble(QWidget):
                 self._pending_words[-1] += new_words[0]
                 new_words = new_words[1:]
             self._pending_words.extend(new_words)
+        chunk_start = len(self._full_text)
         self._full_text += chunk
+        if annotations is not None:
+            self._set_reply_annotations(annotations, base_offset=chunk_start, text=chunk)
         self._last_chunk_ended_with_space = chunk[-1].isspace()
         # Kick off WPM reveal on first token so words always appear gradually,
         # even when TTS=none.  start_word_reveal() / schedule_words() will take
@@ -640,6 +837,8 @@ class SpeechBubble(QWidget):
     def clear(self):
         """Hard reset — hide immediately."""
         self._hide_timer.stop()
+        self._auto_hide_holds = 0
+        self._auto_hide_pending_ms = None
         self._dot_timer.stop()
         self._reveal_timer.stop()
         self._scroll_snap_timer.stop()
@@ -651,6 +850,8 @@ class SpeechBubble(QWidget):
         self._last_chunk_ended_with_space = True
         self._reply_chunk_count = 0
         self._speed_boosting = False
+        self._fast_forward_hover = False
+        self._fast_forward_pressed = False
         self._highlight_generation += 1
         self._pending_words = []
         self._revealed_count = 0
@@ -666,9 +867,11 @@ class SpeechBubble(QWidget):
         self._lines = []
         self._all_line_segments = []
         self._line_segments = []
+        self._reply_annotations = []
         self._clear_notice_actions()
         self._restore_base_size()
         self._close_cancels = True
+        self._sync_text_view()
         self.hide()
 
     def show_notice(
@@ -742,6 +945,7 @@ class SpeechBubble(QWidget):
     ):
         """Show static text."""
         self._hide_timer.stop()
+        self._auto_hide_pending_ms = None
         self._dot_timer.stop()
         self._reveal_timer.stop()
         self._scroll_snap_timer.stop()
@@ -773,6 +977,7 @@ class SpeechBubble(QWidget):
         self._highlight_index_offset = len(self._reveal_units(prefix))
         self._highlight_callback_text = body_text if prefix else ""
         self._pending_words = self._reveal_units(body_text)
+        self._reply_annotations = []
         self._revealed_count = 0 if prefix else len(self._pending_words)
         self._full_text = text
         self._layout_action_buttons()
@@ -813,6 +1018,23 @@ class SpeechBubble(QWidget):
             _CLOSE_SIZE,
         )
 
+    def _fast_forward_rect(self) -> QRect:
+        """Return the bottom-right speed-boost hit target inside the bubble body."""
+        return QRect(
+            self._bubble_w - _FAST_FORWARD_MARGIN - _FAST_FORWARD_W,
+            self._bubble_h - _FAST_FORWARD_MARGIN - _FAST_FORWARD_H,
+            _FAST_FORWARD_W,
+            _FAST_FORWARD_H,
+        )
+
+    def _fast_forward_enabled(self) -> bool:
+        """Return whether the speed-boost control should be active."""
+        if self._thinking or self._notice_actions or self._transcript_preview:
+            return False
+        if self._reply_chunk_count > 0:
+            return True
+        return bool(self._close_cancels and self._display_label_prefix and self._pending_words)
+
     def _action_index_at(self, point) -> int:
         """Return the notice action index under point, or -1."""
         for idx, rect in enumerate(self._action_rects):
@@ -835,11 +1057,13 @@ class SpeechBubble(QWidget):
         """Restore normal speech-bubble dimensions."""
         self._bubble_h = self._base_bubble_h()
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+        self._sync_text_view_geometry()
 
     def _set_notice_action_size(self) -> None:
         """Make room for notice action buttons."""
         self._bubble_h = self._base_bubble_h() + _ACTION_ROW_H
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+        self._sync_text_view_geometry()
 
     def _layout_action_buttons(self) -> None:
         """Lay out static notice action buttons."""
@@ -895,10 +1119,36 @@ class SpeechBubble(QWidget):
 
     def _start_hide_timer(self, delay_ms: int | None = None) -> None:
         """Start hide timer."""
-        self._hide_timer.setInterval(
-            max(1, int(self._hide_delay_ms() if delay_ms is None else delay_ms))
-        )
+        interval = max(1, int(self._hide_delay_ms() if delay_ms is None else delay_ms))
+        self._hide_timer.setInterval(interval)
+        if self._auto_hide_holds > 0:
+            self._auto_hide_pending_ms = interval
+            self._hide_timer.stop()
+            return
+        self._auto_hide_pending_ms = None
         self._hide_timer.start()
+        self._hide_timer_elapsed.restart()
+
+    def _pause_auto_hide(self) -> None:
+        """Hold the auto-hide timer while the user is interacting with the bubble."""
+        self._auto_hide_holds += 1
+        if self._hide_timer.isActive():
+            elapsed = self._hide_timer_elapsed.elapsed() if self._hide_timer_elapsed.isValid() else 0
+            remaining = max(1, int(self._hide_timer.interval()) - int(elapsed))
+            self._auto_hide_pending_ms = max(_AUTO_HIDE_RESUME_MIN_MS, remaining)
+            self._hide_timer.stop()
+
+    def _resume_auto_hide(self) -> None:
+        """Resume a held auto-hide timer after interaction ends."""
+        if self._auto_hide_holds <= 0:
+            return
+        self._auto_hide_holds -= 1
+        if self._auto_hide_holds > 0 or self._auto_hide_pending_ms is None:
+            return
+        self._hide_timer.setInterval(max(1, int(self._auto_hide_pending_ms)))
+        self._auto_hide_pending_ms = None
+        self._hide_timer.start()
+        self._hide_timer_elapsed.restart()
 
     def _set_speed_boost(self, enabled: bool):
         """Set speed boost."""
@@ -908,6 +1158,301 @@ class SpeechBubble(QWidget):
         self._apply_reveal_speed()
         if self._speed_callback:
             self._speed_callback(enabled)
+
+    def _sync_text_view_geometry(self) -> None:
+        """Keep the selectable text view inside the bubble's content rectangle."""
+        if not hasattr(self, "_text_view"):
+            return
+        height = max(1, min(self._base_bubble_h() - _PAD * 2, self._line_h * self._visible_line_count()))
+        self._text_view.setGeometry(_PAD, _PAD, max(1, self._text_w), height)
+
+    def _sync_text_view(self) -> None:
+        """Refresh selectable text without giving it ownership of shell controls."""
+        if not hasattr(self, "_text_view"):
+            return
+        self._sync_text_view_geometry()
+        document_lines = self._all_line_segments or self._line_segments
+        if self._thinking or not document_lines:
+            self._text_view.clear()
+            self._text_view.set_annotation_tooltips([])
+            self._text_view.hide()
+            return
+        cursor = self._text_view.textCursor()
+        had_selection = cursor.hasSelection()
+        old_anchor = cursor.anchor()
+        old_position = cursor.position()
+        old_selected_text = cursor.selectedText().replace("\u2029", "\n")
+        old_plain_text = self._text_view.toPlainText()
+        old_scroll = self._text_view.verticalScrollBar().value()
+        self._text_view.setStyleSheet(
+            "QTextBrowser {"
+            " background: transparent;"
+            " border: none;"
+            " padding: 0;"
+            f" color: {_css_color(self._text_color)};"
+            f" font-family: {html.escape(self._font.family(), quote=True)};"
+            f" font-size: {self._font.pointSize()}pt;"
+            "}"
+            f"QTextBrowser::selection {{ background: {_css_color(self._read_word_color)}; color: white; }}"
+        )
+        self._text_view.setHtml(self._line_segments_html(document_lines))
+        self._text_view.set_annotation_tooltips(self._text_view_tooltips)
+        if had_selection:
+            self._restore_text_selection(
+                old_anchor,
+                old_position,
+                old_selected_text,
+                old_plain_text,
+                old_scroll,
+            )
+        else:
+            self._scroll_text_view_to_visible_start()
+        self._text_view.show()
+        self._text_view.raise_()
+
+    def _line_segments_html(self, lines: list[list[tuple[str, bool, int | None, bool, bool]]] | None = None) -> str:
+        """Render line segments as safe HTML for the selectable text layer."""
+        if lines is None:
+            lines = self._all_line_segments or self._line_segments
+        if not lines and self._lines:
+            lines = [[(line, False, None, False, False)] for line in self._lines]
+        html_lines: list[str] = []
+        tooltip_annotations: list[TextAnnotation] = []
+        reply_offset = 0
+        doc_offset = 0
+        for line_idx, line in enumerate(lines):
+            parts: list[str] = []
+            for idx, (word, bold, word_idx, is_thought, space_before) in enumerate(line):
+                if idx and space_before:
+                    parts.append(" ")
+                    doc_offset += 1
+                    if not is_thought:
+                        reply_offset += 1
+                is_read = (
+                    not is_thought
+                    and word_idx is not None
+                    and word_idx >= self._highlight_index_offset
+                    and word_idx < self._highlight_index_offset + self._revealed_count
+                )
+                color = self._thought_color if is_thought else (self._read_word_color if is_read else self._text_color)
+                styles = [f"color:{_css_color(color)}"]
+                if bold and not is_thought:
+                    styles.append("font-weight:700")
+                if is_thought:
+                    parts.append(self._styled_text_span(word, styles))
+                    doc_offset += len(word)
+                else:
+                    start = reply_offset
+                    end = start + len(word)
+                    tooltip_annotations.extend(self._tooltip_annotations_for_word(start, end, doc_offset))
+                    parts.append(self._styled_text_span(word, styles, start=start, end=end))
+                    reply_offset = end
+                    doc_offset += len(word)
+            html_lines.append("".join(parts))
+            if line_idx < len(lines) - 1:
+                doc_offset += 1
+        self._text_view_tooltips = tooltip_annotations
+        return (
+            "<html><body "
+            f"style='margin:0; padding:0; background:transparent; white-space:pre; line-height:{self._line_h}px;'>"
+            + "<br>".join(html_lines)
+            + "</body></html>"
+        )
+
+    def _set_reply_annotations(self, annotations: object, *, base_offset: int, text: str) -> None:
+        """Store sanitized addon annotations for rendered reply text."""
+        normalized = normalize_range_annotations(annotations, text, surface="reply")
+        if base_offset <= 0:
+            self._reply_annotations = normalized
+            return
+        rebased: list[TextAnnotation] = list(self._reply_annotations)
+        for item in normalized:
+            rebased.append(
+                TextAnnotation(
+                    start=item.start + base_offset,
+                    end=item.end + base_offset,
+                    tag=item.tag,
+                    style=item.style,
+                    tooltip=item.tooltip,
+                    source=item.source,
+                    id=item.id,
+                    surface=item.surface,
+                    message_id=item.message_id,
+                    conversation_id=item.conversation_id,
+                    action=item.action,
+                )
+            )
+        self._reply_annotations = rebased
+
+    def _styled_text_span(
+        self,
+        text: str,
+        styles: list[str],
+        *,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> str:
+        """Render one text unit with base bubble styles and optional addon annotation styles."""
+        if start is None or end is None or not self._reply_annotations:
+            style = html.escape("; ".join(styles), quote=True)
+            return f'<span style="{style}">{html.escape(text)}</span>'
+        clipped = annotations_for_subrange(self._reply_annotations, start, end)
+        if not clipped:
+            style = html.escape("; ".join(styles), quote=True)
+            return f'<span style="{style}">{html.escape(text)}</span>'
+        parts: list[str] = []
+        for item in compose_annotated_slices(text, clipped):
+            item_styles = list(styles)
+            attrs = ""
+            if item.annotation is not None:
+                if item.annotation.style:
+                    item_styles.append(item.annotation.style)
+                attrs = _bubble_annotation_attrs(item.annotation)
+            style = html.escape("; ".join(s for s in item_styles if s), quote=True)
+            extra = f" {attrs}" if attrs else ""
+            tag = item.annotation.tag if item.annotation is not None else "span"
+            parts.append(f'<{tag} style="{style}"{extra}>{html.escape(item.text)}</{tag}>')
+        return "".join(parts)
+
+    def _tooltip_annotations_for_word(self, start: int, end: int, doc_start: int) -> list[TextAnnotation]:
+        """Return tooltip annotations re-based to the selectable document text."""
+        out: list[TextAnnotation] = []
+        for item in annotations_for_subrange(self._reply_annotations, start, end):
+            if not item.tooltip:
+                continue
+            out.append(
+                TextAnnotation(
+                    start=doc_start + item.start,
+                    end=doc_start + item.end,
+                    tag=item.tag,
+                    style=item.style,
+                    tooltip=item.tooltip,
+                    source=item.source,
+                    id=item.id,
+                    surface=item.surface,
+                    message_id=item.message_id,
+                    conversation_id=item.conversation_id,
+                    action=item.action,
+                )
+            )
+        return out
+
+    def _scroll_text_view_to_visible_start(self) -> None:
+        """Align the document viewport with the bubble's current visible line."""
+        if not hasattr(self, "_text_view"):
+            return
+        self._text_view.verticalScrollBar().setValue(max(0, self._visible_start_line * self._line_h))
+
+    def _restore_text_selection(
+        self,
+        old_anchor: int,
+        old_position: int,
+        old_selected_text: str,
+        old_plain_text: str,
+        old_scroll: int,
+    ) -> None:
+        """Keep a user selection alive across style/highlight refreshes."""
+        doc = self._text_view.document()
+        new_plain_text = self._text_view.toPlainText()
+        cursor = QTextCursor(doc)
+        restored = False
+        if old_plain_text == new_plain_text:
+            max_pos = max(0, len(new_plain_text))
+            cursor.setPosition(max(0, min(max_pos, old_anchor)))
+            cursor.setPosition(max(0, min(max_pos, old_position)), QTextCursor.MoveMode.KeepAnchor)
+            restored = True
+        elif old_selected_text:
+            start = new_plain_text.find(old_selected_text)
+            if start >= 0:
+                cursor.setPosition(start)
+                cursor.setPosition(start + len(old_selected_text), QTextCursor.MoveMode.KeepAnchor)
+                restored = True
+        if restored:
+            self._text_view.setTextCursor(cursor)
+            self._text_view.verticalScrollBar().setValue(old_scroll)
+        else:
+            self._scroll_text_view_to_visible_start()
+
+    def _visible_plain_text(self) -> str:
+        """Return the plain text currently visible in the bubble."""
+        return "\n".join(self._lines).strip()
+
+    def _text_view_clicked(self) -> None:
+        """Mirror the old bubble click behavior for simple text-area clicks."""
+        if self._click_callback and self._can_open_chat_from_click():
+            self._click_callback()
+
+    def _text_context_actions(self, selected_text: str, full_text: str) -> list[dict]:
+        """Return addon-provided actions for selected bubble text."""
+        if not selected_text.strip():
+            return []
+        try:
+            from core.addon_manager import get_manager
+
+            manager = get_manager()
+            if not hasattr(manager, "get_text_context_actions"):
+                return []
+            return manager.get_text_context_actions(
+                {
+                    "selected_text": selected_text,
+                    "text": full_text,
+                    "surface": "reply",
+                    "role": "assistant",
+                }
+            )
+        except Exception:
+            pass
+        try:
+            from addons.ui_lab import get_text_context_actions
+
+            return list(
+                get_text_context_actions(
+                    {
+                        "selected_text": selected_text,
+                        "text": full_text,
+                        "surface": "reply",
+                        "role": "assistant",
+                    }
+                )
+                or []
+            )
+        except Exception:
+            return []
+
+    def _edit_ui_lab_label(self, selected_text: str) -> None:
+        """Open the UI Lab label editor for selected bubble text."""
+        try:
+            from ui.ui_lab_label_editor import edit_label
+
+            if edit_label(selected_text, self):
+                self._refresh_ui_lab_annotations()
+        except Exception:
+            return
+
+    def _delete_ui_lab_label(self, selected_text: str) -> None:
+        """Delete a UI Lab label rule for selected bubble text."""
+        try:
+            from ui.ui_lab_label_editor import delete_label
+
+            if delete_label(selected_text, self):
+                self._refresh_ui_lab_annotations()
+        except Exception:
+            return
+
+    def _refresh_ui_lab_annotations(self) -> None:
+        """Refresh bubble annotations from saved UI Lab labels."""
+        try:
+            from addons.ui_lab import labels
+
+            self._set_reply_annotations(
+                labels.annotations_for_text(self._full_text, surface="reply"),
+                base_offset=0,
+                text=self._full_text,
+            )
+            self._sync_text_view()
+            self.update()
+        except Exception:
+            return
 
     def _reveal_next_word(self):
         # WPM fallback tick. _advance_highlight() also starts the hide countdown
@@ -1010,6 +1555,7 @@ class SpeechBubble(QWidget):
         lines = self._all_line_segments
         if not lines:
             visible: list[list[tuple[str, bool, int | None, bool, bool]]] = []
+            start_line = 0
         else:
             max_start = max(0, len(lines) - visible_lines)
             if self._manual_scroll_start is None or not self._bubble_scroll_enabled():
@@ -1023,8 +1569,10 @@ class SpeechBubble(QWidget):
                 start_line = max(0, min(max_start, self._manual_scroll_start))
                 self._manual_scroll_start = start_line
             visible = lines[start_line:start_line + visible_lines]
+        self._visible_start_line = start_line
         self._line_segments = visible
         self._lines = [self._join_units(line) for line in visible]
+        self._sync_text_view()
 
     def _should_follow_latest_stream_text(self, lines: list) -> bool:
         """Follow streamed text only until a read-position highlight exists."""
@@ -1249,6 +1797,20 @@ class SpeechBubble(QWidget):
             close_rect.bottom() - pad,
         )
 
+        if self._fast_forward_enabled():
+            rect = self._fast_forward_rect()
+            pressed = self._fast_forward_pressed
+            hovered = self._fast_forward_hover
+            bg = QColor(77, 163, 255, 210 if not pressed else 245)
+            if hovered and not pressed:
+                bg = QColor(99, 179, 255, 225)
+            p.setBrush(QBrush(bg))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(rect, 6, 6)
+            p.setFont(self._bold_font)
+            p.setPen(QPen(QColor(255, 255, 255, 235)))
+            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, ">>")
+
         # Content
         p.setFont(self._font)
         if self._thinking:
@@ -1256,57 +1818,25 @@ class SpeechBubble(QWidget):
             p.setPen(QPen(_DOTS_COLOR))
             p.drawText(0, 0, self._bubble_w, self._bubble_h,
                        Qt.AlignmentFlag.AlignCenter, dots)
-        else:
-            p.setPen(QPen(self._text_color))
-            y = _PAD
-            if not self._line_segments and self._lines:
-                self._line_segments = [[(line, False, None, False, False)] for line in self._lines]
-            for line in self._line_segments:
-                x = _PAD
-                for idx, (word, bold, word_idx, is_thought, space_before) in enumerate(line):
-                    if idx and space_before:
-                        x += self._space_w
-                    is_read = (
-                        not is_thought
-                        and word_idx is not None
-                        and word_idx >= self._highlight_index_offset
-                        and word_idx < self._highlight_index_offset + self._revealed_count
-                    )
-                    font = self._bold_font if (bold and not is_thought) else self._font
-                    fm = self._bold_fm if (bold and not is_thought) else self._fm
-                    word_w = fm.horizontalAdvance(word)
-                    p.setFont(font)
-                    if is_thought:
-                        pen = self._thought_color
-                    else:
-                        pen = self._read_word_color if is_read else self._text_color
-                    p.setPen(QPen(pen))
-                    p.drawText(x, y, self._bubble_w - x, self._line_h,
-                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                               word)
-                    x += word_w
-                p.setFont(self._font)
-                y += self._line_h
-
-            if self._notice_actions:
-                p.setFont(self._font)
-                for idx, (label, _callback) in enumerate(self._notice_actions):
-                    if idx >= len(self._action_rects):
-                        continue
-                    rect = self._action_rects[idx]
-                    pressed = idx == self._action_pressed
-                    hovered = idx == self._action_hover
-                    bg = QColor(77, 163, 255, 230 if not pressed else 255)
-                    if hovered and not pressed:
-                        bg = QColor(99, 179, 255, 240)
-                    p.setBrush(QBrush(bg))
-                    p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRoundedRect(rect, 6, 6)
-                    p.setPen(QPen(QColor(255, 255, 255)))
-                    p.drawText(
-                        rect,
-                        Qt.AlignmentFlag.AlignCenter,
-                        label,
-                    )
+        if self._notice_actions:
+            p.setFont(self._font)
+            for idx, (label, _callback) in enumerate(self._notice_actions):
+                if idx >= len(self._action_rects):
+                    continue
+                rect = self._action_rects[idx]
+                pressed = idx == self._action_pressed
+                hovered = idx == self._action_hover
+                bg = QColor(77, 163, 255, 230 if not pressed else 255)
+                if hovered and not pressed:
+                    bg = QColor(99, 179, 255, 240)
+                p.setBrush(QBrush(bg))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(rect, 6, 6)
+                p.setPen(QPen(QColor(255, 255, 255)))
+                p.drawText(
+                    rect,
+                    Qt.AlignmentFlag.AlignCenter,
+                    label,
+                )
 
         p.end()

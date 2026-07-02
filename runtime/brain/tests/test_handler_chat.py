@@ -1,7 +1,9 @@
 ﻿"""Unit tests for the ``brain.chat`` handler."""
 from __future__ import annotations
 
+import sys
 import threading
+import types
 
 import pytest
 
@@ -188,6 +190,40 @@ def test_chat_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch)
     progress = [data for event, data in events if event == "reply.chunk" and data.get("is_progress")]
     assert progress == [{"text": "Checking the file first.", "is_progress": True, "is_thought": False}]
     assert [data for event, data in events if event == "reply.done"] == [{"text": "Done."}]
+
+
+def test_chat_uses_addon_modified_final_response(record_ctx, monkeypatch):
+    """Verify chat commits the addon-transformed final text."""
+    calls: dict[str, object] = {}
+
+    def fake_stream(*_args, **_kwargs):
+        """Emit raw chat text."""
+        yield "chat raw"
+
+    class FakeManager:
+        """Coordinate fake manager behavior."""
+        def transform_response_text(self, payload):
+            """Replace final assistant text."""
+            calls["transform"] = dict(payload)
+            return "addon: " + str(payload.get("text") or "")
+
+    fake_addon_manager = types.ModuleType("core.addon_manager")
+    fake_addon_manager.get_manager = lambda: FakeManager()
+    monkeypatch.setitem(sys.modules, "core.addon_manager", fake_addon_manager)
+    monkeypatch.setattr(handlers, "_addon_startup_done", True)
+    monkeypatch.setattr(handlers, "_stream_chat_reply", fake_stream)
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[{"role": "user", "content": "hello"}],
+        memory_context="(none)",
+    )
+
+    assert result["text"] == "addon: chat raw"
+    assert _chunks(events) == ["addon: chat raw"]
+    assert [data for event, data in events if event == "reply.done"] == [{"text": "addon: chat raw"}]
+    assert calls["transform"] == {"text": "chat raw", "surface": "chat", "role": "assistant"}
 
 
 def test_chat_memory_disabled_skips_retrieval(record_ctx, monkeypatch):

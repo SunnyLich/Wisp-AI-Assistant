@@ -41,28 +41,14 @@ _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*$")
 _WS_RE = re.compile(r"(\s+)")
 
 
-def _annotation_style(annotation: TextAnnotation, extra_style: str = "") -> str:
-    """Return Wisp-owned inline CSS for a sanitized annotation."""
-    if annotation.kind == "underline":
-        style = f"text-decoration: underline; text-decoration-color: {annotation.color};"
-    elif annotation.kind == "tag":
-        style = (
-            f"background-color:{annotation.color}; border-radius:3px; padding:0 2px;"
-            f" border-bottom:1px solid {annotation.color};"
-        )
-    else:
-        style = f"background-color:{annotation.color}; border-radius:3px; padding:0 1px;"
-    return style + extra_style
-
-
 def _annotation_attrs(annotation: TextAnnotation, extra_style: str = "") -> str:
     """Return sanitized HTML attributes for one annotation span."""
-    style = html.escape(_annotation_style(annotation, extra_style), quote=True)
-    attrs = [f'style="{style}"']
+    attrs: list[str] = []
+    style = "; ".join(s for s in [annotation.style, extra_style] if s)
+    if style:
+        attrs.append(f'style="{html.escape(style, quote=True)}"')
     if annotation.tooltip:
         attrs.append(f'title="{html.escape(annotation.tooltip, quote=True)}"')
-    if annotation.id:
-        attrs.append(f'data-annotation-id="{html.escape(annotation.id, quote=True)}"')
     return " ".join(attrs)
 
 
@@ -84,7 +70,9 @@ def _annotated_text_html(text: str, annotations: list[TextAnnotation], extra_sty
             else:
                 parts.append(escaped)
         else:
-            parts.append(f"<span {_annotation_attrs(item.annotation, extra_style)}>{escaped}</span>")
+            attrs = _annotation_attrs(item.annotation, extra_style)
+            attr_text = f" {attrs}" if attrs else ""
+            parts.append(f"<{item.annotation.tag}{attr_text}>{escaped}</{item.annotation.tag}>")
     return "".join(parts)
 
 

@@ -68,7 +68,9 @@ prompt = "Summarize the current context using this addon's workflow."
 
 Missing permissions are denied. For example, an addon without `tools = true`
 will not register model-callable tools, and an addon without `ui = ["tray"]`
-will not expose tray actions.
+will not expose tray actions. `response = "read"` allows observation through
+`after_response`; `response = "modify"` is required to replace assistant text
+through `transform_response_text`.
 
 `[dependencies]` is optional. Addons without it run from Wisp's own Python
 runtime. Addons that declare dependencies get a dedicated virtual environment
@@ -139,6 +141,25 @@ def before_query(prompt: str, context: str) -> tuple[str, str]:
 def after_response(text: str):
     pass
 
+def transform_response_text(payload: dict) -> dict:
+    return {"text": payload.get("text", "")}
+
+def get_text_annotations(payload: dict) -> list[dict]:
+    return [{
+        "start": 0,
+        "end": 5,
+        "tag": "mark",
+        "style": "background-color:#ffd166; color:#111111",
+        "tooltip": "Addon-provided tooltip",
+    }]
+
+def get_text_context_actions(payload: dict) -> list[dict]:
+    return [{
+        "label": "Copy tagged selection",
+        "action": "copy",
+        "text": "[addon] " + payload.get("selected_text", ""),
+    }]
+
 def get_tray_actions() -> list[dict]:
     return [{"label": "Run thing", "callback": run_thing}]
 
@@ -153,6 +174,27 @@ def get_tools() -> list[dict]:
         "executor": lambda inputs: "ok",
     }]
 ```
+
+`transform_response_text` receives the final assistant text plus display
+metadata such as `surface` (`"reply"` for the floating bubble, `"chat"` for
+chat), `role`, `message_id`, and `conversation_id`. It only runs for addons
+with `[permissions] response = "modify"`. Returning a string or
+`{"text": "..."}` replaces the final assistant text used by the bubble/chat
+document and by later annotations. Wisp buffers normal assistant chunks until
+this final text is ready; live progress/thought chunks may still be shown, but
+the raw pre-transform answer text is not sent to the bubble/chat first.
+
+`get_text_annotations` receives the same visible text metadata and returns safe
+range tags for chat and floating-bubble text. `tag` is an HTML-like inline tag
+name such as `span`, `mark`, `u`, `code`, `strong`, or `em`; unknown tags fall
+back to `span`. `style` is sanitized inline CSS, and `tooltip` is rendered as a
+normal HTML `title` attribute. Raw HTML from addons is never injected.
+
+`get_text_context_actions` receives selected-text metadata from chat and the
+floating bubble, then returns safe right-click menu actions. Addons must request
+`ui = ["text_context_menu"]`. Supported actions include `{"action": "copy",
+"text": "..."}` for clipboard text and UI Lab's local `label_editor` /
+`delete_label` actions with a `match` value for editing saved text labels.
 
 Read settings with:
 

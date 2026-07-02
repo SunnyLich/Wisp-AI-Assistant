@@ -34,7 +34,7 @@ def test_empty_annotations_keep_assistant_html_unchanged():
 
 
 def test_assistant_annotations_escape_untrusted_text_and_tooltips():
-    """Annotation spans are Wisp-owned and do not inject raw HTML."""
+    """Annotation tags/styles are sanitized and do not inject raw HTML."""
     text = "Mark <script>alert(1)</script>"
     rendered = _assistant_text_to_html(
         text,
@@ -42,7 +42,8 @@ def test_assistant_annotations_escape_untrusted_text_and_tooltips():
             {
                 "start": 5,
                 "end": len(text),
-                "color": "#ffcc00",
+                "tag": "mark",
+                "style": "background-color:#ffcc00; position:absolute",
                 "tooltip": '"quoted" <tip>',
                 "id": "unsafe",
             }
@@ -51,20 +52,43 @@ def test_assistant_annotations_escape_untrusted_text_and_tooltips():
 
     assert "<script>" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "<mark " in rendered
+    assert "background-color:#ffcc00" in rendered
+    assert "position:absolute" not in rendered
     assert "title=\"&quot;quoted&quot; &lt;tip&gt;\"" in rendered
-    assert 'data-annotation-id="unsafe"' in rendered
 
 
 def test_annotations_preserve_inline_code_and_markdown_structure():
     """Annotations decorate text nodes without taking over markdown structure."""
     text = "Use `CUDA` and **CUDA** now"
-    annotations = annotations_from_keyword_rules(text, [{"match": "CUDA", "color": "#ffd166"}])
+    annotations = annotations_from_keyword_rules(
+        text,
+        [{"match": "CUDA", "tag": "mark", "style": "background-color:#ffd166"}],
+    )
 
     rendered = _assistant_text_to_html(text, annotations=annotations)
 
     assert "<code>CUDA</code>" in rendered
-    assert "<strong><span" in rendered
+    assert "<strong><mark" in rendered
     assert rendered.count("background-color:#ffd166") == 1
+
+
+def test_annotation_code_word_does_not_inherit_markdown_code_background():
+    """Addon code-word styling should not accidentally use markdown code tags."""
+    rendered = _assistant_text_to_html(
+        "inspect code",
+        annotations=[
+            {
+                "start": 8,
+                "end": 12,
+                "tag": "span",
+                "style": "font-family:Consolas, Cascadia Mono, monospace; color:#8bd17c",
+            }
+        ],
+    )
+
+    assert "<span style=\"font-family:Consolas, Cascadia Mono, monospace; color:#8bd17c\">code</span>" in rendered
+    assert "<code>code</code>" not in rendered
 
 
 def test_tts_read_highlight_composes_with_annotation_background():
@@ -73,7 +97,7 @@ def test_tts_read_highlight_composes_with_annotation_background():
     rendered = _assistant_text_to_html(
         text,
         read_count=1,
-        annotations=[{"start": 2, "end": 6, "color": "#abc123"}],
+        annotations=[{"start": 2, "end": 6, "style": "background-color:#abc123"}],
     )
 
     assert "background-color:#abc123" in rendered
@@ -85,9 +109,10 @@ def test_user_text_annotations_escape_and_preserve_newlines():
     """User messages can opt into safe annotation rendering."""
     rendered = _user_text_to_html(
         "hello\n<world>",
-        annotations=[{"start": 6, "end": 13, "kind": "underline", "color": "#00ffaa"}],
+        annotations=[{"start": 6, "end": 13, "tag": "u", "style": "text-decoration-color:#00ffaa"}],
     )
 
     assert "<br>" in rendered
     assert "&lt;world&gt;" in rendered
-    assert "text-decoration: underline" in rendered
+    assert "<u " in rendered
+    assert "text-decoration-color:#00ffaa" in rendered

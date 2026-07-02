@@ -208,15 +208,17 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('APP_ICON_ICNS = ROOT / "assets" / "app.icns"', macos)
         self.assertIn("icon=str(APP_ICON_ICNS) if APP_ICON_ICNS.exists() else None", macos)
 
-    def test_specs_bundle_mcp_bridge_as_default_addon(self) -> None:
+    def test_specs_bundle_default_addons(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
             with self.subTest(spec=spec_name):
                 spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
                 self.assertIn('ROOT / "addons" / "mcp_bridge"', spec)
                 self.assertIn('"addons/mcp_bridge"', spec)
+                self.assertIn('ROOT / "addons" / "ui_lab"', spec)
+                self.assertIn('"addons/ui_lab"', spec)
 
         docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
-        self.assertIn("MCP Bridge addon is bundled", docs)
+        self.assertIn("MCP Bridge and UI Lab addons are bundled", docs)
         self.assertIn("servers.json", docs)
 
     def test_specs_bundle_runtime_worker_modules_for_frozen_module_dispatch(self) -> None:

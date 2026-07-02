@@ -28,7 +28,7 @@ from core.system.paths import ADDONS_DIR, BUNDLED_ADDONS_DIR, REPO_ROOT
 log = logging.getLogger("wisp.addons")
 
 _HOST_TIMEOUT_SECONDS = 2.0
-_DEFAULT_BUNDLED_ADDONS = ("mcp_bridge",)
+_DEFAULT_BUNDLED_ADDONS = ("mcp_bridge", "ui_lab")
 
 
 def _terminal(event: str) -> None:
@@ -347,6 +347,27 @@ class AddonManager:
                 _call_host(addon, "after_response", {"text": response_text})
         self.dispatch_event("response.after", {"text": response_text})
 
+    def transform_response_text(self, payload: dict[str, Any] | None = None) -> str:
+        """Let explicitly permitted addons replace assistant response text."""
+        request = _safe_response_transform_payload(payload or {})
+        text = request.get("text", "")
+        if not text:
+            return text
+        for addon in self._enabled_addons():
+            response_perm = str(addon.manifest.permissions.get("response") or "none").lower()
+            if addon.host is None or response_perm != "modify":
+                continue
+            result = _call_host(addon, "transform_response_text", request, timeout=3.0)
+            replacement: str | None = None
+            if isinstance(result, str):
+                replacement = result
+            elif isinstance(result, dict) and "text" in result:
+                replacement = str(result.get("text") or "")
+            if replacement is not None:
+                text = replacement
+                request["text"] = text
+        return text
+
     def dispatch_event(self, event: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Dispatch event."""
         results: list[dict[str, Any]] = []
@@ -477,6 +498,26 @@ class AddonManager:
                 annotations.append(item)
             remaining = MAX_ANNOTATIONS - len(annotations)
         return annotations
+
+    def get_text_context_actions(self, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Return sanitized text context-menu actions from permitted addons."""
+        request = _safe_text_context_action_payload(payload or {})
+        if not request.get("selected_text", ""):
+            return []
+        actions: list[dict[str, Any]] = []
+        for addon in self._enabled_addons():
+            if len(actions) >= 12:
+                break
+            if addon.host is None or not _has_text_context_menu_permission(addon):
+                continue
+            result = _call_host(addon, "get_text_context_actions", request, timeout=2.0)
+            for item in _safe_list(result):
+                if len(actions) >= 12:
+                    break
+                normalized = _safe_text_context_action(addon.id, item)
+                if normalized is not None:
+                    actions.append(normalized)
+        return actions
 
     def mod_names(self) -> list[str]:
         """Handle mod names for addon manager."""
@@ -869,8 +910,68 @@ def _has_text_annotation_permission(addon: LoadedAddon) -> bool:
     return isinstance(ui, list) and "text_annotations" in {str(item) for item in ui}
 
 
+def _has_text_context_menu_permission(addon: LoadedAddon) -> bool:
+    """Return whether an addon explicitly opted into text context-menu actions."""
+    ui = addon.manifest.permissions.get("ui")
+    return isinstance(ui, list) and "text_context_menu" in {str(item) for item in ui}
+
+
 def _safe_text_annotation_payload(payload: dict[str, Any]) -> dict[str, str]:
     """Return the visible text metadata an annotation addon may inspect."""
+    allowed = {
+        "text",
+        "surface",
+        "role",
+        "message_id",
+        "conversation_id",
+    }
+    return {key: str(payload.get(key) or "") for key in allowed}
+
+
+def _safe_text_context_action_payload(payload: dict[str, Any]) -> dict[str, str]:
+    """Return selected text metadata a context-menu addon may inspect."""
+    allowed = {
+        "selected_text",
+        "text",
+        "surface",
+        "role",
+        "message_id",
+        "conversation_id",
+    }
+    out = {key: str(payload.get(key) or "") for key in allowed}
+    out["selected_text"] = out["selected_text"][:4000]
+    out["text"] = out["text"][:12000]
+    return out
+
+
+def _safe_text_context_action(addon_id: str, item: Any) -> dict[str, Any] | None:
+    """Return one safe text context-menu action."""
+    if not isinstance(item, dict):
+        return None
+    label = str(item.get("label") or "").replace("\x00", "").strip()[:80]
+    action = str(item.get("action") or "copy").replace("\x00", "").strip().lower()
+    if not label or action not in {"copy", "label_editor", "delete_label"}:
+        return None
+    text = str(item.get("text") or "").replace("\x00", "")[:12000]
+    if action == "copy" and not text:
+        return None
+    match = str(item.get("match") or "").replace("\x00", "").strip()[:160]
+    if action in {"label_editor", "delete_label"} and not match:
+        return None
+    out = {
+        "addon_id": addon_id,
+        "id": str(item.get("id") or label).replace("\x00", "").strip()[:80],
+        "label": label,
+        "action": action,
+        "text": text,
+    }
+    if match:
+        out["match"] = match
+    return out
+
+
+def _safe_response_transform_payload(payload: dict[str, Any]) -> dict[str, str]:
+    """Return assistant text metadata a response-modifying addon may inspect."""
     allowed = {
         "text",
         "surface",

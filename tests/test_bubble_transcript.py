@@ -85,6 +85,315 @@ def test_notice_bubble_close_is_dismiss_only():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_fast_forward_button_controls_speed_boost():
+    """Holding the fast-forward button should toggle bubble speed boost."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    speed_events: list[bool] = []
+    bubble.set_speed_callback(speed_events.append)
+
+    try:
+        bubble.append_chunk("hello world")
+        app.processEvents()
+
+        assert bubble._fast_forward_enabled() is True
+        pos = bubble._fast_forward_rect().center()
+
+        QTest.mousePress(bubble, Qt.MouseButton.LeftButton, pos=pos)
+        assert bubble._speed_boosting is True
+        assert speed_events == [True]
+
+        QTest.mouseRelease(bubble, Qt.MouseButton.LeftButton, pos=pos)
+        assert bubble._speed_boosting is False
+        assert speed_events == [True, False]
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_holding_bubble_body_no_longer_controls_speed_boost():
+    """The bubble body should remain available for drag/click instead of speed control."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    speed_events: list[bool] = []
+    bubble.set_speed_callback(speed_events.append)
+
+    try:
+        bubble.append_chunk("hello world")
+        app.processEvents()
+
+        pos = QPoint(24, 24)
+        assert not bubble._fast_forward_rect().contains(pos)
+        assert not bubble._close_rect().contains(pos)
+
+        QTest.mousePress(bubble, Qt.MouseButton.LeftButton, pos=pos)
+        QTest.mouseRelease(bubble, Qt.MouseButton.LeftButton, pos=pos)
+
+        assert bubble._speed_boosting is False
+        assert speed_events == []
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_document_view_is_selectable_and_avoids_controls():
+    """The full document widget should live only inside the bubble text viewport."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("one two three four five six seven eight")
+        app.processEvents()
+
+        view = bubble._text_view
+        assert view.isVisible()
+        assert view.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
+        assert "one two three" in view.toPlainText()
+        assert "\n".join(bubble._lines).strip() in view.toPlainText()
+        assert not view.geometry().intersects(bubble._close_rect())
+        assert not view.geometry().intersects(bubble._fast_forward_rect())
+
+        bubble.show_notice("Choose an action", timeout_ms=0, actions=[("Open", lambda: None)])
+        app.processEvents()
+
+        assert view.isVisible()
+        assert bubble._action_rects
+        assert not view.geometry().intersects(bubble._action_rects[0])
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_document_view_keeps_legacy_bubble_text_width():
+    """Selectable document styling must not change the bubble text wrapping budget."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble, _CLOSE_SIZE, _PAD
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_WIDTH = 420
+    bubble = SpeechBubble()
+
+    try:
+        assert bubble._text_w == config.BUBBLE_WIDTH - _PAD * 2 - _CLOSE_SIZE
+        bubble.append_chunk("style changes should not change the text model")
+
+        assert bubble._full_text == "style changes should not change the text model"
+        assert bubble._visible_plain_text() == "\n".join(bubble._lines).strip()
+        assert not bubble._text_view.geometry().intersects(bubble._close_rect())
+        assert not bubble._text_view.geometry().intersects(bubble._fast_forward_rect())
+    finally:
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_document_view_renders_addon_reply_annotations():
+    """Addon reply annotations should render safe HTML-style tag/style attributes."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk(
+            "bubble chat",
+            annotations=[
+                {
+                    "start": 0,
+                    "end": 6,
+                    "tag": "mark",
+                    "style": "background-color:#12abef; position:absolute",
+                    "tooltip": "Addon picked this style",
+                    "id": "custom-reply-style",
+                }
+            ],
+        )
+        app.processEvents()
+
+        html = bubble._text_view.toHtml()
+        assert "#12abef" in html
+        assert "position:absolute" not in html
+        assert "Addon picked this style" in html
+        assert "bubble chat" in bubble._text_view.toPlainText()
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_document_view_keeps_full_text_and_selection_on_update():
+    """The selectable bubble text should behave like a live document viewport."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QTextCursor
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_LINES = 1
+    config.BUBBLE_WIDTH = 260
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("one two three four five six seven eight")
+        app.processEvents()
+
+        visible_text = "\n".join(bubble._lines).strip()
+        document_text = bubble._text_view.toPlainText()
+
+        assert visible_text
+        assert visible_text in document_text
+        assert "one two three" in document_text
+        assert document_text != visible_text
+
+        doc = bubble._text_view.document()
+        cursor = QTextCursor(doc)
+        start = document_text.index("two")
+        cursor.setPosition(start)
+        cursor.setPosition(start + len("two three"), QTextCursor.MoveMode.KeepAnchor)
+        bubble._text_view.setTextCursor(cursor)
+
+        bubble._advance_highlight()
+        app.processEvents()
+
+        selected = bubble._text_view.textCursor().selectedText().replace("\u2029", "\n")
+        assert selected == "two three"
+        assert "one two three" in bubble._text_view.toPlainText()
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_text_view_click_opens_chat_without_speed_boost():
+    """Simple text-area clicks should keep old open-chat behavior without speeding up."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    opened: list[bool] = []
+    speed_events: list[bool] = []
+    bubble.set_click_callback(lambda: opened.append(True))
+    bubble.set_speed_callback(speed_events.append)
+
+    try:
+        bubble.append_chunk("click this text")
+        app.processEvents()
+
+        QTest.mouseClick(bubble._text_view, Qt.MouseButton.LeftButton, pos=bubble._text_view.rect().center())
+
+        assert opened == [True]
+        assert speed_events == []
+        assert bubble._speed_boosting is False
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_document_view_wheel_moves_bubble_viewport():
+    """Wheel events over document text should move the bubble viewport, not replace the document."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    class _Delta:
+        def __init__(self, value: int):
+            self._value = value
+
+        def y(self) -> int:
+            return self._value
+
+    class _WheelEvent:
+        def __init__(self, value: int):
+            self.accepted = False
+            self._value = value
+
+        def angleDelta(self) -> _Delta:
+            return _Delta(self._value)
+
+        def pixelDelta(self) -> _Delta:
+            return _Delta(0)
+
+        def accept(self) -> None:
+            self.accepted = True
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    old_scroll = getattr(config, "BUBBLE_SCROLL_ENABLED", True)
+    old_snap = getattr(config, "BUBBLE_SCROLL_SNAP_ENABLED", True)
+    config.BUBBLE_LINES = 2
+    config.BUBBLE_SCROLL_ENABLED = True
+    config.BUBBLE_SCROLL_SNAP_ENABLED = False
+    bubble = SpeechBubble()
+
+    try:
+        bubble._all_line_segments = [
+            [(word, False, idx, False, True)]
+            for idx, word in enumerate(["one", "two", "three", "four"])
+        ]
+        bubble._revealed_count = 1
+        bubble._apply_visible_lines()
+        before_document = bubble._text_view.toPlainText()
+
+        event = _WheelEvent(-120)
+        bubble._text_view.wheelEvent(event)
+
+        assert event.accepted is True
+        assert bubble._lines == ["two", "three"]
+        assert bubble._text_view.toPlainText() == before_document
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_SCROLL_ENABLED = old_scroll
+        config.BUBBLE_SCROLL_SNAP_ENABLED = old_snap
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_reading_prefix_is_not_counted_as_spoken_highlight():
     """The read-aloud label should display without becoming spoken/highlighted text."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

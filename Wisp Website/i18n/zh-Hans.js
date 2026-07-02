@@ -4,7 +4,6 @@
 I18N.register('zh-Hans', {
   ui: {
     download: '下载',
-    changelog: '更新日志',
     searchBtn: '搜索文档',
     searchPlaceholder: '搜索文档…',
     onThisPage: '本页内容',

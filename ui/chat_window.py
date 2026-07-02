@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTextBrowser,
     QTextEdit,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -57,6 +58,7 @@ from runtime.supervisor import tool_modes
 from ui.chat_rendering import _assistant_segments_to_html, _assistant_text_to_html, _user_text_to_html
 from ui.i18n import t
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
+from ui.text_annotations import TextAnnotation, normalize_range_annotations
 
 _W          = 840
 _H          = 640
@@ -627,6 +629,32 @@ def _truncate_for_display(text: str, limit: int, label: str = "display") -> str:
     return text[:limit].rstrip() + f"\n\n[{label} truncated; {hidden} chars hidden]"
 
 
+def _ui_lab_label_annotations(text: str, role: str) -> list[dict]:
+    """Return saved UI Lab label annotations for chat-window display."""
+    try:
+        from addons.ui_lab import get_text_annotations
+
+        return list(
+            get_text_annotations(
+                {
+                    "text": text,
+                    "surface": "chat",
+                    "role": role,
+                }
+            )
+            or []
+        )
+    except Exception:
+        return []
+
+
+def _merged_annotations(base: object, text: str, role: str) -> list:
+    """Merge stored message annotations with current UI Lab label rules."""
+    out = list(base or []) if isinstance(base, list) else []
+    out.extend(_ui_lab_label_annotations(text, role))
+    return out
+
+
 def _truncate_segments_for_display(
     segments: list[tuple[str, bool]],
     limit: int = _CHAT_RENDER_CHAR_LIMIT,
@@ -674,8 +702,11 @@ class _MessageTextView(QTextBrowser):
         super().__init__()
         self._bg = bg
         self._scale = scale
+        self._tooltip_annotations: list[TextAnnotation] = []
+        self._context_menu_handler = None
         self.setOpenLinks(False)
         self.setReadOnly(True)
+        self.setMouseTracking(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -686,6 +717,16 @@ class _MessageTextView(QTextBrowser):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.set_font_scale(scale)
         self.textChanged.connect(self._sync_height)
+
+    def set_annotation_tooltips(self, text: str, annotations: object) -> None:
+        """Store annotation tooltips for explicit hover handling."""
+        self._tooltip_annotations = [
+            item for item in normalize_range_annotations(annotations, text) if item.tooltip
+        ]
+
+    def set_message_context_menu_handler(self, handler) -> None:
+        """Install the owning chat-window message menu callback."""
+        self._context_menu_handler = handler
 
     def set_font_scale(self, scale: float) -> None:
         """Apply the chat text zoom multiplier to this bubble."""
@@ -716,9 +757,37 @@ class _MessageTextView(QTextBrowser):
         if event.size().width() != event.oldSize().width():
             self._sync_height()
 
+    def mouseMoveEvent(self, event):  # noqa: N802
+        """Show annotation tooltips over labeled text."""
+        tooltip = self._tooltip_at_position(self.cursorForPosition(event.position().toPoint()).position())
+        if tooltip:
+            QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
+        else:
+            QToolTip.hideText()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        """Hide annotation tooltips when leaving message text."""
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
+    def contextMenuEvent(self, event):  # noqa: N802
+        """Route right-clicks to the chat message menu."""
+        if callable(self._context_menu_handler):
+            self._context_menu_handler(event.pos())
+            event.accept()
+            return
+        super().contextMenuEvent(event)
+
     def wheelEvent(self, event):  # noqa: N802
         """Let the conversation page scroll instead of the individual bubble."""
         event.ignore()
+
+    def _tooltip_at_position(self, position: int) -> str:
+        for annotation in self._tooltip_annotations:
+            if annotation.start <= position < annotation.end:
+                return annotation.tooltip
+        return ""
 
 
 class _ConversationTitleButton(QPushButton):
@@ -2202,11 +2271,13 @@ class ChatWindow(QWidget):
         """Handle bubble for chat window."""
         bg = _USER_BG if role == 'user' else _AI_BG
         display_text = _truncate_for_display(text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
+        display_annotations = _merged_annotations(annotations, display_text, role)
         lbl = _MessageTextView(bg, self._font_scale)
+        lbl.set_annotation_tooltips(display_text, display_annotations)
         if role == "assistant":
-            lbl.setHtml(_assistant_text_to_html(display_text, annotations=annotations))
-        elif annotations:
-            lbl.setHtml(_user_text_to_html(display_text, annotations))
+            lbl.setHtml(_assistant_text_to_html(display_text, annotations=display_annotations))
+        elif display_annotations:
+            lbl.setHtml(_user_text_to_html(display_text, display_annotations))
         else:
             lbl.setPlainText(display_text)
 
@@ -2221,6 +2292,14 @@ class ChatWindow(QWidget):
         wrapper = QWidget()
         wrapper.setStyleSheet("background: transparent;")
         if conversation_index is not None and message_index is not None:
+            lbl.set_message_context_menu_handler(
+                lambda pos, ci=conversation_index, mi=message_index, view=lbl: self._open_message_menu(
+                    ci,
+                    mi,
+                    view,
+                    pos,
+                )
+            )
             wrapper.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             wrapper.customContextMenuRequested.connect(
                 lambda pos, w=wrapper, ci=conversation_index, mi=message_index: self._open_message_menu(
@@ -2309,7 +2388,7 @@ class ChatWindow(QWidget):
         )
         selected_text = ""
         if anchor is not None:
-            text_view = anchor.findChild(_MessageTextView)
+            text_view = anchor if isinstance(anchor, _MessageTextView) else anchor.findChild(_MessageTextView)
             if isinstance(text_view, _MessageTextView):
                 selected_text = text_view.textCursor().selectedText().replace("\u2029", "\n").strip()
         if selected_text:
@@ -2317,6 +2396,14 @@ class ChatWindow(QWidget):
                 t("Copy selected text"),
                 lambda text=selected_text: QApplication.clipboard().setText(text),
             )
+            for item in self._ui_lab_context_actions(selected_text, messages[message_index]):
+                label = str(item.get("label") or "").strip()
+                action = str(item.get("action") or "").strip()
+                match = str(item.get("match") or selected_text).strip()
+                if label and action == "label_editor":
+                    menu.addAction(label, lambda value=match, ci=conversation_index: self._edit_ui_lab_label(value, ci))
+                elif label and action == "delete_label":
+                    menu.addAction(label, lambda value=match, ci=conversation_index: self._delete_ui_lab_label(value, ci))
             menu.addSeparator()
         menu.addAction(
             t("Branch from here"),
@@ -2334,6 +2421,52 @@ class ChatWindow(QWidget):
         else:
             pos = anchor.mapToGlobal(anchor.rect().bottomLeft())
         menu.popup(pos)
+
+    def _ui_lab_context_actions(self, selected_text: str, message: dict) -> list[dict]:
+        """Return UI Lab label actions for a selected chat message range."""
+        try:
+            from addons.ui_lab import get_text_context_actions
+
+            return list(
+                get_text_context_actions(
+                    {
+                        "selected_text": selected_text,
+                        "text": str(message.get("display_content", message.get("content", "")) or ""),
+                        "surface": "chat",
+                        "role": str(message.get("role") or "assistant"),
+                    }
+                )
+                or []
+            )
+        except Exception:
+            return []
+
+    def _edit_ui_lab_label(self, selected_text: str, conversation_index: int) -> None:
+        """Open the UI Lab label editor from the chat window."""
+        try:
+            from ui.ui_lab_label_editor import edit_label
+
+            if edit_label(selected_text, self):
+                self._refresh_ui_lab_labels(conversation_index)
+        except Exception:
+            return
+
+    def _delete_ui_lab_label(self, selected_text: str, conversation_index: int) -> None:
+        """Delete a UI Lab label from the chat window."""
+        try:
+            from ui.ui_lab_label_editor import delete_label
+
+            if delete_label(selected_text, self):
+                self._refresh_ui_lab_labels(conversation_index)
+        except Exception:
+            return
+
+    def _refresh_ui_lab_labels(self, conversation_index: int) -> None:
+        """Rebuild the current page so saved UI Lab labels apply immediately."""
+        if not (0 <= conversation_index < len(self._conversations)):
+            return
+        self._built_pages.discard(conversation_index)
+        self._switch(conversation_index)
 
     def _conversation_slice(self, conv: dict, message_index: int, *, new_id: bool) -> dict:
         """Copy a conversation through one message and rebuild hidden context."""

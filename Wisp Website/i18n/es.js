@@ -3,7 +3,6 @@
 I18N.register('es', {
   ui: {
     download: 'Descargar',
-    changelog: 'Registro de cambios',
     searchBtn: 'Buscar en la documentación',
     searchPlaceholder: 'Buscar en la documentación…',
     onThisPage: 'En esta página',

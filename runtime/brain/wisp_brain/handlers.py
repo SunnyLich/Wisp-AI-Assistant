@@ -611,6 +611,15 @@ def brain_addons_text_annotations(payload: dict[str, Any] | None = None) -> dict
     return {"annotations": manager.get_text_annotations(payload or {})}
 
 
+@handler("brain.addons.transform_response_text")
+def brain_addons_transform_response_text(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return assistant text after response-modifying addons run."""
+    from core.system.paths import ADDONS_DIR
+
+    manager = _loaded_addon_manager(Path(ADDONS_DIR))
+    return {"text": manager.transform_response_text(payload or {})}
+
+
 @handler("brain.addons.run_action")
 def brain_addons_run_action(addon_id: str = "", label: str = "") -> dict[str, Any]:
     """Run a loaded addon tray action by addon name/id and label."""
@@ -978,6 +987,7 @@ _ADDON_HOOKS = (
     "on_shutdown",
     "before_query",
     "after_response",
+    "transform_response_text",
     "get_tools",
     "get_tray_actions",
     "get_settings",
@@ -1410,10 +1420,23 @@ def brain_query(
         is_progress = kind == "progress"
         is_thought = kind == "thought"
         if not (is_progress or is_thought):
+            # Buffer answer text so Wisp/default transforms and addons can
+            # finalize it before the UI sees any assistant content.
             parts.append(text)
+            continue
         ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress, "is_thought": is_thought})
 
-    full = "".join(parts)
+    full = _transform_addon_response_text("".join(parts), surface="reply")
+    if full and not ctx.cancelled:
+        ctx.emit(
+            "reply.chunk",
+            {
+                "text": full,
+                "is_progress": False,
+                "is_thought": False,
+                "annotations": _addon_text_annotations(full, surface="reply"),
+            },
+        )
     done_payload: dict[str, Any] = {"text": full}
     if file_context:
         done_payload["file_context"] = file_context
@@ -1504,6 +1527,47 @@ def _notify_addon_after_response(text: str) -> None:
         _loaded_addon_manager(Path(ADDONS_DIR)).after_response(text)
     except Exception as exc:  # noqa: BLE001 - addon hooks should not block answering
         _log(f"addon after_response skipped: {type(exc).__name__}: {exc}")
+
+
+def _transform_addon_response_text(text: str, *, surface: str) -> str:
+    """Apply opt-in addon response transforms to final assistant text."""
+    if not text:
+        return text
+    try:
+        from core.system.paths import ADDONS_DIR
+
+        run_addon_startup()
+        return _loaded_addon_manager(Path(ADDONS_DIR)).transform_response_text(
+            {
+                "text": text,
+                "surface": surface,
+                "role": "assistant",
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - addon hooks should not block answering
+        _log(f"addon transform_response_text skipped: {type(exc).__name__}: {exc}")
+        return text
+
+
+def _addon_text_annotations(text: str, *, surface: str) -> list[dict[str, Any]]:
+    """Return display-only addon text annotations for a final assistant surface."""
+    if not text:
+        return []
+    try:
+        from core.system.paths import ADDONS_DIR
+
+        run_addon_startup()
+        result = _loaded_addon_manager(Path(ADDONS_DIR)).get_text_annotations(
+            {
+                "text": text,
+                "surface": surface,
+                "role": "assistant",
+            }
+        )
+        return result if isinstance(result, list) else []
+    except Exception as exc:  # noqa: BLE001 - addon annotations should not block answering
+        _log(f"addon text annotations skipped: {type(exc).__name__}: {exc}")
+        return []
 
 
 @handler("brain.context.active_document")
@@ -1745,10 +1809,15 @@ def brain_chat(
         is_progress = kind == "progress"
         is_thought = kind == "thought"
         if not (is_progress or is_thought):
+            # Buffer answer text so Wisp/default transforms and addons can
+            # finalize it before the UI sees any assistant content.
             parts.append(text)
+            continue
         ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress, "is_thought": is_thought})
 
-    full = "".join(parts)
+    full = _transform_addon_response_text("".join(parts), surface="chat")
+    if full and not ctx.cancelled:
+        ctx.emit("reply.chunk", {"text": full, "is_progress": False, "is_thought": False})
     done_payload: dict[str, Any] = {"text": full}
     if file_context:
         done_payload["file_context"] = file_context

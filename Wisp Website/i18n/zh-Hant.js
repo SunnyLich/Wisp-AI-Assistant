@@ -3,7 +3,6 @@
 I18N.register('zh-Hant', {
   ui: {
     download: '下載',
-    changelog: '更新日誌',
     searchBtn: '搜尋文件',
     searchPlaceholder: '搜尋文件…',
     onThisPage: '本頁內容',

@@ -1983,16 +1983,15 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 
 /* Navigation tree — mirrors the sidebar */
 const NAV_TREE = [
+  { pages: [
+    { id: 'overview', label: 'Overview' },
+  ]},
   { section: 'Getting Started', pages: [
-    { id: 'overview',      label: 'Overview' },
     { id: 'technical-demos', label: 'Technical demos'},
     { id: 'installation',  label: 'Installation' },
     { id: 'quickstart',    label: 'Quick start' },
     { id: 'faq',           label: 'Q&A' },
     { id: 'common-issues', label: 'Common issues' },
-  ]},
-  { section: 'Security & Privacy', pages: [
-    { id: 'security',      label: 'Security & privacy' },
   ]},
   { section: 'Core Features', pages: [
     { id: 'overlay',         label: 'Overlay' },
@@ -2000,6 +1999,10 @@ const NAV_TREE = [
     { id: 'voice',           label: 'Voice mode' },
     { id: 'team-mode',       label: 'Agent framework' },
     { id: 'memory',          label: 'Memory' },
+    { id: 'addons',          label: 'Add-ons' },
+  ]},
+  { pages: [
+    { id: 'security', label: 'Security & privacy' },
   ]},
   { section: 'Configuration', pages: [
     { id: 'env-reference',     label: '.env reference' },
@@ -2023,7 +2026,6 @@ const NAV_TREE = [
     { id: 'platform-linux',   label: 'Linux' },
   ]},
   { section: 'Advanced', pages: [
-    { id: 'addons',          label: 'Add-ons' },
     { id: 'custom-prompts',  label: 'Custom prompts' },
     { id: 'fallback-routes', label: 'Fallback routes' },
     { id: 'building-exe',    label: 'Building a portable version' },

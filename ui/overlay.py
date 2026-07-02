@@ -60,7 +60,7 @@ class OverlaySignals(QObject):
     show_context_summary   = Signal(object)  # list[(name, type)] of context sent with a prompt
     drop_context_cleared   = Signal()        # context panel should be cleared
     remove_dropped_item    = Signal(int)     # user clicked X on badge at this index
-    bubble_speed           = Signal(bool)     # hold-to-speed state changed
+    bubble_speed           = Signal(bool)     # fast-forward button state changed
     status_notification    = Signal(str, str) # (title, message) startup/status notice (addons, STT-ready)
 
 

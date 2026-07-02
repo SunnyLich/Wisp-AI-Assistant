@@ -2179,7 +2179,7 @@ class QtProtocolHost:
 
             self._overlay_signals = OverlaySignals()
             self._overlay = IconOverlay(self._overlay_signals)
-            # Keep audio ownership out of the UI process. Bubble hold gestures
+            # Keep audio ownership out of the UI process. Bubble fast-forward
             # and hide/reset callbacks are routed over protocol to the supervisor.
             try:
                 self._overlay._bubble.set_speed_callback(
@@ -2668,6 +2668,7 @@ class QtProtocolHost:
         text: str = "",
         is_thought: bool = False,
         is_progress: bool = False,
+        annotations: list | None = None,
     ) -> dict[str, Any]:
         """Handle reply chunk for qt protocol host."""
         bubble = self._ensure_bubble()
@@ -2676,7 +2677,7 @@ class QtProtocolHost:
             # the first real reply token replaces, not appended reply content.
             bubble.show_progress(text)
         else:
-            bubble.append_chunk(text, is_thought=is_thought)
+            bubble.append_chunk(text, is_thought=is_thought, annotations=annotations)
         return {"appended": len(text or ""), "is_progress": bool(is_progress)}
 
     def _reply_done(self, flush: bool = True) -> dict[str, Any]:

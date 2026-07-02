@@ -85,6 +85,19 @@ def set_setting(addon_id: str, key: str, value: Any) -> None:
     _write(data)
 
 
+def delete_setting(addon_id: str, key: str) -> None:
+    """Delete one addon setting if present."""
+    data = _read()
+    item = data.get("addons", {}).get(addon_id, {})
+    settings = item.get("settings", {}) if isinstance(item, dict) else {}
+    if not isinstance(settings, dict) or key not in settings:
+        return
+    del settings[key]
+    if not settings:
+        item.pop("settings", None)
+    _write(data)
+
+
 def approved_dependency_hash(addon_id: str) -> str:
     """Handle approved dependency hash for addon store."""
     item = _read().get("addons", {}).get(addon_id, {})

@@ -493,8 +493,8 @@ def test_chat_add_conversation_persists_text_annotations() -> None:
     host._all_conversations = []
     host._chat = None
     host._persist_conversations = lambda: None  # type: ignore[attr-defined]
-    user_annotations = [{"start": 0, "end": 4, "kind": "underline"}]
-    assistant_annotations = [{"start": 0, "end": 4, "kind": "highlight"}]
+    user_annotations = [{"start": 0, "end": 4, "tag": "u"}]
+    assistant_annotations = [{"start": 0, "end": 4, "tag": "mark"}]
 
     host._chat_add_conversation(
         user="test",
@@ -602,8 +602,8 @@ def test_chat_send_fn_forwards_annotation_metadata() -> None:
     import threading
 
     host._chat_streams_lock = threading.Lock()
-    assistant_annotations = [{"start": 0, "end": 2, "kind": "highlight"}]
-    user_annotations = [{"start": 0, "end": 4, "kind": "underline"}]
+    assistant_annotations = [{"start": 0, "end": 2, "tag": "mark"}]
+    user_annotations = [{"start": 0, "end": 4, "tag": "u"}]
 
     def emit(event, payload):
         request_id = payload["request_id"]

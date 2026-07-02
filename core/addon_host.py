@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import traceback
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,10 @@ class AddonHost:
         package_name = f"wisp_addons.{self.addon_id.replace('-', '_')}"
         if str(self.folder) not in sys.path:
             sys.path.insert(0, str(self.folder))
+        if "wisp_addons" not in sys.modules:
+            namespace = types.ModuleType("wisp_addons")
+            namespace.__path__ = []  # type: ignore[attr-defined]
+            sys.modules["wisp_addons"] = namespace
         spec = importlib.util.spec_from_file_location(
             package_name,
             entry_path,
@@ -66,6 +71,8 @@ class AddonHost:
             return self._before_query(params)
         if method == "after_response":
             return self._call_hook("after_response", str(params.get("text") or ""))
+        if method == "transform_response_text":
+            return self._transform_response_text(params)
         if method == "get_tray_actions":
             return self._tray_labels()
         if method == "run_tray_action":
@@ -86,6 +93,8 @@ class AddonHost:
             return self._call_list_hook("get_settings")
         if method == "get_text_annotations":
             return self._text_annotations(params)
+        if method == "get_text_context_actions":
+            return self._text_context_actions(params)
         if method == "get_tools":
             return self._tools()
         if method == "execute_tool":
@@ -99,6 +108,7 @@ class AddonHost:
             "on_shutdown",
             "before_query",
             "after_response",
+            "transform_response_text",
             "get_tray_actions",
             "get_intents",
             "get_notifications",
@@ -107,6 +117,7 @@ class AddonHost:
             "get_tools",
             "get_settings",
             "get_text_annotations",
+            "get_text_context_actions",
         )
         return [name for name in hooks if hasattr(self.module, name)]
 
@@ -288,6 +299,22 @@ class AddonHost:
             return []
         result = fn(params or {})
         return result if isinstance(result, list) else []
+
+    def _text_context_actions(self, params: dict[str, Any]) -> list[Any]:
+        """Return text-selection context-menu actions from an addon hook."""
+        fn = getattr(self.module, "get_text_context_actions", None)
+        if not callable(fn):
+            return []
+        result = fn(params or {})
+        return result if isinstance(result, list) else []
+
+    def _transform_response_text(self, params: dict[str, Any]) -> str | dict[str, Any] | None:
+        """Return replacement assistant text from an addon hook."""
+        fn = getattr(self.module, "transform_response_text", None)
+        if not callable(fn):
+            return None
+        result = fn(params or {})
+        return result if isinstance(result, (str, dict)) else None
 
     def _call_hook(self, hook: str, *args: Any) -> Any:
         """Call hook."""

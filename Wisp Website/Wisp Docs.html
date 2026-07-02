@@ -137,8 +137,8 @@
     .nav-section-btn {
       width: 100%; display: flex; align-items: center; justify-content: space-between;
       padding: 8px 12px; background: transparent; border: none;
-      color: var(--dim); font-family: var(--sans); font-size: 11px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: 0.7px;
+      color: var(--dim); font-family: var(--sans); font-size: 13.5px; font-weight: 600;
+      letter-spacing: 0;
       cursor: pointer; text-align: left; transition: color .12s; border-radius: 7px;
     }
     .nav-section-btn:hover { color: var(--text-2); }
@@ -551,8 +551,7 @@
   <div class="header-right">
     <div class="lang-switch" id="langSwitch"></div>
     <div class="header-divider"></div>
-    <a class="header-link" id="hl-download" href="https://github.com/SunnyLich/Python-AI-assistant-overlay" target="_blank">Download</a>
-    <a class="header-link" id="hl-changelog" href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">Changelog</a>
+    <a class="header-link" id="hl-download" href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">Download</a>
     <button class="search-btn" onclick="openSearch()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
       <span class="sb-label">Search documentation</span>
@@ -675,12 +674,15 @@ function navigate(pageId, options = {}) {
 
   // Content
   const content = document.getElementById('content');
-  const breadcrumb =
-    '<nav class="breadcrumb">' +
-      '<span>' + trSection(meta.section) + '</span>' +
-      '<span class="crumb-sep">/</span>' +
-      '<span class="crumb-current">' + trMeta(pageId, 'title', page.title) + '</span>' +
-    '</nav>';
+  const breadcrumb = meta.section
+    ? '<nav class="breadcrumb">' +
+        '<span>' + trSection(meta.section) + '</span>' +
+        '<span class="crumb-sep">/</span>' +
+        '<span class="crumb-current">' + trMeta(pageId, 'title', page.title) + '</span>' +
+      '</nav>'
+    : '<nav class="breadcrumb">' +
+        '<span class="crumb-current">' + trMeta(pageId, 'title', page.title) + '</span>' +
+      '</nav>';
 
   const pageNav = buildPageNav(meta);
 
@@ -798,8 +800,17 @@ function tocClick(id) {
 function buildSidebar() {
   const sidebar = document.getElementById('sidebar');
   let html = '';
-  NAV_TREE.forEach((group, gi) => {
-    const open = gi < 3; // first 3 sections open by default
+  let openGroupCount = 0;
+  NAV_TREE.forEach(group => {
+    if (!group.section) {
+      group.pages.forEach(p => {
+        html += '<div class="nav-item" data-page="' + p.id + '" onclick="navigate(\'' + p.id + '\')">' +
+          trLabel(p.label) + '</div>';
+      });
+      return;
+    }
+    const open = openGroupCount < 3; // first 3 grouped sections open by default
+    openGroupCount += 1;
     html += '<div class="nav-group' + (open ? ' open' : '') + '">';
     html += '<button class="nav-section-btn" onclick="toggleGroup(this)">' +
       trSection(group.section) + ' <span class="nav-chevron">▶</span></button>';

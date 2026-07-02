@@ -3,7 +3,6 @@
 I18N.register('fr', {
   ui: {
     download: 'Télécharger',
-    changelog: 'Journal des modifications',
     searchBtn: 'Rechercher dans la doc',
     searchPlaceholder: 'Rechercher dans la doc…',
     onThisPage: 'Sur cette page',

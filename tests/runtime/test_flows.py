@@ -213,8 +213,7 @@ def query_stream(reply: str = "reply"):
     """Verify query stream behavior."""
     def handler(_params: dict[str, Any], on_event) -> dict[str, Any]:
         """Verify handler behavior."""
-        on_event("reply.chunk", {"text": reply[:2]}, 1)
-        on_event("reply.chunk", {"text": reply[2:]}, 1)
+        on_event("reply.chunk", {"text": reply}, 1)
         on_event("reply.done", {"text": reply}, 1)
         return {"text": reply}
 
@@ -586,7 +585,7 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert "[Dropped context]" in query["ambient_text"]
     chunks = [c["params"] for c in ui.calls_for("ui.reply.chunk")]
     assert not any(c.get("is_progress") for c in chunks)
-    assert [c["text"] for c in chunks] == ["he", "llo"]
+    assert [c["text"] for c in chunks] == ["hello"]
     assert ui.calls_for("ui.reply.done")
     chat_params = ui.last_call("ui.chat.add_conversation")["params"]
     assert chat_params["assistant"] == "hello"
@@ -626,8 +625,7 @@ def test_query_flow_streams_reply_into_open_chat_conversation():
 
     chat_chunks = [call["params"] for call in ui.calls_for("ui.chat.chunk")]
     assert chat_chunks == [
-        {"conversation_index": 2, "text": "he", "is_progress": False, "is_thought": False},
-        {"conversation_index": 2, "text": "llo", "is_progress": False, "is_thought": False},
+        {"conversation_index": 2, "text": "hello", "is_progress": False, "is_thought": False},
     ]
     assert ui.calls_for("ui.chat.done")[-1]["params"]["conversation_index"] == 2
     assert ui.calls_for("ui.chat.done")[-1]["params"]["text"] == "hello"
@@ -656,13 +654,14 @@ def test_query_bubble_splits_exposed_thought_segments():
     assert "".join(chunk["text"] for chunk in chunks if not chunk.get("is_thought") and not chunk.get("is_progress")) == "Created it."
 
 
-def test_query_bubble_replaces_partial_stream_with_final_text():
-    """Verify final query text replaces incomplete streamed bubble text."""
+def test_query_bubble_forwards_reply_text_annotations():
+    """Verify final reply-surface annotations reach the floating bubble chunk."""
+    annotation = {"start": 0, "end": 6, "tag": "mark", "style": "background-color:#4da3ff", "id": "reply-mark"}
+
     def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
-        """Emit an incomplete stream and a complete final answer."""
-        on_event("reply.chunk", {"text": "draft only"}, 1)
-        on_event("reply.done", {"text": "final answer"}, 1)
-        return {"text": "final answer"}
+        on_event("reply.chunk", {"text": "bubble text", "annotations": [annotation]}, 1)
+        on_event("reply.done", {"text": "bubble text"}, 1)
+        return {"text": "bubble text"}
 
     native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
     brain = FakeWorker(stream_handlers={"brain.query": stream})
@@ -671,9 +670,9 @@ def test_query_bubble_replaces_partial_stream_with_final_text():
         flow.begin_caller(0)
         ui.emit("ui.intent.chosen", {"custom": "answer"})
 
-    assert len(ui.calls_for("ui.reply.reset")) >= 2
-    assert ui.calls_for("ui.reply.chunk")[-1]["params"]["text"] == "final answer"
-    assert ui.last_call("ui.chat.add_conversation")["params"]["assistant"] == "final answer"
+    chunks = [call["params"] for call in ui.calls_for("ui.reply.chunk")]
+    assert chunks[-1]["text"] == "bubble text"
+    assert chunks[-1]["annotations"] == [annotation]
 
 
 def test_add_context_shows_panel_badge_not_bubble():
@@ -3923,7 +3922,7 @@ def test_chat_request_streams_through_brain_chat():
     chunks = [c["params"] for c in ui.calls_for("ui.chat.chunk")]
     progress_chunks = [c for c in chunks if c.get("is_progress")]
     assert [c["text"] for c in progress_chunks] == []
-    assert [c["text"] for c in chunks if not c.get("is_progress")] == ["ch", "at reply"]
+    assert [c["text"] for c in chunks if not c.get("is_progress")] == ["chat reply"]
     done_params = ui.last_call("ui.chat.done")["params"]
     assert done_params["request_id"] == "chat-1"
     assert done_params["text"] == "chat reply"
@@ -4166,7 +4165,7 @@ def test_chat_request_forwards_addon_text_annotations():
                     "id": f"{role}-mark",
                     "start": 0,
                     "end": min(2, len(str(payload.get("text") or ""))),
-                    "kind": "highlight",
+                    "tag": "mark",
                 }
             ]
         }

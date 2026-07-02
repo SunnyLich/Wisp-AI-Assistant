@@ -173,8 +173,8 @@ def test_query_uses_planned_chunking_when_enabled_and_eligible(record_ctx, monke
         memory_enabled=False,
     )
 
-    assert _chunks(events) == ["First part.", " Second part.", " Final part."]
     assert result["text"] == "First part. Second part. Final part."
+    assert _chunks(events) == [result["text"]]
     assert planned_calls
     assert planned_calls[0]["kwargs"]["chunks"] == 3
     assert [data for event, data in events if event == "reply.done"] == [{"text": result["text"]}]
@@ -445,6 +445,66 @@ def test_query_runs_shared_addon_before_and_after_hooks(record_ctx, monkeypatch)
     assert "addon context" in result["text"]
     assert calls["after"] == result["text"]
     assert "".join(_chunks(events)) == result["text"]
+
+
+def test_query_uses_addon_modified_final_response(record_ctx, monkeypatch):
+    """Verify query commits the addon-transformed final text."""
+    calls: dict[str, object] = {}
+
+    def fake_stream(*_args, **_kwargs):
+        """Emit raw model text."""
+        yield "raw reply"
+
+    class FakeManager:
+        """Coordinate fake manager behavior."""
+        def before_query(self, prompt, context):
+            """Leave the prompt unchanged."""
+            return prompt, context
+
+        def transform_response_text(self, payload):
+            """Replace final assistant text."""
+            calls["transform"] = dict(payload)
+            return str(payload.get("text") or "").upper()
+
+        def get_text_annotations(self, payload):
+            """Return reply-surface annotations for final visible text."""
+            calls["annotations"] = dict(payload)
+            return [
+                {
+                    "start": 0,
+                    "end": 3,
+                    "tag": "mark",
+                    "style": "background-color:#4da3ff",
+                    "id": "reply-mark",
+                }
+            ]
+
+        def after_response(self, text):
+            """Record post-response text."""
+            calls["after"] = text
+
+    fake_addon_manager = types.ModuleType("core.addon_manager")
+    fake_addon_manager.get_manager = lambda: FakeManager()
+    monkeypatch.setitem(sys.modules, "core.addon_manager", fake_addon_manager)
+    monkeypatch.setattr(handlers, "_addon_startup_done", True)
+    monkeypatch.setattr(handlers, "_stream_query_reply", fake_stream)
+
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="original prompt",
+        ambient_text="original context",
+        memory_context="(none)",
+    )
+
+    assert result["text"] == "RAW REPLY"
+    assert _chunks(events) == ["RAW REPLY"]
+    chunks = [data for event, data in events if event == "reply.chunk"]
+    assert chunks[-1]["annotations"][0]["id"] == "reply-mark"
+    assert [data for event, data in events if event == "reply.done"] == [{"text": "RAW REPLY"}]
+    assert calls["transform"] == {"text": "raw reply", "surface": "reply", "role": "assistant"}
+    assert calls["annotations"] == {"text": "RAW REPLY", "surface": "reply", "role": "assistant"}
+    assert calls["after"] == "RAW REPLY"
 
 
 def test_query_reads_active_document_alongside_screenshot(record_ctx, monkeypatch):

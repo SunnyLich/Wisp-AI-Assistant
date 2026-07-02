@@ -693,6 +693,7 @@ class FlowController:
             return []
         is_progress = bool((data or {}).get("is_progress"))
         payload_is_thought = bool((data or {}).get("is_thought"))
+        annotations = list((data or {}).get("annotations") or []) if isinstance(data, dict) else []
         if payload_is_thought:
             self._safe_call(
                 self.ui,
@@ -710,21 +711,25 @@ class FlowController:
             self._safe_call(
                 self.ui,
                 "ui.reply.chunk",
-                {"text": text, "is_progress": is_progress},
+                {"text": text, "is_progress": is_progress, "annotations": annotations},
                 timeout=30.0,
             )
             return [(text, False, is_progress)]
         segments = list(parser.feed(text))
+        passthrough_annotations = annotations if len(segments) == 1 and segments[0] == (text, False) else []
         for segment, is_thought in segments:
             if segment:
+                chunk_payload: dict[str, Any] = {
+                    "text": segment,
+                    "is_thought": bool(is_thought),
+                    "is_progress": is_progress,
+                }
+                if passthrough_annotations and not is_thought:
+                    chunk_payload["annotations"] = passthrough_annotations
                 self._safe_call(
                     self.ui,
                     "ui.reply.chunk",
-                    {
-                        "text": segment,
-                        "is_thought": bool(is_thought),
-                        "is_progress": is_progress,
-                    },
+                    chunk_payload,
                     timeout=30.0,
                 )
         return [(segment, bool(is_thought), is_progress) for segment, is_thought in segments if segment]

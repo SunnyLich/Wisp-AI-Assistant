@@ -10,19 +10,38 @@ from typing import Any
 MAX_ANNOTATIONS = 256
 MAX_KEYWORD_RULES = 64
 MAX_TOOLTIP_CHARS = 240
-DEFAULT_HIGHLIGHT_COLOR = "#ffd166"
-_ALLOWED_KINDS = {"highlight", "underline", "tag"}
-_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+MAX_STYLE_CHARS = 360
+_ALLOWED_TAGS = {"span", "mark", "u", "code", "strong", "b", "em", "i", "s", "small", "sub", "sup"}
+_ALLOWED_STYLE_PROPS = {
+    "background",
+    "background-color",
+    "border",
+    "border-bottom",
+    "border-color",
+    "border-radius",
+    "border-style",
+    "border-width",
+    "color",
+    "font-family",
+    "font-style",
+    "font-weight",
+    "padding",
+    "text-decoration",
+    "text-decoration-color",
+    "text-decoration-line",
+    "text-decoration-style",
+}
+_UNSAFE_STYLE_RE = re.compile(r"(?i)(?:url\s*\(|expression\s*\(|@import|javascript:|vbscript:|-moz-binding)")
 
 
 @dataclass(frozen=True)
 class TextAnnotation:
-    """A sanitized display-only text annotation."""
+    """A sanitized text range that can render as a small HTML-like inline tag."""
 
     start: int
     end: int
-    kind: str = "highlight"
-    color: str = DEFAULT_HIGHLIGHT_COLOR
+    tag: str = "span"
+    style: str = ""
     tooltip: str = ""
     source: str = ""
     id: str = ""
@@ -37,8 +56,8 @@ class KeywordRule:
     """A sanitized literal keyword rule that can be applied to live text."""
 
     match: str
-    kind: str = "highlight"
-    color: str = DEFAULT_HIGHLIGHT_COLOR
+    tag: str = "span"
+    style: str = ""
     tooltip: str = ""
     source: str = ""
     id: str = ""
@@ -138,8 +157,8 @@ def annotations_from_keyword_rules(
                 TextAnnotation(
                     start=idx,
                     end=end,
-                    kind=rule.kind,
-                    color=rule.color,
+                    tag=rule.tag,
+                    style=rule.style,
                     tooltip=rule.tooltip,
                     source=rule.source,
                     id=rule.id,
@@ -170,8 +189,8 @@ def annotations_for_subrange(
             TextAnnotation(
                 start=left - start,
                 end=right - start,
-                kind=annotation.kind,
-                color=annotation.color,
+                tag=annotation.tag,
+                style=annotation.style,
                 tooltip=annotation.tooltip,
                 source=annotation.source,
                 id=annotation.id,
@@ -226,13 +245,11 @@ def _coerce_annotation(raw: Any, *, text_len: int, fallback_surface: str) -> Tex
     if end <= start:
         return None
 
-    kind = _safe_kind(data.get("kind"))
-    color = _safe_color(data.get("color"))
     return TextAnnotation(
         start=start,
         end=end,
-        kind=kind,
-        color=color,
+        tag=_safe_tag(data.get("tag")),
+        style=_safe_style(data.get("style")),
         tooltip=_safe_text(data.get("tooltip"), MAX_TOOLTIP_CHARS),
         source=_safe_text(data.get("source"), 80),
         id=_safe_text(data.get("id"), 80),
@@ -256,8 +273,8 @@ def _coerce_keyword_rule(raw: Any, *, fallback_surface: str) -> KeywordRule | No
         return None
     return KeywordRule(
         match=match,
-        kind=_safe_kind(data.get("kind")),
-        color=_safe_color(data.get("color")),
+        tag=_safe_tag(data.get("tag")),
+        style=_safe_style(data.get("style")),
         tooltip=_safe_text(data.get("tooltip"), MAX_TOOLTIP_CHARS),
         source=_safe_text(data.get("source"), 80),
         id=_safe_text(data.get("id"), 80),
@@ -277,14 +294,30 @@ def _coerce_int(value: object) -> int | None:
         return None
 
 
-def _safe_kind(value: object) -> str:
-    kind = str(value or "highlight").strip().lower()
-    return kind if kind in _ALLOWED_KINDS else "highlight"
+def _safe_tag(value: object) -> str:
+    tag = str(value or "span").replace("\x00", "").strip().lower()
+    return tag if tag in _ALLOWED_TAGS else "span"
 
 
-def _safe_color(value: object) -> str:
-    color = str(value or "").strip()
-    return color if _COLOR_RE.fullmatch(color) else DEFAULT_HIGHLIGHT_COLOR
+def _safe_style(value: object) -> str:
+    raw = _safe_text(value, MAX_STYLE_CHARS)
+    if not raw:
+        return ""
+    declarations: list[str] = []
+    for part in raw.split(";"):
+        if ":" not in part:
+            continue
+        prop, val = part.split(":", 1)
+        prop = prop.strip().lower()
+        val = val.strip()
+        if not prop or not val or prop not in _ALLOWED_STYLE_PROPS:
+            continue
+        if any(ch in val for ch in {"<", ">", '"', "'", "\\", "`", "{", "}"}):
+            continue
+        if _UNSAFE_STYLE_RE.search(val):
+            continue
+        declarations.append(f"{prop}:{val}")
+    return "; ".join(declarations)
 
 
 def _safe_text(value: object, limit: int) -> str:

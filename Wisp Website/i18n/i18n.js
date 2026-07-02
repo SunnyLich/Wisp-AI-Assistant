@@ -142,9 +142,7 @@ function setLang(code) {
 /* header + search chrome that lives outside the article */
 function applyChromeI18n() {
   const dl = document.getElementById('hl-download');
-  const cl = document.getElementById('hl-changelog');
   if (dl) dl.textContent = trUI('download', 'Download');
-  if (cl) cl.textContent = trUI('changelog', 'Changelog');
   const sbl = document.querySelector('.search-btn .sb-label');
   if (sbl) sbl.textContent = trUI('searchBtn', 'Search documentation');
   const si = document.getElementById('searchInput');

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ui.text_annotations import (
-    DEFAULT_HIGHLIGHT_COLOR,
     annotations_from_keyword_rules,
     compose_annotated_slices,
     normalize_keyword_rules,
@@ -12,14 +11,14 @@ from ui.text_annotations import (
 
 
 def test_normalize_range_annotations_sanitizes_payloads() -> None:
-    """Invalid ranges are dropped and unsafe display metadata is normalized."""
+    """Invalid ranges are dropped and unsafe tag/style metadata is normalized."""
     annotations = normalize_range_annotations(
         [
             {
                 "start": -5,
                 "end": 4,
-                "kind": "unknown",
-                "color": "javascript:bad",
+                "tag": "mark",
+                "style": "background-color:#ffd166; position:absolute; color:red; background:url(x)",
                 "tooltip": "x" * 400,
                 "source": "addon:demo",
             },
@@ -32,9 +31,15 @@ def test_normalize_range_annotations_sanitizes_payloads() -> None:
     assert len(annotations) == 1
     assert annotations[0].start == 0
     assert annotations[0].end == 4
-    assert annotations[0].kind == "highlight"
-    assert annotations[0].color == DEFAULT_HIGHLIGHT_COLOR
+    assert annotations[0].tag == "mark"
+    assert annotations[0].style == "background-color:#ffd166; color:red"
     assert len(annotations[0].tooltip) == 240
+
+    unsafe = normalize_range_annotations(
+        [{"start": 0, "end": 2, "tag": "<script>"}],
+        "hi",
+    )
+    assert unsafe[0].tag == "span"
 
 
 def test_keyword_rules_expand_with_case_and_word_boundaries() -> None:
@@ -46,14 +51,15 @@ def test_keyword_rules_expand_with_case_and_word_boundaries() -> None:
                 "match": "cuda",
                 "case_sensitive": False,
                 "whole_word": True,
-                "color": "#abc",
+                "tag": "code",
+                "style": "color:#abc; font-weight:700; font-family:Consolas, monospace",
             }
         ],
     )
 
-    assert [(item.start, item.end, item.color) for item in annotations] == [
-        (0, 4, "#abc"),
-        (5, 9, "#abc"),
+    assert [(item.start, item.end, item.tag, item.style) for item in annotations] == [
+        (0, 4, "code", "color:#abc; font-weight:700; font-family:Consolas, monospace"),
+        (5, 9, "code", "color:#abc; font-weight:700; font-family:Consolas, monospace"),
     ]
 
 

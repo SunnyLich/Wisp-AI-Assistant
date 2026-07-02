@@ -1,6 +1,7 @@
 ﻿"""Tests for process-hosted addons and the plugin compatibility facade."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -181,8 +182,8 @@ def test_text_annotation_hook_requires_explicit_permission_and_sanitizes(tmp_pat
                 def get_text_annotations(payload):
                     assert "context" not in payload
                     return [
-                        {"start": 0, "end": 4, "color": "#00ffaa", "tooltip": "visible"},
-                        {"start": 5, "end": 9, "color": "not-a-color", "source": "addon:fake"},
+                        {"start": 0, "end": 4, "tag": "mark", "style": "background-color:#00ffaa", "tooltip": "visible"},
+                        {"start": 5, "end": 9, "tag": "script", "style": "position:absolute", "source": "addon:fake"},
                         {"start": 999, "end": 1000},
                     ]
                 """
@@ -208,27 +209,213 @@ def test_text_annotation_hook_requires_explicit_permission_and_sanitizes(tmp_pat
 
     assert len(annotations) == 2
     assert {item["source"] for item in annotations} == {"addon:allowed"}
-    assert annotations[0]["color"] == "#00ffaa"
-    assert annotations[1]["color"] == "#ffd166"
+    assert annotations[0]["tag"] == "mark"
+    assert annotations[0]["style"] == "background-color:#00ffaa"
+    assert annotations[1]["tag"] == "span"
+    assert annotations[1]["style"] == ""
     assert all(item["message_id"] == "m1" for item in annotations)
     assert all(item["conversation_id"] == "c1" for item in annotations)
     manager.on_shutdown()
 
 
-def test_ui_lab_addon_exercises_chat_annotation_surfaces(tmp_path, monkeypatch):
-    """The bundled UI Lab addon should expose safe chat styling annotations."""
+def test_text_context_actions_require_permission_and_sanitize(tmp_path, monkeypatch):
+    """Verify selected-text menu actions are opt-in and client-side safe."""
     addons_dir = tmp_path / "addons"
     addons_dir.mkdir()
-    shutil.copytree(Path("addons/ui_lab"), addons_dir / "ui_lab")
+    specs = {
+        "allowed": 'ui = ["text_context_menu"]',
+        "blocked": 'ui = ["text_annotations"]',
+        "broad": "ui = true",
+    }
+    for addon_id, ui_permission in specs.items():
+        folder = addons_dir / addon_id
+        folder.mkdir()
+        (folder / "addon.toml").write_text(
+            textwrap.dedent(
+                f"""
+                [addon]
+                id = "{addon_id}"
+                name = "{addon_id}"
+                entry = "__init__.py"
+
+                [permissions]
+                {ui_permission}
+                """
+            ).strip(),
+            encoding="utf-8",
+        )
+        (folder / "__init__.py").write_text(
+            textwrap.dedent(
+                """
+                def get_text_context_actions(payload):
+                    assert "context" not in payload
+                    return [
+                        {"label": "Copy note", "action": "copy", "text": "note: " + payload["selected_text"]},
+                        {"label": "Edit note", "action": "label_editor", "match": payload["selected_text"]},
+                        {"label": "Delete note", "action": "delete_label", "match": payload["selected_text"]},
+                        {"label": "Broken edit", "action": "label_editor"},
+                        {"label": "Run code", "action": "execute", "text": "bad"},
+                        {"label": "", "action": "copy", "text": "bad"},
+                    ]
+                """
+            ).strip(),
+            encoding="utf-8",
+        )
     monkeypatch.setattr(addon_store, "_STORE_PATH", tmp_path / "addons.json")
     monkeypatch.setattr(am.addon_store, "_STORE_PATH", tmp_path / "addons.json")
 
     manager = am.AddonManager(addons_dir)
     manager.load_all()
 
+    actions = manager.get_text_context_actions(
+        {
+            "selected_text": "bubble words",
+            "text": "full bubble words",
+            "context": "secret hidden context",
+            "surface": "reply",
+            "role": "assistant",
+        }
+    )
+
+    assert actions == [
+        {
+            "addon_id": "allowed",
+            "id": "Copy note",
+            "label": "Copy note",
+            "action": "copy",
+            "text": "note: bubble words",
+        },
+        {
+            "addon_id": "allowed",
+            "id": "Edit note",
+            "label": "Edit note",
+            "action": "label_editor",
+            "text": "",
+            "match": "bubble words",
+        },
+        {
+            "addon_id": "allowed",
+            "id": "Delete note",
+            "label": "Delete note",
+            "action": "delete_label",
+            "text": "",
+            "match": "bubble words",
+        }
+    ]
+    assert manager.get_text_context_actions({"text": "full only", "surface": "reply"}) == []
+    manager.on_shutdown()
+
+
+def test_response_transform_hook_requires_modify_permission_and_chains(tmp_path, monkeypatch):
+    """Verify response text transforms are opt-in and use sanitized payloads."""
+    addons_dir = tmp_path / "addons"
+    addons_dir.mkdir()
+    specs = {
+        "first": 'response = "modify"',
+        "blocked": 'response = "read"',
+        "second": 'response = "modify"',
+    }
+    for addon_id, response_permission in specs.items():
+        folder = addons_dir / addon_id
+        folder.mkdir()
+        (folder / "addon.toml").write_text(
+            textwrap.dedent(
+                f"""
+                [addon]
+                id = "{addon_id}"
+                name = "{addon_id}"
+                entry = "__init__.py"
+
+                [permissions]
+                {response_permission}
+                """
+            ).strip(),
+            encoding="utf-8",
+        )
+        (folder / "__init__.py").write_text(
+            textwrap.dedent(
+                f"""
+                def transform_response_text(payload):
+                    assert "context" not in payload
+                    assert payload["surface"] == "chat"
+                    assert payload["role"] == "assistant"
+                    return {addon_id!r} + ":" + payload["text"]
+                """
+            ).strip(),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(addon_store, "_STORE_PATH", tmp_path / "addons.json")
+    monkeypatch.setattr(am.addon_store, "_STORE_PATH", tmp_path / "addons.json")
+
+    manager = am.AddonManager(addons_dir)
+    manager.load_all()
+
+    result = manager.transform_response_text(
+        {
+            "text": "hello",
+            "context": "secret hidden context",
+            "surface": "chat",
+            "role": "assistant",
+        }
+    )
+
+    assert result == "second:first:hello"
+    manager.on_shutdown()
+
+
+def test_ui_lab_addon_exercises_saved_label_surfaces(tmp_path, monkeypatch):
+    """The bundled UI Lab addon should apply saved labels to chat and bubble text."""
+    addons_dir = tmp_path / "addons"
+    addons_dir.mkdir()
+    shutil.copytree(Path("addons/ui_lab"), addons_dir / "ui_lab")
+    repo_data = tmp_path / "repo-data"
+    labels_dir = repo_data / "addon_data" / "ui-lab"
+    labels_dir.mkdir(parents=True)
+    labels_path = labels_dir / "labels.json"
+    monkeypatch.setenv("WISP_REPO_ROOT", str(repo_data))
+    monkeypatch.setattr(addon_store, "_STORE_PATH", tmp_path / "addons.json")
+    monkeypatch.setattr(am.addon_store, "_STORE_PATH", tmp_path / "addons.json")
+
+    manager = am.AddonManager(addons_dir)
+    manager.load_all()
+
+    assert (
+        manager.get_text_annotations(
+            {
+                "text": "Try bubble chat style select right-click code in Wisp.",
+                "message_id": "m-ui-lab",
+                "conversation_id": "c-ui-lab",
+                "surface": "chat",
+                "role": "assistant",
+            }
+        )
+        == []
+    )
+
+    labels_path.write_text(
+        json.dumps(
+            {
+                "labels": [
+                    {
+                        "match": "Wisp",
+                        "tooltip": "Assistant name",
+                        "style": "font-weight:700; text-decoration:underline; background:url(x)",
+                    },
+                    {
+                        "match": "bubble label",
+                        "tooltip": "Phrase label",
+                        "style": "font-style:italic; color:#b8b8ff",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sample_text = "Wisp uses a bubble label. wisps should not match. WISP can match again."
     annotations = manager.get_text_annotations(
         {
-            "text": "Try bubble chat style select right-click code in Wisp.",
+            "text": sample_text,
             "message_id": "m-ui-lab",
             "conversation_id": "c-ui-lab",
             "surface": "chat",
@@ -236,21 +423,125 @@ def test_ui_lab_addon_exercises_chat_annotation_surfaces(tmp_path, monkeypatch):
         }
     )
 
-    ids = {item["id"] for item in annotations}
-    assert {
-        "ui-lab-bubble",
-        "ui-lab-chat",
-        "ui-lab-style",
-        "ui-lab-select",
-        "ui-lab-right-click",
-        "ui-lab-code",
-        "ui-lab-extra",
-    } <= ids
+    assert len(annotations) == 3
     assert {item["source"] for item in annotations} == {"addon:ui-lab"}
     assert all(item["message_id"] == "m-ui-lab" for item in annotations)
+    assert all(item["tag"] == "span" for item in annotations)
+    by_match = {sample_text[item["start"]: item["end"]]: item for item in annotations}
+    assert {"Wisp", "bubble label", "WISP"} == set(by_match)
+    assert by_match["Wisp"]["start"] == 0
+    assert by_match["Wisp"]["end"] == 4
+    assert by_match["Wisp"]["tooltip"] == "Assistant name"
+    assert by_match["Wisp"]["style"] == "font-weight:700; text-decoration:underline"
+    assert by_match["bubble label"]["style"] == "font-style:italic; color:#b8b8ff"
+    setting_keys = {item["key"] for item in manager.get_settings("ui-lab")}
+    assert {"enabled", "annotate_user_messages", "rewrite_enabled", "rewrite_prefix"} <= setting_keys
+
+    assert (
+        manager.get_text_annotations(
+            {
+                "text": "Wisp uses a bubble label.",
+                "surface": "chat",
+                "role": "user",
+            }
+        )
+        == []
+    )
+    manager.set_setting("ui-lab", "annotate_user_messages", "true")
+    assert manager.get_text_annotations(
+        {
+            "text": "Wisp uses a bubble label.",
+            "surface": "chat",
+            "role": "user",
+        }
+    )
+
+    reply_annotations = manager.get_text_annotations(
+        {
+            "text": "Wisp uses a bubble label.",
+            "surface": "reply",
+            "role": "assistant",
+        }
+    )
+    reply_ids = {item["id"] for item in reply_annotations}
+    assert {"ui-lab-label-wisp", "ui-lab-label-bubble-label"} == reply_ids
+    assert {item["surface"] for item in reply_annotations} == {"reply"}
+
+    context_actions = manager.get_text_context_actions(
+        {
+            "selected_text": "Wisp",
+            "text": "Wisp uses a bubble label.",
+            "surface": "reply",
+            "role": "assistant",
+        }
+    )
+    assert context_actions == [
+        {
+            "addon_id": "ui-lab",
+            "id": "ui-lab-edit-label",
+            "label": "Edit label",
+            "action": "label_editor",
+            "text": "",
+            "match": "Wisp",
+        },
+        {
+            "addon_id": "ui-lab",
+            "id": "ui-lab-delete-label",
+            "label": "Delete label",
+            "action": "delete_label",
+            "text": "",
+            "match": "Wisp",
+        },
+    ]
+    assert manager.get_text_context_actions({"selected_text": "new phrase", "surface": "chat"}) == [
+        {
+            "addon_id": "ui-lab",
+            "id": "ui-lab-edit-label",
+            "label": "Add label",
+            "action": "label_editor",
+            "text": "",
+            "match": "new phrase",
+        },
+    ]
 
     manager.set_setting("ui-lab", "enabled", "false")
-    assert manager.get_text_annotations({"text": "bubble chat", "surface": "chat"}) == []
+    assert manager.get_text_annotations({"text": "Wisp", "surface": "chat"}) == []
+    assert "labels" not in (tmp_path / "addons.json").read_text(encoding="utf-8")
+
+    assert manager.transform_response_text({"text": "reply", "surface": "chat", "role": "assistant"}) == "reply"
+    manager.set_setting("ui-lab", "rewrite_enabled", "true")
+    assert (
+        manager.transform_response_text({"text": "reply", "surface": "chat", "role": "assistant"})
+        == "[UI Lab] reply"
+    )
+    manager.on_shutdown()
+
+
+def test_ui_lab_labels_migrate_from_legacy_addon_settings(tmp_path, monkeypatch):
+    """Legacy UI Lab label settings should move into addon-owned data storage."""
+    addons_dir = tmp_path / "addons"
+    addons_dir.mkdir()
+    shutil.copytree(Path("addons/ui_lab"), addons_dir / "ui_lab")
+    repo_data = tmp_path / "repo-data"
+    monkeypatch.setenv("WISP_REPO_ROOT", str(repo_data))
+    store_path = tmp_path / "addons.json"
+    monkeypatch.setattr(addon_store, "_STORE_PATH", store_path)
+    monkeypatch.setattr(am.addon_store, "_STORE_PATH", store_path)
+    addon_store.set_setting(
+        "ui-lab",
+        "labels",
+        [{"match": "Wisp", "tooltip": "Migrated label", "style": "text-decoration:underline"}],
+    )
+
+    manager = am.AddonManager(addons_dir)
+    manager.load_all()
+    annotations = manager.get_text_annotations({"text": "Wisp", "surface": "chat", "role": "assistant"})
+
+    assert annotations and annotations[0]["tooltip"] == "Migrated label"
+    labels_path = repo_data / "addon_data" / "ui-lab" / "labels.json"
+    assert labels_path.exists()
+    assert "Migrated label" in labels_path.read_text(encoding="utf-8")
+    assert "labels" not in store_path.read_text(encoding="utf-8")
     manager.on_shutdown()
 
 
@@ -364,6 +655,10 @@ def test_manager_seeds_bundled_default_addons_when_missing(tmp_path, monkeypatch
     (bundled_addon / "addon.toml").write_text("[addon]\nid = 'mcp-bridge'\nname = 'MCP Bridge'\n", encoding="utf-8")
     (bundled_addon / "__init__.py").write_text("", encoding="utf-8")
     (bundled_addon / "servers.json").write_text('{"servers": []}', encoding="utf-8")
+    ui_lab_addon = bundled_root / "ui_lab"
+    ui_lab_addon.mkdir(parents=True)
+    (ui_lab_addon / "addon.toml").write_text("[addon]\nid = 'ui-lab'\nname = 'UI Lab'\n", encoding="utf-8")
+    (ui_lab_addon / "__init__.py").write_text("", encoding="utf-8")
 
     store_path = tmp_path / "addons.json"
     monkeypatch.setattr(addon_store, "_STORE_PATH", store_path)
@@ -376,8 +671,10 @@ def test_manager_seeds_bundled_default_addons_when_missing(tmp_path, monkeypatch
 
     assert (addons_dir / "mcp_bridge" / "addon.toml").exists()
     assert (addons_dir / "mcp_bridge" / "servers.json").read_text(encoding="utf-8") == '{"servers": []}'
-    assert manager.summaries()[0]["id"] == "mcp-bridge"
-    assert manager.summaries()[0]["enabled"] is False
+    assert (addons_dir / "ui_lab" / "addon.toml").exists()
+    summaries = {item["id"]: item for item in manager.summaries()}
+    assert summaries["mcp-bridge"]["enabled"] is False
+    assert summaries["ui-lab"]["enabled"] is True
 
 
 def test_manager_does_not_overwrite_existing_default_addon(tmp_path, monkeypatch):
