@@ -1,0 +1,9 @@
+{
+  "settings": {
+    "announce_tools": "true",
+    "call_timeout_seconds": "8",
+    "description_tag": "",
+    "log_prefix": "[mcp-bridge]",
+    "max_tools_per_server": "50"
+  }
+}

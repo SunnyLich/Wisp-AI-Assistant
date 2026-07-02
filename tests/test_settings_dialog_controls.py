@@ -404,8 +404,9 @@ def test_optional_install_terminal_auto_closes_on_macos(monkeypatch, tmp_path):
     )
 
     assert ok is True
-    assert launched["command"][:2] == ["osascript", "-e"]
+    assert launched["command"][:2] == ["/usr/bin/osascript", "-e"]
     script = launched["command"][2]
+    assert "activate" in script
     assert "exit" in script
     assert "close (window of targetTab) saving no" in script
     assert "Press Enter" not in script
@@ -420,10 +421,15 @@ def test_optional_install_terminal_auto_closes_on_linux(monkeypatch, tmp_path):
     launched: dict[str, object] = {}
     monkeypatch.setattr(dialog_mod.sys, "platform", "linux")
     monkeypatch.setattr(dialog_mod.shutil, "which", lambda name: "/usr/bin/x-terminal-emulator")
+
+    class RunningProcess:
+        def wait(self, timeout=None):
+            raise dialog_mod.subprocess.TimeoutExpired(["x-terminal-emulator"], timeout)
+
     monkeypatch.setattr(
         dialog_mod.subprocess,
         "Popen",
-        lambda command, **kwargs: launched.update(command=command, **kwargs),
+        lambda command, **kwargs: launched.update(command=command, **kwargs) or RunningProcess(),
     )
 
     ok = dialog_mod._launch_terminal_command(
@@ -435,11 +441,52 @@ def test_optional_install_terminal_auto_closes_on_linux(monkeypatch, tmp_path):
     assert ok is True
     command = launched["command"]
     assert command[:3] == ["x-terminal-emulator", "-e", "sh"]
+    assert launched["stdin"] == dialog_mod.subprocess.DEVNULL
+    assert launched["stdout"] == dialog_mod.subprocess.DEVNULL
+    assert launched["stderr"] == dialog_mod.subprocess.DEVNULL
     shell_cmd = command[-1]
+    assert "exec python -m installer" in shell_cmd
     assert "python -m installer" in shell_cmd
     assert "Press Enter" not in shell_cmd
     assert "read -r -p" not in shell_cmd
     assert "read -r" not in shell_cmd
+
+
+def test_optional_install_terminal_falls_back_to_konsole_on_linux(monkeypatch, tmp_path):
+    """Linux terminal installs should try another emulator when the first one fails."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    launched: list[list[str]] = []
+    monkeypatch.setattr(dialog_mod.sys, "platform", "linux")
+    monkeypatch.setattr(dialog_mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"x-terminal-emulator", "konsole"} else None)
+    monkeypatch.delenv("TERMINAL", raising=False)
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "")
+
+    class FailedProcess:
+        def wait(self, timeout=None):
+            return 1
+
+    class RunningProcess:
+        def wait(self, timeout=None):
+            raise dialog_mod.subprocess.TimeoutExpired(["konsole"], timeout)
+
+    def fake_popen(command, **kwargs):
+        launched.append(command)
+        return FailedProcess() if command[0] == "x-terminal-emulator" else RunningProcess()
+
+    monkeypatch.setattr(dialog_mod.subprocess, "Popen", fake_popen)
+
+    ok = dialog_mod._launch_terminal_command(
+        ["python", "-m", "installer"],
+        cwd=tmp_path,
+        title="Wisp installer",
+    )
+
+    assert ok is True
+    assert launched[0][:2] == ["x-terminal-emulator", "-e"]
+    assert launched[1][:2] == ["konsole", "--workdir"]
+    assert "--title" in launched[1]
+    assert "Wisp installer" in launched[1]
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -954,6 +1001,46 @@ def test_kokoro_fast_status_defers_gpu_availability_check():
 
         assert not dialog._kokoro_install_btn.isEnabled()
         assert dialog._kokoro_install_status_lbl.text() == "Kokoro is installed."
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_status_preserves_persisted_runtime_failure():
+    """Reopening Settings should keep a prior Kokoro verification failure visible."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    combo = QComboBox()
+    combo.addItem("CPU", "cpu")
+    dialog._fields["KOKORO_DEVICE"] = combo
+
+    try:
+        SettingsDialog._apply_kokoro_install_status(
+            dialog,
+            installed=True,
+            mode="cpu",
+            torch_status={"fast": True, "installed": True, "valid": True, "version": "2.12.1+cpu"},
+            needs_gpu=False,
+            install_status={
+                "ok": False,
+                "message": "Kokoro installed, but runtime verification failed: ImportError: cmath verification failed.",
+            },
+        )
+
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Install Kokoro"
+        assert "cmath verification failed" in dialog._kokoro_install_status_lbl.text()
     finally:
         dialog._kokoro_install_btn.deleteLater()
         dialog._kokoro_install_status_lbl.deleteLater()

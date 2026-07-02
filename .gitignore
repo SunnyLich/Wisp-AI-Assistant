@@ -16,7 +16,11 @@ secrets.*
 /doll/
 /tmp_debug_agent/
 /model_files/
-/addon_data/
+/addon_data/*
+!/addon_data/mcp-bridge/
+!/addon_data/mcp-bridge/**
+!/addon_data/ui-lab/
+!/addon_data/ui-lab/**
 /python_packages/
 /.understand-anything/
 /.agents/

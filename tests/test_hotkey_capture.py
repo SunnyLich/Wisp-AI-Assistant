@@ -113,6 +113,42 @@ def test_hotkey_capture_records_linux_default_caller_chord(monkeypatch):
         app.processEvents()
 
 
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_hotkey_capture_records_linux_super_shift_s(monkeypatch):
+    """Linux Super+Shift+S should capture as win+shift+s without crashing."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    import ui.settings_panel.hotkey_capture as hotkey_capture
+    from ui.settings_panel.hotkey_capture import HotkeyCaptureEdit
+
+    monkeypatch.setattr(hotkey_capture._WindowsKeyCaptureHook, "start", lambda self: False)
+    monkeypatch.setattr(hotkey_capture._WindowsKeyCaptureHook, "stop", lambda self: None)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    edit = HotkeyCaptureEdit()
+    super_key = getattr(Qt.Key, "Key_Super_L", Qt.Key.Key_Meta)
+    meta_shift = Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ShiftModifier
+    try:
+        edit._start_recording()
+
+        edit.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, super_key, Qt.KeyboardModifier.MetaModifier))
+        edit.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Shift, meta_shift))
+        edit.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_S, meta_shift))
+        edit.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_S, meta_shift))
+        edit.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Shift, Qt.KeyboardModifier.MetaModifier))
+        edit.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease, super_key, Qt.KeyboardModifier.NoModifier))
+        edit._commit_pending()
+
+        assert edit.text() == "shift+win+s"
+        assert edit._recording is False
+    finally:
+        edit.deleteLater()
+        app.processEvents()
+
+
 def test_hotkey_capture_does_not_import_global_hotkey_backend():
     """The settings UI should not import global hotkey listener code to validate edits."""
     source = (ROOT / "ui" / "settings_panel" / "hotkey_capture.py").read_text(encoding="utf-8")

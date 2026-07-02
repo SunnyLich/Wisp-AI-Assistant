@@ -1,0 +1,10 @@
+{
+  "labels": [
+    {
+      "match": "for",
+      "style": "text-decoration:underline",
+      "tag": "span",
+      "tooltip": "This is from the addon"
+    }
+  ]
+}

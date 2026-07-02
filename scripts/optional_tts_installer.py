@@ -24,6 +24,26 @@ def _log(handle, prefix: str, message: str) -> None:
         pass
 
 
+def _write_status(path: Path | None, *, ok: bool | None, message: str) -> None:
+    """Persist installer status for Settings to show after the terminal exits."""
+    if path is None:
+        return
+    try:
+        import time
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "ok": ok,
+            "message": str(message or ""),
+            "updated_at": time.time(),
+        }
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        pass
+
+
 def _load_plan(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -91,18 +111,23 @@ def main() -> int:
     log_path = Path(str(plan.get("log_path") or "")).expanduser()
     if not log_path:
         log_path = Path(plan_path).with_suffix(".log")
+    raw_status_path = str(plan.get("status_path") or "").strip()
+    status_path = Path(raw_status_path).expanduser() if raw_status_path else None
     log_path.parent.mkdir(parents=True, exist_ok=True)
     prefix = f"[{display_name.lower()} install]"
 
     with log_path.open("a", encoding="utf-8") as log:
+        _write_status(status_path, ok=None, message=f"{display_name} install is running.")
         if pre_install_packages:
             _log(log, prefix, "Installing CUDA Torch before Kokoro packages.")
             returncode = _run_install_command(log, prefix, pre_install_packages, reinstall=True)
             if returncode != 0:
+                _write_status(status_path, ok=False, message=f"{display_name} install failed during CUDA Torch install.")
                 return returncode
         if packages:
             returncode = _run_install_command(log, prefix, packages)
             if returncode != 0:
+                _write_status(status_path, ok=False, message=f"{display_name} install failed during package install.")
                 return returncode
 
         optional_deps.add_optional_packages_to_path()
@@ -120,21 +145,33 @@ def main() -> int:
                 runtime_status = optional_deps.kokoro_runtime_import_status()
                 if runtime_status.get("error") or runtime_status.get("valid") is False:
                     detail = str(runtime_status.get("error") or "Kokoro runtime import failed.")
-                    _log(log, prefix, f"Kokoro runtime verification failed: {detail}")
+                    message = f"Kokoro installed, but runtime verification failed: {detail}"
+                    _log(log, prefix, message)
+                    _write_status(status_path, ok=False, message=message)
                     return 1
                 torch_status = optional_deps.kokoro_torch_status()
                 if torch_status.get("error") or torch_status.get("valid") is False:
                     detail = str(torch_status.get("error") or "Torch verification failed.")
-                    _log(log, prefix, f"Torch verification failed: {detail}")
+                    message = f"Kokoro installed, but Torch verification failed: {detail}"
+                    _log(log, prefix, message)
+                    _write_status(status_path, ok=False, message=message)
                     return 1
                 if require_gpu and not torch_status.get("cuda_available"):
-                    _log(log, prefix, "CUDA Torch verification failed.")
+                    message = "Kokoro installed, but CUDA Torch verification failed."
+                    _log(log, prefix, message)
+                    _write_status(status_path, ok=False, message=message)
                     return 1
             except Exception as exc:
-                _log(log, prefix, f"Voice preparation failed: {type(exc).__name__}: {exc}")
+                message = (
+                    "Kokoro installed, but local voice preparation failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                _log(log, prefix, message)
+                _write_status(status_path, ok=False, message=message)
                 return 1
 
         _log(log, prefix, "Completed successfully.")
+        _write_status(status_path, ok=True, message=f"{display_name} installed successfully.")
         return 0
 
 

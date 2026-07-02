@@ -560,7 +560,9 @@ def test_addon_enable_and_settings_round_trip(tmp_path, monkeypatch):
     manager.set_setting("demo", "greeting", "hello")
     assert pm.addon_setting("demo", "greeting") == "hello"
     assert manager.get_settings("demo")[0]["value"] == "hello"
-    assert "hello" in store_path.read_text(encoding="utf-8")
+    settings_path = store_path.parent / "addon_data" / "demo" / "settings.json"
+    assert "hello" in settings_path.read_text(encoding="utf-8")
+    assert "hello" not in store_path.read_text(encoding="utf-8")
 
     manager.set_enabled("demo", False)
     assert not manager.is_enabled("demo")

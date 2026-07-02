@@ -1,0 +1,8 @@
+{
+  "settings": {
+    "annotate_user_messages": false,
+    "enabled": true,
+    "rewrite_enabled": false,
+    "rewrite_prefix": "[UI Lab] "
+  }
+}

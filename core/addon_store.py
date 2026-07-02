@@ -10,6 +10,8 @@ from typing import Any
 from core.system.paths import REPO_ROOT
 
 _STORE_PATH = REPO_ROOT / "addons.json"
+_DATA_DIR_NAME = "addon_data"
+_SETTINGS_FILENAME = "settings.json"
 
 
 def store_path() -> Path:
@@ -36,6 +38,41 @@ def _write(data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _addon_data_root() -> Path:
+    """Return the addon data root beside the active addon store."""
+    return store_path().parent / _DATA_DIR_NAME
+
+
+def _settings_path(addon_id: str) -> Path:
+    """Return the per-addon settings JSON path."""
+    return _addon_data_root() / str(addon_id) / _SETTINGS_FILENAME
+
+
+def _read_settings_file(addon_id: str) -> dict[str, Any]:
+    """Read settings from addon-owned data storage."""
+    path = _settings_path(addon_id)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    settings = data.get("settings", data) if isinstance(data, dict) else {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def _write_settings_file(addon_id: str, settings: dict[str, Any]) -> None:
+    """Write settings to addon-owned data storage."""
+    path = _settings_path(addon_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps({"settings": settings}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     tmp.replace(path)
 
 
@@ -67,6 +104,9 @@ def set_enabled(addon_id: str, enabled: bool) -> None:
 
 def get_setting(addon_id: str, key: str, default: Any = None) -> Any:
     """Return setting."""
+    settings = _read_settings_file(addon_id)
+    if key in settings:
+        return settings[key]
     item = _read().get("addons", {}).get(addon_id, {})
     settings = item.get("settings", {}) if isinstance(item, dict) else {}
     if isinstance(settings, dict) and key in settings:
@@ -76,17 +116,28 @@ def get_setting(addon_id: str, key: str, default: Any = None) -> Any:
 
 def set_setting(addon_id: str, key: str, value: Any) -> None:
     """Set setting."""
+    settings = _read_settings_file(addon_id)
+    settings[str(key)] = value
+    _write_settings_file(addon_id, settings)
+
     data = _read()
     item = _addon(data, addon_id)
     settings = item.setdefault("settings", {})
     if not isinstance(settings, dict):
         item["settings"] = settings = {}
-    settings[str(key)] = value
+    settings.pop(str(key), None)
+    if not settings:
+        item.pop("settings", None)
     _write(data)
 
 
 def delete_setting(addon_id: str, key: str) -> None:
     """Delete one addon setting if present."""
+    file_settings = _read_settings_file(addon_id)
+    if key in file_settings:
+        del file_settings[key]
+        _write_settings_file(addon_id, file_settings)
+
     data = _read()
     item = data.get("addons", {}).get(addon_id, {})
     settings = item.get("settings", {}) if isinstance(item, dict) else {}

@@ -3165,10 +3165,19 @@ class SettingsDialog(QDialog):
         result = getattr(self, "_tts_install_status_result", None)
         if isinstance(result, dict) and result.get("ok"):
             torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
+            install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else {}
             system_has_cuda = bool(result.get("system_cuda_available"))
             installed = bool(result.get("kokoro_installed"))
         else:
             torch_status = self._kokoro_torch_status_fast() if installed else {}
+            install_status = {}
+            if installed:
+                try:
+                    from core import optional_deps
+
+                    install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
+                except Exception:
+                    install_status = {}
             system_has_cuda = False
         mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
         needs_gpu = self._kokoro_needs_gpu_install_from_status(
@@ -3182,6 +3191,7 @@ class SettingsDialog(QDialog):
             "installed": installed,
             "selected_device": selected_device,
             "mode": mode,
+            "install_status": install_status,
             "torch_status": torch_status,
             "needs_gpu": needs_gpu,
             "needs_repair": needs_repair,
@@ -3261,6 +3271,11 @@ class SettingsDialog(QDialog):
                     self._optional_package_installed(module_name)
                     for module_name in ("kokoro", "en_core_web_sm")
                 )
+                kokoro_install_status = (
+                    _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
+                    if kokoro_installed
+                    else {}
+                )
                 system_has_cuda = optional_deps.system_cuda_available()
                 selected = selected_device.strip().lower()
                 mode = "gpu" if selected == "auto" and system_has_cuda else (
@@ -3283,6 +3298,7 @@ class SettingsDialog(QDialog):
                     "elevenlabs_installed": elevenlabs_installed,
                     "kokoro_installed": kokoro_installed,
                     "kokoro_mode": mode,
+                    "kokoro_install_status": kokoro_install_status,
                     "kokoro_torch_status": torch_status,
                     "kokoro_needs_gpu": needs_gpu,
                     "system_cuda_available": system_has_cuda,
@@ -3325,6 +3341,7 @@ class SettingsDialog(QDialog):
         system_has_cuda = bool(result.get("system_cuda_available"))
         mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
         torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
+        install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else {}
         installed = bool(result.get("kokoro_installed"))
         needs_gpu = self._kokoro_needs_gpu_install_from_status(
             installed=installed,
@@ -3335,6 +3352,7 @@ class SettingsDialog(QDialog):
         self._apply_kokoro_install_status(
             installed=installed,
             mode=mode,
+            install_status=install_status,
             torch_status=torch_status,
             needs_gpu=needs_gpu,
         )
@@ -3372,13 +3390,19 @@ class SettingsDialog(QDialog):
         mode: str,
         torch_status: dict[str, object],
         needs_gpu: bool,
+        install_status: dict[str, object] | None = None,
     ) -> None:
         """Apply Kokoro install state to the settings controls."""
         label = getattr(self, "_kokoro_install_status_lbl", None)
         button = getattr(self, "_kokoro_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
-        if installed and torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
+        failed_install_message = _failed_optional_install_message(install_status)
+        if installed and failed_install_message:
+            button.setEnabled(True)
+            button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
+            self._set_test_status(label, "warn", failed_install_message)
+        elif installed and torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
             self._set_test_status(label, "warn", "Kokoro install is incomplete. Reinstall Kokoro.")
@@ -3414,6 +3438,7 @@ class SettingsDialog(QDialog):
         self._apply_kokoro_install_status(
             installed=bool(snapshot.get("installed")),
             mode=str(snapshot.get("mode") or "cpu"),
+            install_status=snapshot.get("install_status") if isinstance(snapshot.get("install_status"), dict) else {},
             torch_status=snapshot.get("torch_status") if isinstance(snapshot.get("torch_status"), dict) else {},
             needs_gpu=bool(snapshot.get("needs_gpu")),
         )
@@ -3624,16 +3649,23 @@ class SettingsDialog(QDialog):
             if not script_path.exists():
                 return False
             log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+            status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
             plan_path = log_path.with_suffix(".plan.json")
             plan = {
                 "display_name": display_name,
                 "packages": packages,
                 "pre_install_packages": pre_install_packages or [],
                 "log_path": str(log_path),
+                "status_path": str(status_path),
                 **(external_plan_extra or {}),
             }
             log_path.parent.mkdir(parents=True, exist_ok=True)
             plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            _write_optional_install_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} install is running.",
+            )
             command = [sys.executable, str(script_path), "--plan", str(plan_path)]
             if not _launch_terminal_command(command, cwd=root, title=f"Wisp {display_name} installer"):
                 return False
@@ -3695,6 +3727,7 @@ class SettingsDialog(QDialog):
             from core import optional_deps
 
             log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+            status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
             log_prefix = f"[{display_name.lower()} install]"
             tail: list[str] = []
             last_progress = f"Installing {display_name}: starting installer."
@@ -3712,6 +3745,12 @@ class SettingsDialog(QDialog):
                         handle.write(line.rstrip() + "\n")
                 except Exception:
                     pass
+
+            _write_optional_install_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} install is running.",
+            )
 
             def _heartbeat() -> None:
                 while not stop_heartbeat.wait(20.0):
@@ -3769,7 +3808,9 @@ class SettingsDialog(QDialog):
                         print(f"{log_prefix} Failed to start installer: {exc}", flush=True)
                         _settings_log.exception("%s install could not start installer", display_name)
                         _write_log(f"{log_prefix} Failed to start installer: {exc}")
-                        return False, f"{display_name} install failed: {exc}"
+                        message = f"{display_name} install failed: {exc}"
+                        _write_optional_install_status(status_path, ok=False, message=message)
+                        return False, message
                     assert process.stdout is not None
                     current_process["value"] = process
                     print(f"{log_prefix} installer started with pid {process.pid}", flush=True)
@@ -3821,10 +3862,16 @@ class SettingsDialog(QDialog):
                     finally:
                         prepare_stop.set()
                     if not ok:
+                        _write_optional_install_status(status_path, ok=False, message=message)
                         return False, message
                     post_install_message = message
                 print(f"{log_prefix} Completed successfully.", flush=True)
                 _write_log(f"{log_prefix} Completed successfully.")
+                _write_optional_install_status(
+                    status_path,
+                    ok=True,
+                    message=post_install_message or success_message,
+                )
                 _progress(f"Installing {display_name}: completed successfully.")
                 return True, post_install_message or success_message
             detail = _optional_install_failure_detail(tail)
@@ -3832,7 +3879,9 @@ class SettingsDialog(QDialog):
                 detail = stopped_reason["value"]
             _write_log(f"{log_prefix} Failed with exit code {returncode}: {detail}")
             _progress(f"{display_name} install failed: {detail}")
-            return False, f"{display_name} install failed: {detail}"
+            message = f"{display_name} install failed: {detail}"
+            _write_optional_install_status(status_path, ok=False, message=message)
+            return False, message
 
         def _worker() -> None:
             try:
@@ -6306,6 +6355,7 @@ class SettingsDialog(QDialog):
                 button = getattr(self, "_kokoro_install_btn", None)
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
+                self._refresh_kokoro_install_status()
             elif test_key == "elevenlabs_install" and ok:
                 self._refresh_elevenlabs_install_status()
             elif test_key == "elevenlabs_install":
@@ -7930,6 +7980,44 @@ def _optional_install_log_path(display_name: str, optional_packages_dir: Path) -
     return base / f"{slug}-install.log"
 
 
+def _optional_install_status_path(display_name: str, optional_packages_dir: Path) -> Path:
+    """Return the durable installer status path beside the installer log."""
+    return _optional_install_log_path(display_name, optional_packages_dir).with_suffix(".status.json")
+
+
+def _write_optional_install_status(path: Path, *, ok: bool | None, message: str) -> None:
+    """Persist the latest optional installer result for future Settings opens."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "ok": ok,
+            "message": str(message or ""),
+            "updated_at": time.time(),
+        }
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        pass
+
+
+def _read_optional_install_status(display_name: str, optional_packages_dir: Path) -> dict[str, object]:
+    """Read the last optional installer result if one exists."""
+    path = _optional_install_status_path(display_name, optional_packages_dir)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _failed_optional_install_message(status: dict[str, object] | None) -> str:
+    """Return the persisted failure message from an installer status payload."""
+    if not isinstance(status, dict) or status.get("ok") is not False:
+        return ""
+    return str(status.get("message") or "").strip()
+
+
 def _optional_install_no_output_timeout_seconds() -> int:
     """Return how long an optional installer may be silent before Wisp stops it.
 
@@ -7994,6 +8082,7 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
             script = (
                 f"set commandText to {json.dumps(command_text)}\n"
                 "tell application \"Terminal\"\n"
+                "  activate\n"
                 "  set targetTab to do script commandText\n"
                 "  repeat while busy of targetTab\n"
                 "    delay 1\n"
@@ -8003,23 +8092,114 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
                 "  end try\n"
                 "end tell"
             )
-            subprocess.Popen(["osascript", "-e", script], cwd=str(cwd))
+            subprocess.Popen(["/usr/bin/osascript", "-e", script], cwd=str(cwd))
             return True
-        shell_cmd = f"cd {shlex.quote(str(cwd))}; {shlex.join(command)}"
-        terminal_candidates = (
-            ("x-terminal-emulator", ["x-terminal-emulator", "-e", "sh", "-lc", shell_cmd]),
-            ("gnome-terminal", ["gnome-terminal", "--", "sh", "-lc", shell_cmd]),
-            ("konsole", ["konsole", "-e", "sh", "-lc", shell_cmd]),
-            ("xfce4-terminal", ["xfce4-terminal", "-e", f"sh -lc {shlex.quote(shell_cmd)}"]),
-            ("xterm", ["xterm", "-e", "sh", "-lc", shell_cmd]),
-        )
-        for executable, terminal_command in terminal_candidates:
-            if shutil.which(executable):
-                subprocess.Popen(terminal_command, cwd=str(cwd))
+        shell_cmd = _terminal_shell_command(command, cwd, title)
+        for executable, terminal_command in _linux_terminal_candidates(shell_cmd, cwd=cwd, title=title):
+            if shutil.which(executable) and _popen_terminal(terminal_command, cwd):
                 return True
     except Exception:
         return False
     return False
+
+
+def _terminal_shell_command(command: list[str], cwd: Path, title: str) -> str:
+    """Return the shell body run inside a visible terminal."""
+    title_cmd = f"printf '\\033]0;%s\\007' {shlex.quote(str(title))}"
+    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; exec {shlex.join(command)}"
+
+
+def _linux_terminal_candidates(shell_cmd: str, *, cwd: Path, title: str) -> list[tuple[str, list[str]]]:
+    """Return Linux terminal launcher candidates in preferred order."""
+    ordered: list[str] = []
+    terminal_env = os.environ.get("TERMINAL", "").strip()
+    if terminal_env:
+        ordered.append(terminal_env)
+    desktop = " ".join(
+        os.environ.get(key, "")
+        for key in ("XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "KDE_FULL_SESSION", "GNOME_DESKTOP_SESSION_ID")
+    ).lower()
+    if "kde" in desktop:
+        ordered.append("konsole")
+    if "gnome" in desktop:
+        ordered.extend(["ptyxis", "kgx", "gnome-terminal"])
+    ordered.extend([
+        "x-terminal-emulator",
+        "konsole",
+        "gnome-terminal",
+        "ptyxis",
+        "kgx",
+        "xfce4-terminal",
+        "mate-terminal",
+        "tilix",
+        "terminator",
+        "lxterminal",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "foot",
+        "xterm",
+        "uxterm",
+        "urxvt",
+        "rxvt",
+    ])
+
+    candidates: list[tuple[str, list[str]]] = []
+    seen: set[str] = set()
+    for raw in ordered:
+        parts = shlex.split(raw)
+        if not parts:
+            continue
+        executable = parts[0]
+        key = str(Path(executable).name).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append((executable, _linux_terminal_command(parts, shell_cmd, cwd=cwd, title=title)))
+    return candidates
+
+
+def _linux_terminal_command(parts: list[str], shell_cmd: str, *, cwd: Path, title: str) -> list[str]:
+    """Build the command line for one Linux terminal emulator."""
+    executable = Path(parts[0]).name
+    prefix = list(parts)
+    cwd_text = str(cwd)
+    if executable == "konsole":
+        return prefix + ["--workdir", cwd_text, "--title", title, "-e", "sh", "-lc", shell_cmd]
+    if executable in {"gnome-terminal", "ptyxis", "kgx", "terminator", "mate-terminal"}:
+        return prefix + ["--title", title, "--working-directory", cwd_text, "--", "sh", "-lc", shell_cmd]
+    if executable == "xfce4-terminal":
+        return prefix + ["--working-directory", cwd_text, "--title", title, "--command", f"sh -lc {shlex.quote(shell_cmd)}"]
+    if executable == "lxterminal":
+        return prefix + ["--working-directory", cwd_text, "--title", title, "-e", "sh", "-lc", shell_cmd]
+    if executable == "tilix":
+        return prefix + ["--working-directory", cwd_text, "--title", title, "-e", "sh", "-lc", shell_cmd]
+    if executable == "kitty":
+        return prefix + ["--directory", cwd_text, "--title", title, "sh", "-lc", shell_cmd]
+    if executable == "alacritty":
+        return prefix + ["--working-directory", cwd_text, "--title", title, "-e", "sh", "-lc", shell_cmd]
+    if executable == "wezterm":
+        return prefix + ["start", "--cwd", cwd_text, "--", "sh", "-lc", shell_cmd]
+    if executable == "foot":
+        return prefix + ["--working-directory", cwd_text, "--title", title, "sh", "-lc", shell_cmd]
+    if executable in {"xterm", "uxterm", "urxvt", "rxvt"}:
+        return prefix + ["-T", title, "-e", "sh", "-lc", shell_cmd]
+    return prefix + ["-e", "sh", "-lc", shell_cmd]
+
+
+def _popen_terminal(command: list[str], cwd: Path) -> bool:
+    """Start a terminal launcher, treating immediate non-zero exit as failure."""
+    proc = subprocess.Popen(
+        command,
+        cwd=str(cwd),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        return proc.wait(timeout=0.35) == 0
+    except subprocess.TimeoutExpired:
+        return True
 
 
 def _translate_status_message(message: str) -> str:

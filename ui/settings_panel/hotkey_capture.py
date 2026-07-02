@@ -38,6 +38,10 @@ _MODIFIER_NAMES = {
     Qt.Key.Key_Meta.value: "win",
     Qt.Key.Key_AltGr.value: "alt",
 }
+for _qt_name in ("Key_Super_L", "Key_Super_R", "Key_Hyper_L", "Key_Hyper_R"):
+    _qt_key = getattr(Qt.Key, _qt_name, None)
+    if _qt_key is not None:
+        _MODIFIER_NAMES[int(_qt_key.value)] = "win"
 _COMMIT_DEBOUNCE_MS = 80
 _HOTKEY_MODIFIER_TOKENS = {"ctrl", "control", "alt", "shift", "win", "cmd", "command", "option"}
 _HOTKEY_ACTION_MODIFIER_TOKENS = {"ctrl", "control", "alt", "win", "cmd", "command", "option"}
@@ -79,6 +83,19 @@ def _qt_key_name(key: int) -> str | None:
     return ch if ch else None
 
 
+def _event_key_int(event) -> int | None:
+    """Return a stable integer key code from a Qt key event."""
+    try:
+        return int(event.key())
+    except Exception:
+        key = getattr(event, "key", lambda: None)()
+        value = getattr(key, "value", None)
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+
 def _tokens_from_qt_event(event) -> tuple[list[str], str | None]:
     """Return modifier tokens and the action token from a Qt key event."""
     mods = event.modifiers()
@@ -92,7 +109,9 @@ def _tokens_from_qt_event(event) -> tuple[list[str], str | None]:
     if mods & Qt.KeyboardModifier.MetaModifier:
         modifiers.append("win")
 
-    key = int(event.key())
+    key = _event_key_int(event)
+    if key is None:
+        return modifiers, None
     modifier_name = _MODIFIER_NAMES.get(key)
     if modifier_name and modifier_name not in modifiers:
         modifiers.append(modifier_name)
@@ -337,22 +356,29 @@ class HotkeyCaptureEdit(QLineEdit):
         if not self._recording:
             super().keyPressEvent(event)
             return
-        modifiers, action = _tokens_from_qt_event(event)
-        for modifier in modifiers:
-            self._handle_captured_token(modifier, True)
-        if action:
-            self._handle_captured_token(action, True)
+        try:
+            modifiers, action = _tokens_from_qt_event(event)
+            for modifier in modifiers:
+                self._handle_captured_token(modifier, True)
+            if action:
+                self._handle_captured_token(action, True)
+        except Exception as exc:
+            print(f"[hotkey-capture] ignored key press: {type(exc).__name__}: {exc}", flush=True)
         event.accept()
 
     def keyReleaseEvent(self, event):  # noqa: N802
         """Handle key release event for hotkey capture edit."""
         if self._recording:
-            modifier_name = _MODIFIER_NAMES.get(int(event.key()))
-            if modifier_name:
-                self._handle_captured_token(modifier_name, False)
-            action = None if modifier_name else _qt_key_name(int(event.key()))
-            if action:
-                self._handle_captured_token(action, False)
+            try:
+                key = _event_key_int(event)
+                modifier_name = _MODIFIER_NAMES.get(key) if key is not None else None
+                if modifier_name:
+                    self._handle_captured_token(modifier_name, False)
+                action = None if modifier_name or key is None else _qt_key_name(key)
+                if action:
+                    self._handle_captured_token(action, False)
+            except Exception as exc:
+                print(f"[hotkey-capture] ignored key release: {type(exc).__name__}: {exc}", flush=True)
             event.accept()
         else:
             super().keyReleaseEvent(event)

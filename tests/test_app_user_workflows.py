@@ -1548,7 +1548,9 @@ def test_addon_update_remove_bad_archive_and_credentials_reset_workflow(
     addon = next(item for item in handlers.brain_addons_list()["addons"] if item["id"] == "archive-demo")
     assert addon["settings"][0]["value"] == "v1"
     assert handlers.brain_addons_set_setting("archive-demo", "version", "custom")["ok"] is True
-    assert "custom" in (tmp_path / "addons.json").read_text(encoding="utf-8")
+    settings_path = tmp_path / "addon_data" / "archive-demo" / "settings.json"
+    assert "custom" in settings_path.read_text(encoding="utf-8")
+    assert "custom" not in (tmp_path / "addons.json").read_text(encoding="utf-8")
 
     updated = tmp_path / "updated-source" / "archive_demo"
     updated.mkdir(parents=True)
