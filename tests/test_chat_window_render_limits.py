@@ -591,6 +591,7 @@ def test_chat_message_menu_can_copy_selected_text(monkeypatch):
         return None
 
     monkeypatch.setattr(QMenu, "popup", fake_popup)
+    monkeypatch.setattr(ChatWindow, "_ui_lab_context_actions", lambda *_args: [])
     try:
         view = window.findChild(_MessageTextView)
         assert view is not None

@@ -13,16 +13,18 @@ def test_optional_packages_default_to_shared_user_data_dir(monkeypatch, tmp_path
     import core.system.paths as paths
 
     appdata = tmp_path / "appdata"
+    xdg_config = tmp_path / "xdg-config"
     repo_root = tmp_path / "repo"
     with monkeypatch.context() as mp:
         mp.setenv("APPDATA", str(appdata))
+        mp.setenv("XDG_CONFIG_HOME", str(xdg_config))
         mp.setenv("WISP_REPO_ROOT", str(repo_root))
         mp.delenv("WISP_OPTIONAL_PACKAGES_DIR", raising=False)
         reloaded_paths = importlib.reload(paths)
         reloaded_optional = importlib.reload(optional_deps)
 
         assert reloaded_paths.REPO_ROOT == repo_root
-        assert reloaded_optional.OPTIONAL_PACKAGES_DIR == appdata / "Wisp" / "python_packages"
+        assert reloaded_optional.OPTIONAL_PACKAGES_DIR == reloaded_paths.USER_DATA_DIR / "python_packages"
 
     importlib.reload(paths)
     importlib.reload(optional_deps)
