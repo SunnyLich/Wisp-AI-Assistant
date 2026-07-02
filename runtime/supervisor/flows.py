@@ -340,6 +340,9 @@ class FlowController:
     def _on_native_hotkey(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle native hotkey events."""
         kind = (data or {}).get("kind")
+        if self._settings_dialog_is_open():
+            log.info("hotkey ignored while Settings is open: kind=%s", kind)
+            return
         if kind == "caller":
             log.info("hotkey received: kind=%s", kind)
             self._schedule(self.begin_caller, int((data or {}).get("index") or 0))
@@ -1825,6 +1828,11 @@ class FlowController:
             {"extra_tools": self._addon_model_tool_payloads()},
             timeout=30.0,
         )
+
+    def _settings_dialog_is_open(self) -> bool:
+        """Return whether Settings is visible in the UI worker."""
+        result = self._safe_call(self.ui, "ui.settings.is_open", timeout=2.0) or {}
+        return bool(isinstance(result, dict) and result.get("open"))
 
     def _worker_status_row(self, name: str, worker: WorkerLike) -> dict[str, Any]:
         """Build one worker status row without making an IPC round trip."""

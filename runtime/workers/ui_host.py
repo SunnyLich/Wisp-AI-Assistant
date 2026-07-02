@@ -2132,6 +2132,8 @@ class QtProtocolHost:
             return self._show_chat(force_new=bool(params.get("new", False)))
         if method == "ui.show_settings":
             return self._show_settings(**params)
+        if method == "ui.settings.is_open":
+            return self._settings_is_open()
         if method == "ui.show_memory":
             return self._show_memory(**params)
         if method == "ui.show_addons":
@@ -3231,6 +3233,7 @@ class QtProtocolHost:
 
         from PySide6.QtWidgets import QMessageBox
 
+        details = params.get("details") if isinstance(params.get("details"), dict) else {}
         diff = str(params.get("diff") or details.get("diff") or "").strip()
 
         box = QMessageBox(self._chat or self._overlay)
@@ -3692,6 +3695,16 @@ class QtProtocolHost:
 
         QTimer.singleShot(0, _open)
         return {"queued": True}
+
+    def _settings_is_open(self) -> dict[str, bool]:
+        """Return whether the Settings dialog is currently visible."""
+        try:
+            from ui.settings_panel import dialog as settings_dialog
+
+            dlg = getattr(settings_dialog, "_settings_dialog", None)
+            return {"open": bool(dlg is not None and dlg.isVisible())}
+        except Exception:
+            return {"open": False}
 
     def _format_status_rows(self, rows: list[dict[str, Any]] | None) -> str:
         """Format health/privacy rows for a compact QMessageBox."""

@@ -23,6 +23,7 @@ _local_tts_error = ""
 _local_tts_warmup_started_at: float | None = None
 _LOCAL_TTS_WARMUP_STALE_SECONDS = 3600.0
 _LOCAL_TTS_WARMUP_PROGRESS_SECONDS = 5.0
+_PLAYBACK_CHUNK_FRAMES = 2048
 
 
 def _local_tts_provider(provider: str) -> bool:
@@ -150,8 +151,8 @@ def _warm_local_audio(
         if is_local_tts and on_progress is not None:
             threading.Thread(target=_progress_heartbeat, daemon=True, name="audio-tts-prewarm-progress").start()
         try:
-            from core import tts
             import config
+            from core import tts
 
             if provider == "kokoro":
                 message = (
@@ -346,6 +347,41 @@ def _write_empty_wav(path: Path, *, sample_rate: int = 22_050) -> dict[str, Any]
     return {"path": str(path), "sample_rate": sample_rate, "bytes": 0, "provider": "none"}
 
 
+def _current_tts_rate() -> float:
+    """Return the current playback rate, including bubble fast-forward state."""
+    import config
+    from core import audio_state
+
+    return audio_state.current_tts_rate(
+        playback_rate=float(getattr(config, "TTS_PLAYBACK_RATE", 1.0) or 1.0),
+        hold_playback_rate=float(getattr(config, "TTS_HOLD_PLAYBACK_RATE", 1.35) or 1.35),
+    )
+
+
+def _speed_adjust_float_audio(data, rate: float):
+    """Return a copy of float audio resampled to play at the requested speed."""
+    if abs(rate - 1.0) < 0.01 or getattr(data, "size", 0) < 2:
+        return data
+    import numpy as np
+
+    samples = np.asarray(data, dtype=np.float32)
+    mono = samples.ndim == 1
+    if mono:
+        samples = samples.reshape(-1, 1)
+    frames = samples.shape[0]
+    if frames < 2:
+        return data
+    out_frames = max(1, int(frames / rate))
+    src_x = np.arange(frames, dtype=np.float32)
+    dst_x = np.linspace(0, frames - 1, out_frames, dtype=np.float32)
+    adjusted = np.empty((out_frames, samples.shape[1]), dtype=np.float32)
+    for channel in range(samples.shape[1]):
+        adjusted[:, channel] = np.interp(dst_x, src_x, samples[:, channel]).astype(np.float32)
+    if mono:
+        return adjusted[:, 0]
+    return adjusted
+
+
 def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
     """Synthesize text into a WAV file and return its path."""
     if not text.strip():
@@ -409,7 +445,7 @@ def tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, Any]:
             print(f"[audio] tts.synthesize retry failed ({type(exc2).__name__}: {exc2})", flush=True)
             raise RuntimeError(f"{provider} TTS failed: {exc2}") from exc2
         if expects_audio and not chunks:
-            raise RuntimeError(f"{provider} returned no audio")
+            raise RuntimeError(f"{provider} returned no audio") from exc
 
     if not chunks:
         return _write_empty_wav(path)
@@ -446,23 +482,30 @@ def play_file(path: str = "") -> dict[str, Any]:
     if not path:
         raise ValueError("path is required")
     _playback_stop.clear()
+    import numpy as np
     import sounddevice as sd
     import soundfile as sf
-    import numpy as np
+
     import config
 
     data, sample_rate = sf.read(path, dtype="float32")
+    data = np.asarray(data, dtype=np.float32)
     volume = max(0.0, min(2.0, float(getattr(config, "TTS_VOLUME", 1.0) or 1.0)))
     if volume != 1.0:
         data = np.clip(data * volume, -1.0, 1.0).astype("float32", copy=False)
+    channels = 1 if data.ndim == 1 else int(data.shape[1])
     _event("audio.playback.started", {"path": path})
-    sd.play(data, sample_rate)
-    while not _playback_stop.is_set():
-        try:
-            sd.wait()
-            break
-        except KeyboardInterrupt:
-            _playback_stop.set()
+    try:
+        with sd.OutputStream(samplerate=sample_rate, channels=channels, dtype="float32") as stream:
+            total_frames = int(data.shape[0]) if getattr(data, "ndim", 0) else 0
+            offset = 0
+            while offset < total_frames and not _playback_stop.is_set():
+                end = min(total_frames, offset + _PLAYBACK_CHUNK_FRAMES)
+                chunk = data[offset:end]
+                offset = end
+                stream.write(_speed_adjust_float_audio(chunk, _current_tts_rate()))
+    except KeyboardInterrupt:
+        _playback_stop.set()
     if _playback_stop.is_set():
         sd.stop()
     _event("audio.playback.done", {"path": path, "stopped": _playback_stop.is_set()})

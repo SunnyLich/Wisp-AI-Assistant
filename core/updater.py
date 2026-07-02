@@ -50,6 +50,17 @@ class UpdateCheckResult:
     notes_url: str = ""
 
 
+@dataclass(frozen=True)
+class RepoUpdateResult:
+    """Result from fast-forwarding a source checkout."""
+
+    repo_root: Path
+    before: str
+    after: str
+    updated: bool
+    output: str = ""
+
+
 def manifest_url() -> str:
     """Return the update manifest URL, allowing release-host overrides."""
     return os.environ.get("WISP_UPDATE_MANIFEST_URL", DEFAULT_MANIFEST_URL).strip()
@@ -222,6 +233,77 @@ def _quoted_ps(value: str) -> str:
 
 def _quoted_sh(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def source_checkout_root() -> Path:
+    """Return the repository root for a source checkout."""
+    return Path(__file__).resolve().parents[1]
+
+
+def is_repo_checkout(root: Path | None = None) -> bool:
+    """Return True when Wisp is running from an editable git checkout."""
+    if getattr(sys, "frozen", False):
+        return False
+    candidate = Path(root) if root is not None else source_checkout_root()
+    return (candidate / ".git").exists()
+
+
+def _run_git(root: Path, args: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise UpdateError("Git is not available on PATH.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise UpdateError("Git update timed out.") from exc
+
+
+def _git_stdout(root: Path, args: list[str], timeout: float) -> str:
+    completed = _run_git(root, args, timeout)
+    if completed.returncode == 0:
+        return str(completed.stdout or "").strip()
+    message = str(completed.stderr or completed.stdout or "").strip()
+    raise UpdateError(message or f"git {' '.join(args)} failed with exit code {completed.returncode}.")
+
+
+def apply_repo_update(
+    root: Path | None = None,
+    *,
+    remote: str = "origin",
+    branch: str = "main",
+    timeout: float = 120.0,
+) -> RepoUpdateResult:
+    """Fast-forward a clean source checkout from origin/main."""
+    repo = (Path(root) if root is not None else source_checkout_root()).resolve()
+    if not is_repo_checkout(repo):
+        raise UpdateError("Repo update is only available from a git checkout.")
+
+    current_branch = _git_stdout(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
+    if current_branch == "HEAD":
+        raise UpdateError("Repo update is not available while HEAD is detached.")
+    if current_branch != branch:
+        raise UpdateError(
+            f"Repo update is only available on the {branch} branch (current branch: {current_branch})."
+        )
+
+    status = _git_stdout(repo, ["status", "--porcelain"], timeout)
+    if status:
+        raise UpdateError("Repo update stopped because this checkout has local changes. Commit or stash them, then try again.")
+
+    before = _git_stdout(repo, ["rev-parse", "HEAD"], timeout)
+    pull = _run_git(repo, ["pull", "--ff-only", remote, branch], timeout)
+    output = "\n".join(part for part in (str(pull.stdout or "").strip(), str(pull.stderr or "").strip()) if part)
+    if pull.returncode != 0:
+        raise UpdateError(output or f"git pull --ff-only {remote} {branch} failed with exit code {pull.returncode}.")
+    after = _git_stdout(repo, ["rev-parse", "HEAD"], timeout)
+    return RepoUpdateResult(repo_root=repo, before=before, after=after, updated=before != after, output=output)
 
 
 def install_root() -> Path:
@@ -523,6 +605,9 @@ work_root="$(dirname "$archive")/apply-$(date +%s)-$$"
 extract_root="$work_root/extract"
 backup_root="$install_root.previous-update"
 error_log="$(dirname "$archive")/apply-update-error.log"
+ui_pipe=""
+ui_pid=""
+ui_fd_open=0
 
 restore_backup() {{
     if [ -d "$backup_root" ] && [ ! -e "$install_root" ]; then
@@ -530,7 +615,71 @@ restore_backup() {{
     fi
 }}
 
+start_installer_ui() {{
+    if [ -z "${{DISPLAY:-}}" ] && [ -z "${{WAYLAND_DISPLAY:-}}" ]; then
+        return 0
+    fi
+    if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ]; then
+        return 0
+    fi
+    if command -v zenity >/dev/null 2>&1 && command -v mkfifo >/dev/null 2>&1; then
+        mkdir -p "$work_root"
+        ui_pipe="$work_root/update-ui.pipe"
+        rm -f "$ui_pipe"
+        if mkfifo "$ui_pipe"; then
+            zenity --progress --pulsate --no-cancel --auto-close --title="Wisp Update" --text="Preparing update..." < "$ui_pipe" >/dev/null 2>&1 &
+            ui_pid=$!
+            if exec 3<>"$ui_pipe"; then
+                ui_fd_open=1
+            fi
+        fi
+    elif command -v kdialog >/dev/null 2>&1; then
+        kdialog --title "Wisp Update" --passivepopup "Updating Wisp. Wisp will reopen when the update finishes." 30 >/dev/null 2>&1 &
+        ui_pid=$!
+    elif command -v xmessage >/dev/null 2>&1; then
+        xmessage -center -buttons "" "Updating Wisp. Wisp will reopen when the update finishes." >/dev/null 2>&1 &
+        ui_pid=$!
+    fi
+}}
+
+update_installer_status() {{
+    if [ "$ui_fd_open" = "1" ]; then
+        {{ printf '# %s\n' "$1" >&3; }} 2>/dev/null || true
+    fi
+}}
+
+finish_installer_ui() {{
+    message="$1"
+    failed="$2"
+    if [ "$ui_fd_open" = "1" ]; then
+        if [ "$failed" = "1" ]; then
+            {{ printf '# %s\n' "$message" >&3; }} 2>/dev/null || true
+        else
+            {{ printf '100\n# %s\n' "$message" >&3; }} 2>/dev/null || true
+        fi
+        exec 3>&- 2>/dev/null || true
+        ui_fd_open=0
+    fi
+    if [ -n "$ui_pid" ] && kill -0 "$ui_pid" 2>/dev/null; then
+        if [ "$failed" = "1" ]; then
+            kill "$ui_pid" 2>/dev/null || true
+        else
+            sleep 0.5
+        fi
+    fi
+    if [ "$failed" = "1" ]; then
+        if command -v zenity >/dev/null 2>&1; then
+            zenity --error --title="Wisp Update" --text="$message" >/dev/null 2>&1 || true
+        elif command -v kdialog >/dev/null 2>&1; then
+            kdialog --title "Wisp Update" --error "$message" >/dev/null 2>&1 || true
+        elif command -v xmessage >/dev/null 2>&1; then
+            xmessage -center "$message" >/dev/null 2>&1 || true
+        fi
+    fi
+}}
+
 wait_for_wisp_exit() {{
+    update_installer_status "Waiting for Wisp to close..."
     while kill -0 "$pid_to_wait" 2>/dev/null; do
         sleep 1
     done
@@ -551,9 +700,11 @@ wait_for_wisp_exit() {{
     fi
 }}
 
-trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_backup; if [ ! -s "$error_log" ]; then echo "Wisp update apply failed." > "$error_log"; fi; fi; exit "$rc"' EXIT
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_backup; if [ ! -s "$error_log" ]; then echo "Wisp update apply failed." > "$error_log"; fi; finish_installer_ui "Wisp update failed. Details were saved to $error_log" 1; fi; exit "$rc"' EXIT
+start_installer_ui
 mkdir -p "$extract_root"
 wait_for_wisp_exit
+update_installer_status "Extracting the downloaded update..."
 {extract_command}
 candidate="$extract_root/$archive_root_name"
 if [ ! -e "$candidate" ]; then
@@ -563,12 +714,15 @@ if [ -z "$candidate" ] || [ ! -e "$candidate" ]; then
     echo "Could not find the extracted Wisp app folder." > "$error_log"
     exit 1
 fi
+update_installer_status "Replacing the old Wisp files..."
 rm -rf "$backup_root"
 mv "$install_root" "$backup_root"
 mv "$candidate" "$install_root"
+update_installer_status "Reopening Wisp..."
 {opener}
 sleep 5
 rm -rf "$backup_root" "$work_root"
+finish_installer_ui "Wisp has been updated and reopened." 0
 """
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o700)

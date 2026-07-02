@@ -257,6 +257,28 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert not ui.calls_for("ui.reply.listening")
 
 
+def test_caller_hotkey_is_ignored_while_settings_is_open():
+    """Remapping a registered caller hotkey should not summon the intent overlay."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents": True,
+            "context_tools": True,
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler()})
+    ui = FakeWorker({"ui.settings.is_open": lambda _params: {"open": True}})
+    with caller_config(rows):
+        _flow, native, ui, _brain, _audio = make_flow(native=native, ui=ui)
+        native.emit("native.hotkey", {"kind": "caller", "index": 0})
+
+    assert not native.calls_for("native.context.snapshot")
+    assert not ui.calls_for("ui.show_intent")
+
+
 def test_audio_warmup_events_surface_user_notices():
     """Verify local audio warmup start and finish are visible to the user."""
     flow, _native, ui, _brain, audio = make_flow()

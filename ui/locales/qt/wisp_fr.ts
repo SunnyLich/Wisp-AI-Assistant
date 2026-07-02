@@ -4004,12 +4004,44 @@ Continuer ?</translation>
       <translation>Vérifiez les versions GitHub pour une nouvelle version de Wisp.</translation>
     </message>
     <message>
+      <source>Fast-forward this repo checkout from origin/main.</source>
+      <translation>Mettre ce checkout du dépôt à jour en avance rapide depuis origin/main.</translation>
+    </message>
+    <message>
       <source>Check for updates</source>
       <translation>Rechercher des mises à jour</translation>
     </message>
     <message>
+      <source>Pull latest</source>
+      <translation>Récupérer la dernière version</translation>
+    </message>
+    <message>
+      <source>Repo checkout: ready to pull origin/main.</source>
+      <translation>Checkout du dépôt : prêt à tirer origin/main.</translation>
+    </message>
+    <message>
       <source>Checking...</source>
       <translation>Vérification...</translation>
+    </message>
+    <message>
+      <source>Pulling...</source>
+      <translation>Tirage...</translation>
+    </message>
+    <message>
+      <source>Pulling latest from origin/main...</source>
+      <translation>Tirage de la dernière version depuis origin/main...</translation>
+    </message>
+    <message>
+      <source>Repo update failed: {error}</source>
+      <translation>Échec de la mise à jour du dépôt : {error}</translation>
+    </message>
+    <message>
+      <source>Repo updated. Restart Wisp to use the latest code.</source>
+      <translation>Dépôt mis à jour. Redémarrez Wisp pour utiliser le dernier code.</translation>
+    </message>
+    <message>
+      <source>Repo is already up to date.</source>
+      <translation>Le dépôt est déjà à jour.</translation>
     </message>
     <message>
       <source>Apply update</source>

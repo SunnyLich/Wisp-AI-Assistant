@@ -4004,12 +4004,44 @@ Continue?</source>
       <translation>在 GitHub Releases 中查看更新的 Wisp 版本。</translation>
     </message>
     <message>
+      <source>Fast-forward this repo checkout from origin/main.</source>
+      <translation>从 origin/main 快进此仓库检出。</translation>
+    </message>
+    <message>
       <source>Check for updates</source>
       <translation>检查更新</translation>
     </message>
     <message>
+      <source>Pull latest</source>
+      <translation>拉取最新</translation>
+    </message>
+    <message>
+      <source>Repo checkout: ready to pull origin/main.</source>
+      <translation>仓库检出：已准备好拉取 origin/main。</translation>
+    </message>
+    <message>
       <source>Checking...</source>
       <translation>正在检查……</translation>
+    </message>
+    <message>
+      <source>Pulling...</source>
+      <translation>正在拉取……</translation>
+    </message>
+    <message>
+      <source>Pulling latest from origin/main...</source>
+      <translation>正在从 origin/main 拉取最新代码……</translation>
+    </message>
+    <message>
+      <source>Repo update failed: {error}</source>
+      <translation>仓库更新失败：{error}</translation>
+    </message>
+    <message>
+      <source>Repo updated. Restart Wisp to use the latest code.</source>
+      <translation>仓库已更新。重启 Wisp 以使用最新代码。</translation>
+    </message>
+    <message>
+      <source>Repo is already up to date.</source>
+      <translation>仓库已是最新。</translation>
     </message>
     <message>
       <source>Apply update</source>

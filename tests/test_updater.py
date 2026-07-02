@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from core import updater
 
 
@@ -69,6 +70,79 @@ def test_apply_update_rejects_source_checkout(tmp_path: Path) -> None:
 
     with pytest.raises(updater.UpdateError, match="packaged Wisp builds"):
         updater.apply_update(update, pid=123)
+
+
+def test_apply_repo_update_pulls_origin_main(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    calls: list[list[str]] = []
+    heads = iter(["abc123", "def456"])
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        args = list(cmd)[1:]
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
+        if args == ["status", "--porcelain"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout=f"{next(heads)}\n", stderr="")
+        if args == ["pull", "--ff-only", "origin", "main"]:
+            return SimpleNamespace(returncode=0, stdout="Updating abc123..def456\n", stderr="")
+        raise AssertionError(f"unexpected git command: {args}")
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(updater.subprocess, "run", fake_run)
+
+    result = updater.apply_repo_update(repo)
+
+    assert result.updated is True
+    assert result.before == "abc123"
+    assert result.after == "def456"
+    assert ["git", "pull", "--ff-only", "origin", "main"] in calls
+
+
+def test_apply_repo_update_rejects_dirty_checkout(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        args = list(cmd)[1:]
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
+        if args == ["status", "--porcelain"]:
+            return SimpleNamespace(returncode=0, stdout=" M config.py\n", stderr="")
+        raise AssertionError(f"unexpected git command: {args}")
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(updater.subprocess, "run", fake_run)
+
+    with pytest.raises(updater.UpdateError, match="local changes"):
+        updater.apply_repo_update(repo)
+
+    assert ["git", "pull", "--ff-only", "origin", "main"] not in calls
+
+
+def test_apply_repo_update_rejects_non_main_branch(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+
+    def fake_run(cmd, **kwargs):
+        args = list(cmd)[1:]
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="feature/test\n", stderr="")
+        raise AssertionError(f"unexpected git command: {args}")
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(updater.subprocess, "run", fake_run)
+
+    with pytest.raises(updater.UpdateError, match="main branch"):
+        updater.apply_repo_update(repo)
 
 
 def test_apply_update_writes_windows_helper_without_running_it(monkeypatch, tmp_path: Path) -> None:
@@ -163,6 +237,13 @@ def test_apply_update_writes_posix_helper_with_lock_wait(monkeypatch, tmp_path: 
     assert "single_instance_lock=" in script_text
     assert "flock -n 9" in script_text
     assert "Timed out waiting for Wisp to exit before applying the update." in script_text
+    assert "start_installer_ui" in script_text
+    assert "zenity --progress --pulsate --no-cancel --auto-close" in script_text
+    assert 'kdialog --title "Wisp Update" --passivepopup' in script_text
+    assert 'xmessage -center -buttons ""' in script_text
+    assert "update_installer_status \"Extracting the downloaded update...\"" in script_text
+    assert "finish_installer_ui \"Wisp has been updated and reopened.\" 0" in script_text
+    assert "finish_installer_ui \"Wisp update failed. Details were saved to $error_log\" 1" in script_text
     assert launched["cmd"] == [str(script)]
     assert launched["kwargs"]["start_new_session"] is True
 

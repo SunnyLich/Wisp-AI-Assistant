@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 import types
 import wave
-import shutil
 from pathlib import Path
 
 import pytest
@@ -314,10 +314,26 @@ def test_play_file_applies_tts_volume(monkeypatch):
     """The Settings volume slider applies to file-based worker playback too."""
     import config
 
+    class FakeOutputStream:
+        def __init__(self, *, samplerate, channels, dtype):
+            self.samplerate = samplerate
+            self.channels = channels
+            self.dtype = dtype
+            self.writes: list[np.ndarray] = []
+            played["stream"] = self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def write(self, data):
+            self.writes.append(np.array(data, copy=True))
+
     played = {}
     fake_sd = types.SimpleNamespace(
-        play=lambda data, sample_rate: played.update(data=np.array(data), sample_rate=sample_rate),
-        wait=lambda: None,
+        OutputStream=FakeOutputStream,
         stop=lambda: None,
     )
     fake_sf = types.SimpleNamespace(
@@ -330,8 +346,50 @@ def test_play_file_applies_tts_volume(monkeypatch):
     result = audio_host.play_file("voice.wav")
 
     assert result == {"played": True, "stopped": False}
-    assert played["sample_rate"] == 22_050
-    assert np.allclose(played["data"], np.array([0.4, -0.4], dtype=np.float32))
+    assert played["stream"].samplerate == 22_050
+    assert np.allclose(np.concatenate(played["stream"].writes), np.array([0.4, -0.4], dtype=np.float32))
+
+
+def test_play_file_speed_boost_changes_mid_playback(monkeypatch):
+    """File-based playback should honor bubble fast-forward while audio is already playing."""
+    import config
+    from core import audio_state
+
+    audio_state.set_tts_speed_boost(False)
+    monkeypatch.setattr(config, "TTS_VOLUME", 1.0, raising=False)
+    monkeypatch.setattr(config, "TTS_PLAYBACK_RATE", 1.0, raising=False)
+    monkeypatch.setattr(config, "TTS_HOLD_PLAYBACK_RATE", 2.0, raising=False)
+    monkeypatch.setattr(audio_host, "_PLAYBACK_CHUNK_FRAMES", 4)
+    source = np.arange(8, dtype=np.float32)
+    writes: list[np.ndarray] = []
+
+    class FakeOutputStream:
+        def __init__(self, *, samplerate, channels, dtype):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def write(self, data):
+            writes.append(np.array(data, copy=True))
+            if len(writes) == 1:
+                audio_host.audio_speed_boost(True)
+
+    fake_sd = types.SimpleNamespace(OutputStream=FakeOutputStream, stop=lambda: None)
+    fake_sf = types.SimpleNamespace(read=lambda path, dtype="float32": (source, 24_000))
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "soundfile", fake_sf)
+
+    try:
+        result = audio_host.play_file("voice.wav")
+    finally:
+        audio_state.set_tts_speed_boost(False)
+
+    assert result == {"played": True, "stopped": False}
+    assert [len(chunk) for chunk in writes] == [4, 2]
 
 
 def test_config_reload_schedules_prewarm_in_background(monkeypatch):

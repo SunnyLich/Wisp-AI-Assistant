@@ -8,7 +8,6 @@ from collections.abc import Callable
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QLineEdit
 
-from core.hotkeys import is_safe_global_hotkey
 from ui.i18n import t
 
 _QT_KEY_NAMES: dict[int, str] = {
@@ -40,6 +39,35 @@ _MODIFIER_NAMES = {
     Qt.Key.Key_AltGr.value: "alt",
 }
 _COMMIT_DEBOUNCE_MS = 80
+_HOTKEY_MODIFIER_TOKENS = {"ctrl", "control", "alt", "shift", "win", "cmd", "command", "option"}
+_HOTKEY_ACTION_MODIFIER_TOKENS = {"ctrl", "control", "alt", "win", "cmd", "command", "option"}
+
+
+def _hotkey_parts(hotkey_str: str) -> list[str]:
+    """Return normalized hotkey tokens from a combo string."""
+    return [part.strip().lower() for part in (hotkey_str or "").split("+") if part.strip()]
+
+
+def _is_f_key(token: str) -> bool:
+    """Return whether token names an F-key accepted for global shortcuts."""
+    if not (token.startswith("f") and token[1:].isdigit()):
+        return False
+    try:
+        return 1 <= int(token[1:]) <= 24
+    except ValueError:
+        return False
+
+
+def _is_safe_global_hotkey(hotkey_str: str) -> bool:
+    """Return True when a combo avoids stealing ordinary unmodified typing keys."""
+    parts = _hotkey_parts(hotkey_str)
+    if not parts:
+        return False
+    has_action_modifier = any(part in _HOTKEY_ACTION_MODIFIER_TOKENS for part in parts)
+    key_parts = [part for part in parts if part not in _HOTKEY_MODIFIER_TOKENS]
+    if not key_parts:
+        return False
+    return has_action_modifier or any(_is_f_key(part) for part in key_parts)
 
 
 def _qt_key_name(key: int) -> str | None:
@@ -267,7 +295,7 @@ class HotkeyCaptureEdit(QLineEdit):
         combo = self._combo_from_capture()
         if not combo:
             return
-        if not is_safe_global_hotkey(combo):
+        if not _is_safe_global_hotkey(combo):
             self._pending_combo = ""
             self._commit_timer.stop()
             self.setText(t("Add modifier or use F-key"))

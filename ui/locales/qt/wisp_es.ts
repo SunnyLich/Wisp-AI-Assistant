@@ -4004,12 +4004,44 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
       <translation>Busca una versión más reciente de Wisp en GitHub Releases.</translation>
     </message>
     <message>
+      <source>Fast-forward this repo checkout from origin/main.</source>
+      <translation>Avanza rápidamente este checkout del repo desde origin/main.</translation>
+    </message>
+    <message>
       <source>Check for updates</source>
       <translation>Buscar actualizaciones</translation>
     </message>
     <message>
+      <source>Pull latest</source>
+      <translation>Traer lo último</translation>
+    </message>
+    <message>
+      <source>Repo checkout: ready to pull origin/main.</source>
+      <translation>Checkout del repo: listo para traer origin/main.</translation>
+    </message>
+    <message>
       <source>Checking...</source>
       <translation>Comprobando...</translation>
+    </message>
+    <message>
+      <source>Pulling...</source>
+      <translation>Trayendo...</translation>
+    </message>
+    <message>
+      <source>Pulling latest from origin/main...</source>
+      <translation>Trayendo lo último de origin/main...</translation>
+    </message>
+    <message>
+      <source>Repo update failed: {error}</source>
+      <translation>La actualización del repo falló: {error}</translation>
+    </message>
+    <message>
+      <source>Repo updated. Restart Wisp to use the latest code.</source>
+      <translation>Repo actualizado. Reinicia Wisp para usar el código más reciente.</translation>
+    </message>
+    <message>
+      <source>Repo is already up to date.</source>
+      <translation>El repo ya está actualizado.</translation>
     </message>
     <message>
       <source>Apply update</source>

@@ -605,14 +605,16 @@ def test_app_tab_exposes_assistant_language_setting():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_app_tab_exposes_update_controls():
+def test_app_tab_exposes_packaged_update_controls(monkeypatch):
     """Verify the App tab exposes manual update controls."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
+    from core import updater
     from ui.i18n import t
     from ui.settings_panel.dialog import SettingsDialog
 
+    monkeypatch.setattr(updater, "is_repo_checkout", lambda: False)
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}
@@ -632,14 +634,46 @@ def test_app_tab_exposes_update_controls():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_update_download_switches_button_to_apply(tmp_path):
+def test_app_tab_exposes_repo_update_controls(monkeypatch):
+    """Verify source checkouts expose a git fast-forward update action."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from core import updater
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    monkeypatch.setattr(updater, "is_repo_checkout", lambda: True)
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    tab = SettingsDialog._tab_app(dialog)
+
+    try:
+        update_button = tab.findChild(QPushButton, "settingsUpdateButton")
+        update_status = tab.findChild(QLabel, "settingsUpdateStatusLabel")
+
+        assert update_button is not None
+        assert update_button.text() == t("Pull latest")
+        assert update_status is not None
+        assert update_status.text() == t("Repo checkout: ready to pull origin/main.")
+        assert dialog._update_mode == "repo"
+    finally:
+        tab.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_update_download_switches_button_to_apply(monkeypatch, tmp_path):
     """Verify a downloaded update is applied from Settings instead of just opened."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
+    from core import updater
     from ui.i18n import t
     from ui.settings_panel.dialog import SettingsDialog, _UpdateSignals
 
+    monkeypatch.setattr(updater, "is_repo_checkout", lambda: False)
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}

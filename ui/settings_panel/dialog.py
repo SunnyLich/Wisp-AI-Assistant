@@ -4576,14 +4576,27 @@ class SettingsDialog(QDialog):
         updates_card, updates_cv = self._card("Updates")
         from core import updater
 
+        if not hasattr(self, "_update_running"):
+            self._update_running = False
+        if not hasattr(self, "_update_signal_carriers"):
+            self._update_signal_carriers = []
+        repo_checkout = updater.is_repo_checkout()
+        self._update_repo_checkout = repo_checkout
         self._update_current_lbl = QLabel(f"{t('Current version')}: {updater.current_version()}")
-        self._update_status_lbl = QLabel(t("Ready to check for updates."))
+        status_text = "Repo checkout: ready to pull origin/main." if repo_checkout else "Ready to check for updates."
+        self._update_status_lbl = QLabel(t(status_text))
         self._update_status_lbl.setObjectName("settingsUpdateStatusLabel")
         self._update_status_lbl.setWordWrap(True)
         self._update_status_lbl.setStyleSheet("color: palette(placeholder-text);")
-        self._update_btn = QPushButton(t("Check for updates"))
+        self._update_mode = "repo" if repo_checkout else "check"
+        self._update_btn = QPushButton(t("Pull latest") if repo_checkout else t("Check for updates"))
         self._update_btn.setObjectName("settingsUpdateButton")
-        self._update_btn.setToolTip(t("Check GitHub Releases for a newer Wisp build."))
+        tooltip = (
+            "Fast-forward this repo checkout from origin/main."
+            if repo_checkout
+            else "Check GitHub Releases for a newer Wisp build."
+        )
+        self._update_btn.setToolTip(t(tooltip))
         self._update_btn.clicked.connect(self._on_update_button)
         updates_row = QHBoxLayout()
         updates_row.addWidget(self._update_current_lbl)
@@ -4621,6 +4634,8 @@ class SettingsDialog(QDialog):
             self._download_available_update()
         elif mode == "apply":
             self._apply_downloaded_update()
+        elif mode == "repo":
+            self._pull_repo_update()
         else:
             self._check_for_updates()
 
@@ -4658,6 +4673,45 @@ class SettingsDialog(QDialog):
                 carrier.done.emit(None, str(exc))
 
         threading.Thread(target=_worker, daemon=True, name="wisp-update-check").start()
+
+    def _pull_repo_update(self) -> None:
+        """Fast-forward a source checkout without blocking the Settings dialog."""
+        if self._update_running:
+            return
+        self._update_running = True
+        self._update_mode = "repo"
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText(t("Pulling..."))
+        self._set_update_status("Pulling latest from origin/main...")
+
+        carrier = _UpdateSignals()
+        self._remember_update_carrier(carrier)
+        carrier.done.connect(lambda result, error, c=carrier: self._finish_repo_update(c, result, error))
+
+        def _worker() -> None:
+            try:
+                from core import updater
+
+                carrier.done.emit(updater.apply_repo_update(), "")
+            except Exception as exc:  # noqa: BLE001 - repo update errors should stay in Settings
+                carrier.done.emit(None, str(exc))
+
+        threading.Thread(target=_worker, daemon=True, name="wisp-repo-update").start()
+
+    def _finish_repo_update(self, carrier: _UpdateSignals, result: object, error: str) -> None:
+        """Apply a repo update result on the Qt thread."""
+        self._forget_update_carrier(carrier)
+        self._update_running = False
+        self._update_mode = "repo"
+        self._update_btn.setEnabled(True)
+        self._update_btn.setText(t("Pull latest"))
+        if error:
+            self._set_update_status("Repo update failed: {error}", "error", error=error)
+            return
+        if bool(getattr(result, "updated", False)):
+            self._set_update_status("Repo updated. Restart Wisp to use the latest code.", "ok")
+        else:
+            self._set_update_status("Repo is already up to date.", "ok")
 
     def _finish_update_check(self, carrier: _UpdateSignals, result: object, error: str) -> None:
         """Apply an update-check result on the Qt thread."""
@@ -8045,11 +8099,10 @@ def _open_settings_now(parent=None, on_apply=None, on_setup_check=None, extra_to
     global _settings_dialog, _settings_open_pending
     _settings_open_pending = False
     # Never parent the settings window to the floating icon overlay: that overlay
-    # is a Qt.Tool window (an NSPanel on macOS, a no-taskbar tool window on
-    # Windows), and attaching a normal child window to it crashes Cocoa on show()
-    # and misbehaves on Windows. Only Linux keeps the parent. Elsewhere the dialog
-    # is top-level and grabs focus itself via raise_()/activateWindow() below.
-    dialog_parent = parent if sys.platform.startswith("linux") else None
+    # is a Qt.Tool/no-taskbar utility window, and attaching a normal settings
+    # dialog to it is fragile across focus-heavy interactions such as hotkey
+    # recording. Keep Settings top-level on every platform.
+    dialog_parent = None
     if not _dialog_is_usable(_settings_dialog):
         _settings_dialog = None
     elif not _settings_dialog.isVisible():
