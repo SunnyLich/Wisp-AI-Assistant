@@ -181,7 +181,7 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
             {
                 "display_name": "Kokoro",
                 "packages": [],
-                "pre_install_packages": ["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.12.0"],
+                "pre_install_packages": ["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.11.0+cu128"],
                 "log_path": str(log_path),
             }
         ),
@@ -196,7 +196,7 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
     )
 
     assert optional_tts_installer.main() == 0
-    assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.12.0"], True)]
+    assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.11.0+cu128"], True)]
 
 
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):
@@ -268,11 +268,11 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
     assert torch_packages == [
         "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
-        "torch==2.12.0",
+        "torch==2.11.0+cu128",
         *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
     ]
     assert optional_deps.KOKORO_PACKAGE in packages
-    assert "torch==2.12.0" not in packages
+    assert "torch==2.11.0+cu128" not in packages
     assert any(str(item).endswith("/en_core_web_sm-3.8.0-py3-none-any.whl") for item in packages)
 
 
@@ -283,8 +283,8 @@ def test_kokoro_auto_install_selects_gpu_when_cuda_detected(monkeypatch):
     monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: True)
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "gpu"
-    assert "torch==2.12.0" in optional_deps.kokoro_torch_install_packages("auto")
-    assert "torch==2.12.0" not in optional_deps.kokoro_install_packages("auto")
+    assert "torch==2.11.0+cu128" in optional_deps.kokoro_torch_install_packages("auto")
+    assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages("auto")
 
 
 def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
@@ -295,7 +295,7 @@ def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "cpu"
     assert optional_deps.kokoro_torch_install_packages("auto") == []
-    assert "torch==2.12.0" not in optional_deps.kokoro_install_packages("auto")
+    assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages("auto")
 
 
 def test_system_cuda_available_does_not_import_ctranslate2(monkeypatch):

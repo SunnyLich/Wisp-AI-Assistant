@@ -1329,8 +1329,8 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
 
         assert captured["packages"] == optional_deps.kokoro_install_packages("cuda")
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
-        assert "torch==2.12.0" in captured["pre_install_packages"]
-        assert "torch==2.12.0" not in captured["packages"]
+        assert "torch==2.11.0+cu128" in captured["pre_install_packages"]
+        assert "torch==2.11.0+cu128" not in captured["packages"]
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():
