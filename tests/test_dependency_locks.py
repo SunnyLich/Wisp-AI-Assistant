@@ -8,6 +8,11 @@ RUNTIME_LOCKS = (
     "requirements-linux.lock",
     "requirements-macos.lock",
 )
+COMBINED_INSTALL_LOCK_GROUPS = tuple(
+    (runtime_lock, companion_lock)
+    for runtime_lock in RUNTIME_LOCKS
+    for companion_lock in ("requirements-build.lock", "requirements-dev.lock")
+)
 
 
 def _locked_version(lock_name: str, package: str) -> str:
@@ -35,6 +40,27 @@ def test_runtime_locks_keep_optional_ai_shared_dependencies_compatible() -> None
         assert _locked_version(lock_name, "tokenizers") == "0.22.2"
         assert _locked_version(lock_name, "setuptools") == "81.0.0"
         assert _locked_version(lock_name, "elevenlabs") == "2.55.0"
+
+
+def test_combined_lock_installs_do_not_pin_conflicting_versions() -> None:
+    """Packaging/dev installs combine locks, so shared pins must agree."""
+    for lock_group in COMBINED_INSTALL_LOCK_GROUPS:
+        package_versions: dict[str, dict[str, str]] = {}
+        for lock_name in lock_group:
+            for line in (ROOT / lock_name).read_text(encoding="utf-8").splitlines():
+                if "==" not in line or line.startswith((" ", "#")):
+                    continue
+                package, version = line.split("==", 1)
+                package = package.lower()
+                version = version.split(";", 1)[0].strip()
+                package_versions.setdefault(package, {})[lock_name] = version
+
+        conflicts = {
+            package: versions
+            for package, versions in package_versions.items()
+            if len(set(versions.values())) > 1
+        }
+        assert conflicts == {}
 
 
 def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
