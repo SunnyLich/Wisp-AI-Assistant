@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 NO_RECORD_MARKER = "error: uninstall-no-record-file"
+MAX_RECOVERY_ATTEMPTS = 20
 PINNED_SPEC_RE = re.compile(
     r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.!+*-]+)"
     r"(?:\s*(?:;|#).*)?$"
@@ -135,20 +136,34 @@ def _run_recovery(spec: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    returncode, output = _run_pip_install(args)
-    if returncode == 0 or NO_RECORD_MARKER not in output:
-        return returncode
+    repaired: set[str] = set()
 
-    spec = _recovery_spec(args, output)
-    if not spec:
-        return returncode
-    if _run_recovery(spec) != 0:
-        return returncode
+    while True:
+        returncode, output = _run_pip_install(args)
+        if returncode == 0 or NO_RECORD_MARKER not in output:
+            return returncode
 
-    print()
-    print("Retrying dependency install after metadata repair.", flush=True)
-    retry_returncode, _retry_output = _run_pip_install(args)
-    return retry_returncode
+        spec = _recovery_spec(args, output)
+        parsed_spec = _pinned_spec_from_text(spec)
+        if not spec or parsed_spec is None:
+            return returncode
+
+        package_name, _requirement = parsed_spec
+        if package_name in repaired:
+            print()
+            print(f"pip still reports missing uninstall metadata for {spec} after repair.", flush=True)
+            return returncode
+        if len(repaired) >= MAX_RECOVERY_ATTEMPTS:
+            print()
+            print(f"Stopped after {MAX_RECOVERY_ATTEMPTS} metadata repairs.", flush=True)
+            return returncode
+
+        if _run_recovery(spec) != 0:
+            return returncode
+        repaired.add(package_name)
+
+        print()
+        print("Retrying dependency install after metadata repair.", flush=True)
 
 
 if __name__ == "__main__":

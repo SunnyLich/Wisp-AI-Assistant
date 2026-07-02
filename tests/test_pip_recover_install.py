@@ -43,6 +43,54 @@ def test_recover_install_repairs_missing_record_package_from_lock(monkeypatch, t
     ]
 
 
+def test_recover_install_repairs_multiple_missing_record_packages(monkeypatch, tmp_path):
+    from scripts import pip_recover_install
+
+    requirements = tmp_path / "requirements.lock"
+    requirements.write_text("tqdm==4.68.2\nprotobuf==6.33.2\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    responses = [
+        (
+            1,
+            [
+                "error: uninstall-no-record-file\n",
+                "x Cannot uninstall tqdm None\n",
+            ],
+        ),
+        (0, ["Successfully installed tqdm-4.68.2\n"]),
+        (
+            1,
+            [
+                "error: uninstall-no-record-file\n",
+                "x Cannot uninstall protobuf None\n",
+            ],
+        ),
+        (0, ["Successfully installed protobuf-6.33.2\n"]),
+        (0, ["Successfully installed requirements\n"]),
+    ]
+
+    class FakeProcess:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            self.returncode, lines = responses.pop(0)
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
+
+    assert pip_recover_install.main(["-r", str(requirements)]) == 0
+    assert commands == [
+        ["python", "-m", "pip", "install", "-r", str(requirements)],
+        ["python", "-m", "pip", "install", "--ignore-installed", "--no-deps", "tqdm==4.68.2"],
+        ["python", "-m", "pip", "install", "-r", str(requirements)],
+        ["python", "-m", "pip", "install", "--ignore-installed", "--no-deps", "protobuf==6.33.2"],
+        ["python", "-m", "pip", "install", "-r", str(requirements)],
+    ]
+
+
 def test_recover_install_does_not_recover_unrelated_pip_failures(monkeypatch):
     from scripts import pip_recover_install
 
