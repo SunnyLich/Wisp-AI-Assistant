@@ -679,8 +679,8 @@ Object.assign(I18N.reg['es'].tr, {
   'You need a model route, but it does not have to be a paid API key. Use a provider key, an OAuth or GitHub Copilot sign-in route, or a local OpenAI-compatible server. For no-cost options, start with Free API sources.':
     'Necesitas una ruta de modelo, pero no tiene que ser una clave API de pago. Usa una clave de proveedor, una ruta con OAuth o inicio de sesión de GitHub Copilot, o un servidor local compatible con OpenAI. Para opciones sin coste, empieza por <a href="#" onclick="navigate(\'free-apis\')">Fuentes de API gratuitas</a>.',
   'Where should I start if launch fails?': '¿Por dónde empiezo si falla el arranque?',
-  'Run the matching debug launcher, then open Common issues. The Settings setup check can also explain missing keys, providers, and optional features.':
-    'Ejecuta el lanzador de depuración correspondiente y abre <a href="#" onclick="navigate(\'common-issues\')">Problemas comunes</a>. La comprobación de configuración en Ajustes también puede explicar claves, proveedores y funciones opcionales ausentes.',
+  'Start with the first error shown by the launcher or log. If you run from source, run python scripts/check_dev_environment.py; it checks Python 3.12, platform locks, and required runtime modules. If you use a packaged build, keep the extracted app folder intact and check OS security prompts, then match the exact message in Common issues.':
+    'Empieza por el primer error que muestre el lanzador o el registro. Si ejecutas desde código fuente, ejecuta <code>python scripts/check_dev_environment.py</code>; comprueba Python 3.12, los locks de plataforma y los módulos de runtime necesarios. Si usas un build empaquetado, conserva intacta la carpeta extraída de la app y revisa los avisos de seguridad del sistema; después busca el mensaje exacto en <a href="#" onclick="navigate(\'common-issues\')">Problemas comunes</a>.',
   'Models and providers': 'Modelos y proveedores',
   'Can I use local models?': '¿Puedo usar modelos locales?',
   'Yes, if they expose an OpenAI-compatible endpoint. Ollama works through its /v1 endpoint, and LM Studio / vLLM can be used through the custom endpoint route. Wisp does not directly speak native, non-OpenAI-compatible local model APIs.':
@@ -743,9 +743,9 @@ Object.assign(I18N.reg['es'].tr, {
   'Run the setup check': 'Ejecuta la comprobación de configuración',
   'Open Settings and run the setup check. It reports missing provider keys, disabled optional features, and likely route problems.':
     'Abre Ajustes y ejecuta la comprobación de configuración. Informa de claves de proveedor ausentes, funciones opcionales desactivadas y posibles problemas de ruta.',
-  'Use the debug launcher': 'Usa el lanzador de depuración',
-  'Run Start Wisp Debug.bat, Start Wisp Debug.command, or Start Wisp Debug.sh so errors remain visible in a terminal.':
-    'Ejecuta <code>Start Wisp Debug.bat</code>, <code>Start Wisp Debug.command</code> o <code>Start Wisp Debug.sh</code> para que los errores sigan visibles en una terminal.',
+  'Read the first error': 'Lee el primer error',
+  'Use the launcher window, terminal output, or app log to capture the first real error. Fix that message first; later shutdown messages are often just consequences.':
+    'Usa la ventana del lanzador, la salida de la terminal o el registro de la app para capturar el primer error real. Corrige ese mensaje primero; los mensajes de cierre posteriores suelen ser solo consecuencias.',
   'Confirm Python': 'Confirma Python',
   'Use Python 3.12. Other versions may install but fail later with native dependencies.':
     'Usa Python <code>3.12</code>. Otras versiones pueden instalarse, pero fallar después con dependencias nativas.',
@@ -758,16 +758,16 @@ Object.assign(I18N.reg['es'].tr, {
   'Fix': 'Solución',
   'Launcher opens then closes': 'El lanzador se abre y se cierra',
   'Python, dependency install, or import error': 'Error de Python, instalación de dependencias o importación',
-  'Use the debug launcher and read the last error. Confirm Python 3.12, then rerun the launcher so it can finish provisioning.':
-    'Usa el lanzador de depuración y lee el último error. Confirma Python <code>3.12</code> y vuelve a ejecutar el lanzador para que termine el aprovisionamiento.',
+  'From a source checkout, run python scripts/check_dev_environment.py and fix the first reported Python, lock-file, or missing-module problem. Then rerun the platform launcher.':
+    'Desde un checkout de código fuente, ejecuta <code>python scripts/check_dev_environment.py</code> y corrige el primer problema que indique sobre Python, archivos lock o módulos faltantes. Luego vuelve a ejecutar el lanzador de tu plataforma.',
   'Dependency install fails on macOS': 'La instalación de dependencias falla en macOS',
   'Wrong Python version or interrupted lock install': 'Versión incorrecta de Python o instalación del lock interrumpida',
   'Install Python 3.12, then rerun Start Wisp.command. macOS installs from requirements-macos.lock.':
     'Instala Python <code>3.12</code> y vuelve a ejecutar <code>Start Wisp.command</code>. macOS instala desde <code>requirements-macos.lock</code>.',
   'Icon never appears': 'El icono nunca aparece',
-  'UI worker failed or app is hidden behind permissions': 'Falló el worker de UI o la app está bloqueada por permisos',
-  'Use the debug launcher. On macOS, grant Accessibility and screen recording permissions when prompted.':
-    'Usa el lanzador de depuración. En macOS, concede Accesibilidad y Grabación de pantalla cuando se solicite.',
+  'UI worker failed, the app folder is incomplete, or OS permissions blocked startup': 'Falló el worker de UI, la carpeta de la app está incompleta o los permisos del sistema bloquearon el inicio',
+  'Keep the packaged app folder intact. On macOS, grant Accessibility and Screen Recording when prompted; on Linux, prefer an X11 session for hotkeys and screenshots. If running from source, run the environment check above.':
+    'Mantén intacta la carpeta de la app empaquetada. En macOS, concede Accesibilidad y Grabación de pantalla cuando se solicite; en Linux, prefiere una sesión X11 para atajos y capturas. Si ejecutas desde código fuente, usa la comprobación de entorno anterior.',
   'Settings opens but providers fail': 'Ajustes se abre, pero los proveedores fallan',
   'Missing key or unsupported model id': 'Clave ausente o id de modelo no compatible',
   'Add the provider key in Settings, verify LLM_PROVIDER and LLM_MODEL, then run setup check again.':

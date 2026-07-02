@@ -273,7 +273,7 @@ python -m runtime.supervisor.app</code></pre>
     <tr><td>Which dependency file does the source launcher use?</td><td>The launcher uses the exact lock for your platform: <code>requirements-windows.lock</code>, <code>requirements-macos.lock</code>, or <code>requirements-linux.lock</code>.</td></tr>
     <tr><td>Can Wisp update itself?</td><td>Packaged builds can check GitHub Releases from Settings, download the matching artifact, verify its hash, and apply it through a helper that restarts Wisp. Source checkouts should update with Git.</td></tr>
     <tr><td>Do I need an API key?</td><td>You need a model route, but it does not have to be a paid API key. Use a provider key, an OAuth or GitHub Copilot sign-in route, or a local OpenAI-compatible server. For no-cost options, start with <a href="#" onclick="navigate('free-apis')">Free API sources</a>.</td></tr>
-    <tr><td>Where should I start if launch fails?</td><td>Run the matching debug launcher, then open <a href="#" onclick="navigate('common-issues')">Common issues</a>. The Settings setup check can also explain missing keys, providers, and optional features.</td></tr>
+    <tr><td>Where should I start if launch fails?</td><td>Start with the first error shown by the launcher or log. If you run from source, run <code>python scripts/check_dev_environment.py</code>; it checks Python 3.12, platform locks, and required runtime modules. If you use a packaged build, keep the extracted app folder intact and check OS security prompts, then match the exact message in <a href="#" onclick="navigate('common-issues')">Common issues</a>.</td></tr>
   </tbody>
 </table>
 
@@ -345,7 +345,7 @@ python -m runtime.supervisor.app</code></pre>
   <thead><tr><th>Check</th><th>What to do</th></tr></thead>
   <tbody>
     <tr><td>Run the setup check</td><td>Open Settings and run the setup check. It reports missing provider keys, disabled optional features, and likely route problems.</td></tr>
-    <tr><td>Use the debug launcher</td><td>Run <code>Start Wisp Debug.bat</code>, <code>Start Wisp Debug.command</code>, or <code>Start Wisp Debug.sh</code> so errors remain visible in a terminal.</td></tr>
+    <tr><td>Read the first error</td><td>Use the launcher window, terminal output, or app log to capture the first real error. Fix that message first; later shutdown messages are often just consequences.</td></tr>
     <tr><td>Confirm Python</td><td>Use Python <code>3.12</code>. Other versions may install but fail later with native dependencies.</td></tr>
     <tr><td>Check Settings</td><td>Review provider, model, hotkey, and feature switch choices in Settings, then run the setup check again.</td></tr>
   </tbody>
@@ -356,9 +356,9 @@ python -m runtime.supervisor.app</code></pre>
 <table>
   <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
   <tbody>
-    <tr><td>Launcher opens then closes</td><td>Python, dependency install, or import error</td><td>Use the debug launcher and read the last error. Confirm Python <code>3.12</code>, then rerun the launcher so it can finish provisioning.</td></tr>
+    <tr><td>Launcher opens then closes</td><td>Python, dependency install, or import error</td><td>From a source checkout, run <code>python scripts/check_dev_environment.py</code> and fix the first reported Python, lock-file, or missing-module problem. Then rerun the platform launcher.</td></tr>
     <tr><td>Dependency install fails</td><td>Wrong Python version or interrupted lock install</td><td>Install Python <code>3.12</code>, then rerun the launcher. Source launchers install from the platform lock: Windows, macOS, or Linux.</td></tr>
-    <tr><td>Icon never appears</td><td>UI worker failed or app is hidden behind permissions</td><td>Use the debug launcher. On macOS, grant Accessibility and screen recording permissions when prompted.</td></tr>
+    <tr><td>Icon never appears</td><td>UI worker failed, the app folder is incomplete, or OS permissions blocked startup</td><td>Keep the packaged app folder intact. On macOS, grant Accessibility and Screen Recording when prompted; on Linux, prefer an X11 session for hotkeys and screenshots. If running from source, run the environment check above.</td></tr>
     <tr><td>Settings opens but providers fail</td><td>Missing key or unsupported model id</td><td>Add the provider key in Settings, verify the selected provider and model there, then run setup check again.</td></tr>
   </tbody>
 </table>

@@ -670,8 +670,8 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
   'You need a model route, but it does not have to be a paid API key. Use a provider key, an OAuth or GitHub Copilot sign-in route, or a local OpenAI-compatible server. For no-cost options, start with Free API sources.':
     '你需要一條模型路線，但不一定要付費 API 金鑰。可以使用供應商金鑰、OAuth 或 GitHub Copilot 登入路線，或本機 OpenAI 相容伺服器。若想找零成本選項，請先看<a href="#" onclick="navigate(\'free-apis\')">免費 API 來源</a>。',
   'Where should I start if launch fails?': '如果啟動失敗，我該從哪裡開始？',
-  'Run the matching debug launcher, then open Common issues. The Settings setup check can also explain missing keys, providers, and optional features.':
-    '先執行對應的偵錯啟動器，然後開啟<a href="#" onclick="navigate(\'common-issues\')">常見問題</a>。設定裡的設定檢查也能解釋缺少的金鑰、供應商和選用功能。',
+  'Start with the first error shown by the launcher or log. If you run from source, run python scripts/check_dev_environment.py; it checks Python 3.12, platform locks, and required runtime modules. If you use a packaged build, keep the extracted app folder intact and check OS security prompts, then match the exact message in Common issues.':
+    '先看啟動器或日誌顯示的第一個錯誤。如果從原始碼執行，請執行 <code>python scripts/check_dev_environment.py</code>；它會檢查 Python 3.12、平台鎖定檔和必要的執行階段模組。如果使用打包版本，請保持解壓後的應用程式資料夾完整，並檢查系統安全提示，然後在<a href="#" onclick="navigate(\'common-issues\')">常見問題</a>中對照完整錯誤訊息。',
   'Models and providers': '模型與供應商',
   'Can I use local models?': '我可以使用本機模型嗎？',
   'Yes, if they expose an OpenAI-compatible endpoint. Ollama works through its /v1 endpoint, and LM Studio / vLLM can be used through the custom endpoint route. Wisp does not directly speak native, non-OpenAI-compatible local model APIs.':
@@ -734,9 +734,9 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
   'Run the setup check': '執行設定檢查',
   'Open Settings and run the setup check. It reports missing provider keys, disabled optional features, and likely route problems.':
     '開啟設定並執行設定檢查。它會報告缺少的供應商金鑰、停用的選用功能和可能的路線問題。',
-  'Use the debug launcher': '使用偵錯啟動器',
-  'Run Start Wisp Debug.bat, Start Wisp Debug.command, or Start Wisp Debug.sh so errors remain visible in a terminal.':
-    '執行 <code>Start Wisp Debug.bat</code>、<code>Start Wisp Debug.command</code> 或 <code>Start Wisp Debug.sh</code>，讓錯誤保留在終端機中可見。',
+  'Read the first error': '讀取第一個錯誤',
+  'Use the launcher window, terminal output, or app log to capture the first real error. Fix that message first; later shutdown messages are often just consequences.':
+    '查看啟動器視窗、終端機輸出或應用程式日誌，找出第一個真正的錯誤。先修復那個訊息；後面的關閉訊息通常只是連帶結果。',
   'Confirm Python': '確認 Python',
   'Use Python 3.12. Other versions may install but fail later with native dependencies.':
     '使用 Python <code>3.12</code>。其他版本可能能安裝，但之後會在原生相依套件處失敗。',
@@ -749,16 +749,16 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
   'Fix': '修復',
   'Launcher opens then closes': '啟動器開啟後立即關閉',
   'Python, dependency install, or import error': 'Python、相依套件安裝或匯入錯誤',
-  'Use the debug launcher and read the last error. Confirm Python 3.12, then rerun the launcher so it can finish provisioning.':
-    '使用偵錯啟動器並閱讀最後一條錯誤。確認 Python <code>3.12</code>，然後重新執行啟動器，讓它完成準備工作。',
+  'From a source checkout, run python scripts/check_dev_environment.py and fix the first reported Python, lock-file, or missing-module problem. Then rerun the platform launcher.':
+    '如果是原始碼檢出，請執行 <code>python scripts/check_dev_environment.py</code>，並修復它最先回報的 Python、鎖定檔或缺少模組問題。然後重新執行平台啟動器。',
   'Dependency install fails on macOS': 'macOS 上相依套件安裝失敗',
   'Wrong Python version or interrupted lock install': 'Python 版本錯誤或 lock 安裝中斷',
   'Install Python 3.12, then rerun Start Wisp.command. macOS installs from requirements-macos.lock.':
     '安裝 Python <code>3.12</code>，然後重新執行 <code>Start Wisp.command</code>。macOS 會從 <code>requirements-macos.lock</code> 安裝。',
   'Icon never appears': '圖示始終不出現',
-  'UI worker failed or app is hidden behind permissions': 'UI worker 失敗或應用程式被權限隱藏',
-  'Use the debug launcher. On macOS, grant Accessibility and screen recording permissions when prompted.':
-    '使用偵錯啟動器。在 macOS 上，按提示授予輔助使用和螢幕錄製權限。',
+  'UI worker failed, the app folder is incomplete, or OS permissions blocked startup': 'UI worker 失敗、應用程式資料夾不完整，或系統權限阻止啟動',
+  'Keep the packaged app folder intact. On macOS, grant Accessibility and Screen Recording when prompted; on Linux, prefer an X11 session for hotkeys and screenshots. If running from source, run the environment check above.':
+    '保持打包後的應用程式資料夾完整。在 macOS 上，按提示授予輔助使用和螢幕錄製權限；在 Linux 上，快速鍵和截圖最好使用 X11 工作階段。如果從原始碼執行，請執行上方的環境檢查。',
   'Settings opens but providers fail': '設定能開啟，但供應商失敗',
   'Missing key or unsupported model id': '缺少金鑰或模型 id 不受支援',
   'Add the provider key in Settings, verify the selected provider and model there, then run setup check again.':
