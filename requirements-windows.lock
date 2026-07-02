@@ -220,7 +220,7 @@ soundfile==0.14.0
     # via -r requirements.txt
 soupsieve==2.8.4
     # via beautifulsoup4
-tokenizers==0.23.0
+tokenizers==0.22.2
     # via
     #   -r requirements.txt
     #   faster-whisper

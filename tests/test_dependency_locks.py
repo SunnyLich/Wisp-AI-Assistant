@@ -23,7 +23,7 @@ def test_runtime_manifest_pins_optional_ai_shared_dependencies() -> None:
     manifest = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 
     assert "protobuf==6.33.2" in manifest
-    assert "tokenizers==0.23.0" in manifest
+    assert "tokenizers==0.22.2" in manifest
     assert "setuptools==81.0.0" in manifest
     assert "elevenlabs==2.55.0" in manifest
 
@@ -32,7 +32,7 @@ def test_runtime_locks_keep_optional_ai_shared_dependencies_compatible() -> None
     """Avoid pip warnings from optional torch/transformers/opentelemetry installs."""
     for lock_name in RUNTIME_LOCKS:
         assert _locked_version(lock_name, "protobuf").startswith("6.")
-        assert _locked_version(lock_name, "tokenizers") == "0.23.0"
+        assert _locked_version(lock_name, "tokenizers") == "0.22.2"
         assert _locked_version(lock_name, "setuptools") == "81.0.0"
         assert _locked_version(lock_name, "elevenlabs") == "2.55.0"
 
@@ -48,7 +48,7 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "kokoro==0.9.4",
         "soundfile==0.14.0",
         "protobuf==6.33.2",
-        "tokenizers==0.23.0",
+        "tokenizers==0.22.2",
         "setuptools==81.0.0",
     ]
     assert optional_deps.kokoro_torch_install_packages("cuda") == [
@@ -56,6 +56,6 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
         "torch==2.12.0",
         "protobuf==6.33.2",
-        "tokenizers==0.23.0",
+        "tokenizers==0.22.2",
         "setuptools==81.0.0",
     ]

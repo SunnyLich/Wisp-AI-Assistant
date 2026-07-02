@@ -250,7 +250,7 @@ def test_kokoro_install_includes_persistent_english_g2p_model():
     ]
     assert optional_deps.OPTIONAL_AI_COMPAT_PACKAGES == [
         "protobuf==6.33.2",
-        "tokenizers==0.23.0",
+        "tokenizers==0.22.2",
         "setuptools==81.0.0",
     ]
     assert optional_deps.KOKORO_INSTALL_PACKAGES[-1].endswith(

@@ -50,5 +50,5 @@ odfpy>=1.4.1              # read LibreOffice .odt/.ods/.odp files
 # These are pulled transitively by STT/runtime packages but must stay compatible
 # with optional local AI packages that may already share the source checkout venv.
 protobuf==6.33.2          # opentelemetry-proto requires protobuf<7,>=5
-tokenizers==0.23.0        # transformers 5.x currently requires tokenizers<=0.23.0
+tokenizers==0.22.2        # transformers 5.x currently requires tokenizers<=0.23.0
 setuptools==81.0.0        # torch 2.12 requires setuptools<82

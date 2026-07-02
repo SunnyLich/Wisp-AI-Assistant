@@ -30,7 +30,7 @@ KOKORO_EN_MODEL_URL = (
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
 OPTIONAL_AI_COMPAT_PACKAGES = [
     "protobuf==6.33.2",
-    "tokenizers==0.23.0",
+    "tokenizers==0.22.2",
     "setuptools==81.0.0",
 ]
 KOKORO_PACKAGE = "kokoro==0.9.4"
