@@ -121,4 +121,4 @@ jobs:
         run: python -m compileall -q core ui runtime config.py
 
       - name: Run test suite
-        run: python -X faulthandler -m pytest -ra --tb=short -k "not platform_macos"
+        run: python -X faulthandler -m pytest -ra --tb=short -k "not platform_macos" --basetemp .pytest-tmp-ci

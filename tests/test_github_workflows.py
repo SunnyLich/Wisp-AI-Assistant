@@ -74,6 +74,11 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("Wisp-${safe_ref}-linux-x64.tar.gz", workflow)
         self.assertIn("Wisp-${safe_ref}-macos-${arch}.zip", workflow)
 
+    def test_ci_uses_workspace_pytest_basetemp_on_windows(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("--basetemp .pytest-tmp-ci", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
