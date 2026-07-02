@@ -191,7 +191,7 @@ install_requirements() {
     "$py" -m ensurepip --upgrade
   fi
   "$py" -m pip install --upgrade pip
-  "$py" -m pip install -r "$REQ_FILE"
+  "$py" "$REPO_ROOT/scripts/pip_recover_install.py" -r "$REQ_FILE"
   req_hash > "$STAMP_FILE"
 }
 

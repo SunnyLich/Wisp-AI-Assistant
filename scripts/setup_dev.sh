@@ -150,7 +150,7 @@ if [ ! -x "$VPY" ] || [ "$REBUILD_VENV" -eq 1 ]; then
 fi
 
 "$VPY" -m pip install --upgrade pip
-"$VPY" -m pip install -r "$REQ_FILE" -r "$DEV_REQ_FILE"
+"$VPY" scripts/pip_recover_install.py -r "$REQ_FILE" -r "$DEV_REQ_FILE"
 "$VPY" scripts/check_dev_environment.py
 SETUP_SUCCEEDED=1
 cleanup_venv_backup

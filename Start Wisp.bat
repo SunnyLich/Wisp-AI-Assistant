@@ -69,7 +69,7 @@ if "!REBUILD_VENV!"=="0" if exist "%VPY%" (
   "%VPY%" -m pip --version >nul 2>nul
   if errorlevel 1 "%VPY%" -m ensurepip --upgrade
   "%VPY%" -m pip install --upgrade pip >nul 2>nul
-  "%VPY%" -m pip install -r "%REQ_FILE%"
+  "%VPY%" "scripts\pip_recover_install.py" -r "%REQ_FILE%"
   if not errorlevel 1 call :write_req_stamp
   if not errorlevel 1 call :runtime_deps_ok
   if not errorlevel 1 goto run
@@ -92,7 +92,7 @@ if defined PYCMD (
     "%VPY%" -m pip --version >nul 2>nul
     if errorlevel 1 "%VPY%" -m ensurepip --upgrade
     "%VPY%" -m pip install --upgrade pip >nul 2>nul
-    "%VPY%" -m pip install -r "%REQ_FILE%"
+    "%VPY%" "scripts\pip_recover_install.py" -r "%REQ_FILE%"
     if not errorlevel 1 call :write_req_stamp
     if not errorlevel 1 call :runtime_deps_ok
     if not errorlevel 1 goto run

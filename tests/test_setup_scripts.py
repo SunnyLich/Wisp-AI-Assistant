@@ -1,9 +1,8 @@
-import unittest
 import re
+import unittest
 from pathlib import Path
 
 from scripts import check_dev_environment
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -62,7 +61,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn('if [ "$OS_NAME" = "Darwin" ]; then', script)
         self.assertIn('REQ_FILE="$ROOT/requirements-macos.lock"', script)
         self.assertIn("Regenerate locks with: bash scripts/compile_dependency_locks.sh", script)
-        self.assertIn('"$VPY" -m pip install -r "$REQ_FILE" -r "$DEV_REQ_FILE"', script)
+        self.assertIn('"$VPY" scripts/pip_recover_install.py -r "$REQ_FILE" -r "$DEV_REQ_FILE"', script)
         self.assertNotIn('"$VPY" -m pip install -r requirements.txt -r requirements-dev.txt', script)
 
     def test_install_entry_points_check_dependency_manifests_before_mutating_venv(self) -> None:
@@ -70,6 +69,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn('if [ ! -s "$REQ_FILE" ]; then', launcher)
         self.assertIn("is required for setup", launcher)
         self.assertIn("scripts/compile_dependency_locks.sh", launcher)
+        self.assertIn('"$py" "$REPO_ROOT/scripts/pip_recover_install.py" -r "$REQ_FILE"', launcher)
         self.assertLess(launcher.index("is required for setup"), launcher.index("rm -rf"))
 
         setup_sh = (ROOT / "scripts" / "setup_dev.sh").read_text(encoding="utf-8")
@@ -89,6 +89,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn('if not exist "%REQ_FILE%"', batch)
         self.assertIn('for %%I in ("%REQ_FILE%") do if %%~zI EQU 0', batch)
         self.assertIn("is required for setup", batch)
+        self.assertIn('"%VPY%" "scripts\\pip_recover_install.py" -r "%REQ_FILE%"', batch)
         self.assertLess(batch.index("is required for setup"), batch.index("rmdir /s /q .venv"))
 
         powershell = (ROOT / "scripts" / "setup_dev.ps1").read_text(encoding="utf-8")
@@ -96,6 +97,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn('$RequirementsFile = "requirements-windows.lock"', powershell)
         self.assertIn('$DevRequirementsFile = "requirements-dev.lock"', powershell)
         self.assertIn("$Name is required for developer setup.", powershell)
+        self.assertIn('Invoke-Native "dependency install" $Python @("scripts\\pip_recover_install.py", "-r", $RequirementsFile, "-r", $DevRequirementsFile)', powershell)
         self.assertLess(powershell.index("$RequiredDependencyFiles = @("), powershell.index("Move-Item -LiteralPath $VenvDir -Destination $VenvBackupDir"))
 
     def test_macos_lock_ci_verification_constrains_to_committed_lock(self) -> None:

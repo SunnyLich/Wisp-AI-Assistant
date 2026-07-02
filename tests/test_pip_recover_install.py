@@ -1,0 +1,63 @@
+"""Tests for pip install recovery around missing package RECORD metadata."""
+
+from __future__ import annotations
+
+
+def test_recover_install_repairs_missing_record_package_from_lock(monkeypatch, tmp_path):
+    from scripts import pip_recover_install
+
+    requirements = tmp_path / "requirements.lock"
+    requirements.write_text("tqdm==4.68.2\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    responses = [
+        (
+            1,
+            [
+                "error: uninstall-no-record-file\n",
+                "\n",
+                "x Cannot uninstall tqdm None\n",
+                "hint: You might be able to recover from this via: pip install --ignore-installed --no-deps tqdm==4.68.2\n",
+            ],
+        ),
+        (0, ["Successfully installed tqdm-4.68.2\n"]),
+        (0, ["Successfully installed requirements\n"]),
+    ]
+
+    class FakeProcess:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            self.returncode, lines = responses.pop(0)
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
+
+    assert pip_recover_install.main(["-r", str(requirements)]) == 0
+    assert commands == [
+        ["python", "-m", "pip", "install", "-r", str(requirements)],
+        ["python", "-m", "pip", "install", "--ignore-installed", "--no-deps", "tqdm==4.68.2"],
+        ["python", "-m", "pip", "install", "-r", str(requirements)],
+    ]
+
+
+def test_recover_install_does_not_recover_unrelated_pip_failures(monkeypatch):
+    from scripts import pip_recover_install
+
+    commands: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            self.stdout = iter(["ERROR: Could not find a version that satisfies the requirement missing\n"])
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
+
+    assert pip_recover_install.main(["missing==1"]) == 1
+    assert commands == [["python", "-m", "pip", "install", "missing==1"]]

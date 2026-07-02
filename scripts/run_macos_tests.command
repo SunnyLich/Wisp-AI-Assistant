@@ -196,7 +196,7 @@ setup_venv() {
     run_logged "python-venv-create" "$py" -m venv "$REPO_ROOT/.venv"
     ensure_pip "$VPY"
     run_logged "python-pip-upgrade" "$VPY" -m pip install --upgrade pip
-    run_logged "python-deps-install" "$VPY" -m pip install -r "$REQ_FILE"
+    run_logged "python-deps-install" "$VPY" "$REPO_ROOT/scripts/pip_recover_install.py" -r "$REQ_FILE"
   else
     echo "Installing/locating uv because Python $WANT was not found locally..."
     uv="$(ensure_uv)"

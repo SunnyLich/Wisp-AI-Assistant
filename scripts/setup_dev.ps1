@@ -186,7 +186,7 @@ try {
     }
 
     Invoke-Native "pip upgrade" $Python @("-m", "pip", "install", "--upgrade", "pip")
-    Invoke-Native "dependency install" $Python @("-m", "pip", "install", "-r", $RequirementsFile, "-r", $DevRequirementsFile)
+    Invoke-Native "dependency install" $Python @("scripts\pip_recover_install.py", "-r", $RequirementsFile, "-r", $DevRequirementsFile)
     Invoke-Native "developer environment preflight" $Python @("scripts\check_dev_environment.py")
     Remove-VenvBackup
 } catch {
