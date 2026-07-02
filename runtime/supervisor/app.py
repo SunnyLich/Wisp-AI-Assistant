@@ -186,6 +186,7 @@ def main() -> int:
         return 2
     supervisor = WispSupervisor()
     stop = threading.Event()
+    ui_quit_requested = threading.Event()
     abrupt_reason = ""
 
     def _stop(_signum=None, _frame=None) -> None:
@@ -196,7 +197,7 @@ def main() -> int:
         """Stop when ui exits."""
         nonlocal abrupt_reason
         logging.info("UI worker exited with code %s", returncode)
-        if returncode in (0, None):
+        if returncode in (0, None) or ui_quit_requested.is_set():
             logging.info("UI worker exited cleanly; shutting down Wisp")
             stop.set()
             return
@@ -233,6 +234,13 @@ def main() -> int:
     ui_worker = supervisor.workers.get("ui")
     if ui_worker is not None and hasattr(ui_worker, "on_exit"):
         ui_worker.on_exit(_stop_when_ui_exits)
+    if ui_worker is not None and hasattr(ui_worker, "on_event"):
+        def _on_ui_quit_requested(_data=None, _req_id=None) -> None:
+            logging.info("UI worker requested Wisp shutdown")
+            ui_quit_requested.set()
+            stop.set()
+
+        ui_worker.on_event("ui.quit_requested", _on_ui_quit_requested)
 
     try:
         supervisor.start_all()

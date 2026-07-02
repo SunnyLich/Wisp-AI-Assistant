@@ -342,6 +342,29 @@ def test_ui_shutdown_message_closes_stdin_reader() -> None:
     assert quit_calls == [True]
 
 
+def test_ui_about_to_quit_emits_user_quit_and_closes_stdin() -> None:
+    """Verify user-requested Qt quit tells the supervisor not to restart UI."""
+    from types import SimpleNamespace
+
+    from runtime.workers.ui_host import QtProtocolHost
+
+    emitted = []
+    stopped = []
+    closed = []
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._closing = False
+    host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
+    host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
+    host.emit = lambda event, data=None, req_id=None: emitted.append((event, data, req_id))  # type: ignore[method-assign]
+
+    host._on_about_to_quit()
+
+    assert host._closing is True
+    assert emitted == [("ui.quit_requested", {"reason": "qt_about_to_quit"}, None)]
+    assert stopped == [True]
+    assert closed == [True]
+
+
 def test_bubble_highlight_does_not_mutate_chat_window() -> None:
     """Verify TTS bubble highlight leaves selectable chat transcript alone."""
     from types import SimpleNamespace

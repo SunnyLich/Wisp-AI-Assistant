@@ -1909,6 +1909,7 @@ class QtProtocolHost:
         self._active_dispatch_started = 0.0
         self._drain_ticks = 0  # bumped each pump tick so the watchdog can tell the IPC drain apart from an event-loop freeze
         self._watchdog = QtFreezeWatchdog(app, self._watchdog_status)
+        app.aboutToQuit.connect(self._on_about_to_quit)
 
         self._pump = QTimer()
         self._pump.setInterval(20)
@@ -1950,6 +1951,20 @@ class QtProtocolHost:
             self._stdin_stream.close()
         except Exception:
             pass
+
+    def _on_about_to_quit(self) -> None:
+        """Tell the supervisor that Qt is quitting by user request."""
+        if not self._closing:
+            self._closing = True
+            try:
+                self.emit("ui.quit_requested", {"reason": "qt_about_to_quit"})
+            except Exception:
+                pass
+        try:
+            self._pump.stop()
+        except Exception:
+            pass
+        self._close_stdin_reader()
 
     def _quit_after_shutdown(self) -> None:
         """Stop UI IPC and quit the Qt event loop."""
