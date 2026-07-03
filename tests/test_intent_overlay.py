@@ -347,8 +347,8 @@ def test_intent_overlay_translates_default_custom_prompt_label(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     import config
-    from ui import i18n
     import ui.intent_overlay as intent_overlay
+    from ui import i18n
 
     app = QApplication.instance() or QApplication(sys.argv)
     old_rows = list(config.CALLER_ROWS)
@@ -869,7 +869,8 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
     """Verify Linux overlay-local shortcuts do not start a second native listener."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     import builtins
-    from PySide6.QtWidgets import QApplication
+
+    from PySide6.QtWidgets import QApplication, QWidget
 
     import config
     import ui.intent_overlay as intent_overlay
@@ -877,6 +878,8 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
     app = QApplication.instance() or QApplication(sys.argv)
     old_rows = list(config.CALLER_ROWS)
     original_import = builtins.__import__
+    grabs: list[QWidget] = []
+    releases: list[QWidget] = []
 
     def guarded_import(name, *args, **kwargs):
         """Fail if showing the overlay tries to import pynput."""
@@ -884,10 +887,20 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
             raise AssertionError("Linux intent overlay should rely on Qt key events")
         return original_import(name, *args, **kwargs)
 
+    def grab_keyboard(self):
+        """Record Qt-local keyboard grabs."""
+        grabs.append(self)
+
+    def release_keyboard(self):
+        """Record Qt-local keyboard releases."""
+        releases.append(self)
+
     config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
     monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
     monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
     monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(QWidget, "grabKeyboard", grab_keyboard)
+    monkeypatch.setattr(QWidget, "releaseKeyboard", release_keyboard)
     overlay = intent_overlay.IntentOverlay(
         caller_idx=0,
         context_items=[{"id": "browser", "key": "2", "label": "Browser", "state": "on"}],
@@ -897,8 +910,62 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
         app.processEvents()
 
         assert overlay._kb_hook is None
+        assert grabs == [overlay]
+        assert overlay._overlay_grabbed_keyboard is True
         assert overlay._cycle_context_key("2") is True
         assert overlay.context_choices()[0]["state"] == "off"
+
+        overlay._unhook()
+
+        assert releases == [overlay]
+        assert overlay._overlay_grabbed_keyboard is False
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_linux_moves_keyboard_grab_to_custom_input(monkeypatch):
+    """Verify Linux custom prompt typing gets a Qt-local keyboard grab."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    grabs: list[QWidget] = []
+    releases: list[QWidget] = []
+
+    def grab_keyboard(self):
+        """Record Qt-local keyboard grabs."""
+        grabs.append(self)
+
+    def release_keyboard(self):
+        """Record Qt-local keyboard releases."""
+        releases.append(self)
+
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
+    monkeypatch.setattr(QWidget, "grabKeyboard", grab_keyboard)
+    monkeypatch.setattr(QWidget, "releaseKeyboard", release_keyboard)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        overlay._focus_overlay()
+        overlay._enter_custom_mode()
+
+        assert grabs == [overlay, overlay._input_line]
+        assert releases == [overlay]
+        assert overlay._overlay_grabbed_keyboard is False
+        assert overlay._input_grabbed_keyboard is True
+
+        overlay._unhook()
+
+        assert releases == [overlay, overlay._input_line]
+        assert overlay._input_grabbed_keyboard is False
     finally:
         config.CALLER_ROWS[:] = old_rows
         overlay.close()

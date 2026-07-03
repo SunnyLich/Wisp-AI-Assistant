@@ -7,11 +7,14 @@ Custom Prompt row (config.HOTKEY_CUSTOM_PROMPT_KEY).
 Press the matching key to pick, Escape to cancel.
 """
 from __future__ import annotations
+
 import os
 import sys
-from PySide6.QtWidgets import QWidget, QApplication, QInputDialog, QLineEdit, QMenu, QToolTip
-from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QRect
-from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPainterPath, QFontMetrics
+
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMenu, QToolTip, QWidget
+
 import config
 from ui.i18n import t
 
@@ -336,6 +339,7 @@ class IntentOverlay(QWidget):
         self._focus_overlay_requested = bool(focus_overlay)
         self._was_activated = False   # macOS: dismiss on focus-out once activated
         self._kb_hook = None
+        self._overlay_grabbed_keyboard = False
         self._input_grabbed_keyboard = False
         self._drop_next_keypress = False
         self._last_raw_context_key = ""
@@ -1082,7 +1086,7 @@ class IntentOverlay(QWidget):
         menu.addAction(t("+ New project..."), self._create_project_interactive)
         self._project_menu = menu
         def _menu_closed() -> None:
-            setattr(self, "_project_menu", None)
+            self._project_menu = None
             self._restart_timer()
         menu.aboutToHide.connect(_menu_closed)
         menu.popup(self.mapToGlobal(self._project_rect.bottomLeft()))
@@ -1131,7 +1135,7 @@ class IntentOverlay(QWidget):
             action.triggered.connect(lambda _checked=False, idx=idx: self._set_conversation_choice(idx))
         self._conversation_menu = menu
         def _menu_closed() -> None:
-            setattr(self, "_conversation_menu", None)
+            self._conversation_menu = None
             self._restart_timer()
         menu.aboutToHide.connect(_menu_closed)
         menu.popup(self.mapToGlobal(self._conversation_list_rect.bottomLeft()))
@@ -1336,15 +1340,16 @@ class IntentOverlay(QWidget):
         """Focus custom input."""
         if not self._custom_mode or self._input_line.isHidden():
             return
-        if self._input_line.hasFocus() and (not _IS_WIN or self._input_grabbed_keyboard):
+        if self._input_line.hasFocus() and (_IS_MAC or self._input_grabbed_keyboard):
             return
         self._debug("focus-custom-before")
+        self._release_overlay_keyboard()
         self.raise_()
         if _IS_WIN:
             self._win_force_foreground()
         self.activateWindow()
         self._input_line.setFocus(Qt.FocusReason.OtherFocusReason)
-        if _IS_WIN and not self._input_grabbed_keyboard:
+        if not _IS_MAC and not self._input_grabbed_keyboard:
             try:
                 self._input_line.grabKeyboard()
                 self._input_grabbed_keyboard = True
@@ -1359,7 +1364,38 @@ class IntentOverlay(QWidget):
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+        self._grab_overlay_keyboard()
         self._debug("focus-overlay")
+
+    def _grab_overlay_keyboard(self) -> None:
+        """Route overlay-local shortcut keys to this Qt popup on Linux."""
+        if _IS_MAC or _IS_WIN or self._custom_mode or self._overlay_grabbed_keyboard:
+            return
+        try:
+            self.grabKeyboard()
+            self._overlay_grabbed_keyboard = True
+        except Exception:
+            pass
+
+    def _release_overlay_keyboard(self) -> None:
+        """Release a Qt keyboard grab owned by the picker shell."""
+        if not self._overlay_grabbed_keyboard:
+            return
+        try:
+            self.releaseKeyboard()
+        except Exception:
+            pass
+        self._overlay_grabbed_keyboard = False
+
+    def _release_input_keyboard(self) -> None:
+        """Release a Qt keyboard grab owned by the custom prompt input."""
+        if not self._input_grabbed_keyboard:
+            return
+        try:
+            self._input_line.releaseKeyboard()
+        except Exception:
+            pass
+        self._input_grabbed_keyboard = False
 
     def changeEvent(self, event):
         """Handle change event for intent overlay."""
@@ -1569,6 +1605,7 @@ class IntentOverlay(QWidget):
             # intent popup is being clicked or resized.
             self._kb_hook = None
             self.setFocus(Qt.FocusReason.PopupFocusReason)
+            self._grab_overlay_keyboard()
         if self._initial_custom_text:
             QTimer.singleShot(0, self._enter_prefilled_custom_mode)
             if _IS_WIN or self._focus_overlay_requested:
@@ -1600,15 +1637,8 @@ class IntentOverlay(QWidget):
             except Exception:
                 pass
             self._kb_hook = None
-        try:
-            self.releaseKeyboard()
-        except Exception:
-            pass
-        try:
-            self._input_line.releaseKeyboard()
-        except Exception:
-            pass
-        self._input_grabbed_keyboard = False
+        self._release_overlay_keyboard()
+        self._release_input_keyboard()
 
     def closeEvent(self, event):
         """Close event."""
