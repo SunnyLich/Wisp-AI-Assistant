@@ -244,7 +244,7 @@ class FlowController:
         self._reply_thought_parser = None
         self._tts_lock = threading.RLock()
         self._tts_generation = 0
-        self._tts_queue: "queue.Queue[str | None] | None" = None
+        self._tts_queue: queue.Queue[str | None] | None = None
         self._tts_sequence_active = False
         self._reply_bubble_cancelled_generation = 0
         self._config_mtime = self._current_config_mtime()
@@ -2724,7 +2724,10 @@ class FlowController:
         """Handle safe call for flow controller."""
         try:
             return worker.call(method, params or {}, timeout=timeout)
-        except Exception:
+        except Exception as exc:
+            if self._is_expected_worker_exit(method, exc):
+                log.debug("worker unavailable for best-effort call %s: %s", method, exc)
+                return None
             log.exception("worker call failed: %s", method)
             return None
 
@@ -2736,8 +2739,24 @@ class FlowController:
         then can't delay the thing the user is actually waiting for."""
         try:
             worker.call(method, params or {}, wait=False)
-        except Exception:
+        except Exception as exc:
+            if self._is_expected_worker_exit(method, exc):
+                log.debug("worker unavailable for best-effort fire %s: %s", method, exc)
+                return
             log.exception("worker fire failed: %s", method)
+
+    @staticmethod
+    def _is_expected_worker_exit(method: str, exc: Exception) -> bool:
+        """Return True for best-effort UI calls racing a normal UI shutdown."""
+        if not method.startswith("ui."):
+            return False
+        message = str(exc).lower()
+        return (
+            "worker exited" in message
+            or "is not running" in message
+            or "broken pipe" in message
+            or "write failed" in message
+        )
 
     def _brain_call_with_events(
         self,
@@ -4447,14 +4466,14 @@ class FlowController:
         if q is not None:
             q.put(None)
 
-    def _ensure_tts_sequence(self, generation: int) -> "queue.Queue[str | None]":
+    def _ensure_tts_sequence(self, generation: int) -> queue.Queue[str | None]:
         """Create or return the segmented TTS queue for this generation."""
         if self._reply_bubble_cancelled(generation):
             raise RuntimeError("reply bubble output is muted for this generation")
         with self._tts_lock:
             if self._tts_queue is not None and self._tts_generation == generation:
                 return self._tts_queue
-            q: "queue.Queue[str | None]" = queue.Queue()
+            q: queue.Queue[str | None] = queue.Queue()
             self._tts_generation = generation
             self._tts_queue = q
             self._tts_sequence_active = True
@@ -4482,7 +4501,7 @@ class FlowController:
         if q is not None:
             q.put(None)
 
-    def _tts_sequence_worker(self, generation: int, q: "queue.Queue[str | None]") -> None:
+    def _tts_sequence_worker(self, generation: int, q: queue.Queue[str | None]) -> None:
         """Synthesize and play queued TTS segments sequentially."""
         try:
             while self._is_current(generation) and not self._reply_bubble_cancelled(generation):
@@ -4580,7 +4599,7 @@ class FlowController:
                     self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
                     self._set_idle()
 
-        synth_queue: "queue.Queue[dict[str, Any] | None]" = queue.Queue(maxsize=1)
+        synth_queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=1)
         stop_synth = threading.Event()
 
         def put_synth_result(item: dict[str, Any] | None) -> bool:

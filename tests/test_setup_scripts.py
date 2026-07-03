@@ -242,6 +242,14 @@ class SetupScriptTests(unittest.TestCase):
         self.assertLess(script.index("setup_venv"), script.rindex('WISP_APP_LAUNCHED=1'))
         self.assertIn("export WISP_KEEP_TERMINAL_ON_EXIT=1", debug)
 
+    def test_linux_sh_launcher_reexecs_under_bash(self) -> None:
+        script = (ROOT / "Start Wisp.sh").read_text(encoding="utf-8")
+
+        self.assertTrue(script.startswith("#!/bin/sh"))
+        self.assertIn('if [ -z "${BASH_VERSION:-}" ]; then', script)
+        self.assertIn('exec bash "$0" "$@"', script)
+        self.assertIn('exec bash "./Start Wisp.command" "$@"', script)
+
     def test_macos_test_runner_requires_lock_file(self) -> None:
         script = (ROOT / "scripts" / "run_macos_tests.command").read_text(encoding="utf-8")
 

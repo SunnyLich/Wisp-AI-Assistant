@@ -68,6 +68,11 @@ a = Analysis(
         (str(ROOT / "pyproject.toml"), "."),
     ] + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS + FASTER_WHISPER_DATAS,
     hiddenimports=[
+        "Xlib",
+        "Xlib.X",
+        "Xlib.XK",
+        "Xlib.display",
+        "Xlib.error",
         "pynput.keyboard._xorg",
         "pynput.mouse._xorg",
         # SSL support — required for any https:// request from the bundle

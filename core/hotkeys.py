@@ -5,17 +5,17 @@ Windows: Uses Win32 RegisterHotKey — the OS consumes the keystroke before it
          reaches any foreground window, so no stray characters are typed.
          Works without administrator privileges.
 
-Linux:   Uses pynput.keyboard.GlobalHotKeys — does NOT consume the keystroke,
-         but fires callbacks reliably on X11 without root.
+Linux:   Uses X11 XGrabKey — the OS reserves only configured hotkey chords.
+         Requires an X11/XWayland display and does not observe ordinary keys.
 
-Push-to-talk (press + release on a single key) always uses
-pynput.keyboard.Listener, which works on both platforms.
+Push-to-talk uses the platform hotkey backend on macOS/Linux and a pynput
+keyboard.Listener fallback on Windows.
 """
 from __future__ import annotations
 
 import sys
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 import config
 
@@ -313,7 +313,15 @@ class HotkeyListener:
                 on_voice_stop=on_voice_stop,
             )
         else:
-            self._impl = _PynputImpl(self._hotkey_defs)
+            self._impl = _XGrabKeyImpl(
+                self._hotkey_defs,
+                voice_hotkey=config.HOTKEY_VOICE,
+                on_voice_start=on_voice_start,
+                on_voice_stop=on_voice_stop,
+                dictate_hotkey=self._dictate_hotkey,
+                on_dictate_start=on_dictate_start,
+                on_dictate_stop=on_dictate_stop,
+            )
         self._voice_listener = None
         self._voice_key      = None
         # Maps a resolved pynput key object -> (on_press, on_release) so one
@@ -330,7 +338,7 @@ class HotkeyListener:
         # which trace-traps (SIGTRAP) — same flaw as GlobalHotKeys. Skip it there.
         has_voice = bool(config.HOTKEY_VOICE and (self._on_voice_start or self._on_voice_stop))
         has_dictate = bool(self._dictate_hotkey and (self._on_dictate_start or self._on_dictate_stop))
-        if not _IS_MAC and (has_voice or has_dictate):
+        if _IS_WIN and (has_voice or has_dictate):
             self._start_voice_listener()
         return True
 
@@ -766,7 +774,248 @@ class _CarbonImpl:
 
 
 # ---------------------------------------------------------------------------
-# Linux implementation — pynput GlobalHotKeys
+# Linux implementation — XGrabKey
+# ---------------------------------------------------------------------------
+
+class _XGrabKeyImpl:
+    """Linux/X11 global hotkeys using XGrabKey for configured chords only."""
+
+    _IGNORED_LOCK_MASKS = (0, 2, 16, 18)  # none, CapsLock, NumLock, both
+
+    def __init__(
+        self,
+        hotkey_defs: list[tuple[str, Callable]],
+        *,
+        voice_hotkey: str = "",
+        on_voice_start: Callable[[], None] | None = None,
+        on_voice_stop: Callable[[], None] | None = None,
+        dictate_hotkey: str = "",
+        on_dictate_start: Callable[[], None] | None = None,
+        on_dictate_stop: Callable[[], None] | None = None,
+    ):
+        """Initialize the X11 hotkey backend."""
+        self._hotkey_defs = hotkey_defs
+        self._voice_hotkey = voice_hotkey
+        self._on_voice_start = on_voice_start
+        self._on_voice_stop = on_voice_stop
+        self._dictate_hotkey = dictate_hotkey
+        self._on_dictate_start = on_dictate_start
+        self._on_dictate_stop = on_dictate_stop
+        self._display = None
+        self._root = None
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._callbacks: dict[tuple[int, int], tuple[Callable | None, Callable | None]] = {}
+        self._grabbed: list[tuple[int, int]] = []
+        self._requested = 0
+        self._registered = 0
+        self._status_reason = "not started"
+
+    def start(self) -> bool:
+        """Register configured hotkeys with XGrabKey and start the event loop."""
+        try:
+            from Xlib import X, display, error  # type: ignore
+        except Exception as exc:
+            self._status_reason = f"python-xlib unavailable: {type(exc).__name__}: {exc}"
+            print(f"[hotkeys] X11 backend unavailable: {self._status_reason}")
+            return False
+
+        try:
+            self._display = display.Display()
+            self._root = self._display.screen().root
+        except Exception as exc:
+            self._display = None
+            self._root = None
+            self._status_reason = f"cannot open X display: {type(exc).__name__}: {exc}"
+            print(f"[hotkeys] X11 backend unavailable: {self._status_reason}")
+            return False
+
+        bindings: list[tuple[str, Callable | None, Callable | None, str]] = [
+            *[(hotkey, cb, None, "hotkey") for hotkey, cb in self._hotkey_defs],
+        ]
+        if self._voice_hotkey and (self._on_voice_start or self._on_voice_stop):
+            bindings.append((self._voice_hotkey, self._on_voice_start, self._on_voice_stop, "voice"))
+        if self._dictate_hotkey and (self._on_dictate_start or self._on_dictate_stop):
+            bindings.append((self._dictate_hotkey, self._on_dictate_start, self._on_dictate_stop, "dictation"))
+
+        self._requested = len(bindings)
+        self._registered = 0
+        self._callbacks.clear()
+        self._grabbed.clear()
+        for hotkey_str, on_press, on_release, label in bindings:
+            parsed = self._parse_hotkey_x11(hotkey_str)
+            if parsed is None:
+                print(f"[hotkeys] X11: cannot parse {label} hotkey {hotkey_str!r}.")
+                continue
+            keycode, modifiers = parsed
+            grabbed_for_binding: list[tuple[int, int]] = []
+            try:
+                for ignored in self._IGNORED_LOCK_MASKS:
+                    grab_mods = modifiers | ignored
+                    self._root.grab_key(keycode, grab_mods, True, X.GrabModeAsync, X.GrabModeAsync)
+                    grabbed_for_binding.append((keycode, grab_mods))
+                self._display.sync()
+            except error.XError as exc:
+                for grabbed_keycode, grabbed_mods in grabbed_for_binding:
+                    try:
+                        self._root.ungrab_key(grabbed_keycode, grabbed_mods)
+                    except Exception:
+                        pass
+                print(f"[hotkeys] X11 grab failed for {hotkey_str!r}: {exc}")
+                continue
+            self._grabbed.extend(grabbed_for_binding)
+            self._callbacks[(keycode, modifiers)] = (on_press, on_release)
+            self._registered += 1
+
+        if not self._callbacks:
+            self._status_reason = "no X11 hotkeys registered"
+            print(f"[hotkeys] {self._status_reason}.")
+            self.stop()
+            return False
+
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._event_loop, daemon=True, name="hotkey-xgrabkey")
+        self._thread.start()
+        self._status_reason = f"registered {self._registered} of {self._requested} hotkey(s)"
+        print(f"[hotkeys] X11 {self._status_reason}.")
+        return True
+
+    def status(self) -> dict[str, object]:
+        """Return hotkey backend status."""
+        return {
+            "started": bool(self._callbacks),
+            "registered": self._registered,
+            "requested": self._requested,
+            "reason": self._status_reason,
+            "backend": "xgrabkey",
+        }
+
+    def stop(self) -> None:
+        """Ungrab X11 hotkeys and stop the event loop."""
+        self._stop_event.set()
+        thread = self._thread
+        self._thread = None
+        if thread is not None:
+            thread.join(timeout=1.0)
+        display_obj = self._display
+        root = self._root
+        self._display = None
+        self._root = None
+        if display_obj is not None and root is not None:
+            try:
+                for keycode, modifiers in self._grabbed:
+                    root.ungrab_key(keycode, modifiers)
+                display_obj.sync()
+            except Exception:
+                pass
+            try:
+                display_obj.close()
+            except Exception:
+                pass
+        self._callbacks.clear()
+        self._grabbed.clear()
+        self._status_reason = "stopped"
+
+    def _event_loop(self) -> None:
+        """Dispatch X11 KeyPress/KeyRelease events for grabbed hotkeys."""
+        import select
+
+        from Xlib import X  # type: ignore
+
+        display_obj = self._display
+        if display_obj is None:
+            return
+        modifier_mask = X.ControlMask | X.ShiftMask | X.Mod1Mask | X.Mod4Mask
+        while not self._stop_event.is_set():
+            try:
+                readable, _, _ = select.select([display_obj], [], [], 0.2)
+                if not readable:
+                    continue
+                while display_obj.pending():
+                    event = display_obj.next_event()
+                    if event.type not in (X.KeyPress, X.KeyRelease):
+                        continue
+                    key = (int(event.detail), int(event.state) & modifier_mask)
+                    binding = self._callbacks.get(key)
+                    if not binding:
+                        continue
+                    cb = binding[0] if event.type == X.KeyPress else binding[1]
+                    if cb is not None:
+                        threading.Thread(target=cb, daemon=True).start()
+            except Exception as exc:
+                if not self._stop_event.is_set():
+                    print(f"[hotkeys] X11 event loop stopped: {type(exc).__name__}: {exc}")
+                break
+
+    def _parse_hotkey_x11(self, hotkey_str: str) -> tuple[int, int] | None:
+        """Return ``(keycode, modifier_mask)`` for a configured hotkey."""
+        from Xlib import XK, X  # type: ignore
+
+        if not is_safe_global_hotkey(hotkey_str):
+            print(f"[hotkeys] Refusing unsafe global hotkey {hotkey_str!r}")
+            return None
+
+        display_obj = self._display
+        if display_obj is None:
+            return None
+
+        modifier_flags = {
+            "ctrl": X.ControlMask,
+            "control": X.ControlMask,
+            "shift": X.ShiftMask,
+            "alt": X.Mod1Mask,
+            "option": X.Mod1Mask,
+            "win": X.Mod4Mask,
+            "cmd": X.Mod4Mask,
+            "command": X.Mod4Mask,
+        }
+        special_keys = {
+            "space": "space",
+            "space_bar": "space",
+            "tab": "Tab",
+            "enter": "Return",
+            "return": "Return",
+            "backspace": "BackSpace",
+            "delete": "Delete",
+            "insert": "Insert",
+            "home": "Home",
+            "end": "End",
+            "pageup": "Page_Up",
+            "pagedown": "Page_Down",
+            "left": "Left",
+            "right": "Right",
+            "up": "Up",
+            "down": "Down",
+            "escape": "Escape",
+            "esc": "Escape",
+        }
+
+        modifiers = 0
+        keysym = 0
+        for token in _hotkey_parts(hotkey_str):
+            if token in modifier_flags:
+                modifiers |= modifier_flags[token]
+            elif token.startswith("f") and token[1:].isdigit():
+                keysym = XK.string_to_keysym(token.upper())
+            elif token in special_keys:
+                keysym = XK.string_to_keysym(special_keys[token])
+            elif len(token) == 1:
+                keysym = XK.string_to_keysym(token)
+            else:
+                print(f"[hotkeys] X11: unrecognised token {token!r}")
+                return None
+
+        if not keysym:
+            return None
+        keycode = display_obj.keysym_to_keycode(keysym)
+        if not keycode:
+            print(f"[hotkeys] X11: no keycode for {hotkey_str!r}")
+            return None
+        return int(keycode), int(modifiers)
+
+
+# ---------------------------------------------------------------------------
+# Fallback pynput implementation
 # ---------------------------------------------------------------------------
 
 class _PynputImpl:

@@ -141,7 +141,7 @@ Then start Wisp with the repo launcher for your platform:
 | --- | --- | --- |
 | Windows | `Start Wisp.bat` | `requirements.txt` |
 | macOS | `Start Wisp.command` | `requirements-macos.lock` |
-| Linux | `Start Wisp.sh` | `requirements.txt` |
+| Linux | `Start Wisp.sh` | `requirements-linux.lock` |
 
 The first launch provisions the Python environment and installs dependencies. Later launches go straight into the app.
 

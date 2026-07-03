@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any
 
 from core.system.paths import SINGLE_INSTANCE_LOCK, UPDATE_DOWNLOAD_DIR
@@ -273,6 +273,118 @@ def _git_stdout(root: Path, args: list[str], timeout: float) -> str:
     raise UpdateError(message or f"git {' '.join(args)} failed with exit code {completed.returncode}.")
 
 
+@dataclass(frozen=True)
+class _StatusEntry:
+    status: str
+    path: str
+
+
+def _git_status_entries(root: Path, timeout: float) -> list[_StatusEntry]:
+    """Return parsed porcelain status entries."""
+    completed = _run_git(root, ["status", "--porcelain", "-z"], timeout)
+    if completed.returncode != 0:
+        message = str(completed.stderr or completed.stdout or "").strip()
+        raise UpdateError(message or "Could not read git status before updating.")
+    output = str(completed.stdout or "")
+    if not output:
+        return []
+    raw_entries = output.split("\0")
+    entries: list[_StatusEntry] = []
+    index = 0
+    while index < len(raw_entries):
+        raw = raw_entries[index]
+        index += 1
+        if not raw:
+            continue
+        if len(raw) < 4:
+            entries.append(_StatusEntry(raw[:2], ""))
+            continue
+        status = raw[:2]
+        path = raw[3:].rstrip("\n")
+        entries.append(_StatusEntry(status, path))
+        if status[0] in {"R", "C"} or status[1] in {"R", "C"}:
+            index += 1
+    return entries
+
+
+def _allowed_repo_update_dirty_path(path: str) -> bool:
+    """Return whether a local path is user state that should survive repo pulls."""
+    normalized = path.replace("\\", "/").lstrip("/")
+    if not normalized or normalized.startswith("../"):
+        return False
+    if normalized == "addons.json":
+        return True
+    if normalized.startswith((".env", "addon_data/", "memory/", "chats/", "model_files/", "private/")):
+        return normalized != ".env.example"
+    if normalized == "addons/mcp_bridge/servers.json":
+        return True
+    if normalized.startswith("addons/"):
+        parts = normalized.split("/")
+        return len(parts) >= 2 and parts[1] not in {"mcp_bridge", "ui_lab"} and parts[1] != "README.md"
+    return False
+
+
+def _copy_path(src: Path, dst: Path) -> None:
+    if src.is_dir():
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    elif src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _restore_preserved_paths(repo: Path, backup_root: Path, paths: list[str]) -> None:
+    for rel in paths:
+        backup_path = backup_root / rel
+        target = repo / rel
+        if not backup_path.exists():
+            continue
+        _remove_path(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _copy_path(backup_path, target)
+
+
+def _preserve_user_state_for_repo_update(
+    repo: Path,
+    entries: list[_StatusEntry],
+    backup_root: Path,
+    timeout: float,
+) -> list[str]:
+    """Back up allowed dirty user-state paths and clear them for a git pull."""
+    preserved: list[str] = []
+    tracked_to_restore: list[str] = []
+    for entry in entries:
+        path = entry.path
+        if not path or not _allowed_repo_update_dirty_path(path):
+            raise UpdateError(
+                "Repo update stopped because this checkout has local changes in app code. "
+                "Wisp can preserve settings and addon data automatically, but code changes must be committed or stashed."
+            )
+        source = repo / path
+        if source.exists():
+            _copy_path(source, backup_root / path)
+            preserved.append(path)
+        if entry.status != "??":
+            tracked_to_restore.append(path)
+
+    if tracked_to_restore:
+        restore = _run_git(repo, ["checkout", "--", *tracked_to_restore], timeout)
+        if restore.returncode != 0:
+            message = str(restore.stderr or restore.stdout or "").strip()
+            raise UpdateError(message or "Could not temporarily restore tracked user-state files before updating.")
+
+    for entry in entries:
+        if entry.status == "??" and entry.path:
+            _remove_path(repo / entry.path)
+    return preserved
+
+
 def apply_repo_update(
     root: Path | None = None,
     *,
@@ -293,16 +405,20 @@ def apply_repo_update(
             f"Repo update is only available on the {branch} branch (current branch: {current_branch})."
         )
 
-    status = _git_stdout(repo, ["status", "--porcelain"], timeout)
-    if status:
-        raise UpdateError("Repo update stopped because this checkout has local changes. Commit or stash them, then try again.")
-
-    before = _git_stdout(repo, ["rev-parse", "HEAD"], timeout)
-    pull = _run_git(repo, ["pull", "--ff-only", remote, branch], timeout)
-    output = "\n".join(part for part in (str(pull.stdout or "").strip(), str(pull.stderr or "").strip()) if part)
-    if pull.returncode != 0:
-        raise UpdateError(output or f"git pull --ff-only {remote} {branch} failed with exit code {pull.returncode}.")
-    after = _git_stdout(repo, ["rev-parse", "HEAD"], timeout)
+    entries = _git_status_entries(repo, timeout)
+    with TemporaryDirectory(prefix="wisp-repo-update-") as tmp:
+        backup_root = Path(tmp)
+        preserved = _preserve_user_state_for_repo_update(repo, entries, backup_root, timeout) if entries else []
+        try:
+            before = _git_stdout(repo, ["rev-parse", "HEAD"], timeout)
+            pull = _run_git(repo, ["pull", "--ff-only", remote, branch], timeout)
+            output = "\n".join(part for part in (str(pull.stdout or "").strip(), str(pull.stderr or "").strip()) if part)
+            if pull.returncode != 0:
+                raise UpdateError(output or f"git pull --ff-only {remote} {branch} failed with exit code {pull.returncode}.")
+            after = _git_stdout(repo, ["rev-parse", "HEAD"], timeout)
+        finally:
+            if preserved:
+                _restore_preserved_paths(repo, backup_root, preserved)
     return RepoUpdateResult(repo_root=repo, before=before, after=after, updated=before != after, output=output)
 
 

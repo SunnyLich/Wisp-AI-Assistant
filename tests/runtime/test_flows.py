@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 import config
-from runtime.supervisor.flows import FlowController, PendingInvocation
 from runtime.supervisor import tool_modes
+from runtime.supervisor.flows import FlowController, PendingInvocation
 
 
 class FakeWorker:
@@ -162,6 +163,36 @@ def make_flow(
     flow = FlowController(native=native, ui=ui, brain=brain, audio=audio, run_async=False)
     flow.start()
     return flow, native, ui, brain, audio
+
+
+def test_safe_call_quiets_ui_worker_exit(caplog):
+    """Late best-effort UI calls during shutdown should not log an ERROR traceback."""
+    flow, *_ = make_flow()
+
+    class ExitedUi:
+        def call(self, _method, _params=None, *, timeout=30.0, wait=True):
+            raise RuntimeError("worker exited")
+
+    with caplog.at_level("ERROR", logger="wisp.runtime.flows"):
+        result = flow._safe_call(ExitedUi(), "ui.reply.notice", {"text": "closing"}, timeout=1.0)
+
+    assert result is None
+    assert "worker call failed" not in caplog.text
+
+
+def test_safe_call_still_logs_real_ui_failures(caplog):
+    """Non-shutdown UI failures should remain visible."""
+    flow, *_ = make_flow()
+
+    class BrokenUi:
+        def call(self, _method, _params=None, *, timeout=30.0, wait=True):
+            raise RuntimeError("render failed")
+
+    with caplog.at_level("ERROR", logger="wisp.runtime.flows"):
+        result = flow._safe_call(BrokenUi(), "ui.reply.notice", {"text": "hello"}, timeout=1.0)
+
+    assert result is None
+    assert "worker call failed: ui.reply.notice" in caplog.text
 
 
 def context_handler(
@@ -554,7 +585,7 @@ def test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue():
     """Verify bubble stop mutes visible output for the current reply."""
     flow, _native, ui, _brain, audio = make_flow()
     generation = flow._new_generation()
-    q: "queue.Queue[str | None]" = queue.Queue()
+    q: queue.Queue[str | None] = queue.Queue()
     with flow._tts_lock:
         flow._tts_generation = generation
         flow._tts_queue = q

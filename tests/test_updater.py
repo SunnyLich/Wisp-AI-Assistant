@@ -84,7 +84,7 @@ def test_apply_repo_update_pulls_origin_main(monkeypatch, tmp_path: Path) -> Non
         args = list(cmd)[1:]
         if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
             return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
-        if args == ["status", "--porcelain"]:
+        if args == ["status", "--porcelain", "-z"]:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if args == ["rev-parse", "HEAD"]:
             return SimpleNamespace(returncode=0, stdout=f"{next(heads)}\n", stderr="")
@@ -114,7 +114,7 @@ def test_apply_repo_update_rejects_dirty_checkout(monkeypatch, tmp_path: Path) -
         args = list(cmd)[1:]
         if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
             return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
-        if args == ["status", "--porcelain"]:
+        if args == ["status", "--porcelain", "-z"]:
             return SimpleNamespace(returncode=0, stdout=" M config.py\n", stderr="")
         raise AssertionError(f"unexpected git command: {args}")
 
@@ -125,6 +125,65 @@ def test_apply_repo_update_rejects_dirty_checkout(monkeypatch, tmp_path: Path) -
         updater.apply_repo_update(repo)
 
     assert ["git", "pull", "--ff-only", "origin", "main"] not in calls
+
+
+def test_apply_repo_update_preserves_settings_and_addons(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    (repo / "addons").mkdir()
+    (repo / "addons.json").write_text('{"addons":{"demo":{"enabled":true}}}', encoding="utf-8")
+    (repo / "addons" / "mcp_bridge").mkdir()
+    (repo / "addons" / "mcp_bridge" / "servers.json").write_text('{"servers":[{"name":"local"}]}', encoding="utf-8")
+    (repo / "addons" / "custom").mkdir()
+    (repo / "addons" / "custom" / "addon.toml").write_text("[addon]\nid='custom'\n", encoding="utf-8")
+    (repo / "addon_data" / "custom").mkdir(parents=True)
+    (repo / "addon_data" / "custom" / "settings.json").write_text('{"theme":"mine"}', encoding="utf-8")
+    calls: list[list[str]] = []
+    heads = iter(["abc123", "def456"])
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        args = list(cmd)[1:]
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
+        if args == ["status", "--porcelain", "-z"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    " M addons.json\0"
+                    " M addons/mcp_bridge/servers.json\0"
+                    "?? addons/custom/\0"
+                    "?? addon_data/custom/\0"
+                ),
+                stderr="",
+            )
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout=f"{next(heads)}\n", stderr="")
+        if args == [
+            "checkout",
+            "--",
+            "addons.json",
+            "addons/mcp_bridge/servers.json",
+        ]:
+            (repo / "addons.json").write_text('{"addons":{}}', encoding="utf-8")
+            (repo / "addons" / "mcp_bridge" / "servers.json").write_text('{"servers":[]}', encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if args == ["pull", "--ff-only", "origin", "main"]:
+            return SimpleNamespace(returncode=0, stdout="Updating abc123..def456\n", stderr="")
+        raise AssertionError(f"unexpected git command: {args}")
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(updater.subprocess, "run", fake_run)
+
+    result = updater.apply_repo_update(repo)
+
+    assert result.updated is True
+    assert (repo / "addons.json").read_text(encoding="utf-8") == '{"addons":{"demo":{"enabled":true}}}'
+    assert (repo / "addons" / "mcp_bridge" / "servers.json").read_text(encoding="utf-8") == '{"servers":[{"name":"local"}]}'
+    assert (repo / "addons" / "custom" / "addon.toml").exists()
+    assert (repo / "addon_data" / "custom" / "settings.json").read_text(encoding="utf-8") == '{"theme":"mine"}'
+    assert ["git", "pull", "--ff-only", "origin", "main"] in calls
 
 
 def test_apply_repo_update_rejects_non_main_branch(monkeypatch, tmp_path: Path) -> None:
