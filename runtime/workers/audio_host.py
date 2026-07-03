@@ -316,7 +316,10 @@ def record_start() -> dict[str, Any]:
     """Record start."""
     from core.macos_helper import handlers as stt_handlers
 
-    stt_handlers.stt_start_recording()
+    try:
+        stt_handlers.stt_start_recording()
+    except Exception as exc:  # noqa: BLE001 - mic/device errors should not kill the worker request.
+        return {"recording": False, "error": f"{type(exc).__name__}: {exc}"}
     _event("audio.recording.started", {})
     return {"recording": True}
 

@@ -61,6 +61,20 @@ def test_main_starts_ipc_before_loading_tts_stack(monkeypatch):
     ]
 
 
+def test_record_start_reports_mic_open_failure_without_raising(monkeypatch):
+    """Mic/device failures should be reported without killing the audio worker request."""
+    from core.macos_helper import handlers as stt_handlers
+
+    def fail_start():
+        raise RuntimeError("PortAudio unavailable")
+
+    monkeypatch.setattr(stt_handlers, "stt_start_recording", fail_start)
+
+    result = audio_host.record_start()
+
+    assert result == {"recording": False, "error": "RuntimeError: PortAudio unavailable"}
+
+
 def test_tts_synthesize_uses_provider_pcm_format_for_kokoro(monkeypatch):
     """Kokoro streams int16 PCM, so the audio worker must not parse it as float32."""
     import config

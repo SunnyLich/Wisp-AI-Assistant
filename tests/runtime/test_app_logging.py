@@ -309,6 +309,78 @@ def test_main_restarts_ui_worker_after_nonzero_exit(tmp_path, monkeypatch):
     assert not list((tmp_path / "build_logs").glob("wisp_crash_*/supervisor-crash.log"))
 
 
+def test_main_restarts_audio_worker_after_unexpected_exit(tmp_path, monkeypatch):
+    """Verify an unexpected audio worker exit restarts without shutting down Wisp."""
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
+    monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: True)
+    instances = []
+
+    class FakeWorker:
+        """Fake worker that records restart and call activity."""
+        def __init__(self):
+            self.exit_handlers = []
+            self.event_handlers = {}
+            self.calls = []
+            self.restart_calls = 0
+
+        def on_exit(self, handler):
+            self.exit_handlers.append(handler)
+
+        def on_event(self, event, handler):
+            self.event_handlers[event] = handler
+
+        def call(self, method, _params=None, *, timeout=30.0, wait=True):
+            self.calls.append({"method": method, "timeout": timeout, "wait": wait})
+            return {"pong": method.endswith(".ping")}
+
+        def restart(self):
+            self.restart_calls += 1
+
+    class FakeSupervisor:
+        """Fake supervisor."""
+        def __init__(self):
+            self.workers = {
+                "native": FakeWorker(),
+                "ui": FakeWorker(),
+                "brain": FakeWorker(),
+                "audio": FakeWorker(),
+            }
+            self.shutdown_called = False
+            instances.append(self)
+
+        def start_all(self):
+            return {}
+
+        def shutdown(self):
+            self.shutdown_called = True
+
+    class FakeFlowController:
+        """Fake flow controller that simulates audio exit, then normal UI exit."""
+        def __init__(self, *, native, ui, brain, audio):
+            self.ui = ui
+            self.audio = audio
+
+        def start(self):
+            for handler in list(self.audio.exit_handlers):
+                handler(9)
+            for handler in list(self.ui.exit_handlers):
+                handler(0)
+
+        def start_hotkeys(self):
+            return {"started": True}
+
+    monkeypatch.setattr(supervisor_app, "WispSupervisor", FakeSupervisor)
+    monkeypatch.setattr(supervisor_app, "FlowController", FakeFlowController)
+
+    assert supervisor_app.main() == 0
+    audio = instances[0].workers["audio"]
+    assert audio.restart_calls == 1
+    assert [call["method"] for call in audio.calls] == ["audio.ping"]
+    assert instances[0].shutdown_called is True
+
+
 def test_main_does_not_restart_ui_after_user_quit_event(tmp_path, monkeypatch):
     """Verify a user-requested Qt quit is not treated as a UI crash."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)

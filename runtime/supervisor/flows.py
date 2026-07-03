@@ -1315,11 +1315,15 @@ class FlowController:
         except Exception as exc:  # noqa: BLE001
             log.exception("voice record start failed")
             self._notice(f"Couldn't start recording: {self._friendly_error(exc)}")
-            self._mark_voice_idle()
+            self._mark_voice_failed()
             self._set_idle()
             return
         if isinstance(record_result, dict) and record_result.get("recording") is False:
-            self._mark_voice_idle()
+            error = str(record_result.get("error") or "").strip()
+            if error:
+                log.warning("voice record start unavailable: %s", error)
+                self._notice(f"Couldn't start recording: {self._friendly_error(error)}")
+            self._mark_voice_failed()
             self._set_idle()
             return
         if not self._mark_voice_recording():
@@ -1415,11 +1419,15 @@ class FlowController:
         except Exception as exc:  # noqa: BLE001 â€” surface mic/worker failure in the UI
             log.exception("dictation record start failed")
             self._notice(f"Couldn't start dictation: {self._friendly_error(exc)}")
-            self._mark_dictate_idle()
+            self._mark_dictate_failed()
             self._set_idle()
             return
         if isinstance(record_result, dict) and record_result.get("recording") is False:
-            self._mark_dictate_idle()
+            error = str(record_result.get("error") or "").strip()
+            if error:
+                log.warning("dictation record start unavailable: %s", error)
+                self._notice(f"Couldn't start dictation: {self._friendly_error(error)}")
+            self._mark_dictate_failed()
             self._set_idle()
             return
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
@@ -2824,6 +2832,10 @@ class FlowController:
         with self._lock:
             if self._voice_state == "idle":
                 return False
+            if self._voice_state == "failed":
+                self._voice_state = "idle"
+                self._voice_active = False
+                return False
             self._voice_state = "stopping"
             self._voice_active = False
             return True
@@ -2833,9 +2845,19 @@ class FlowController:
         with self._lock:
             if self._voice_state == "idle":
                 return False
+            if self._voice_state == "failed":
+                self._voice_state = "idle"
+                self._voice_active = False
+                return False
             self._voice_state = "stopping"
             self._voice_active = False
             return True
+
+    def _mark_voice_failed(self) -> None:
+        """Keep a failed press claimed until its key-up event arrives."""
+        with self._lock:
+            self._voice_state = "failed"
+            self._voice_active = True
 
     def _mark_voice_idle(self) -> None:
         """Handle mark voice idle for flow controller."""
@@ -2855,10 +2877,18 @@ class FlowController:
     def _claim_dictate_stop(self) -> bool:
         """Handle claim dictate stop for flow controller."""
         with self._lock:
+            if self._dictate_state == "failed":
+                self._dictate_state = "idle"
+                return False
             if self._dictate_state != "recording":
                 return False
             self._dictate_state = "stopping"
             return True
+
+    def _mark_dictate_failed(self) -> None:
+        """Keep a failed dictation press claimed until its key-up event arrives."""
+        with self._lock:
+            self._dictate_state = "failed"
 
     def _mark_dictate_idle(self) -> None:
         """Handle mark dictate idle for flow controller."""

@@ -185,17 +185,32 @@ def start_recording():
     # run_on_main); inline no-op on Windows/Linux.
     def _open():
         """Open the PortAudio input stream (must run on the main thread on macOS)."""
-        s = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            blocksize=1024,
-            callback=_audio_callback,
-        )
-        s.start()
-        return s
+        stream = None
+        try:
+            stream = sd.InputStream(
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                blocksize=1024,
+                callback=_audio_callback,
+            )
+            stream.start()
+            return stream
+        except Exception:
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            raise
 
-    _stream = run_on_main(_open)
+    try:
+        _stream = run_on_main(_open)
+    except Exception:
+        _recording = False
+        with _chunks_lock:
+            _chunks.clear()
+        raise
     print("[stt] Recording started.")
 
 

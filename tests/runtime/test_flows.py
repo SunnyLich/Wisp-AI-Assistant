@@ -3500,6 +3500,23 @@ def test_voice_start_key_repeat_is_ignored_until_release():
     assert len(audio.calls_for("audio.record.stop_transcribe")) == 1
 
 
+def test_voice_start_failure_ignores_key_repeat_until_release():
+    """Verify failed voice start does not hammer the microphone on key repeat."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    audio = FakeWorker({"audio.record.start": lambda _params: {"recording": False, "error": "mic unavailable"}})
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "voice_start"})
+    native.emit("native.hotkey", {"kind": "voice_start"})
+    native.emit("native.hotkey", {"kind": "voice_start"})
+    native.emit("native.hotkey", {"kind": "voice_stop"})
+    native.emit("native.hotkey", {"kind": "voice_start"})
+
+    assert len(audio.calls_for("audio.record.start")) == 2
+    assert not audio.calls_for("audio.record.stop_transcribe")
+    assert ui.calls_for("ui.reply.notice")
+
+
 def test_voice_stop_leaves_recording_bubble_before_transcribing():
     """Verify voice stop leaves recording bubble before transcribing behavior."""
     ui = FakeWorker()
@@ -3722,6 +3739,23 @@ def test_dictation_does_not_show_recording_ui_when_recorder_reports_false():
     assert audio.calls_for("audio.record.start")
     assert not ui.calls_for("ui.reply.listening")
     assert not any(call["params"].get("state") == "listening" for call in ui.calls_for("ui.overlay.state"))
+
+
+def test_dictation_start_failure_ignores_key_repeat_until_release():
+    """Verify failed dictation start does not hammer the microphone on key repeat."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="", pid=777, focus_token=9)})
+    audio = FakeWorker({"audio.record.start": lambda _params: {"recording": False, "error": "mic unavailable"}})
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_stop"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+
+    assert len(audio.calls_for("audio.record.start")) == 2
+    assert not audio.calls_for("audio.record.stop_transcribe")
+    assert ui.calls_for("ui.reply.notice")
 
 
 @pytest.mark.workflow

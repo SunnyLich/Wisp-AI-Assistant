@@ -242,6 +242,25 @@ def main() -> int:
 
         ui_worker.on_event("ui.quit_requested", _on_ui_quit_requested)
 
+    def _restart_audio_on_exit(returncode=None) -> None:
+        """Restart the isolated audio worker after an unexpected exit."""
+        if stop.is_set():
+            return
+        audio_worker = supervisor.workers.get("audio")
+        logging.warning("Audio worker exited with code %s; restarting it", returncode)
+        if audio_worker is None or not hasattr(audio_worker, "restart"):
+            return
+        try:
+            audio_worker.restart()
+            audio_worker.call("audio.ping", timeout=30.0)
+            logging.info("Audio worker restarted after exit")
+        except Exception:
+            logging.exception("Audio worker restart failed")
+
+    audio_worker = supervisor.workers.get("audio")
+    if audio_worker is not None and hasattr(audio_worker, "on_exit"):
+        audio_worker.on_exit(_restart_audio_on_exit)
+
     try:
         supervisor.start_all()
         flows = FlowController(

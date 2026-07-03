@@ -351,6 +351,7 @@ def stt_start_recording() -> None:
         _recording = True
         with _chunks_lock:
             _chunks.clear()
+        stream = None
         try:
             stream = sd.InputStream(
                 samplerate=_SAMPLE_RATE,
@@ -363,6 +364,11 @@ def stt_start_recording() -> None:
             _stream = stream
         except Exception:
             _recording = False
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:  # noqa: BLE001
+                    pass
             raise
         _start_background_stt()
     _log("recording started")
