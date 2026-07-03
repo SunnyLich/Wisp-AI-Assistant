@@ -48,6 +48,14 @@ UV_BINARIES = [
     )
     if path.exists()
 ]
+BUNDLED_ADDON_DATAS = [
+    (str(path), dest)
+    for path, dest in (
+        (ROOT / "addons" / "mcp_bridge", "addons/mcp_bridge"),
+        (ROOT / "addons" / "ui_lab", "addons/ui_lab"),
+    )
+    if path.exists()
+]
 
 block_cipher = None
 
@@ -58,12 +66,10 @@ a = Analysis(
     binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + FASTER_WHISPER_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
-        (str(ROOT / "addons" / "mcp_bridge"), "addons/mcp_bridge"),
-        (str(ROOT / "addons" / "ui_lab"), "addons/ui_lab"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),
-    ] + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS + FASTER_WHISPER_DATAS,
+    ] + BUNDLED_ADDON_DATAS + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS + FASTER_WHISPER_DATAS,
     hiddenimports=[
         "pynput.keyboard._darwin",
         "pynput.mouse._darwin",

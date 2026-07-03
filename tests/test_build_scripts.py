@@ -1,4 +1,5 @@
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -244,14 +245,39 @@ class BuildScriptTests(unittest.TestCase):
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
             with self.subTest(spec=spec_name):
                 spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertIn("BUNDLED_ADDON_DATAS", spec)
                 self.assertIn('ROOT / "addons" / "mcp_bridge"', spec)
                 self.assertIn('"addons/mcp_bridge"', spec)
                 self.assertIn('ROOT / "addons" / "ui_lab"', spec)
                 self.assertIn('"addons/ui_lab"', spec)
+                self.assertIn("if path.exists()", spec)
+                self.assertIn("] + BUNDLED_ADDON_DATAS +", spec)
 
         docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
-        self.assertIn("MCP Bridge and UI Lab addons are bundled", docs)
+        self.assertIn("MCP Bridge and UI Lab addons are bundled when present", docs)
         self.assertIn("servers.json", docs)
+
+    def test_specs_skip_missing_default_addon_inputs(self) -> None:
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                start = spec.index("BUNDLED_ADDON_DATAS = [")
+                end = spec.index("\n\nblock_cipher", start)
+                addon_datas_block = spec[start:end]
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    temp_root = Path(tmp)
+                    namespace = {"ROOT": temp_root}
+
+                    exec(addon_datas_block, namespace)
+                    self.assertEqual(namespace["BUNDLED_ADDON_DATAS"], [])
+
+                    (temp_root / "addons" / "mcp_bridge").mkdir(parents=True)
+                    exec(addon_datas_block, namespace)
+                    self.assertEqual(
+                        namespace["BUNDLED_ADDON_DATAS"],
+                        [(str(temp_root / "addons" / "mcp_bridge"), "addons/mcp_bridge")],
+                    )
 
     def test_specs_bundle_runtime_worker_modules_for_frozen_module_dispatch(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):

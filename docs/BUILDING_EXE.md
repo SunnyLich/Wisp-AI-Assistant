@@ -48,9 +48,10 @@ Notes:
 
 - API keys are not bundled. Users should enter them in Settings so they are saved to the OS keychain.
 - `.env.example` is bundled as a template, but your local `.env` is not included.
-- The MCP Bridge and UI Lab addons are bundled and seeded into the writable
-  `addons` folder on first launch. Existing addon folders are left untouched so
-  user addon configuration, such as MCP Bridge `servers.json`, is preserved.
+- The MCP Bridge and UI Lab addons are bundled when present in the checkout and
+  seeded into the writable `addons` folder on first launch. Existing addon
+  folders are left untouched so user addon configuration, such as MCP Bridge
+  `servers.json`, is preserved.
 - Portable builds create an `addons` folder next to `Wisp.exe` when that folder
   is writable. Drop addon folders there, or use **Addon Manager > Install
   archive/folder**. If the executable lives in a read-only install location,
