@@ -6,15 +6,23 @@ Positioned to the left of the icon, tail points right toward it.
 Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
-from collections.abc import Callable
-import html
 
-from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEdit, QToolTip, QWidget
-from PySide6.QtCore import Qt, QTimer, QElapsedTimer, QRect
+import html
+from collections.abc import Callable
+
+from PySide6.QtCore import QElapsedTimer, QRect, Qt, QTimer
 from PySide6.QtGui import (
-    QPainter, QColor, QFont, QFontMetrics,
-    QBrush, QPen, QPainterPath, QTextCursor,
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QTextCursor,
 )
+from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEdit, QToolTip, QWidget
+
 import config
 from ui.i18n import t
 from ui.text_annotations import (
@@ -71,6 +79,13 @@ def _css_color(color: QColor) -> str:
     return color.name()
 
 
+def _with_alpha(color: QColor, alpha: int) -> QColor:
+    """Return a copy of color with a bounded alpha channel."""
+    out = QColor(color)
+    out.setAlpha(max(0, min(255, int(alpha))))
+    return out
+
+
 def _bubble_annotation_attrs(annotation: TextAnnotation) -> str:
     """Return sanitized optional attributes for one floating-bubble annotation."""
     attrs: list[str] = []
@@ -82,7 +97,7 @@ def _bubble_annotation_attrs(annotation: TextAnnotation) -> str:
 class _BubbleTextView(QTextBrowser):
     """Selectable text layer embedded inside the painted speech bubble."""
 
-    def __init__(self, parent: "SpeechBubble"):
+    def __init__(self, parent: SpeechBubble):
         """Initialize the selectable text surface."""
         super().__init__(parent)
         self._press_pos = None
@@ -689,7 +704,7 @@ class SpeechBubble(QWidget):
         elapsed = self._audio_elapsed.elapsed()
         playback_rate = self._current_tts_rate()
         generation = self._highlight_generation
-        schedule = list(zip(words, start_ms))
+        schedule = list(zip(words, start_ms, strict=False))
         for i, (word, t_ms) in enumerate(schedule):
             units = self._reveal_units(str(word))
             if not units:
@@ -1034,6 +1049,19 @@ class SpeechBubble(QWidget):
         if self._reply_chunk_count > 0:
             return True
         return bool(self._close_cancels and self._display_label_prefix and self._pending_words)
+
+    def _fast_forward_colors(self, *, pressed: bool, hovered: bool) -> tuple[QColor, QColor, QColor]:
+        """Return background, border, and text colors for the speed-boost control."""
+        bg = QColor(self._bubble_color)
+        if pressed:
+            bg = bg.darker(112)
+            bg.setAlpha(max(bg.alpha(), 235))
+        elif hovered:
+            bg = bg.lighter(116)
+            bg.setAlpha(max(bg.alpha(), 220))
+        else:
+            bg.setAlpha(max(bg.alpha(), 190))
+        return bg, _with_alpha(self._text_color, 70), _with_alpha(self._text_color, 235)
 
     def _action_index_at(self, point) -> int:
         """Return the notice action index under point, or -1."""
@@ -1801,14 +1829,12 @@ class SpeechBubble(QWidget):
             rect = self._fast_forward_rect()
             pressed = self._fast_forward_pressed
             hovered = self._fast_forward_hover
-            bg = QColor(77, 163, 255, 210 if not pressed else 245)
-            if hovered and not pressed:
-                bg = QColor(99, 179, 255, 225)
+            bg, border, text = self._fast_forward_colors(pressed=pressed, hovered=hovered)
             p.setBrush(QBrush(bg))
-            p.setPen(Qt.PenStyle.NoPen)
+            p.setPen(QPen(border, 1))
             p.drawRoundedRect(rect, 6, 6)
             p.setFont(self._bold_font)
-            p.setPen(QPen(QColor(255, 255, 255, 235)))
+            p.setPen(QPen(text))
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, ">>")
 
         # Content

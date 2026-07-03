@@ -210,6 +210,36 @@ def _theme_palette() -> dict[str, QColor]:
     }
 
 
+def _input_line_stylesheet() -> str:
+    """Return theme-aware styling for the custom prompt input."""
+    try:
+        from ui.shared.theme import theme_colors
+
+        colors = theme_colors()
+    except Exception:
+        colors = {}
+    surface = colors.get("surface", _BADGE_BG.name())
+    text = colors.get("text", _LABEL.name())
+    border = colors.get("border", _BORDER.name())
+    accent = colors.get("accent", _KEY_COLOR.name())
+    on_accent = colors.get("on_accent", "#ffffff")
+    return (
+        "QLineEdit {"
+        f"  background: {surface};"
+        f"  border: 1px solid {border};"
+        "  border-radius: 6px;"
+        f"  color: {text};"
+        "  padding: 4px 10px;"
+        "  font-size: 10pt;"
+        f"  selection-background-color: {accent};"
+        f"  selection-color: {on_accent};"
+        "}"
+        "QLineEdit:focus {"
+        f"  border-color: {accent};"
+        "}"
+    )
+
+
 def _context_toggle_keys() -> str:
     """Return eight unique overlay-local context toggle keys."""
     raw = str(getattr(config, "INTENT_CONTEXT_TOGGLE_KEYS", "12345678") or "12345678")
@@ -349,16 +379,7 @@ class IntentOverlay(QWidget):
         self._input_line = QLineEdit(self)
         self._input_line.installEventFilter(self)
         self._input_line.setPlaceholderText(t("Type your prompt, press Enter…"))
-        self._input_line.setStyleSheet(
-            "QLineEdit {"
-            "  background: #2a2a38;"
-            "  border: 1px solid #6d63a8;"
-            "  border-radius: 6px;"
-            "  color: #eeeef8;"
-            "  padding: 4px 10px;"
-            "  font-size: 10pt;"
-            "}"
-        )
+        self._input_line.setStyleSheet(_input_line_stylesheet())
         self._input_line.hide()
         self._input_line.returnPressed.connect(self._fire_custom)
 

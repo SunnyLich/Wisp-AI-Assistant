@@ -412,6 +412,37 @@ def test_intent_overlay_context_palette_uses_theme_settings():
             setattr(config, key, value)
 
 
+def test_intent_overlay_custom_prompt_input_uses_theme_settings():
+    """Verify custom prompt input does not stay hard-coded dark in light mode."""
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_values = {
+        "THEME_MODE": getattr(config, "THEME_MODE", "system"),
+        "THEME_LIGHT_BG": getattr(config, "THEME_LIGHT_BG", "#f2f2f7"),
+        "THEME_LIGHT_SURFACE": getattr(config, "THEME_LIGHT_SURFACE", "#ffffff"),
+        "THEME_LIGHT_TEXT": getattr(config, "THEME_LIGHT_TEXT", "#1c1c1e"),
+        "THEME_LIGHT_ACCENT": getattr(config, "THEME_LIGHT_ACCENT", "#5856d6"),
+    }
+    try:
+        config.THEME_MODE = "light"
+        config.THEME_LIGHT_BG = "#eeeeee"
+        config.THEME_LIGHT_SURFACE = "#fafafa"
+        config.THEME_LIGHT_TEXT = "#111111"
+        config.THEME_LIGHT_ACCENT = "#2255aa"
+
+        style = intent_overlay._input_line_stylesheet().lower()
+
+        assert "#fafafa" in style
+        assert "#111111" in style
+        assert "#2255aa" in style
+        assert "#2a2a38" not in style
+        assert "#eeeef8" not in style
+    finally:
+        for key, value in old_values.items():
+            setattr(config, key, value)
+
+
 def test_context_preview_text_is_redacted_and_trimmed(monkeypatch):
     """Verify context preview snippets are compact and privacy-safe."""
     import config

@@ -119,6 +119,32 @@ def test_fast_forward_button_controls_speed_boost():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_fast_forward_button_uses_bubble_colors():
+    """The speed control should visually belong to the bubble, not use a blue badge."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    try:
+        bubble._bubble_color = QColor("#f4f0df")
+        bubble._text_color = QColor("#1b1b1b")
+
+        bg, border, text = bubble._fast_forward_colors(pressed=False, hovered=False)
+
+        assert bg.name().lower() == "#f4f0df"
+        assert border.name().lower() == "#1b1b1b"
+        assert text.name().lower() == "#1b1b1b"
+        assert bg.name().lower() != "#4da3ff"
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_holding_bubble_body_no_longer_controls_speed_boost():
     """The bubble body should remain available for drag/click instead of speed control."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -193,7 +219,7 @@ def test_document_view_keeps_legacy_bubble_text_width():
     from PySide6.QtWidgets import QApplication
 
     import config
-    from ui.bubble import SpeechBubble, _CLOSE_SIZE, _PAD
+    from ui.bubble import _CLOSE_SIZE, _PAD, SpeechBubble
 
     app = QApplication.instance() or QApplication(sys.argv)
     old_width = getattr(config, "BUBBLE_WIDTH", 340)
