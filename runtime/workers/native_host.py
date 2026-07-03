@@ -637,7 +637,12 @@ def clipboard_set(text: str = "") -> dict[str, Any]:
     return {"ok": bool(ok)}
 
 
-def selected_text(*, allow_clipboard_fallback: bool = True) -> str:
+def selected_text(
+    *,
+    allow_clipboard_fallback: bool = True,
+    active_pid: int | None = None,
+    require_active_owner: bool = False,
+) -> str:
     """Handle selected text for runtime workers native host."""
     if IS_MAC:
         # Prefer Accessibility: reading AXSelectedText injects no keystrokes. The
@@ -657,6 +662,16 @@ def selected_text(*, allow_clipboard_fallback: bool = True) -> str:
 
         return macos_native.get_selected_text() or ""
     try:
+        if not IS_WIN and not IS_MAC and require_active_owner:
+            from core.capture import _get_primary_selection_linux
+
+            return (
+                _get_primary_selection_linux(
+                    active_pid=active_pid,
+                    require_active_owner=True,
+                )
+                or ""
+            ).strip()
         if allow_clipboard_fallback:
             from core.capture import get_selected_text
 
@@ -667,7 +682,13 @@ def selected_text(*, allow_clipboard_fallback: bool = True) -> str:
             return (_get_selected_text_uia() or "").strip()
         from core.capture import _get_primary_selection_linux
 
-        return (_get_primary_selection_linux() or "").strip()
+        return (
+            _get_primary_selection_linux(
+                active_pid=active_pid,
+                require_active_owner=require_active_owner,
+            )
+            or ""
+        ).strip()
     except Exception:
         return ""
 
@@ -808,6 +829,7 @@ def context_snapshot(
     include_browser_content: bool = False,
     include_browser_url: bool = False,
     capture_focus: bool = False,
+    require_active_selection_owner: bool = True,
 ) -> dict[str, Any]:
     """Handle context snapshot for runtime workers native host."""
     t0 = time.monotonic()
@@ -842,7 +864,11 @@ def context_snapshot(
     selection_kind = _selection_source_kind(active) if include_selected_paths else "text"
     if include_selection and selection_kind != "paths":
         _s = time.monotonic()
-        snapshot["selected_text"] = selected_text(allow_clipboard_fallback=True)
+        snapshot["selected_text"] = selected_text(
+            allow_clipboard_fallback=True,
+            active_pid=int(active.get("pid") or 0),
+            require_active_owner=bool(require_active_selection_owner),
+        )
         sel_dt = time.monotonic() - _s
     if include_clipboard:
         _s = time.monotonic()
@@ -1006,6 +1032,7 @@ def await_selection_context(
         include_browser_content=False,
         include_browser_url=False,
         capture_focus=False,
+        require_active_selection_owner=False,
     )
 
 

@@ -114,10 +114,15 @@ def test_context_snapshot_explorer_selection_uses_paths_not_text(monkeypatch):
     monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": "previous clipboard"})
     monkeypatch.setattr(native_host, "selected_paths", lambda: [r"C:\Users\sunny\Desktop\note.txt"])
-    calls: list[bool] = []
+    calls: list[tuple[bool, int | None, bool]] = []
 
-    def fake_selected_text(*, allow_clipboard_fallback: bool = True) -> str:
-        calls.append(allow_clipboard_fallback)
+    def fake_selected_text(
+        *,
+        allow_clipboard_fallback: bool = True,
+        active_pid: int | None = None,
+        require_active_owner: bool = False,
+    ) -> str:
+        calls.append((allow_clipboard_fallback, active_pid, require_active_owner))
         return ""
 
     monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
@@ -146,10 +151,15 @@ def test_context_snapshot_text_app_selection_uses_text_not_paths(monkeypatch):
     monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": "clipboard text"})
     monkeypatch.setattr(native_host, "selected_paths", lambda: pytest.fail("text app should not read paths"))
-    calls: list[bool] = []
+    calls: list[tuple[bool, int | None, bool]] = []
 
-    def fake_selected_text(*, allow_clipboard_fallback: bool = True) -> str:
-        calls.append(allow_clipboard_fallback)
+    def fake_selected_text(
+        *,
+        allow_clipboard_fallback: bool = True,
+        active_pid: int | None = None,
+        require_active_owner: bool = False,
+    ) -> str:
+        calls.append((allow_clipboard_fallback, active_pid, require_active_owner))
         return "selected text"
 
     monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
@@ -160,10 +170,47 @@ def test_context_snapshot_text_app_selection_uses_text_not_paths(monkeypatch):
         include_selected_paths=True,
     )
 
-    assert calls == [True]
+    assert calls == [(True, 42, True)]
     assert snapshot["selected_text"] == "selected text"
     assert snapshot["selected_paths"] == []
     assert snapshot["clipboard_text"] == "clipboard text"
+
+
+def test_await_selection_context_disables_active_owner_requirement(monkeypatch):
+    """Verify explicit Selection capture can use the interactive selection gesture."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(native_host.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "Editor", "process_name": "editor", "pid": 42, "window_id": 777},
+    )
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
+    monkeypatch.setattr(native_host, "selected_paths", lambda: [])
+    calls: list[tuple[bool, int | None, bool]] = []
+
+    def fake_selected_text(
+        *,
+        allow_clipboard_fallback: bool = True,
+        active_pid: int | None = None,
+        require_active_owner: bool = False,
+    ) -> str:
+        calls.append((allow_clipboard_fallback, active_pid, require_active_owner))
+        return "picked text"
+
+    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+
+    snapshot = native_host.await_selection_context(
+        timeout=0.5,
+        settle_ms=0,
+        include_clipboard=False,
+        include_selected_paths=False,
+    )
+
+    assert calls == [(True, 42, False)]
+    assert snapshot["selected_text"] == "picked text"
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
