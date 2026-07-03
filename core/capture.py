@@ -181,6 +181,26 @@ def _linux_x11_primary_selection_owner_pid() -> int | None:
     return None
 
 
+def _linux_processes_related(first_pid: int | None, second_pid: int | None) -> bool:
+    """Return True when two Linux PIDs appear to belong to the same app tree."""
+    first = int(first_pid or 0)
+    second = int(second_pid or 0)
+    if first <= 0 or second <= 0:
+        return False
+    if first == second:
+        return True
+    try:
+        import psutil  # type: ignore
+
+        first_proc = psutil.Process(first)
+        second_proc = psutil.Process(second)
+        first_ancestors = {int(proc.pid) for proc in first_proc.parents()}
+        second_ancestors = {int(proc.pid) for proc in second_proc.parents()}
+        return second in first_ancestors or first in second_ancestors
+    except Exception:
+        return False
+
+
 def _get_primary_selection_linux(
     *,
     active_pid: int | None = None,
@@ -204,7 +224,7 @@ def _get_primary_selection_linux(
         if pid <= 0:
             return None
         owner_pid = _linux_x11_primary_selection_owner_pid()
-        if owner_pid != pid:
+        if owner_pid != pid and not _linux_processes_related(owner_pid, pid):
             return None
 
     xclip = ["xclip", "-selection", "primary", "-o"]

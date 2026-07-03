@@ -665,13 +665,18 @@ def selected_text(
         if not IS_WIN and not IS_MAC and require_active_owner:
             from core.capture import _get_primary_selection_linux
 
-            return (
+            text = (
                 _get_primary_selection_linux(
                     active_pid=active_pid,
                     require_active_owner=True,
                 )
                 or ""
             ).strip()
+            if text or not allow_clipboard_fallback:
+                return text
+            from core.capture import _get_selected_text_clipboard
+
+            return (_get_selected_text_clipboard() or "").strip()
         if allow_clipboard_fallback:
             from core.capture import get_selected_text
 
