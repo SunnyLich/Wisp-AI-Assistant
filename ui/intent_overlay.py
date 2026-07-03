@@ -274,15 +274,15 @@ class IntentOverlay(QWidget):
         """Initialize the intent overlay instance."""
         super().__init__(parent)
         flags = (
-            Qt.WindowType.FramelessWindowHint
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        if not _IS_MAC:
-            # Popup gives click-outside-to-dismiss on Win/Linux, where we read
-            # keys via a global hook. On macOS a Popup window cannot become the
-            # key window, so the QLineEdit / keyPressEvent would never receive
-            # input — use a plain frameless top-level (Qt overrides
-            # canBecomeKeyWindow for it) and dismiss via Esc / focus-out / timer.
+        if _IS_WIN:
+            # Popup gives click-outside-to-dismiss on Windows, where a raw hook
+            # forwards suppressed overlay command keys. On Linux/macOS the
+            # overlay must itself become a real key window, so keep those as
+            # normal frameless top-level windows and dismiss via Esc/focus-out.
             flags |= Qt.WindowType.Popup
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)

@@ -870,6 +870,8 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     import builtins
 
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QWidget
 
     import config
@@ -910,9 +912,11 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
         app.processEvents()
 
         assert overlay._kb_hook is None
+        assert overlay.windowFlags() & Qt.WindowType.WindowType_Mask == Qt.WindowType.Window
         assert grabs == [overlay]
         assert overlay._overlay_grabbed_keyboard is True
-        assert overlay._cycle_context_key("2") is True
+        QTest.keyClick(overlay, Qt.Key.Key_2)
+        app.processEvents()
         assert overlay.context_choices()[0]["state"] == "off"
 
         overlay._unhook()
@@ -923,6 +927,55 @@ def test_intent_overlay_linux_uses_qt_keys_without_pynput(monkeypatch):
         config.CALLER_ROWS[:] = old_rows
         overlay.close()
         app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_linux_visible_picker_accepts_letter_shortcut(monkeypatch):
+    """Verify Linux visible intent picker handles letter shortcuts through Qt."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    chosen: list[tuple[str, str]] = []
+
+    def grab_keyboard(self):
+        """Allow Qt-local keyboard grabs without touching the host desktop."""
+
+    def release_keyboard(self):
+        """Allow Qt-local keyboard releases without touching the host desktop."""
+
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
+    monkeypatch.setattr(QWidget, "grabKeyboard", grab_keyboard)
+    monkeypatch.setattr(QWidget, "releaseKeyboard", release_keyboard)
+    config.CALLER_ROWS[:] = [
+        {
+            "intents": [
+                {"key": "w", "label": "Write", "hint": "", "prompt": "write this"},
+            ],
+            "custom_key": "s",
+        }
+    ]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
+    try:
+        overlay.show()
+        app.processEvents()
+
+        QTest.keyClick(overlay, Qt.Key.Key_W)
+        QTest.qWait(120)
+        app.processEvents()
+
+        assert chosen == [("W", "write this")]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, app)
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
