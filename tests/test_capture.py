@@ -1,5 +1,6 @@
 """Tests for test capture."""
 
+import os
 import sys
 import types
 import unittest
@@ -195,6 +196,46 @@ class CaptureTests(unittest.TestCase):
              mock.patch("core.platform.macos_native.get_clipboard_text", return_value=" pasted \n"), \
              mock.patch.object(self.capture.pyperclip, "paste", side_effect=AssertionError("no pyperclip on macOS")):
             self.assertEqual(self.capture.get_clipboard_text(), "pasted")
+
+    def test_linux_primary_auto_capture_skips_wayland_primary(self):
+        """Verify guarded auto-capture does not trust Wayland global PRIMARY."""
+        with mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"}, clear=True), \
+             mock.patch.object(self.capture, "_linux_x11_primary_selection_owner_pid", return_value=42), \
+             mock.patch("subprocess.run", side_effect=AssertionError("wl-paste should not run")):
+            self.assertIsNone(
+                self.capture._get_primary_selection_linux(
+                    active_pid=42,
+                    require_active_owner=True,
+                )
+            )
+
+    def test_linux_primary_auto_capture_requires_matching_x11_owner(self):
+        """Verify guarded auto-capture rejects stale PRIMARY from another app."""
+        with mock.patch.dict(os.environ, {"DISPLAY": ":0"}, clear=True), \
+             mock.patch.object(self.capture, "_linux_x11_primary_selection_owner_pid", return_value=99), \
+             mock.patch("subprocess.run", side_effect=AssertionError("selection tool should not run")):
+            self.assertIsNone(
+                self.capture._get_primary_selection_linux(
+                    active_pid=42,
+                    require_active_owner=True,
+                )
+            )
+
+    def test_linux_primary_auto_capture_reads_matching_x11_owner(self):
+        """Verify guarded X11 auto-capture reads PRIMARY when ownership matches."""
+        fake_proc = types.SimpleNamespace(returncode=0, stdout=" selected text \n")
+        with mock.patch.dict(os.environ, {"DISPLAY": ":0"}, clear=True), \
+             mock.patch.object(self.capture, "_linux_x11_primary_selection_owner_pid", return_value=42), \
+             mock.patch("subprocess.run", return_value=fake_proc) as run:
+            self.assertEqual(
+                self.capture._get_primary_selection_linux(
+                    active_pid=42,
+                    require_active_owner=True,
+                ),
+                "selected text",
+            )
+
+        self.assertEqual(run.call_args.args[0], ["xclip", "-selection", "primary", "-o"])
 
     def test_macos_screen_snippet_uses_native_helper(self):
         """Verify macos screen snippet uses native helper behavior."""

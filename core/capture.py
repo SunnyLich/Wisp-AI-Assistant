@@ -144,7 +144,48 @@ def _clipboard_sequence_number() -> int | None:
         return None
 
 
-def _get_primary_selection_linux() -> str | None:
+def _linux_x11_primary_selection_owner_pid() -> int | None:
+    """Return the X11 PRIMARY owner pid when it can be verified."""
+    try:
+        from Xlib import X
+        from Xlib.display import Display
+
+        display = Display()
+    except Exception:
+        return None
+    try:
+        owner = display.get_selection_owner(display.intern_atom("PRIMARY"))
+        if owner is None:
+            return None
+        pid_atom = display.intern_atom("_NET_WM_PID")
+        current = owner
+        for _ in range(16):
+            try:
+                prop = current.get_full_property(pid_atom, X.AnyPropertyType)
+                if prop is not None and len(prop.value):
+                    return int(prop.value[0])
+            except Exception:
+                pass
+            try:
+                parent = current.query_tree().parent
+            except Exception:
+                break
+            if parent is None or int(parent.id) == int(current.id):
+                break
+            current = parent
+    finally:
+        try:
+            display.close()
+        except Exception:
+            pass
+    return None
+
+
+def _get_primary_selection_linux(
+    *,
+    active_pid: int | None = None,
+    require_active_owner: bool = False,
+) -> str | None:
     """
     Read the X11/Wayland PRIMARY selection (the current highlight) on Linux.
 
@@ -155,6 +196,16 @@ def _get_primary_selection_linux() -> str | None:
     """
     import os
     import subprocess
+
+    if require_active_owner:
+        if os.environ.get("WAYLAND_DISPLAY"):
+            return None
+        pid = int(active_pid or 0)
+        if pid <= 0:
+            return None
+        owner_pid = _linux_x11_primary_selection_owner_pid()
+        if owner_pid != pid:
+            return None
 
     xclip = ["xclip", "-selection", "primary", "-o"]
     xsel  = ["xsel", "-p"]

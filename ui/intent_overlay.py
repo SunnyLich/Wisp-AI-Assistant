@@ -21,6 +21,7 @@ from ui.shared.theme import show_tooltip_text
 
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
+_IS_LINUX = sys.platform.startswith("linux")
 _DEBUG_KEYS = os.environ.get("WISP_INTENT_KEY_DEBUG", "0").strip().lower() not in {
     "0",
     "false",
@@ -54,6 +55,14 @@ def _event_type_name(event) -> str:
         return event.type().name
     except Exception:
         return str(event.type())
+
+
+def _linux_qt_keyboard_grabs_enabled() -> bool:
+    """Return whether the Linux picker should use Qt's native keyboard grab."""
+    raw = os.environ.get("WISP_LINUX_QT_KEYBOARD_GRAB")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return not bool(getattr(sys, "frozen", False))
 
 
 def _build_rows(caller_idx: int = 0) -> list[dict]:
@@ -1371,7 +1380,7 @@ class IntentOverlay(QWidget):
             self._win_force_foreground()
         self.activateWindow()
         self._input_line.setFocus(Qt.FocusReason.OtherFocusReason)
-        if not _IS_MAC and not self._input_grabbed_keyboard:
+        if self._qt_keyboard_grabs_enabled() and not self._input_grabbed_keyboard:
             try:
                 self._input_line.grabKeyboard()
                 self._input_grabbed_keyboard = True
@@ -1391,13 +1400,29 @@ class IntentOverlay(QWidget):
 
     def _grab_overlay_keyboard(self) -> None:
         """Route overlay-local shortcut keys to this Qt popup on Linux."""
-        if _IS_MAC or _IS_WIN or self._custom_mode or self._overlay_grabbed_keyboard:
+        if (
+            _IS_MAC
+            or _IS_WIN
+            or self._custom_mode
+            or self._overlay_grabbed_keyboard
+            or not self._qt_keyboard_grabs_enabled()
+        ):
             return
         try:
             self.grabKeyboard()
             self._overlay_grabbed_keyboard = True
         except Exception:
             pass
+
+    def _qt_keyboard_grabs_enabled(self) -> bool:
+        """Return whether this platform should use Qt native keyboard grabs."""
+        if _IS_MAC:
+            return False
+        if _IS_WIN:
+            return True
+        if _IS_LINUX:
+            return _linux_qt_keyboard_grabs_enabled()
+        return True
 
     def _release_overlay_keyboard(self) -> None:
         """Release a Qt keyboard grab owned by the picker shell."""
