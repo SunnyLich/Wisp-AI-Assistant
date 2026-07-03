@@ -16,7 +16,7 @@ DATA_FILENAME = "labels.json"
 MAX_LABELS = 128
 MAX_MATCH_CHARS = 160
 MAX_TOOLTIP_CHARS = 240
-DEFAULT_STYLE = "text-decoration:underline"
+DEFAULT_STYLE = ""
 _data_dir = REPO_ROOT / "addon_data" / ADDON_ID
 _labels_path = _data_dir / DATA_FILENAME
 

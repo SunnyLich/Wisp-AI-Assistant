@@ -23,6 +23,8 @@ def parse_fallback_rows(raw: str) -> list[tuple[str, str]]:
 
 
 if QComboBox is not None:
+    from ui.shared.theme import show_tooltip_text
+
 
     class NoScrollCombo(QComboBox):
         """QComboBox that keeps passive wheel scrolling on the settings page."""
@@ -47,7 +49,7 @@ if QComboBox is not None:
             """Handle enter event for warning header label."""
             tip = self.toolTip()
             if tip:
-                QToolTip.showText(
+                show_tooltip_text(
                     self.mapToGlobal(self.rect().bottomLeft()),
                     tip,
                     self,

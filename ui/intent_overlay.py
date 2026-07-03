@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMenu, QToo
 
 import config
 from ui.i18n import t
+from ui.shared.theme import show_tooltip_text
 
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
@@ -1249,7 +1250,7 @@ class IntentOverlay(QWidget):
             return
         idx, text = found
         if idx != self._last_warning_idx:
-            QToolTip.showText(event.globalPosition().toPoint(), text, self)
+            show_tooltip_text(event.globalPosition().toPoint(), text, self)
             self._last_warning_idx = idx
         super().mouseMoveEvent(event)
 

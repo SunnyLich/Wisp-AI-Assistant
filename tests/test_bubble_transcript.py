@@ -270,6 +270,8 @@ def test_bubble_document_view_renders_addon_reply_annotations():
         html = bubble._text_view.toHtml()
         assert "#12abef" in html
         assert "position:absolute" not in html
+        assert "Addon picked this style" not in html
+        assert "title=" not in html
         assert any(item.tooltip == "Addon picked this style" for item in bubble._text_view_tooltips)
         assert "bubble chat" in bubble._text_view.toPlainText()
     finally:

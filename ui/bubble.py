@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEd
 
 import config
 from ui.i18n import t
+from ui.shared.theme import show_tooltip_text
 from ui.text_annotations import (
     TextAnnotation,
     annotations_for_subrange,
@@ -86,14 +87,6 @@ def _with_alpha(color: QColor, alpha: int) -> QColor:
     return out
 
 
-def _bubble_annotation_attrs(annotation: TextAnnotation) -> str:
-    """Return sanitized optional attributes for one floating-bubble annotation."""
-    attrs: list[str] = []
-    if annotation.tooltip:
-        attrs.append(f'title="{html.escape(annotation.tooltip, quote=True)}"')
-    return " ".join(attrs)
-
-
 class _BubbleTextView(QTextBrowser):
     """Selectable text layer embedded inside the painted speech bubble."""
 
@@ -137,7 +130,7 @@ class _BubbleTextView(QTextBrowser):
         if not event.buttons():
             tooltip = self._tooltip_at_position(self.cursorForPosition(event.position().toPoint()).position())
             if tooltip:
-                QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
+                show_tooltip_text(event.globalPosition().toPoint(), tooltip, self)
             else:
                 QToolTip.hideText()
         super().mouseMoveEvent(event)
@@ -1331,15 +1324,12 @@ class SpeechBubble(QWidget):
         parts: list[str] = []
         for item in compose_annotated_slices(text, clipped):
             item_styles = list(styles)
-            attrs = ""
             if item.annotation is not None:
                 if item.annotation.style:
                     item_styles.append(item.annotation.style)
-                attrs = _bubble_annotation_attrs(item.annotation)
             style = html.escape("; ".join(s for s in item_styles if s), quote=True)
-            extra = f" {attrs}" if attrs else ""
             tag = item.annotation.tag if item.annotation is not None else "span"
-            parts.append(f'<{tag} style="{style}"{extra}>{html.escape(item.text)}</{tag}>')
+            parts.append(f'<{tag} style="{style}">{html.escape(item.text)}</{tag}>')
         return "".join(parts)
 
     def _tooltip_annotations_for_word(self, start: int, end: int, doc_start: int) -> list[TextAnnotation]:

@@ -47,8 +47,6 @@ def _annotation_attrs(annotation: TextAnnotation, extra_style: str = "") -> str:
     style = "; ".join(s for s in [annotation.style, extra_style] if s)
     if style:
         attrs.append(f'style="{html.escape(style, quote=True)}"')
-    if annotation.tooltip:
-        attrs.append(f'title="{html.escape(annotation.tooltip, quote=True)}"')
     return " ".join(attrs)
 
 

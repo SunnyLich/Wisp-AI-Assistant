@@ -590,9 +590,11 @@ def test_chat_history_projects_and_corruption_recovery_workflow(
 def test_bubble_settings_and_platform_popup_styles_workflow(qapp, monkeypatch: pytest.MonkeyPatch):
     """Bubble width and font size change independently; popup styles stay opaque."""
     import config
+    from PySide6.QtGui import QColor, QPalette
+    from PySide6.QtWidgets import QToolTip
     from ui.bubble import SpeechBubble
     from ui.intent_overlay import IntentOverlay
-    from ui.shared.theme import apply_app_theme
+    from ui.shared.theme import apply_app_theme, theme_colors
 
     monkeypatch.setattr(config, "BUBBLE_WIDTH", 320, raising=False)
     monkeypatch.setattr(config, "BUBBLE_LINES", 2, raising=False)
@@ -630,6 +632,13 @@ def test_bubble_settings_and_platform_popup_styles_workflow(qapp, monkeypatch: p
         finally:
             overlay.close()
             overlay.deleteLater()
+
+        monkeypatch.setattr(config, "THEME_MODE", "light", raising=False)
+        apply_app_theme(qapp)
+        colors = theme_colors(False)
+        tooltip_palette = QToolTip.palette()
+        assert tooltip_palette.color(QPalette.ColorRole.ToolTipBase).name() == QColor(colors["tooltip_bg"]).name()
+        assert tooltip_palette.color(QPalette.ColorRole.ToolTipText).name() == QColor(colors["text"]).name()
     finally:
         bubble.close()
         bubble.deleteLater()

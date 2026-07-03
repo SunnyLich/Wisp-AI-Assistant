@@ -68,15 +68,15 @@ def test_context_preview_entries_expand_item_sources(monkeypatch):
 def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
     """Verify custom prompt input grabs keyboard on windows behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLineEdit
+    from PySide6.QtWidgets import QApplication, QWidget
 
     import config
     import ui.intent_overlay as intent_overlay
 
     app = QApplication.instance() or QApplication(sys.argv)
     old_rows = list(config.CALLER_ROWS)
-    grabs: list[QLineEdit] = []
-    releases: list[QLineEdit] = []
+    grabs: list[QWidget] = []
+    releases: list[QWidget] = []
     force_foreground_calls: list[bool] = []
 
     def grab_keyboard(self):
@@ -88,13 +88,14 @@ def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
         releases.append(self)
 
     monkeypatch.setattr(intent_overlay, "_IS_WIN", True)
+    monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
     monkeypatch.setattr(
         intent_overlay.IntentOverlay,
         "_win_force_foreground",
         lambda self: force_foreground_calls.append(True),
     )
-    monkeypatch.setattr(QLineEdit, "grabKeyboard", grab_keyboard)
-    monkeypatch.setattr(QLineEdit, "releaseKeyboard", release_keyboard)
+    monkeypatch.setattr(QWidget, "grabKeyboard", grab_keyboard)
+    monkeypatch.setattr(QWidget, "releaseKeyboard", release_keyboard)
     config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
     overlay = intent_overlay.IntentOverlay(caller_idx=0)
     try:

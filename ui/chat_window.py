@@ -57,6 +57,7 @@ from core.conversation_store.store import GENERAL_PROJECT_ID as _GENERAL_PROJECT
 from runtime.supervisor import tool_modes
 from ui.chat_rendering import _assistant_segments_to_html, _assistant_text_to_html, _user_text_to_html
 from ui.i18n import t
+from ui.shared.theme import show_tooltip_text
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 from ui.text_annotations import TextAnnotation, normalize_range_annotations
 
@@ -761,7 +762,7 @@ class _MessageTextView(QTextBrowser):
         """Show annotation tooltips over labeled text."""
         tooltip = self._tooltip_at_position(self.cursorForPosition(event.position().toPoint()).position())
         if tooltip:
-            QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
+            show_tooltip_text(event.globalPosition().toPoint(), tooltip, self)
         else:
             QToolTip.hideText()
         super().mouseMoveEvent(event)

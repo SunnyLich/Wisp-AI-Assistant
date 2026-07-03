@@ -34,7 +34,7 @@ def test_empty_annotations_keep_assistant_html_unchanged():
 
 
 def test_assistant_annotations_escape_untrusted_text_and_tooltips():
-    """Annotation tags/styles are sanitized and do not inject raw HTML."""
+    """Annotation tags/styles are sanitized and tooltips do not inject raw HTML."""
     text = "Mark <script>alert(1)</script>"
     rendered = _assistant_text_to_html(
         text,
@@ -55,7 +55,8 @@ def test_assistant_annotations_escape_untrusted_text_and_tooltips():
     assert "<mark " in rendered
     assert "background-color:#ffcc00" in rendered
     assert "position:absolute" not in rendered
-    assert "title=\"&quot;quoted&quot; &lt;tip&gt;\"" in rendered
+    assert "title=" not in rendered
+    assert "quoted" not in rendered
 
 
 def test_annotations_preserve_inline_code_and_markdown_structure():

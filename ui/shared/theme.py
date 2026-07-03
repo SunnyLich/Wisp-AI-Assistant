@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QToolTip
 
 import config
 
@@ -266,6 +266,21 @@ def _app_stylesheet(c: dict[str, str]) -> str:
         """
 
 
+def apply_tooltip_palette() -> None:
+    """Apply the active theme colours to Qt's tooltip palette."""
+    c = theme_colors()
+    palette = QToolTip.palette()
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(c["tooltip_bg"]))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(c["text"]))
+    QToolTip.setPalette(palette)
+
+
+def show_tooltip_text(pos, text: str, widget=None, *args) -> None:
+    """Show a tooltip using the current Wisp theme palette."""
+    apply_tooltip_palette()
+    QToolTip.showText(pos, text, widget, *args)
+
+
 def apply_app_theme(app: QApplication | None = None) -> None:
     """Apply the active mode's template to the whole Qt application."""
     app = app or QApplication.instance()
@@ -296,3 +311,4 @@ def apply_app_theme(app: QApplication | None = None) -> None:
 
     app.setPalette(palette)
     app.setStyleSheet(_app_stylesheet(c))
+    apply_tooltip_palette()
