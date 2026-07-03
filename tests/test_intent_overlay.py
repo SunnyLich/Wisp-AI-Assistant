@@ -1011,6 +1011,116 @@ def test_intent_overlay_linux_visible_picker_accepts_letter_shortcut(monkeypatch
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_frozen_linux_avoids_keyboard_grabs(monkeypatch):
+    """Verify frozen Linux builds do not use native Qt keyboard grabs."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    chosen: list[tuple[str, str]] = []
+    grabs: list[QWidget] = []
+    releases: list[QWidget] = []
+
+    def grab_keyboard(self):
+        """Record unexpected Qt-native keyboard grabs."""
+        grabs.append(self)
+
+    def release_keyboard(self):
+        """Record unexpected Qt-native keyboard releases."""
+        releases.append(self)
+
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
+    monkeypatch.setattr(intent_overlay, "_IS_LINUX", True)
+    monkeypatch.setattr(intent_overlay.sys, "frozen", True, raising=False)
+    monkeypatch.delenv("WISP_LINUX_QT_KEYBOARD_GRAB", raising=False)
+    monkeypatch.setattr(QWidget, "grabKeyboard", grab_keyboard)
+    monkeypatch.setattr(QWidget, "releaseKeyboard", release_keyboard)
+    config.CALLER_ROWS[:] = [
+        {
+            "intents": [
+                {"key": "w", "label": "Write", "hint": "", "prompt": "write this"},
+            ],
+            "custom_key": "s",
+        }
+    ]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
+    try:
+        overlay.show()
+        app.processEvents()
+
+        QTest.keyClick(overlay, Qt.Key.Key_W)
+        QTest.qWait(120)
+        app.processEvents()
+
+        assert chosen == [("W", "write this")]
+        assert grabs == []
+        assert releases == []
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, app)
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_frozen_linux_custom_prompt_avoids_keyboard_grabs(monkeypatch):
+    """Verify frozen Linux custom prompt focus does not use native Qt grabs."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    grabs: list[QWidget] = []
+    releases: list[QWidget] = []
+
+    def grab_keyboard(self):
+        """Record unexpected Qt-native keyboard grabs."""
+        grabs.append(self)
+
+    def release_keyboard(self):
+        """Record unexpected Qt-native keyboard releases."""
+        releases.append(self)
+
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    monkeypatch.setattr(intent_overlay, "_IS_MAC", False)
+    monkeypatch.setattr(intent_overlay, "_IS_LINUX", True)
+    monkeypatch.setattr(intent_overlay.sys, "frozen", True, raising=False)
+    monkeypatch.delenv("WISP_LINUX_QT_KEYBOARD_GRAB", raising=False)
+    monkeypatch.setattr(QWidget, "grabKeyboard", grab_keyboard)
+    monkeypatch.setattr(QWidget, "releaseKeyboard", release_keyboard)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        overlay.show()
+        app.processEvents()
+
+        QTest.keyClick(overlay, Qt.Key.Key_S)
+        QTest.qWait(120)
+        app.processEvents()
+
+        assert overlay._custom_mode is True
+        assert overlay._input_line.isHidden() is False
+        assert overlay._input_grabbed_keyboard is False
+        assert grabs == []
+        assert releases == []
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_linux_moves_keyboard_grab_to_custom_input(monkeypatch):
     """Verify Linux custom prompt typing gets a Qt-local keyboard grab."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
