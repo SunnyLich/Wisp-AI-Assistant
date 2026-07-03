@@ -432,8 +432,8 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
   'Wisp runs natively on macOS 13 (Ventura) and later, on both Apple Silicon and Intel Macs. The overlay, voice, context capture, and memory are all supported.':
     'Wisp 在 macOS 13（Ventura）及更新版本上原生執行，支援 Apple Silicon 與 Intel Mac。覆蓋介面、語音、情境擷取與記憶均受支援。',
   'macOS packaged build status': 'macOS 打包版狀態',
-  'The packaged macOS build has not had enough real-device testing yet. If it gives you trouble, please try the repo version with Start Wisp.command; it is the best-supported macOS path right now. Help is welcome: macOS test environments, clear bug reports with logs, or donations all make it easier to improve and verify packaged releases.':
-    'macOS 打包版目前還沒有足夠的真實裝置測試。如果它遇到問題，請嘗試使用 <code>Start Wisp.command</code> 執行倉庫版本；這是目前支援最好的 macOS 路徑。歡迎協助：macOS 測試環境、附帶日誌的清楚 bug 回報，或捐贈，都能讓改進與驗證打包版本變得更容易。',
+  'The packaged macOS build was last live-tested quite a while ago, so it may be buggier than the Windows build or the repo launcher path. If it gives you trouble, please try the repo version with Start Wisp.command; it is the best-supported macOS path right now. Renting Apple hardware for fresh testing costs money, so if you would like to support more macOS verification, you can donate at Buy Me a Coffee. No pressure either way: clear bug reports with logs are also very helpful.':
+    'macOS 打包版距離上次真機實測已經有一段時間，因此可能比 Windows 版本或儲存庫啟動器路徑更容易出問題。如果遇到問題，請嘗試使用 <code>Start Wisp.command</code> 執行儲存庫版本；這是目前支援最好的 macOS 路徑。租用 Apple 硬體進行新的測試需要費用，所以如果你想支持更多 macOS 驗證，可以在 <a href="https://buymeacoffee.com/sunnylich" target="_blank">Buy Me a Coffee</a> 捐助。當然完全沒有壓力：附帶日誌的清楚 bug 回報也非常有幫助。',
   'Area': '方面',
   'Full support': '完整支援',
   'Shared Qt UI parity': '共用 Qt 介面，功能對等',

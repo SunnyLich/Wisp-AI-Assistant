@@ -271,9 +271,11 @@ Wisp is designed as a local desktop assistant. Storage stays on your machine, an
 | --- | --- |
 | Windows 11 | Full support |
 | Windows 10 | Supported |
-| macOS 13+ | Supported with native/audio work isolated in workers |
-| Linux X11 | Functional |
+| macOS 13+ | Supported* |
+| Linux X11 | Supported |
 | Linux Wayland | Limited; use X11 for the full hotkey/screenshot path |
+
+*The packaged macOS build was last live-tested quite a while ago, so it may be buggier than the Windows build or the repo launcher path. If it gives you trouble, please try the repo version with `Start Wisp.command`; it is the best-supported macOS path right now. Renting Apple hardware for fresh testing costs money, so if you would like to support more macOS verification, you can donate at [Buy Me a Coffee](https://buymeacoffee.com/sunnylich). No pressure either way: clear bug reports with logs are also very helpful.
 
 ## Feedback And Platform Help
 

@@ -244,9 +244,11 @@ Wisp 被设计为本地桌面助手。存储保留在您的机器上，请求直
 | --- | --- |
 | Windows 11 | 完全支持 |
 | Windows 10 | 支持 |
-| macOS 13+ | 支持，本地/音频工作在工作器中隔离 |
-| Linux X11 | 功能正常 |
+| macOS 13+ | 支持* |
+| Linux X11 | 支持 |
 | Linux Wayland | 有限支持；使用 X11 获得完整的快捷键/截图路径 |
+
+*macOS 打包版距离上次真实机器实测已经有一段时间，因此可能比 Windows 版本或仓库启动器路径更容易出问题。如果遇到问题，请尝试使用 `Start Wisp.command` 运行仓库版本；这是目前支持最好的 macOS 路径。租用 Apple 硬件进行新的测试需要费用，所以如果你想支持更多 macOS 验证，可以在 [Buy Me a Coffee](https://buymeacoffee.com/sunnylich) 捐助。当然完全没有压力：附带日志的清晰 bug 报告也非常有帮助。
 
 ## 反馈与平台帮助
 

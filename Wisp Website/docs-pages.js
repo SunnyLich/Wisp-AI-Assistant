@@ -1636,7 +1636,7 @@ ollama serve</code></pre>
   html: `
 <h2 id="status">Status</h2>
 <p>Wisp runs natively on macOS 13 (Ventura) and later, on both Apple Silicon and Intel Macs. The overlay, voice, context capture, and memory are all supported.</p>
-<div class="callout note"><div class="callout-label">macOS packaged build status</div><p>The packaged macOS build has not had enough real-device testing yet. If it gives you trouble, please try the repo version with <code>Start Wisp.command</code>; it is the best-supported macOS path right now. Help is welcome: macOS test environments, clear bug reports with logs, or donations all make it easier to improve and verify packaged releases.</p></div>
+<div class="callout note"><div class="callout-label">macOS packaged build status</div><p>The packaged macOS build was last live-tested quite a while ago, so it may be buggier than the Windows build or the repo launcher path. If it gives you trouble, please try the repo version with <code>Start Wisp.command</code>; it is the best-supported macOS path right now. Renting Apple hardware for fresh testing costs money, so if you would like to support more macOS verification, you can donate at <a href="https://buymeacoffee.com/sunnylich" target="_blank">Buy Me a Coffee</a>. No pressure either way: clear bug reports with logs are also very helpful.</p></div>
 <table>
   <thead><tr><th>Area</th><th>Status</th></tr></thead>
   <tbody>
