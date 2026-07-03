@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -5,6 +6,37 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BuildScriptTests(unittest.TestCase):
+    def test_posix_entrypoints_are_executable_in_git(self) -> None:
+        scripts = [
+            "Start Wisp.sh",
+            "Start Wisp Debug.sh",
+            "Start Wisp.command",
+            "Start Wisp Debug.command",
+            "Open Wisp Mac Logs.command",
+            "scripts/compile_dependency_locks.sh",
+            "scripts/compile_macos_lock.sh",
+            "scripts/run_macos_tests.command",
+            "scripts/setup_dev.sh",
+            "tools/build_exe.sh",
+            "tools/build_macos_app.sh",
+        ]
+
+        result = subprocess.run(
+            ["git", "ls-files", "--stage", *scripts],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        modes = {
+            line.split(maxsplit=3)[3]: line.split(maxsplit=1)[0]
+            for line in result.stdout.splitlines()
+            if line.strip()
+        }
+
+        self.assertEqual(set(modes), set(scripts))
+        self.assertTrue(all(mode == "100755" for mode in modes.values()))
+
     def test_windows_build_accepts_python_minor_or_patch_target(self) -> None:
         script = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
 
