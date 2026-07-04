@@ -22,8 +22,8 @@ $WantMinor = ($Want -split "\.")[0..1] -join "."
 $VenvDir = Join-Path $Root ".venv"
 $VenvBackupDir = Join-Path $Root ".venv.rebuild-backup"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
-$RequirementsFile = "requirements-windows.lock"
-$DevRequirementsFile = "requirements-dev.lock"
+$RequirementsFile = "requirements/requirements-windows.lock"
+$DevRequirementsFile = "requirements/requirements-dev.lock"
 $RequiredDependencyFiles = @(
     (Join-Path $Root $RequirementsFile),
     (Join-Path $Root $DevRequirementsFile)

@@ -4,14 +4,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_LOCKS = (
-    "requirements-windows.lock",
-    "requirements-linux.lock",
-    "requirements-macos.lock",
+    "requirements/requirements-windows.lock",
+    "requirements/requirements-linux.lock",
+    "requirements/requirements-macos.lock",
 )
 COMBINED_INSTALL_LOCK_GROUPS = tuple(
     (runtime_lock, companion_lock)
     for runtime_lock in RUNTIME_LOCKS
-    for companion_lock in ("requirements-build.lock", "requirements-dev.lock")
+    for companion_lock in ("requirements/requirements-build.lock", "requirements/requirements-dev.lock")
 )
 
 
@@ -25,7 +25,7 @@ def _locked_version(lock_name: str, package: str) -> str:
 
 def test_runtime_manifest_pins_optional_ai_shared_dependencies() -> None:
     """Keep source checkout installs compatible with optional local AI packages."""
-    manifest = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    manifest = (ROOT / "requirements/requirements.txt").read_text(encoding="utf-8")
 
     assert "protobuf==6.33.2" in manifest
     assert "tokenizers==0.22.2" in manifest

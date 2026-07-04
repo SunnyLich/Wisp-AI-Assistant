@@ -3,7 +3,7 @@
 # Pure-Python macOS test runner.
 #
 # This is the macOS gate now that Wisp uses one Python app across Windows and
-# macOS. It provisions the repo .venv from requirements-macos.lock and runs the
+# macOS. It provisions the repo .venv from requirements/requirements-macos.lock and runs the
 # normal Python test suite plus the runtime worker tests.
 set -euo pipefail
 
@@ -42,12 +42,12 @@ if [[ ! "$WANT" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
   exit 1
 fi
 WANT_MM="$(printf '%s' "$WANT" | cut -d. -f1,2)"
-REQ_FILE="$REPO_ROOT/requirements-macos.lock"
+REQ_FILE="$REPO_ROOT/requirements/requirements-macos.lock"
 VPY="$REPO_ROOT/.venv/bin/python"
 STAMP_FILE="$REPO_ROOT/.venv/.wisp-macos-python-deps.stamp"
 
 if [ ! -s "$REQ_FILE" ]; then
-  echo "ERROR: requirements-macos.lock is required for macOS setup." >&2
+  echo "ERROR: requirements/requirements-macos.lock is required for macOS setup." >&2
   echo "Logs written to: $LOG_DIR"
   exit 1
 fi

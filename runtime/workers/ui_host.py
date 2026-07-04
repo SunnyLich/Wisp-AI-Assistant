@@ -376,7 +376,7 @@ class QtFreezeWatchdog:
                 continue
 
             # Case 2 (the blind spot): the event loop is alive but the IPC pump
-            # has stopped draining while requests are queued â€” exactly the state
+            # has stopped draining while requests are queued - exactly the state
             # a 'ui.* timed out' with no freeze log points to.
             drain_stalled = now - self._drain_progress
             if (
@@ -2701,7 +2701,7 @@ class QtProtocolHost:
         """Finish the reply bubble.
 
         flush=True reveals everything immediately (TTS playback ended, errors).
-        flush=False lets a running WPM reveal drain at the configured speed â€”
+        flush=False lets a running WPM reveal drain at the configured speed -
         used when TTS is off, so BUBBLE_REVEAL_WPM is honored instead of the
         whole reply slamming in the moment the LLM finishes streaming.
         """

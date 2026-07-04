@@ -28,7 +28,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-set "REQ_FILE=requirements-windows.lock"
+set "REQ_FILE=requirements/requirements-windows.lock"
 if not exist "%REQ_FILE%" (
   echo ERROR: %REQ_FILE% is required for setup.
   echo Regenerate locks with: powershell.exe -ExecutionPolicy Bypass -File scripts\compile_dependency_locks.ps1

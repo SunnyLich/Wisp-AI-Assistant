@@ -43,6 +43,8 @@ I18N.register('fr', {
       'Context budgets': 'Budgets de contexte',
       'Bubble appearance': 'Apparence de la bulle',
       'Free API sources': "Sources d'API gratuites",
+      'OpenAI (API key)': 'OpenAI (clé API)',
+      'OpenAI (subscription)': 'OpenAI (abonnement)',
       'Other providers': 'Autres fournisseurs',
       'Custom endpoint': 'Point de terminaison personnalisé',
       'Add-ons': 'Modules complémentaires',
@@ -53,7 +55,7 @@ I18N.register('fr', {
   },
   meta: {
     'overview': { title: 'Présentation', sub: "Ce qu'est Wisp et comment ses éléments s'assemblent." },
-    'installation': { title: 'Installation', sub: 'Builds de release, versions portables et lanceurs source.' },
+    'installation': { title: 'Installation', sub: 'Versions portables, lanceurs source et mises à jour.' },
     'quickstart': { title: 'Démarrage rapide', sub: 'De zéro à votre première réponse en cinq minutes.' },
     'faq': { title: 'Questions-réponses', sub: 'Réponses courtes aux questions posées avant d’utiliser Wisp.' },
     'common-issues': { title: 'Problèmes courants', sub: 'Symptômes, causes et corrections pour les problèmes les plus fréquents.' },
@@ -71,14 +73,15 @@ I18N.register('fr', {
     'free-apis': { title: "Sources d'API gratuites", sub: "Où obtenir un accès aux modèles gratuit ou sans frais — et comment y connecter Wisp." },
     'provider-groq': { title: 'Groq', sub: 'Inférence rapide via une API compatible OpenAI. Offre gratuite disponible.' },
     'provider-anthropic': { title: 'Anthropic', sub: "Modèles Claude, également utilisés pour l'outil de recherche web." },
-    'provider-openai': { title: 'OpenAI', sub: "Modèles GPT via l'API OpenAI." },
+    'provider-openai': { title: 'OpenAI (clé API)', sub: "Modèles GPT via l'API OpenAI." },
+    'provider-openai-subscription': { title: 'OpenAI (abonnement)', sub: 'Accès à un abonnement ChatGPT / Codex via OAuth.' },
     'provider-google': { title: 'Google AI Studio', sub: "Modèles Gemini via l'API Google AI Studio." },
     'provider-copilot': { title: 'GitHub Copilot', sub: 'Acheminez les requêtes via votre abonnement GitHub Copilot Pro/Plus.' },
     'provider-others': { title: 'Autres fournisseurs', sub: 'DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras.' },
     'provider-custom': { title: 'Point de terminaison personnalisé', sub: 'Tout serveur compatible OpenAI — Ollama local, LM Studio, vLLM, etc.' },
     'platform-windows': { title: 'Windows', sub: 'Prise en charge complète sur Windows 10 et 11.' },
     'platform-macos': { title: 'macOS', sub: 'Berceau du runtime de workers en Python pur — macOS 13 (Ventura) et ultérieur.' },
-    'platform-linux': { title: 'Linux', sub: 'Pris en charge sur X11 ; la prise en charge de Wayland varie selon l’environnement de bureau.' },
+    'platform-linux': { title: 'Linux', sub: 'Pris en charge sur X11 ; la prise en charge de Wayland est actuellement en cours.' },
     'addons': { title: 'Modules complémentaires', sub: "Étendez Wisp avec des hooks de requête, des actions de barre d'état, des réglages et des outils appelables par le modèle — chacun dans son propre processus." },
     'custom-prompts': { title: 'Invites personnalisées', sub: "Modifier les invites d'intention et l'invite système." },
     'fallback-routes': { title: 'Routes de secours', sub: "Bascule automatique lorsqu'un fournisseur est indisponible ou limité." },
@@ -166,10 +169,12 @@ I18N.register('fr', {
 
     /* Overview */
     'Concept': 'Concept',
-    "Wisp is a completely free, open-source desktop AI assistant with no vendor lock-in — runs on Windows, macOS, and Linux, works with any supported model provider, and never forces you into a subscription or a walled garden. It responds to custom hotkeys from any application, with pop-up display and voice interaction designed for quick turnaround so you never have to break focus to get an answer.":
-      "Wisp est un assistant IA de bureau entièrement gratuit et open source, sans dépendance à un fournisseur — il fonctionne sous Windows, macOS et Linux, avec n'importe quel fournisseur de modèle pris en charge, et ne vous impose jamais d'abonnement ni d'écosystème fermé. Il répond à des raccourcis personnalisés depuis n'importe quelle application, avec un affichage en surimpression et une interaction vocale pensés pour la rapidité, afin que vous n'ayez jamais à rompre votre concentration pour obtenir une réponse.",
-    "Context is managed dynamically — Wisp captures only what's relevant to keep token costs low, or goes deep on long-context queries when you need it. Everything is customisable: add your own plugins, rewrite the prompts, or swap out the GUI entirely.":
-      "Le contexte est géré dynamiquement — Wisp ne capture que l'essentiel pour limiter le coût en tokens, ou approfondit les requêtes à long contexte quand c'est nécessaire. Tout est personnalisable : ajoutez vos propres plugins, réécrivez les invites ou remplacez entièrement l'interface.",
+    "Wisp is a completely free, open-source desktop AI assistant for fast AI co-work across Windows, macOS, and Linux. It gives you provider freedom — from popular model providers and free API routes to local servers and custom endpoints, your workflow stays portable. It responds to custom hotkeys from any application, with pop-up display and voice interaction designed for quick turnaround so you never have to break focus to get an answer.":
+      "Wisp est un assistant IA de bureau entièrement gratuit et open source pour co-travailler rapidement avec l'IA sous Windows, macOS et Linux. Il vous donne la liberté de fournisseur : des fournisseurs de modèles populaires et des routes d'API gratuites aux serveurs locaux et points de terminaison personnalisés, votre flux de travail reste portable. Il répond à des raccourcis personnalisés depuis n'importe quelle application, avec un affichage en surimpression et une interaction vocale pensés pour un retour rapide, afin que vous n'ayez jamais à rompre votre concentration pour obtenir une réponse.",
+    "Hold a hotkey to talk instead of type, and opt into spoken replies when answers stream in.":
+      "Maintenez un raccourci pour parler au lieu de taper, et activez les réponses parlées lorsqu'elles arrivent en flux.",
+    "Context is managed dynamically, with you in control: keep it lean so Wisp captures only what's relevant and token costs stay low, or go deep on long-context queries when the task needs it. Each caller can attach context up front, expose selected sources as model-fetchable tools, or keep them off entirely. Everything is customisable: add your own add-ons, rewrite the prompts, or edit the GUI.":
+      "Le contexte est géré dynamiquement, et vous gardez le contrôle : gardez-le léger pour que Wisp ne capture que ce qui est pertinent et limite le coût en tokens, ou allez plus loin sur les requêtes à long contexte quand la tâche l'exige. Chaque appelant peut joindre le contexte d'emblée, exposer certaines sources comme outils récupérables par le modèle, ou les garder entièrement désactivées. Tout est personnalisable : ajoutez vos propres modules, réécrivez les invites, ou modifiez l'interface.",
     'Why it works this way': 'Pourquoi ça marche ainsi',
     'This app aims to address 3 main issues with AI tools — and pairs each with what Wisp does instead.':
       "Cette application vise à résoudre 3 problèmes majeurs des outils d'IA — chacun associé à ce que Wisp fait à la place.",
@@ -217,23 +222,23 @@ I18N.register('fr', {
     'Design goals': 'Objectifs de conception',
     'Less window-hopping': 'Moins d’allers-retours entre fenêtres',
     'The picker opens over the app you are already using, so quick queries can start without moving into a separate chat window': "Le sélecteur s’ouvre au-dessus de l’application que vous utilisez déjà, afin de lancer une requête rapide sans passer à une fenêtre de chat séparée.",
-    'No typing': 'Aucune saisie',
+    'Less typing': 'Moins de saisie',
     'A hotkey runs a saved prompt on your highlighted/clipboard text; STT dictation covers custom prompts': 'Un raccourci exécute une invite enregistrée sur votre texte sélectionné/presse-papiers ; la dictée couvre les invites personnalisées',
     'No walls of text': 'Pas de murs de texte',
     'Bubble shows a 4-line preview by default and reads it aloud via TTS — expand only if you want the full answer': 'La bulle affiche par défaut un aperçu de 4 lignes et le lit à voix haute — développez seulement si vous voulez la réponse complète',
     'Yours to configure': 'À configurer à votre guise',
-    'Edit hotkeys, prompts, providers, voice, and UI options in Settings; source checkouts can still use .env for deeper control': "Modifiez les raccourcis, invites, fournisseurs, options vocales et réglages d'interface dans les Paramètres ; les checkouts source peuvent toujours utiliser <code>.env</code> pour un contrôle plus fin",
+    'Edit hotkeys, prompts, providers, context sources, allowed tools, voice, updates, and UI options in Settings': "Modifiez les raccourcis, invites, fournisseurs, sources de contexte, outils autorisés, options vocales, mises à jour et options d'interface dans les Réglages",
 
     /* Installation */
-    'Release / portable build': 'Build de release / portable',
-    'For most people, start with a packaged release or portable build from GitHub Releases. Download the package for your OS, unzip it anywhere, and run the included Wisp app or launcher.':
-      'Pour la plupart des utilisateurs, commencez par un paquet de release ou une version portable depuis <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>. Téléchargez le paquet pour votre système, décompressez-le où vous voulez, puis lancez l’app ou le lanceur Wisp inclus.',
+    'Portable version': 'Version portable',
+    'For most people, start with a portable package from GitHub Releases. Download the package for your OS, unzip it anywhere, and run the included Wisp app or launcher.':
+      'Pour la plupart des utilisateurs, commencez par un paquet portable depuis <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>. Téléchargez le paquet pour votre système, décompressez-le où vous voulez, puis lancez l’app ou le lanceur Wisp inclus.',
     'Path': 'Chemin',
     'Use it when': 'À utiliser si',
     'How to start': 'Comment démarrer',
-    'Release build': 'Build de release',
+    'Portable package': 'Paquet portable',
     'You want the easiest setup and do not plan to edit the source': 'Vous voulez l’installation la plus simple et ne prévoyez pas de modifier le code source',
-    'Open the app or launcher included in the release package': 'Ouvrez l’app ou le lanceur inclus dans le paquet de release',
+    'Open the app or launcher included in the portable package': 'Ouvrez l’app ou le lanceur inclus dans le paquet portable',
     'Portable build': 'Version portable',
     'You want a self-contained folder you can move or remove later': 'Vous voulez un dossier autonome que vous pourrez déplacer ou supprimer plus tard',
     'Unzip the portable package, keep the folder together, and run Wisp from inside it': 'Décompressez le paquet portable, gardez le dossier complet, puis lancez Wisp depuis ce dossier',
@@ -262,7 +267,7 @@ I18N.register('fr', {
     'Python 3.12': 'Python 3.12',
     'Pinned in .python-version; the launchers locate a compatible interpreter automatically': 'Fixé dans <code>.python-version</code> ; les lanceurs trouvent automatiquement un interpréteur compatible',
     'Windows, macOS, or Linux': 'Windows, macOS ou Linux',
-    'Windows and macOS have the most complete feature set; Linux is also supported (X11).': 'Windows et macOS offrent l\'ensemble de fonctionnalités le plus complet ; Linux est aussi pris en charge (X11).',
+    'Windows and macOS have the most complete feature set; Linux is supported on X11, and Wayland support is currently in progress.': 'Windows et macOS offrent l\'ensemble de fonctionnalités le plus complet ; Linux est pris en charge sur X11 et la prise en charge de Wayland est actuellement en cours.',
     'At least one LLM Provider': 'Au moins un fournisseur LLM',
     'Any supported provider works — see Providers': 'Tout fournisseur pris en charge convient — voir Fournisseurs',
     'Microphone (optional)': 'Microphone (facultatif)',
@@ -273,13 +278,13 @@ I18N.register('fr', {
     'The platform launcher does all of this for you: bash "Start Wisp.command" on macOS, bash "Start Wisp.sh" on Linux, or double-click Start Wisp.bat on Windows — each provisions dependencies and starts the same pure-Python worker supervisor.':
       "Le lanceur de la plateforme fait tout cela pour vous : <code>bash \"Start Wisp.command\"</code> sur macOS, <code>bash \"Start Wisp.sh\"</code> sur Linux, ou double-clic sur <code>Start Wisp.bat</code> sous Windows — chacun installe les dépendances et démarre le même superviseur de workers en Python pur.",
     'Dependency footprint': 'Empreinte des dépendances',
-    'The source checkout installs from requirements.txt on Windows and Linux, and from the locked requirements-macos.lock on macOS. There is no separate light requirements file in this repo.':
-      "Le checkout source installe depuis <code>requirements.txt</code> sur Windows et Linux, et depuis le fichier verrouillé <code>requirements-macos.lock</code> sur macOS. Ce dépôt ne contient pas de fichier de dépendances léger séparé.",
+    'The source checkout installs from exact platform locks: requirements/requirements-windows.lock, requirements/requirements-macos.lock, or requirements/requirements-linux.lock. requirements/requirements.txt remains the human-edited runtime manifest used to regenerate those locks.':
+      "Le checkout source installe depuis les locks exacts de plateforme : <code>requirements/requirements-windows.lock</code>, <code>requirements/requirements-macos.lock</code> ou <code>requirements/requirements-linux.lock</code>. <code>requirements/requirements.txt</code> reste le manifeste d'exécution édité manuellement qui sert à régénérer ces locks.",
     'Optional capabilities stay inactive until configured: local STT needs an STT_MODEL, cloud TTS needs a provider and voice settings, GitHub Copilot needs sign-in, and document readers are only used when document context is enabled.':
       "Les capacités optionnelles restent inactives tant qu'elles ne sont pas configurées : le STT local nécessite <code>STT_MODEL</code>, le TTS cloud nécessite un fournisseur et des réglages de voix, GitHub Copilot nécessite une connexion, et les lecteurs de documents ne sont utilisés que lorsque le contexte documentaire est activé.",
     'Full vs Lite install': 'Installation complète vs allégée',
-    'The full requirements.txt includes local Whisper STT, document readers, and TTS SDKs. If you only need the core overlay + LLM replies, a lighter install works:':
-      "Le <code>requirements.txt</code> complet inclut le STT Whisper local, les lecteurs de documents et les SDK TTS. Si vous ne voulez que la surimpression de base + les réponses LLM, une installation plus légère suffit :",
+    'The full requirements/requirements.txt includes local Whisper STT, document readers, and TTS SDKs. If you only need the core overlay + LLM replies, a lighter install works:':
+      "Le <code>requirements/requirements.txt</code> complet inclut le STT Whisper local, les lecteurs de documents et les SDK TTS. Si vous ne voulez que la surimpression de base + les réponses LLM, une installation plus légère suffit :",
     'The lite install omits: faster-whisper, cartesia, elevenlabs, github-copilot-sdk, and all document-reader packages.':
       "L'installation allégée omet : <code>faster-whisper</code>, <code>cartesia</code>, <code>elevenlabs</code>, <code>github-copilot-sdk</code> et tous les paquets de lecture de documents.",
     'Key dependencies at a glance': "Dépendances clés en un coup d'œil",
@@ -297,10 +302,9 @@ I18N.register('fr', {
     /* Quick start */
     '1. Start': '1. Démarrer',
     'There are two ways to start Wisp.': 'Il y a deux façons de démarrer Wisp.',
-    'Released version': 'Version publiée',
     'Repo version': 'Version du dépôt',
-    'Recommended: download a release or portable build from GitHub Releases, unzip it, and run the included Wisp app or launcher. No repo checkout is needed for that path.':
-      'Recommandé : téléchargez un build de release ou portable depuis <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>, décompressez-le, puis lancez l’app ou le lanceur Wisp inclus. Aucun checkout du dépôt n’est nécessaire pour ce chemin.',
+    'Recommended: download a portable package from GitHub Releases, unzip it, and run the included Wisp app or launcher. No repo checkout is needed for that path.':
+      'Recommandé : téléchargez un paquet portable depuis <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>, décompressez-le, puis lancez l’app ou le lanceur Wisp inclus. Aucun checkout du dépôt n’est nécessaire pour ce chemin.',
     'If you are running from the repo instead, download or clone the source and use the launcher for your platform:':
       'Si vous lancez plutôt depuis le dépôt, téléchargez ou clonez le code source et utilisez le lanceur de votre plateforme :',
     'For the repo version, the first run installs everything Wisp needs and then starts the app. Requires Python 3.12 (see Installation).':
@@ -321,8 +325,8 @@ I18N.register('fr', {
     'Privacy mode is not a guarantee': "Le mode confidentialité n'est pas une garantie",
     'Privacy mode can reduce accidental leaks, but do not treat it as perfect. Before sending sensitive material, review the enabled context chips and redacted preview.':
       "Le mode confidentialité peut réduire les fuites accidentelles, mais ne le considérez pas comme parfait. Avant d'envoyer des éléments sensibles, vérifiez les puces de contexte activées et l'aperçu caviardé.",
-    'Use the packaged app or portable build for your OS: Windows .exe, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use Start Wisp.bat, Start Wisp.command, or Start Wisp.sh; the first source run installs dependencies, and later runs just launch the app.':
-      "Utilisez l'app empaquetée ou le build portable pour votre système : le <code>.exe</code> Windows, l'app ou le lanceur macOS, ou le build portable ou lanceur Linux. Si vous lancez depuis le dépôt, utilisez <code>Start Wisp.bat</code>, <code>Start Wisp.command</code> ou <code>Start Wisp.sh</code> ; le premier lancement depuis les sources installe les dépendances, puis les suivants démarrent simplement l'application.",
+    'Use the portable package for your OS: Windows .exe, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use Start Wisp.bat, Start Wisp.command, or Start Wisp.sh; the first source run installs dependencies, and later runs just launch the app.':
+      "Utilisez le paquet portable pour votre système : le <code>.exe</code> Windows, l'app ou le lanceur macOS, ou le build portable ou lanceur Linux. Si vous lancez depuis le dépôt, utilisez <code>Start Wisp.bat</code>, <code>Start Wisp.command</code> ou <code>Start Wisp.sh</code> ; le premier lancement depuis les sources installe les dépendances, puis les suivants démarrent simplement l'application.",
 
     /* Security */
     'Local-first': 'Local avant tout',

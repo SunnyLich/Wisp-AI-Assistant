@@ -1,5 +1,5 @@
 ﻿"""
-ui/settings.py -” Settings dialog.
+ui/settings.py - Settings dialog.
 
 A plain GUI for editing all user-configurable values.
 Reads from and writes to the .env file.

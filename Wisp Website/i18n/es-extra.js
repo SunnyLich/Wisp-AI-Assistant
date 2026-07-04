@@ -138,14 +138,14 @@ Object.assign(I18N.reg['es'].tr, {
   'Wisp reads your selection, open documents, clipboard, and browser tab — or a region you draw — automatically.':
     "Wisp lee tu selección, los documentos abiertos, el portapapeles y la pestaña del navegador — o una región que dibujes — automáticamente.",
   'Yours': 'Tuyo',
-  'Any model, all local': 'Cualquier modelo, todo en local',
-  'Bring your own provider, keep everything on your machine, and remap every hotkey. No subscription, no lock-in.':
-    "Trae tu propio proveedor, mantén todo en tu equipo y reasigna cada atajo. Sin suscripción, sin dependencia.",
+  'Any model, cloud/local': 'Cualquier modelo, nube/local',
+  'Choose your provider, keep data on your machine, and remap every hotkey. Your setup stays portable.':
+    "Elige tu proveedor, mantén los datos en tu equipo y reasigna cada atajo. Tu configuración se mantiene portable.",
   "Click the icon any time to open a full chat window that remembers everything you've discussed. For bigger, multi-step jobs there's an experimental agent framework that works a task on its own.":
     "Haz clic en el icono en cualquier momento para abrir una ventana de chat completa que recuerda todo lo que has hablado. Para trabajos más grandes y de varios pasos hay un <a onclick=\"navigate('team-mode')\">framework de agentes</a> experimental que realiza una tarea por su cuenta.",
 
   /* Installation */
-  'requirements-macos.lock — exact resolved lock': '<code>requirements-macos.lock</code> — bloqueo resuelto exacto',
+  'requirements/requirements-macos.lock — exact resolved lock': '<code>requirements/requirements-macos.lock</code> — bloqueo resuelto exacto',
 
   /* Quick start — inline link labels */
   'Using a ChatGPT / Codex subscription': 'Usar una suscripción de ChatGPT / Codex',
@@ -295,7 +295,11 @@ Object.assign(I18N.reg['es'].tr, {
   'Caller hotkeys': 'Atajos de invocador',
   'Each caller has its own hotkey defined by CALLER_N_HOTKEY. The two default callers ship with template hotkeys — remap them freely.':
     "Cada invocador tiene su propio atajo definido por <code>CALLER_N_HOTKEY</code>. Los dos invocadores predeterminados vienen con atajos de plantilla — reasígnalos libremente.",
-  'Global hotkeys': 'Atajos globales',
+  'Remappable global hotkeys': 'Atajos globales reasignables',
+  'Primary caller': 'Invocador principal',
+  'Rewrite & Paste caller': 'Invocador Reescribir y pegar',
+  'The two caller rows are starter templates. Add more caller hotkeys in Settings, or increase CALLER_COUNT and define CALLER_3_HOTKEY, then give each caller its own label, context defaults, and action rows. Action hotkeys inside the picker are remappable too: each caller can define intent keys such as CALLER_N_INTENT_M_KEY plus the freeform custom action key.':
+    'Las dos filas de invocadores son plantillas iniciales. Añade más atajos de invocador en Ajustes, o aumenta <code>CALLER_COUNT</code> y define <code>CALLER_3_HOTKEY</code>; después da a cada invocador su propia etiqueta, valores de contexto y filas de acciones. Los atajos de acción dentro del selector también se pueden reasignar: cada invocador puede definir teclas de intención como <code>CALLER_N_INTENT_M_KEY</code>, además de la tecla de acción personalizada libre.',
   'Voice input (push-to-talk)': 'Entrada de voz (pulsar para hablar)',
   'Conflict resolution': 'Resolución de conflictos',
   'Wisp uses pynput (no admin rights) for caller hotkeys. If a hotkey is already claimed by Windows or another app, Wisp will not intercept it reliably. Choose combinations that are not globally reserved.':
@@ -371,8 +375,25 @@ Object.assign(I18N.reg['es'].tr, {
   /* Provider: OpenAI */
   'Enter your key in Settings → LLM → OpenAI API key.': "Introduce tu clave en <strong>Ajustes → LLM → Clave de API de OpenAI</strong>.",
   'ChatGPT OAuth is separate': 'OAuth de ChatGPT es independiente',
-  "The OpenAI API route uses LLM_PROVIDER=openai and an API key. If you want to use a ChatGPT/Codex subscription instead, choose the ChatGPT provider (LLM_PROVIDER=chatgpt) and sign in with OAuth in Settings. That route stores tokens in the OS keychain, may require signing in again after restart, is metered against your subscription's agentic allowance, and does not run live context tools the same way API-key providers do.":
-    "La ruta de OpenAI API usa <code>LLM_PROVIDER=openai</code> y una clave de API. Si quieres usar una suscripción de ChatGPT/Codex en su lugar, elige el proveedor ChatGPT (<code>LLM_PROVIDER=chatgpt</code>) e inicia sesión con OAuth en Ajustes. Esa ruta guarda los tokens en el llavero del sistema, puede requerir iniciar sesión de nuevo tras reiniciar, se mide contra la cuota agéntica de tu suscripción y no ejecuta herramientas de contexto en vivo igual que los proveedores con clave de API.",
+  "The OpenAI API route uses LLM_PROVIDER=openai and an API key. If you want to use a ChatGPT/Codex subscription instead, sign in with OAuth at the top of Settings → LLM first, then choose the ChatGPT provider (LLM_PROVIDER=chatgpt) and model. That route stores tokens in the OS keychain, may require signing in again after restart, is metered against your subscription's agentic allowance, and does not run live context tools the same way API-key providers do.":
+    "La ruta de OpenAI API usa <code>LLM_PROVIDER=openai</code> y una clave de API. Si quieres usar una suscripción de ChatGPT/Codex en su lugar, inicia sesión con OAuth en la parte superior de <strong>Ajustes → LLM</strong> primero, y luego elige el proveedor ChatGPT (<code>LLM_PROVIDER=chatgpt</code>) y el modelo. Esa ruta guarda los tokens en el llavero del sistema, puede requerir iniciar sesión de nuevo tras reiniciar, se mide contra la cuota agéntica de tu suscripción y no ejecuta herramientas de contexto en vivo igual que los proveedores con clave de API.",
+  'Sign in with OAuth at the top of Settings → LLM, then choose the ChatGPT provider and model. Tokens are stored in the OS keychain.':
+    'Inicia sesión con OAuth en la parte superior de <strong>Ajustes → LLM</strong> y luego elige el proveedor ChatGPT y el modelo. Los tokens se guardan en el llavero del sistema.',
+  'Stable for now, provider-controlled': 'Estable por ahora, controlado por el proveedor',
+  'This route is stable today, but it depends on OpenAI continuing to allow subscription-backed OAuth access from third-party clients. Provider policy can change later, so keep an API-key, local, or other provider route as a fallback if Wisp is part of your daily workflow.':
+    'Esta ruta es estable hoy, pero depende de que OpenAI siga permitiendo acceso OAuth respaldado por suscripción desde clientes de terceros. La política del proveedor puede cambiar más adelante, así que mantén una ruta de respaldo con clave API, local u otro proveedor si Wisp forma parte de tu flujo diario.',
+  'How it differs from an API key': 'En qué se diferencia de una clave API',
+  'Route': 'Ruta',
+  'What to expect': 'Qué esperar',
+  "Uses your ChatGPT / Codex subscription through OAuth. Usage is metered against your subscription's agentic allowance and may require signing in again after restart.":
+    'Usa tu suscripción de ChatGPT / Codex mediante OAuth. El uso se descuenta de la cuota agéntica de tu suscripción y puede requerir iniciar sesión de nuevo tras reiniciar.',
+  'Uses a normal OpenAI API key from Settings. It is usually more predictable for non-coding work and API-style integrations.':
+    'Usa una clave API normal de OpenAI desde Ajustes. Suele ser más predecible para trabajo que no sea de programación e integraciones estilo API.',
+  'Context tools': 'Herramientas de contexto',
+  'The subscription route does not run live context tools the same way API-key providers do. Use OpenAI API key mode when you need predictable tool-capable provider behavior.':
+    'La ruta de suscripción no ejecuta herramientas de contexto en vivo igual que los proveedores con clave API. Usa el modo de clave API de OpenAI cuando necesites un comportamiento predecible con herramientas.',
+  'Model availability depends on your subscription and what the OAuth route exposes to Wisp. Start with the default shown in Settings, then adjust only if the selected model is available on your account.':
+    'La disponibilidad de modelos depende de tu suscripción y de lo que la ruta OAuth exponga a Wisp. Empieza con el valor predeterminado que se muestra en Ajustes y cambia solo si el modelo elegido está disponible en tu cuenta.',
   'Fast and cheap — good overlay model': 'Rápido y barato — buen modelo de superposición',
   'Supports image input — can be used as VISION_LLM_MODEL': 'Admite entrada de imagen — puede usarse como <code>VISION_LLM_MODEL</code>',
   'Reasoning model — use for complex tasks': 'Modelo de razonamiento — úsalo para tareas complejas',
@@ -493,8 +514,9 @@ Object.assign(I18N.reg['es'].tr, {
     'Herramientas de portapapeles disponibles para <code>pyperclip</code>: <code>xclip</code> o <code>xsel</code> en X11, o <code>wl-clipboard</code> en Wayland',
   'Notes': 'Notas',
   'X11': 'X11',
-  'Wisp is best supported on X11 sessions. Wayland may work for some shared UI flows, but native hotkey, clipboard, and screen capture behavior depends on the desktop environment.':
-    'Wisp tiene mejor soporte en sesiones X11. Wayland puede funcionar para algunos flujos de interfaz compartidos, pero el comportamiento nativo de atajos, portapapeles y captura de pantalla depende del entorno de escritorio.',
+  'Wayland in progress': 'Wayland en curso',
+  'Wisp is best supported on X11 sessions today. We are currently working on Linux Wayland support; native hotkey, clipboard, and screen capture behavior still depends on the desktop environment.':
+    'Wisp tiene mejor soporte hoy en sesiones X11. Actualmente estamos trabajando en el soporte de Linux Wayland; el comportamiento nativo de atajos, portapapeles y captura de pantalla todavía depende del entorno de escritorio.',
   'Linux desktop integrations vary by distro and window manager; clear bug reports with the desktop environment, session type, and logs are especially useful.':
     'Las integraciones de escritorio en Linux varían según la distribución y el gestor de ventanas; los informes de bug claros con el entorno de escritorio, el tipo de sesión y los registros son especialmente útiles.',
 
@@ -670,7 +692,7 @@ Object.assign(I18N.reg['es'].tr, {
     'El modo de privacidad mantiene activos los avisos y la censura antes de enviar contexto sensible. Puede marcar o censurar posibles secretos, tokens, tarjetas, contraseñas y otras cadenas sensibles.',
   'Setup and launch': 'Configuración y arranque',
   'How can I run it?': '¿Cómo puedo ejecutarlo?',
-  'Use the packaged app or portable build for your OS: Windows .exe, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use Start Wisp.bat, Start Wisp.command, or Start Wisp.sh; the first source run installs dependencies, and later runs just launch the app.':
+  'Use the portable package for your OS: Windows .exe, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use Start Wisp.bat, Start Wisp.command, or Start Wisp.sh; the first source run installs dependencies, and later runs just launch the app.':
     'Usa la app empaquetada o el build portable para tu sistema: el <code>.exe</code> de Windows, la app o lanzador de macOS, o el build portable o lanzador de Linux. Si ejecutas desde el repositorio, usa <code>Start Wisp.bat</code>, <code>Start Wisp.command</code> o <code>Start Wisp.sh</code>; la primera ejecución desde código fuente instala dependencias y las siguientes solo inician la app.',
   'Which Python version should I use?': '¿Qué versión de Python debo usar?',
   'Python 3.12. It is pinned in .python-version, and the launchers expect that version.':
@@ -762,8 +784,8 @@ Object.assign(I18N.reg['es'].tr, {
     'Desde un checkout de código fuente, ejecuta <code>python scripts/check_dev_environment.py</code> y corrige el primer problema que indique sobre Python, archivos lock o módulos faltantes. Luego vuelve a ejecutar el lanzador de tu plataforma.',
   'Dependency install fails on macOS': 'La instalación de dependencias falla en macOS',
   'Wrong Python version or interrupted lock install': 'Versión incorrecta de Python o instalación del lock interrumpida',
-  'Install Python 3.12, then rerun Start Wisp.command. macOS installs from requirements-macos.lock.':
-    'Instala Python <code>3.12</code> y vuelve a ejecutar <code>Start Wisp.command</code>. macOS instala desde <code>requirements-macos.lock</code>.',
+  'Install Python 3.12, then rerun Start Wisp.command. macOS installs from requirements/requirements-macos.lock.':
+    'Instala Python <code>3.12</code> y vuelve a ejecutar <code>Start Wisp.command</code>. macOS instala desde <code>requirements/requirements-macos.lock</code>.',
   'Icon never appears': 'El icono nunca aparece',
   'UI worker failed, the app folder is incomplete, or OS permissions blocked startup': 'Falló el worker de UI, la carpeta de la app está incompleta o los permisos del sistema bloquearon el inicio',
   'Keep the packaged app folder intact. On macOS, grant Accessibility and Screen Recording when prompted; on Linux, prefer an X11 session for hotkeys and screenshots. If running from source, run the environment check above.':
@@ -865,8 +887,8 @@ Object.assign(I18N.reg['es'].tr, {
     'Concede Accesibilidad, Grabación de pantalla y Micrófono según sea necesario, y reinicia Wisp.',
   'Linux': 'Linux',
   'Global hotkeys or screenshots fail under Wayland': 'Los atajos globales o capturas fallan en Wayland',
-  'Use an X11 session for the full hotkey/screenshot path.':
-    'Usa una sesión X11 para la ruta completa de atajos/capturas.',
+  'Use an X11 session for the full hotkey/screenshot path while Wayland support is in progress.':
+    'Usa una sesión X11 para la ruta completa de atajos/capturas mientras el soporte de Wayland está en curso.',
 
 });
 

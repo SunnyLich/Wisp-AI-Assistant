@@ -1,14 +1,14 @@
 ﻿"""
-ui/overlay.py -” Persistent icon overlay widget.
+ui/overlay.py - Persistent icon overlay widget.
 
 A small, always-on-top, click-through frameless window that lives in the
 bottom-right corner. It shows the icon sprite and hosts the system tray icon.
 
 States:
-  idle      -” static icon, sitting quietly
-  listening -” hotkey pressed; plays animate_listen()
-  thinking  -” LLM request in flight
-  speaking  -” TTS playing; plays animate_speak()
+  idle      - static icon, sitting quietly
+  listening - hotkey pressed; plays animate_listen()
+  thinking  - LLM request in flight
+  speaking  - TTS playing; plays animate_speak()
 """
 from __future__ import annotations
 import os
@@ -450,7 +450,7 @@ class IconOverlay(QMainWindow):
             return
         if not config.ICON_AUTO_HIDE:
             return
-        # Start a backstop timer -” the icon will normally be hidden in sync with
+        # Start a backstop timer - the icon will normally be hidden in sync with
         # the bubble via _on_bubble_hidden, but this covers cases where the bubble
         # is never shown (e.g. empty voice transcription).
         self._icon_hide_timer.start()

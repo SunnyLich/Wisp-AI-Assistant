@@ -7,7 +7,7 @@ iniconfig==2.3.0
 librt==0.11.0 ; platform_python_implementation != 'PyPy'
     # via mypy
 mypy==2.1.0
-    # via -r requirements-dev.txt
+    # via -r requirements/requirements-dev.txt
 mypy-extensions==1.1.0
     # via mypy
 packaging==26.2
@@ -19,8 +19,8 @@ pluggy==1.6.0
 pygments==2.20.0
     # via pytest
 pytest==9.1.1
-    # via -r requirements-dev.txt
+    # via -r requirements/requirements-dev.txt
 ruff==0.15.20
-    # via -r requirements-dev.txt
+    # via -r requirements/requirements-dev.txt
 typing-extensions==4.15.0
     # via mypy

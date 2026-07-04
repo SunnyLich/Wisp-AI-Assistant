@@ -10,7 +10,7 @@ def _repo_root() -> Path:
     start = Path(SPECPATH).resolve()
     candidates = [start, *start.parents]
     for candidate in candidates:
-        if (candidate / ".python-version").exists() and (candidate / "requirements.txt").exists():
+        if (candidate / ".python-version").exists() and (candidate / "requirements/requirements.txt").exists():
             return candidate
     return start
 

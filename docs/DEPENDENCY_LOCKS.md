@@ -1,11 +1,11 @@
 # Dependency Locks
 
-Wisp keeps `requirements.txt` as the human-edited runtime dependency manifest.
-Developer-only tools live in `requirements-dev.txt`, and packaging-only tools
-live in `requirements-build.txt`. Installs use exact lock files:
-`requirements-windows.lock`, `requirements-linux.lock`,
-`requirements-macos.lock`, `requirements-dev.lock`, and
-`requirements-build.lock`.
+Wisp keeps `requirements/requirements.txt` as the human-edited runtime dependency manifest.
+Developer-only tools live in `requirements/requirements-dev.txt`, and packaging-only tools
+live in `requirements/requirements-build.txt`. Installs use exact lock files:
+`requirements/requirements-windows.lock`, `requirements/requirements-linux.lock`,
+`requirements/requirements-macos.lock`, `requirements/requirements-dev.lock`, and
+`requirements/requirements-build.lock`.
 
 The lock matters because Wisp crosses several native macOS boundaries:
 PySide6/Qt Cocoa, PortAudio through `sounddevice`, PyObjC Quartz/AppKit,
@@ -16,9 +16,9 @@ has not changed.
 
 ## Updating Dependencies
 
-1. Edit `requirements.txt` when adding, removing, or intentionally upgrading a
-   runtime dependency. Edit `requirements-dev.txt` for local tooling such as
-   pytest, Ruff, and MyPy. Edit `requirements-build.txt` for packaging tools
+1. Edit `requirements/requirements.txt` when adding, removing, or intentionally upgrading a
+   runtime dependency. Edit `requirements/requirements-dev.txt` for local tooling such as
+   pytest, Ruff, and MyPy. Edit `requirements/requirements-build.txt` for packaging tools
    such as PyInstaller.
 2. Regenerate the lock files with `uv`:
 

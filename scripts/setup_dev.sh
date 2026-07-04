@@ -18,11 +18,11 @@ VENV_DIR="$ROOT/.venv"
 VENV_BACKUP_DIR="$ROOT/.venv.rebuild-backup"
 VPY="$VENV_DIR/bin/python"
 OS_NAME="$(uname -s 2>/dev/null || true)"
-REQ_FILE="$ROOT/requirements-linux.lock"
-DEV_REQ_FILE="$ROOT/requirements-dev.lock"
+REQ_FILE="$ROOT/requirements/requirements-linux.lock"
+DEV_REQ_FILE="$ROOT/requirements/requirements-dev.lock"
 
 if [ "$OS_NAME" = "Darwin" ]; then
-  REQ_FILE="$ROOT/requirements-macos.lock"
+  REQ_FILE="$ROOT/requirements/requirements-macos.lock"
 fi
 if [ ! -s "$REQ_FILE" ]; then
   echo "ERROR: ${REQ_FILE##*/} is required for developer setup." >&2
@@ -30,7 +30,7 @@ if [ ! -s "$REQ_FILE" ]; then
   exit 1
 fi
 if [ ! -s "$DEV_REQ_FILE" ]; then
-  echo "ERROR: requirements-dev.lock is required for developer setup." >&2
+  echo "ERROR: requirements/requirements-dev.lock is required for developer setup." >&2
   echo "Regenerate locks with: bash scripts/compile_dependency_locks.sh" >&2
   exit 1
 fi

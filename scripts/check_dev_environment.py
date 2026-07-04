@@ -141,16 +141,16 @@ def requirement_names_for_platform(path: Path, platform: str) -> set[str]:
 
 
 def dev_modules(root: Path) -> tuple[str, ...]:
-    requirements = root / "requirements-dev.txt"
+    requirements = root / "requirements/requirements-dev.txt"
     if not requirements.exists():
-        raise ValueError("requirements-dev.txt is missing")
+        raise ValueError("requirements/requirements-dev.txt is missing")
     modules = [
         module
         for line in requirements.read_text(encoding="utf-8").splitlines()
         if (module := requirement_import_name(line))
     ]
     if not modules:
-        raise ValueError("requirements-dev.txt has no developer requirements")
+        raise ValueError("requirements/requirements-dev.txt has no developer requirements")
     return tuple(modules)
 
 
@@ -167,11 +167,11 @@ def ensure_requirement_file(root: Path, filename: str, description: str) -> None
 
 
 def ensure_runtime_requirements(root: Path) -> None:
-    ensure_requirement_file(root, "requirements.txt", "runtime")
+    ensure_requirement_file(root, "requirements/requirements.txt", "runtime")
 
 
 def ensure_build_requirements(root: Path) -> None:
-    ensure_requirement_file(root, "requirements-build.txt", "build")
+    ensure_requirement_file(root, "requirements/requirements-build.txt", "build")
 
 
 def ensure_lock_file(root: Path, filename: str, source_filename: str, platform: str, description: str) -> None:
@@ -194,15 +194,15 @@ def ensure_lock_file(root: Path, filename: str, source_filename: str, platform: 
 
 def ensure_dependency_locks(root: Path) -> None:
     ensure_runtime_requirements(root)
-    ensure_lock_file(root, "requirements-windows.lock", "requirements.txt", "win32", "Windows runtime")
-    ensure_lock_file(root, "requirements-linux.lock", "requirements.txt", "linux", "Linux runtime")
-    ensure_lock_file(root, "requirements-macos.lock", "requirements.txt", "darwin", "macOS runtime")
-    ensure_lock_file(root, "requirements-dev.lock", "requirements-dev.txt", sys.platform, "developer")
-    ensure_lock_file(root, "requirements-build.lock", "requirements-build.txt", sys.platform, "build")
+    ensure_lock_file(root, "requirements/requirements-windows.lock", "requirements/requirements.txt", "win32", "Windows runtime")
+    ensure_lock_file(root, "requirements/requirements-linux.lock", "requirements/requirements.txt", "linux", "Linux runtime")
+    ensure_lock_file(root, "requirements/requirements-macos.lock", "requirements/requirements.txt", "darwin", "macOS runtime")
+    ensure_lock_file(root, "requirements/requirements-dev.lock", "requirements/requirements-dev.txt", sys.platform, "developer")
+    ensure_lock_file(root, "requirements/requirements-build.lock", "requirements/requirements-build.txt", sys.platform, "build")
 
 
 def ensure_macos_lock(root: Path) -> None:
-    ensure_lock_file(root, "requirements-macos.lock", "requirements.txt", "darwin", "runtime")
+    ensure_lock_file(root, "requirements/requirements-macos.lock", "requirements/requirements.txt", "darwin", "runtime")
 
 
 def venv_python(root: Path, os_name: str | None = None) -> Path:

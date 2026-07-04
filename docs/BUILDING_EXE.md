@@ -74,15 +74,15 @@ Notes:
   ElevenLabs TTS provider will see an in-app warning and can install ElevenLabs
   from Settings > Voice into Wisp's user-writable optional packages folder.
 
-## Cross-Platform Release Builds
+## Cross-Platform Portable Builds
 
 Tagged releases are built by `.github/workflows/build.yml`.
 
-Create a release tag that matches `pyproject.toml`:
+Create a release tag that matches the current `pyproject.toml` version:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 The workflow builds:

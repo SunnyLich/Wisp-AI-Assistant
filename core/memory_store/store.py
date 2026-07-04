@@ -1,5 +1,5 @@
 ﻿"""
-core/memory.py -” Long-term and short-term memory for the AI assistant.
+core/memory.py - Long-term and short-term memory for the AI assistant.
 
 Short-term memory (STM):
   - In-memory log of turns from the current session; reset on every app start.
@@ -101,7 +101,7 @@ You are extracting facts for a personal memory system.
 
 Extract ONLY facts that fit these categories:
 - project_context: things the user is working on, projects, goals, tasks, deadlines
-- general: everything else -” preferences, personal facts, background, open questions
+- general: everything else - preferences, personal facts, background, open questions
 
 Rules:
 - Each fact must be a single atomic sentence, under 20 words.
@@ -535,7 +535,7 @@ class MemoryManager:
             self._compressing = False
 
     # ------------------------------------------------------------------
-    # Long-term memory -” explicit writes
+    # Long-term memory - explicit writes
     # ------------------------------------------------------------------
 
     def add_explicit_fact(self, text: str, project: Optional[str] = _USE_ACTIVE_PROJECT) -> None:
@@ -708,7 +708,7 @@ class MemoryManager:
         return _format_memory_block(_fallback_get_all_from_path(), query)
 
     # ------------------------------------------------------------------
-    # Long-term memory -” periodic consolidation
+    # Long-term memory - periodic consolidation
     # ------------------------------------------------------------------
 
     def _schedule_consolidation(self) -> None:
@@ -764,7 +764,7 @@ class MemoryManager:
         prompt = _SUMMARIZER_PROMPT.format(turns=turns_text)
         response = self._call_memory_llm(prompt, max_tokens=600).strip()
 
-        # Parse JSON -” tolerant of extra prose around the array
+        # Parse JSON - tolerant of extra prose around the array
         facts: list[dict] = []
         try:
             facts = json.loads(response)
@@ -792,10 +792,10 @@ class MemoryManager:
                     if self._upsert_fact(item["text"], cat, source="summarizer"):
                         count += 1
 
-        print(f"[memory] Consolidation complete -” {count} fact(s) extracted.")
+        print(f"[memory] Consolidation complete - {count} fact(s) extracted.")
 
     # ------------------------------------------------------------------
-    # Long-term memory -” upsert with conflict resolution
+    # Long-term memory - upsert with conflict resolution
     # ------------------------------------------------------------------
 
     def _upsert_fact(
@@ -825,7 +825,7 @@ class MemoryManager:
             _fallback_upsert_unlocked(text, category, source, project)
 
     # ------------------------------------------------------------------
-    # Viewer API -” read
+    # Viewer API - read
     # ------------------------------------------------------------------
 
     def get_all_facts(self) -> list[dict]:
@@ -839,11 +839,11 @@ class MemoryManager:
             return [fa for fa in facts if not fa.get("archived")]
 
     # ------------------------------------------------------------------
-    # Viewer API -” write
+    # Viewer API - write
     # ------------------------------------------------------------------
 
     def delete_fact(self, fact_id: str) -> None:
-        """Hard-delete a fact (viewer action -” user explicitly removed it)."""
+        """Hard-delete a fact (viewer action - user explicitly removed it)."""
         with self._ltm_lock:
             self._fallback_delete(fact_id)
             self._invalidate_router()
@@ -933,7 +933,7 @@ class MemoryManager:
         Synchronous LLM call using MEMORY_LLM_PROVIDER / MEMORY_LLM_MODEL, with
         the MEMORY_LLM_FALLBACKS chain tried in order if the primary route fails
         or returns nothing. Used for consolidation and mid-session compression.
-        Runs on background threads -” never call from Qt main thread.
+        Runs on background threads - never call from Qt main thread.
         """
         from core.llm_clients.routes import route_candidates
 

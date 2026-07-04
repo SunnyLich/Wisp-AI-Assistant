@@ -1,5 +1,5 @@
 ﻿"""
-ui/memory_viewer.py -” Long-term memory viewer / editor.
+ui/memory_viewer.py - Long-term memory viewer / editor.
 
 Provides two surfaces:
 
@@ -460,4 +460,3 @@ class MemoryViewer(QDialog):
         """Show event."""
         super().showEvent(event)
         fit_window_to_screen(self, preferred_width=820, preferred_height=640)
-

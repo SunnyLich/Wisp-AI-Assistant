@@ -775,7 +775,7 @@ class FlowController:
         if text:
             self._last_reply = text
         # flush=False: the LLM finished streaming but no audio will pace the
-        # bubble (this path only runs with TTS off) â€” let the WPM reveal drain
+        # bubble (this path only runs with TTS off) - let the WPM reveal drain
         # at BUBBLE_REVEAL_WPM instead of slamming the full reply in at once.
         self._safe_call(self.ui, "ui.reply.done", {"flush": False}, timeout=30.0)
         self._safe_call(self.ui, "ui.overlay.state", {"state": "idle"}, timeout=30.0)
@@ -818,7 +818,7 @@ class FlowController:
         self._log_caller_runtime(caller_idx, caller)
         generation = self._new_generation()
         # Silence any in-progress speech, but don't block the picker waiting for
-        # it â€” audio.stop just flips a flag in the audio worker.
+        # it - audio.stop just flips a flag in the audio worker.
         self._fire(self.audio, "audio.stop")
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
         initial_context: dict[str, Any] = {}
@@ -879,7 +879,7 @@ class FlowController:
         # cosmetic UI state. Stopping audio and the "listening" animation are
         # fired afterwards without blocking (mirrors begin_caller). Previously the
         # blocking audio.stop call delayed the overlay once the audio worker was
-        # busy â€” fast on the first snip, slow on later ones.
+        # busy - fast on the first snip, slow on later ones.
         t0 = time.monotonic()
         self.ui.call("ui.show_snip", timeout=30.0)
         log.info("snip: ui.show_snip round-trip %.2fs", time.monotonic() - t0)
@@ -1347,7 +1347,7 @@ class FlowController:
         # staring at the generic "thinking" dots wondering why it's slow.
         if self._stt_warming():
             self._fire(self.ui, "ui.reply.notice",
-                       {"text": "Warming up speech model â€” the first transcription is slowerâ€¦"})
+                       {"text": "Warming up speech model - the first transcription is slower..."})
         else:
             self._fire(self.ui, "ui.reply.thinking")
         try:
@@ -1416,7 +1416,7 @@ class FlowController:
         self._fire(self.audio, "audio.stop")
         try:
             record_result = self.audio.call("audio.record.start", timeout=20.0)
-        except Exception as exc:  # noqa: BLE001 â€” surface mic/worker failure in the UI
+        except Exception as exc:  # noqa: BLE001 - surface mic/worker failure in the UI
             log.exception("dictation record start failed")
             self._notice(f"Couldn't start dictation: {self._friendly_error(exc)}")
             self._mark_dictate_failed()
@@ -1436,10 +1436,11 @@ class FlowController:
     def dictate_stop(self) -> None:
         """Stop dictation, transcribe, optionally LLM-clean, and paste into the
         text field that was focused when recording started."""
+        self._fire(self.ui, "ui.reply.reset")
         try:
             try:
                 result = self.audio.call("audio.record.stop_transcribe", timeout=180.0)
-            except Exception as exc:  # noqa: BLE001 â€” surface transcribe failure in the UI
+            except Exception as exc:  # noqa: BLE001 - surface transcribe failure in the UI
                 log.exception("dictation transcribe failed")
                 self._notice(f"Dictation failed: {self._friendly_error(exc)}")
                 self._set_idle()
@@ -1478,7 +1479,7 @@ class FlowController:
                 on_event=lambda *_a, **_k: None,
             )
             return str((result or {}).get("text") or "").strip() or text
-        except Exception:  # noqa: BLE001 â€” never block a paste on cleanup
+        except Exception:  # noqa: BLE001 - never block a paste on cleanup
             log.exception("dictation LLM cleanup failed; pasting raw transcript")
             return text
 
@@ -1536,15 +1537,15 @@ class FlowController:
         log.info("dictation paste: target_pid=%s result=%s", self._dictate_target_pid, paste)
         self._set_idle()
         if paste.get("ok"):
-            return  # silent success â€” the pasted text is the confirmation
+            return  # silent success - the pasted text is the confirmation
         if paste.get("clipboard_ok"):
             self._native_notify(
-                "Wisp â€” dictation on clipboard",
+                "Wisp - dictation on clipboard",
                 f"Couldn't focus the field. Press {self._paste_shortcut()} to paste.",
             )
         else:
             log.error("dictation paste failed: %s", paste.get("error") or paste)
-            self._native_notify("Wisp â€” dictation failed", "Couldn't paste the text. See native.stderr.log.")
+            self._native_notify("Wisp - dictation failed", "Couldn't paste the text. See native.stderr.log.")
 
     def reload_settings(self, changed_keys: list[str] | None = None) -> None:
         """Handle reload settings for flow controller."""
@@ -1555,7 +1556,7 @@ class FlowController:
         log.info("supervisor config reloaded")
         self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
         # The audio worker owns the live TTS path and is long-lived, so it must
-        # reload config + drop cached TTS connections here â€” prewarm alone leaves
+        # reload config + drop cached TTS connections here - prewarm alone leaves
         # the old provider/voice in effect until restart.
         audio_changed = changed_keys is None or any(key in _AUDIO_CONFIG_KEYS for key in changed_keys)
         if audio_changed:
@@ -2579,7 +2580,7 @@ class FlowController:
                 pending.paste_target_pid, paste,
             )
             # Rewrite status must NOT land in the reply bubble (it would clobber the
-            # streamed rewrite text). Success is silent â€” the pasted text in the
+            # streamed rewrite text). Success is silent - the pasted text in the
             # user's app is the confirmation. Only problems raise a system
             # notification, which needs user action / awareness.
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
@@ -2601,7 +2602,7 @@ class FlowController:
                 )
             else:
                 log.error("rewrite paste-back failed: %s", paste.get("error") or paste)
-                self._native_notify("Wisp â€” rewrite failed", "Couldn't paste the rewrite. See native.stderr.log.")
+                self._native_notify("Wisp - rewrite failed", "Couldn't paste the rewrite. See native.stderr.log.")
             self._safe_call(
                 self.ui,
                     "ui.chat.add_conversation",
@@ -2740,7 +2741,7 @@ class FlowController:
             return None
 
     def _fire(self, worker: WorkerLike, method: str, params: dict[str, Any] | None = None) -> None:
-        """Send a fire-and-forget request â€” the response is not awaited.
+        """Send a fire-and-forget request - the response is not awaited.
 
         For cosmetic / side-effect calls (e.g. doll animation state, stopping
         speech) that must never sit on the critical path. A slow or wedged worker
@@ -3077,7 +3078,7 @@ class FlowController:
         # The browser-page fetch is a ~2-3s network read (requests.get). Keep it
         # OFF the hotkey -> picker path (include_browser=False) and fetch it lazily
         # at query time instead, where it overlaps the LLM round-trip. The URL and
-        # window handle ARE captured now, while the browser is still foreground â€”
+        # window handle ARE captured now, while the browser is still foreground -
         # by query time the picker has stolen focus and re-detection would fail.
         """Handle context snapshot for flow controller."""
         browser_auto = self._context_mode(caller, "browser") == "auto"
@@ -3148,7 +3149,7 @@ class FlowController:
         return snapshot
 
     def _fetch_browser_snapshot(self) -> dict[str, Any]:
-        """Fetch just the active browser tab's URL + page content â€” the deferred,
+        """Fetch just the active browser tab's URL + page content - the deferred,
         slow part of the snapshot. Active-app only; no selection/clipboard."""
         return self.native.call(
             "native.context.snapshot",
@@ -3471,7 +3472,7 @@ class FlowController:
                 # URL + window handle (Windows) or browser app name (macOS) were
                 # captured at hotkey time while the browser was foreground; read
                 # the page now (deferred off the picker path). Windows reads by
-                # handle; macOS asks the named app via AppleScript â€” both work
+                # handle; macOS asks the named app via AppleScript - both work
                 # with the picker/overlay holding focus.
                 browser = self._fetch_browser_content_for_context(context)
                 browser_url = browser.get("browser_url") or browser_url
@@ -3486,7 +3487,7 @@ class FlowController:
                 browser_bits.append(browser_content)
             elif browser_app:
                 # macOS only (browser_app is set only there). The page text came
-                # back empty â€” almost always a permission the user hasn't granted
+                # back empty - almost always a permission the user hasn't granted
                 # yet. Tell the model so it can relay the fix instead of just
                 # claiming it cannot read the page.
                 if browser_url:
@@ -4727,8 +4728,8 @@ class FlowController:
                     return False
                 self._safe_call(self.ui, "ui.overlay.state", {"state": "speaking"}, timeout=30.0)
                 # Buffer Cartesia word timestamps in the bubble *before* playback
-                # starts. start_word_reveal â€” fired by the audio.playback.started
-                # event below â€” drains them anchored to the real audio clock, so
+                # starts. start_word_reveal - fired by the audio.playback.started
+                # event below - drains them anchored to the real audio clock, so
                 # the word highlight tracks the spoken voice instead of the
                 # normal bubble reveal speed. Do NOT call ui.reply.start_reveal here: it would
                 # anchor the reveal to synth-completion (before audio is audible)

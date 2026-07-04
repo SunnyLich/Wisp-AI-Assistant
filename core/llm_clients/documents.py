@@ -129,7 +129,7 @@ def _read_document_file(path: str, max_chars: int | None = None) -> str:
         # Redact sensitive data before the text reaches the LLM.
         from core.context_fetcher import _redact  # noqa: PLC0415
         text = _redact(text)
-        _log_context(f"tool: read_document -” read {path!r}", text)
+        _log_context(f"tool: read_document - read {path!r}", text)
         return text
     except Exception as e:
         return f"Failed to read {path!r}: {e}"

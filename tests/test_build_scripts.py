@@ -70,7 +70,7 @@ class BuildScriptTests(unittest.TestCase):
         script = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
 
         self.assertIn('SPEC_NAME="WispMac.spec"', script)
-        self.assertIn('MACOS_LOCK_FILE="$ROOT/requirements-macos.lock"', script)
+        self.assertIn('MACOS_LOCK_FILE="$ROOT/requirements/requirements-macos.lock"', script)
         self.assertIn('if [[ "$(uname -s)" != "Darwin" ]]', script)
         self.assertIn('require_file "$ICON_ICNS_PATH" "assets/app.icns"', script)
         self.assertIn('require_file "$ICON_PNG_PATH" "assets/app.png"', script)
@@ -82,8 +82,8 @@ class BuildScriptTests(unittest.TestCase):
 
         self.assertIn("function Require-PackagingFile", powershell)
         self.assertIn("$RequiredBuildFiles = @(", powershell)
-        self.assertIn('$RequirementsFile = "requirements-windows.lock"', powershell)
-        self.assertIn('$BuildRequirementsFile = "requirements-build.lock"', powershell)
+        self.assertIn('$RequirementsFile = "requirements/requirements-windows.lock"', powershell)
+        self.assertIn('$BuildRequirementsFile = "requirements/requirements-build.lock"', powershell)
         self.assertIn('Path = (Join-Path $Root $RequirementsFile); Name = $RequirementsFile', powershell)
         self.assertIn('Path = (Join-Path $Root $BuildRequirementsFile); Name = $BuildRequirementsFile', powershell)
         self.assertIn("$Name is required for packaging.", powershell)
@@ -93,13 +93,13 @@ class BuildScriptTests(unittest.TestCase):
         shell = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
 
         self.assertIn("require_file()", shell)
-        self.assertIn('REQUIREMENTS_FILE="$ROOT/requirements-linux.lock"', shell)
-        self.assertIn('BUILD_REQUIREMENTS_FILE="$ROOT/requirements-build.lock"', shell)
-        self.assertIn('require_file "$REQUIREMENTS_FILE" "requirements-linux.lock"', shell)
-        self.assertIn('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.lock"', shell)
+        self.assertIn('REQUIREMENTS_FILE="$ROOT/requirements/requirements-linux.lock"', shell)
+        self.assertIn('BUILD_REQUIREMENTS_FILE="$ROOT/requirements/requirements-build.lock"', shell)
+        self.assertIn('require_file "$REQUIREMENTS_FILE" "requirements/requirements-linux.lock"', shell)
+        self.assertIn('require_file "$BUILD_REQUIREMENTS_FILE" "requirements/requirements-build.lock"', shell)
         self.assertIn('echo "ERROR: $name is required for packaging."', shell)
-        self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.lock"'), shell.index('"$CREATE_PYTHON" -m venv'))
-        self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.lock"'), shell.index("clean_build_outputs"))
+        self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements/requirements-build.lock"'), shell.index('"$CREATE_PYTHON" -m venv'))
+        self.assertLess(shell.index('require_file "$BUILD_REQUIREMENTS_FILE" "requirements/requirements-build.lock"'), shell.index("clean_build_outputs"))
 
     def test_windows_build_warns_loudly_when_elevenlabs_is_skipped(self) -> None:
         powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")

@@ -69,11 +69,11 @@ fi
 WANT_MM="$(printf '%s' "$WANT" | cut -d. -f1,2)"
 
 VPY="$REPO_ROOT/.venv/bin/python"
-REQ_FILE="$REPO_ROOT/requirements-linux.lock"
+REQ_FILE="$REPO_ROOT/requirements/requirements-linux.lock"
 STAMP_FILE="$REPO_ROOT/.venv/.wisp-linux-python-deps.stamp"
 
 if [ "$OS_NAME" = "Darwin" ]; then
-  REQ_FILE="$REPO_ROOT/requirements-macos.lock"
+  REQ_FILE="$REPO_ROOT/requirements/requirements-macos.lock"
   STAMP_FILE="$REPO_ROOT/.venv/.wisp-macos-python-deps.stamp"
 fi
 if [ ! -s "$REQ_FILE" ]; then

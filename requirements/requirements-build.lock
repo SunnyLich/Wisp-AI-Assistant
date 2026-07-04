@@ -11,12 +11,12 @@ packaging==26.2
 pefile==2024.8.26 ; sys_platform == 'win32'
     # via pyinstaller
 pyinstaller==6.21.0
-    # via -r requirements-build.txt
+    # via -r requirements/requirements-build.txt
 pyinstaller-hooks-contrib==2026.6
     # via pyinstaller
 pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
     # via pyinstaller
 setuptools==81.0.0
     # via
-    #   -r requirements-build.txt
+    #   -r requirements/requirements-build.txt
     #   pyinstaller

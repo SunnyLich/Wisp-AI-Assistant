@@ -16,13 +16,12 @@ on:
       - "runtime/**"
       - "packaging/**"
       - "config.py"
-      - "requirements*.txt"
-      - "requirements*.lock"
-      - "requirements-dev.txt"
+      - "requirements/*.txt"
+      - "requirements/*.lock"
       - "pyproject.toml"
-      - "requirements-macos.lock"
-      - "requirements-dev.lock"
-      - "requirements-build.lock"
+      - "requirements/requirements-macos.lock"
+      - "requirements/requirements-dev.lock"
+      - "requirements/requirements-build.lock"
       - "scripts/compile_dependency_locks.sh"
       - "scripts/compile_macos_lock.sh"
       - "scripts/macos_testbot.py"
@@ -36,13 +35,12 @@ on:
       - "runtime/**"
       - "packaging/**"
       - "config.py"
-      - "requirements*.txt"
-      - "requirements*.lock"
-      - "requirements-dev.txt"
+      - "requirements/*.txt"
+      - "requirements/*.lock"
       - "pyproject.toml"
-      - "requirements-macos.lock"
-      - "requirements-dev.lock"
-      - "requirements-build.lock"
+      - "requirements/requirements-macos.lock"
+      - "requirements/requirements-dev.lock"
+      - "requirements/requirements-build.lock"
       - "scripts/compile_dependency_locks.sh"
       - "scripts/compile_macos_lock.sh"
       - "scripts/macos_testbot.py"
@@ -62,8 +60,8 @@ jobs:
           python-version-file: ".python-version"
           cache: pip
           cache-dependency-path: |
-            requirements-macos.lock
-            requirements-dev.lock
+            requirements/requirements-macos.lock
+            requirements/requirements-dev.lock
             pyproject.toml
 
       - uses: astral-sh/setup-uv@v5
@@ -75,14 +73,14 @@ jobs:
           }
           tmp_lock="$(mktemp)"
           python_minor="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
-          uv pip compile requirements.txt \
+          uv pip compile requirements/requirements.txt \
             --no-header \
             --python "$(command -v python)" \
             --python-version "$python_minor" \
             --python-platform aarch64-apple-darwin \
-            --constraint requirements-macos.lock \
+            --constraint requirements/requirements-macos.lock \
             --output-file "$tmp_lock"
-          diff -u <(normalize_lock requirements-macos.lock) <(normalize_lock "$tmp_lock")
+          diff -u <(normalize_lock requirements/requirements-macos.lock) <(normalize_lock "$tmp_lock")
 
       - name: Verify tooling locks are reproducible
         run: |
@@ -92,24 +90,24 @@ jobs:
           dev_lock="$(mktemp)"
           build_lock="$(mktemp)"
           python_minor="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
-          uv pip compile requirements-dev.txt \
+          uv pip compile requirements/requirements-dev.txt \
             --universal \
             --no-header \
             --python-version "$python_minor" \
-            --constraint requirements-dev.lock \
+            --constraint requirements/requirements-dev.lock \
             --output-file "$dev_lock"
-          diff -u <(normalize_lock requirements-dev.lock) <(normalize_lock "$dev_lock")
-          uv pip compile requirements-build.txt \
+          diff -u <(normalize_lock requirements/requirements-dev.lock) <(normalize_lock "$dev_lock")
+          uv pip compile requirements/requirements-build.txt \
             --universal \
             --no-header \
             --python-version "$python_minor" \
-            --constraint requirements-build.lock \
+            --constraint requirements/requirements-build.lock \
             --output-file "$build_lock"
-          diff -u <(normalize_lock requirements-build.lock) <(normalize_lock "$build_lock")
+          diff -u <(normalize_lock requirements/requirements-build.lock) <(normalize_lock "$build_lock")
 
       - name: Install locked dependencies
         run: |
-          uv pip sync requirements-macos.lock --python "$(command -v python)" --strict
+          uv pip sync requirements/requirements-macos.lock --python "$(command -v python)" --strict
 
       - name: Byte-compile all sources
         run: python -m compileall -q core ui runtime config.py

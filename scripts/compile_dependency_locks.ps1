@@ -25,16 +25,16 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     throw "uv is required to compile dependency lock files. Install it from https://docs.astral.sh/uv/ and rerun this script."
 }
 
-Require-Input "requirements.txt"
-Require-Input "requirements-dev.txt"
-Require-Input "requirements-build.txt"
+Require-Input "requirements/requirements.txt"
+Require-Input "requirements/requirements-dev.txt"
+Require-Input "requirements/requirements-build.txt"
 
 function Compile-RuntimeLock {
     param(
         [string]$Platform,
         [string]$OutputFile
     )
-    uv pip compile requirements.txt `
+    uv pip compile requirements/requirements.txt `
         --upgrade `
         --no-header `
         --python-version $WantMinor `
@@ -65,17 +65,17 @@ if ($Targets.Count -eq 0) {
 foreach ($Target in $Targets) {
     switch ($Target) {
         "all" {
-            Compile-RuntimeLock "x86_64-pc-windows-msvc" "requirements-windows.lock"
-            Compile-RuntimeLock "x86_64-manylinux_2_34" "requirements-linux.lock"
-            Compile-RuntimeLock "aarch64-apple-darwin" "requirements-macos.lock"
-            Compile-UniversalLock "requirements-dev.txt" "requirements-dev.lock"
-            Compile-UniversalLock "requirements-build.txt" "requirements-build.lock"
+            Compile-RuntimeLock "x86_64-pc-windows-msvc" "requirements/requirements-windows.lock"
+            Compile-RuntimeLock "x86_64-manylinux_2_34" "requirements/requirements-linux.lock"
+            Compile-RuntimeLock "aarch64-apple-darwin" "requirements/requirements-macos.lock"
+            Compile-UniversalLock "requirements/requirements-dev.txt" "requirements/requirements-dev.lock"
+            Compile-UniversalLock "requirements/requirements-build.txt" "requirements/requirements-build.lock"
         }
-        "windows" { Compile-RuntimeLock "x86_64-pc-windows-msvc" "requirements-windows.lock" }
-        "linux" { Compile-RuntimeLock "x86_64-manylinux_2_34" "requirements-linux.lock" }
-        "macos" { Compile-RuntimeLock "aarch64-apple-darwin" "requirements-macos.lock" }
-        "dev" { Compile-UniversalLock "requirements-dev.txt" "requirements-dev.lock" }
-        "build" { Compile-UniversalLock "requirements-build.txt" "requirements-build.lock" }
+        "windows" { Compile-RuntimeLock "x86_64-pc-windows-msvc" "requirements/requirements-windows.lock" }
+        "linux" { Compile-RuntimeLock "x86_64-manylinux_2_34" "requirements/requirements-linux.lock" }
+        "macos" { Compile-RuntimeLock "aarch64-apple-darwin" "requirements/requirements-macos.lock" }
+        "dev" { Compile-UniversalLock "requirements/requirements-dev.txt" "requirements/requirements-dev.lock" }
+        "build" { Compile-UniversalLock "requirements/requirements-build.txt" "requirements/requirements-build.lock" }
         default { throw "Unknown lock target '$Target'. Use all, windows, linux, macos, dev, or build." }
     }
 }

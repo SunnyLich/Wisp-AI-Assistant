@@ -12,9 +12,8 @@ on:
       - "tests/**"
       - "scripts/**"
       - "config.py"
-      - "requirements*.txt"
-      - "requirements*.lock"
-      - "requirements-dev.txt"
+      - "requirements/*.txt"
+      - "requirements/*.lock"
       - "pyproject.toml"
       - "pytest.ini"
       - ".github/workflows/ci.yml"
@@ -28,9 +27,8 @@ on:
       - "tests/**"
       - "scripts/**"
       - "config.py"
-      - "requirements*.txt"
-      - "requirements*.lock"
-      - "requirements-dev.txt"
+      - "requirements/*.txt"
+      - "requirements/*.lock"
       - "pyproject.toml"
       - "pytest.ini"
       - ".github/workflows/ci.yml"
@@ -58,20 +56,20 @@ jobs:
           windows_lock="$(mktemp)"
           linux_lock="$(mktemp)"
           python_minor="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
-          uv pip compile requirements.txt \
+          uv pip compile requirements/requirements.txt \
             --no-header \
             --python-version "$python_minor" \
             --python-platform x86_64-pc-windows-msvc \
-            --constraint requirements-windows.lock \
+            --constraint requirements/requirements-windows.lock \
             --output-file "$windows_lock"
-          diff -u <(normalize_lock requirements-windows.lock) <(normalize_lock "$windows_lock")
-          uv pip compile requirements.txt \
+          diff -u <(normalize_lock requirements/requirements-windows.lock) <(normalize_lock "$windows_lock")
+          uv pip compile requirements/requirements.txt \
             --no-header \
             --python-version "$python_minor" \
             --python-platform x86_64-manylinux_2_34 \
-            --constraint requirements-linux.lock \
+            --constraint requirements/requirements-linux.lock \
             --output-file "$linux_lock"
-          diff -u <(normalize_lock requirements-linux.lock) <(normalize_lock "$linux_lock")
+          diff -u <(normalize_lock requirements/requirements-linux.lock) <(normalize_lock "$linux_lock")
 
   test:
     name: Tests (${{ matrix.os }})
@@ -93,9 +91,9 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            requirements-windows.lock
-            requirements-linux.lock
-            requirements-dev.lock
+            requirements/requirements-windows.lock
+            requirements/requirements-linux.lock
+            requirements/requirements-dev.lock
             pyproject.toml
             pytest.ini
 
@@ -118,13 +116,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-linux.lock -r requirements-dev.lock
+          pip install -r requirements/requirements-linux.lock -r requirements/requirements-dev.lock
 
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-windows.lock -r requirements-dev.lock
+          pip install -r requirements/requirements-windows.lock -r requirements/requirements-dev.lock
 
       - name: Byte-compile all sources
         run: python -m compileall -q core ui runtime config.py

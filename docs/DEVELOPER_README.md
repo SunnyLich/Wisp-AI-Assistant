@@ -1,8 +1,9 @@
 # Wisp Developer README
 
-This document is the practical entry point for working on Wisp. The root
-`README.md` explains the product; this file explains how the codebase is put
-together, how to run it locally, and where to look when changing behavior.
+This document is the practical entry point for working on Wisp. The GitHub
+README at `.github/README.md` explains the product; this file explains how the
+codebase is put together, how to run it locally, and where to look when changing
+behavior.
 
 For the current architecture map, start with `docs/OVERVIEW.md`.
 
@@ -65,8 +66,9 @@ to keep full runtime logs during local debugging.
   tool definitions.
 - `tests/` covers settings, routing, worker boundaries, UI helpers, memory,
   agent behavior, addon behavior, and platform safety.
-- `experiments/` contains exploratory code that is not part of the stable app
-  contract but can inform future features.
+- `private/`, `.agents/`, and other local-only folders are developer workspace
+  scratch areas; stable app behavior should live in the tracked runtime,
+  `core/`, `ui/`, addon, script, or test folders above.
 
 ## Worker Architecture
 

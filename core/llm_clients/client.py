@@ -1,5 +1,5 @@
 ﻿"""
-core/llm.py -” Cloud LLM client with streaming support.
+core/llm.py - Cloud LLM client with streaming support.
 
 Supports:
   - Groq (OpenAI-compatible, fast TTFT)
@@ -1480,7 +1480,7 @@ def read_active_document_for_context() -> str:
 
 
 # ------------------------------------------------------------------
-# Singleton clients -” initialised once, reused across all requests
+# Singleton clients - initialised once, reused across all requests
 # ------------------------------------------------------------------
 _openai_client = None
 _anthropic_client = None
@@ -1519,7 +1519,7 @@ def reset_clients() -> None:
 
 
 # ------------------------------------------------------------------
-# Codex (ChatGPT subscription) -” custom httpx transport + client
+# Codex (ChatGPT subscription) - custom httpx transport + client
 # ------------------------------------------------------------------
 
 class _CodexTransport:
@@ -1586,12 +1586,12 @@ def _get_codex_client():
 
 
 def _get_chat_codex_client():
-    """Returns the same singleton as _get_codex_client() -” same endpoint."""
+    """Returns the same singleton as _get_codex_client() - same endpoint."""
     return _get_codex_client()
 
 
 # ------------------------------------------------------------------
-# Config sanity checks -” raise early with actionable messages
+# Config sanity checks - raise early with actionable messages
 # ------------------------------------------------------------------
 
 def _log_model_route(kind: str, provider: str, model: str, use_tools: bool = False) -> None:
@@ -4395,7 +4395,7 @@ def _stream_openai_compat(
 
 
 # ------------------------------------------------------------------
-# Codex (ChatGPT subscription) -” Responses API streaming
+# Codex (ChatGPT subscription) - Responses API streaming
 # ------------------------------------------------------------------
 
 def _build_codex_text(user_message: str, ambient_context: str = "", memory_context: str = "") -> str:
@@ -4544,7 +4544,7 @@ def _stream_codex_vision(
 
 
 # ------------------------------------------------------------------
-# Anthropic Claude  -”  shared tool-loop helper
+# Anthropic Claude - shared tool-loop helper
 # ------------------------------------------------------------------
 
 def _run_anthropic_tool_loop(
@@ -5018,7 +5018,7 @@ def stream_rewrite(
     """
     import time
     ts = time.strftime("%H:%M:%S")
-    print(f"[llm {ts}] Rewrite request ({len(selected_text)} chars) -” {intent_prompt[:60]!r}")
+    print(f"[llm {ts}] Rewrite request ({len(selected_text)} chars) - {intent_prompt[:60]!r}")
     context = str(rewrite_context or "").strip()
     user_message = (
         "Instruction:\n"
@@ -5412,7 +5412,7 @@ def stream_response_with_history(
     Args:
         messages:        [{{"role": "system"|"user"|"assistant", "content": str,
                          "image_base64": str?}}, ...]
-        memory_context:  Pre-formatted LTM facts from core.memory -” attached to
+        memory_context:  Pre-formatted LTM facts from core.memory - attached to
                          the latest user turn so the model is aware of user facts.
     """
     # Attach memory to the latest user turn, NOT the system prompt. Memory is
@@ -5422,7 +5422,7 @@ def stream_response_with_history(
     # on the volatile last user turn lets the stable prefix stay byte-identical so
     # providers can cache the replayed history (including any screenshot).
     if memory_context:
-        messages = [dict(m) for m in messages]  # copy -” don't mutate the caller's turns
+        messages = [dict(m) for m in messages]  # copy - don't mutate the caller's turns
         for i in range(len(messages) - 1, -1, -1):
             if messages[i].get("role") == "user":
                 base = messages[i].get("content")

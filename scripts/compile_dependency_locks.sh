@@ -30,14 +30,14 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-require_input requirements.txt
-require_input requirements-dev.txt
-require_input requirements-build.txt
+require_input requirements/requirements.txt
+require_input requirements/requirements-dev.txt
+require_input requirements/requirements-build.txt
 
 compile_runtime_lock() {
   local platform="$1"
   local output="$2"
-  uv pip compile requirements.txt \
+  uv pip compile requirements/requirements.txt \
     --upgrade \
     --no-header \
     --python-version "$WANT_MM" \
@@ -66,26 +66,26 @@ fi
 for target in "${targets[@]}"; do
   case "$target" in
     all)
-      compile_runtime_lock x86_64-pc-windows-msvc requirements-windows.lock
-      compile_runtime_lock x86_64-manylinux_2_34 requirements-linux.lock
-      compile_runtime_lock aarch64-apple-darwin requirements-macos.lock
-      compile_universal_lock requirements-dev.txt requirements-dev.lock
-      compile_universal_lock requirements-build.txt requirements-build.lock
+      compile_runtime_lock x86_64-pc-windows-msvc requirements/requirements-windows.lock
+      compile_runtime_lock x86_64-manylinux_2_34 requirements/requirements-linux.lock
+      compile_runtime_lock aarch64-apple-darwin requirements/requirements-macos.lock
+      compile_universal_lock requirements/requirements-dev.txt requirements/requirements-dev.lock
+      compile_universal_lock requirements/requirements-build.txt requirements/requirements-build.lock
       ;;
     windows)
-      compile_runtime_lock x86_64-pc-windows-msvc requirements-windows.lock
+      compile_runtime_lock x86_64-pc-windows-msvc requirements/requirements-windows.lock
       ;;
     linux)
-      compile_runtime_lock x86_64-manylinux_2_34 requirements-linux.lock
+      compile_runtime_lock x86_64-manylinux_2_34 requirements/requirements-linux.lock
       ;;
     macos)
-      compile_runtime_lock aarch64-apple-darwin requirements-macos.lock
+      compile_runtime_lock aarch64-apple-darwin requirements/requirements-macos.lock
       ;;
     dev)
-      compile_universal_lock requirements-dev.txt requirements-dev.lock
+      compile_universal_lock requirements/requirements-dev.txt requirements/requirements-dev.lock
       ;;
     build)
-      compile_universal_lock requirements-build.txt requirements-build.lock
+      compile_universal_lock requirements/requirements-build.txt requirements/requirements-build.lock
       ;;
     *)
       echo "ERROR: unknown lock target '$target'. Use all, windows, linux, macos, dev, or build." >&2

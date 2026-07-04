@@ -1256,7 +1256,7 @@ def test_browser_hwnd_without_url_fetches_content_by_handle():
 
 def test_browser_app_captured_at_hotkey_time_fetches_text_via_applescript():
     """macOS path: the browser app name + URL are grabbed at hotkey time, then
-    the page text is read by app (AppleScript) â€” no read-by-handle on macOS."""
+    the page text is read by app (AppleScript) - no read-by-handle on macOS."""
     rows = [
         {
             "paste_back": False,
@@ -3706,7 +3706,11 @@ def test_dictation_shows_recording_ui_after_recording_starts():
     assert audio.calls_for("audio.record.stop_transcribe")
     assert ui.calls_for("ui.overlay.state")[0]["params"]["state"] == "listening"
     assert ui.calls_for("ui.reply.listening")
-    assert not ui.calls_for("ui.reply.reset")
+    assert ui.calls_for("ui.reply.reset")
+    assert [call["params"]["state"] for call in ui.calls_for("ui.overlay.state")] == [
+        "listening",
+        "idle",
+    ]
 
 
 def test_dictation_does_not_show_recording_ui_when_recording_fails():

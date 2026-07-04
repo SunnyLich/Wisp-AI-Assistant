@@ -2,25 +2,35 @@ import contextlib
 import io
 import tempfile
 import unittest
-from subprocess import CompletedProcess
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest import mock
 
 from scripts import check_dev_environment
 
 
+def requirement_file(root: Path, filename: str) -> Path:
+    requirements_dir = Path(root, "requirements")
+    requirements_dir.mkdir(exist_ok=True)
+    return requirements_dir / filename
+
+
 def write_minimal_dependency_inputs(root: Path) -> None:
-    Path(root, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
-    Path(root, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
-    Path(root, "requirements-build.txt").write_text("pyinstaller>=6.0.0\n", encoding="utf-8")
+    requirements_dir = Path(root, "requirements")
+    requirements_dir.mkdir(exist_ok=True)
+    Path(requirements_dir, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+    Path(requirements_dir, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
+    Path(requirements_dir, "requirements-build.txt").write_text("pyinstaller>=6.0.0\n", encoding="utf-8")
 
 
 def write_minimal_dependency_locks(root: Path) -> None:
-    Path(root, "requirements-windows.lock").write_text("pyside6==6.11.0\n", encoding="utf-8")
-    Path(root, "requirements-linux.lock").write_text("pyside6==6.11.0\n", encoding="utf-8")
-    Path(root, "requirements-macos.lock").write_text("pyside6==6.11.0\n", encoding="utf-8")
-    Path(root, "requirements-dev.lock").write_text("pytest==8.0.0\n", encoding="utf-8")
-    Path(root, "requirements-build.lock").write_text("pyinstaller==6.0.0\n", encoding="utf-8")
+    requirements_dir = Path(root, "requirements")
+    requirements_dir.mkdir(exist_ok=True)
+    Path(requirements_dir, "requirements-windows.lock").write_text("pyside6==6.11.0\n", encoding="utf-8")
+    Path(requirements_dir, "requirements-linux.lock").write_text("pyside6==6.11.0\n", encoding="utf-8")
+    Path(requirements_dir, "requirements-macos.lock").write_text("pyside6==6.11.0\n", encoding="utf-8")
+    Path(requirements_dir, "requirements-dev.lock").write_text("pytest==8.0.0\n", encoding="utf-8")
+    Path(requirements_dir, "requirements-build.lock").write_text("pyinstaller==6.0.0\n", encoding="utf-8")
 
 
 class DevEnvironmentCheckTests(unittest.TestCase):
@@ -74,7 +84,7 @@ class DevEnvironmentCheckTests(unittest.TestCase):
 
     def test_dev_modules_rejects_empty_requirements_dev(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "requirements-dev.txt").write_text("# nothing here\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-dev.txt").write_text("# nothing here\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.dev_modules(Path(tmp))
@@ -91,7 +101,7 @@ class DevEnvironmentCheckTests(unittest.TestCase):
 
     def test_runtime_requirements_rejects_empty_requirements_txt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "requirements.txt").write_text("# nothing here\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("# nothing here\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.ensure_runtime_requirements(Path(tmp))
@@ -108,7 +118,7 @@ class DevEnvironmentCheckTests(unittest.TestCase):
 
     def test_build_requirements_rejects_empty_requirements_build_txt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "requirements-build.txt").write_text("# nothing here\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-build.txt").write_text("# nothing here\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.ensure_build_requirements(Path(tmp))
@@ -125,21 +135,21 @@ class DevEnvironmentCheckTests(unittest.TestCase):
 
     def test_macos_lock_rejects_empty_lock_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "requirements-macos.lock").write_text("# nothing here\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("# nothing here\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.ensure_macos_lock(Path(tmp))
 
     def test_macos_lock_rejects_unlocked_requirement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "requirements-macos.lock").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("PySide6>=6.11.0\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.ensure_macos_lock(Path(tmp))
 
     def test_macos_lock_rejects_missing_runtime_requirement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "requirements.txt").write_text(
+            requirement_file(tmp, "requirements.txt").write_text(
                 "\n".join(
                     [
                         "PySide6>=6.11.0",
@@ -149,7 +159,7 @@ class DevEnvironmentCheckTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            Path(tmp, "requirements-macos.lock").write_text("pyside6==6.11.1\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("pyside6==6.11.1\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 check_dev_environment.ensure_macos_lock(Path(tmp))
@@ -246,12 +256,12 @@ class DevEnvironmentCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
             Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
-            Path(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-dev.txt is missing", stdout.getvalue())
+        self.assertIn("requirements/requirements-dev.txt is missing", stdout.getvalue())
 
     def test_main_reports_missing_requirements_macos_lock_file(self) -> None:
         stdout = io.StringIO()
@@ -260,11 +270,11 @@ class DevEnvironmentCheckTests(unittest.TestCase):
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
             write_minimal_dependency_inputs(Path(tmp))
             write_minimal_dependency_locks(Path(tmp))
-            Path(tmp, "requirements-macos.lock").unlink()
+            requirement_file(tmp, "requirements-macos.lock").unlink()
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-macos.lock is missing", stdout.getvalue())
+        self.assertIn("requirements/requirements-macos.lock is missing", stdout.getvalue())
 
     def test_main_reports_empty_requirements_macos_lock_file(self) -> None:
         stdout = io.StringIO()
@@ -273,11 +283,11 @@ class DevEnvironmentCheckTests(unittest.TestCase):
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
             write_minimal_dependency_inputs(Path(tmp))
             write_minimal_dependency_locks(Path(tmp))
-            Path(tmp, "requirements-macos.lock").write_text("# none\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("# none\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-macos.lock has no macOS runtime requirements", stdout.getvalue())
+        self.assertIn("requirements/requirements-macos.lock has no macOS runtime requirements", stdout.getvalue())
 
     def test_main_reports_unlocked_requirements_macos_lock_file(self) -> None:
         stdout = io.StringIO()
@@ -286,29 +296,29 @@ class DevEnvironmentCheckTests(unittest.TestCase):
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
             write_minimal_dependency_inputs(Path(tmp))
             write_minimal_dependency_locks(Path(tmp))
-            Path(tmp, "requirements-macos.lock").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("PySide6>=6.11.0\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-macos.lock contains unlocked requirement 'PySide6>=6.11.0'", stdout.getvalue())
+        self.assertIn("requirements/requirements-macos.lock contains unlocked requirement 'PySide6>=6.11.0'", stdout.getvalue())
 
     def test_main_reports_requirements_macos_lock_missing_runtime_requirement(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
             Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
-            Path(tmp, "requirements.txt").write_text("PySide6>=6.11.0\nPillow>=12.0\n", encoding="utf-8")
-            Path(tmp, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-build.txt").write_text("pyinstaller>=6.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-windows.lock").write_text("pyside6==6.11.0\npillow==12.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-linux.lock").write_text("pyside6==6.11.0\npillow==12.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-dev.lock").write_text("pytest==8.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-build.lock").write_text("pyinstaller==6.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-macos.lock").write_text("pyside6==6.11.1\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("PySide6>=6.11.0\nPillow>=12.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-build.txt").write_text("pyinstaller>=6.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-windows.lock").write_text("pyside6==6.11.0\npillow==12.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-linux.lock").write_text("pyside6==6.11.0\npillow==12.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-dev.lock").write_text("pytest==8.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-build.lock").write_text("pyinstaller==6.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("pyside6==6.11.1\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-macos.lock is missing locked macOS runtime requirement 'pillow'", stdout.getvalue())
+        self.assertIn("requirements/requirements-macos.lock is missing locked macOS runtime requirement 'pillow'", stdout.getvalue())
 
     def test_main_reports_missing_requirements_txt_file(self) -> None:
         stdout = io.StringIO()
@@ -318,58 +328,58 @@ class DevEnvironmentCheckTests(unittest.TestCase):
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements.txt is missing", stdout.getvalue())
+        self.assertIn("requirements/requirements.txt is missing", stdout.getvalue())
 
     def test_main_reports_empty_requirements_txt_file(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
             Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
-            Path(tmp, "requirements.txt").write_text("# none\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("# none\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements.txt has no runtime requirements", stdout.getvalue())
+        self.assertIn("requirements/requirements.txt has no runtime requirements", stdout.getvalue())
 
     def test_main_reports_empty_requirements_dev_file(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
             Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
-            Path(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-dev.txt").write_text("# none\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-dev.txt").write_text("# none\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-dev.txt has no developer requirements", stdout.getvalue())
+        self.assertIn("requirements/requirements-dev.txt has no developer requirements", stdout.getvalue())
 
     def test_main_reports_missing_requirements_build_file(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
             Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
-            Path(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-build.txt is missing", stdout.getvalue())
+        self.assertIn("requirements/requirements-build.txt is missing", stdout.getvalue())
 
     def test_main_reports_empty_requirements_build_file(self) -> None:
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(stdout):
             Path(tmp, ".python-version").write_text("3.12.13\n", encoding="utf-8")
             Path(tmp, "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.13"\n', encoding="utf-8")
-            Path(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
-            Path(tmp, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
-            Path(tmp, "requirements-build.txt").write_text("# none\n", encoding="utf-8")
+            requirement_file(tmp, "requirements.txt").write_text("PySide6>=6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-macos.lock").write_text("PySide6==6.11.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
+            requirement_file(tmp, "requirements-build.txt").write_text("# none\n", encoding="utf-8")
             exit_code = check_dev_environment.main(["--root", tmp])
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("requirements-build.txt has no build requirements", stdout.getvalue())
+        self.assertIn("requirements/requirements-build.txt has no build requirements", stdout.getvalue())
 
     def test_venv_python_uses_windows_layout(self) -> None:
         root = Path("repo")

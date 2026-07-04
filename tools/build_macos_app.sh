@@ -30,9 +30,9 @@ VENV_PYTHON="$VENV_DIR/bin/python"
 SPEC_NAME="WispMac.spec"
 APP_NAME="Wisp"
 SPEC="$ROOT/packaging/$SPEC_NAME"
-REQUIREMENTS_FILE="$ROOT/requirements.txt"
-MACOS_LOCK_FILE="$ROOT/requirements-macos.lock"
-BUILD_REQUIREMENTS_FILE="$ROOT/requirements-build.lock"
+REQUIREMENTS_FILE="$ROOT/requirements/requirements.txt"
+MACOS_LOCK_FILE="$ROOT/requirements/requirements-macos.lock"
+BUILD_REQUIREMENTS_FILE="$ROOT/requirements/requirements-build.lock"
 ICON_ICNS_PATH="$ROOT/assets/app.icns"
 ICON_PNG_PATH="$ROOT/assets/app.png"
 
@@ -155,9 +155,9 @@ clean_build_outputs() {
     find "$ROOT" -maxdepth 1 -type d -name '.pytest-tmp-*' -exec rm -rf {} +
 }
 
-require_file "$REQUIREMENTS_FILE" "requirements.txt"
-require_file "$MACOS_LOCK_FILE" "requirements-macos.lock"
-require_file "$BUILD_REQUIREMENTS_FILE" "requirements-build.lock"
+require_file "$REQUIREMENTS_FILE" "requirements/requirements.txt"
+require_file "$MACOS_LOCK_FILE" "requirements/requirements-macos.lock"
+require_file "$BUILD_REQUIREMENTS_FILE" "requirements/requirements-build.lock"
 require_file "$SPEC" "packaging/$SPEC_NAME"
 require_file "$ROOT/runtime/supervisor/app.py" "runtime/supervisor/app.py"
 require_file "$ROOT/.env.example" ".env.example"
@@ -216,7 +216,7 @@ if ! $SKIP_INSTALL; then
 fi
 
 if ! "$PYTHON" -m PyInstaller --version > /dev/null 2>&1; then
-    echo "PyInstaller is not installed. Run without --skip-install, or: $PYTHON -m pip install -r requirements-build.lock" >&2
+    echo "PyInstaller is not installed. Run without --skip-install, or: $PYTHON -m pip install -r requirements/requirements-build.lock" >&2
     exit 1
 fi
 

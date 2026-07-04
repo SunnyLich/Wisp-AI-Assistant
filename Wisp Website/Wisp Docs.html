@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Wisp Docs</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=1280" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -40,7 +40,7 @@
       --toc-w:     224px;
       --header-h:  60px;
     }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; min-width: 1280px; }
     body {
       font-family: var(--sans);
       font-size: 15px;
@@ -144,19 +144,19 @@
     .nav-section-btn:hover { color: var(--text-2); }
     .nav-chevron { font-size: 8px; color: var(--dimmer); transition: transform .18s ease; }
     .nav-group.open .nav-chevron { transform: rotate(90deg); }
-    .nav-items { display: none; padding-top: 2px; }
+    .nav-items { display: none; padding: 2px 0 0 10px; }
     .nav-group.open .nav-items { display: block; }
 
     .nav-item {
       display: flex; align-items: center; gap: 8px;
-      padding: 7px 12px;
+      padding: 7px 10px 7px 12px;
       color: var(--dim); text-decoration: none; font-size: 13.5px; font-weight: 500;
       border-radius: 7px; cursor: pointer; position: relative;
       transition: color .12s, background .12s;
     }
     .nav-item:hover { color: var(--text); background: var(--bg-hover); }
     .nav-item.active { color: var(--accent); font-weight: 600; background: var(--accent-soft); }
-    .nav-item.sub { margin-left: 10px; font-size: 13px; }
+    .nav-item.sub { margin-left: 12px; font-size: 13px; }
     .nav-tag {
       margin-left: auto;
       font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 20px;
@@ -520,8 +520,8 @@
     .search-result-sub   { font-size: 12.5px; color: var(--dim); font-weight: 500; }
     .search-empty { padding: 28px 20px; color: var(--dim); font-size: 13.5px; text-align: center; }
 
-    @media (max-width: 1180px) { .toc { display: none; } }
-    @media (max-width: 820px)  { .sidebar { display: none; } .header-link { display: none; } }
+    @media (max-width: 1180px) and (hover: hover) { .toc { display: none; } }
+    @media (max-width: 820px) and (hover: hover)  { .sidebar { display: none; } .header-link { display: none; } }
   </style>
 </head>
 <body>
@@ -779,13 +779,13 @@ function buildToc(page) {
   const content = document.getElementById('content');
   const headings = {};
   content.querySelectorAll('h2[id], h3[id]').forEach(h => {
-    headings[h.id] = h.textContent;
+    headings[h.id] = { label: h.textContent, sub: h.tagName === 'H3' };
   });
 
   let html = '<div class="toc-heading">' + trUI('onThisPage', 'On this page') + '</div>';
   page.toc.forEach((id, i) => {
-    const label = headings[id] || id.replace(/-/g, ' ');
-    html += '<div class="toc-link' + (i === 0 ? ' active' : '') + '" data-id="' + id + '" onclick="tocClick(\'' + id + '\')">' + label + '</div>';
+    const heading = headings[id] || { label: id.replace(/-/g, ' '), sub: false };
+    html += '<div class="toc-link' + (i === 0 ? ' active' : '') + (heading.sub ? ' sub' : '') + '" data-id="' + id + '" onclick="tocClick(\'' + id + '\')">' + heading.label + '</div>';
   });
   toc.innerHTML = html;
 }

@@ -61,8 +61,8 @@ callers and older addon code, but new work should use addon naming and
    intent picker.
 3. The selected intent builds a prompt with optional ambient context, documents,
    tool access, memory retrieval, and screenshots.
-4. `core.llm` routes the request to the configured provider with fallback
-   routes where enabled.
+4. `core.llm_clients.client` routes the request to the configured provider
+   with fallback routes where enabled.
 5. Reply chunks feed the overlay/chat UI and TTS stream while memory receives
    the completed exchange.
 

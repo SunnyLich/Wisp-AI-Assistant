@@ -43,6 +43,8 @@ I18N.register('zh-Hant', {
       'Context budgets': '情境預算',
       'Bubble appearance': '泡泡外觀',
       'Free API sources': '免費 API 來源',
+      'OpenAI (API key)': 'OpenAI（API 金鑰）',
+      'OpenAI (subscription)': 'OpenAI（訂閱）',
       'Other providers': '其他供應商',
       'Custom endpoint': '自訂端點',
       'Add-ons': '附加元件',
@@ -53,7 +55,7 @@ I18N.register('zh-Hant', {
   },
   meta: {
     'overview': { title: '概覽', sub: 'Wisp 是什麼，以及各部分如何協作。' },
-    'installation': { title: '安裝', sub: '發行版、可攜版與原始碼啟動器。' },
+    'installation': { title: '安裝', sub: '可攜版、原始碼啟動器與更新。' },
     'quickstart': { title: '快速開始', sub: '五分鐘內從零到第一則回覆。' },
     'faq': { title: '問答', sub: '使用 Wisp 前常見問題的簡短回答。' },
     'common-issues': { title: '常見問題', sub: '最常遇到的問題、原因與修復方法。' },
@@ -71,14 +73,15 @@ I18N.register('zh-Hant', {
     'free-apis': { title: '免費 API 來源', sub: '在哪裡取得免費或零成本的模型存取——以及如何讓 Wisp 連接它們。' },
     'provider-groq': { title: 'Groq', sub: '透過相容 OpenAI 的 API 提供快速推論。提供免費額度。' },
     'provider-anthropic': { title: 'Anthropic', sub: 'Claude 模型，也用於網路搜尋工具。' },
-    'provider-openai': { title: 'OpenAI', sub: '透過 OpenAI API 使用 GPT 模型。' },
+    'provider-openai': { title: 'OpenAI（API 金鑰）', sub: '透過 OpenAI API 使用 GPT 模型。' },
+    'provider-openai-subscription': { title: 'OpenAI（訂閱）', sub: '透過 OAuth 使用 ChatGPT / Codex 訂閱。' },
     'provider-google': { title: 'Google AI Studio', sub: '透過 Google AI Studio API 使用 Gemini 模型。' },
     'provider-copilot': { title: 'GitHub Copilot', sub: '透過你的 GitHub Copilot Pro/Plus 訂閱路由查詢。' },
     'provider-others': { title: '其他供應商', sub: 'DeepSeek、OpenRouter、Mistral、xAI、Together、Cerebras。' },
     'provider-custom': { title: '自訂端點', sub: '任何相容 OpenAI 的伺服器——本機 Ollama、LM Studio、vLLM 等。' },
     'platform-windows': { title: 'Windows', sub: '在 Windows 10 與 11 上完整支援。' },
     'platform-macos': { title: 'macOS', sub: '純 Python 工作行程執行階段的主場——macOS 13 (Ventura) 及更新版本。' },
-    'platform-linux': { title: 'Linux', sub: '支援 X11；Wayland 支援因桌面環境而異。' },
+    'platform-linux': { title: 'Linux', sub: '支援 X11；Wayland 支援目前正在推進中。' },
     'addons': { title: '附加元件', sub: '用查詢掛鉤、系統匣動作、設定項目與模型可呼叫工具擴充 Wisp——每個都在自己的行程中執行。' },
     'custom-prompts': { title: '自訂提示詞', sub: '編輯意圖提示詞與系統提示詞。' },
     'fallback-routes': { title: '備援路由', sub: '當某個供應商無法使用或被限流時自動切換。' },
@@ -166,10 +169,12 @@ I18N.register('zh-Hant', {
 
     /* Overview */
     'Concept': '概念',
-    "Wisp is a completely free, open-source desktop AI assistant with no vendor lock-in — runs on Windows, macOS, and Linux, works with any supported model provider, and never forces you into a subscription or a walled garden. It responds to custom hotkeys from any application, with pop-up display and voice interaction designed for quick turnaround so you never have to break focus to get an answer.":
-      'Wisp 是一款完全免費、開源的桌面 AI 助理，沒有供應商鎖定——可在 Windows、macOS 和 Linux 上執行，支援任何受支援的模型供應商，絕不強迫你訂閱或困在封閉生態裡。它回應來自任何應用程式的自訂快速鍵，彈出顯示與語音互動皆為快速回應而設計，讓你無需中斷專注即可得到答案。',
-    "Context is managed dynamically — Wisp captures only what's relevant to keep token costs low, or goes deep on long-context queries when you need it. Everything is customisable: add your own plugins, rewrite the prompts, or swap out the GUI entirely.":
-      '情境是動態管理的——Wisp 只擷取相關內容以降低 token 成本，需要時也能深入處理長情境查詢。一切皆可自訂：加入你自己的外掛、改寫提示詞，或徹底替換整個圖形介面。',
+    "Wisp is a completely free, open-source desktop AI assistant for fast AI co-work across Windows, macOS, and Linux. It gives you provider freedom — from popular model providers and free API routes to local servers and custom endpoints, your workflow stays portable. It responds to custom hotkeys from any application, with pop-up display and voice interaction designed for quick turnaround so you never have to break focus to get an answer.":
+      'Wisp 是完全免費、開源的桌面 AI 助手，讓你在 Windows、macOS 和 Linux 上更有效率地與 AI 協作。你可以自由選擇模型來源：主流模型供應商、免費 API、本機伺服器，或自己的自訂端點都能接入，工作流程不必綁定在單一平台上。Wisp 可在任何應用程式中透過自訂快速鍵呼叫，並以彈出視窗和語音互動快速回應，讓你不用離開當前工作也能取得答案。',
+    "Hold a hotkey to talk instead of type, and opt into spoken replies when answers stream in.":
+      '按住快速鍵用語音代替打字，或選擇在答案串流進來時朗讀回覆。',
+    "Context is managed dynamically, with you in control: keep it lean so Wisp captures only what's relevant and token costs stay low, or go deep on long-context queries when the task needs it. Each caller can attach context up front, expose selected sources as model-fetchable tools, or keep them off entirely. Everything is customisable: add your own add-ons, rewrite the prompts, or edit the GUI.":
+      '情境會動態管理，而且由你決定使用多少：可以保持精簡，讓 Wisp 只捕捉相關內容並控制 token 成本；也可以在任務需要時深入讀取長情境。每個呼叫器都可以預先附加情境、把選定來源作為模型可擷取工具公開，或完全關閉它們。一切都可自訂：加入自己的附加元件、重寫提示詞，甚至編輯介面。',
     'Why it works this way': '為何如此設計',
     'This app aims to address 3 main issues with AI tools — and pairs each with what Wisp does instead.':
       '本應用程式旨在解決 AI 工具的 3 個主要痛點——並針對每一個給出 Wisp 的做法。',
@@ -217,23 +222,23 @@ I18N.register('zh-Hant', {
     'Design goals': '設計目標',
     'Less window-hopping': '少一點視窗切換',
     'The picker opens over the app you are already using, so quick queries can start without moving into a separate chat window': '選擇器會在你正在使用的應用程式上方開啟，讓快速查詢不必先切到另一個聊天視窗。',
-    'No typing': '無需打字',
+    'Less typing': '少打字',
     'A hotkey runs a saved prompt on your highlighted/clipboard text; STT dictation covers custom prompts': '一個快速鍵即可對選取/剪貼簿文字執行已儲存的提示詞；語音聽寫涵蓋自訂提示詞',
     'No walls of text': '沒有大段文字',
     'Bubble shows a 4-line preview by default and reads it aloud via TTS — expand only if you want the full answer': '泡泡預設顯示四行預覽並透過文字轉語音朗讀——想看完整答案時再展開',
     'Yours to configure': '由你設定',
-    'Edit hotkeys, prompts, providers, voice, and UI options in Settings; source checkouts can still use .env for deeper control': '可在「設定」中編輯快速鍵、提示詞、供應商、語音與介面選項；原始碼版本仍可使用 <code>.env</code> 進行更深入控制',
+    'Edit hotkeys, prompts, providers, context sources, allowed tools, voice, updates, and UI options in Settings': '在設定中編輯快速鍵、提示詞、供應商、情境來源、允許的工具、語音、更新和介面選項',
 
     /* Installation */
-    'Release / portable build': '發行版 / 可攜版',
-    'For most people, start with a packaged release or portable build from GitHub Releases. Download the package for your OS, unzip it anywhere, and run the included Wisp app or launcher.':
-      '一般使用者建議直接從 <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a> 下載已打包版本或可攜版。選擇符合你作業系統的檔案，解壓縮到任意位置，然後執行裡面的 Wisp 應用程式或啟動器。',
+    'Portable version': '可攜版',
+    'For most people, start with a portable package from GitHub Releases. Download the package for your OS, unzip it anywhere, and run the included Wisp app or launcher.':
+      '一般使用者建議直接從 <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a> 下載可攜套件。選擇符合你作業系統的檔案，解壓縮到任意位置，然後執行裡面的 Wisp 應用程式或啟動器。',
     'Path': '路徑',
     'Use it when': '適用情境',
     'How to start': '如何啟動',
-    'Release build': '發行版',
+    'Portable package': '可攜套件',
     'You want the easiest setup and do not plan to edit the source': '你想要最簡單的設定，且不打算編輯原始碼',
-    'Open the app or launcher included in the release package': '開啟發行套件內附的應用程式或啟動器',
+    'Open the app or launcher included in the portable package': '開啟可攜套件內附的應用程式或啟動器',
     'Portable build': '可攜版',
     'You want a self-contained folder you can move or remove later': '你想要一個之後可移動或直接移除的自含資料夾',
     'Unzip the portable package, keep the folder together, and run Wisp from inside it': '解壓可攜套件，保持資料夾內容完整，並從資料夾內執行 Wisp',
@@ -262,7 +267,7 @@ I18N.register('zh-Hant', {
     'Python 3.12': 'Python 3.12',
     'Pinned in .python-version; the launchers locate a compatible interpreter automatically': '在 <code>.python-version</code> 中固定；啟動器會自動定位相容的直譯器',
     'Windows, macOS, or Linux': 'Windows、macOS 或 Linux',
-    'Windows and macOS have the most complete feature set; Linux is also supported (X11).': 'Windows 與 macOS 功能最完整；Linux 也受支援（X11）。',
+    'Windows and macOS have the most complete feature set; Linux is supported on X11, and Wayland support is currently in progress.': 'Windows 與 macOS 功能最完整；Linux 支援 X11，Wayland 支援目前正在推進中。',
     'At least one LLM Provider': '至少一個 LLM 供應商',
     'Any supported provider works — see Providers': '任何受支援的供應商皆可——參見「模型供應商」',
     'Microphone (optional)': '麥克風（選用）',
@@ -273,13 +278,13 @@ I18N.register('zh-Hant', {
     'The platform launcher does all of this for you: bash "Start Wisp.command" on macOS, bash "Start Wisp.sh" on Linux, or double-click Start Wisp.bat on Windows — each provisions dependencies and starts the same pure-Python worker supervisor.':
       '平台啟動器會替你完成這一切：macOS 上 <code>bash "Start Wisp.command"</code>，Linux 上 <code>bash "Start Wisp.sh"</code>，或在 Windows 上雙擊 <code>Start Wisp.bat</code>——每個都會建立相依套件並啟動同一個純 Python 工作行程監督器。',
     'Dependency footprint': '相依套件占用',
-    'The source checkout installs from requirements.txt on Windows and Linux, and from the locked requirements-macos.lock on macOS. There is no separate light requirements file in this repo.':
-      '原始碼版本在 Windows 和 Linux 上會從 <code>requirements.txt</code> 安裝，在 macOS 上會從鎖定的 <code>requirements-macos.lock</code> 安裝。此儲存庫沒有單獨的輕量 requirements 檔。',
+    'The source checkout installs from exact platform locks: requirements/requirements-windows.lock, requirements/requirements-macos.lock, or requirements/requirements-linux.lock. requirements/requirements.txt remains the human-edited runtime manifest used to regenerate those locks.':
+      '原始碼版本會從精確的平台鎖定檔安裝：<code>requirements/requirements-windows.lock</code>、<code>requirements/requirements-macos.lock</code> 或 <code>requirements/requirements-linux.lock</code>。<code>requirements/requirements.txt</code> 仍是人工編輯的執行階段清單，用來重新產生這些鎖定檔。',
     'Optional capabilities stay inactive until configured: local STT needs an STT_MODEL, cloud TTS needs a provider and voice settings, GitHub Copilot needs sign-in, and document readers are only used when document context is enabled.':
       '選用功能在設定前會保持停用：本機 STT 需要 <code>STT_MODEL</code>，雲端 TTS 需要供應商與語音設定，GitHub Copilot 需要登入，文件讀取器只會在啟用文件情境時使用。',
     'Full vs Lite install': '完整版與精簡版安裝',
-    'The full requirements.txt includes local Whisper STT, document readers, and TTS SDKs. If you only need the core overlay + LLM replies, a lighter install works:':
-      '完整的 <code>requirements.txt</code> 包含本機 Whisper STT、文件讀取器與 TTS SDK。如果你只需要核心覆蓋介面 + LLM 回覆，可選擇更輕量的安裝：',
+    'The full requirements/requirements.txt includes local Whisper STT, document readers, and TTS SDKs. If you only need the core overlay + LLM replies, a lighter install works:':
+      '完整的 <code>requirements/requirements.txt</code> 包含本機 Whisper STT、文件讀取器與 TTS SDK。如果你只需要核心覆蓋介面 + LLM 回覆，可選擇更輕量的安裝：',
     'The lite install omits: faster-whisper, cartesia, elevenlabs, github-copilot-sdk, and all document-reader packages.':
       '精簡版安裝會省略：<code>faster-whisper</code>、<code>cartesia</code>、<code>elevenlabs</code>、<code>github-copilot-sdk</code> 以及所有文件讀取相關套件。',
     'Key dependencies at a glance': '關鍵相依套件一覽',
@@ -297,10 +302,9 @@ I18N.register('zh-Hant', {
     /* Quick start */
     '1. Start': '1. 開始',
     'There are two ways to start Wisp.': '啟動 Wisp 有兩種方式。',
-    'Released version': '發行版',
     'Repo version': '儲存庫版本',
-    'Recommended: download a release or portable build from GitHub Releases, unzip it, and run the included Wisp app or launcher. No repo checkout is needed for that path.':
-      '建議先從 <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a> 下載已打包版本或可攜版，解壓縮後執行裡面的 Wisp 應用程式或啟動器。這種安裝方式不需要下載原始碼。',
+    'Recommended: download a portable package from GitHub Releases, unzip it, and run the included Wisp app or launcher. No repo checkout is needed for that path.':
+      '建議先從 <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a> 下載可攜套件，解壓縮後執行裡面的 Wisp 應用程式或啟動器。這種安裝方式不需要下載原始碼。',
     'If you are running from the repo instead, download or clone the source and use the launcher for your platform:':
       '如果你改用儲存庫版本，請下載或複製原始碼，並使用適合你平台的啟動器：',
     'For the repo version, the first run installs everything Wisp needs and then starts the app. Requires Python 3.12 (see Installation).':
@@ -321,8 +325,8 @@ I18N.register('zh-Hant', {
     'Privacy mode is not a guarantee': '隱私模式不是保證',
     'Privacy mode can reduce accidental leaks, but do not treat it as perfect. Before sending sensitive material, review the enabled context chips and redacted preview.':
       '隱私模式可以降低不小心外洩的風險，但不要把它當成萬無一失。傳送敏感內容前，請先檢查已啟用的情境晶片和已遮蔽的預覽。',
-    'Use the packaged app or portable build for your OS: Windows .exe, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use Start Wisp.bat, Start Wisp.command, or Start Wisp.sh; the first source run installs dependencies, and later runs just launch the app.':
-      '請使用適合你作業系統的已打包應用程式或可攜版：Windows 的 <code>.exe</code>、macOS 應用程式或啟動器，或 Linux 可攜版或啟動器。如果你從原始碼版本執行，請使用 <code>Start Wisp.bat</code>、<code>Start Wisp.command</code> 或 <code>Start Wisp.sh</code>；第一次會安裝相依套件，之後只會啟動應用程式。',
+    'Use the portable package for your OS: Windows .exe, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use Start Wisp.bat, Start Wisp.command, or Start Wisp.sh; the first source run installs dependencies, and later runs just launch the app.':
+      '請使用適合你作業系統的可攜套件：Windows 的 <code>.exe</code>、macOS 應用程式或啟動器，或 Linux 可攜版或啟動器。如果你從原始碼版本執行，請使用 <code>Start Wisp.bat</code>、<code>Start Wisp.command</code> 或 <code>Start Wisp.sh</code>；第一次會安裝相依套件，之後只會啟動應用程式。',
 
     /* Security */
     'Local-first': '本機優先',

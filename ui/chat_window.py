@@ -1,5 +1,5 @@
 ﻿"""
-ui/chat_window.py -” Multi-turn chat window with conversation history sidebar.
+ui/chat_window.py - Multi-turn chat window with conversation history sidebar.
 
 Left sidebar lists all past conversations; clicking one selects it so you can
 continue that thread.
@@ -965,7 +965,7 @@ class ChatWindow(QWidget):
         """
         super().__init__()
         _refresh_chat_palette()  # match the active light/dark theme on open
-        self._conversations = conversations  # live reference -” NOT a copy
+        self._conversations = conversations  # live reference - NOT a copy
         for conv in self._conversations:
             if isinstance(conv, dict):
                 _ensure_conversation_metadata(conv)

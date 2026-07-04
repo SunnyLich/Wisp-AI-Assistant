@@ -1,11 +1,11 @@
-﻿/* docs-pages.js — all Wisp documentation page content */
+/* docs-pages.js — all Wisp documentation page content */
 /* Each key is a page id. Returns { title, sub, toc, html } */
 
 const DOCS_PAGES = {
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    GETTING STARTED
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'overview': {
   title: 'Overview',
@@ -13,8 +13,8 @@ const DOCS_PAGES = {
   toc: ['concept','what-you-get','design-goals'],
   html: `
 <h2 id="concept">Concept</h2>
-<p>Wisp is a completely free, open-source desktop AI assistant with no vendor lock-in — runs on Windows, macOS, and Linux, works with any supported model provider, and never forces you into a subscription or a walled garden. It responds to custom hotkeys from any application, with pop-up display and voice interaction designed for quick turnaround so you never have to break focus to get an answer.</p>
-<p>Context is managed dynamically — Wisp captures only what's relevant to keep token costs low, or goes deep on long-context queries when you need it. Each caller can attach context up front, expose selected sources as model-fetchable tools, or keep them off entirely. Everything is customisable: add your own add-ons, rewrite the prompts, or swap out the GUI entirely.</p>
+<p>Wisp is a completely free, open-source desktop AI assistant for fast AI co-work across Windows, macOS, and Linux. It gives you provider freedom — from popular model providers and free API routes to local servers and custom endpoints, your workflow stays portable. It responds to custom hotkeys from any application, with pop-up display and voice interaction designed for quick turnaround so you never have to break focus to get an answer.</p>
+<p>Context is managed dynamically, with you in control: keep it lean so Wisp captures only what's relevant and token costs stay low, or go deep on long-context queries when the task needs it. Each caller can attach context up front, expose selected sources as model-fetchable tools, or keep them off entirely. Everything is customisable: add your own add-ons, rewrite the prompts, or edit the GUI.</p>
 <div class="callout tip"><div class="callout-label">Why it works this way</div><p>This app aims to address 3 main issues with AI tools — and pairs each with what Wisp does instead.</p><div class="compare"><div class="compare-head"><div class="ch-issue"><span class="compare-dot"></span>The annoyance</div><div class="ch-sol"><span class="compare-dot"></span>With Wisp</div></div><div class="compare-row"><div class="c-issue">Having to repeatedly type out common prompts</div><div class="c-sol"><strong>Select &amp; hotkey.</strong> Select text with one hand, press a hotkey with the other — saving you seconds every time. STT support means you don't have to type even for custom prompts.</div></div><div class="compare-row"><div class="c-issue">Reading huge bulks of text every time</div><div class="c-sol"><strong>TTS built in.</strong> Listen instead of read, reducing reading fatigue.</div></div><div class="compare-row"><div class="c-issue">Having to switch between the chat window and the app you were using</div><div class="c-sol"><strong>It's an overlay.</strong> Wisp sits on top, so you never have to switch windows.</div></div></div></div>
 
 <hr />
@@ -22,9 +22,9 @@ const DOCS_PAGES = {
 <p>Wisp lives as a small animated icon in the corner of your screen — always on top, never in your way. Press the hotkey and a quick picker drops in; choose an action or type your own, and Wisp grabs the right context, streams the reply, and can read it aloud word by word.</p>
 <div class="sec-pillars">
   <div class="sec-pillar"><span class="sec-pillar-k">Any app</span><div class="sec-pillar-t">Ask from anywhere</div><p>Wisp listens for your custom hotkey across apps, opens with minimal prompt delay, and sends the selected context without a mouse or window switch.</p></div>
-  <div class="sec-pillar"><span class="sec-pillar-k">Speaks &amp; listens</span><div class="sec-pillar-t">Hear it, talk back</div><p>Read selected text with one hotkey, hold another to talk instead of type, or opt into spoken replies when answers stream in.</p></div>
+  <div class="sec-pillar"><span class="sec-pillar-k">Speaks &amp; listens</span><div class="sec-pillar-t">Hear it, talk back</div><p>Hold a hotkey to talk instead of type, and opt into spoken replies when answers stream in.</p></div>
   <div class="sec-pillar"><span class="sec-pillar-k">Sees your work</span><div class="sec-pillar-t">Context, no copy-paste</div><p>Wisp reads your selection, clipboard, focused app, open documents, browser tab, memory, local files, Git/GitHub context, or a region you draw.</p></div>
-  <div class="sec-pillar"><span class="sec-pillar-k">Yours</span><div class="sec-pillar-t">Any model, all local</div><p>Bring your own provider, keep everything on your machine, and remap every hotkey. No subscription, no lock-in.</p></div>
+  <div class="sec-pillar"><span class="sec-pillar-k">Yours</span><div class="sec-pillar-t">Any model, cloud/local</div><p>Choose your provider, keep data on your machine, and remap every hotkey. Your setup stays portable.</p></div>
 </div>
 <p>Click the icon any time to open a full chat window that remembers past conversations and can continue from context captured in the overlay. For bigger, multi-step jobs there's an experimental <a onclick="navigate('team-mode')">agent framework</a> that works a task on its own.</p>
 
@@ -34,9 +34,9 @@ const DOCS_PAGES = {
   <thead><tr><th>Goal</th><th>How Wisp addresses it</th></tr></thead>
   <tbody>
     <tr><td>Less window-hopping</td><td>The picker opens over the app you are already using, so quick queries can start without moving into a separate chat window</td></tr>
-    <tr><td>No typing</td><td>A hotkey runs a saved prompt on your highlighted/clipboard text; STT dictation covers custom prompts</td></tr>
+    <tr><td>Less typing</td><td>A hotkey runs a saved prompt on your highlighted/clipboard text; STT dictation covers custom prompts</td></tr>
     <tr><td>No walls of text</td><td>Bubble shows a compact preview by default; read selected text aloud with <kbd>F7</kbd>, or enable auto-speak replies only when you want them</td></tr>
-    <tr><td>Yours to configure</td><td>Edit hotkeys, prompts, providers, context sources, allowed tools, voice, updates, and UI options in Settings; source checkouts can still use <code>.env</code> for deeper control</td></tr>
+    <tr><td>Yours to configure</td><td>Edit hotkeys, prompts, providers, context sources, allowed tools, voice, updates, and UI options in Settings</td></tr>
   </tbody>
 </table>`
 },
@@ -92,15 +92,15 @@ const DOCS_PAGES = {
 
 'installation': {
   title: 'Installation',
-  sub: 'Release builds, portable installs, source launchers, and updates.',
+  sub: 'Portable versions, source launchers, and updates.',
   toc: ['portable-build','updates','source-launch','source-requirements','install-steps','lite-vs-full','running'],
   html: `
-<h2 id="portable-build">Release / portable build</h2>
-<p>For most people, start with a packaged release or portable build from <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>. Download the package for your OS, unzip it anywhere, and run the included Wisp app or launcher.</p>
+<h2 id="portable-build">Portable version</h2>
+<p>For most people, start with a portable package from <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>. Download the package for your OS, unzip it anywhere, and run the included Wisp app or launcher.</p>
 <table>
   <thead><tr><th>Path</th><th>Use it when</th><th>How to start</th></tr></thead>
   <tbody>
-    <tr><td>Release build</td><td>You want the easiest setup and do not plan to edit the source</td><td>Open the app or launcher included in the release package</td></tr>
+    <tr><td>Portable package</td><td>You want the easiest setup and do not plan to edit the source</td><td>Open the app or launcher included in the portable package</td></tr>
     <tr><td>Portable build</td><td>You want a self-contained folder you can move or remove later</td><td>Unzip the portable package, keep the folder together, and run Wisp from inside it</td></tr>
   </tbody>
 </table>
@@ -125,9 +125,9 @@ const DOCS_PAGES = {
 <table>
   <thead><tr><th>Platform</th><th>Launcher</th><th>Installs from</th></tr></thead>
   <tbody>
-    <tr><td>macOS</td><td><code>Start Wisp.command</code></td><td><code>requirements-macos.lock</code> — exact resolved lock</td></tr>
-    <tr><td>Linux</td><td><code>Start Wisp.sh</code></td><td><code>requirements-linux.lock</code> — exact resolved lock</td></tr>
-    <tr><td>Windows</td><td><code>Start Wisp.bat</code></td><td><code>requirements-windows.lock</code> — exact resolved lock</td></tr>
+    <tr><td>macOS</td><td><code>Start Wisp.command</code></td><td><code>requirements/requirements-macos.lock</code> — exact resolved lock</td></tr>
+    <tr><td>Linux</td><td><code>Start Wisp.sh</code></td><td><code>requirements/requirements-linux.lock</code> — exact resolved lock</td></tr>
+    <tr><td>Windows</td><td><code>Start Wisp.bat</code></td><td><code>requirements/requirements-windows.lock</code> — exact resolved lock</td></tr>
   </tbody>
 </table>
 <div class="callout note"><div class="callout-label">Source checkout only</div><p>Wisp pins <strong>Python 3.12</strong> in <code>.python-version</code>. The source launchers find a compatible Python 3.12 interpreter automatically — install via <code>pyenv install 3.12</code> on macOS, or from python.org on Windows.</p></div>
@@ -138,7 +138,7 @@ const DOCS_PAGES = {
   <thead><tr><th>Requirement</th><th>Notes</th></tr></thead>
   <tbody>
     <tr><td>Python 3.12</td><td>Pinned in <code>.python-version</code>; the source launchers locate a compatible interpreter automatically</td></tr>
-    <tr><td>Windows, macOS, or Linux</td><td>Windows and macOS have the most complete feature set; Linux is also supported (X11).</td></tr>
+    <tr><td>Windows, macOS, or Linux</td><td>Windows and macOS have the most complete feature set; Linux is supported on X11, and Wayland support is currently in progress.</td></tr>
     <tr><td>At least one LLM Provider</td><td>Any supported provider works — see Providers</td></tr>
     <tr><td>Microphone (optional)</td><td>Required only for voice input (STT)</td></tr>
   </tbody>
@@ -156,8 +156,8 @@ python -m venv .venv
 .venv\Scripts\activate
 
 <span class="c-comment"># 3. Install dependencies</span>
-pip install -r requirements-windows.lock
-<span class="c-comment">#    Use requirements-macos.lock or requirements-linux.lock on those platforms.</span>
+pip install -r requirements/requirements-windows.lock
+<span class="c-comment">#    Use requirements/requirements-macos.lock or requirements/requirements-linux.lock on those platforms.</span>
 
 <span class="c-comment"># 4. Copy the example config</span>
 copy .env.example .env
@@ -169,7 +169,7 @@ python -m runtime.supervisor.app</code></pre>
 
 <hr />
 <h2 id="lite-vs-full">Dependency footprint</h2>
-<p>The source checkout installs from exact platform locks: <code>requirements-windows.lock</code>, <code>requirements-macos.lock</code>, or <code>requirements-linux.lock</code>. <code>requirements.txt</code> remains the human-edited runtime manifest used to regenerate those locks.</p>
+<p>The source checkout installs from exact platform locks: <code>requirements/requirements-windows.lock</code>, <code>requirements/requirements-macos.lock</code>, or <code>requirements/requirements-linux.lock</code>. <code>requirements/requirements.txt</code> remains the human-edited runtime manifest used to regenerate those locks.</p>
 <p>Optional capabilities stay inactive until configured: local STT needs an <code>STT_MODEL</code>, cloud TTS needs a provider and voice settings, GitHub Copilot needs sign-in, and document readers are only used when document context is enabled.</p>
 
 <hr />
@@ -199,7 +199,7 @@ python -m runtime.supervisor.app</code></pre>
 <h2 id="step-1">1. Start</h2>
 <p>There are two ways to start Wisp.</p>
 
-<div class="callout tip"><div class="callout-label">Released version</div><p>Recommended: download a release or portable build from <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>, unzip it, and run the included Wisp app or launcher. No repo checkout is needed for that path.</p></div>
+<div class="callout tip"><div class="callout-label">Portable version</div><p>Recommended: download a portable package from <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay/releases" target="_blank">GitHub Releases</a>, unzip it, and run the included Wisp app or launcher. No repo checkout is needed for that path.</p></div>
 <table>
   <thead><tr><th>Platform</th><th>Double-click</th></tr></thead>
   <tbody>
@@ -268,9 +268,9 @@ python -m runtime.supervisor.app</code></pre>
 <table>
   <thead><tr><th>Question</th><th>Answer</th></tr></thead>
   <tbody>
-    <tr><td>How can I run it?</td><td>Use the packaged app or portable build for your OS: Windows <code>.exe</code>, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use <code>Start Wisp.bat</code>, <code>Start Wisp.command</code>, or <code>Start Wisp.sh</code>; the first source run installs dependencies, and later runs just launch the app.</td></tr>
+    <tr><td>How can I run it?</td><td>Use the portable package for your OS: Windows <code>.exe</code>, macOS app or launcher, or Linux portable build or launcher. If you are running from the repo, use <code>Start Wisp.bat</code>, <code>Start Wisp.command</code>, or <code>Start Wisp.sh</code>; the first source run installs dependencies, and later runs just launch the app.</td></tr>
     <tr><td>Which Python version should I use?</td><td>Python <code>3.12</code>. It is pinned in <code>.python-version</code>, and the launchers expect a compatible 3.12 interpreter.</td></tr>
-    <tr><td>Which dependency file does the source launcher use?</td><td>The launcher uses the exact lock for your platform: <code>requirements-windows.lock</code>, <code>requirements-macos.lock</code>, or <code>requirements-linux.lock</code>.</td></tr>
+    <tr><td>Which dependency file does the source launcher use?</td><td>The launcher uses the exact lock for your platform: <code>requirements/requirements-windows.lock</code>, <code>requirements/requirements-macos.lock</code>, or <code>requirements/requirements-linux.lock</code>.</td></tr>
     <tr><td>Can Wisp update itself?</td><td>Packaged builds can check GitHub Releases from Settings, download the matching artifact, verify its hash, and apply it through a helper that restarts Wisp. Source checkouts should update with Git.</td></tr>
     <tr><td>Do I need an API key?</td><td>You need a model route, but it does not have to be a paid API key. Use a provider key, an OAuth or GitHub Copilot sign-in route, or a local OpenAI-compatible server. For no-cost options, start with <a href="#" onclick="navigate('free-apis')">Free API sources</a>.</td></tr>
     <tr><td>Where should I start if launch fails?</td><td>Start with the first error shown by the launcher or log. If you run from source, run <code>python scripts/check_dev_environment.py</code>; it checks Python 3.12, platform locks, and required runtime modules. If you use a packaged build, keep the extracted app folder intact and check OS security prompts, then match the exact message in <a href="#" onclick="navigate('common-issues')">Common issues</a>.</td></tr>
@@ -428,14 +428,14 @@ python -m runtime.supervisor.app</code></pre>
   <tbody>
     <tr><td>Windows</td><td>Hotkey or paste blocked by another app</td><td>Remap the hotkey, run normally rather than inside a restricted terminal, and test with Notepad.</td></tr>
     <tr><td>macOS</td><td>Screen, keyboard, or microphone features blocked</td><td>Grant Accessibility, Screen Recording, and Microphone permissions as needed, then restart Wisp.</td></tr>
-    <tr><td>Linux</td><td>Global hotkeys or screenshots fail under Wayland</td><td>Use an X11 session for the full hotkey/screenshot path.</td></tr>
+    <tr><td>Linux</td><td>Global hotkeys or screenshots fail under Wayland</td><td>Use an X11 session for the full hotkey/screenshot path while Wayland support is in progress.</td></tr>
   </tbody>
 </table>`
 },
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    CORE FEATURES
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'overlay': {
   title: 'Overlay',
@@ -827,9 +827,9 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
 <div class="callout tip"><div class="callout-label">View memory</div><p>Open the <strong>tray icon → Memory Viewer</strong> to browse, search, and delete stored facts from the UI.</p></div>`
 },
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    SECURITY & PRIVACY
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'security': {
   title: 'Security & privacy',
@@ -918,9 +918,9 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
 <div class="callout tip"><div class="callout-label">Verify it yourself</div><p>Read the source on <a href="https://github.com/SunnyLich/Python-AI-assistant-overlay" target="_blank">GitHub</a> — start with <code>core/context_fetcher.py</code> for redaction and context handling.</p></div>`
 },
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    CONFIGURATION
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'env-reference': {
   title: '.env reference',
@@ -986,11 +986,11 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Action</th></tr></thead>
   <tbody>
-    <tr><td><code>HOTKEY_ADD_CONTEXT</code></td><td>remappable</td><td>Add selection to context buffer</td></tr>
-    <tr><td><code>HOTKEY_CLEAR_CONTEXT</code></td><td>remappable</td><td>Clear context buffer</td></tr>
-    <tr><td><code>HOTKEY_SNIP</code></td><td>remappable</td><td>Open screen-snip overlay</td></tr>
+    <tr><td><code>HOTKEY_ADD_CONTEXT</code></td><td><code>alt+q</code></td><td>Add selection to context buffer</td></tr>
+    <tr><td><code>HOTKEY_CLEAR_CONTEXT</code></td><td><code>alt+w</code></td><td>Clear context buffer</td></tr>
+    <tr><td><code>HOTKEY_SNIP</code></td><td><code>ctrl+alt+q</code></td><td>Open screen-snip overlay</td></tr>
     <tr><td><code>HOTKEY_READ_SELECTION_ALOUD</code></td><td><code>f7</code></td><td>Read the selected text aloud</td></tr>
-    <tr><td><code>HOTKEY_VOICE</code></td><td>remappable</td><td>Push-to-talk voice input</td></tr>
+    <tr><td><code>HOTKEY_VOICE</code></td><td><code>f9</code></td><td>Push-to-talk voice input</td></tr>
     <tr><td><code>HOTKEY_DICTATE</code></td><td><code>f8</code></td><td>Hold to dictate speech into the focused field</td></tr>
     <tr><td><code>DICTATE_MODE</code></td><td><code>raw</code></td><td><code>raw</code> verbatim, or <code>llm</code> cleaned-up dictation</td></tr>
     <tr><td><code>VOICE_TRANSCRIPT_CONFIRM</code></td><td><code>False</code></td><td>Show transcript candidates before voice query or dictation paste</td></tr>
@@ -1002,7 +1002,7 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
     <tr><td><code>CALLER_COUNT</code></td><td><code>2</code></td><td>Number of callers</td></tr>
-    <tr><td><code>CALLER_N_HOTKEY</code></td><td>remappable</td><td>Hotkey for caller N</td></tr>
+    <tr><td><code>CALLER_N_HOTKEY</code></td><td><code>ctrl+q</code> / <code>ctrl+shift+q</code> <span class="muted">(Windows)</span></td><td>Hotkey for caller N</td></tr>
     <tr><td><code>CALLER_N_LABEL</code></td><td>template</td><td>Display name shown in the overlay header</td></tr>
     <tr><td><code>CALLER_N_PASTE_BACK</code></td><td><code>False</code></td><td>Paste reply into the active field after completion</td></tr>
     <tr><td><code>CALLER_N_CUSTOM_KEY</code></td><td><code>s</code></td><td>Key that opens the freeform text input</td></tr>
@@ -1195,28 +1195,23 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 'hotkeys': {
   title: 'Hotkeys',
   sub: 'All global hotkeys and how to remap them.',
-  toc: ['caller-hotkeys','global-hotkeys','conflicts'],
+  toc: ['global-hotkeys','conflicts'],
   html: `
-<h2 id="caller-hotkeys">Caller hotkeys</h2>
-<p>Each caller has its own hotkey defined by <code>CALLER_N_HOTKEY</code>. Defaults are platform-specific: Windows uses <code>ctrl+q</code> / <code>ctrl+shift+q</code>; macOS and Linux use <code>ctrl+alt+space</code> / <code>ctrl+alt+shift+space</code> to avoid common app-quit shortcuts. Remap them freely.</p>
-<pre><span class="pre-lang">env</span><code><span class="c-key">CALLER_1_HOTKEY</span>=<span class="c-val">ctrl+q</span>              <span class="c-comment"># Windows default</span>
-<span class="c-key">CALLER_2_HOTKEY</span>=<span class="c-val">ctrl+shift+q</span>        <span class="c-comment"># Windows default</span>
-<span class="c-comment"># macOS/Linux defaults: ctrl+alt+space and ctrl+alt+shift+space</span></code></pre>
-
-<hr />
-<h2 id="global-hotkeys">Global hotkeys</h2>
+<h2 id="global-hotkeys">Remappable global hotkeys</h2>
 <table>
   <thead><tr><th>Action</th><th>Env var</th><th>Template default</th></tr></thead>
   <tbody>
-    <tr><td>Add to context buffer</td><td><code>HOTKEY_ADD_CONTEXT</code></td><td>remappable</td></tr>
-    <tr><td>Clear context buffer</td><td><code>HOTKEY_CLEAR_CONTEXT</code></td><td>remappable</td></tr>
-    <tr><td>Screen snip</td><td><code>HOTKEY_SNIP</code></td><td>remappable</td></tr>
+    <tr><td>Primary caller</td><td><code>CALLER_1_HOTKEY</code></td><td><code>ctrl+q</code> <span class="muted">(Windows)</span>; <code>ctrl+alt+space</code> <span class="muted">(macOS/Linux)</span></td></tr>
+    <tr><td>Rewrite &amp; Paste caller</td><td><code>CALLER_2_HOTKEY</code></td><td><code>ctrl+shift+q</code> <span class="muted">(Windows)</span>; <code>ctrl+alt+shift+space</code> <span class="muted">(macOS/Linux)</span></td></tr>
+    <tr><td>Add to context buffer</td><td><code>HOTKEY_ADD_CONTEXT</code></td><td><code>alt+q</code></td></tr>
+    <tr><td>Clear context buffer</td><td><code>HOTKEY_CLEAR_CONTEXT</code></td><td><code>alt+w</code></td></tr>
+    <tr><td>Screen snip</td><td><code>HOTKEY_SNIP</code></td><td><code>ctrl+alt+q</code></td></tr>
     <tr><td>Read selection aloud</td><td><code>HOTKEY_READ_SELECTION_ALOUD</code></td><td><code>f7</code></td></tr>
-    <tr><td>Voice input (push-to-talk)</td><td><code>HOTKEY_VOICE</code></td><td>remappable</td></tr>
+    <tr><td>Voice input (push-to-talk)</td><td><code>HOTKEY_VOICE</code></td><td><code>f9</code></td></tr>
     <tr><td>Dictation into focused field</td><td><code>HOTKEY_DICTATE</code></td><td><code>f8</code></td></tr>
   </tbody>
 </table>
-
+<p>The two caller rows are starter templates. Add more caller hotkeys in Settings, or increase <code>CALLER_COUNT</code> and define <code>CALLER_3_HOTKEY</code>, then give each caller its own label, context defaults, and action rows. Action hotkeys inside the picker are remappable too: each caller can define intent keys such as <code>CALLER_N_INTENT_M_KEY</code> plus the freeform custom action key.</p>
 
 <hr />
 <h2 id="conflicts">Conflict resolution</h2>
@@ -1300,9 +1295,9 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 <pre><span class="pre-lang">env</span><code><span class="c-key">DARK_MODE</span>=<span class="c-val">true</span></code></pre>`
 },
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    PROVIDERS
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'free-apis': {
   title: 'Free API sources',
@@ -1319,22 +1314,22 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 <table>
   <thead><tr><th>Provider</th><th>What's free</th><th>Good for</th></tr></thead>
   <tbody>
-    <tr><td>OpenRouter</td><td>The <code>:free</code> models — roughly 20 requests/min and 50/day with no credits, or 1,000/day after a one-time $10 top-up. Also an <code>openrouter/free</code> router.</td><td>The easiest "one API, many models" option.</td></tr>
-    <tr><td>Google AI Studio</td><td>A Gemini API free tier in supported regions, with per-minute and daily limits.</td><td>Multimodal and long-context work, including vision.</td></tr>
-    <tr><td>Mistral</td><td>A free experimental tier on La Plateforme, rate-limited.</td><td>European, GDPR-friendly models and function calling.</td></tr>
-    <tr><td>NVIDIA</td><td>Free API access to many open models through the NVIDIA API Catalog.</td><td>Trying lots of open-weight models on fast hosted endpoints.</td></tr>
-    <tr><td>GroqCloud</td><td>A free tier with rate limits.</td><td>Very fast inference for open models like Llama and Qwen.</td></tr>
-    <tr><td>Cerebras Inference</td><td>A free API tier for Cerebras-hosted models.</td><td>Extremely fast text inference and prototyping.</td></tr>
-    <tr><td>GitHub Models</td><td>Rate-limited no-cost access for every GitHub account.</td><td>Prototyping, experiments, and GitHub-integrated workflows.</td></tr>
-    <tr><td>Cloudflare Workers AI</td><td>Included in the Workers free plan with a free daily allocation.</td><td>Apps already deployed on Cloudflare; serverless AI endpoints.</td></tr>
-    <tr><td>Z.AI / GLM</td><td>GLM model access through Z.AI's OpenAI-compatible API, plus agent-specific free access in tools such as FreeBuff. Free API quota details change by platform.</td><td>Open-source coding and agent workflows, especially when GLM is exposed through an API route Wisp can call.</td></tr>
-    <tr><td>Cohere</td><td>Trial API key access to Command R+ with request caps; non-commercial use only.</td><td>RAG and retrieval-focused experiments.</td></tr>
-    <tr><td>Hugging Face Inference Providers</td><td>Community and small-credit access varies by provider and account type.</td><td>Trying lots of open models through one ecosystem.</td></tr>
-    <tr><td>Chutes</td><td>Community access to open-source models, subject to availability and rate limits.</td><td>Testing OpenAI-compatible hosted OSS endpoints.</td></tr>
-    <tr><td>Puter.js</td><td>Front-end JavaScript access to many models with no API key of your own.</td><td>Browser apps and demos, "user-pays" style apps.</td></tr>
-    <tr><td><a href="https://github.com/tashfeenahmed/freellmapi" target="_blank">FreeLLMAPI</a> (self-hosted)</td><td>Open-source MIT gateway you run yourself; pools ~16 providers' free tiers (Google, Groq, Cerebras, Mistral, OpenRouter, GitHub Models, and more) behind one OpenAI-compatible endpoint with automatic failover.</td><td>One token for many free backends; point Wisp's custom endpoint at your local deployment.</td></tr>
-    <tr><td><a href="https://github.com/diegosouzapw/OmniRoute" target="_blank">OmniRoute</a> (local gateway)</td><td>Open-source router you run locally; aggregates many provider accounts and free tiers behind one OpenAI-compatible endpoint with routing, fallback, and optional compression.</td><td>One local endpoint for many backends; point Wisp's custom endpoint at OmniRoute and use a model such as <code>auto</code>.</td></tr>
-    <tr><td>Local — Ollama / LM Studio / vLLM</td><td>Free whenever you run the model on your own machine or server.</td><td>Privacy, no token billing, OpenAI-compatible local endpoints.</td></tr>
+    <tr><td><a href="https://openrouter.ai/" target="_blank" rel="noopener">OpenRouter</a></td><td>The <code>:free</code> models — roughly 20 requests/min and 50/day with no credits, or 1,000/day after a one-time $10 top-up. Also an <code>openrouter/free</code> router.</td><td>The easiest "one API, many models" option.</td></tr>
+    <tr><td><a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a></td><td>A Gemini API free tier in supported regions, with per-minute and daily limits.</td><td>Multimodal and long-context work, including vision.</td></tr>
+    <tr><td><a href="https://console.mistral.ai/" target="_blank" rel="noopener">Mistral</a></td><td>A free experimental tier on La Plateforme, rate-limited.</td><td>European, GDPR-friendly models and function calling.</td></tr>
+    <tr><td><a href="https://build.nvidia.com/" target="_blank" rel="noopener">NVIDIA</a></td><td>Free API access to many open models through the NVIDIA API Catalog.</td><td>Trying lots of open-weight models on fast hosted endpoints.</td></tr>
+    <tr><td><a href="https://console.groq.com/" target="_blank" rel="noopener">GroqCloud</a></td><td>A free tier with rate limits.</td><td>Very fast inference for open models like Llama and Qwen.</td></tr>
+    <tr><td><a href="https://cloud.cerebras.ai/" target="_blank" rel="noopener">Cerebras Inference</a></td><td>A free API tier for Cerebras-hosted models.</td><td>Extremely fast text inference and prototyping.</td></tr>
+    <tr><td><a href="https://github.com/marketplace/models" target="_blank" rel="noopener">GitHub Models</a></td><td>Rate-limited no-cost access for every GitHub account.</td><td>Prototyping, experiments, and GitHub-integrated workflows.</td></tr>
+    <tr><td><a href="https://developers.cloudflare.com/workers-ai/" target="_blank" rel="noopener">Cloudflare Workers AI</a></td><td>Included in the Workers free plan with a free daily allocation.</td><td>Apps already deployed on Cloudflare; serverless AI endpoints.</td></tr>
+    <tr><td><a href="https://docs.z.ai/" target="_blank" rel="noopener">Z.AI / GLM</a></td><td>GLM model access through Z.AI's OpenAI-compatible API, plus agent-specific free access in tools such as FreeBuff. Free API quota details change by platform.</td><td>Open-source coding and agent workflows, especially when GLM is exposed through an API route Wisp can call.</td></tr>
+    <tr><td><a href="https://dashboard.cohere.com/" target="_blank" rel="noopener">Cohere</a></td><td>Trial API key access to Command R+ with request caps; non-commercial use only.</td><td>RAG and retrieval-focused experiments.</td></tr>
+    <tr><td><a href="https://huggingface.co/inference-providers" target="_blank" rel="noopener">Hugging Face Inference Providers</a></td><td>Community and small-credit access varies by provider and account type.</td><td>Trying lots of open models through one ecosystem.</td></tr>
+    <tr><td><a href="https://chutes.ai/" target="_blank" rel="noopener">Chutes</a></td><td>Community access to open-source models, subject to availability and rate limits.</td><td>Testing OpenAI-compatible hosted OSS endpoints.</td></tr>
+    <tr><td><a href="https://docs.puter.com/" target="_blank" rel="noopener">Puter.js</a></td><td>Front-end JavaScript access to many models with no API key of your own.</td><td>Browser apps and demos, "user-pays" style apps.</td></tr>
+    <tr><td><a href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener">FreeLLMAPI</a> (self-hosted)</td><td>Open-source MIT gateway you run yourself; pools ~16 providers' free tiers (Google, Groq, Cerebras, Mistral, OpenRouter, GitHub Models, and more) behind one OpenAI-compatible endpoint with automatic failover.</td><td>One token for many free backends; point Wisp's custom endpoint at your local deployment.</td></tr>
+    <tr><td><a href="https://github.com/diegosouzapw/OmniRoute" target="_blank" rel="noopener">OmniRoute</a> (local gateway)</td><td>Open-source router you run locally; aggregates many provider accounts and free tiers behind one OpenAI-compatible endpoint with routing, fallback, and optional compression.</td><td>One local endpoint for many backends; point Wisp's custom endpoint at OmniRoute and use a model such as <code>auto</code>.</td></tr>
+    <tr><td>Local — <a href="https://ollama.com/" target="_blank" rel="noopener">Ollama</a> / <a href="https://lmstudio.ai/" target="_blank" rel="noopener">LM Studio</a> / <a href="https://docs.vllm.ai/" target="_blank" rel="noopener">vLLM</a></td><td>Free whenever you run the model on your own machine or server.</td><td>Privacy, no token billing, OpenAI-compatible local endpoints.</td></tr>
   </tbody>
 </table>
 
@@ -1344,13 +1339,13 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 <table>
   <thead><tr><th>Provider</th><th>Trial-style offer</th><th>Good for</th></tr></thead>
   <tbody>
-    <tr><td>Vercel AI Gateway</td><td>Free gateway credit for eligible models, with provider-dependent backend terms.</td><td>Vercel projects and unified OpenAI-compatible access.</td></tr>
-    <tr><td>SambaNova Cloud</td><td>Example: $5 of API credit.</td><td>Fast hosted open-model inference, including large Llama models.</td></tr>
-    <tr><td>DeepSeek</td><td>Example: token-based trial access for DeepSeek models.</td><td>Reasoning-heavy workloads and cost comparisons.</td></tr>
-    <tr><td>Fireworks</td><td>Example: small starter credit for hosted open-weight models.</td><td>Benchmarking Fireworks-hosted Llama and Mixtral variants.</td></tr>
-    <tr><td>Baseten</td><td>Example: larger evaluation credit, often with billing setup after exhaustion.</td><td>End-to-end hosted inference prototyping.</td></tr>
-    <tr><td>Nebius</td><td>Example: small trial credit for hosted open-weight models.</td><td>Quick provider comparison runs.</td></tr>
-    <tr><td>AI21</td><td>Example: trial credit for Jamba-family models.</td><td>Testing AI21's hybrid SSM-Transformer models.</td></tr>
+    <tr><td><a href="https://vercel.com/docs/ai-gateway" target="_blank" rel="noopener">Vercel AI Gateway</a></td><td>Free gateway credit for eligible models, with provider-dependent backend terms.</td><td>Vercel projects and unified OpenAI-compatible access.</td></tr>
+    <tr><td><a href="https://cloud.sambanova.ai/" target="_blank" rel="noopener">SambaNova Cloud</a></td><td>Example: $5 of API credit.</td><td>Fast hosted open-model inference, including large Llama models.</td></tr>
+    <tr><td><a href="https://platform.deepseek.com/" target="_blank" rel="noopener">DeepSeek</a></td><td>Example: token-based trial access for DeepSeek models.</td><td>Reasoning-heavy workloads and cost comparisons.</td></tr>
+    <tr><td><a href="https://fireworks.ai/" target="_blank" rel="noopener">Fireworks</a></td><td>Example: small starter credit for hosted open-weight models.</td><td>Benchmarking Fireworks-hosted Llama and Mixtral variants.</td></tr>
+    <tr><td><a href="https://www.baseten.co/" target="_blank" rel="noopener">Baseten</a></td><td>Example: larger evaluation credit, often with billing setup after exhaustion.</td><td>End-to-end hosted inference prototyping.</td></tr>
+    <tr><td><a href="https://studio.nebius.com/" target="_blank" rel="noopener">Nebius</a></td><td>Example: small trial credit for hosted open-weight models.</td><td>Quick provider comparison runs.</td></tr>
+    <tr><td><a href="https://studio.ai21.com/" target="_blank" rel="noopener">AI21</a></td><td>Example: trial credit for Jamba-family models.</td><td>Testing AI21's hybrid SSM-Transformer models.</td></tr>
   </tbody>
 </table>
 
@@ -1467,7 +1462,7 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 },
 
 'provider-openai': {
-  title: 'OpenAI',
+  title: 'OpenAI (API key)',
   sub: 'GPT models via the OpenAI API.',
   toc: ['setup','models'],
   html: `
@@ -1475,7 +1470,7 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 <pre><span class="pre-lang">env</span><code><span class="c-key">LLM_PROVIDER</span>=<span class="c-val">openai</span>
 <span class="c-key">LLM_MODEL</span>=<span class="c-val">gpt-5.4-mini</span></code></pre>
 <p>Enter your key in <strong>Settings → LLM → OpenAI API key</strong>.</p>
-<div class="callout note"><div class="callout-label">ChatGPT OAuth is separate</div><p>The OpenAI API route uses <code>LLM_PROVIDER=openai</code> and an API key. If you want to use a ChatGPT/Codex subscription instead, choose the ChatGPT provider (<code>LLM_PROVIDER=chatgpt</code>) and sign in with OAuth in Settings. That route stores tokens in the OS keychain, may require signing in again after restart, is metered against your subscription's agentic allowance, and does not run live context tools the same way API-key providers do.</p></div>
+<div class="callout note"><div class="callout-label">ChatGPT OAuth is separate</div><p>The OpenAI API route uses <code>LLM_PROVIDER=openai</code> and an API key. If you want to use a ChatGPT/Codex subscription instead, sign in with OAuth at the top of <strong>Settings → LLM</strong> first, then choose the ChatGPT provider (<code>LLM_PROVIDER=chatgpt</code>) and model. That route stores tokens in the OS keychain, may require signing in again after restart, is metered against your subscription's agentic allowance, and does not run live context tools the same way API-key providers do.</p></div>
 
 <hr />
 <h2 id="models">Models</h2>
@@ -1487,6 +1482,33 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
     <tr><td><code>gpt-5.3-codex</code></td><td>Useful for coding-heavy agent work when available on your account</td></tr>
   </tbody>
 </table>`
+},
+
+'provider-openai-subscription': {
+  title: 'OpenAI (subscription)',
+  sub: 'ChatGPT / Codex subscription access through OAuth.',
+  toc: ['setup','how-it-differs','models'],
+  html: `
+<h2 id="setup">Example setup</h2>
+<pre><span class="pre-lang">env</span><code><span class="c-key">LLM_PROVIDER</span>=<span class="c-val">chatgpt</span>
+<span class="c-key">LLM_MODEL</span>=<span class="c-val">gpt-5.3-codex</span></code></pre>
+<p>Sign in with OAuth at the top of <strong>Settings → LLM</strong>, then choose the ChatGPT provider and model. Tokens are stored in the OS keychain.</p>
+<div class="callout note"><div class="callout-label">Stable for now, provider-controlled</div><p>This route is stable today, but it depends on OpenAI continuing to allow subscription-backed OAuth access from third-party clients. Provider policy can change later, so keep an API-key, local, or other provider route as a fallback if Wisp is part of your daily workflow.</p></div>
+
+<hr />
+<h2 id="how-it-differs">How it differs from an API key</h2>
+<table>
+  <thead><tr><th>Route</th><th>What to expect</th></tr></thead>
+  <tbody>
+    <tr><td><code>LLM_PROVIDER=chatgpt</code></td><td>Uses your ChatGPT / Codex subscription through OAuth. Usage is metered against your subscription's agentic allowance and may require signing in again after restart.</td></tr>
+    <tr><td><code>LLM_PROVIDER=openai</code></td><td>Uses a normal OpenAI API key from Settings. It is usually more predictable for non-coding work and API-style integrations.</td></tr>
+  </tbody>
+</table>
+<div class="callout note"><div class="callout-label">Context tools</div><p>The subscription route does not run live context tools the same way API-key providers do. Use OpenAI API key mode when you need predictable tool-capable provider behavior.</p></div>
+
+<hr />
+<h2 id="models">Models</h2>
+<p>Model availability depends on your subscription and what the OAuth route exposes to Wisp. Start with the default shown in Settings, then adjust only if the selected model is available on your account.</p>`
 },
 
 'provider-google': {
@@ -1593,9 +1615,9 @@ ollama serve</code></pre>
 </ul>`
 },
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    PLATFORM
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'platform-windows': {
   title: 'Windows',
@@ -1673,7 +1695,7 @@ ollama serve</code></pre>
 
 'platform-linux': {
   title: 'Linux',
-  sub: 'Supported on X11; Wayland support varies by desktop environment.',
+  sub: 'Supported on X11; Wayland support is currently in progress.',
   toc: ['apis','requirements','notes'],
   html: `
 <h2 id="apis">Linux-specific APIs</h2>
@@ -1701,13 +1723,13 @@ ollama serve</code></pre>
 
 <hr />
 <h2 id="notes">Notes</h2>
-<div class="callout note"><div class="callout-label">X11</div><p>Wisp is best supported on X11 sessions. Wayland may work for some shared UI flows, but native hotkey, clipboard, and screen capture behavior depends on the desktop environment.</p></div>
+<div class="callout note"><div class="callout-label">Wayland in progress</div><p>Wisp is best supported on X11 sessions today. We are currently working on Linux Wayland support; native hotkey, clipboard, and screen capture behavior still depends on the desktop environment.</p></div>
 <p>Linux desktop integrations vary by distro and window manager; clear bug reports with the desktop environment, session type, and logs are especially useful.</p>`
 },
 
-/* ═══════════════════════════════════════════════════════
+/* -------------------------------------------------------
    ADVANCED
-═══════════════════════════════════════════════════════ */
+------------------------------------------------------- */
 
 'custom-prompts': {
   title: 'Custom prompts',
@@ -1954,7 +1976,7 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 </table>
 
 <hr />
-<h2 id="release-builds">Cross-platform release builds</h2>
+<h2 id="release-builds">Cross-platform portable builds</h2>
 <p>Tagged releases are built by <code>.github/workflows/build.yml</code>. The workflow uploads one artifact per supported platform plus <code>wisp-release-manifest.json</code>, which powers the Settings update button.</p>
 <table>
   <thead><tr><th>Platform</th><th>Release artifact</th></tr></thead>
@@ -1969,7 +1991,7 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 <hr />
 <h2 id="notes">Notes</h2>
 <ul style="padding-left:20px;color:var(--text);font-size:14px;line-height:2">
-  <li>API keys are <strong>not bundled</strong>. Users enter them in Settings → they are saved to the OS keychain.</li>
+  <li>API keys are <strong>not bundled</strong>. Users enter them in Settings — they are saved to the OS keychain.</li>
   <li><code>.env.example</code> is bundled as a template. Your local <code>.env</code> is not included.</li>
   <li>The MCP Bridge add-on is bundled and seeded into the writable add-ons folder on first launch. Existing add-on folders and <code>servers.json</code> files are left alone.</li>
   <li>Runtime package installs in packaged builds require <code>uv</code>, including add-on dependency environments and optional voice package installs from Settings.</li>
@@ -2016,7 +2038,8 @@ const NAV_TREE = [
     { id: 'provider-anthropic', label: 'Anthropic' },
     { id: 'provider-google',    label: 'Google AI Studio' },
     { id: 'provider-groq',      label: 'Groq' },
-    { id: 'provider-openai',    label: 'OpenAI' },
+    { id: 'provider-openai',    label: 'OpenAI (API key)' },
+    { id: 'provider-openai-subscription', label: 'OpenAI (subscription)' },
     { id: 'provider-others',    label: 'Other providers' },
     { id: 'provider-custom',    label: 'Custom endpoint' },
   ]},
