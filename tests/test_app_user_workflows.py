@@ -138,39 +138,6 @@ def _minimal_agent_spec(scope: Path) -> dict[str, Any]:
     }
 
 
-def test_assistant_ux_feature_plan_tracks_requested_workflows():
-    """The roadmap for the next assistant UX work stays complete and testable."""
-    plan_path = Path(__file__).resolve().parents[1] / "docs" / "ASSISTANT_UX_FEATURE_PLAN.md"
-    text = plan_path.read_text(encoding="utf-8")
-
-    required_phrases = [
-        "Settings button",
-        "right-click menu item",
-        "small dismissible notice near the Wisp icon",
-        "Implement in the intent overlay",
-        "Implement in the chat window",
-        "Faster-whisper does not cheaply expose true top-N",
-        "detected and censored",
-        "Privacy report shows detected categories",
-        "Recommendation",
-        "directly after the message",
-        "ui/locales/qt/wisp_es.ts",
-        "ui/locales/qt/wisp_fr.ts",
-        "ui/locales/qt/wisp_zh.ts",
-        "ui/locales/qt/wisp_zh-Hant.ts",
-    ]
-    for phrase in required_phrases:
-        assert phrase in text
-
-    for feature_id in ("1", "2", "3", "6", "7", "8"):
-        assert f"## {feature_id}. " in text
-
-    for section in text.split("## ")[1:]:
-        if section.startswith(("1. ", "2. ", "3. ", "6. ", "7. ", "8. ")):
-            assert "Tests:" in section
-            assert "translated" in section or "locale" in section
-
-
 def test_workflow_state_isolation_guard_and_memory_project_scope(isolated_app_state: IsolatedAppState):
     """A real project/conversation/memory workflow stays scoped to temp state."""
     from core.conversation_store import store as conversations

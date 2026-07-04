@@ -228,8 +228,8 @@ def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
     assert not (tmp_path / "build_logs").exists()
 
 
-def test_main_restarts_ui_worker_after_nonzero_exit(tmp_path, monkeypatch):
-    """Verify an unexpected UI worker exit is restarted before app shutdown."""
+def test_main_shuts_down_after_nonzero_ui_exit(tmp_path, monkeypatch):
+    """Verify an unexpected UI worker exit shuts down instead of restarting UI."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
     monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
     monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
@@ -283,16 +283,15 @@ def test_main_restarts_ui_worker_after_nonzero_exit(tmp_path, monkeypatch):
             self.shutdown_called = True
 
     class FakeFlowController:
-        """Fake flow controller that simulates a crash followed by a clean exit."""
+        """Fake flow controller that simulates a UI crash."""
         def __init__(self, *, native, ui, brain, audio):
             """Initialize fake flow controller."""
             self.ui = ui
 
         def start(self):
-            """Emit UI crash and later clean exit."""
+            """Emit UI crash."""
             for handler in list(self.ui.exit_handlers):
                 handler(9)
-                handler(0)
 
         def start_hotkeys(self):
             """No-op hotkeys."""
@@ -303,10 +302,12 @@ def test_main_restarts_ui_worker_after_nonzero_exit(tmp_path, monkeypatch):
 
     assert supervisor_app.main() == 0
     ui = instances[0].workers["ui"]
-    assert ui.restart_calls == 1
-    assert [call["method"] for call in ui.calls] == ["ui.ping", "ui.reply.notice"]
+    assert ui.restart_calls == 0
+    assert ui.calls == []
     assert instances[0].shutdown_called is True
-    assert not list((tmp_path / "build_logs").glob("wisp_crash_*/supervisor-crash.log"))
+    crash_logs = list((tmp_path / "build_logs").glob("wisp_crash_*/supervisor-crash.log"))
+    assert len(crash_logs) == 1
+    assert "UI worker exited with code 9" in crash_logs[0].read_text(encoding="utf-8")
 
 
 def test_main_restarts_audio_worker_after_unexpected_exit(tmp_path, monkeypatch):

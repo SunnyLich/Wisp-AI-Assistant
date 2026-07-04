@@ -4,8 +4,7 @@ This document is the practical entry point for working on Wisp. The root
 `README.md` explains the product; this file explains how the codebase is put
 together, how to run it locally, and where to look when changing behavior.
 
-For the current architecture map, start with `docs/OVERVIEW.md`, then use
-`docs/COMMUNICATION_GRAPH.md` for process and feature-flow diagrams.
+For the current architecture map, start with `docs/OVERVIEW.md`.
 
 ## Quick Setup
 
@@ -83,9 +82,7 @@ Workers communicate with newline-delimited JSON over stdin/stdout. The
 supervisor assigns request ids, matches responses, forwards scoped stream
 events, captures stderr, and shuts workers down together.
 
-See `docs/OVERVIEW.md` for the compact ownership map and
-`docs/COMMUNICATION_GRAPH.md` for diagrams of the process graph and common
-feature flows.
+See `docs/OVERVIEW.md` for the compact ownership map.
 
 ## Common Flows
 

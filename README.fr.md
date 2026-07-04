@@ -15,7 +15,7 @@ Wisp vous offre une IA pilotée par raccourcis clavier qui peut lire votre séle
 
 **Langues :** [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | Français | [Español](README.es.md)
 
-**Site web :** [Documentation Wisp](https://sunnylich.github.io/Python-AI-assistant-overlay/)
+**Site web :** [Documentation Wisp](https://sunnylich.github.io/Wisp-AI-Assistant/)
 
 [Démarrage rapide](#démarrage-rapide) | [Fonctionnalités](#ce-que-fait-wisp) | [Démos](#démos) | [Configuration](#configuration) | [APIs gratuites](#sources-dapi-de-modèles-gratuites) | [Confidentialité](#confidentialité-et-contrôle)
 

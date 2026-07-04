@@ -44,9 +44,8 @@ def test_pytest_command_enables_startup_faulthandler():
     assert cmd[4:] == ["pytest", "-q"]
 
 
-def test_workflow_runner_points_to_product_ux_plan():
-    """The workflow entrypoint keeps the assistant UX plan visible."""
-    assert run_app_workflow_tests.PRODUCT_UX_PLAN == "docs/ASSISTANT_UX_FEATURE_PLAN.md"
+def test_workflow_runner_covers_core_user_workflows():
+    """The workflow entrypoint keeps the main user-visible suites together."""
     expected = {
         "tests/test_app_user_workflows.py",
         "tests/runtime/test_flows.py",

@@ -37,7 +37,6 @@ WORKFLOW_TESTS = (
     "tests/test_real_gpt55_integration.py",
     "tests/test_real_host_native_smoke.py",
 )
-PRODUCT_UX_PLAN = "docs/ASSISTANT_UX_FEATURE_PLAN.md"
 APP_ARCHITECTURE_TESTS = (
     "tests/runtime/test_supervisor_ipc.py",
 )
@@ -458,7 +457,6 @@ def main(argv: list[str] | None = None) -> int:
         f"started={_dt.datetime.now().isoformat(timespec='seconds')}",
         f"cwd={root}",
         f"python={python}",
-        f"product_ux_plan={PRODUCT_UX_PLAN}",
         f"args={' '.join(argv if argv is not None else sys.argv[1:])}",
         "",
     ]

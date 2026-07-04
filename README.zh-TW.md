@@ -15,7 +15,7 @@ Wisp 為您提供快捷鍵驅動的 AI，能夠讀取您的選取內容、剪貼
 
 **語言：** [English](README.md) | [简体中文](README.zh-CN.md) | 繁體中文 | [Français](README.fr.md) | [Español](README.es.md)
 
-**網站：** [Wisp 文件](https://sunnylich.github.io/Python-AI-assistant-overlay/)
+**網站：** [Wisp 文件](https://sunnylich.github.io/Wisp-AI-Assistant/)
 
 [快速開始](#快速開始) | [功能介紹](#wisp-的功能) | [示範](#示範) | [設定](#設定) | [免費 API](#免費模型-api-來源) | [隱私](#隱私與控制)
 

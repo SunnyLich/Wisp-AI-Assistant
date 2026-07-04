@@ -1,0 +1,112 @@
+name: Bug report
+description: Something crashed, broke, or behaved wrong
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this — reports like yours are how Wisp gets better.
+
+        **Before you post:** logs and screenshots can contain text Wisp captured (selections, clipboard, page content). Skim them and redact anything personal. **Never paste an API key.**
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: Pressed the rewrite hotkey on a selection in Word; the picker opened but pressing W did nothing.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact actions that trigger it, starting from which app was focused.
+      placeholder: |
+        1. Focus Chrome with some text selected
+        2. Press Ctrl+Q
+        3. Press W
+        4. Overlay shows the spinner forever
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Wisp?
+      options:
+        - Hotkeys
+        - Overlay / intent picker
+        - Context capture (selection, clipboard, browser, documents)
+        - Screen snip / vision
+        - Rewrite / paste-back
+        - Voice input (STT / dictation)
+        - TTS / read-aloud
+        - Chat window
+        - Settings / setup check
+        - Addons / MCP
+        - Agent tasks
+        - Install / updater / packaging
+        - Other / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux (X11)
+        - Linux (Wayland)
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: os-details
+    attributes:
+      label: OS details
+      description: Exact version, and desktop environment on Linux.
+      placeholder: "Windows 11 24H2 / macOS 14.5 / Ubuntu 24.04 GNOME"
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run Wisp?
+      options:
+        - Packaged release (Wisp.exe / Wisp.app / Wisp binary)
+        - Repo launcher (Start Wisp.bat / .command / .sh)
+        - Other (built from source, custom setup)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Wisp version
+      description: Release tag, or the git commit for repo checkouts.
+      placeholder: "v0.7.0"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Provider / model (if the bug involves a query)
+      description: Provider and model name only — never include an API key.
+      placeholder: "Groq / llama-3.3-70b"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and crash files
+      description: |
+        - **Crash files:** look for `wisp_*.crash` next to the app (repo folder, or beside `Wisp.exe`).
+        - **Full logs:** repo checkouts → run the matching `Start Wisp Debug` launcher. Packaged app → set the environment variable `WISP_RUNTIME_LOG_MODE=debug`, relaunch, reproduce the bug, then grab the newest folder under `build_logs/` next to the app. Zip it and drag it into this issue, or paste the relevant lines below.
+        - Logs can include captured text — redact anything personal before posting.
+      render: text
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this isn't already reported.
+          required: true
+        - label: I removed API keys and personal data from anything I attached.
+          required: true

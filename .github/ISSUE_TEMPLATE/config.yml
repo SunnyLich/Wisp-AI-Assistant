@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or setup help
+    url: https://github.com/SunnyLich/Python-AI-assistant-overlay/discussions/categories/q-a
+    about: Ask in Discussions Q&A — issues are for bugs.
+  - name: Feature idea
+    url: https://github.com/SunnyLich/Python-AI-assistant-overlay/discussions/categories/ideas
+    about: Propose and discuss ideas in Discussions.

@@ -15,7 +15,7 @@ Wisp te da IA controlada por atajos de teclado que puede leer tu selección, por
 
 **Idiomas:** [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Français](README.fr.md) | Español
 
-**Sitio web:** [Documentación de Wisp](https://sunnylich.github.io/Python-AI-assistant-overlay/)
+**Sitio web:** [Documentación de Wisp](https://sunnylich.github.io/Wisp-AI-Assistant/)
 
 [Inicio rápido](#inicio-rápido) | [Qué hace](#qué-hace-wisp) | [Demos](#demos) | [Configuración](#configuración) | [APIs gratuitas](#fuentes-de-api-de-modelos-gratuitas) | [Privacidad](#privacidad-y-control)
 
