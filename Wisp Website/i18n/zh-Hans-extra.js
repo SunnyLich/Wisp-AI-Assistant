@@ -477,8 +477,8 @@ Object.assign(I18N.reg['zh-Hans'].tr, {
   'The launcher installs everything automatically on first run': '启动器会在首次运行时自动安装一切',
   'Accessibility + Input Monitoring permissions granted': '已授予辅助功能 + 输入监控权限',
   'Logs': '日志',
-  "If something misbehaves, double-click Open Wisp Mac Logs.command in the project folder to open Wisp's log files — handy to attach to a bug report.":
-    '如果出现异常，双击项目文件夹中的 <code>Open Wisp Mac Logs.command</code> 即可打开 Wisp 的日志文件——便于附加到错误报告中。',
+  'If something misbehaves, attach the latest files from build_logs/ to a bug report.':
+    '如果出现异常，请将 <code>build_logs/</code> 中最新的文件附加到错误报告中。',
   'For a session that keeps full runtime logs, start Wisp with Start Wisp Debug.command instead of the normal launcher.':
     '若要让会话保留完整的运行日志，请使用 <code>Start Wisp Debug.command</code> 而非普通启动器来启动 Wisp。',
 

@@ -13,7 +13,6 @@ class BuildScriptTests(unittest.TestCase):
             "Start Wisp Debug.sh",
             "Start Wisp.command",
             "Start Wisp Debug.command",
-            "Open Wisp Mac Logs.command",
             "scripts/compile_dependency_locks.sh",
             "scripts/compile_macos_lock.sh",
             "scripts/run_macos_tests.command",

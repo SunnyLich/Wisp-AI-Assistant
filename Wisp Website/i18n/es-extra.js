@@ -486,8 +486,8 @@ Object.assign(I18N.reg['es'].tr, {
   'The launcher installs everything automatically on first run': 'El lanzador instala todo automáticamente en la primera ejecución',
   'Accessibility + Input Monitoring permissions granted': 'Permisos de Accesibilidad + Monitorización de entrada concedidos',
   'Logs': 'Registros',
-  "If something misbehaves, double-click Open Wisp Mac Logs.command in the project folder to open Wisp's log files — handy to attach to a bug report.":
-    "Si algo falla, haz doble clic en <code>Open Wisp Mac Logs.command</code> en la carpeta del proyecto para abrir los archivos de registro de Wisp — útil para adjuntar a un informe de error.",
+  'If something misbehaves, attach the latest files from build_logs/ to a bug report.':
+    'Si algo falla, adjunta los archivos más recientes de <code>build_logs/</code> a un informe de error.',
   'For a session that keeps full runtime logs, start Wisp with Start Wisp Debug.command instead of the normal launcher.':
     "Para una sesión que conserve los registros de ejecución completos, inicia Wisp con <code>Start Wisp Debug.command</code> en lugar del lanzador normal.",
 

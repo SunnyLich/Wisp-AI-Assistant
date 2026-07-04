@@ -1689,7 +1689,7 @@ ollama serve</code></pre>
 
 <hr />
 <h2 id="logs">Logs</h2>
-<p>If something misbehaves, double-click <code>Open Wisp Mac Logs.command</code> in the project folder to open Wisp's log files — handy to attach to a bug report.</p>
+<p>If something misbehaves, attach the latest files from <code>build_logs/</code> to a bug report.</p>
 <p>For a session that keeps full runtime logs, start Wisp with <code>Start Wisp Debug.command</code> instead of the normal launcher.</p>`
 },
 
