@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+﻿<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="zh">
   <context>
     <name>Wisp</name>
@@ -563,6 +563,10 @@
       <translation>自动（有 GPU 时使用）</translation>
     </message>
     <message>
+      <source>Auto (CPU)</source>
+      <translation>自动（CPU）</translation>
+    </message>
+    <message>
       <source>Auto document chars</source>
       <translation>自动文档字符数</translation>
     </message>
@@ -775,6 +779,62 @@ Let model decide — expose web search and browser page fetch tools.</source>
     <message>
       <source>Close</source>
       <translation>关闭</translation>
+    </message>
+    <message>
+      <source>Wisp is preparing the optional install.</source>
+      <translation>Wisp 正在准备可选安装。</translation>
+    </message>
+    <message>
+      <source>Ready to start.</source>
+      <translation>准备开始。</translation>
+    </message>
+    <message>
+      <source>Copy log</source>
+      <translation>复制日志</translation>
+    </message>
+    <message>
+      <source>Open log folder</source>
+      <translation>打开日志文件夹</translation>
+    </message>
+    <message>
+      <source>Starting installer...</source>
+      <translation>正在启动安装程序...</translation>
+    </message>
+    <message>
+      <source>Installer command is empty.</source>
+      <translation>安装程序命令为空。</translation>
+    </message>
+    <message>
+      <source>Installer process could not be started.</source>
+      <translation>无法启动安装程序进程。</translation>
+    </message>
+    <message>
+      <source>Installer is running.</source>
+      <translation>安装程序正在运行。</translation>
+    </message>
+    <message>
+      <source>Cancelling installer...</source>
+      <translation>正在取消安装程序...</translation>
+    </message>
+    <message>
+      <source>Installer process failed.</source>
+      <translation>安装程序进程失败。</translation>
+    </message>
+    <message>
+      <source>Installer cancelled.</source>
+      <translation>安装程序已取消。</translation>
+    </message>
+    <message>
+      <source>Installer completed successfully.</source>
+      <translation>安装程序已成功完成。</translation>
+    </message>
+    <message>
+      <source>Installer failed with exit code {code}.</source>
+      <translation>安装程序失败，退出代码 {code}。</translation>
+    </message>
+    <message>
+      <source>Cancel the installer before closing this window.</source>
+      <translation>关闭此窗口前请先取消安装程序。</translation>
     </message>
     <message>
       <source>ChatGPT Plus/Pro (OAuth subscription)</source>
@@ -2671,6 +2731,14 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>Whisper 的运行位置。GPU (CUDA) 快得多，尤其是 large-v3，但需要已安装 CUDA 的 NVIDIA GPU。自动模式有 GPU 时使用 GPU，否则回退到 CPU。</translation>
     </message>
     <message>
+      <source>Where Whisper runs. macOS uses CPU for local STT in this release.</source>
+      <translation>Whisper 的运行位置。此版本在 macOS 上使用 CPU 运行本地 STT。</translation>
+    </message>
+    <message>
+      <source>Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release.</source>
+      <translation>本地 Kokoro TTS 的运行位置。此版本在 macOS 上使用 CPU 运行 Kokoro。</translation>
+    </message>
+    <message>
       <source>Whisper compute precision. Keep int8 for CPU unless you know you need another mode.</source>
       <translation>Whisper 计算精度。CPU 上建议保持 int8，除非你明确需要其他模式。</translation>
     </message>
@@ -3091,7 +3159,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp 会将 Kokoro 安装到此 Python 环境中。
@@ -3139,8 +3207,16 @@ Continue?</source>
       <translation>安装器输出会显示在这里。</translation>
     </message>
     <message>
-      <source>Installer opened in a terminal window. It will close automatically when it finishes.</source>
-      <translation>安装程序已在终端窗口中打开。完成后会自动关闭。</translation>
+      <source>Installer opened in a Wisp installer window. Progress and errors will appear there.</source>
+      <translation>安装程序已在 Wisp 安装窗口中打开。进度和错误会显示在那里。</translation>
+    </message>
+    <message>
+      <source>Wisp {display_name} installer</source>
+      <translation>Wisp {display_name} 安装程序</translation>
+    </message>
+    <message>
+      <source>Installing {display_name} into Wisp's optional packages folder.</source>
+      <translation>正在将 {display_name} 安装到 Wisp 的可选包文件夹。</translation>
     </message>
     <message>
       <source>Installer window launched. You can close Settings; leave the terminal open until it finishes.</source>
@@ -3362,7 +3438,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>{action_note}包：{package_label}
@@ -4313,7 +4389,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp 会将 Kokoro 安装到其用户可写的可选包文件夹中。

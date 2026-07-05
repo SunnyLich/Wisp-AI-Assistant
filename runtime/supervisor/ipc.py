@@ -356,13 +356,20 @@ class WorkerClient:
             with self._write_lock:
                 if proc.stdin and not proc.stdin.closed:
                     protocol.write_message(proc.stdin, protocol.make_request(0, "__shutdown__"))
+                    # EOF is the deterministic quit signal: worker stdin readers
+                    # unblock on it even if the __shutdown__ request is missed.
+                    proc.stdin.close()
         except Exception:  # noqa: BLE001
             pass
         try:
             proc.wait(timeout=2.0)
         except Exception:  # noqa: BLE001
-            proc.kill()
-            proc.wait(timeout=5.0)
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except Exception:  # noqa: BLE001
+                proc.kill()
+                proc.wait(timeout=5.0)
 
 
 def default_specs() -> dict[str, WorkerSpec]:

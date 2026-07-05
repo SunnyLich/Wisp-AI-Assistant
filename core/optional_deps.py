@@ -199,6 +199,8 @@ def subprocess_no_window_kwargs() -> dict[str, object]:
 
 def system_cuda_available() -> bool:
     """Return whether the host appears to have an NVIDIA CUDA device."""
+    if sys.platform == "darwin":
+        return False
     nvidia_smi = shutil.which("nvidia-smi")
     if not nvidia_smi:
         return False
@@ -220,6 +222,8 @@ def system_cuda_available() -> bool:
 
 def kokoro_install_mode_for_device(device: str | None) -> str:
     """Return cpu/gpu install mode for the selected Kokoro device."""
+    if sys.platform == "darwin":
+        return "cpu"
     selected = (device or "auto").strip().lower()
     if selected == "cpu":
         return "cpu"
@@ -491,9 +495,10 @@ def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list
     if _is_frozen():
         uv = _find_uv()
         if not uv:
+            suffix = ".exe" if sys.platform == "win32" else ""
             raise RuntimeError(
                 "Packaged Wisp installs optional packages with uv, but uv was not bundled. "
-                "Place uv.exe at bin\\uv.exe or tools\\uv.exe before building, then rebuild Wisp."
+                f"Place uv{suffix} under bin/ or tools/ before building, then rebuild Wisp."
             )
         return [
             uv,

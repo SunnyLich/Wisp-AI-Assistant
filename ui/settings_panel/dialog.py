@@ -44,6 +44,7 @@ from ui.settings_panel.helpers import (
     parse_fallback_rows,
 )
 from ui.i18n import COMBO_I18N_SOURCE_ROLE, LANGUAGE_OPTIONS, localize_widget_tree, t
+from ui.optional_install_dialog import OptionalInstallDialog
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 ENV_PATH = settings_env.ENV_PATH
@@ -135,6 +136,17 @@ _STT_DEVICE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("CPU", "cpu"),
     ("GPU (CUDA)", "cuda"),
 )
+
+
+def _local_speech_device_options() -> tuple[tuple[str, str], ...]:
+    """Return device choices that are valid for local speech installs."""
+    if sys.platform == "darwin":
+        return (
+            ("Auto (CPU)", "auto"),
+            ("CPU", "cpu"),
+        )
+    return _STT_DEVICE_OPTIONS
+
 
 _DICTATE_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Paste raw transcript", "raw"),
@@ -2678,11 +2690,15 @@ class SettingsDialog(QDialog):
         self._fields["STT_BEAM_SIZE"] = stt_beam
 
         stt_device = _NoScrollCombo()
-        for label, value in _STT_DEVICE_OPTIONS:
+        for label, value in _local_speech_device_options():
             stt_device.addItem(label, value)
         stt_device_tip = (
-            "Where Whisper runs. GPU (CUDA) is much faster, especially for large-v3, but needs an "
-            "NVIDIA GPU with CUDA installed. Auto uses the GPU when present and falls back to CPU."
+            "Where Whisper runs. macOS uses CPU for local STT in this release."
+            if sys.platform == "darwin"
+            else (
+                "Where Whisper runs. GPU (CUDA) is much faster, especially for large-v3, but needs an "
+                "NVIDIA GPU with CUDA installed. Auto uses the GPU when present and falls back to CPU."
+            )
         )
         self._fields["STT_DEVICE"] = stt_device
 
@@ -2812,10 +2828,12 @@ class SettingsDialog(QDialog):
         self._fields["KOKORO_LANG_CODE"].setPlaceholderText("a")
         kokoro_lang_tip = "Kokoro language code. Use a for American English, b for British English, e for Spanish, f for French."
         kokoro_device = _NoScrollCombo()
-        for label, value in _STT_DEVICE_OPTIONS:
+        for label, value in _local_speech_device_options():
             kokoro_device.addItem(label, value)
         kokoro_device_tip = (
-            "Where local Kokoro TTS runs. Auto uses CUDA when Torch can see an NVIDIA GPU and falls back to CPU."
+            "Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release."
+            if sys.platform == "darwin"
+            else "Where local Kokoro TTS runs. Auto uses CUDA when Torch can see an NVIDIA GPU and falls back to CPU."
         )
         self._fields["KOKORO_DEVICE"] = kokoro_device
         kokoro_device.currentIndexChanged.connect(lambda _idx: self._handle_kokoro_device_changed())
@@ -3501,7 +3519,8 @@ class SettingsDialog(QDialog):
             "Speed: {speed}\n"
             "Sample rate: {sample_rate} Hz\n"
             "Volume: {volume}\n\n"
-            "On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.\n\n"
+            "Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error "
+            "(Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).\n\n"
             "Continue?"
         ).format(
             action_note=action_note,
@@ -3638,10 +3657,8 @@ class SettingsDialog(QDialog):
         status_attr: str,
         external_plan_extra: dict[str, object] | None = None,
     ) -> bool:
-        """Launch an optional TTS install in a separate terminal when possible."""
+        """Launch an optional speech install in a Wisp-owned installer window."""
         if os.environ.get("WISP_OPTIONAL_INSTALL_INLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
-            return False
-        if getattr(sys, "frozen", False):
             return False
         status = getattr(self, status_attr, None)
         button = getattr(self, button_attr, None)
@@ -3650,10 +3667,19 @@ class SettingsDialog(QDialog):
         try:
             from core import optional_deps
 
-            root = Path(__file__).resolve().parents[2]
-            script_path = root / "scripts" / "optional_tts_installer.py"
-            if not script_path.exists():
-                return False
+            if getattr(sys, "frozen", False):
+                root = Path(sys.executable).resolve().parent
+                command = [
+                    sys.executable,
+                    "-m",
+                    "runtime.workers.optional_speech_installer",
+                ]
+            else:
+                root = Path(__file__).resolve().parents[2]
+                script_path = root / "scripts" / "optional_tts_installer.py"
+                if not script_path.exists():
+                    return False
+                command = [sys.executable, str(script_path)]
             log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
             status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
             plan_path = log_path.with_suffix(".plan.json")
@@ -3673,21 +3699,115 @@ class SettingsDialog(QDialog):
                 ok=None,
                 message=f"{display_name} install is running.",
             )
-            command = [sys.executable, str(script_path), "--plan", str(plan_path)]
-            if not _launch_terminal_command(command, cwd=root, title=f"Wisp {display_name} installer"):
-                return False
+            command = [*command, "--plan", str(plan_path)]
+            dialog = OptionalInstallDialog(
+                title=t("Wisp {display_name} installer").format(display_name=display_name),
+                subtitle=t("Installing {display_name} into Wisp's optional packages folder.").format(
+                    display_name=display_name
+                ),
+                command=command,
+                cwd=root,
+                log_path=log_path,
+                env=optional_deps.pip_install_env(),
+                mirror_output_to_log=False,
+                parent=self,
+                auto_start=True,
+            )
         except Exception as exc:  # noqa: BLE001
             self._set_test_status(status, "warn", f"Installer window could not be opened; continuing inside Settings: {exc}")
             return False
+
+        dialogs = getattr(self, "_optional_install_dialogs", None)
+        if not isinstance(dialogs, list):
+            dialogs = []
+            self._optional_install_dialogs = dialogs
+        dialogs.append(dialog)
+        dialog.install_finished.connect(
+            lambda code, _dialog=dialog: self._finish_optional_install_dialog(
+                test_key=test_key,
+                display_name=display_name,
+                button_attr=button_attr,
+                status_attr=status_attr,
+                exit_code=int(code),
+                dialog=_dialog,
+            )
+        )
+        dialog.destroyed.connect(lambda _obj=None, _dialog=dialog: self._forget_optional_install_dialog(_dialog))
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
         if isinstance(button, QPushButton):
             button.setEnabled(False)
             button.setText(t(f"Installing {display_name}..."))
         self._set_test_pending(
             status,
-            "Installer opened in a terminal window. It will close automatically when it finishes.",
+            "Installer opened in a Wisp installer window. Progress and errors will appear there.",
         )
         return True
+
+    def _forget_optional_install_dialog(self, dialog: OptionalInstallDialog) -> None:
+        """Drop a finished optional installer dialog reference."""
+        dialogs = getattr(self, "_optional_install_dialogs", None)
+        if isinstance(dialogs, list) and dialog in dialogs:
+            dialogs.remove(dialog)
+
+    def _finish_optional_install_dialog(
+        self,
+        *,
+        test_key: str,
+        display_name: str,
+        button_attr: str,
+        status_attr: str,
+        exit_code: int,
+        dialog: OptionalInstallDialog,
+    ) -> None:
+        """Refresh Settings after a Wisp-owned optional installer exits."""
+        button = getattr(self, button_attr, None)
+        status = getattr(self, status_attr, None)
+        if isinstance(button, QPushButton):
+            button.setEnabled(True)
+            if test_key == "stt_install":
+                button.setText(t("Install / load STT"))
+            elif test_key == "kokoro_install":
+                button.setText(t("Install Kokoro"))
+            elif test_key == "elevenlabs_install":
+                button.setText(t("Install ElevenLabs"))
+        if isinstance(status, QLabel):
+            message = ""
+            ok: bool | str = exit_code == 0
+            try:
+                from core import optional_deps
+
+                install_status = _read_optional_install_status(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+                if install_status:
+                    if install_status.get("ok") is None:
+                        ok = exit_code == 0
+                    else:
+                        ok = bool(install_status.get("ok"))
+                    message = str(install_status.get("message") or "")
+            except Exception:
+                message = ""
+            if not message:
+                message = (
+                    f"{display_name} installed successfully."
+                    if exit_code == 0
+                    else f"{display_name} install failed with exit code {exit_code}."
+                )
+            self._set_test_status(status, ok, _translate_status_message(message))
+
+        if test_key == "kokoro_install":
+            self._tts_install_status_checked = False
+            self._tts_install_status_result = None
+            self._refresh_tts_optional_install_status()
+        elif test_key == "elevenlabs_install":
+            self._tts_install_status_checked = False
+            self._tts_install_status_result = None
+            self._refresh_tts_optional_install_status()
+        elif test_key == "stt_install":
+            self._refresh_stt_active_backend()
+        if getattr(dialog, "exit_code", None) == 0:
+            self._forget_optional_install_dialog(dialog)
 
     def _install_optional_tts_package(
         self,
@@ -8179,21 +8299,43 @@ def _collapse_spaces(text: str) -> str:
     return " ".join(str(text or "").split())
 
 
+def _cmd_control_escape(text: str) -> str:
+    """Escape cmd.exe control characters in simple command literals."""
+    return (
+        str(text)
+        .replace("^", "^^")
+        .replace("&", "^&")
+        .replace("|", "^|")
+        .replace("<", "^<")
+        .replace(">", "^>")
+    )
+
+
 def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bool:
     """Launch a command in a user-visible terminal window."""
     try:
         if sys.platform == "win32":
             inner = subprocess.list2cmdline(command)
             quoted_cwd = subprocess.list2cmdline([str(cwd)])
+            failure_prompt = (
+                "if errorlevel 1 ("
+                "set WISP_INSTALL_EXIT=!errorlevel! & "
+                "echo. & "
+                "echo Wisp installer failed with exit code !WISP_INSTALL_EXIT!. & "
+                "echo This window stayed open so you can copy the error above. & "
+                "echo Press any key to close this window. & "
+                "pause > nul"
+                ")"
+            )
             cmdline = (
-                f"title {title} & chcp 65001 > nul & cd /d {quoted_cwd} & "
-                f"{inner}"
+                f"title {_cmd_control_escape(title)} & chcp 65001 > nul & cd /d {quoted_cwd} & "
+                f"{inner} & {failure_prompt}"
             )
             flags = int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0) or 0)
             subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], cwd=str(cwd), creationflags=flags)
             return True
         if sys.platform == "darwin":
-            command_text = f"cd {shlex.quote(str(cwd))}; {shlex.join(command)}; exit"
+            command_text = _terminal_shell_command(command, cwd, title)
             script = (
                 f"set commandText to {json.dumps(command_text)}\n"
                 "tell application \"Terminal\"\n"
@@ -8221,7 +8363,17 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
 def _terminal_shell_command(command: list[str], cwd: Path, title: str) -> str:
     """Return the shell body run inside a visible terminal."""
     title_cmd = f"printf '\\033]0;%s\\007' {shlex.quote(str(title))}"
-    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; exec {shlex.join(command)}"
+    failure_prompt = (
+        "status=$?; "
+        "if [ $status -ne 0 ]; then "
+        "printf '\\nWisp installer failed with exit code %s.\\n' \"$status\"; "
+        "printf 'This window stayed open so you can copy the error above.\\n'; "
+        "printf 'Press Enter to close this window.\\n'; "
+        "read -r _; "
+        "fi; "
+        "exit $status"
+    )
+    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; {shlex.join(command)}; {failure_prompt}"
 
 
 def _linux_terminal_candidates(shell_cmd: str, *, cwd: Path, title: str) -> list[tuple[str, list[str]]]:

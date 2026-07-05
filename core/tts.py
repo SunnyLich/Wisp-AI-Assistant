@@ -554,10 +554,19 @@ def _import_kokoro_pipeline():
 
         _kokoro_diag(f"Kokoro import ready origin={_kokoro_module_origin('kokoro')}")
         return KPipeline
+    except ModuleNotFoundError as exc:
+        _kokoro_diag(f"Kokoro import failed: {type(exc).__name__}: {exc}")
+        if getattr(exc, "name", "") == "kokoro":
+            raise RuntimeError(
+                "Kokoro support is not installed. Open Settings > Voice and click Install Kokoro."
+            ) from exc
+        raise RuntimeError(
+            f"Kokoro support failed to import: {exc}. Open Settings > Voice and reinstall Kokoro."
+        ) from exc
     except ImportError as exc:
         _kokoro_diag(f"Kokoro import failed: {type(exc).__name__}: {exc}")
         raise RuntimeError(
-            "Kokoro support is not installed. Open Settings > Voice and click Install Kokoro."
+            f"Kokoro support failed to import: {exc}. Open Settings > Voice and reinstall Kokoro."
         ) from exc
     except Exception as exc:
         _kokoro_diag(f"Kokoro import failed: {type(exc).__name__}: {exc}")

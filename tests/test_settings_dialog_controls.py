@@ -313,7 +313,7 @@ def test_settings_voice_status_check_runs_once_per_dialog(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
-    """Optional TTS installs should launch a standalone terminal in source builds."""
+    """Optional TTS installs should launch the Wisp installer dialog in source builds."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
@@ -323,8 +323,29 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
 
     app = QApplication.instance() or QApplication(sys.argv)
     launched: dict[str, object] = {}
+
+    class FakeSignal:
+        def connect(self, callback):
+            launched.setdefault("callbacks", []).append(callback)
+
+    class FakeInstallDialog:
+        def __init__(self, **kwargs):
+            launched.update(kwargs)
+            self.install_finished = FakeSignal()
+            self.destroyed = FakeSignal()
+            self.exit_code = None
+
+        def show(self):
+            launched["shown"] = True
+
+        def raise_(self):
+            launched["raised"] = True
+
+        def activateWindow(self):
+            launched["activated"] = True
+
     monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
-    monkeypatch.setattr(dialog_mod, "_launch_terminal_command", lambda command, **kwargs: launched.update(command=command, **kwargs) or True)
+    monkeypatch.setattr(dialog_mod, "OptionalInstallDialog", FakeInstallDialog)
     monkeypatch.setattr(dialog_mod.sys, "frozen", False, raising=False)
 
     dialog = SettingsDialog.__new__(SettingsDialog)
@@ -344,16 +365,173 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
 
         assert ok is True
         assert launched["title"] == "Wisp Kokoro installer"
+        assert launched["shown"] is True
+        assert launched["mirror_output_to_log"] is False
         command = launched["command"]
         assert isinstance(command, list)
+        assert command[1].endswith("optional_tts_installer.py")
         assert command[-2] == "--plan"
         plan = Path(command[-1]).read_text(encoding="utf-8")
         assert '"kokoro==0.9.4"' in plan
         assert '"post_install": "kokoro_prepare"' in plan
-        assert "close automatically" in dialog._kokoro_install_status_lbl.text()
+        assert "Wisp installer window" in dialog._kokoro_install_status_lbl.text()
     finally:
         dialog._kokoro_install_btn.deleteLater()
         dialog._kokoro_install_status_lbl.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_optional_tts_install_launches_external_terminal_in_frozen_build(monkeypatch, tmp_path):
+    """Portable builds should launch the bundled installer worker in the Wisp dialog."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    launched: dict[str, object] = {}
+
+    class FakeSignal:
+        def connect(self, callback):
+            launched.setdefault("callbacks", []).append(callback)
+
+    class FakeInstallDialog:
+        def __init__(self, **kwargs):
+            launched.update(kwargs)
+            self.install_finished = FakeSignal()
+            self.destroyed = FakeSignal()
+            self.exit_code = None
+
+        def show(self):
+            launched["shown"] = True
+
+        def raise_(self):
+            launched["raised"] = True
+
+        def activateWindow(self):
+            launched["activated"] = True
+
+    fake_exe = tmp_path / "Wisp.exe"
+    fake_exe.write_text("", encoding="utf-8")
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.setattr(dialog_mod, "OptionalInstallDialog", FakeInstallDialog)
+    monkeypatch.setattr(dialog_mod.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(dialog_mod.sys, "platform", "win32")
+    monkeypatch.setattr(dialog_mod.sys, "executable", str(fake_exe))
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._stt_download_btn = QPushButton()
+    dialog._stt_active_lbl = QLabel()
+
+    try:
+        ok = SettingsDialog._try_launch_external_optional_tts_install(
+            dialog,
+            test_key="stt_install",
+            display_name="STT",
+            packages=["faster-whisper==1.2.1"],
+            button_attr="_stt_download_btn",
+            status_attr="_stt_active_lbl",
+            external_plan_extra={"post_install": "stt_prepare", "stt_model": "base"},
+        )
+
+        assert ok is True
+        assert launched["cwd"] == fake_exe.parent
+        assert launched["command"][:3] == [
+            str(fake_exe),
+            "-m",
+            "runtime.workers.optional_speech_installer",
+        ]
+        assert launched["shown"] is True
+        assert launched["mirror_output_to_log"] is False
+        assert launched["command"][-2] == "--plan"
+        plan = Path(launched["command"][-1]).read_text(encoding="utf-8")
+        assert '"post_install": "stt_prepare"' in plan
+        assert '"stt_model": "base"' in plan
+    finally:
+        dialog._stt_download_btn.deleteLater()
+        dialog._stt_active_lbl.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_optional_installer_finish_refreshes_tts_detection(monkeypatch):
+    """Finishing a TTS install should invalidate cached detection and recheck."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    refreshes: list[str] = []
+    monkeypatch.setattr(dialog_mod, "_read_optional_install_status", lambda *_args, **_kwargs: {"ok": True, "message": "Kokoro installed."})
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", lambda self: refreshes.append("tts"))
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    dialog._tts_install_status_checked = True
+    dialog._tts_install_status_result = {"kokoro_installed": False}
+
+    try:
+        SettingsDialog._finish_optional_install_dialog(
+            dialog,
+            test_key="kokoro_install",
+            display_name="Kokoro",
+            button_attr="_kokoro_install_btn",
+            status_attr="_kokoro_install_status_lbl",
+            exit_code=0,
+            dialog=object(),
+        )
+
+        assert refreshes == ["tts"]
+        assert dialog._tts_install_status_checked is False
+        assert dialog._tts_install_status_result is None
+        assert dialog._kokoro_install_status_lbl.text() == "Kokoro installed."
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_optional_installer_finish_refreshes_stt_detection(monkeypatch):
+    """Finishing an STT install should refresh the STT backend readout."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    refreshes: list[str] = []
+    monkeypatch.setattr(dialog_mod, "_read_optional_install_status", lambda *_args, **_kwargs: {"ok": True, "message": "STT installed."})
+    monkeypatch.setattr(SettingsDialog, "_refresh_stt_active_backend", lambda self: refreshes.append("stt"))
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._stt_download_btn = QPushButton()
+    dialog._stt_active_lbl = QLabel()
+
+    try:
+        SettingsDialog._finish_optional_install_dialog(
+            dialog,
+            test_key="stt_install",
+            display_name="STT",
+            button_attr="_stt_download_btn",
+            status_attr="_stt_active_lbl",
+            exit_code=0,
+            dialog=object(),
+        )
+
+        assert refreshes == ["stt"]
+        assert dialog._stt_active_lbl.text() == "STT installed."
+        assert dialog._stt_download_btn.text() == "Install / load STT"
+    finally:
+        dialog._stt_download_btn.deleteLater()
+        dialog._stt_active_lbl.deleteLater()
         app.processEvents()
 
 
@@ -421,7 +599,7 @@ def test_stt_install_uses_optional_installer(monkeypatch, tmp_path):
 
 
 def test_optional_install_terminal_closes_on_windows(monkeypatch, tmp_path):
-    """Windows terminal installs should close when the installer command exits."""
+    """Windows terminal installs should auto-close on success and stay open on failure."""
     from ui.settings_panel import dialog as dialog_mod
 
     launched: dict[str, object] = {}
@@ -444,12 +622,14 @@ def test_optional_install_terminal_closes_on_windows(monkeypatch, tmp_path):
     cmdline = launched["command"][-1]
     assert "python -m installer" in cmdline
     assert "/K" not in launched["command"]
-    assert "pause" not in cmdline.lower()
+    assert "if errorlevel 1" in cmdline
+    assert "Wisp installer failed with exit code !WISP_INSTALL_EXIT!." in cmdline
+    assert "pause > nul" in cmdline.lower()
     assert launched["creationflags"] == 16
 
 
 def test_optional_install_terminal_auto_closes_on_macos(monkeypatch, tmp_path):
-    """macOS terminal installs should close the Terminal window after completion."""
+    """macOS terminal installs should close on success and pause on failure."""
     from ui.settings_panel import dialog as dialog_mod
 
     launched: dict[str, object] = {}
@@ -472,13 +652,14 @@ def test_optional_install_terminal_auto_closes_on_macos(monkeypatch, tmp_path):
     assert "activate" in script
     assert "exit" in script
     assert "close (window of targetTab) saving no" in script
-    assert "Press Enter" not in script
-    assert "read -r" not in script
+    assert "Wisp installer failed with exit code" in script
+    assert "Press Enter to close this window" in script
+    assert "read -r _" in script
     assert "read -n" not in script
 
 
 def test_optional_install_terminal_auto_closes_on_linux(monkeypatch, tmp_path):
-    """Linux terminal installs should let the terminal close when the command exits."""
+    """Linux terminal installs should close on success and pause on failure."""
     from ui.settings_panel import dialog as dialog_mod
 
     launched: dict[str, object] = {}
@@ -508,11 +689,23 @@ def test_optional_install_terminal_auto_closes_on_linux(monkeypatch, tmp_path):
     assert launched["stdout"] == dialog_mod.subprocess.DEVNULL
     assert launched["stderr"] == dialog_mod.subprocess.DEVNULL
     shell_cmd = command[-1]
-    assert "exec python -m installer" in shell_cmd
     assert "python -m installer" in shell_cmd
-    assert "Press Enter" not in shell_cmd
+    assert "Wisp installer failed with exit code" in shell_cmd
+    assert "Press Enter to close this window" in shell_cmd
     assert "read -r -p" not in shell_cmd
-    assert "read -r" not in shell_cmd
+    assert "read -r _" in shell_cmd
+
+
+def test_local_speech_device_options_hide_cuda_on_macos(monkeypatch):
+    """macOS should not offer CUDA for STT or Kokoro installs."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    monkeypatch.setattr(dialog_mod.sys, "platform", "darwin")
+
+    options = dialog_mod._local_speech_device_options()
+
+    assert ("GPU (CUDA)", "cuda") not in options
+    assert [value for _label, value in options] == ["auto", "cpu"]
 
 
 def test_optional_install_terminal_falls_back_to_konsole_on_linux(monkeypatch, tmp_path):

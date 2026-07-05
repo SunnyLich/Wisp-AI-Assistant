@@ -315,20 +315,55 @@ def test_reply_labeled_text_keeps_label_out_of_reply_content() -> None:
     assert bubble.chunks == []
 
 
-def test_ui_shutdown_message_closes_stdin_reader() -> None:
-    """Verify UI shutdown unblocks the stdin reader before interpreter teardown."""
+def _install_fake_pyside(monkeypatch, *, top_level_widgets):
+    """Fake the PySide6 pieces the shutdown path imports lazily."""
+    import sys
+    from types import SimpleNamespace
+
+    def single_shot(interval, callback):
+        assert interval == 0
+        callback()
+
+    qtcore = SimpleNamespace(QTimer=SimpleNamespace(singleShot=single_shot))
+    qtwidgets = SimpleNamespace(
+        QApplication=SimpleNamespace(topLevelWidgets=lambda: list(top_level_widgets))
+    )
+    monkeypatch.setitem(sys.modules, "PySide6", SimpleNamespace(QtCore=qtcore, QtWidgets=qtwidgets))
+    monkeypatch.setitem(sys.modules, "PySide6.QtCore", qtcore)
+    monkeypatch.setitem(sys.modules, "PySide6.QtWidgets", qtwidgets)
+
+
+def _fake_window(events, name):
+    """Record close/deleteLater calls for a stand-in top-level widget."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        close=lambda: events.append((name, "close")),
+        deleteLater=lambda: events.append((name, "deleteLater")),
+    )
+
+
+def test_ui_shutdown_message_defers_quit_and_leaves_stdin_open(monkeypatch) -> None:
+    """Verify __shutdown__ tears down windows once, then quits via the loop."""
     import json
     from types import SimpleNamespace
 
     from runtime.workers.ui_host import QtProtocolHost
 
+    window_events = []
+    quit_calls = []
+    _install_fake_pyside(
+        monkeypatch,
+        top_level_widgets=[_fake_window(window_events, "overlay"), _fake_window(window_events, "chat")],
+    )
     host = QtProtocolHost.__new__(QtProtocolHost)
     stopped = []
-    quit_calls = []
+    watchdog_stopped = []
     responses = []
     closed = []
     host._closing = False
     host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
+    host._watchdog = SimpleNamespace(stop=lambda: watchdog_stopped.append(True))
     host._app = SimpleNamespace(quit=lambda: quit_calls.append(True))
     host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
     host._respond = lambda req_id, ok, **kwargs: responses.append((req_id, ok, kwargs))  # type: ignore[method-assign]
@@ -338,31 +373,50 @@ def test_ui_shutdown_message_closes_stdin_reader() -> None:
     assert responses == [(7, True, {"result": None})]
     assert host._closing is True
     assert stopped == [True]
-    assert closed == [True]
+    assert watchdog_stopped == [True]
+    assert window_events == [
+        ("overlay", "close"),
+        ("overlay", "deleteLater"),
+        ("chat", "close"),
+        ("chat", "deleteLater"),
+    ]
+    # The reader thread owns the buffered stdin lock while blocked in
+    # readline(); closing the stream from the main thread would deadlock.
+    assert closed == []
     assert quit_calls == [True]
 
 
-def test_ui_about_to_quit_emits_user_quit_and_closes_stdin() -> None:
+def test_ui_about_to_quit_emits_user_quit_once_and_leaves_stdin_open(monkeypatch) -> None:
     """Verify user-requested Qt quit tells the supervisor not to restart UI."""
     from types import SimpleNamespace
 
     from runtime.workers.ui_host import QtProtocolHost
 
+    window_events = []
+    _install_fake_pyside(
+        monkeypatch,
+        top_level_widgets=[_fake_window(window_events, "overlay")],
+    )
     emitted = []
     stopped = []
+    watchdog_stopped = []
     closed = []
     host = QtProtocolHost.__new__(QtProtocolHost)
     host._closing = False
     host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
+    host._watchdog = SimpleNamespace(stop=lambda: watchdog_stopped.append(True))
     host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
     host.emit = lambda event, data=None, req_id=None: emitted.append((event, data, req_id))  # type: ignore[method-assign]
 
+    host._on_about_to_quit()
     host._on_about_to_quit()
 
     assert host._closing is True
     assert emitted == [("ui.quit_requested", {"reason": "qt_about_to_quit"}, None)]
     assert stopped == [True]
-    assert closed == [True]
+    assert watchdog_stopped == [True]
+    assert window_events == [("overlay", "close"), ("overlay", "deleteLater")]
+    assert closed == []
 
 
 def test_bubble_highlight_does_not_mutate_chat_window() -> None:

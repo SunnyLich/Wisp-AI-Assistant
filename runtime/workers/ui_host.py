@@ -1945,33 +1945,75 @@ class QtProtocolHost:
                 return
             self._lines.put(line)
 
-    def _close_stdin_reader(self) -> None:
-        """Unblock the stdin reader before Python starts interpreter teardown."""
-        try:
-            self._stdin_stream.close()
-        except Exception:
-            pass
+    def _begin_shutdown(self, reason: str, *, notify_supervisor: bool) -> None:
+        """Run every shutdown path through one idempotent teardown sequence.
 
-    def _on_about_to_quit(self) -> None:
-        """Tell the supervisor that Qt is quitting by user request."""
-        if not self._closing:
-            self._closing = True
+        The stdin reader thread is deliberately left blocked in readline():
+        closing the buffered stream from this thread would block on the
+        buffer's internal lock until the supervisor writes or closes the pipe,
+        and closing the raw fd does not interrupt a blocked read on Linux.
+        The reader is a daemon thread that only touches a queue.Queue, so it
+        is safe to leave running until the process exits.
+        """
+        if self._closing:
+            return
+        self._closing = True
+        if notify_supervisor:
             try:
-                self.emit("ui.quit_requested", {"reason": "qt_about_to_quit"})
+                self.emit("ui.quit_requested", {"reason": reason})
             except Exception:
                 pass
         try:
             self._pump.stop()
         except Exception:
             pass
-        self._close_stdin_reader()
+        try:
+            self._watchdog.stop()
+        except Exception:
+            pass
+        self._teardown_windows()
 
-    def _quit_after_shutdown(self) -> None:
-        """Stop UI IPC and quit the Qt event loop."""
-        self._closing = True
-        self._pump.stop()
-        self._close_stdin_reader()
-        self._app.quit()
+    def _teardown_windows(self) -> None:
+        """Close and delete all windows while Qt can still process the deletes."""
+        from PySide6.QtWidgets import QApplication
+
+        for widget in QApplication.topLevelWidgets():
+            try:
+                widget.close()
+            except Exception:
+                pass
+            try:
+                widget.deleteLater()
+            except Exception:
+                pass
+
+    def _on_about_to_quit(self) -> None:
+        """Tell the supervisor that Qt is quitting by user request."""
+        self._begin_shutdown("qt_about_to_quit", notify_supervisor=True)
+
+    def _quit_after_shutdown(self, reason: str) -> None:
+        """Stop UI IPC, tear down windows, and quit the Qt event loop."""
+        from PySide6.QtCore import QTimer
+
+        self._begin_shutdown(reason, notify_supervisor=False)
+        # Quit on the next loop pass so the current IPC dispatch unwinds and
+        # the DeferredDelete events posted by _teardown_windows run while the
+        # event loop is still alive.
+        QTimer.singleShot(0, self._app.quit)
+
+    def finalize_after_exec(self) -> None:
+        """Destroy pending deleteLater objects while QApplication still exists.
+
+        Runs after app.exec() returns; without it, widgets deleted during the
+        aboutToQuit path would be destroyed by interpreter teardown in
+        arbitrary order against QApplication.
+        """
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        try:
+            QCoreApplication.sendPostedEvents(None, int(QEvent.Type.DeferredDelete))
+        except Exception:
+            pass
 
     def _drain(self) -> None:
         """Handle drain for qt protocol host."""
@@ -1982,7 +2024,7 @@ class QtProtocolHost:
             except queue.Empty:
                 return
             if line is None:
-                self._quit_after_shutdown()
+                self._quit_after_shutdown("stdin_eof")
                 return
             if line.strip():
                 self._handle_line(line)
@@ -1997,7 +2039,7 @@ class QtProtocolHost:
             params = msg.get("params") or {}
             if method == "__shutdown__":
                 self._respond(req_id, True, result=None)
-                self._quit_after_shutdown()
+                self._quit_after_shutdown("supervisor_shutdown")
                 return
             if not isinstance(params, dict):
                 raise ValueError("params must be an object")
@@ -4503,7 +4545,9 @@ def main() -> int:
     host = QtProtocolHost(app, real_out)
     app._wisp_runtime_ui_host = host
     host.emit("ui.ready", {"repo": str(root)})
-    return int(app.exec())
+    exit_code = int(app.exec())
+    host.finalize_after_exec()
+    return exit_code
 
 
 if __name__ == "__main__":

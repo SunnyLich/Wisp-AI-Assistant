@@ -7,6 +7,8 @@ import unittest
 import wave
 from unittest.mock import patch
 
+import numpy as np
+
 from core import tts
 
 
@@ -144,6 +146,21 @@ class TtsConnectionTests(unittest.TestCase):
         with patch("builtins.__import__", fake_import):
             with self.assertRaisesRegex(RuntimeError, "reinstall Kokoro"):
                 tts._import_kokoro_pipeline()
+
+    def test_kokoro_missing_transitive_module_is_not_reported_as_uninstalled(self):
+        """Missing bundled stdlib/native modules should not look like absent Kokoro."""
+        original_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "kokoro":
+                raise ModuleNotFoundError("No module named 'cmath'", name="cmath")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", fake_import):
+            with self.assertRaisesRegex(RuntimeError, "failed to import.*cmath") as ctx:
+                tts._import_kokoro_pipeline()
+
+        self.assertNotIn("not installed", str(ctx.exception))
 
     def test_prepare_kokoro_assets_downloads_model_and_voice(self):
         """Verify Kokoro asset preparation fetches the model files before synthesis."""

@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+﻿<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="fr">
   <context>
     <name>Wisp</name>
@@ -563,6 +563,10 @@
       <translation>Auto (GPU si disponible)</translation>
     </message>
     <message>
+      <source>Auto (CPU)</source>
+      <translation>Auto (CPU)</translation>
+    </message>
+    <message>
       <source>Auto document chars</source>
       <translation>Caractères de document automatique</translation>
     </message>
@@ -775,6 +779,62 @@ Laisser le modèle décider — expose la recherche web et les outils de lecture
     <message>
       <source>Close</source>
       <translation>Fermer</translation>
+    </message>
+    <message>
+      <source>Wisp is preparing the optional install.</source>
+      <translation>Wisp prépare l'installation optionnelle.</translation>
+    </message>
+    <message>
+      <source>Ready to start.</source>
+      <translation>Prêt à démarrer.</translation>
+    </message>
+    <message>
+      <source>Copy log</source>
+      <translation>Copier le journal</translation>
+    </message>
+    <message>
+      <source>Open log folder</source>
+      <translation>Ouvrir le dossier du journal</translation>
+    </message>
+    <message>
+      <source>Starting installer...</source>
+      <translation>Démarrage du programme d'installation...</translation>
+    </message>
+    <message>
+      <source>Installer command is empty.</source>
+      <translation>La commande du programme d'installation est vide.</translation>
+    </message>
+    <message>
+      <source>Installer process could not be started.</source>
+      <translation>Impossible de démarrer le processus d'installation.</translation>
+    </message>
+    <message>
+      <source>Installer is running.</source>
+      <translation>Le programme d'installation est en cours d'exécution.</translation>
+    </message>
+    <message>
+      <source>Cancelling installer...</source>
+      <translation>Annulation du programme d'installation...</translation>
+    </message>
+    <message>
+      <source>Installer process failed.</source>
+      <translation>Le processus d'installation a échoué.</translation>
+    </message>
+    <message>
+      <source>Installer cancelled.</source>
+      <translation>Installation annulée.</translation>
+    </message>
+    <message>
+      <source>Installer completed successfully.</source>
+      <translation>Installation terminée avec succès.</translation>
+    </message>
+    <message>
+      <source>Installer failed with exit code {code}.</source>
+      <translation>Le programme d'installation a échoué avec le code de sortie {code}.</translation>
+    </message>
+    <message>
+      <source>Cancel the installer before closing this window.</source>
+      <translation>Annulez l'installation avant de fermer cette fenêtre.</translation>
     </message>
     <message>
       <source>ChatGPT Plus/Pro (OAuth subscription)</source>
@@ -2671,6 +2731,14 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Emplacement d’exécution de Whisper. GPU (CUDA) est beaucoup plus rapide, surtout avec large-v3, mais nécessite un GPU NVIDIA avec CUDA installé. Auto utilise le GPU s’il est présent, sinon repasse au CPU.</translation>
     </message>
     <message>
+      <source>Where Whisper runs. macOS uses CPU for local STT in this release.</source>
+      <translation>Emplacement d’exécution de Whisper. macOS utilise le CPU pour le STT local dans cette version.</translation>
+    </message>
+    <message>
+      <source>Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release.</source>
+      <translation>Emplacement d’exécution de Kokoro TTS local. macOS utilise le CPU pour Kokoro dans cette version.</translation>
+    </message>
+    <message>
       <source>Whisper compute precision. Keep int8 for CPU unless you know you need another mode.</source>
       <translation>Précision de calcul Whisper. Gardez int8 pour le CPU sauf si vous savez qu’un autre mode est nécessaire.</translation>
     </message>
@@ -3091,7 +3159,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp va installer Kokoro dans cet environnement Python.
@@ -3139,8 +3207,16 @@ Continuer ?</translation>
       <translation>La sortie du programme d'installation apparaitra ici.</translation>
     </message>
     <message>
-      <source>Installer opened in a terminal window. It will close automatically when it finishes.</source>
-      <translation>Le programme d'installation s'est ouvert dans une fenetre de terminal. Elle se fermera automatiquement a la fin.</translation>
+      <source>Installer opened in a Wisp installer window. Progress and errors will appear there.</source>
+      <translation>Le programme d'installation s'est ouvert dans une fenetre Wisp. La progression et les erreurs y apparaitront.</translation>
+    </message>
+    <message>
+      <source>Wisp {display_name} installer</source>
+      <translation>Programme d'installation Wisp pour {display_name}</translation>
+    </message>
+    <message>
+      <source>Installing {display_name} into Wisp's optional packages folder.</source>
+      <translation>Installation de {display_name} dans le dossier des paquets optionnels de Wisp.</translation>
     </message>
     <message>
       <source>Installer window launched. You can close Settings; leave the terminal open until it finishes.</source>
@@ -3362,7 +3438,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>{action_note}Paquets : {package_label}
@@ -4313,7 +4389,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp installera Kokoro dans son dossier de paquets optionnels accessible en écriture.

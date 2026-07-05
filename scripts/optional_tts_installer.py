@@ -123,9 +123,8 @@ def main() -> int:
     packages = _package_list(plan, "packages")
     if not packages and not pre_install_packages:
         raise ValueError("installer plan packages or pre_install_packages must be a non-empty list of strings")
-    log_path = Path(str(plan.get("log_path") or "")).expanduser()
-    if not log_path:
-        log_path = Path(plan_path).with_suffix(".log")
+    raw_log_path = str(plan.get("log_path") or "").strip()
+    log_path = Path(raw_log_path).expanduser() if raw_log_path else Path(plan_path).with_suffix(".log")
     raw_status_path = str(plan.get("status_path") or "").strip()
     status_path = Path(raw_status_path).expanduser() if raw_status_path else None
     log_path.parent.mkdir(parents=True, exist_ok=True)

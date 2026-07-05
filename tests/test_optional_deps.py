@@ -352,6 +352,18 @@ def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
     assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages("auto")
 
 
+def test_kokoro_install_uses_cpu_on_macos_even_when_cuda_selected(monkeypatch):
+    """macOS cannot install CUDA Kokoro support, even if a stale config asks for it."""
+    from core import optional_deps
+
+    monkeypatch.setattr(optional_deps.sys, "platform", "darwin")
+    monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: True)
+
+    assert optional_deps.kokoro_install_mode_for_device("cuda") == "cpu"
+    assert optional_deps.kokoro_install_mode_for_device("auto") == "cpu"
+    assert optional_deps.kokoro_torch_install_packages("cuda") == []
+
+
 def test_system_cuda_available_does_not_import_ctranslate2(monkeypatch):
     """Settings must not import native ML libraries while deciding Kokoro install mode."""
     from core import optional_deps
