@@ -222,6 +222,17 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn("installs/uses `uv` to provision that Python", docs)
         self.assertIn("bootstraps it with `ensurepip`", docs)
 
+    def test_windows_build_stages_uv_for_portable_runtime_installs(self) -> None:
+        powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+
+        self.assertIn("function Stage-PortableUv", powershell)
+        self.assertIn('Join-Path $ToolsDir "uv.exe"', powershell)
+        self.assertIn("Copy-Item -LiteralPath $SourcePath -Destination $PortableUv -Force", powershell)
+        self.assertLess(powershell.index("Stage-PortableUv"), powershell.index('Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "PyInstaller"'))
+        self.assertIn("The Windows build script stages", docs)
+        self.assertIn("`uv.exe` into `tools\\uv.exe` before PyInstaller runs", docs)
+
     def test_specs_bundle_version_metadata_for_updater(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
             with self.subTest(spec=spec_name):

@@ -80,6 +80,34 @@ def test_optional_deps_dev_reinstall_can_force_replacement(monkeypatch, tmp_path
     assert command[-1] == "torch"
 
 
+def test_remove_optional_package_artifacts_is_scoped(monkeypatch, tmp_path):
+    """STT repair cleanup should only remove matching optional package artifacts."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    (target / "faster_whisper").mkdir(parents=True)
+    (target / "faster_whisper-1.2.1.dist-info").mkdir()
+    (target / "ctranslate2").mkdir()
+    (target / "keepme").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    removed = optional_deps.remove_optional_package_artifacts([
+        "faster_whisper",
+        "faster_whisper-*.dist-info",
+        "ctranslate2",
+        "../outside",
+    ])
+
+    assert sorted(removed) == ["ctranslate2", "faster_whisper", "faster_whisper-1.2.1.dist-info"]
+    assert not (target / "faster_whisper").exists()
+    assert not (target / "faster_whisper-1.2.1.dist-info").exists()
+    assert not (target / "ctranslate2").exists()
+    assert (target / "keepme").exists()
+    assert outside.exists()
+
+
 def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
     """Packaged launches must not run Wisp.exe as `python -m pip`."""
     from core import optional_deps
@@ -108,6 +136,32 @@ def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
     assert "--python-version" in command
     assert command[command.index("--target") + 1] == str(target)
     assert command[-2:] == [optional_deps.KOKORO_PACKAGE, optional_deps.SOUNDFILE_PACKAGE]
+
+
+def test_optional_deps_frozen_stt_install_uses_bundled_uv(monkeypatch, tmp_path):
+    """Packaged STT installs must use bundled uv too, not Wisp.exe as pip."""
+    from core import optional_deps
+
+    suffix = ".exe" if sys.platform == "win32" else ""
+    bundle = tmp_path / "_internal"
+    uv = bundle / "bin" / f"uv{suffix}"
+    uv.parent.mkdir(parents=True)
+    uv.write_text("", encoding="utf-8")
+    target = tmp_path / "data" / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_deps, "REPO_ROOT", tmp_path / "data")
+    monkeypatch.setattr(optional_deps.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(optional_deps.sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setattr(optional_deps.sys, "executable", str(tmp_path / "Wisp.exe"))
+    monkeypatch.setattr(optional_deps.shutil, "which", lambda _name: "")
+
+    command = optional_deps.pip_install_command(optional_deps.stt_install_packages())
+
+    assert command[:3] == [str(uv), "pip", "install"]
+    assert "-m" not in command
+    assert "--python-version" in command
+    assert command[command.index("--target") + 1] == str(target)
+    assert command[-len(optional_deps.stt_install_packages()):] == optional_deps.stt_install_packages()
 
 
 def test_optional_deps_frozen_reinstall_can_force_replacement(monkeypatch, tmp_path):

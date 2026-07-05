@@ -105,16 +105,42 @@ def run_setup_check() -> list[dict[str, str]]:
     )
 
     stt_model = str(getattr(config, "STT_MODEL", "") or "").strip()
+    stt_package_ok = False
+    stt_import_error = ""
+    stt_recommendation = ""
+    if stt_model:
+        try:
+            from core import optional_deps
+
+            stt_status = optional_deps.stt_runtime_import_status_subprocess()
+            stt_package_ok = bool(stt_status.get("installed") and stt_status.get("valid"))
+            stt_import_error = str(stt_status.get("error") or "").strip()
+        except Exception:
+            stt_package_ok = False
+            stt_import_error = ""
+        if not stt_package_ok:
+            stt_recommendation = (
+                "Recommendation: STT support is not working. Open Settings > Voice and click "
+                "Install / load STT."
+            )
     rows.append(
         {
             "name": "Speech to text",
-            "status": "pass",
+            "status": "pass" if not stt_model else _status(stt_package_ok),
             "message": (
-                f"STT model configured: {stt_model}."
+                f"STT model configured: {stt_model}. faster-whisper is installed."
+                if stt_model and stt_package_ok
+                else f"STT model configured: {stt_model}, but faster-whisper failed to import: {stt_import_error}"
+                if stt_model and stt_import_error
+                else f"STT model configured: {stt_model}, but faster-whisper is not installed."
                 if stt_model
                 else "STT is not configured; voice and dictation can stay off."
             ),
-            "recommendation": "",
+            "recommendation": (
+                ""
+                if not stt_model or stt_package_ok
+                else stt_recommendation
+            ),
         }
     )
 

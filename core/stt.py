@@ -115,7 +115,7 @@ def preload_model() -> dict | None:
     active backend info.
 
     Unlike ``prewarm`` this is synchronous and lets the exception propagate, so a
-    caller (e.g. the Settings "Download / load model now" button) can tell the
+    caller can tell the
     user the difference between "ready" and "couldn't fetch — you're offline".
     Call it from a worker thread, never the UI thread: the first call downloads
     ~150 MB. On macOS the helper owns STT out-of-process, so this just kicks its

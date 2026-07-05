@@ -8,6 +8,18 @@ from core import setup_check
 pytestmark = pytest.mark.workflow
 
 
+@pytest.fixture(autouse=True)
+def _installed_stt_package(monkeypatch):
+    """Most setup-check tests are about other rows; treat STT as installed by default."""
+    from core import optional_deps
+
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_runtime_import_status_subprocess",
+        lambda: {"installed": True, "valid": True},
+    )
+
+
 def test_setup_check_reports_core_readiness(monkeypatch):
     """Setup check returns statuses, messages, and recommendations."""
     import config
@@ -55,6 +67,70 @@ def test_setup_check_treats_unconfigured_stt_as_optional(monkeypatch):
 
     assert by_name["Speech to text"]["status"] == "pass"
     assert "voice and dictation can stay off" in by_name["Speech to text"]["message"]
+
+
+def test_setup_check_warns_when_stt_package_missing(monkeypatch):
+    """Configured STT should verify the package, not just the model name."""
+    import config
+    from core import optional_deps
+
+    monkeypatch.setattr(config, "reload", lambda: None)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config, "LLM_MODEL", "llama-test", raising=False)
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setattr(config, "STT_MODEL", "base", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_SNIP", "ctrl+alt+q", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_VOICE", "f9", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_ADD_CONTEXT", "", raising=False)
+    monkeypatch.setattr(config, "CALLER_ROWS", [], raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_runtime_import_status_subprocess",
+        lambda: {"installed": False, "valid": False},
+    )
+
+    rows = setup_check.run_setup_check()
+    by_name = {row["name"]: row for row in rows}
+
+    assert by_name["Speech to text"]["status"] == "fail"
+    assert "faster-whisper is not installed" in by_name["Speech to text"]["message"]
+    assert "Install / load STT" in by_name["Speech to text"]["recommendation"]
+
+
+def test_setup_check_warns_when_stt_import_fails(monkeypatch):
+    """Configured STT should catch broken imports, not just missing package folders."""
+    import config
+    from core import optional_deps
+
+    monkeypatch.setattr(config, "reload", lambda: None)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config, "LLM_MODEL", "llama-test", raising=False)
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setattr(config, "STT_MODEL", "base", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_SNIP", "ctrl+alt+q", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_VOICE", "f9", raising=False)
+    monkeypatch.setattr(config, "HOTKEY_ADD_CONTEXT", "", raising=False)
+    monkeypatch.setattr(config, "CALLER_ROWS", [], raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_runtime_import_status_subprocess",
+        lambda: {
+            "installed": True,
+            "valid": False,
+            "error": "ImportError: DLL load failed while importing ctranslate2",
+        },
+    )
+
+    rows = setup_check.run_setup_check()
+    by_name = {row["name"]: row for row in rows}
+
+    assert by_name["Speech to text"]["status"] == "fail"
+    assert "failed to import" in by_name["Speech to text"]["message"]
+    assert "ctranslate2" in by_name["Speech to text"]["message"]
+    assert "STT support is not working" in by_name["Speech to text"]["recommendation"]
+
 
 
 def test_setup_check_accepts_zai_key(monkeypatch):

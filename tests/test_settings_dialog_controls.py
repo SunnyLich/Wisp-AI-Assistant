@@ -357,6 +357,69 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
         app.processEvents()
 
 
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_stt_install_uses_optional_installer(monkeypatch, tmp_path):
+    """STT install should use the same optional installer flow as TTS."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox, QMessageBox
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.setattr(
+        dialog_mod.QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(SettingsDialog, "_install_optional_tts_package", lambda self, **kwargs: captured.update(kwargs))
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    model = QComboBox()
+    model.addItem("base", "base")
+    device = QComboBox()
+    device.addItem("Auto", "auto")
+    compute = QComboBox()
+    compute.addItem("int8", "int8")
+    language = QComboBox()
+    language.addItem("English", "en")
+    beam = QComboBox()
+    beam.addItem("5", "5")
+    dialog._fields = {
+        "STT_MODEL": model,
+        "STT_DEVICE": device,
+        "STT_COMPUTE_TYPE": compute,
+        "STT_LANGUAGE": language,
+        "STT_BEAM_SIZE": beam,
+    }
+    dialog._stt_download_btn = QPushButton()
+    dialog._stt_active_lbl = QLabel()
+
+    try:
+        SettingsDialog._preload_stt_model(dialog)
+
+        assert captured["test_key"] == "stt_install"
+        assert captured["display_name"] == "STT"
+        assert captured["packages"] == optional_deps.stt_install_packages()
+        assert captured["remove_artifacts"] == optional_deps.stt_remove_artifacts()
+        assert captured["button_attr"] == "_stt_download_btn"
+        assert captured["status_attr"] == "_stt_active_lbl"
+        assert captured["external_plan_extra"] == {
+            "post_install": "stt_prepare",
+            "stt_model": "base",
+            "stt_device": "auto",
+            "stt_compute_type": "int8",
+        }
+        assert captured["post_install_progress_detail"] == "downloading or loading Whisper model for {elapsed}"
+    finally:
+        for widget in (model, device, compute, language, beam, dialog._stt_download_btn, dialog._stt_active_lbl):
+            widget.deleteLater()
+        app.processEvents()
+
+
 def test_optional_install_terminal_closes_on_windows(monkeypatch, tmp_path):
     """Windows terminal installs should close when the installer command exits."""
     from ui.settings_panel import dialog as dialog_mod
@@ -1416,6 +1479,7 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
 
         assert captured["packages"] == optional_deps.kokoro_install_packages("cuda")
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
+        assert captured["remove_artifacts"] == optional_deps.kokoro_remove_artifacts()
         assert "torch==2.11.0+cu128" in captured["pre_install_packages"]
         assert "torch==2.11.0+cu128" not in captured["packages"]
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
@@ -1476,6 +1540,7 @@ def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
 
         assert captured["packages"] == []
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
+        assert captured["remove_artifacts"] == []
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():
@@ -2106,8 +2171,8 @@ def test_drain_test_progress_coalesces_timer_updates():
     dialog._kokoro_install_status_lbl = label
     dialog._disposing = False
     dialog._pending_test_progress = [
-        ("kokoro_install", 1, "Installing Kokoro: preparing local voice assets for 0s."),
-        ("kokoro_install", 1, "Installing Kokoro: preparing local voice assets for 20s."),
+        ("kokoro_install", 1, "Installing Kokoro: preparing local assets for 0s."),
+        ("kokoro_install", 1, "Installing Kokoro: preparing local assets for 20s."),
     ]
     dialog._pending_test_progress_lock = threading.Lock()
     dialog._pending_test_results = []
@@ -2119,7 +2184,7 @@ def test_drain_test_progress_coalesces_timer_updates():
     try:
         SettingsDialog._drain_test_results(dialog)
 
-        assert label.text() == "Installing Kokoro: preparing local voice assets for 20s."
+        assert label.text() == "Installing Kokoro: preparing local assets for 20s."
         assert dialog._pending_test_progress == []
         assert dialog._test_result_timer.stopped is False
     finally:

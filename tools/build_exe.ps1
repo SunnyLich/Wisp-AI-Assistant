@@ -143,8 +143,9 @@ function Get-PythonVersion {
 }
 
 function Find-Uv {
-    if (Get-Command uv -ErrorAction SilentlyContinue) {
-        return "uv"
+    $UvCommand = Get-Command uv -ErrorAction SilentlyContinue
+    if ($UvCommand) {
+        return $UvCommand.Source
     }
 
     $Candidates = @(
@@ -174,6 +175,27 @@ function Ensure-Uv {
         "irm https://astral.sh/uv/install.ps1 | iex"
     )
     return Find-Uv
+}
+
+function Stage-PortableUv {
+    $Uv = Ensure-Uv
+    if ($null -eq $Uv) {
+        throw "Could not find or install uv. Runtime package installs in packaged Wisp require bundled uv.exe."
+    }
+
+    $ToolsDir = Join-Path $Root "tools"
+    $PortableUv = Join-Path $ToolsDir "uv.exe"
+    if (-not (Test-Path $ToolsDir)) {
+        New-Item -ItemType Directory -Force $ToolsDir | Out-Null
+    }
+
+    $SourcePath = (Resolve-Path -LiteralPath $Uv).Path
+    $TargetPath = if (Test-Path -LiteralPath $PortableUv) { (Resolve-Path -LiteralPath $PortableUv).Path } else { $PortableUv }
+    if ($SourcePath -ne $TargetPath) {
+        Copy-Item -LiteralPath $SourcePath -Destination $PortableUv -Force
+    }
+    Write-Host "Bundling uv for runtime optional package installs:"
+    Write-Host "  $PortableUv"
 }
 
 function Test-PipAvailable {
@@ -347,6 +369,7 @@ try {
     throw "PyInstaller is not installed in $Python. Run without -SkipInstall, or run: $Python -m pip install -r requirements/requirements-build.lock"
 }
 
+Stage-PortableUv
 Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "PyInstaller", "--noconfirm", $Spec) -StepName "PyInstaller build"
 
 # Seed %APPDATA%\Wisp\.env with the repo's .env if the user has no settings yet.

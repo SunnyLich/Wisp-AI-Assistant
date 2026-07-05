@@ -1,4 +1,4 @@
-"""Run optional TTS package installs in a standalone terminal."""
+"""Run optional speech package installs in a standalone terminal."""
 from __future__ import annotations
 
 import argparse
@@ -61,6 +61,20 @@ def _package_list(plan: dict[str, Any], key: str) -> list[str]:
     return packages
 
 
+def _remove_artifacts(log, prefix: str, patterns: list[str]) -> None:
+    """Remove optional-package artifacts before reinstalling a repaired package."""
+    if not patterns:
+        return
+    from core import optional_deps
+
+    _log(log, prefix, "Removing previous optional package artifacts before install.")
+    removed = optional_deps.remove_optional_package_artifacts(patterns)
+    if removed:
+        _log(log, prefix, f"Removed: {', '.join(sorted(removed))}")
+    else:
+        _log(log, prefix, "No previous artifacts found.")
+
+
 def _run_install_command(log, prefix: str, packages: list[str], *, reinstall: bool = False) -> int:
     """Run one optional package install command, streaming output to the terminal."""
     from core import optional_deps
@@ -104,6 +118,7 @@ def main() -> int:
     plan_path = Path(args.plan).expanduser().resolve()
     plan = _load_plan(plan_path)
     display_name = str(plan.get("display_name") or "Optional package")
+    remove_artifacts = _package_list(plan, "remove_artifacts")
     pre_install_packages = _package_list(plan, "pre_install_packages")
     packages = _package_list(plan, "packages")
     if not packages and not pre_install_packages:
@@ -118,6 +133,7 @@ def main() -> int:
 
     with log_path.open("a", encoding="utf-8") as log:
         _write_status(status_path, ok=None, message=f"{display_name} install is running.")
+        _remove_artifacts(log, prefix, remove_artifacts)
         if pre_install_packages:
             _log(log, prefix, "Installing CUDA Torch before Kokoro packages.")
             returncode = _run_install_command(log, prefix, pre_install_packages, reinstall=True)
@@ -169,6 +185,24 @@ def main() -> int:
                 _log(log, prefix, message)
                 _write_status(status_path, ok=False, message=message)
                 return 1
+        elif post_install == "stt_prepare":
+            model = str(plan.get("stt_model") or "base")
+            device = str(plan.get("stt_device") or "auto")
+            compute_type = str(plan.get("stt_compute_type") or "int8")
+            _write_status(status_path, ok=None, message=f"Installing STT: downloading or loading Whisper model {model}.")
+            _log(log, prefix, f"Downloading or loading STT model {model} on {device} ({compute_type}).")
+            status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
+            if status.get("error") or status.get("valid") is False:
+                detail = str(status.get("error") or "STT model verification failed.")
+                message = f"STT installed, but model verification failed: {detail}"
+                _log(log, prefix, message)
+                _write_status(status_path, ok=False, message=message)
+                return 1
+            resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
+            message = f"STT installed and model ready: {resolved}."
+            _log(log, prefix, message)
+            _write_status(status_path, ok=True, message=message)
+            return 0
 
         _log(log, prefix, "Completed successfully.")
         _write_status(status_path, ok=True, message=f"{display_name} installed successfully.")

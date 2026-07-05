@@ -76,17 +76,82 @@ def _kokoro_runtime_status() -> dict[str, object]:
     return status
 
 
+def _stt_runtime_status() -> dict[str, object]:
+    status: dict[str, object] = {
+        "installed": False,
+        "valid": False,
+        "version": "",
+        "origin": "",
+        "error": "",
+        "subprocess": True,
+    }
+    try:
+        from faster_whisper import WhisperModel  # type: ignore
+
+        status["installed"] = True
+        status["valid"] = WhisperModel is not None
+        spec = importlib.util.find_spec("faster_whisper")
+        status["origin"] = str(getattr(spec, "origin", "") or "")
+        try:
+            from importlib import metadata
+
+            status["version"] = metadata.version("faster-whisper")
+        except Exception:
+            status["version"] = ""
+    except Exception as exc:  # noqa: BLE001
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status
+
+
+def _stt_model_status(model_name: str, requested_device: str, requested_compute: str) -> dict[str, object]:
+    status: dict[str, object] = {
+        "installed": False,
+        "valid": False,
+        "model": model_name,
+        "device": "",
+        "compute": "",
+        "error": "",
+        "subprocess": True,
+    }
+    try:
+        from faster_whisper import WhisperModel  # type: ignore
+        from core.stt_device import build_model, resolve_compute_type, resolve_device
+
+        status["installed"] = True
+
+        def _log(message: str) -> None:
+            print(f"[stt probe] {message}", file=sys.stderr, flush=True)
+
+        device = resolve_device(requested_device, log=_log)
+        compute = resolve_compute_type(device, requested_compute, log=_log)
+        _model, compute = build_model(WhisperModel, model_name, device, compute, log=_log)
+        status["device"] = device
+        status["compute"] = compute
+        status["valid"] = True
+    except Exception as exc:  # noqa: BLE001
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 2 or args[0] not in {"torch-status", "kokoro-runtime-status"}:
-        print(json.dumps({"error": "usage: optional_deps_probe <probe> <optional-packages-dir>"}))
+    valid_probes = {"torch-status", "kokoro-runtime-status", "stt-runtime-status", "stt-model-status"}
+    if len(args) < 2 or args[0] not in valid_probes:
+        print(json.dumps({"error": "usage: optional_deps_probe <probe> <optional-packages-dir> [args...]"}))
         return 2
-    probe, optional_dir = args
+    probe, optional_dir = args[:2]
     _add_optional_path(optional_dir)
     if probe == "torch-status":
         status = _torch_status()
-    else:
+    elif probe == "kokoro-runtime-status":
         status = _kokoro_runtime_status()
+    elif probe == "stt-runtime-status":
+        status = _stt_runtime_status()
+    else:
+        if len(args) != 5:
+            print(json.dumps({"error": "usage: optional_deps_probe stt-model-status <optional-packages-dir> <model> <device> <compute>"}))
+            return 2
+        status = _stt_model_status(args[2], args[3], args[4])
     print(json.dumps(status))
     return 0
 

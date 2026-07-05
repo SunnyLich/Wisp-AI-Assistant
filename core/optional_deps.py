@@ -36,6 +36,7 @@ OPTIONAL_AI_COMPAT_PACKAGES = [
 KOKORO_PACKAGE = "kokoro==0.9.4"
 SOUNDFILE_PACKAGE = "soundfile==0.14.0"
 ELEVENLABS_PACKAGE = "elevenlabs==2.55.0"
+STT_PACKAGE = "faster-whisper==1.2.1"
 KOKORO_BASE_INSTALL_PACKAGES = [
     KOKORO_PACKAGE,
     SOUNDFILE_PACKAGE,
@@ -50,6 +51,29 @@ KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
     *OPTIONAL_AI_COMPAT_PACKAGES,
 ]
 KOKORO_GPU_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
+KOKORO_REMOVE_ARTIFACTS = [
+    "kokoro",
+    "kokoro-*.dist-info",
+    "misaki",
+    "misaki-*.dist-info",
+    "soundfile.py",
+    "soundfile-*.dist-info",
+    "_soundfile.py",
+    "_soundfile_data",
+    "en_core_web_sm",
+    "en_core_web_sm-*.dist-info",
+]
+STT_INSTALL_PACKAGES = [
+    STT_PACKAGE,
+    *OPTIONAL_AI_COMPAT_PACKAGES,
+]
+STT_REMOVE_ARTIFACTS = [
+    "faster_whisper",
+    "faster_whisper-*.dist-info",
+    "ctranslate2",
+    "ctranslate2-*.dist-info",
+    "ctranslate2.libs",
+]
 
 
 def _is_frozen() -> bool:
@@ -111,6 +135,58 @@ def is_importable(module_name: str) -> bool:
         return importlib.util.find_spec(module_name) is not None
     except Exception:
         return False
+
+
+def stt_install_packages() -> list[str]:
+    """Return packages needed to repair or install local speech-to-text."""
+    return list(STT_INSTALL_PACKAGES)
+
+
+def stt_remove_artifacts() -> list[str]:
+    """Return optional-package artifacts to clear before repairing STT."""
+    return list(STT_REMOVE_ARTIFACTS)
+
+
+def kokoro_remove_artifacts() -> list[str]:
+    """Return optional-package artifacts to clear before repairing Kokoro."""
+    return list(KOKORO_REMOVE_ARTIFACTS)
+
+
+def remove_optional_package_artifacts(patterns: list[str]) -> list[str]:
+    """Remove package files/directories from Wisp's optional package layer.
+
+    This is intentionally scoped to ``OPTIONAL_PACKAGES_DIR``. Runtime installs
+    use ``pip --target``/``uv --target``, and a broken native wheel can survive a
+    reinstall unless its old target directories are removed first.
+    """
+    removed: list[str] = []
+    try:
+        root = OPTIONAL_PACKAGES_DIR.resolve()
+    except Exception:
+        root = OPTIONAL_PACKAGES_DIR
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return removed
+    for raw_pattern in patterns:
+        pattern = str(raw_pattern or "").strip()
+        if not pattern or any(sep in pattern for sep in ("/", "\\")):
+            continue
+        for path in root.glob(pattern):
+            try:
+                resolved = path.resolve()
+                if resolved == root or root not in resolved.parents:
+                    continue
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                removed.append(path.name)
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+    return removed
 
 
 def subprocess_no_window_kwargs() -> dict[str, object]:
@@ -218,22 +294,31 @@ def kokoro_torch_status_subprocess() -> dict[str, object]:
     )
 
 
-def _optional_probe_status(probe: str, default: dict[str, object]) -> dict[str, object]:
+def _optional_probe_status(
+    probe: str,
+    default: dict[str, object],
+    *,
+    extra_args: list[str] | None = None,
+    timeout: float | None = 30,
+) -> dict[str, object]:
     """Run an optional dependency probe in a short-lived process."""
     try:
+        command = [
+            sys.executable,
+            "-m",
+            "runtime.workers.optional_deps_probe",
+            probe,
+            str(OPTIONAL_PACKAGES_DIR),
+        ]
+        if extra_args:
+            command.extend(extra_args)
         result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "runtime.workers.optional_deps_probe",
-                probe,
-                str(OPTIONAL_PACKAGES_DIR),
-            ],
+            command,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=30,
+            timeout=timeout,
             check=False,
             cwd=str(REPO_ROOT),
             env=pip_install_env(),
@@ -255,6 +340,76 @@ def _optional_probe_status(probe: str, default: dict[str, object]) -> dict[str, 
         status = dict(default)
         status["error"] = f"{type(exc).__name__}: {exc}"
         return status
+
+
+def stt_runtime_import_status_fast() -> dict[str, object]:
+    """Return cheap faster-whisper package metadata without importing it."""
+    add_optional_packages_to_path(prepend=True)
+    importlib.invalidate_caches()
+    status: dict[str, object] = {
+        "installed": False,
+        "valid": False,
+        "version": "",
+        "origin": "",
+        "error": "",
+        "fast": True,
+    }
+    try:
+        spec = importlib.util.find_spec("faster_whisper")
+        if spec is None:
+            return status
+        status["installed"] = True
+        status["origin"] = str(getattr(spec, "origin", "") or "")
+        try:
+            from importlib import metadata
+
+            status["version"] = metadata.version("faster-whisper")
+        except Exception:
+            status["version"] = ""
+        status["valid"] = bool(status["origin"])
+    except Exception as exc:
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status
+
+
+def stt_runtime_import_status_subprocess() -> dict[str, object]:
+    """Return faster-whisper import status without pinning native modules."""
+    return _optional_probe_status(
+        "stt-runtime-status",
+        {
+            "installed": False,
+            "valid": False,
+            "version": "",
+            "origin": "",
+            "error": "",
+            "subprocess": True,
+        },
+    )
+
+
+def stt_model_status_subprocess(model: str, device: str, compute_type: str) -> dict[str, object]:
+    """Load a Whisper model in a subprocess to verify STT without freezing Settings."""
+    timeout_text = os.environ.get("WISP_STT_MODEL_VERIFY_TIMEOUT_SECONDS", "").strip()
+    timeout: float | None = None
+    if timeout_text:
+        try:
+            timeout = max(1.0, float(timeout_text))
+        except ValueError:
+            timeout = None
+    return _optional_probe_status(
+        "stt-model-status",
+        {
+            "installed": False,
+            "valid": False,
+            "model": model,
+            "device": "",
+            "compute": "",
+            "error": "",
+            "subprocess": True,
+        },
+        extra_args=[model, device, compute_type],
+        timeout=timeout,
+    )
 
 
 def kokoro_torch_status_fast() -> dict[str, object]:

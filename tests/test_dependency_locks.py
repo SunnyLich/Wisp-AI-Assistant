@@ -68,8 +68,32 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
     from core import optional_deps
 
     assert optional_deps.ELEVENLABS_PACKAGE == "elevenlabs==2.55.0"
+    assert optional_deps.STT_PACKAGE == "faster-whisper==1.2.1"
     assert optional_deps.KOKORO_PACKAGE == "kokoro==0.9.4"
     assert optional_deps.SOUNDFILE_PACKAGE == "soundfile==0.14.0"
+    assert optional_deps.stt_install_packages() == [
+        optional_deps.STT_PACKAGE,
+        *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
+    ]
+    assert optional_deps.stt_remove_artifacts() == [
+        "faster_whisper",
+        "faster_whisper-*.dist-info",
+        "ctranslate2",
+        "ctranslate2-*.dist-info",
+        "ctranslate2.libs",
+    ]
+    assert optional_deps.kokoro_remove_artifacts() == [
+        "kokoro",
+        "kokoro-*.dist-info",
+        "misaki",
+        "misaki-*.dist-info",
+        "soundfile.py",
+        "soundfile-*.dist-info",
+        "_soundfile.py",
+        "_soundfile_data",
+        "en_core_web_sm",
+        "en_core_web_sm-*.dist-info",
+    ]
     assert optional_deps.KOKORO_INSTALL_PACKAGES[:5] == [
         "kokoro==0.9.4",
         "soundfile==0.14.0",

@@ -4656,5 +4656,133 @@ Continue?</source>
       <source>Tool failed: {tool}: {path}</source>
       <translation>工具失敗：{tool}：{path}</translation>
     </message>
+    <message>
+      <source>STT model configured: {model}. faster-whisper is installed.</source>
+      <translation>STT model configured: {model}. faster-whisper is installed.</translation>
+    </message>
+    <message>
+      <source>STT model configured: {model}, but faster-whisper is not installed.</source>
+      <translation>STT model configured: {model}, but faster-whisper is not installed.</translation>
+    </message>
+    <message>
+      <source>STT model configured: {model}, but faster-whisper failed to import: {error}</source>
+      <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
+    </message>
+    <message>
+      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</source>
+      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</translation>
+    </message>
+    <message>
+      <source>Installing STT: {detail}.</source>
+      <translation>Installing STT: {detail}.</translation>
+    </message>
+    <message>
+      <source>Installing STT...</source>
+      <translation>Installing STT...</translation>
+    </message>
+    <message>
+      <source>Install / load STT</source>
+      <translation>Install / load STT</translation>
+    </message>
+    <message>
+      <source>Install STT</source>
+      <translation>Install STT</translation>
+    </message>
+    <message>
+      <source>STT install failed: {message}</source>
+      <translation>STT install failed: {message}</translation>
+    </message>
+    <message>
+      <source>STT installed, but model verification failed: {message}</source>
+      <translation>STT installed, but model verification failed: {message}</translation>
+    </message>
+    <message>
+      <source>STT installed and model ready: {summary}.</source>
+      <translation>STT installed and model ready: {summary}.</translation>
+    </message>
+    <message>
+      <source>Installing STT: downloading or loading Whisper model {model}.</source>
+      <translation>Installing STT: downloading or loading Whisper model {model}.</translation>
+    </message>
+    <message>
+      <source>STT package installed. Configured backend: {summary}; model loads on first use.</source>
+      <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
+    </message>
+    <message>
+      <source>STT package is not installed. Click Install / load STT to install and verify it.</source>
+      <translation>STT package is not installed. Click Install / load STT to install and verify it.</translation>
+    </message>
+    <message>
+      <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>
+      <translation>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</translation>
+    </message>
+    <message>
+      <source>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
+
+Package: {package}
+Model: {model}
+Device: {device}
+Compute type: {compute_type}
+Speech language: {language}
+Beam size: {beam_size}
+
+The installer will then load the selected Whisper model in a separate process. The first model download needs internet access and may take a while.
+
+Continue?</source>
+      <translation>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
+
+Package: {package}
+Model: {model}
+Device: {device}
+Compute type: {compute_type}
+Speech language: {language}
+Beam size: {beam_size}
+
+The installer will then load the selected Whisper model in a separate process. The first model download needs internet access and may take a while.
+
+Continue?</translation>
+    </message>
+    <message>
+      <source>preparing local assets for {elapsed}</source>
+      <translation>preparing local assets for {elapsed}</translation>
+    </message>
+    <message>
+      <source>downloading or loading Whisper model for {elapsed}</source>
+      <translation>downloading or loading Whisper model for {elapsed}</translation>
+    </message>
+    <message>
+      <source>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
+
+Package: {package}
+Model: {model}
+Device: {device}
+Compute type: {compute_type}
+Speech language: {language}
+Beam size: {beam_size}
+
+Before installing, Wisp will remove any previous STT package files from its optional packages folder so a broken build cannot be reused.
+
+The installer will then load the selected Whisper model in a separate process. The first model download needs internet access and may take a while.
+
+Continue?</source>
+      <translation>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
+
+Package: {package}
+Model: {model}
+Device: {device}
+Compute type: {compute_type}
+Speech language: {language}
+Beam size: {beam_size}
+
+Before installing, Wisp will remove any previous STT package files from its optional packages folder so a broken build cannot be reused.
+
+The installer will then load the selected Whisper model in a separate process. The first model download needs internet access and may take a while.
+
+Continue?</translation>
+    </message>
+    <message>
+      <source>removing previous install</source>
+      <translation>removing previous install</translation>
+    </message>
   </context>
 </TS>

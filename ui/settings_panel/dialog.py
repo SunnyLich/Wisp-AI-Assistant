@@ -2719,11 +2719,13 @@ class SettingsDialog(QDialog):
         ssr.setSpacing(8)
         self._stt_active_lbl = QLabel()
         self._stt_active_lbl.setWordWrap(True)
-        self._stt_download_btn = QPushButton(t("Download / load model now"))
+        self._stt_install_status_lbl = self._stt_active_lbl
+        self._stt_download_btn = QPushButton(t("Install / load STT"))
         self._stt_download_btn.setToolTip(
             t(
-                "Download and load the speech model now so the first hold-to-talk "
-                "does not stall. The first download needs an internet connection."
+                "Install or repair faster-whisper, then download and load the speech "
+                "model so the first hold-to-talk does not stall. The first download "
+                "needs an internet connection."
             )
         )
         self._stt_download_btn.clicked.connect(self._preload_stt_model)
@@ -3463,8 +3465,10 @@ class SettingsDialog(QDialog):
         install_device = "cuda" if mode == "gpu" else "cpu"
         pre_install_packages = optional_deps.kokoro_torch_install_packages(install_device)
         packages = optional_deps.kokoro_install_packages(install_device)
+        remove_artifacts = optional_deps.kokoro_remove_artifacts()
         if installed and needs_gpu and not needs_repair:
             packages = []
+            remove_artifacts = []
         base_package_label = f"{optional_deps.KOKORO_PACKAGE}, {optional_deps.SOUNDFILE_PACKAGE}"
         package_label = (
             t("CUDA-enabled Torch")
@@ -3525,6 +3529,7 @@ class SettingsDialog(QDialog):
             display_name="Kokoro",
             packages=packages,
             pre_install_packages=pre_install_packages,
+            remove_artifacts=remove_artifacts,
             button_attr="_kokoro_install_btn",
             status_attr="_kokoro_install_status_lbl",
             success_message=(
@@ -3628,6 +3633,7 @@ class SettingsDialog(QDialog):
         display_name: str,
         packages: list[str],
         pre_install_packages: list[str] | None = None,
+        remove_artifacts: list[str] | None = None,
         button_attr: str,
         status_attr: str,
         external_plan_extra: dict[str, object] | None = None,
@@ -3655,6 +3661,7 @@ class SettingsDialog(QDialog):
                 "display_name": display_name,
                 "packages": packages,
                 "pre_install_packages": pre_install_packages or [],
+                "remove_artifacts": remove_artifacts or [],
                 "log_path": str(log_path),
                 "status_path": str(status_path),
                 **(external_plan_extra or {}),
@@ -3689,11 +3696,13 @@ class SettingsDialog(QDialog):
         display_name: str,
         packages: list[str],
         pre_install_packages: list[str] | None = None,
+        remove_artifacts: list[str] | None = None,
         button_attr: str,
         status_attr: str,
         success_message: str,
         thread_name: str,
         external_plan_extra: dict[str, object] | None = None,
+        post_install_progress_detail: str | None = None,
         post_install: Callable[[Callable[[str], None], Callable[[str], None]], tuple[bool, str]] | None = None,
     ) -> None:
         """Install optional TTS packages into Wisp's user package folder."""
@@ -3702,6 +3711,7 @@ class SettingsDialog(QDialog):
             display_name=display_name,
             packages=packages,
             pre_install_packages=pre_install_packages,
+            remove_artifacts=remove_artifacts,
             button_attr=button_attr,
             status_attr=status_attr,
             external_plan_extra=external_plan_extra,
@@ -3751,6 +3761,15 @@ class SettingsDialog(QDialog):
                 ok=None,
                 message=f"{display_name} install is running.",
             )
+
+            if remove_artifacts:
+                _progress(f"Installing {display_name}: removing previous install.")
+                _write_log(f"{log_prefix} Removing previous optional package artifacts before install.")
+                removed = optional_deps.remove_optional_package_artifacts(remove_artifacts)
+                if removed:
+                    _write_log(f"{log_prefix} Removed: {', '.join(sorted(removed))}")
+                else:
+                    _write_log(f"{log_prefix} No previous artifacts found.")
 
             def _heartbeat() -> None:
                 while not stop_heartbeat.wait(20.0):
@@ -3847,9 +3866,10 @@ class SettingsDialog(QDialog):
                     def _prepare_heartbeat() -> None:
                         while not prepare_stop.wait(20.0):
                             elapsed = int(time.monotonic() - prepare_started_at)
+                            detail = post_install_progress_detail or "preparing local assets for {elapsed}"
                             _progress(
-                                f"Installing {display_name}: preparing local voice assets for "
-                                f"{_format_duration(elapsed)}."
+                                f"Installing {display_name}: "
+                                f"{detail.format(elapsed=_format_duration(elapsed))}."
                             )
 
                     threading.Thread(
@@ -6362,6 +6382,12 @@ class SettingsDialog(QDialog):
                 button = getattr(self, "_elevenlabs_install_btn", None)
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
+            elif test_key == "stt_install":
+                button = getattr(self, "_stt_download_btn", None)
+                if isinstance(button, QPushButton):
+                    button.setEnabled(True)
+                    button.setText(t("Install / load STT"))
+                self._refresh_stt_active_backend()
         if not self._running_test_tokens and not pending and not progress:
             self._test_result_timer.stop()
 
@@ -6580,12 +6606,38 @@ class SettingsDialog(QDialog):
 
         configured_summary = f"{model} · {device} / {compute}"
         if info is None:
-            lbl.setText(
-                t("Configured backend: {summary} — active backend appears after recording starts.").format(
-                    summary=configured_summary
+            installed = False
+            install_status: dict[str, object] = {}
+            try:
+                from core import optional_deps
+
+                runtime_status = optional_deps.stt_runtime_import_status_fast()
+                installed = bool(runtime_status.get("installed") and runtime_status.get("valid"))
+                install_status = _read_optional_install_status("STT", optional_deps.OPTIONAL_PACKAGES_DIR)
+            except Exception:
+                installed = False
+                install_status = {}
+
+            failed_install_message = _failed_optional_install_message(install_status)
+            if failed_install_message:
+                lbl.setText(_translate_status_message(failed_install_message))
+                lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
+            elif bool(install_status.get("ok")):
+                message = str(install_status.get("message") or f"STT installed and model ready: {configured_summary}.")
+                lbl.setText(_translate_status_message(message))
+                lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
+            elif installed:
+                lbl.setText(
+                    t("STT package installed. Configured backend: {summary}; model loads on first use.").format(
+                        summary=configured_summary
+                    )
                 )
-            )
-            lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
+                lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
+            else:
+                lbl.setText(
+                    t("STT package is not installed. Click Install / load STT to install and verify it.")
+                )
+                lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
             return
 
         summary = f"{info['model']} · {info['device']} / {info['compute']}"
@@ -6600,41 +6652,69 @@ class SettingsDialog(QDialog):
             lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
 
     def _preload_stt_model(self) -> None:
-        """Download (first use) and load the speech model now, with feedback.
+        """Install/repair faster-whisper and verify the selected model."""
+        from core import optional_deps
 
-        On a fresh machine the model weights aren't bundled — they download on
-        the first hold-to-talk, which looks like a hang or silently fails when
-        offline. This button fetches them up front on a worker thread and reports
-        success or a clear offline message in the backend readout.
-        """
-        btn = getattr(self, "_stt_download_btn", None)
-        lbl = getattr(self, "_stt_active_lbl", None)
-        if btn is not None:
-            btn.setEnabled(False)
-            btn.setText(t("Loading..."))
-        if lbl is not None:
-            lbl.setText(
-                t(
-                    "Loading the speech model... the first time downloads it "
-                    "(about 150 MB for the base model)."
-                )
-            )
-            lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
+        model = _get(self._fields["STT_MODEL"]).strip() or "base"
+        device = _get(self._fields["STT_DEVICE"]).strip() or "auto"
+        compute_type = _get(self._fields["STT_COMPUTE_TYPE"]).strip() or "int8"
+        language = _get(self._fields["STT_LANGUAGE"]).strip() or "auto"
+        beam_size = _get(self._fields["STT_BEAM_SIZE"]).strip() or "5"
 
-        carrier = _SttPreloadSignals()
-        carrier.done.connect(self._on_stt_model_preloaded)
-        self._stt_preload_carrier = carrier  # keep alive until the load completes
+        message = t(
+            "Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.\n\n"
+            "Package: {package}\n"
+            "Model: {model}\n"
+            "Device: {device}\n"
+            "Compute type: {compute_type}\n"
+            "Speech language: {language}\n"
+            "Beam size: {beam_size}\n\n"
+            "Before installing, Wisp will remove any previous STT package files from its optional packages folder so a broken build cannot be reused.\n\n"
+            "The installer will then load the selected Whisper model in a separate process. "
+            "The first model download needs internet access and may take a while.\n\n"
+            "Continue?"
+        ).format(
+            package=optional_deps.STT_PACKAGE,
+            model=model,
+            device=device,
+            compute_type=compute_type,
+            language=language,
+            beam_size=beam_size,
+        )
+        answer = QMessageBox.question(
+            self,
+            t("Install STT"),
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
 
-        def _worker():
-            """Load the model off the UI thread; first call downloads it."""
-            try:
-                from core import stt as _stt
-                info = _stt.preload_model()
-                carrier.done.emit(info, "")
-            except Exception as exc:  # noqa: BLE001 — surfaced to the user below
-                carrier.done.emit(None, str(exc))
-
-        threading.Thread(target=_worker, daemon=True, name="settings-stt-preload").start()
+        self._install_optional_tts_package(
+            test_key="stt_install",
+            display_name="STT",
+            packages=optional_deps.stt_install_packages(),
+            remove_artifacts=optional_deps.stt_remove_artifacts(),
+            button_attr="_stt_download_btn",
+            status_attr="_stt_active_lbl",
+            success_message=f"STT installed and model ready: {model} on {device} ({compute_type}).",
+            thread_name="stt-install",
+            external_plan_extra={
+                "post_install": "stt_prepare",
+                "stt_model": model,
+                "stt_device": device,
+                "stt_compute_type": compute_type,
+            },
+            post_install_progress_detail="downloading or loading Whisper model for {elapsed}",
+            post_install=lambda progress, write_log: self._prepare_stt_after_install(
+                model=model,
+                device=device,
+                compute_type=compute_type,
+                progress=progress,
+                write_log=write_log,
+            ),
+        )
 
     def _on_stt_model_preloaded(self, _info, err: str) -> None:
         """Apply an STT preload result on the Qt thread."""
@@ -6642,7 +6722,7 @@ class SettingsDialog(QDialog):
         btn = getattr(self, "_stt_download_btn", None)
         if btn is not None:
             btn.setEnabled(True)
-            btn.setText(t("Download / load model now"))
+            btn.setText(t("Install / load STT"))
         lbl = getattr(self, "_stt_active_lbl", None)
         if err:
             if lbl is not None:
@@ -6656,6 +6736,31 @@ class SettingsDialog(QDialog):
             return
         # core.stt is now imported, so the readout can show the live backend.
         self._refresh_stt_active_backend()
+
+    @staticmethod
+    def _prepare_stt_after_install(
+        *,
+        model: str,
+        device: str,
+        compute_type: str,
+        progress: Callable[[str], None],
+        write_log: Callable[[str], None],
+    ) -> tuple[bool, str]:
+        """Verify faster-whisper and load the selected model outside Settings."""
+        try:
+            from core import optional_deps
+
+            progress(f"Installing STT: downloading or loading Whisper model {model}.")
+            write_log(f"[stt install] Downloading or loading Whisper model {model} on {device} ({compute_type}).")
+            status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
+            if status.get("error") or status.get("valid") is False:
+                detail = str(status.get("error") or "STT model verification failed.")
+                return False, f"STT installed, but model verification failed: {detail}"
+            resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
+            return True, f"STT installed and model ready: {resolved}."
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"[stt install] Model verification failed: {type(exc).__name__}: {exc}")
+            return False, f"STT install failed: {exc}"
 
     def _stt_fields_changed(self, old_env: dict[str, str]) -> bool:
         """Handle STT fields changed for settings dialog."""
@@ -7923,6 +8028,14 @@ def _translate_install_detail(detail: str) -> str:
             r"^preparing local voice assets for (?P<elapsed>.+)$",
             "preparing local voice assets for {elapsed}",
         ),
+        (
+            r"^preparing local assets for (?P<elapsed>.+)$",
+            "preparing local assets for {elapsed}",
+        ),
+        (
+            r"^downloading or loading Whisper model for (?P<elapsed>.+)$",
+            "downloading or loading Whisper model for {elapsed}",
+        ),
     )
     for pattern, template in dynamic_patterns:
         match = re.match(pattern, text)
@@ -7954,6 +8067,8 @@ def _optional_install_progress_text(line: str, display_name: str) -> str:
         detail = "installing packages"
     elif "successfully installed" in lower:
         detail = "finalizing"
+    elif "removing previous" in lower:
+        detail = "removing previous install"
     else:
         detail = "working - installer is still running"
     return f"Installing {display_name}: {detail}."
@@ -8211,6 +8326,9 @@ def _translate_status_message(message: str) -> str:
         (r"^LLM route configured: (?P<route>.+)\.$", "LLM route configured: {route}."),
         (r"^LLM route incomplete: (?P<route>.+)\.$", "LLM route incomplete: {route}."),
         (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),
+        (r"^STT model configured: (?P<model>.+)\. faster-whisper is installed\.$", "STT model configured: {model}. faster-whisper is installed."),
+        (r"^STT model configured: (?P<model>.+), but faster-whisper is not installed\.$", "STT model configured: {model}, but faster-whisper is not installed."),
+        (r"^STT model configured: (?P<model>.+), but faster-whisper failed to import: (?P<error>.+)$", "STT model configured: {model}, but faster-whisper failed to import: {error}"),
         (r"^STT model configured: (?P<model>.+)\.$", "STT model configured: {model}."),
         (r"^(?P<count>\d+) hotkeys configured\.$", "{count} hotkeys configured."),
         (r"^Accessibility permission: (?P<value>.+)\.$", "Accessibility permission: {value}."),
@@ -8221,9 +8339,14 @@ def _translate_status_message(message: str) -> str:
         (r"^Kokoro installed, but runtime verification failed: (?P<message>.+)$", "Kokoro installed, but runtime verification failed: {message}"),
         (r"^Kokoro installed, but Torch verification failed: (?P<message>.+)$", "Kokoro installed, but Torch verification failed: {message}"),
         (r"^ElevenLabs install failed: (?P<message>.+)$", "ElevenLabs install failed: {message}"),
+        (r"^STT install failed: (?P<message>.+)$", "STT install failed: {message}"),
+        (r"^STT installed, but model verification failed: (?P<message>.+)$", "STT installed, but model verification failed: {message}"),
+        (r"^STT installed and model ready: (?P<summary>.+)\.$", "STT installed and model ready: {summary}."),
+        (r"^Installing STT: downloading or loading Whisper model (?P<model>.+)\.$", "Installing STT: downloading or loading Whisper model {model}."),
         (r"^Kokoro is installed with GPU support \((?P<device>.+)\)\.$", "Kokoro is installed with GPU support ({device})."),
         (r"^Installing Kokoro: (?P<detail>.+)\.$", "Installing Kokoro: {detail}."),
         (r"^Installing ElevenLabs: (?P<detail>.+)\.$", "Installing ElevenLabs: {detail}."),
+        (r"^Installing STT: (?P<detail>.+)\.$", "Installing STT: {detail}."),
         (r"^LLM route uses (?P<provider>.+) but you are not logged in\.$", "LLM route uses {provider} but you are not logged in."),
     )
     for pattern, template in dynamic_patterns:
