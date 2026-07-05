@@ -637,11 +637,35 @@ def clipboard_set(text: str = "") -> dict[str, Any]:
     return {"ok": bool(ok)}
 
 
+# Last PRIMARY acquisition auto-filled per surface (owner id, timestamp, digest).
+# X11 apps keep serving a selection after the user clears the highlight, so a
+# repeat of the exact same acquisition is treated as stale instead of being
+# auto-filled again; re-selecting (even the same text) makes a new timestamp.
+_AUTOFILLED_PRIMARY_SELECTIONS: dict[str, tuple[int, int, str]] = {}
+
+
+def _primary_selection_identity(text: str) -> tuple[int, int, str] | None:
+    """Return (owner id, acquisition timestamp, text digest) for X11 PRIMARY."""
+    try:
+        import hashlib
+
+        from core.capture import _linux_x11_primary_selection_identity
+
+        identity = _linux_x11_primary_selection_identity()
+        if not identity:
+            return None
+        digest = hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
+        return int(identity[0]), int(identity[1]), digest
+    except Exception:
+        return None
+
+
 def selected_text(
     *,
     allow_clipboard_fallback: bool = True,
     active_pid: int | None = None,
     require_active_owner: bool = False,
+    selection_dedupe_key: str = "",
 ) -> str:
     """Handle selected text for runtime workers native host."""
     if IS_MAC:
@@ -672,6 +696,15 @@ def selected_text(
                 )
                 or ""
             ).strip()
+            if text and selection_dedupe_key:
+                identity = _primary_selection_identity(text)
+                if identity is not None:
+                    if _AUTOFILLED_PRIMARY_SELECTIONS.get(selection_dedupe_key) == identity:
+                        # Same acquisition this surface already auto-filled once;
+                        # the highlight may be long gone. Skip the Ctrl+C
+                        # fallback too - it would just re-copy the same text.
+                        return ""
+                    _AUTOFILLED_PRIMARY_SELECTIONS[selection_dedupe_key] = identity
             if text or not allow_clipboard_fallback:
                 return text
             from core.capture import _get_selected_text_clipboard
@@ -835,6 +868,7 @@ def context_snapshot(
     include_browser_url: bool = False,
     capture_focus: bool = False,
     require_active_selection_owner: bool = True,
+    selection_dedupe_key: str = "",
 ) -> dict[str, Any]:
     """Handle context snapshot for runtime workers native host."""
     t0 = time.monotonic()
@@ -873,6 +907,7 @@ def context_snapshot(
             allow_clipboard_fallback=True,
             active_pid=int(active.get("pid") or 0),
             require_active_owner=bool(require_active_selection_owner),
+            selection_dedupe_key=str(selection_dedupe_key or ""),
         )
         sel_dt = time.monotonic() - _s
     if include_clipboard:

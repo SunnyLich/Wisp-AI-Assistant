@@ -290,6 +290,86 @@ class CaptureTests(unittest.TestCase):
                 self.capture._linux_x11_window_client_pid(fake_display, fake_window)
             )
 
+    def _fake_xlib_identity_env(self, notify_property: int):
+        """Build fake Xlib modules answering a PRIMARY TIMESTAMP conversion."""
+        import sys
+
+        fake_x = types.SimpleNamespace(
+            SelectionNotify=31, NONE=0, CurrentTime=0, AnyPropertyType=0
+        )
+        calls: dict[str, object] = {}
+
+        class FakeWindow:
+            id = 555
+
+            def convert_selection(self, selection, target, prop, time):
+                calls["convert"] = (selection, target, prop, time)
+
+            def get_full_property(self, _prop, _kind):
+                return types.SimpleNamespace(value=[123456])
+
+            def destroy(self):
+                calls["destroyed"] = True
+
+        fake_window = FakeWindow()
+        events = [
+            types.SimpleNamespace(type=31, requestor=fake_window, property=notify_property)
+        ]
+        screen = types.SimpleNamespace(
+            root=types.SimpleNamespace(create_window=lambda *_a, **_k: fake_window),
+            root_depth=24,
+        )
+
+        class FakeDisplay:
+            def intern_atom(self, name):
+                return {"PRIMARY": 1, "TIMESTAMP": 2, "WISP_SELECTION_TIMESTAMP": 99}[name]
+
+            def get_selection_owner(self, _selection):
+                return types.SimpleNamespace(id=777)
+
+            def screen(self):
+                return screen
+
+            def flush(self):
+                return None
+
+            def pending_events(self):
+                return len(events)
+
+            def next_event(self):
+                return events.pop(0)
+
+            def fileno(self):
+                return 0
+
+            def close(self):
+                calls["closed"] = True
+
+        modules = {
+            "Xlib": types.SimpleNamespace(X=fake_x),
+            "Xlib.display": types.SimpleNamespace(Display=FakeDisplay),
+        }
+        return sys, modules, calls
+
+    def test_linux_primary_selection_identity_reads_timestamp_target(self):
+        """Verify PRIMARY identity pairs the owner with its acquisition timestamp."""
+        sys, modules, calls = self._fake_xlib_identity_env(notify_property=99)
+        with mock.patch.dict(sys.modules, modules):
+            self.assertEqual(
+                self.capture._linux_x11_primary_selection_identity(),
+                (777, 123456),
+            )
+        self.assertEqual(calls["convert"], (1, 2, 99, 0))
+        self.assertTrue(calls.get("destroyed"))
+        self.assertTrue(calls.get("closed"))
+
+    def test_linux_primary_selection_identity_none_when_owner_refuses(self):
+        """Verify a refused TIMESTAMP conversion degrades to None, not a raise."""
+        sys, modules, calls = self._fake_xlib_identity_env(notify_property=0)
+        with mock.patch.dict(sys.modules, modules):
+            self.assertIsNone(self.capture._linux_x11_primary_selection_identity())
+        self.assertTrue(calls.get("destroyed"))
+
     def test_macos_screen_snippet_uses_native_helper(self):
         """Verify macos screen snippet uses native helper behavior."""
         class FakeImage:

@@ -828,6 +828,7 @@ class FlowController:
                 include_browser=False,
                 include_selected_paths=True,
                 preview_context_sources=True,
+                dedupe_selection=True,
             )
         except Exception:
             log.exception("pre-picker context snapshot failed")
@@ -906,7 +907,7 @@ class FlowController:
             pending = PendingInvocation(
                 caller_idx=0,
                 caller=caller,
-                context=self._context_snapshot(caller),
+                context=self._context_snapshot(caller, dedupe_selection=True),
                 screenshot_b64=screenshot_b64,
                 is_snip=True,
             )
@@ -3074,6 +3075,7 @@ class FlowController:
         include_browser: bool = True,
         include_selected_paths: bool = False,
         preview_context_sources: bool = False,
+        dedupe_selection: bool = False,
     ) -> dict[str, Any]:
         # The browser-page fetch is a ~2-3s network read (requests.get). Keep it
         # OFF the hotkey -> picker path (include_browser=False) and fetch it lazily
@@ -3094,6 +3096,10 @@ class FlowController:
                 # Paste-back callers capture the focused text element so the rewrite
                 # can be written back in place (AX) without refocusing the app.
                 "capture_focus": bool(caller.get("paste_back")),
+                # Intent-picker captures suppress re-serving the exact same X11
+                # PRIMARY acquisition they already auto-filled once (stale after
+                # the user deselects); other flows keep plain reads.
+                "selection_dedupe_key": "intent" if dedupe_selection else "",
             },
             timeout=30.0,
         ) or {}
@@ -3186,6 +3192,7 @@ class FlowController:
                     pending.caller,
                     include_browser=False,
                     preview_context_sources=True,
+                    dedupe_selection=True,
                 )
             t_ctx = time.monotonic()
             if not self._is_current(generation):
