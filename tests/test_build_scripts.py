@@ -65,6 +65,28 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('HAVE_VERSION="$(python_version "$PYTHON")"', script)
         self.assertIn('if ! python_matches_want "$PYTHON"; then', script)
 
+    def test_linux_build_opens_terminal_for_gui_launches(self) -> None:
+        linux = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
+
+        self.assertIn("relaunch_in_terminal()", linux)
+        self.assertIn("--relaunched-in-terminal", linux)
+        self.assertIn("[[ ! -t 0 && ! -t 1 && ! -t 2 ]]", linux)
+        self.assertIn('[[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]', linux)
+        self.assertIn('[[ -z "${CI:-}" ]]', linux)
+        self.assertIn('[[ "$(uname -s)" == "Linux" ]]', linux)
+        for emulator in ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm"):
+            self.assertIn(emulator, linux)
+        self.assertIn("trap report_result_and_hold EXIT", linux)
+        self.assertIn("Press Enter to close this window", linux)
+        # The relaunch must run before the option parser consumes "$@".
+        self.assertLess(
+            linux.index("relaunch_in_terminal"),
+            linux.index("while [[ $# -gt 0 ]]"),
+        )
+
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+        self.assertIn("opens a terminal window automatically", docs)
+
     def test_macos_build_script_uses_macos_spec_and_lockfile(self) -> None:
         script = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
 

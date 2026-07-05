@@ -2,6 +2,62 @@
 # Builds the Linux Wisp executable with PyInstaller and required assets.
 set -euo pipefail
 
+# A GUI launch (double-clicking the script in a file manager) attaches no
+# terminal, so build progress is invisible and the confirm prompts read EOF.
+# Re-launch inside a terminal emulator on Linux desktops to match the console
+# window that double-clicking build_exe.bat opens on Windows.
+HOLD_TERMINAL_OPEN=false
+for arg in "$@"; do
+    if [[ "$arg" == "--relaunched-in-terminal" ]]; then
+        HOLD_TERMINAL_OPEN=true
+    fi
+done
+
+relaunch_in_terminal() {
+    local term="$1"
+    shift
+    case "$(basename "$term")" in
+        gnome-terminal|ptyxis|tilix)
+            exec "$term" -- "$@" ;;
+        kgx)
+            exec "$term" -e "$(printf '%q ' "$@")" ;;
+        xfce4-terminal|mate-terminal)
+            exec "$term" -x "$@" ;;
+        kitty)
+            exec "$term" "$@" ;;
+        *)
+            exec "$term" -e "$@" ;;
+    esac
+}
+
+if [[ "$(uname -s)" == "Linux" ]] && ! $HOLD_TERMINAL_OPEN && [[ -z "${CI:-}" ]] \
+    && [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]] \
+    && [[ ! -t 0 && ! -t 1 && ! -t 2 ]]; then
+    SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    for candidate in x-terminal-emulator gnome-terminal ptyxis kgx konsole xfce4-terminal mate-terminal lxterminal tilix kitty alacritty xterm; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            relaunch_in_terminal "$(command -v "$candidate")" bash "$SELF" --relaunched-in-terminal "$@"
+        fi
+    done
+    echo "WARNING: no terminal emulator found; building without a visible console." >&2
+fi
+
+# Keep the spawned terminal open once the build ends so the outcome stays
+# readable, matching the pause in build_exe.bat.
+if $HOLD_TERMINAL_OPEN; then
+    report_result_and_hold() {
+        local status=$?
+        echo ""
+        if [[ $status -eq 0 ]]; then
+            echo "Build finished successfully."
+        else
+            echo "Build failed with exit code $status. Scroll up to see what went wrong."
+        fi
+        read -rp "Press Enter to close this window... " || true
+    }
+    trap report_result_and_hold EXIT
+fi
+
 CLEAN=false
 SKIP_INSTALL=false
 YES=false
@@ -15,6 +71,7 @@ while [[ $# -gt 0 ]]; do
         --yes|-y)   YES=true ;;
         --use-dev-venv) USE_DEV_VENV=true ;;
         --use-global-python) USE_GLOBAL_PYTHON=true ;;
+        --relaunched-in-terminal) ;; # internal: set when re-launched from a GUI start
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
     shift
