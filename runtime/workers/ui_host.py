@@ -2433,6 +2433,18 @@ class QtProtocolHost:
             )
 
         self._intent.context_source_removed.connect(_context_source_removed)
+        def _context_source_reenabled(item_id: str) -> None:
+            overlay = self._intent
+            self.emit(
+                "ui.intent.context.reenabled",
+                {
+                    "caller_idx": caller_idx,
+                    "id": str(item_id or ""),
+                    "context_choices": overlay.context_choices() if overlay else [],
+                },
+            )
+
+        self._intent.context_source_reenabled.connect(_context_source_reenabled)
         def _cancelled() -> None:
             self._apply_cancelled_intent_conversation_choice(self._intent)
             self.emit("ui.intent.cancelled", {"caller_idx": caller_idx})

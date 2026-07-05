@@ -3079,6 +3079,10 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Installer Kokoro</translation>
     </message>
     <message>
+      <source>Reinstall Kokoro</source>
+      <translation>Réinstaller Kokoro</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro installe</translation>
     </message>
@@ -3407,6 +3411,14 @@ Continuer ?</translation>
 </translation>
     </message>
     <message>
+      <source>Wisp will reinstall Kokoro in its user-writable optional packages folder.
+
+</source>
+      <translation>Wisp réinstallera Kokoro dans son dossier de paquets optionnels accessible en écriture.
+
+</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, CUDA-enabled Torch, English speech model</source>
       <translation>kokoro&gt;=0.9.4, soundfile, Torch avec CUDA, modèle vocal anglais</translation>
     </message>
@@ -3463,6 +3475,10 @@ Continuer ?</translation>
     <message>
       <source>Kokoro installed and local voice is ready.</source>
       <translation>Kokoro est installé et la voix locale est prête.</translation>
+    </message>
+    <message>
+      <source>Kokoro reinstalled and local voice is ready.</source>
+      <translation>Kokoro a été réinstallé et la voix locale est prête.</translation>
     </message>
     <message>
       <source>Kokoro installed, but Torch verification failed: {message}</source>
@@ -4222,6 +4238,10 @@ Continuer ?</translation>
       <translation>Installer ElevenLabs</translation>
     </message>
     <message>
+      <source>Reinstall ElevenLabs</source>
+      <translation>Réinstaller ElevenLabs</translation>
+    </message>
+    <message>
       <source>Install ElevenLabs before applying it as the active TTS provider.</source>
       <translation>Installez ElevenLabs avant de l'appliquer comme fournisseur TTS actif.</translation>
     </message>
@@ -4374,6 +4394,26 @@ Paquet : {package}
 Utilisez ceci lorsque l'exe empaqueté a ignoré ElevenLabs parce que le chemin de build était trop long. L'installation peut nécessiter un accès à Internet et survivra aux reconstructions de Wisp.
 
 Continuer ?</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp réinstallera la prise en charge d'ElevenLabs dans son dossier de paquets optionnels accessible en écriture.
+
+Paquet : {package}
+
+Utilisez ceci lorsque l'exe empaqueté a ignoré ElevenLabs parce que le chemin de compilation était trop long. L'installation peut nécessiter un accès Internet et survivra aux recompilations de Wisp.
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>ElevenLabs reinstalled. Add your API key, then click Test TTS.</source>
+      <translation>ElevenLabs a été réinstallé. Ajoutez votre clé API, puis cliquez sur Test TTS.</translation>
     </message>
     <message>
       <source>Wisp will install Kokoro into its user-writable optional packages folder.

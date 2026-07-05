@@ -3043,6 +3043,10 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>安裝 Kokoro</translation>
     </message>
     <message>
+      <source>Reinstall Kokoro</source>
+      <translation>重新安裝 Kokoro</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro 已安裝</translation>
     </message>
@@ -3371,6 +3375,14 @@ Continue?</source>
 </translation>
     </message>
     <message>
+      <source>Wisp will reinstall Kokoro in its user-writable optional packages folder.
+
+</source>
+      <translation>Wisp 會在使用者可寫入的選用套件資料夾中重新安裝 Kokoro。
+
+</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, CUDA-enabled Torch, English speech model</source>
       <translation>kokoro&gt;=0.9.4、soundfile、啟用 CUDA 的 Torch、英語語音模型</translation>
     </message>
@@ -3427,6 +3439,10 @@ Continue?</source>
     <message>
       <source>Kokoro installed and local voice is ready.</source>
       <translation>Kokoro 已安裝，本機語音已準備好。</translation>
+    </message>
+    <message>
+      <source>Kokoro reinstalled and local voice is ready.</source>
+      <translation>Kokoro 已重新安裝，本機語音已準備好。</translation>
     </message>
     <message>
       <source>Kokoro installed, but Torch verification failed: {message}</source>
@@ -4225,6 +4241,10 @@ Continue?</source>
       <translation>安裝 ElevenLabs</translation>
     </message>
     <message>
+      <source>Reinstall ElevenLabs</source>
+      <translation>重新安裝 ElevenLabs</translation>
+    </message>
+    <message>
       <source>Install ElevenLabs before applying it as the active TTS provider.</source>
       <translation>在將 ElevenLabs 設為目前 TTS 提供者之前，請先安裝它。</translation>
     </message>
@@ -4377,6 +4397,26 @@ Continue?</source>
 當打包的 exe 因建置路徑過長而略過 ElevenLabs 時可使用此功能。安裝可能需要連網，並會在 Wisp 重新建置後保留。
 
 是否繼續？</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 會在其使用者可寫入的選用套件資料夾中重新安裝 ElevenLabs 支援。
+
+套件：{package}
+
+當打包的 exe 因建置路徑過長而略過 ElevenLabs 時可使用此功能。安裝可能需要連網，並會在 Wisp 重新建置後保留。
+
+是否繼續？</translation>
+    </message>
+    <message>
+      <source>ElevenLabs reinstalled. Add your API key, then click Test TTS.</source>
+      <translation>ElevenLabs 已重新安裝。新增 API 金鑰後，按一下 Test TTS。</translation>
     </message>
     <message>
       <source>Wisp will install Kokoro into its user-writable optional packages folder.

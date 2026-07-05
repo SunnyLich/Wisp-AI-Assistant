@@ -183,12 +183,14 @@ def test_tts_voice_tab_exposes_stt_settings():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_tts_voice_tab_does_not_import_stt_stack():
+def test_tts_voice_tab_does_not_import_stt_stack(monkeypatch):
     """Verify tts voice tab does not import stt stack behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
     import core
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -197,6 +199,12 @@ def test_tts_voice_tab_does_not_import_stt_stack():
     had_core_stt = hasattr(core, "stt")
     if had_core_stt:
         delattr(core, "stt")
+    monkeypatch.setattr(dialog_mod, "_read_optional_install_status", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_runtime_import_status_fast",
+        lambda: {"installed": True, "valid": True, "version": "1.2.1", "origin": "fake"},
+    )
 
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}
@@ -1255,7 +1263,8 @@ def test_kokoro_fast_status_defers_gpu_availability_check():
             needs_gpu=False,
         )
 
-        assert not dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Reinstall Kokoro"
         assert dialog._kokoro_install_status_lbl.text() == "Kokoro is installed."
     finally:
         dialog._kokoro_install_btn.deleteLater()
@@ -1684,7 +1693,7 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
-    """Clicking reinstall should start from metadata/cached status, not full Torch verification."""
+    """Clicking GPU support should start from metadata/cached status, not full Torch verification."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
 
@@ -1734,11 +1743,124 @@ def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
         assert captured["packages"] == []
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
         assert captured["remove_artifacts"] == []
+        assert captured["reinstall"] is False
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():
             widget.deleteLater()
         app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_reinstall_click_passes_reinstall(monkeypatch):
+    """Clicking installed Kokoro reinstall should force package replacement."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    device = QComboBox()
+    device.addItem("CPU", "cpu")
+    dialog._fields = {
+        "KOKORO_DEVICE": device,
+        "KOKORO_VOICE": QLineEdit("af_heart"),
+        "KOKORO_LANG_CODE": QLineEdit("a"),
+        "KOKORO_SPEED": QLineEdit("1.0"),
+        "KOKORO_SAMPLE_RATE": QLineEdit("24000"),
+        "TTS_VOLUME": QLineEdit("1.0"),
+    }
+    dialog._tts_install_status_result = None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_torch_status_fast",
+        lambda self: {"fast": True, "installed": True, "valid": True, "version": "2.12.1+cpu"},
+    )
+    monkeypatch.setattr(
+        dialog_mod.QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    def fake_install(self, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(SettingsDialog, "_install_optional_tts_package", fake_install)
+
+    try:
+        SettingsDialog._install_kokoro(dialog)
+
+        assert captured["packages"] == optional_deps.kokoro_install_packages("cpu")
+        assert captured["pre_install_packages"] == []
+        assert captured["remove_artifacts"] == optional_deps.kokoro_remove_artifacts()
+        assert captured["reinstall"] is True
+        assert captured["success_message"] == "Kokoro reinstalled and local voice is ready."
+    finally:
+        for widget in dialog._fields.values():
+            widget.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_elevenlabs_installed_status_offers_reinstall():
+    """Installed ElevenLabs should keep an enabled reinstall action."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._elevenlabs_install_btn = QPushButton()
+    dialog._elevenlabs_install_status_lbl = QLabel()
+
+    try:
+        SettingsDialog._apply_elevenlabs_install_status(dialog, True)
+
+        assert dialog._elevenlabs_install_btn.isEnabled()
+        assert dialog._elevenlabs_install_btn.text() == "Reinstall ElevenLabs"
+        assert dialog._elevenlabs_install_status_lbl.text() == "ElevenLabs is installed."
+    finally:
+        dialog._elevenlabs_install_btn.deleteLater()
+        dialog._elevenlabs_install_status_lbl.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_elevenlabs_reinstall_click_passes_reinstall(monkeypatch):
+    """Clicking ElevenLabs reinstall should force package replacement."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(SettingsDialog, "_elevenlabs_installed", lambda self: True)
+    monkeypatch.setattr(
+        dialog_mod.QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    def fake_install(self, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(SettingsDialog, "_install_optional_tts_package", fake_install)
+
+    SettingsDialog._install_elevenlabs(dialog)
+
+    assert captured["packages"] == [optional_deps.ELEVENLABS_PACKAGE]
+    assert captured["reinstall"] is True
+    assert captured["success_message"] == "ElevenLabs reinstalled. Add your API key, then click Test TTS."
 
 
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
@@ -2778,6 +2900,7 @@ def test_copilot_api_key_row_saves_through_copilot_auth(monkeypatch):
         assert saved_tokens == ["github_pat_test"]
         assert api_key_row["key"].text() == ""
         assert api_key_row["key"].placeholderText() == "stored in keychain"
+        assert api_key_row["key"].property("storedSecret") is True
     finally:
         dialog.deleteLater()
         app.processEvents()

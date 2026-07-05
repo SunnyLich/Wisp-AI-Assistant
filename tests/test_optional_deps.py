@@ -253,6 +253,120 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
     assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.11.0+cu128"], True)]
 
 
+def test_optional_tts_installer_can_reinstall_packages(monkeypatch, tmp_path):
+    """Installer plans can force replacement of normal package installs."""
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    log_path = tmp_path / "install.log"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "ElevenLabs",
+                "packages": ["elevenlabs==2.55.0"],
+                "reinstall": True,
+                "log_path": str(log_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_run_install_command",
+        lambda _log, _prefix, packages, reinstall=False: calls.append((packages, reinstall)) or 0,
+    )
+
+    assert optional_tts_installer.main() == 0
+    assert calls == [(["elevenlabs==2.55.0"], True)]
+
+
+def test_optional_tts_installer_stt_prepare_requires_model_verification(monkeypatch, tmp_path):
+    """STT installer success is written only after the model probe passes."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    log_path = tmp_path / "install.log"
+    status_path = tmp_path / "status.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "STT",
+                "packages": ["faster-whisper==1.2.1"],
+                "log_path": str(log_path),
+                "status_path": str(status_path),
+                "post_install": "stt_prepare",
+                "stt_model": "tiny",
+                "stt_device": "cpu",
+                "stt_compute_type": "int8",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(optional_tts_installer, "_run_install_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_model_status_subprocess",
+        lambda model, device, compute: {
+            "valid": True,
+            "model": model,
+            "device": device,
+            "compute": compute,
+            "error": "",
+        },
+    )
+
+    assert optional_tts_installer.main() == 0
+
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is True
+    assert status["message"] == "STT installed and model ready: tiny on cpu (int8)."
+
+
+def test_optional_tts_installer_stt_prepare_reports_model_verification_failure(monkeypatch, tmp_path):
+    """STT installer failure is written when the model probe fails."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    log_path = tmp_path / "install.log"
+    status_path = tmp_path / "status.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "STT",
+                "packages": ["faster-whisper==1.2.1"],
+                "log_path": str(log_path),
+                "status_path": str(status_path),
+                "post_install": "stt_prepare",
+                "stt_model": "tiny",
+                "stt_device": "cpu",
+                "stt_compute_type": "int8",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(optional_tts_installer, "_run_install_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_model_status_subprocess",
+        lambda *_args: {"valid": False, "error": "ImportError: missing faster_whisper"},
+    )
+
+    assert optional_tts_installer.main() == 1
+
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is False
+    assert (
+        status["message"]
+        == "STT installed, but model verification failed: ImportError: missing faster_whisper"
+    )
+
+
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):
     """Windows optional-dependency helpers should not flash console windows."""
     from core import optional_deps

@@ -121,6 +121,7 @@ def main() -> int:
     remove_artifacts = _package_list(plan, "remove_artifacts")
     pre_install_packages = _package_list(plan, "pre_install_packages")
     packages = _package_list(plan, "packages")
+    reinstall = bool(plan.get("reinstall"))
     if not packages and not pre_install_packages:
         raise ValueError("installer plan packages or pre_install_packages must be a non-empty list of strings")
     raw_log_path = str(plan.get("log_path") or "").strip()
@@ -140,7 +141,7 @@ def main() -> int:
                 _write_status(status_path, ok=False, message=f"{display_name} install failed during CUDA Torch install.")
                 return returncode
         if packages:
-            returncode = _run_install_command(log, prefix, packages)
+            returncode = _run_install_command(log, prefix, packages, reinstall=reinstall)
             if returncode != 0:
                 _write_status(status_path, ok=False, message=f"{display_name} install failed during package install.")
                 return returncode

@@ -265,6 +265,7 @@ class FlowController:
         self.ui.on_event("ui.intent.snip.cancelled", self._on_intent_snip_cancelled)
         self.ui.on_event("ui.intent.selection.requested", self._on_intent_selection_requested)
         self.ui.on_event("ui.intent.context.remove", self._on_intent_context_remove)
+        self.ui.on_event("ui.intent.context.reenabled", self._on_intent_context_reenabled)
         self.ui.on_event("ui.chat.snip.region", self._on_chat_snip_region)
         self.ui.on_event("ui.chat.snip.cancelled", self._on_chat_snip_cancelled)
         self.ui.on_event("ui.chat.selection.requested", self._on_chat_selection_requested)
@@ -435,6 +436,13 @@ class FlowController:
         source_id = str((data or {}).get("source_id") or "")
         if item_id:
             self._schedule(self.intent_context_source_removed, item_id, source_id)
+
+    def _on_intent_context_reenabled(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle context groups toggled back on after per-row removals."""
+        item_id = str((data or {}).get("id") or "")
+        choices = list((data or {}).get("context_choices") or [])
+        if item_id:
+            self._schedule(self.intent_context_source_reenabled, item_id, choices)
 
     def _on_chat_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle a selected chat screenshot snip region."""
@@ -1054,6 +1062,15 @@ class FlowController:
         pending.removed_context_sources.add((str(item_id), str(source_id)))
         context = pending.context if isinstance(pending.context, dict) else {}
         if item_id == "ambient":
+            context.setdefault("_active_document_text_full", str(context.get("active_document_text") or ""))
+            context.setdefault(
+                "_active_document_sources_full",
+                [
+                    dict(item)
+                    for item in (context.get("active_document_sources") or [])
+                    if isinstance(item, dict)
+                ],
+            )
             removed = {
                 sid for iid, sid in pending.removed_context_sources if iid == "ambient" and sid
             }
@@ -1072,6 +1089,54 @@ class FlowController:
                 # The last app document row was removed: disable App context for
                 # this invocation so the top chip switches off with the list.
                 pending.caller["_context_ambient_enabled"] = False
+        self._fire(
+            self.ui,
+            "ui.intent.context_items",
+            {"context_items": self._intent_context_items(pending)},
+        )
+
+    def intent_context_source_reenabled(
+        self,
+        item_id: str,
+        context_choices: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Restore a context group that was emptied by per-row removals."""
+        with self._lock:
+            pending = self._pending
+        if pending is None:
+            return
+
+        item_id = str(item_id or "")
+        pending.caller = self._apply_intent_context_choices(
+            pending.caller,
+            context_choices or [],
+        )
+        if item_id == "ambient":
+            pending.caller["_context_ambient_enabled"] = True
+            pending.removed_context_sources = {
+                pair for pair in pending.removed_context_sources if pair[0] != "ambient"
+            }
+            context = pending.context if isinstance(pending.context, dict) else {}
+            full_text = str(context.get("_active_document_text_full") or "")
+            full_sources = [
+                dict(item)
+                for item in (context.get("_active_document_sources_full") or [])
+                if isinstance(item, dict)
+            ]
+            if full_text or full_sources:
+                context["active_document_text"] = full_text
+                context["active_document_sources"] = full_sources
+            else:
+                context.pop("active_document_text", None)
+                context.pop("active_document_sources", None)
+                text = self._fetch_active_document_text(context)
+                if text:
+                    context["active_document_text"] = text
+            pending.context = context
+
+        with self._lock:
+            if self._pending is pending:
+                self._pending = pending
         self._fire(
             self.ui,
             "ui.intent.context_items",
@@ -1826,7 +1891,10 @@ class FlowController:
         self._safe_call(
             self.ui,
             "ui.chat.context_preview",
-            {"preview_id": preview_id, "context_items": self._intent_context_items(pending)},
+            {
+                "preview_id": preview_id,
+                "context_items": self._intent_context_items(pending),
+            },
             timeout=30.0,
         )
         changed = False
@@ -1848,7 +1916,10 @@ class FlowController:
             self._safe_call(
                 self.ui,
                 "ui.chat.context_preview",
-                {"preview_id": preview_id, "context_items": self._intent_context_items(pending)},
+                {
+                    "preview_id": preview_id,
+                    "context_items": self._intent_context_items(pending),
+                },
                 timeout=30.0,
             )
 
@@ -4209,11 +4280,6 @@ class FlowController:
         screenshot_mode = str(caller.get("context_screenshot") or "off").strip().lower()
         screenshot_preview = (pending.screenshot_b64 or pending.screenshot_tool_b64) if pending else None
         has_screenshot = bool(screenshot_preview)
-        screenshot_tokens = (
-            self._image_token_label(screenshot_preview)
-            if has_screenshot
-            else self._screen_token_label(context)
-        )
         app_redactions = self._redaction_count(active_text)
         browser_redactions = self._redaction_count(browser_text)
         selected_redactions = self._redaction_count(selected_context_text or stale_selected_text)
@@ -4234,6 +4300,11 @@ class FlowController:
         screenshot_state = "on" if (screenshot_mode == "auto" or (pending and pending.screenshot_b64)) else (
             "auto" if screenshot_mode == "model" else "off"
         )
+        screenshot_tokens = (
+            self._image_token_label(screenshot_preview)
+            if has_screenshot
+            else self._screen_token_label(context)
+        )
 
         return [
             {
@@ -4241,7 +4312,11 @@ class FlowController:
                 "key": keys[0],
                 "label": "App",
                 "state": app_state,
-                "tokens": self._deferred_token_label() if app_deferred else self._token_label(active_text),
+                "tokens": (
+                    self._deferred_token_label()
+                    if app_deferred
+                    else self._token_label(active_text)
+                ),
                 "preview": app_preview,
                 "sources": app_source_previews,
                 "privacy_count": app_redactions,
@@ -4260,7 +4335,11 @@ class FlowController:
                 "key": keys[1],
                 "label": "Browser/Web",
                 "state": browser_state if browser_requested else "off",
-                "tokens": self._deferred_token_label() if browser_deferred else self._token_label(browser_text),
+                "tokens": (
+                    self._deferred_token_label()
+                    if browser_deferred
+                    else self._token_label(browser_text)
+                ),
                 "preview": browser_preview,
                 "privacy_count": browser_redactions,
                 "warning": self._with_privacy_warning(

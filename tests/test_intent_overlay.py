@@ -602,6 +602,7 @@ def test_intent_overlay_cycles_context_chip(monkeypatch):
         )
         assert overlay.context_choices()[0]["state"] == "off"
         assert overlay.context_choices()[0]["touched"] is True
+        assert intent_overlay._context_chip_token_text(overlay.context_choices()[0]) == "? tok"
 
         overlay.show()
         app.processEvents()

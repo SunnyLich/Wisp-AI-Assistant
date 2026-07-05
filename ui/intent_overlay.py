@@ -265,6 +265,11 @@ def _context_toggle_keys() -> str:
     return "".join(keys)
 
 
+def _context_chip_token_text(item: dict) -> str:
+    """Return token text that should be painted for a context chip."""
+    return str(item.get("tokens") or "")
+
+
 def _default_context_items() -> list[dict]:
     """Fallback context chips for callers that do not provide live metadata."""
     keys = _context_toggle_keys()
@@ -300,6 +305,7 @@ class IntentOverlay(QWidget):
     screenshot_snip_requested = Signal()
     selection_capture_requested = Signal(str)
     context_source_removed = Signal(str, str)
+    context_source_reenabled = Signal(str)
     _raw_key      = Signal(str)
 
     def __init__(
@@ -892,7 +898,7 @@ class IntentOverlay(QWidget):
                 p.setPen(QPen(color))
                 p.drawText(rect.x() + 5, rect.y() + 4, 14, 14, Qt.AlignmentFlag.AlignCenter, key)
 
-            warning = str(item.get("warning") or "").strip()
+            warning = "" if state == "off" else str(item.get("warning") or "").strip()
             if warning:
                 warn_rect = QRect(rect.right() - 18, rect.y() + 4, 14, 14)
                 self._warning_rects.append((warn_rect, warning))
@@ -915,7 +921,7 @@ class IntentOverlay(QWidget):
             p.drawText(rect.x() + 6, rect.y() + 34, rect.width() - 12, 12,
                        Qt.AlignmentFlag.AlignCenter, state_label)
 
-            tokens = str(item.get("tokens") or "")
+            tokens = _context_chip_token_text(item)
             if tokens:
                 p.setFont(token_font)
                 p.setPen(QPen(palette["ctx_sub"]))
@@ -1096,6 +1102,8 @@ class IntentOverlay(QWidget):
         self._note_interaction()
         self._resize_for_context_preview()
         self.update()
+        if item_id == "ambient" and state == "off" and item["state"] != "off":
+            QTimer.singleShot(0, lambda: self.context_source_reenabled.emit(item_id))
         if item_id == "screenshot" and state == "off" and item["state"] == "on":
             QTimer.singleShot(0, self.screenshot_snip_requested.emit)
         if (

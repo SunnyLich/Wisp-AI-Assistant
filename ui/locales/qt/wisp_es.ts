@@ -3079,6 +3079,10 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
       <translation>Instalar Kokoro</translation>
     </message>
     <message>
+      <source>Reinstall Kokoro</source>
+      <translation>Reinstalar Kokoro</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro instalado</translation>
     </message>
@@ -3407,6 +3411,14 @@ Continuar?</translation>
 </translation>
     </message>
     <message>
+      <source>Wisp will reinstall Kokoro in its user-writable optional packages folder.
+
+</source>
+      <translation>Wisp reinstalará Kokoro en su carpeta de paquetes opcionales con permisos de escritura.
+
+</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, CUDA-enabled Torch, English speech model</source>
       <translation>kokoro&gt;=0.9.4, soundfile, Torch con CUDA, modelo de voz en inglés</translation>
     </message>
@@ -3463,6 +3475,10 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
     <message>
       <source>Kokoro installed and local voice is ready.</source>
       <translation>Kokoro está instalado y la voz local está lista.</translation>
+    </message>
+    <message>
+      <source>Kokoro reinstalled and local voice is ready.</source>
+      <translation>Kokoro se reinstaló y la voz local está lista.</translation>
     </message>
     <message>
       <source>Kokoro installed, but Torch verification failed: {message}</source>
@@ -4222,6 +4238,10 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
       <translation>Instalar ElevenLabs</translation>
     </message>
     <message>
+      <source>Reinstall ElevenLabs</source>
+      <translation>Reinstalar ElevenLabs</translation>
+    </message>
+    <message>
       <source>Install ElevenLabs before applying it as the active TTS provider.</source>
       <translation>Instala ElevenLabs antes de aplicarlo como proveedor de TTS activo.</translation>
     </message>
@@ -4374,6 +4394,26 @@ Paquete: {package}
 Usa esto cuando el exe empaquetado haya omitido ElevenLabs porque la ruta de compilación era demasiado larga. La instalación puede necesitar acceso a internet y sobrevivirá a reconstrucciones de Wisp.
 
 ¿Continuar?</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp reinstalará el soporte de ElevenLabs en su carpeta de paquetes opcionales escribible por el usuario.
+
+Paquete: {package}
+
+Usa esto cuando el exe empaquetado haya omitido ElevenLabs porque la ruta de compilación era demasiado larga. La instalación puede necesitar acceso a internet y sobrevivirá a reconstrucciones de Wisp.
+
+¿Continuar?</translation>
+    </message>
+    <message>
+      <source>ElevenLabs reinstalled. Add your API key, then click Test TTS.</source>
+      <translation>ElevenLabs se reinstaló. Agrega tu clave API y luego haz clic en Test TTS.</translation>
     </message>
     <message>
       <source>Wisp will install Kokoro into its user-writable optional packages folder.

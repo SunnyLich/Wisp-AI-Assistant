@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from PySide6.QtCore import Qt, QTimer, QObject, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPainter, QPalette
 from core import secret_store
 from core.system.env_utils import (
     format_tool_modes, normalize_file_access_mode, normalize_screenshot_mode,
@@ -76,6 +76,59 @@ _CUSTOM_MODEL_SENTINEL = "__custom__"
 _CUSTOM_MODEL_LABEL = "Custom / enter manually…"
 # Fixed width of the leading "Priority" column shown beside each model row.
 _MODEL_PRIORITY_COL_W = 46
+_SECRET_MASK_PLACEHOLDER = "●" * 16
+
+
+class _SecretLineEdit(QLineEdit):
+    """Password field that can show a stored secret as password dots."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._stored_secret_placeholder = False
+
+    def setStoredSecretPlaceholder(self, stored: bool) -> None:
+        self._stored_secret_placeholder = bool(stored)
+        self.setProperty("storedSecret", self._stored_secret_placeholder)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        stored_placeholder = (
+            self._stored_secret_placeholder
+            and not self.text()
+            and bool(self.placeholderText())
+        )
+        placeholder = ""
+        if stored_placeholder:
+            placeholder = self.placeholderText()
+            super().setPlaceholderText("")
+        try:
+            super().paintEvent(event)
+        finally:
+            if stored_placeholder:
+                super().setPlaceholderText(placeholder)
+        if not stored_placeholder:
+            return
+
+        painter = QPainter(self)
+        font = QFont(self.font())
+        size = font.pointSizeF()
+        if size > 0:
+            font.setPointSizeF(size + 4)
+        painter.setFont(font)
+        painter.setPen(self.palette().color(QPalette.ColorRole.Text))
+        rect = self.rect().adjusted(12, 0, -10, 0)
+        mask = painter.fontMetrics().elidedText(
+            _SECRET_MASK_PLACEHOLDER,
+            Qt.TextElideMode.ElideRight,
+            max(0, rect.width()),
+        )
+        painter.drawText(
+            rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            mask,
+        )
 
 _ASSISTANT_LANGUAGE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("System default", ""),
@@ -399,7 +452,7 @@ class SettingsDialog(QDialog):
                     copilot_auth.save_token(value)
                     _settings_log.info("Saved GitHub Copilot token to OS keychain")
                     row["key"].clear()
-                    row["key"].setPlaceholderText(t("stored in keychain"))
+                    self._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
                     continue
                 except Exception as exc:  # noqa: BLE001 - reported with other keychain failures
                     _settings_log.error("Could not save GitHub Copilot token to OS keychain: %s", exc)
@@ -410,7 +463,7 @@ class SettingsDialog(QDialog):
                 continue
             if _store(key_name, value, label):
                 row["key"].clear()
-                row["key"].setPlaceholderText(t("stored in keychain"))
+                self._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
 
         # TTS and custom keys still live in self._fields
         for name, label in [
@@ -426,7 +479,11 @@ class SettingsDialog(QDialog):
                 continue
             if _store(name, value, label):
                 self._fields[name].clear()  # type: ignore[attr-defined]
-                self._fields[name].setPlaceholderText(t(f"{label} key stored in OS keychain"))  # type: ignore[attr-defined]
+                self._set_secret_placeholder(
+                    self._fields[name],  # type: ignore[arg-type]
+                    f"{label} key stored in OS keychain",
+                    stored=True,
+                )
 
         if failures:
             QMessageBox.warning(
@@ -1662,7 +1719,11 @@ class SettingsDialog(QDialog):
         self._fields["CUSTOM_BASE_URL"] = QLineEdit()
         self._fields["CUSTOM_BASE_URL"].setPlaceholderText("https://api.example.com/v1")
         self._fields["CUSTOM_API_KEY"] = self._password()
-        self._fields["CUSTOM_API_KEY"].setPlaceholderText("Stored in OS keychain")
+        self._set_secret_placeholder(
+            self._fields["CUSTOM_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain",
+            stored=False,
+        )
 
         custom_card, custom_cv = self._card("Custom provider")
         custom_note = QLabel(
@@ -1877,7 +1938,6 @@ class SettingsDialog(QDialog):
         alias_edit.setMinimumWidth(80)
 
         key_edit = self._password()
-        key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
 
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(40)
@@ -1914,13 +1974,15 @@ class SettingsDialog(QDialog):
         provider = _get(row_info["provider"])
         key_edit = row_info["key"]
         if provider == "copilot":
-            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("github_pat_… (not saved to .env)"))
+            text = "stored in keychain" if stored else "github_pat_… (not saved to .env)"
         elif provider == "ollama":
-            key_edit.setPlaceholderText(t("not required"))
+            text = "not required"
+            stored = False
         elif provider == "custom":
-            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("custom endpoint API key"))
+            text = "stored in keychain" if stored else "custom endpoint API key"
         else:
-            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
+            text = "stored in keychain" if stored else "enter API key"
+        self._set_secret_placeholder(key_edit, text, stored=stored)
 
     def _remove_api_key_row(self, row_info: dict) -> None:
         """Remove api key row."""
@@ -2548,7 +2610,7 @@ class SettingsDialog(QDialog):
                     if token.strip():
                         copilot_auth.save_token(token)
                         row["key"].clear()
-                        row["key"].setPlaceholderText(t("stored in keychain"))
+                        self._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
                         break
             if not token.strip():
                 raise ValueError("Add a GitHub Copilot provider row and paste a token first.")
@@ -2771,12 +2833,20 @@ class SettingsDialog(QDialog):
 
         # Fields shared/created up front so save + load can always reach them.
         self._fields["CARTESIA_API_KEY"] = self._password()
-        self._fields["CARTESIA_API_KEY"].setPlaceholderText("Stored in OS keychain")
+        self._set_secret_placeholder(
+            self._fields["CARTESIA_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain",
+            stored=False,
+        )
         self._fields["CARTESIA_VOICE_ID"] = QLineEdit()
         self._fields["CARTESIA_VOICE_ID"].setPlaceholderText("e.g. a0e99841-438c-4a64-b679-ae501e7d6091")
         cartesia_voice_tip = "The Cartesia voice identifier to use for speech. Copy it from your Cartesia voices page."
         self._fields["ELEVENLABS_API_KEY"] = self._password()
-        self._fields["ELEVENLABS_API_KEY"].setPlaceholderText("Stored in OS keychain")
+        self._set_secret_placeholder(
+            self._fields["ELEVENLABS_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain",
+            stored=False,
+        )
         self._fields["ELEVENLABS_VOICE_ID"] = QLineEdit()
         self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText("blank = account default voice")
         eleven_voice_tip = "Leave blank for the account default voice, or paste a specific ElevenLabs voice ID."
@@ -2793,7 +2863,11 @@ class SettingsDialog(QDialog):
         self._fields["TTS_CUSTOM_BASE_URL"].setPlaceholderText("e.g. http://localhost:8880/v1")
         custom_tts_base_tip = "Base URL for an OpenAI-compatible speech server, ending at the API root such as /v1."
         self._fields["TTS_CUSTOM_API_KEY"] = self._password()
-        self._fields["TTS_CUSTOM_API_KEY"].setPlaceholderText("Stored in OS keychain (blank if not needed)")
+        self._set_secret_placeholder(
+            self._fields["TTS_CUSTOM_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain (blank if not needed)",
+            stored=False,
+        )
         self._fields["TTS_CUSTOM_VOICE"] = QLineEdit()
         self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText("server-specific voice name")
         custom_tts_voice_tip = "Voice name or ID expected by your custom speech server."
@@ -3385,8 +3459,8 @@ class SettingsDialog(QDialog):
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
         if installed:
-            button.setEnabled(False)
-            button.setText(t("ElevenLabs installed"))
+            button.setEnabled(True)
+            button.setText(t("Reinstall ElevenLabs"))
             self._set_test_status(label, True, "ElevenLabs is installed.")
         else:
             button.setEnabled(True)
@@ -3431,8 +3505,8 @@ class SettingsDialog(QDialog):
             button.setText(t("Install Kokoro GPU support"))
             self._set_test_status(label, "warn", "Kokoro GPU support is not installed.")
         elif installed:
-            button.setEnabled(False)
-            button.setText(t("Kokoro installed"))
+            button.setEnabled(True)
+            button.setText(t("Reinstall Kokoro"))
             if bool(torch_status.get("fast")):
                 self._set_test_status(label, True, "Kokoro is installed.")
             elif bool(torch_status.get("cuda_available")):
@@ -3473,9 +3547,6 @@ class SettingsDialog(QDialog):
         installed = bool(snapshot.get("installed"))
         needs_gpu = bool(snapshot.get("needs_gpu"))
         needs_repair = bool(snapshot.get("needs_repair"))
-        if installed and not needs_gpu and not needs_repair:
-            self._refresh_kokoro_install_status()
-            return
         voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
         lang_code = _get(self._fields["KOKORO_LANG_CODE"]).strip() or "a"
         device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
@@ -3484,9 +3555,11 @@ class SettingsDialog(QDialog):
         pre_install_packages = optional_deps.kokoro_torch_install_packages(install_device)
         packages = optional_deps.kokoro_install_packages(install_device)
         remove_artifacts = optional_deps.kokoro_remove_artifacts()
+        reinstall = bool(installed)
         if installed and needs_gpu and not needs_repair:
             packages = []
             remove_artifacts = []
+            reinstall = False
         base_package_label = f"{optional_deps.KOKORO_PACKAGE}, {optional_deps.SOUNDFILE_PACKAGE}"
         package_label = (
             t("CUDA-enabled Torch")
@@ -3501,6 +3574,8 @@ class SettingsDialog(QDialog):
         action_note = t(
             "Wisp will upgrade Kokoro's optional package layer with GPU support.\n\n"
             if needs_gpu
+            else "Wisp will reinstall Kokoro in its user-writable optional packages folder.\n\n"
+            if reinstall
             else "Wisp will install Kokoro into its user-writable optional packages folder.\n\n"
         )
         speed = _get(self._fields["KOKORO_SPEED"]).strip() or "1.0"
@@ -3535,7 +3610,13 @@ class SettingsDialog(QDialog):
         )
         answer = QMessageBox.question(
             self,
-            t("Install Kokoro"),
+            t(
+                "Install Kokoro GPU support"
+                if installed and needs_gpu and not needs_repair
+                else "Reinstall Kokoro"
+                if reinstall
+                else "Install Kokoro"
+            ),
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
@@ -3554,9 +3635,12 @@ class SettingsDialog(QDialog):
             success_message=(
                 "Kokoro GPU support installed and local voice is ready."
                 if mode == "gpu"
+                else "Kokoro reinstalled and local voice is ready."
+                if reinstall
                 else "Kokoro installed and local voice is ready."
             ),
             thread_name="kokoro-install",
+            reinstall=reinstall,
             external_plan_extra={
                 "post_install": "kokoro_prepare",
                 "kokoro_voice": voice,
@@ -3613,21 +3697,28 @@ class SettingsDialog(QDialog):
 
     def _install_elevenlabs(self) -> None:
         """Confirm and install optional ElevenLabs dependencies into Wisp's Python."""
-        if self._elevenlabs_installed():
-            self._refresh_elevenlabs_install_status()
-            return
         from core import optional_deps
 
-        message = t(
-            "Wisp will install ElevenLabs support into its user-writable optional packages folder.\n\n"
+        installed = self._elevenlabs_installed()
+        message_source = (
+            "Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.\n\n"
             "Package: {package}\n\n"
             "Use this when the packaged exe skipped ElevenLabs because the build path was too long. "
             "The install may need internet access and will survive Wisp rebuilds.\n\n"
             "Continue?"
-        ).format(package=optional_deps.ELEVENLABS_PACKAGE)
+            if installed
+            else (
+                "Wisp will install ElevenLabs support into its user-writable optional packages folder.\n\n"
+                "Package: {package}\n\n"
+                "Use this when the packaged exe skipped ElevenLabs because the build path was too long. "
+                "The install may need internet access and will survive Wisp rebuilds.\n\n"
+                "Continue?"
+            )
+        )
+        message = t(message_source).format(package=optional_deps.ELEVENLABS_PACKAGE)
         answer = QMessageBox.question(
             self,
-            t("Install ElevenLabs"),
+            t("Reinstall ElevenLabs" if installed else "Install ElevenLabs"),
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
@@ -3641,8 +3732,13 @@ class SettingsDialog(QDialog):
             packages=[optional_deps.ELEVENLABS_PACKAGE],
             button_attr="_elevenlabs_install_btn",
             status_attr="_elevenlabs_install_status_lbl",
-            success_message="ElevenLabs installed. Add your API key, then click Test TTS.",
+            success_message=(
+                "ElevenLabs reinstalled. Add your API key, then click Test TTS."
+                if installed
+                else "ElevenLabs installed. Add your API key, then click Test TTS."
+            ),
             thread_name="elevenlabs-install",
+            reinstall=installed,
         )
 
     def _try_launch_external_optional_tts_install(
@@ -3656,6 +3752,7 @@ class SettingsDialog(QDialog):
         button_attr: str,
         status_attr: str,
         external_plan_extra: dict[str, object] | None = None,
+        reinstall: bool = False,
     ) -> bool:
         """Launch an optional speech install in a Wisp-owned installer window."""
         if os.environ.get("WISP_OPTIONAL_INSTALL_INLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
@@ -3688,6 +3785,7 @@ class SettingsDialog(QDialog):
                 "packages": packages,
                 "pre_install_packages": pre_install_packages or [],
                 "remove_artifacts": remove_artifacts or [],
+                "reinstall": bool(reinstall),
                 "log_path": str(log_path),
                 "status_path": str(status_path),
                 **(external_plan_extra or {}),
@@ -3823,6 +3921,7 @@ class SettingsDialog(QDialog):
         thread_name: str,
         external_plan_extra: dict[str, object] | None = None,
         post_install_progress_detail: str | None = None,
+        reinstall: bool = False,
         post_install: Callable[[Callable[[str], None], Callable[[str], None]], tuple[bool, str]] | None = None,
     ) -> None:
         """Install optional TTS packages into Wisp's user package folder."""
@@ -3835,6 +3934,7 @@ class SettingsDialog(QDialog):
             button_attr=button_attr,
             status_attr=status_attr,
             external_plan_extra=external_plan_extra,
+            reinstall=reinstall,
         ):
             return
         button = getattr(self, button_attr, None)
@@ -3919,7 +4019,7 @@ class SettingsDialog(QDialog):
             if pre_install_packages:
                 commands.append(("installing CUDA Torch", optional_deps.pip_install_command(pre_install_packages, reinstall=True)))
             if packages:
-                commands.append(("installing packages", optional_deps.pip_install_command(packages)))
+                commands.append(("installing packages", optional_deps.pip_install_command(packages, reinstall=reinstall)))
             if not commands:
                 return False, f"No packages selected for {display_name} install."
 
@@ -5606,9 +5706,15 @@ class SettingsDialog(QDialog):
 
         return w
 
+    def _set_secret_placeholder(self, edit: QLineEdit, text: str, *, stored: bool) -> None:
+        """Set placeholder text and render stored secrets as masked dots."""
+        edit.setPlaceholderText(t(text))
+        if isinstance(edit, _SecretLineEdit):
+            edit.setStoredSecretPlaceholder(stored)
+
     def _password(self) -> QLineEdit:
         """Handle password for settings dialog."""
-        le = QLineEdit()
+        le = _SecretLineEdit()
         le.setEchoMode(QLineEdit.EchoMode.Password)
         return le
 
@@ -5833,8 +5939,13 @@ class SettingsDialog(QDialog):
             if name not in self._fields:
                 continue
             self._fields[name].clear()  # type: ignore[attr-defined]
-            status = "stored in OS keychain" if self._secret_configured_fast(name) else "not configured"
-            self._fields[name].setPlaceholderText(t(status))  # type: ignore[attr-defined]
+            stored = self._secret_configured_fast(name)
+            status = "stored in OS keychain" if stored else "not configured"
+            self._set_secret_placeholder(
+                self._fields[name],  # type: ignore[arg-type]
+                status,
+                stored=stored,
+            )
 
         _set(self._fields["TTS_PROVIDER"], self._env.get("TTS_PROVIDER", cfg.TTS_PROVIDER))
         _set(
