@@ -237,6 +237,59 @@ class CaptureTests(unittest.TestCase):
 
         self.assertEqual(run.call_args.args[0], ["xclip", "-selection", "primary", "-o"])
 
+    def test_linux_owner_pid_uses_xres_for_hidden_selection_windows(self):
+        """Verify the owner pid resolves via XRes when _NET_WM_PID is absent."""
+        import sys
+
+        fake_res = types.SimpleNamespace(LocalClientPIDMask=1)
+        fake_reply = types.SimpleNamespace(ids=[types.SimpleNamespace(value=[4242])])
+        seen_specs = []
+
+        def query(specs):
+            seen_specs.extend(specs)
+            return fake_reply
+
+        fake_display = types.SimpleNamespace(res_query_client_ids=query)
+        fake_window = types.SimpleNamespace(id=777)
+        fake_ext = types.SimpleNamespace(res=fake_res)
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "Xlib": types.SimpleNamespace(ext=fake_ext),
+                "Xlib.ext": fake_ext,
+                "Xlib.ext.res": fake_res,
+            },
+        ):
+            self.assertEqual(
+                self.capture._linux_x11_window_client_pid(fake_display, fake_window),
+                4242,
+            )
+        self.assertEqual(seen_specs, [{"client": 777, "mask": 1}])
+
+    def test_linux_owner_pid_xres_failure_returns_none(self):
+        """Verify an XRes lookup failure degrades to None instead of raising."""
+        import sys
+
+        fake_res = types.SimpleNamespace(LocalClientPIDMask=1)
+        fake_ext = types.SimpleNamespace(res=fake_res)
+
+        def query(_specs):
+            raise RuntimeError("X-Resource not supported")
+
+        fake_display = types.SimpleNamespace(res_query_client_ids=query)
+        fake_window = types.SimpleNamespace(id=777)
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "Xlib": types.SimpleNamespace(ext=fake_ext),
+                "Xlib.ext": fake_ext,
+                "Xlib.ext.res": fake_res,
+            },
+        ):
+            self.assertIsNone(
+                self.capture._linux_x11_window_client_pid(fake_display, fake_window)
+            )
+
     def test_macos_screen_snippet_uses_native_helper(self):
         """Verify macos screen snippet uses native helper behavior."""
         class FakeImage:

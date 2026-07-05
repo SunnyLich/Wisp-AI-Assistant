@@ -144,6 +144,28 @@ def _clipboard_sequence_number() -> int | None:
         return None
 
 
+def _linux_x11_window_client_pid(display, window) -> int | None:
+    """Resolve a window's owning pid via the X-Resource extension.
+
+    Apps usually own PRIMARY through an invisible helper window that carries
+    no _NET_WM_PID property, so asking the X server which client created the
+    window is the only lookup that works for selection owners.
+    """
+    try:
+        from Xlib.ext import res as xres
+
+        reply = display.res_query_client_ids(
+            [{"client": int(window.id), "mask": int(xres.LocalClientPIDMask)}]
+        )
+        for item in getattr(reply, "ids", None) or []:
+            values = list(getattr(item, "value", None) or [])
+            if values:
+                return int(values[0])
+    except Exception:
+        return None
+    return None
+
+
 def _linux_x11_primary_selection_owner_pid() -> int | None:
     """Return the X11 PRIMARY owner pid when it can be verified."""
     try:
@@ -157,6 +179,9 @@ def _linux_x11_primary_selection_owner_pid() -> int | None:
         owner = display.get_selection_owner(display.intern_atom("PRIMARY"))
         if owner is None:
             return None
+        pid = _linux_x11_window_client_pid(display, owner)
+        if pid:
+            return pid
         pid_atom = display.intern_atom("_NET_WM_PID")
         current = owner
         for _ in range(16):
