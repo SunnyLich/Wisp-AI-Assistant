@@ -1875,7 +1875,7 @@ class QtProtocolHost:
         self._write_lock = threading.Lock()
         self._lines: "queue.Queue[bytes | None]" = queue.Queue()
         self._closing = False
-        self._stdin_stream = sys.stdin.buffer
+        self._stdin_fd = sys.stdin.fileno()
 
         self._overlay_signals = None
         self._overlay = None
@@ -1933,17 +1933,32 @@ class QtProtocolHost:
         self._send(protocol.make_response(req_id, ok, result=result, error=error))
 
     def _read_loop(self) -> None:
-        """Read loop."""
-        stream = self._stdin_stream
+        """Read stdin as raw fd chunks and queue complete protocol lines.
+
+        os.read is used instead of BufferedReader.readline because this daemon
+        thread would otherwise hold the buffer's internal lock while blocked;
+        interpreter shutdown then aborts with a fatal _enter_buffered_busy
+        error when finalization cannot take that lock to close stdin.
+        """
+        fd = self._stdin_fd
+        pending = b""
         while True:
             try:
-                line = stream.readline()
+                chunk = os.read(fd, 65536)
             except (OSError, ValueError):
-                line = b""
-            if not line:
+                chunk = b""
+            if not chunk:
+                if pending.strip():
+                    self._lines.put(pending)
                 self._lines.put(None)
                 return
-            self._lines.put(line)
+            pending += chunk
+            while True:
+                newline = pending.find(b"\n")
+                if newline < 0:
+                    break
+                self._lines.put(pending[: newline + 1])
+                pending = pending[newline + 1 :]
 
     def _begin_shutdown(self, reason: str, *, notify_supervisor: bool) -> None:
         """Run every shutdown path through one idempotent teardown sequence.

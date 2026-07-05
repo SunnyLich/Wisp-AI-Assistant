@@ -360,12 +360,10 @@ def test_ui_shutdown_message_defers_quit_and_leaves_stdin_open(monkeypatch) -> N
     stopped = []
     watchdog_stopped = []
     responses = []
-    closed = []
     host._closing = False
     host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
     host._watchdog = SimpleNamespace(stop=lambda: watchdog_stopped.append(True))
     host._app = SimpleNamespace(quit=lambda: quit_calls.append(True))
-    host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
     host._respond = lambda req_id, ok, **kwargs: responses.append((req_id, ok, kwargs))  # type: ignore[method-assign]
 
     host._handle_line(json.dumps({"id": 7, "method": "__shutdown__", "params": {}}).encode("utf-8"))
@@ -380,9 +378,6 @@ def test_ui_shutdown_message_defers_quit_and_leaves_stdin_open(monkeypatch) -> N
         ("chat", "close"),
         ("chat", "deleteLater"),
     ]
-    # The reader thread owns the buffered stdin lock while blocked in
-    # readline(); closing the stream from the main thread would deadlock.
-    assert closed == []
     assert quit_calls == [True]
 
 
@@ -400,12 +395,10 @@ def test_ui_about_to_quit_emits_user_quit_once_and_leaves_stdin_open(monkeypatch
     emitted = []
     stopped = []
     watchdog_stopped = []
-    closed = []
     host = QtProtocolHost.__new__(QtProtocolHost)
     host._closing = False
     host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
     host._watchdog = SimpleNamespace(stop=lambda: watchdog_stopped.append(True))
-    host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
     host.emit = lambda event, data=None, req_id=None: emitted.append((event, data, req_id))  # type: ignore[method-assign]
 
     host._on_about_to_quit()
@@ -416,7 +409,6 @@ def test_ui_about_to_quit_emits_user_quit_once_and_leaves_stdin_open(monkeypatch
     assert stopped == [True]
     assert watchdog_stopped == [True]
     assert window_events == [("overlay", "close"), ("overlay", "deleteLater")]
-    assert closed == []
 
 
 def test_bubble_highlight_does_not_mutate_chat_window() -> None:
