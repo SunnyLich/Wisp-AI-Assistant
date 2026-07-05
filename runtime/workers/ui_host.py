@@ -4542,9 +4542,10 @@ def main() -> int:
     real_out = _protect_stdout()
 
     from PySide6.QtWidgets import QApplication
-    from ui.shared.app_icon import install_app_icon, set_windows_app_user_model_id
+    from ui.shared.app_icon import ensure_linux_desktop_entry, install_app_icon, set_windows_app_user_model_id
 
     set_windows_app_user_model_id()
+    ensure_linux_desktop_entry()
     app = QApplication(sys.argv)
     install_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
