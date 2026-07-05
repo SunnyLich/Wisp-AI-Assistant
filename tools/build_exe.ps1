@@ -173,7 +173,7 @@ function Ensure-Uv {
         "-NoProfile",
         "-c",
         "irm https://astral.sh/uv/install.ps1 | iex"
-    )
+    ) | Out-Host
     return Find-Uv
 }
 
@@ -198,8 +198,8 @@ function Install-UvWithPython {
         return $null
     }
     Write-Host "Installing uv into the build Python so it can be bundled with Wisp..."
-    Ensure-Pip -Python $Python
-    Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "uv") -StepName "uv Python install"
+    Ensure-Pip -Python $Python | Out-Host
+    Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "uv") -StepName "uv Python install" | Out-Host
     return Find-UvForPython -Python $Python
 }
 
@@ -218,6 +218,11 @@ function Stage-PortableUv {
     }
     if ([string]::IsNullOrWhiteSpace($Uv)) {
         throw "Could not find or install uv. Runtime package installs in packaged Wisp require bundled uv.exe."
+    }
+    $UvCandidates = @($Uv) | ForEach-Object { "$_".Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $Uv = $UvCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($Uv)) {
+        throw "Could not find a usable uv.exe path after install. Checked output: $($UvCandidates -join '; ')"
     }
 
     $ToolsDir = Join-Path $Root "tools"
