@@ -2422,6 +2422,17 @@ class QtProtocolHost:
                 overlay.hide_without_cancel()
 
         self._intent.selection_capture_requested.connect(_request_selection_capture)
+        def _context_source_removed(item_id: str, source_id: str) -> None:
+            self.emit(
+                "ui.intent.context.remove",
+                {
+                    "caller_idx": caller_idx,
+                    "id": str(item_id or ""),
+                    "source_id": str(source_id or ""),
+                },
+            )
+
+        self._intent.context_source_removed.connect(_context_source_removed)
         def _cancelled() -> None:
             self._apply_cancelled_intent_conversation_choice(self._intent)
             self.emit("ui.intent.cancelled", {"caller_idx": caller_idx})

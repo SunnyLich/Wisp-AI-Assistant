@@ -668,6 +668,29 @@ def selected_text(
     selection_dedupe_key: str = "",
 ) -> str:
     """Handle selected text for runtime workers native host."""
+    return _selected_text_and_stale(
+        allow_clipboard_fallback=allow_clipboard_fallback,
+        active_pid=active_pid,
+        require_active_owner=require_active_owner,
+        selection_dedupe_key=selection_dedupe_key,
+    )[0]
+
+
+def _selected_text_and_stale(
+    *,
+    allow_clipboard_fallback: bool = True,
+    active_pid: int | None = None,
+    require_active_owner: bool = False,
+    selection_dedupe_key: str = "",
+) -> tuple[str, str]:
+    """Return (live selected text, stale selection already auto-filled once).
+
+    The stale slot is only populated on Linux/X11 when a dedupe key is given
+    and PRIMARY still serves the exact acquisition that key already received:
+    the highlight may be long gone (X11 owners keep serving cleared
+    selections), so the caller can offer it off-by-default instead of
+    attaching it silently.
+    """
     if IS_MAC:
         # Prefer Accessibility: reading AXSelectedText injects no keystrokes. The
         # old clipboard path synthesises Cmd+C, and System Events clearing the
@@ -679,12 +702,12 @@ def selected_text(
         # don't expose selection, e.g. some web/Electron views).
         ax = _ax_selected_text()
         if ax is not None:
-            return ax.strip()
+            return ax.strip(), ""
         if not allow_clipboard_fallback:
-            return ""
+            return "", ""
         from core.platform import macos_native
 
-        return macos_native.get_selected_text() or ""
+        return macos_native.get_selected_text() or "", ""
     try:
         if not IS_WIN and not IS_MAC and require_active_owner:
             from core.capture import _get_primary_selection_linux
@@ -701,23 +724,23 @@ def selected_text(
                 if identity is not None:
                     if _AUTOFILLED_PRIMARY_SELECTIONS.get(selection_dedupe_key) == identity:
                         # Same acquisition this surface already auto-filled once;
-                        # the highlight may be long gone. Skip the Ctrl+C
-                        # fallback too - it would just re-copy the same text.
-                        return ""
+                        # hand it back as stale only. Skip the Ctrl+C fallback
+                        # too - it would just re-copy the same text.
+                        return "", text
                     _AUTOFILLED_PRIMARY_SELECTIONS[selection_dedupe_key] = identity
             if text or not allow_clipboard_fallback:
-                return text
+                return text, ""
             from core.capture import _get_selected_text_clipboard
 
-            return (_get_selected_text_clipboard() or "").strip()
+            return (_get_selected_text_clipboard() or "").strip(), ""
         if allow_clipboard_fallback:
             from core.capture import get_selected_text
 
-            return get_selected_text() or ""
+            return get_selected_text() or "", ""
         if IS_WIN:
             from core.capture import _get_selected_text_uia
 
-            return (_get_selected_text_uia() or "").strip()
+            return (_get_selected_text_uia() or "").strip(), ""
         from core.capture import _get_primary_selection_linux
 
         return (
@@ -726,9 +749,9 @@ def selected_text(
                 require_active_owner=require_active_owner,
             )
             or ""
-        ).strip()
+        ).strip(), ""
     except Exception:
-        return ""
+        return "", ""
 
 
 def _windows_clipboard_file_paths() -> list[str]:
@@ -880,6 +903,7 @@ def context_snapshot(
         "active_app": active,
         "document_window": document_window,
         "selected_text": "",
+        "stale_selected_text": "",
         "selected_paths": [],
         "clipboard_text": "",
         "browser_url": "",
@@ -903,7 +927,7 @@ def context_snapshot(
     selection_kind = _selection_source_kind(active) if include_selected_paths else "text"
     if include_selection and selection_kind != "paths":
         _s = time.monotonic()
-        snapshot["selected_text"] = selected_text(
+        snapshot["selected_text"], snapshot["stale_selected_text"] = _selected_text_and_stale(
             allow_clipboard_fallback=True,
             active_pid=int(active.get("pid") or 0),
             require_active_owner=bool(require_active_selection_owner),

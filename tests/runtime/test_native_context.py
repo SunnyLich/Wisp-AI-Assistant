@@ -122,11 +122,11 @@ def test_context_snapshot_explorer_selection_uses_paths_not_text(monkeypatch):
         active_pid: int | None = None,
         require_active_owner: bool = False,
         selection_dedupe_key: str = "",
-    ) -> str:
+    ) -> tuple[str, str]:
         calls.append((allow_clipboard_fallback, active_pid, require_active_owner))
-        return ""
+        return "", ""
 
-    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", fake_selected_text)
 
     snapshot = native_host.context_snapshot(
         include_clipboard=True,
@@ -160,11 +160,11 @@ def test_context_snapshot_text_app_selection_uses_text_not_paths(monkeypatch):
         active_pid: int | None = None,
         require_active_owner: bool = False,
         selection_dedupe_key: str = "",
-    ) -> str:
+    ) -> tuple[str, str]:
         calls.append((allow_clipboard_fallback, active_pid, require_active_owner))
-        return "selected text"
+        return "selected text", ""
 
-    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", fake_selected_text)
 
     snapshot = native_host.context_snapshot(
         include_clipboard=True,
@@ -199,11 +199,11 @@ def test_await_selection_context_disables_active_owner_requirement(monkeypatch):
         active_pid: int | None = None,
         require_active_owner: bool = False,
         selection_dedupe_key: str = "",
-    ) -> str:
+    ) -> tuple[str, str]:
         calls.append((allow_clipboard_fallback, active_pid, require_active_owner))
-        return "picked text"
+        return "picked text", ""
 
-    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", fake_selected_text)
 
     snapshot = native_host.await_selection_context(
         timeout=0.5,
@@ -228,11 +228,11 @@ def test_context_snapshot_forwards_selection_dedupe_key(monkeypatch):
     monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
     seen_keys: list[str] = []
 
-    def fake_selected_text(*, selection_dedupe_key: str = "", **_kwargs) -> str:
+    def fake_selected_text(*, selection_dedupe_key: str = "", **_kwargs) -> tuple[str, str]:
         seen_keys.append(selection_dedupe_key)
-        return ""
+        return "", ""
 
-    monkeypatch.setattr(native_host, "selected_text", fake_selected_text)
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", fake_selected_text)
 
     native_host.context_snapshot(
         include_clipboard=False, include_selection=True, selection_dedupe_key="intent"
@@ -242,8 +242,32 @@ def test_context_snapshot_forwards_selection_dedupe_key(monkeypatch):
     assert seen_keys == ["intent", ""]
 
 
+def test_context_snapshot_surfaces_stale_selection_for_intent(monkeypatch):
+    """Verify a repeated PRIMARY acquisition reaches the snapshot as stale text."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "Editor", "process_name": "editor", "pid": 42, "window_id": 777},
+    )
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(
+        native_host,
+        "_selected_text_and_stale",
+        lambda **_kwargs: ("", "earlier text"),
+    )
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False, include_selection=True, selection_dedupe_key="intent"
+    )
+
+    assert snapshot["selected_text"] == ""
+    assert snapshot["stale_selected_text"] == "earlier text"
+
+
 def test_selected_text_dedupes_repeated_x11_primary_acquisition(monkeypatch):
-    """Verify one PRIMARY acquisition auto-fills the intent surface only once."""
+    """Verify one PRIMARY acquisition auto-fills once, then turns stale."""
     import core.capture as capture
 
     monkeypatch.setattr(native_host, "IS_MAC", False)
@@ -253,15 +277,15 @@ def test_selected_text_dedupes_repeated_x11_primary_acquisition(monkeypatch):
     monkeypatch.setattr(
         capture,
         "_get_selected_text_clipboard",
-        lambda: pytest.fail("suppressed capture must not synthesize Ctrl+C"),
+        lambda: pytest.fail("stale capture must not synthesize Ctrl+C"),
     )
     identities = [(777, 100, "digest"), (777, 100, "digest"), (777, 200, "digest")]
     monkeypatch.setattr(native_host, "_primary_selection_identity", lambda _text: identities.pop(0))
 
     kwargs = {"active_pid": 42, "require_active_owner": True, "selection_dedupe_key": "intent"}
-    assert native_host.selected_text(**kwargs) == "picked text"
-    assert native_host.selected_text(**kwargs) == ""
-    assert native_host.selected_text(**kwargs) == "picked text"
+    assert native_host._selected_text_and_stale(**kwargs) == ("picked text", "")
+    assert native_host._selected_text_and_stale(**kwargs) == ("", "picked text")
+    assert native_host._selected_text_and_stale(**kwargs) == ("picked text", "")
 
 
 def test_selected_text_dedupe_fails_open_without_identity(monkeypatch):
@@ -275,8 +299,8 @@ def test_selected_text_dedupe_fails_open_without_identity(monkeypatch):
     monkeypatch.setattr(native_host, "_primary_selection_identity", lambda _text: None)
 
     kwargs = {"active_pid": 42, "require_active_owner": True, "selection_dedupe_key": "intent"}
-    assert native_host.selected_text(**kwargs) == "picked text"
-    assert native_host.selected_text(**kwargs) == "picked text"
+    assert native_host._selected_text_and_stale(**kwargs) == ("picked text", "")
+    assert native_host._selected_text_and_stale(**kwargs) == ("picked text", "")
     assert native_host._AUTOFILLED_PRIMARY_SELECTIONS == {}
 
 
@@ -296,7 +320,7 @@ def test_selected_text_without_dedupe_key_skips_identity_lookup(monkeypatch):
 
     kwargs = {"active_pid": 42, "require_active_owner": True}
     assert native_host.selected_text(**kwargs) == "picked text"
-    assert native_host.selected_text(**kwargs) == "picked text"
+    assert native_host._selected_text_and_stale(**kwargs) == ("picked text", "")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
@@ -322,7 +346,7 @@ def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
         "_active_app",
         lambda: {"name": "Chrome", "pid": 42, "window_id": 777, "bundle_id": ""},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", lambda **_kwargs: ("", ""))
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
 
     calls: list[int] = []
@@ -362,7 +386,7 @@ def test_context_snapshot_reads_background_browser_when_foreground_is_document(m
         "_active_app",
         lambda: {"name": "Untitled 1 \u2014 LibreOffice Calc", "pid": 42, "window_id": 111, "bundle_id": ""},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", lambda **_kwargs: ("", ""))
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
 
     background_browser = context_fetcher.WindowInfo(
@@ -400,7 +424,7 @@ def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
         "_active_app",
         lambda: {"name": "TextEdit", "pid": 101, "bundle_id": "com.apple.TextEdit"},
     )
-    monkeypatch.setattr(native_host, "selected_text", lambda **_kwargs: "")
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", lambda **_kwargs: ("", ""))
     monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
 
     rows = [

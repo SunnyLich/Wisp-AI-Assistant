@@ -144,6 +144,8 @@ class PendingInvocation:
     intent_target_pid: int = 0
     paste_target_pid: int = 0
     is_snip: bool = False
+    # (item_id, source_id) pairs removed via the intent picker's per-row X.
+    removed_context_sources: set = field(default_factory=set)
     context_ready: threading.Event = field(default_factory=threading.Event)
 
 
@@ -262,6 +264,7 @@ class FlowController:
         self.ui.on_event("ui.intent.snip.region", self._on_intent_snip_region)
         self.ui.on_event("ui.intent.snip.cancelled", self._on_intent_snip_cancelled)
         self.ui.on_event("ui.intent.selection.requested", self._on_intent_selection_requested)
+        self.ui.on_event("ui.intent.context.remove", self._on_intent_context_remove)
         self.ui.on_event("ui.chat.snip.region", self._on_chat_snip_region)
         self.ui.on_event("ui.chat.snip.cancelled", self._on_chat_snip_cancelled)
         self.ui.on_event("ui.chat.selection.requested", self._on_chat_selection_requested)
@@ -425,6 +428,13 @@ class FlowController:
         choices = list((data or {}).get("context_choices") or [])
         custom_text = str((data or {}).get("custom_text") or "")
         self._schedule(self.intent_selection_capture_requested, choices, custom_text)
+
+    def _on_intent_context_remove(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle per-row context removals from an open intent picker."""
+        item_id = str((data or {}).get("id") or "")
+        source_id = str((data or {}).get("source_id") or "")
+        if item_id:
+            self._schedule(self.intent_context_source_removed, item_id, source_id)
 
     def _on_chat_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle a selected chat screenshot snip region."""
@@ -1030,6 +1040,65 @@ class FlowController:
         self._notice("Select text or files/folders.")
         self._complete_selection_after_user_selects(capture)
 
+    def intent_context_source_removed(self, item_id: str, source_id: str) -> None:
+        """Drop one removed context row from the pending invocation.
+
+        Item-level rows (selection, clipboard, ...) are handled inside the
+        overlay by switching the chip off; only per-source rows need the
+        supervisor so the removed document block also leaves the prompt.
+        """
+        with self._lock:
+            pending = self._pending
+        if pending is None:
+            return
+        pending.removed_context_sources.add((str(item_id), str(source_id)))
+        context = pending.context if isinstance(pending.context, dict) else {}
+        if item_id == "ambient":
+            removed = {
+                sid for iid, sid in pending.removed_context_sources if iid == "ambient" and sid
+            }
+            sources = [
+                item
+                for item in (context.get("active_document_sources") or [])
+                if isinstance(item, dict)
+                and " ".join(str(item.get("label") or "").split()) not in removed
+            ]
+            context["active_document_sources"] = sources
+            if context.get("active_document_text"):
+                context["active_document_text"] = self._strip_removed_document_sources(
+                    str(context.get("active_document_text") or ""), removed
+                )
+            if not sources:
+                # The last app document row was removed: disable App context for
+                # this invocation so the top chip switches off with the list.
+                pending.caller["_context_ambient_enabled"] = False
+        self._fire(
+            self.ui,
+            "ui.intent.context_items",
+            {"context_items": self._intent_context_items(pending)},
+        )
+
+    @staticmethod
+    def _strip_removed_document_sources(text: str, removed_labels: set[str]) -> str:
+        """Drop labelled document blocks the user removed in the intent picker."""
+        raw = str(text or "")
+        if not raw or not removed_labels:
+            return raw
+        matches = list(re.finditer(r"(?m)^\[([^\]\n]{1,160})\]\n", raw))
+        if not matches:
+            return raw
+        kept: list[str] = []
+        prefix = raw[: matches[0].start()].strip()
+        if prefix:
+            kept.append(prefix)
+        for idx, match in enumerate(matches):
+            label = " ".join(match.group(1).split()).strip()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+            if label in removed_labels:
+                continue
+            kept.append(raw[match.start():end].strip())
+        return "\n\n".join(part for part in kept if part).strip()
+
     def _complete_selection_after_user_selects(self, capture: dict[str, Any]) -> None:
         """Capture Selection automatically after the user finishes selecting."""
         try:
@@ -1098,6 +1167,15 @@ class FlowController:
         elif not pending.context_ready.is_set():
             pending.context_ready.wait(timeout=3.0)
         pending.caller = self._apply_intent_context_choices(pending.caller, context_choices or [])
+        context = pending.context if isinstance(pending.context, dict) else {}
+        if (
+            pending.caller.get("_context_selection_enabled")
+            and not str(context.get("selected_text") or "").strip()
+            and str(context.get("stale_selected_text") or "").strip()
+        ):
+            # The user toggled the off-by-default Selection chip back on:
+            # attach the earlier (stale) selection it was offering.
+            context["selected_text"] = str(context.get("stale_selected_text") or "")
         if not prompt:
             prompt = "What is this?"
         if pending.caller.get("paste_back") and self._is_local_file_request(prompt):
@@ -3464,6 +3542,15 @@ class FlowController:
         active_document_text = str(context.get("active_document_text") or "") if include_active_document else ""
         if include_active_document:
             active_document_text = active_document_text or self._fetch_active_document_text(context)
+            removed_doc_labels = {
+                sid for iid, sid in pending.removed_context_sources if iid == "ambient" and sid
+            }
+            if removed_doc_labels and active_document_text:
+                # Rows removed via the picker's X buttons must also leave the
+                # prompt; the document text is (re)fetched at submit time.
+                active_document_text = self._strip_removed_document_sources(
+                    active_document_text, removed_doc_labels
+                )
         if caller.get("context_ambient", True):
             active_app = context.get("active_app")
             if isinstance(active_app, dict) and active_app.get("name"):
@@ -4047,10 +4134,14 @@ class FlowController:
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
         document_window = context.get("document_window") if isinstance(context.get("document_window"), dict) else {}
         active_document_text = str(context.get("active_document_text") or "")
+        removed_sources = pending.removed_context_sources if pending else set()
+        removed_app_labels = {sid for iid, sid in removed_sources if iid == "ambient" and sid}
         app_source_previews = [
             dict(item)
             for item in (context.get("active_document_sources") or [])
-            if isinstance(item, dict) and str(item.get("preview") or "").strip()
+            if isinstance(item, dict)
+            and str(item.get("preview") or "").strip()
+            and " ".join(str(item.get("label") or "").split()) not in removed_app_labels
         ]
         active_text = " ".join(
             str(part)
@@ -4068,6 +4159,9 @@ class FlowController:
         document_state = self._mode_to_context_state(self._effective_document_mode(caller))
         app_on = bool(caller.get("context_ambient", True)) and app_available
         app_state = "on" if app_on or (document_state == "on" and app_available) else ("auto" if document_state == "auto" and app_available else "off")
+        if caller.get("_context_ambient_enabled") is False:
+            # Every app document row was removed via the picker's X buttons.
+            app_state = "off"
         app_deferred = app_state != "off" and document_state in {"on", "auto"} and app_available and not active_document_text
 
         browser_text = "\n".join(
@@ -4102,6 +4196,12 @@ class FlowController:
         selected_context_text = "\n\n".join(
             part for part in (selected_text, selected_path_text) if part.strip()
         )
+        # A selection this picker surface already auto-filled once: offered
+        # off-by-default so a cleared highlight never rides along silently,
+        # while one toggle re-attaches it after an accidental close.
+        stale_selected_text = (
+            "" if selected_context_text else str(context.get("stale_selected_text") or "")
+        )
         clipboard_text = str(context.get("clipboard_text") or "")
         github_mode = self._context_mode(caller, "github")
         memory_mode = self._context_mode(caller, "memory")
@@ -4116,7 +4216,7 @@ class FlowController:
         )
         app_redactions = self._redaction_count(active_text)
         browser_redactions = self._redaction_count(browser_text)
-        selected_redactions = self._redaction_count(selected_context_text)
+        selected_redactions = self._redaction_count(selected_context_text or stale_selected_text)
         clipboard_redactions = self._redaction_count(clipboard_text)
         app_preview = self._context_preview_text(active_document_text or active_text)
         if app_source_previews:
@@ -4128,7 +4228,7 @@ class FlowController:
                 or context.get("browser_app")
                 or "Browser page text may be fetched after you send the prompt."
             )
-        selected_preview = self._context_preview_text(selected_context_text)
+        selected_preview = self._context_preview_text(selected_context_text or stale_selected_text)
         clipboard_preview = self._context_preview_text(clipboard_text)
 
         screenshot_state = "on" if (screenshot_mode == "auto" or (pending and pending.screenshot_b64)) else (
@@ -4179,14 +4279,23 @@ class FlowController:
                 "label": "Selection",
                 "available": True,
                 "state": "on" if selected_context_text else "off",
-                "tokens": self._token_label(selected_context_text) if selected_context_text else "",
+                "stale": bool(stale_selected_text),
+                "tokens": (
+                    self._token_label(selected_context_text or stale_selected_text)
+                    if (selected_context_text or stale_selected_text)
+                    else ""
+                ),
                 "preview": selected_preview,
                 "privacy_count": selected_redactions,
                 "warning": self._with_privacy_warning(
                     self._context_warning(
                         self._estimate_context_tokens(selected_context_text),
                         available=bool(selected_context_text),
-                    ) if selected_context_text else "",
+                    ) if selected_context_text else (
+                        "Earlier selection available but not attached (it may no "
+                        "longer be highlighted). Toggle Selection on to attach it."
+                        if stale_selected_text else ""
+                    ),
                     selected_redactions,
                 ),
             },
