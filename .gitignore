@@ -65,6 +65,8 @@ venv/
 build/
 dist/
 build_logs/
+/tools/uv
+/tools/uv.exe
 *.spec~
 *.manifest
 

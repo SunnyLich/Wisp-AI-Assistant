@@ -54,6 +54,12 @@ _CONTROL_GUTTER_W = _CLOSE_SIZE
 _ACTION_H      = 26
 _ACTION_GAP    = 8
 _ACTION_ROW_H  = 36
+_STATIC_TEXT_MAX_LINES = 8
+_STATIC_TEXT_SCREEN_FRACTION = 0.45
+_STATIC_TEXT_EXTRA_LINE_MS = 1_200
+_STATIC_TEXT_EXTRA_CHARS_MS = 1_000
+_STATIC_TEXT_TIMEOUT_MARGIN_MS = 2_500
+_STATIC_TEXT_TIMEOUT_CAP_MS = 45_000
 
 
 def _color(value: str, fallback: QColor) -> QColor:
@@ -269,6 +275,12 @@ class SpeechBubble(QWidget):
         self._auto_hide_holds = 0
         self._auto_hide_pending_ms: int | None = None
         self._hide_timer_elapsed = QElapsedTimer()
+        self._static_text_top_anchor = False
+        self._static_text_visible_lines: int | None = None
+        self._notice_actions: list[tuple[str, Callable[[], None]]] = []
+        self._action_rects: list[QRect] = []
+        self._action_hover = -1
+        self._action_pressed = -1
 
         # Derive size from config
         screen = QApplication.primaryScreen().availableGeometry()
@@ -319,10 +331,6 @@ class SpeechBubble(QWidget):
         self._close_pressed = False
         self._fast_forward_hover = False
         self._fast_forward_pressed = False
-        self._notice_actions: list[tuple[str, Callable[[], None]]] = []
-        self._action_rects: list[QRect] = []
-        self._action_hover = -1
-        self._action_pressed = -1
         self._companion_callback = None   # called with new QPoint after each drag move
         self._hide_callback = None        # called when this widget hides (for icon sync)
         self._speed_callback = None       # called with True while fast-forward is held
@@ -571,6 +579,7 @@ class SpeechBubble(QWidget):
     def show_listening(self, text: str | None = None):
         """Show a static status indicator while the app waits for user input."""
         message = str(text or "Recording - release to send").strip()
+        self._restore_base_size()
         self._full_text = ""
         self._thought_text = ""
         self._highlight_generation += 1
@@ -739,7 +748,7 @@ class SpeechBubble(QWidget):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
         if not chunk:
             return
-        if self._notice_actions:
+        if self._notice_actions or self._static_text_top_anchor or self._static_text_visible_lines is not None:
             self._clear_notice_actions()
             self._restore_base_size()
         if self._transcript_preview:
@@ -888,6 +897,7 @@ class SpeechBubble(QWidget):
         *,
         timeout_ms: int = 12000,
         actions: list[tuple[str, Callable[[], None]]] | None = None,
+        severity: str = "",
     ):
         """Show a compact non-streaming notice next to the icon."""
         self._show_static_text(
@@ -895,6 +905,7 @@ class SpeechBubble(QWidget):
             timeout_ms=timeout_ms,
             actions=actions,
             cancel_on_close=False,
+            severity=severity,
         )
 
     def show_transcript(self, text: str):
@@ -950,8 +961,12 @@ class SpeechBubble(QWidget):
         actions: list[tuple[str, Callable[[], None]]] | None = None,
         cancel_on_close: bool = False,
         label_prefix: str = "",
+        severity: str = "",
     ):
         """Show static text."""
+        text = self._compact_static_text(text)
+        if not text:
+            return
         self._hide_timer.stop()
         self._auto_hide_pending_ms = None
         self._dot_timer.stop()
@@ -988,17 +1003,32 @@ class SpeechBubble(QWidget):
         self._reply_annotations = []
         self._revealed_count = 0 if prefix else len(self._pending_words)
         self._full_text = text
+        self._static_text_top_anchor = self._should_top_anchor_static_text(
+            cancel_on_close=cancel_on_close,
+            label_prefix=prefix,
+            actions=self._notice_actions,
+        )
+        self._static_text_visible_lines = None
         self._layout_action_buttons()
         self._rewrap()
+        self._fit_static_text_size()
         self.show()
         self.raise_()
         self.update()
         if timeout_ms > 0:
-            self._start_hide_timer(timeout_ms)
+            effective_timeout_ms = self._static_text_timeout_ms(timeout_ms, severity=severity)
+            if effective_timeout_ms > 0:
+                self._start_hide_timer(effective_timeout_ms)
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compact_static_text(text: str) -> str:
+        """Remove blank paragraph gaps from compact notice text."""
+        lines = [line.strip() for line in str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+        return "\n".join(line for line in lines if line).strip()
 
     def _tick_dots(self):
         """Handle tick dots for speech bubble."""
@@ -1072,10 +1102,16 @@ class SpeechBubble(QWidget):
 
     def _base_bubble_h(self) -> int:
         """Return the configured bubble body height without notice actions."""
-        return _PAD * 2 + self._line_h * config.BUBBLE_LINES - _LINE_GAP
+        return self._bubble_body_h_for_lines(config.BUBBLE_LINES)
+
+    def _bubble_body_h_for_lines(self, lines: int) -> int:
+        """Return the bubble body height for a given line count."""
+        return _PAD * 2 + self._line_h * max(1, int(lines)) - _LINE_GAP
 
     def _restore_base_size(self) -> None:
         """Restore normal speech-bubble dimensions."""
+        self._static_text_top_anchor = False
+        self._static_text_visible_lines = None
         self._bubble_h = self._base_bubble_h()
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
         self._sync_text_view_geometry()
@@ -1085,6 +1121,96 @@ class SpeechBubble(QWidget):
         self._bubble_h = self._base_bubble_h() + _ACTION_ROW_H
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
         self._sync_text_view_geometry()
+
+    def _notice_action_extra_h(self) -> int:
+        """Return extra height reserved for notice actions."""
+        return _ACTION_ROW_H if self._notice_actions else 0
+
+    def _fit_static_text_size(self) -> None:
+        """Expand static notices so their first sentences are visible."""
+        if not self._full_text or self._reply_chunk_count > 0:
+            return
+        total_lines = max(1, len(self._all_line_segments))
+        configured_lines = self._configured_visible_lines()
+        if total_lines <= configured_lines and self._static_text_visible_lines is None:
+            self._layout_action_buttons()
+            self._sync_text_view_geometry()
+            return
+        target_lines = min(total_lines, self._max_static_text_lines())
+        target_lines = max(configured_lines, target_lines)
+        self._static_text_visible_lines = target_lines
+        self._bubble_h = self._bubble_body_h_for_lines(target_lines) + self._notice_action_extra_h()
+        self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+        self._layout_action_buttons()
+        self._sync_text_view_geometry()
+        self._apply_visible_lines()
+
+    def _max_static_text_lines(self) -> int:
+        """Cap expanded notice height to a reasonable part of the screen."""
+        configured_lines = self._configured_visible_lines()
+        try:
+            screen = QApplication.primaryScreen().availableGeometry()
+            max_body_h = max(
+                self._bubble_body_h_for_lines(configured_lines),
+                int(screen.height() * _STATIC_TEXT_SCREEN_FRACTION) - self._notice_action_extra_h(),
+            )
+            max_screen_lines = max(
+                configured_lines,
+                int((max_body_h - _PAD * 2 + _LINE_GAP) / max(1, self._line_h)),
+            )
+        except Exception:
+            max_screen_lines = _STATIC_TEXT_MAX_LINES
+        return max(configured_lines, min(_STATIC_TEXT_MAX_LINES, max_screen_lines))
+
+    @staticmethod
+    def _should_top_anchor_static_text(
+        *,
+        cancel_on_close: bool,
+        label_prefix: str,
+        actions: list[tuple[str, Callable[[], None]]],
+    ) -> bool:
+        """Return whether a static notice should start at its first line."""
+        return bool(actions) or not cancel_on_close or bool(label_prefix)
+
+    def _static_text_timeout_ms(self, base_ms: int, *, severity: str = "") -> int:
+        """Scale notice lifetime by overflow so longer messages can be read."""
+        severity_name = str(severity or "").strip().lower()
+        if severity_name in {"warning", "error"} and base_ms == 12000:
+            return 0
+        if base_ms < 1000 or self._reply_chunk_count > 0:
+            return base_ms
+        total_lines = max(1, len(self._all_line_segments))
+        visible_lines = self._visible_line_count()
+        overflow_lines = max(0, total_lines - visible_lines)
+        extra_chars = max(0, len(self._full_text) - 160)
+        char_steps = (extra_chars + 79) // 80
+        scaled = (
+            base_ms
+            + _STATIC_TEXT_TIMEOUT_MARGIN_MS
+            + overflow_lines * _STATIC_TEXT_EXTRA_LINE_MS
+            + char_steps * _STATIC_TEXT_EXTRA_CHARS_MS
+        )
+        if self._looks_warning_like_notice(self._full_text):
+            scaled = max(scaled, 15_000)
+        return min(_STATIC_TEXT_TIMEOUT_CAP_MS, scaled)
+
+    @staticmethod
+    def _looks_warning_like_notice(text: str) -> bool:
+        """Best-effort classifier for untagged warning/error notices."""
+        lowered = f" {str(text or '').strip().lower()} "
+        markers = (
+            " warning",
+            " error",
+            " failed",
+            " failure",
+            " denied",
+            " cannot ",
+            " could not ",
+            " missing ",
+            " unavailable",
+            " permission",
+        )
+        return any(marker in lowered for marker in markers)
 
     def _layout_action_buttons(self) -> None:
         """Lay out static notice action buttons."""
@@ -1184,7 +1310,8 @@ class SpeechBubble(QWidget):
         """Keep the selectable text view inside the bubble's content rectangle."""
         if not hasattr(self, "_text_view"):
             return
-        height = max(1, min(self._base_bubble_h() - _PAD * 2, self._line_h * self._visible_line_count()))
+        body_h = max(1, self._bubble_h - self._notice_action_extra_h())
+        height = max(1, min(body_h - _PAD * 2, self._line_h * self._visible_line_count()))
         self._text_view.setGeometry(_PAD, _PAD, max(1, self._text_w), height)
 
     def _sync_text_view(self) -> None:
@@ -1537,6 +1664,13 @@ class SpeechBubble(QWidget):
 
     def _visible_line_count(self) -> int:
         """Return the configured number of visible bubble lines."""
+        if self._static_text_visible_lines is not None:
+            return max(1, int(self._static_text_visible_lines))
+        return self._configured_visible_lines()
+
+    @staticmethod
+    def _configured_visible_lines() -> int:
+        """Return the normal configured bubble line count."""
         return max(1, int(getattr(config, "BUBBLE_LINES", 1)))
 
     def _highlight_start_line(self, lines: list[list[tuple[str, bool, int | None, bool, bool]]]) -> int:
@@ -1579,7 +1713,9 @@ class SpeechBubble(QWidget):
             if self._manual_scroll_start is None or not self._bubble_scroll_enabled():
                 if not self._bubble_scroll_enabled():
                     self._manual_scroll_start = None
-                if self._should_follow_latest_stream_text(lines):
+                if self._static_text_top_anchor:
+                    start_line = 0
+                elif self._should_follow_latest_stream_text(lines):
                     start_line = max_start
                 else:
                     start_line = self._highlight_start_line(lines)

@@ -2598,7 +2598,13 @@ class QtProtocolHost:
         self._ensure_bubble().schedule_words(words, start_ms)
         return {"scheduled": len(words)}
 
-    def _reply_notice(self, text: str = "", timeout_ms: int = 12000, key: str = "") -> dict[str, Any]:
+    def _reply_notice(
+        self,
+        text: str = "",
+        timeout_ms: int = 12000,
+        key: str = "",
+        severity: str = "",
+    ) -> dict[str, Any]:
         """Handle reply notice for qt protocol host."""
         # Mirror whatever the bubble shows into the runtime log so notices and
         # errors aren't on-screen only. Log the untranslated source (collapsed to
@@ -2614,7 +2620,14 @@ class QtProtocolHost:
         if _is_speech_status_notice(text) and _bubble_has_active_prompt_reply(bubble):
             log.info("suppressed speech status notice during active reply: %s", collapsed or "(empty)")
             return {"shown": False, "text": translated, "reason": "active_reply"}
-        bubble.show_notice(translated, timeout_ms=timeout_ms)
+        severity_name = str(severity or "").strip().lower()
+        if severity_name:
+            try:
+                bubble.show_notice(translated, timeout_ms=timeout_ms, severity=severity_name)
+            except TypeError:
+                bubble.show_notice(translated, timeout_ms=timeout_ms)
+        else:
+            bubble.show_notice(translated, timeout_ms=timeout_ms)
         if notice_key:
             self._active_notice_key = notice_key
         else:

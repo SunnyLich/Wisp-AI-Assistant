@@ -112,3 +112,23 @@ Manual platform build entry points:
 ./tools/build_exe.sh --clean --yes
 ./tools/build_macos_app.sh --clean --yes
 ```
+
+For the closest local match to GitHub release artifacts, use the same commands
+the workflow uses:
+
+```powershell
+.\tools\build_exe.ps1 -Clean -Yes
+```
+
+```bash
+./tools/build_exe.sh --clean --yes
+./tools/build_macos_app.sh --clean --yes
+```
+
+The release workflow intentionally delegates to these scripts instead of
+duplicating dependency installation or PyInstaller commands in YAML. The normal
+CI workflow includes `.github/workflows/build.yml`, `.python-version`, and these
+build scripts in its path filters, and the test suite asserts that the release
+workflow still calls the local scripts. If someone changes the GitHub build path
+without updating the shared scripts, CI should fail before a release artifact is
+cut.

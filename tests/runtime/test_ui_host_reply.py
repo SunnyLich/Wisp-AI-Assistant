@@ -669,6 +669,33 @@ def test_selecting_chat_shows_overlay_continuation_notice() -> None:
     assert notices == [("Continuing: new chat", 2500)]
 
 
+def test_reply_notice_forwards_warning_severity_when_supported() -> None:
+    """Tagged notices should reach the bubble with their warning severity."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style fake
+            return True
+
+        def show_notice(self, text: str, timeout_ms: int = 12000, severity: str = "") -> None:
+            self.calls.append({"text": text, "timeout_ms": timeout_ms, "severity": severity})
+
+    bubble = Bubble()
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._ensure_bubble = lambda: bubble  # type: ignore[method-assign]
+    host._active_notice_key = ""
+
+    result = host._reply_notice("Global hotkeys did not start.", severity="warning")
+
+    assert result == {"shown": True, "text": "Global hotkeys did not start."}
+    assert bubble.calls == [
+        {"text": "Global hotkeys did not start.", "timeout_ms": 12000, "severity": "warning"}
+    ]
+
+
 def test_intent_conversation_options_start_new_until_chat_is_active() -> None:
     """Verify loaded history is listed but not continued by default on app start."""
     from runtime.workers.ui_host import QtProtocolHost

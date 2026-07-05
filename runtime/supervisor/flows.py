@@ -331,7 +331,7 @@ class FlowController:
         if not result.get("started"):
             reason = str(result.get("reason") or result.get("error") or "unknown error")
             log.warning("native hotkeys did not start: %s", reason)
-            self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
+            self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.", severity="warning")
         self._show_addon_notifications()
         return result
 
@@ -1573,7 +1573,7 @@ class FlowController:
             timeout=10.0,
         ) or {}
         if isinstance(result, dict) and not result.get("started"):
-            self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.")
+            self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.", severity="warning")
 
     def _on_health_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
         from core.setup_check import run_setup_check
@@ -1589,6 +1589,7 @@ class FlowController:
                 {
                     "text": f"Health issue: {first.get('name')}: {first.get('message')}",
                     "timeout_ms": 8000,
+                    "severity": "warning",
                 },
                 timeout=30.0,
             )
@@ -2906,7 +2907,7 @@ class FlowController:
         """Set idle."""
         self._fire(self.ui, "ui.overlay.state", {"state": "idle"})
 
-    def _notice(self, text: str) -> None:
+    def _notice(self, text: str, *, severity: str = "") -> None:
         """Show a transient warning/status bubble that dismisses itself.
 
         These are advisory ("didn't catch that", "couldn't start recording", …),
@@ -2915,12 +2916,11 @@ class FlowController:
         """
         from core.error_recommendations import format_error
 
-        self._safe_call(
-            self.ui,
-            "ui.reply.notice",
-            {"text": format_error(text), "timeout_ms": 6000},
-            timeout=30.0,
-        )
+        payload = {"text": format_error(text), "timeout_ms": 6000}
+        severity_name = str(severity or "").strip().lower()
+        if severity_name:
+            payload["severity"] = severity_name
+        self._safe_call(self.ui, "ui.reply.notice", payload, timeout=30.0)
 
     def _handle_live_file_approval_request(self, payload: Any) -> None:
         """Ask the UI to approve a live model file edit, then answer the brain."""

@@ -65,6 +65,30 @@ class GitHubWorkflowTests(unittest.TestCase):
             workflow,
         )
 
+    def test_build_workflow_uses_local_portable_build_scripts(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn(r"run: .\tools\build_exe.ps1 -Clean -Yes", workflow)
+        self.assertIn("run: ./tools/build_exe.sh --clean --yes", workflow)
+        self.assertIn("run: ./tools/build_macos_app.sh --clean --yes", workflow)
+        self.assertNotIn("-m PyInstaller", workflow)
+        self.assertNotIn("pip install -r requirements/requirements-windows.lock", workflow)
+        self.assertNotIn("pip install -r requirements/requirements-linux.lock", workflow)
+        self.assertNotIn("pip install -r requirements/requirements-macos.lock", workflow)
+
+    def test_ci_runs_when_release_build_paths_change(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        for path in (
+            '".github/workflows/build.yml"',
+            '"tools/build_exe.ps1"',
+            '"tools/build_exe.sh"',
+            '"tools/build_macos_app.sh"',
+            '".python-version"',
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path, workflow)
+
     def test_build_workflow_sanitizes_manual_artifact_branch_names(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 

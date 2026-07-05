@@ -3928,7 +3928,9 @@ def test_health_request_uses_fast_static_rows_and_warns(monkeypatch):
     assert not brain.calls_for("brain.llm.test")
     assert not audio.calls_for("audio.stt.is_ready")
     assert not native.calls_for("native.permissions.snapshot")
-    assert "Health issue:" in ui.last_call("ui.reply.notice")["params"]["text"]
+    notice = ui.last_call("ui.reply.notice")["params"]
+    assert "Health issue:" in notice["text"]
+    assert notice["severity"] == "warning"
 
 
 @pytest.mark.workflow
@@ -4978,4 +4980,6 @@ def test_start_hotkeys_surfaces_failed_registration_to_user():
     result = flow.start_hotkeys()
 
     assert result["started"] is False
-    assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Global hotkeys did not start")
+    notice = ui.last_call("ui.reply.notice")["params"]
+    assert notice["text"].startswith("Global hotkeys did not start")
+    assert notice["severity"] == "warning"

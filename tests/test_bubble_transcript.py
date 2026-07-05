@@ -85,6 +85,86 @@ def test_notice_bubble_close_is_dismiss_only():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_long_notice_expands_from_top_and_gets_more_read_time():
+    """Long notices should not open scrolled to the final line."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 4)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_LINES = 2
+    config.BUBBLE_WIDTH = 260
+    bubble = SpeechBubble()
+    text = (
+        "This notice has important setup context before the warning. "
+        "The middle explains what changed and why the user should care. "
+        "The final sentence should not be the only visible part."
+    )
+
+    try:
+        base_height = bubble._base_bubble_h()
+        bubble.show_notice(text, timeout_ms=5000)
+
+        visible = " ".join(bubble._lines)
+        assert bubble._visible_line_count() > 2
+        assert bubble._bubble_h > base_height
+        assert "important setup context" in visible
+        assert bubble._visible_start_line == 0
+        assert bubble._hide_timer.interval() > 5000
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_notice_compacts_blank_paragraph_gaps():
+    """Static notices should not spend bubble height on empty paragraph gaps."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.show_notice("First warning.\n\n\nSecond sentence.\n   \nThird sentence.", timeout_ms=0)
+
+        assert bubble._full_text == "First warning.\nSecond sentence.\nThird sentence."
+        assert "" not in bubble._lines
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_tagged_warning_notice_does_not_auto_hide():
+    """Explicit warning notices stay visible until the user dismisses them."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.show_notice("Warning: global hotkeys did not start.", severity="warning")
+
+        assert bubble.isVisible()
+        assert not bubble._hide_timer.isActive()
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_fast_forward_button_controls_speed_boost():
     """Holding the fast-forward button should toggle bubble speed boost."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
