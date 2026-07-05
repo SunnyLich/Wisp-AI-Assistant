@@ -205,7 +205,10 @@ class BuildScriptTests(unittest.TestCase):
         docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
 
         self.assertIn("function Ensure-Uv", powershell)
-        self.assertIn("No local Python $ExpectedPython found; installing uv to provision it", powershell)
+        self.assertIn("uv not found; installing uv to provision Python $ExpectedPython", powershell)
+        self.assertIn("[string]::IsNullOrWhiteSpace($Uv)", powershell)
+        self.assertIn("function Install-UvWithPython", powershell)
+        self.assertIn('Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "uv")', powershell)
         self.assertIn('"irm https://astral.sh/uv/install.ps1 | iex"', powershell)
         self.assertIn('Invoke-Native "uv build virtual environment creation"', powershell)
         self.assertIn('@("venv", "--seed", "--python", $ExpectedPython, $VenvDir)', powershell)
@@ -227,7 +230,10 @@ class BuildScriptTests(unittest.TestCase):
         docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
 
         self.assertIn("function Stage-PortableUv", powershell)
+        self.assertIn("Stage-PortableUv -Python $Python", powershell)
         self.assertIn('Join-Path $ToolsDir "uv.exe"', powershell)
+        self.assertIn("$Uv = Install-UvWithPython -Python $Python", powershell)
+        self.assertIn("if ([string]::IsNullOrWhiteSpace($Uv))", powershell)
         self.assertIn("Copy-Item -LiteralPath $SourcePath -Destination $PortableUv -Force", powershell)
         self.assertLess(powershell.index("Stage-PortableUv"), powershell.index('Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "PyInstaller"'))
         self.assertIn("The Windows build script stages", docs)

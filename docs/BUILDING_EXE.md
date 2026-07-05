@@ -65,9 +65,10 @@ Notes:
 - Runtime package installs in packaged builds require `uv`. This includes addon
   dependency environments and Settings > Voice installs for optional speech
   packages such as STT/faster-whisper, Kokoro, or ElevenLabs. The Windows build script stages
-  `uv.exe` into `tools\uv.exe` before PyInstaller runs, and PyInstaller bundles
-  it with Wisp. If you build without the script, place `uv.exe` at `bin\uv.exe`
-  or `tools\uv.exe` before running PyInstaller.
+  `uv.exe` into `tools\uv.exe` before PyInstaller runs, installing `uv` into the
+  build Python first if needed, and PyInstaller bundles it with Wisp. If you
+  build without the script, place `uv.exe` at `bin\uv.exe` or `tools\uv.exe`
+  before running PyInstaller.
 - If packaging fails on a missing required dependency, rerun without
   `-SkipInstall` so the build script can install it into `.venv-build`.
 - On Windows, if the repo path is long enough to trip the OS path limit during

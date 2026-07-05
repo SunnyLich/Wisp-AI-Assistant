@@ -162,11 +162,11 @@ function Find-Uv {
 
 function Ensure-Uv {
     $Uv = Find-Uv
-    if ($null -ne $Uv) {
+    if (-not [string]::IsNullOrWhiteSpace($Uv)) {
         return $Uv
     }
 
-    Write-Host "No local Python $ExpectedPython found; installing uv to provision it..."
+    Write-Host "uv not found; installing uv to provision Python $ExpectedPython and bundle runtime package installs..."
     Invoke-Native "uv installer" "powershell" @(
         "-ExecutionPolicy",
         "ByPass",
@@ -177,9 +177,46 @@ function Ensure-Uv {
     return Find-Uv
 }
 
+function Find-UvForPython {
+    param([string]$Python)
+
+    if ([string]::IsNullOrWhiteSpace($Python) -or (-not (Test-Path -LiteralPath $Python -PathType Leaf))) {
+        return $null
+    }
+    $ScriptsDir = Split-Path -Parent $Python
+    $UvExe = Join-Path $ScriptsDir "uv.exe"
+    if (Test-Path -LiteralPath $UvExe -PathType Leaf) {
+        return $UvExe
+    }
+    return $null
+}
+
+function Install-UvWithPython {
+    param([string]$Python)
+
+    if ([string]::IsNullOrWhiteSpace($Python) -or (-not (Test-Path -LiteralPath $Python -PathType Leaf))) {
+        return $null
+    }
+    Write-Host "Installing uv into the build Python so it can be bundled with Wisp..."
+    Ensure-Pip -Python $Python
+    Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "uv") -StepName "uv Python install"
+    return Find-UvForPython -Python $Python
+}
+
 function Stage-PortableUv {
-    $Uv = Ensure-Uv
-    if ($null -eq $Uv) {
+    param([string]$Python = "")
+
+    $Uv = Find-Uv
+    if ([string]::IsNullOrWhiteSpace($Uv)) {
+        $Uv = Install-UvWithPython -Python $Python
+    }
+    if ([string]::IsNullOrWhiteSpace($Uv)) {
+        $Uv = Ensure-Uv
+    }
+    if ([string]::IsNullOrWhiteSpace($Uv)) {
+        $Uv = Install-UvWithPython -Python $Python
+    }
+    if ([string]::IsNullOrWhiteSpace($Uv)) {
         throw "Could not find or install uv. Runtime package installs in packaged Wisp require bundled uv.exe."
     }
 
@@ -254,7 +291,7 @@ function New-BuildVenv {
     }
 
     $Uv = Ensure-Uv
-    if ($null -eq $Uv) {
+    if ([string]::IsNullOrWhiteSpace($Uv)) {
         throw "Could not find or install uv. Install Python $ExpectedPython or uv manually, then rerun this script."
     }
     Invoke-Native "uv build virtual environment creation" $Uv @("venv", "--seed", "--python", $ExpectedPython, $VenvDir)
@@ -369,7 +406,7 @@ try {
     throw "PyInstaller is not installed in $Python. Run without -SkipInstall, or run: $Python -m pip install -r requirements/requirements-build.lock"
 }
 
-Stage-PortableUv
+Stage-PortableUv -Python $Python
 Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "PyInstaller", "--noconfirm", $Spec) -StepName "PyInstaller build"
 
 # Seed %APPDATA%\Wisp\.env with the repo's .env if the user has no settings yet.
