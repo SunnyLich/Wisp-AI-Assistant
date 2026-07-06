@@ -4257,7 +4257,7 @@ class FlowController:
         browser_state = self._mode_to_context_state(self._context_mode(caller, "browser"))
         browser_tokens = self._estimate_context_tokens(browser_text)
         browser_requested = browser_state != "off"
-        browser_deferred = browser_requested and not context.get("browser_content")
+        browser_deferred = browser_requested and browser_available and not context.get("browser_content")
 
         selected_text = str(context.get("selected_text") or "")
         selected_paths = self._selected_paths_from_context(context)
@@ -4342,11 +4342,7 @@ class FlowController:
                 "key": keys[0],
                 "label": "App",
                 "state": app_state,
-                "tokens": (
-                    self._deferred_token_label()
-                    if app_deferred
-                    else self._token_label(active_text)
-                ),
+                "tokens": self._token_label(active_text),
                 "preview": app_preview,
                 "sources": app_source_previews,
                 "privacy_count": app_redactions,
@@ -4367,7 +4363,7 @@ class FlowController:
                 "state": browser_state if browser_requested else "off",
                 "tokens": (
                     self._deferred_token_label()
-                    if browser_deferred
+                    if browser_deferred and not browser_text
                     else self._token_label(browser_text)
                 ),
                 "preview": browser_preview,

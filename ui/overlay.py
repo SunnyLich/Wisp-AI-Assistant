@@ -67,7 +67,7 @@ class OverlaySignals(QObject):
 class IconOverlay(QMainWindow):
     """
     The persistent icon window. Always on top, no taskbar entry,
-    no frame. Positioned at bottom-right corner.
+    no frame. Positioned near the bottom-right corner with room for context badges.
     """
 
     @property
@@ -165,8 +165,9 @@ class IconOverlay(QMainWindow):
         """Build icon label."""
         sz = config.ICON_SIZE
         margin = 20
+        from ui.drop_zone import context_panel_reserved_width
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.x() + screen.width()  - sz - margin
+        x = screen.x() + screen.width()  - sz - margin - context_panel_reserved_width(sz)
         y = screen.y() + screen.height() - sz - margin
 
         self._icon_label = QLabel(None)

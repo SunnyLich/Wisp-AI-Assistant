@@ -728,8 +728,8 @@ def test_intent_selection_chip_can_start_capture_without_selected_text():
     assert chips["selection"]["tokens"] == ""
 
 
-def test_intent_context_uses_unknown_tokens_for_deferred_sources():
-    """Verify deferred context chips do not show fake-small token estimates."""
+def test_intent_context_estimates_known_text_and_marks_unknown_deferred_sources():
+    """Verify known context text is estimated while truly unknown sources stay deferred."""
     rows = [
         {
             "paste_back": False,
@@ -751,7 +751,7 @@ def test_intent_context_uses_unknown_tokens_for_deferred_sources():
         for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
     }
 
-    assert chips["ambient"]["tokens"] == "? tok"
+    assert chips["ambient"]["tokens"].startswith("~")
     assert "not known yet" in chips["ambient"]["warning"]
     assert chips["selection"]["tokens"] != "? tok"
     assert chips["clipboard"]["tokens"] != "? tok"
@@ -1485,7 +1485,7 @@ def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
             if item["id"] == "browser"
         )
         assert browser_chip["state"] == "on"
-        assert browser_chip["tokens"] == "? tok"
+        assert browser_chip["tokens"].startswith("~")
         assert "not known yet" in browser_chip["warning"]
         updated_browser_chip = next(
             item
@@ -4371,7 +4371,7 @@ def test_chat_context_preview_updates_token_estimates_before_send():
     calls = ui.calls_for("ui.chat.context_preview")
     assert len(calls) == 2
     first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
-    assert first_browser["tokens"] == "? tok"
+    assert first_browser["tokens"].startswith("~")
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["tokens"].startswith("~")
     assert updated_browser["warning"] == ""
@@ -4423,7 +4423,7 @@ def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
     assert len(calls) == 2
     first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
     assert first_browser["state"] == "on"
-    assert first_browser["tokens"] == "? tok"
+    assert first_browser["tokens"].startswith("~")
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["state"] == "on"
     assert updated_browser["tokens"].startswith("~")
@@ -4473,7 +4473,7 @@ def test_chat_context_preview_keeps_requested_browser_on_while_detecting():
     assert len(calls) == 2
     first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
     assert first_browser["state"] == "on"
-    assert first_browser["tokens"] == "? tok"
+    assert first_browser["tokens"] == "0 tok"
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["state"] == "on"
     assert updated_browser["tokens"].startswith("~")
