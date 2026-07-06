@@ -337,6 +337,7 @@ class SpeechBubble(QWidget):
         self._click_callback = None       # called on a click (no drag) — opens the chat window
         self._highlight_callback = None   # called(reply_text, revealed_count, finished)
         self._stop_callback = None        # called when the user clicks the close/stop affordance
+        self._anchor_callback = None      # called on show() to re-anchor next to the icon
         self._close_cancels = True        # False for informational notices that only dismiss UI
 
     # ------------------------------------------------------------------
@@ -370,6 +371,15 @@ class SpeechBubble(QWidget):
     def set_stop_callback(self, fn):
         """Register callback fired when the user stops the visible bubble reply."""
         self._stop_callback = fn
+
+    def set_anchor_callback(self, fn):
+        """Register a zero-argument callback that re-anchors this bubble on show.
+
+        The runtime UI host calls show_listening/start_thinking/append_chunk/
+        show_notice directly on this widget, so anchoring must happen here — the
+        widget's own startup position is only a guess of where the icon sits.
+        """
+        self._anchor_callback = fn
 
     def apply_config(self):
         """Apply live bubble size/line/speed settings after config.reload()."""
@@ -406,6 +416,12 @@ class SpeechBubble(QWidget):
         self._bold_fm = QFontMetrics(self._bold_font)
         self._space_w = self._fm.horizontalAdvance(" ")
         self._line_h = self._fm.height() + _LINE_GAP
+
+    def showEvent(self, event):  # noqa: N802
+        """Re-anchor next to the icon before the bubble becomes visible."""
+        if self._anchor_callback:
+            self._anchor_callback()
+        super().showEvent(event)
 
     def hideEvent(self, event):  # noqa: N802
         """Hide event."""

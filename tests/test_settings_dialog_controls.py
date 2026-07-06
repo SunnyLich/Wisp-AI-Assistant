@@ -181,7 +181,6 @@ def test_tts_voice_tab_exposes_stt_settings():
         tab.deleteLater()
         app.processEvents()
 
-
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_does_not_import_stt_stack(monkeypatch):
     """Verify tts voice tab does not import stt stack behavior."""
@@ -536,7 +535,7 @@ def test_optional_installer_finish_refreshes_stt_detection(monkeypatch):
 
         assert refreshes == ["stt"]
         assert dialog._stt_active_lbl.text() == "STT installed."
-        assert dialog._stt_download_btn.text() == "Install / load STT"
+        assert dialog._stt_download_btn.text() == "Install STT"
     finally:
         dialog._stt_download_btn.deleteLater()
         dialog._stt_active_lbl.deleteLater()

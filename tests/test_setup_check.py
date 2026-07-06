@@ -95,7 +95,7 @@ def test_setup_check_warns_when_stt_package_missing(monkeypatch):
 
     assert by_name["Speech to text"]["status"] == "fail"
     assert "faster-whisper is not installed" in by_name["Speech to text"]["message"]
-    assert "Install / load STT" in by_name["Speech to text"]["recommendation"]
+    assert "Install STT" in by_name["Speech to text"]["recommendation"]
 
 
 def test_setup_check_warns_when_stt_import_fails(monkeypatch):

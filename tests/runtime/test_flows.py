@@ -332,6 +332,42 @@ def test_audio_warmup_events_surface_user_notices():
     assert ui.calls_for("ui.reply.notice")[0]["params"]["key"] == "audio-warmup"
 
 
+def test_audio_warmup_done_does_not_announce_skipped_tts():
+    """Skipped optional TTS should not be reported as warmed or ready."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["stt", "tts"],
+            "provider": "kokoro",
+            "ok": True,
+            "result": {"stt": "ok", "tts": "skipped"},
+        },
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == "Local speech recognition is ready."
+
+
+def test_audio_warmup_done_uses_remote_tts_wording():
+    """Remote/API TTS prewarm should not be described as a local voice install."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["stt", "tts"],
+            "provider": "cartesia",
+            "ok": True,
+            "result": {"stt": "ok", "tts": "ok"},
+        },
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "TTS connection and speech recognition are ready."
+    )
+
+
 def test_audio_warmup_failure_surfaces_user_notice():
     """Verify local audio warmup failures are visible to the user."""
     _flow, _native, ui, _brain, audio = make_flow()

@@ -2791,14 +2791,10 @@ class SettingsDialog(QDialog):
         # that pulls in NumPy/faster-whisper and can freeze the Qt UI thread.
         # If STT is already loaded in this process, the label below can still
         # show the live backend; otherwise it shows the configured request.
-        stt_status_row = QWidget()
-        ssr = QHBoxLayout(stt_status_row)
-        ssr.setContentsMargins(0, 0, 0, 0)
-        ssr.setSpacing(8)
         self._stt_active_lbl = QLabel()
         self._stt_active_lbl.setWordWrap(True)
         self._stt_install_status_lbl = self._stt_active_lbl
-        self._stt_download_btn = QPushButton(t("Install / load STT"))
+        self._stt_download_btn = QPushButton(t("Install STT"))
         self._stt_download_btn.setToolTip(
             t(
                 "Install or repair faster-whisper, then download and load the speech "
@@ -2807,14 +2803,12 @@ class SettingsDialog(QDialog):
             )
         )
         self._stt_download_btn.clicked.connect(self._preload_stt_model)
-        stt_recheck = QPushButton(t("Recheck"))
-        stt_recheck.setToolTip(
-            t("Refresh the speech backend readout without loading the speech model.")
-        )
-        stt_recheck.clicked.connect(self._refresh_stt_active_backend)
+        stt_status_row = QWidget()
+        ssr = QHBoxLayout(stt_status_row)
+        ssr.setContentsMargins(0, 0, 0, 0)
+        ssr.setSpacing(8)
         ssr.addWidget(self._stt_active_lbl, 1)
         ssr.addWidget(self._stt_download_btn, 0)
-        ssr.addWidget(stt_recheck, 0)
         stt_cv.addWidget(stt_status_row)
         self._refresh_stt_active_backend()
 
@@ -2973,7 +2967,7 @@ class SettingsDialog(QDialog):
         self._elevenlabs_install_status_lbl = QLabel()
         self._elevenlabs_install_status_lbl.setWordWrap(True)
         ef.addRow(eleven_note)
-        ef.addRow(self._elevenlabs_install_btn, self._elevenlabs_install_status_lbl)
+        ef.addRow(self._elevenlabs_install_status_lbl, self._elevenlabs_install_btn)
         ef.addRow(_link_label("ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys"), self._fields["ELEVENLABS_API_KEY"])
         ef.addRow(_tooltip_label("ElevenLabs Voice ID", eleven_voice_tip), self._fields["ELEVENLABS_VOICE_ID"])
         ef.addRow(_tooltip_label("ElevenLabs Model", eleven_model_tip), self._fields["ELEVENLABS_MODEL"])
@@ -3041,7 +3035,7 @@ class SettingsDialog(QDialog):
         self._kokoro_install_status_lbl = QLabel()
         self._kokoro_install_status_lbl.setWordWrap(True)
         kf.addRow(kokoro_note)
-        kf.addRow(self._kokoro_install_btn, self._kokoro_install_status_lbl)
+        kf.addRow(self._kokoro_install_status_lbl, self._kokoro_install_btn)
         kf.addRow(_tooltip_label("Voice", kokoro_voice_tip), self._fields["KOKORO_VOICE"])
         kf.addRow(_tooltip_label("Language code", kokoro_lang_tip), self._fields["KOKORO_LANG_CODE"])
         kf.addRow(_tooltip_label("Device", kokoro_device_tip), self._fields["KOKORO_DEVICE"])
@@ -3866,7 +3860,7 @@ class SettingsDialog(QDialog):
         if isinstance(button, QPushButton):
             button.setEnabled(True)
             if test_key == "stt_install":
-                button.setText(t("Install / load STT"))
+                button.setText(t("Install STT"))
             elif test_key == "kokoro_install":
                 button.setText(t("Install Kokoro"))
             elif test_key == "elevenlabs_install":
@@ -6617,7 +6611,6 @@ class SettingsDialog(QDialog):
                 button = getattr(self, "_stt_download_btn", None)
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
-                    button.setText(t("Install / load STT"))
                 self._refresh_stt_active_backend()
         if not self._running_test_tokens and not pending and not progress:
             self._test_result_timer.stop()
@@ -6816,6 +6809,11 @@ class SettingsDialog(QDialog):
         lbl = getattr(self, "_stt_active_lbl", None)
         if lbl is None:
             return
+        button = getattr(self, "_stt_download_btn", None)
+
+        def _set_stt_action(installed: bool) -> None:
+            if isinstance(button, QPushButton):
+                button.setText(t("Reinstall STT") if installed else t("Install STT"))
 
         import config as cfg
 
@@ -6851,13 +6849,16 @@ class SettingsDialog(QDialog):
 
             failed_install_message = _failed_optional_install_message(install_status)
             if failed_install_message:
+                _set_stt_action(False)
                 lbl.setText(_translate_status_message(failed_install_message))
                 lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
             elif bool(install_status.get("ok")):
+                _set_stt_action(True)
                 message = str(install_status.get("message") or f"STT installed and model ready: {configured_summary}.")
                 lbl.setText(_translate_status_message(message))
                 lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
             elif installed:
+                _set_stt_action(True)
                 lbl.setText(
                     t("STT package installed. Configured backend: {summary}; model loads on first use.").format(
                         summary=configured_summary
@@ -6865,12 +6866,14 @@ class SettingsDialog(QDialog):
                 )
                 lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
             else:
+                _set_stt_action(False)
                 lbl.setText(
-                    t("STT package is not installed. Click Install / load STT to install and verify it.")
+                    t("STT package is not installed. Click Install STT to install and verify it.")
                 )
                 lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
             return
 
+        _set_stt_action(True)
         summary = f"{info['model']} · {info['device']} / {info['compute']}"
         if info["degraded"]:
             lbl.setText(
@@ -6953,7 +6956,7 @@ class SettingsDialog(QDialog):
         btn = getattr(self, "_stt_download_btn", None)
         if btn is not None:
             btn.setEnabled(True)
-            btn.setText(t("Install / load STT"))
+            btn.setText(t("Install STT"))
         lbl = getattr(self, "_stt_active_lbl", None)
         if err:
             if lbl is not None:

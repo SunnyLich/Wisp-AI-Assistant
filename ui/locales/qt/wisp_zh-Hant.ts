@@ -4785,8 +4785,8 @@ Continue?</source>
       <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
     </message>
     <message>
-      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</source>
-      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</translation>
+      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</source>
+      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</translation>
     </message>
     <message>
       <source>Installing STT: {detail}.</source>
@@ -4797,8 +4797,8 @@ Continue?</source>
       <translation>Installing STT...</translation>
     </message>
     <message>
-      <source>Install / load STT</source>
-      <translation>Install / load STT</translation>
+      <source>Reinstall STT</source>
+      <translation>Reinstall STT</translation>
     </message>
     <message>
       <source>Install STT</source>
@@ -4825,8 +4825,8 @@ Continue?</source>
       <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
     </message>
     <message>
-      <source>STT package is not installed. Click Install / load STT to install and verify it.</source>
-      <translation>STT package is not installed. Click Install / load STT to install and verify it.</translation>
+      <source>STT package is not installed. Click Install STT to install and verify it.</source>
+      <translation>STT package is not installed. Click Install STT to install and verify it.</translation>
     </message>
     <message>
       <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>

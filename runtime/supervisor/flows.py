@@ -660,6 +660,7 @@ class FlowController:
         items = set((data or {}).get("items") or [])
         if not items:
             return
+        provider = str((data or {}).get("provider") or "").strip().lower()
         result = (data or {}).get("result") if isinstance((data or {}).get("result"), dict) else {}
         failures = [
             f"{name}: {status}"
@@ -674,12 +675,22 @@ class FlowController:
                 timeout=30.0,
             )
             return
-        if "tts" in items and "stt" in items:
-            text = "Local voice and speech recognition are ready."
-        elif "tts" in items:
-            text = "Local voice is ready."
-        else:
+
+        ready_items = {name for name, status in result.items() if status == "ok"}
+        if not result:
+            ready_items = set(items)
+        if not ready_items:
+            return
+
+        tts_label = "Local voice" if provider == "kokoro" else "TTS connection"
+        if "tts" in ready_items and "stt" in ready_items:
+            text = f"{tts_label} and speech recognition are ready."
+        elif "tts" in ready_items:
+            text = f"{tts_label} is ready."
+        elif "stt" in ready_items:
             text = "Local speech recognition is ready."
+        else:
+            return
         self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 6000}, timeout=30.0)
 
     def _on_bubble_speed(self, data: dict[str, Any], _req_id: Any = None) -> None:
