@@ -1320,7 +1320,9 @@ def context_browser_content(url: str = "", hwnd: int = 0, app: str = "") -> dict
     On Windows this reads the rendered window by handle (UIA does not need
     focus), then falls back to an HTTP fetch of the URL. On macOS it asks the
     named browser app (*app*) for its active tab text via AppleScript, which
-    works even though the overlay now holds focus. Returns {"url", "content"}.
+    works even though the overlay now holds focus. On Linux/X11 the tab URL
+    is resolved from the captured window id via AT-SPI2 and the page text is
+    an HTTP fetch of that URL. Returns {"url", "content"}.
     """
     try:
         from core.context_fetcher import WindowInfo, _browser_content

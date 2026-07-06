@@ -475,8 +475,14 @@ def test_context_snapshot_reads_background_browser_when_foreground_is_document(m
     assert snapshot["debug"]["browser_window"]["process_name"] == "chrome.exe"
 
 
-def test_linux_context_snapshot_reads_browser_target(monkeypatch):
-    """Verify Linux snapshots capture Browser/Web before the overlay takes focus."""
+def test_linux_context_snapshot_keeps_browser_hwnd_for_deferred_read(monkeypatch):
+    """Verify Linux snapshots keep the hotkey-time browser window id.
+
+    On Linux the snapshot itself carries no URL (that is resolved later via
+    AT-SPI2 by the deferred page read); the contract here is that the browser
+    window id survives into browser_hwnd/debug so the deferred read has a
+    target, and that a URL is passed through untouched if one ever appears.
+    """
     monkeypatch.setattr(native_host, "IS_WIN", False)
     monkeypatch.setattr(native_host, "IS_MAC", False)
     monkeypatch.setattr(context_fetcher, "_IS_WIN", False)
@@ -494,12 +500,12 @@ def test_linux_context_snapshot_reads_browser_target(monkeypatch):
 
     def fake_browser_window(preferred_hwnd: int = 0):
         calls.append(preferred_hwnd)
+        # Real Linux capture: title/pid/hwnd only, no URL at snapshot time.
         return context_fetcher.WindowInfo(
             title="Example - Firefox",
             process_name="firefox",
             pid=42,
-            hwnd=0,
-            url="https://example.test/linux",
+            hwnd=777,
         )
 
     monkeypatch.setattr(context_fetcher, "get_browser_window_for_context", fake_browser_window)
@@ -511,8 +517,10 @@ def test_linux_context_snapshot_reads_browser_target(monkeypatch):
     )
 
     assert calls == [777]
-    assert snapshot["browser_url"] == "https://example.test/linux"
+    assert snapshot["browser_url"] == ""
     assert snapshot["browser_hwnd"] == 777
+    assert snapshot["debug"]["browser_window"]["process_name"] == "firefox"
+    assert snapshot["debug"]["browser_window"]["hwnd"] == 777
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS native context behavior is tested on macOS")
