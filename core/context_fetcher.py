@@ -1442,8 +1442,55 @@ def _browser_content_macos(active_win: WindowInfo, max_chars: int) -> str:
 
 
 def _browser_content_linux(active_win: WindowInfo, max_chars: int) -> str:
-    """Linux: no native window read wired up — HTTP fetch of the URL only."""
-    return _fetch_browser_content(active_win.url or "", max_chars)
+    """Linux: resolve the tab URL via AT-SPI2, then HTTP-fetch that URL.
+
+    There is no read-by-window-handle on X11; the accessibility bus provides
+    the document URL (Linux's analog of the Windows UIA address-bar read) and
+    the page text comes from the network, cached per-URL like Windows."""
+    url = (active_win.url or "").strip()
+    if not url:
+        url = _linux_browser_tab_url(active_win)
+        if url:
+            active_win.url = url
+    if not url:
+        return ""
+
+    now = time.time()
+    cached = _browser_cache.get(url)
+    if cached and now - cached[0] < _BROWSER_CACHE_TTL:
+        return cached[1]
+
+    content = _fetch_browser_content(url, max_chars)
+    if content:
+        _browser_cache[url] = (now, content)
+    return content
+
+
+def _linux_browser_tab_url(win: WindowInfo) -> str:
+    """Resolve a Linux browser window's tab URL via AT-SPI2 ("" on failure)."""
+    if _IS_WIN or _IS_MAC:
+        return ""
+    pid = int(win.pid or 0)
+    title = (win.title or "").strip()
+    if win.hwnd and (not pid or not title):
+        from core.platform_utils import get_window_pid, get_window_title
+
+        if not pid:
+            with swallow():
+                pid = int(get_window_pid(win.hwnd) or 0)
+        if not title:
+            with swallow():
+                title = str(get_window_title(win.hwnd) or "").strip()
+    try:
+        from core.platform import linux_atspi
+
+        return linux_atspi.get_browser_tab_url(
+            pid=pid,
+            window_title=title,
+            process_name=win.process_name or "",
+        )
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------------------
