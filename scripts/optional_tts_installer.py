@@ -74,6 +74,48 @@ def _remove_artifacts(log, prefix: str, patterns: list[str]) -> None:
         _log(log, prefix, "No previous artifacts found.")
 
 
+def _remove_duplicate_dist_infos(log, prefix: str) -> None:
+    """Remove mixed optional-package trees before running a target install."""
+    from core import optional_deps
+
+    removed = optional_deps.remove_duplicate_optional_package_artifacts()
+    if removed:
+        _log(
+            log,
+            prefix,
+            "Removed stale duplicate optional package artifacts: "
+            f"{', '.join(sorted(removed))}",
+        )
+
+
+def _remove_stale_install_artifacts(log, prefix: str, packages: list[str]) -> None:
+    """Remove package trees that do not match exact install specs."""
+    from core import optional_deps
+
+    removed = optional_deps.remove_stale_optional_package_artifacts(packages)
+    if removed:
+        _log(
+            log,
+            prefix,
+            "Removed stale optional package artifacts before install: "
+            f"{', '.join(sorted(removed))}",
+        )
+
+
+def _warn_duplicate_dist_infos(log, prefix: str) -> None:
+    """Log duplicate optional package metadata left after installation."""
+    from core import optional_deps
+
+    duplicates = optional_deps.duplicate_optional_dist_infos()
+    if not duplicates:
+        return
+    detail = "; ".join(
+        f"{package}: {', '.join(names)}"
+        for package, names in sorted(duplicates.items())
+    )
+    _log(log, prefix, f"Warning: duplicate optional package metadata found: {detail}")
+
+
 def _run_install_command(log, prefix: str, packages: list[str], *, reinstall: bool = False) -> int:
     """Run one optional package install command, streaming output to the terminal."""
     from core import optional_deps
@@ -138,6 +180,8 @@ def main() -> int:
     with log_path.open("a", encoding="utf-8") as log:
         _write_status(status_path, ok=None, message=f"{display_name} install is running.")
         _remove_artifacts(log, prefix, remove_artifacts)
+        _remove_stale_install_artifacts(log, prefix, [*pre_install_packages, *packages])
+        _remove_duplicate_dist_infos(log, prefix)
         if pre_install_packages:
             _log(log, prefix, "Installing CUDA Torch before Kokoro packages.")
             returncode = _run_install_command(log, prefix, pre_install_packages, reinstall=True)
@@ -150,6 +194,7 @@ def main() -> int:
                 _write_status(status_path, ok=False, message=f"{display_name} install failed during package install.")
                 return returncode
 
+        _warn_duplicate_dist_infos(log, prefix)
         optional_deps.add_optional_packages_to_path()
         post_install = str(plan.get("post_install") or "")
         if post_install == "kokoro_prepare":

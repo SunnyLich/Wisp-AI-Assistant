@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import site
 import subprocess
@@ -60,6 +61,11 @@ KOKORO_REMOVE_ARTIFACTS = [
     "soundfile-*.dist-info",
     "_soundfile.py",
     "_soundfile_data",
+    "numpy",
+    "numpy-*.dist-info",
+    "numpy.libs",
+    "huggingface_hub",
+    "huggingface_hub-*.dist-info",
     "en_core_web_sm",
     "en_core_web_sm-*.dist-info",
 ]
@@ -74,6 +80,7 @@ STT_REMOVE_ARTIFACTS = [
     "ctranslate2-*.dist-info",
     "ctranslate2.libs",
 ]
+_DIST_INFO_SUFFIX = ".dist-info"
 
 
 def _is_frozen() -> bool:
@@ -187,6 +194,193 @@ def remove_optional_package_artifacts(patterns: list[str]) -> list[str]:
             except Exception:
                 continue
     return removed
+
+
+def _canonical_package_name(name: str) -> str:
+    """Return a PEP 503-ish normalized package name for grouping metadata."""
+    return re.sub(r"[-_.]+", "-", name).lower().strip("-")
+
+
+def _dist_info_metadata(path: Path) -> tuple[str, str]:
+    """Return package name/version recorded by a ``.dist-info`` directory."""
+    name = ""
+    version = ""
+    try:
+        metadata = path / "METADATA"
+        for line in metadata.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.lower().startswith("name:"):
+                name = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("version:"):
+                version = line.split(":", 1)[1].strip()
+            if name and version:
+                return name, version
+    except Exception:
+        pass
+
+    stem = path.name[:-len(_DIST_INFO_SUFFIX)] if path.name.endswith(_DIST_INFO_SUFFIX) else path.name
+    if "-" in stem:
+        name, version = stem.rsplit("-", 1)
+    else:
+        name = stem
+    return name, version
+
+
+def _optional_dist_info_groups() -> dict[str, list[Path]]:
+    """Return optional-package ``.dist-info`` directories grouped by package."""
+    try:
+        root = OPTIONAL_PACKAGES_DIR.resolve()
+    except Exception:
+        root = OPTIONAL_PACKAGES_DIR
+    if not root.exists():
+        return {}
+
+    groups: dict[str, list[Path]] = {}
+    try:
+        candidates = list(root.iterdir())
+    except Exception:
+        return groups
+    for path in candidates:
+        if not path.is_dir() or not path.name.endswith(_DIST_INFO_SUFFIX):
+            continue
+        name, _version = _dist_info_metadata(path)
+        canonical = _canonical_package_name(name)
+        if canonical:
+            groups.setdefault(canonical, []).append(path)
+    return groups
+
+
+def duplicate_optional_dist_infos() -> dict[str, list[str]]:
+    """Return duplicate optional-package metadata directories by package name."""
+    duplicates: dict[str, list[str]] = {}
+    for package, paths in _optional_dist_info_groups().items():
+        if len(paths) > 1:
+            duplicates[package] = sorted(path.name for path in paths)
+    return duplicates
+
+
+def _dist_info_top_level_names(path: Path, package: str) -> list[str]:
+    """Return top-level module/package artifacts described by a dist-info."""
+    names: set[str] = set()
+    try:
+        for line in (path / "top_level.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+            name = line.strip()
+            if name and not any(sep in name for sep in ("/", "\\")):
+                names.add(name)
+    except Exception:
+        pass
+    if not names:
+        names.add(package.replace("-", "_"))
+    return sorted(names)
+
+
+def _optional_package_artifact_paths(root: Path, package: str, dist_infos: list[Path]) -> list[Path]:
+    """Return package artifacts associated with dist-info metadata."""
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for dist_info in dist_infos:
+        for name in _dist_info_top_level_names(dist_info, package):
+            for candidate in (
+                root / name,
+                root / f"{name}.py",
+                root / f"{name}.libs",
+            ):
+                if candidate not in seen:
+                    seen.add(candidate)
+                    paths.append(candidate)
+        if dist_info not in seen:
+            seen.add(dist_info)
+            paths.append(dist_info)
+    return paths
+
+
+def _remove_optional_paths(paths: list[Path]) -> list[str]:
+    """Remove resolved paths scoped to ``OPTIONAL_PACKAGES_DIR``."""
+    removed: list[str] = []
+    try:
+        root = OPTIONAL_PACKAGES_DIR.resolve()
+    except Exception:
+        root = OPTIONAL_PACKAGES_DIR
+    for path in paths:
+        try:
+            resolved = path.resolve()
+            if resolved == root or root not in resolved.parents:
+                continue
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            removed.append(path.name)
+        except FileNotFoundError:
+            continue
+        except Exception:
+            continue
+    return removed
+
+
+def _install_requirement_name_version(spec: str) -> tuple[str, str] | None:
+    """Return normalized package name and exact version from an install spec."""
+    text = str(spec or "").strip()
+    if not text or text.startswith("-"):
+        return None
+    wheel_name = Path(text.split("?", 1)[0].rstrip("/")).name
+    if wheel_name.endswith(".whl") and "-" in wheel_name:
+        name, version, *_rest = wheel_name[:-4].split("-")
+        return _canonical_package_name(name), version
+    match = re.match(
+        r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]+\])?\s*==\s*([^;,\s]+)",
+        text,
+    )
+    if match:
+        return _canonical_package_name(match.group(1)), match.group(2)
+    return None
+
+
+def remove_stale_optional_package_artifacts(packages: list[str]) -> list[str]:
+    """Remove target package artifacts that do not match pinned install specs."""
+    requested = {
+        name: version
+        for item in packages
+        if (parsed := _install_requirement_name_version(item))
+        for name, version in [parsed]
+    }
+    if not requested:
+        return []
+    try:
+        root = OPTIONAL_PACKAGES_DIR.resolve()
+    except Exception:
+        root = OPTIONAL_PACKAGES_DIR
+    groups = _optional_dist_info_groups()
+    paths_to_remove: list[Path] = []
+    for package, expected_version in requested.items():
+        dist_infos = groups.get(package) or []
+        if not dist_infos:
+            continue
+        installed_versions = {_dist_info_metadata(path)[1] for path in dist_infos}
+        if len(dist_infos) > 1 or installed_versions != {expected_version}:
+            paths_to_remove.extend(_optional_package_artifact_paths(root, package, dist_infos))
+    return _remove_optional_paths(paths_to_remove)
+
+
+def remove_duplicate_optional_package_artifacts() -> list[str]:
+    """Remove package trees that have duplicate ``.dist-info`` metadata.
+
+    ``pip install --target`` can leave old files behind during upgrades. When
+    duplicate metadata already exists, remove the package tree and metadata so
+    the next install recreates one coherent package version.
+    """
+    try:
+        root = OPTIONAL_PACKAGES_DIR.resolve()
+    except Exception:
+        root = OPTIONAL_PACKAGES_DIR
+    duplicates = {
+        package: paths
+        for package, paths in _optional_dist_info_groups().items()
+        if len(paths) > 1
+    }
+    paths_to_remove: list[Path] = []
+    for package, paths in duplicates.items():
+        paths_to_remove.extend(_optional_package_artifact_paths(root, package, paths))
+    return _remove_optional_paths(paths_to_remove)
 
 
 def subprocess_no_window_kwargs() -> dict[str, object]:
@@ -522,9 +716,10 @@ def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list
         "install",
         "--disable-pip-version-check",
         "--progress-bar=raw",
+        "--upgrade",
         "--target",
         str(OPTIONAL_PACKAGES_DIR),
-        *(["--upgrade", "--force-reinstall"] if reinstall else []),
+        *(["--force-reinstall"] if reinstall else []),
         *packages,
     ]
 

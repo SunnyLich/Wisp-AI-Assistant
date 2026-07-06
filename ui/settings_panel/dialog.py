@@ -4123,6 +4123,23 @@ class SettingsDialog(QDialog):
                 else:
                     _write_log(f"{log_prefix} No previous artifacts found.")
 
+            stale_removed = optional_deps.remove_stale_optional_package_artifacts([
+                *(pre_install_packages or []),
+                *(packages or []),
+            ])
+            if stale_removed:
+                _write_log(
+                    f"{log_prefix} Removed stale optional package artifacts before install: "
+                    f"{', '.join(sorted(stale_removed))}"
+                )
+
+            duplicate_removed = optional_deps.remove_duplicate_optional_package_artifacts()
+            if duplicate_removed:
+                _write_log(
+                    f"{log_prefix} Removed stale duplicate optional package artifacts: "
+                    f"{', '.join(sorted(duplicate_removed))}"
+                )
+
             def _heartbeat() -> None:
                 while not stop_heartbeat.wait(20.0):
                     elapsed = int(time.monotonic() - started_at)
@@ -4209,6 +4226,13 @@ class SettingsDialog(QDialog):
                 stop_heartbeat.set()
             if returncode == 0:
                 importlib.invalidate_caches()
+                duplicates = optional_deps.duplicate_optional_dist_infos()
+                if duplicates:
+                    detail = "; ".join(
+                        f"{package}: {', '.join(names)}"
+                        for package, names in sorted(duplicates.items())
+                    )
+                    _write_log(f"{log_prefix} Warning: duplicate optional package metadata found: {detail}")
                 optional_deps.add_optional_packages_to_path()
                 post_install_message = ""
                 if post_install is not None:

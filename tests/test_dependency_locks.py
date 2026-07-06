@@ -91,6 +91,11 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "soundfile-*.dist-info",
         "_soundfile.py",
         "_soundfile_data",
+        "numpy",
+        "numpy-*.dist-info",
+        "numpy.libs",
+        "huggingface_hub",
+        "huggingface_hub-*.dist-info",
         "en_core_web_sm",
         "en_core_web_sm-*.dist-info",
     ]

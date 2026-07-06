@@ -58,7 +58,7 @@ def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
 
     assert command[:4] == [sys.executable, "-m", "pip", "install"]
     assert "--progress-bar=raw" in command
-    assert "--upgrade" not in command
+    assert "--upgrade" in command
     assert "--force-reinstall" not in command
     assert command[command.index("--target") + 1] == str(target)
     assert command[-1] == optional_deps.ELEVENLABS_PACKAGE
@@ -150,6 +150,66 @@ def test_remove_optional_package_artifacts_is_scoped(monkeypatch, tmp_path):
     assert outside.exists()
 
 
+def test_remove_duplicate_optional_package_artifacts_removes_mixed_tree(monkeypatch, tmp_path):
+    """Duplicate target metadata should clear the package tree before reinstall."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    package_dir = target / "numpy"
+    libs_dir = target / "numpy.libs"
+    package_dir.mkdir(parents=True)
+    libs_dir.mkdir()
+    for version in ("2.5.0", "2.5.1"):
+        dist_info = target / f"numpy-{version}.dist-info"
+        dist_info.mkdir()
+        (dist_info / "METADATA").write_text(f"Name: numpy\nVersion: {version}\n", encoding="utf-8")
+        (dist_info / "top_level.txt").write_text("numpy\n", encoding="utf-8")
+    keep_dist_info = target / "huggingface_hub-1.22.0.dist-info"
+    keep_dist_info.mkdir()
+    (keep_dist_info / "METADATA").write_text(
+        "Name: huggingface-hub\nVersion: 1.22.0\n",
+        encoding="utf-8",
+    )
+
+    removed = optional_deps.remove_duplicate_optional_package_artifacts()
+
+    assert sorted(removed) == [
+        "numpy",
+        "numpy-2.5.0.dist-info",
+        "numpy-2.5.1.dist-info",
+        "numpy.libs",
+    ]
+    assert not package_dir.exists()
+    assert not libs_dir.exists()
+    assert optional_deps.duplicate_optional_dist_infos() == {}
+    assert keep_dist_info.exists()
+
+
+def test_remove_stale_optional_package_artifacts_removes_mismatched_pin(monkeypatch, tmp_path):
+    """Pinned target installs should clear stale package versions first."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    package_dir = target / "elevenlabs"
+    package_dir.mkdir(parents=True)
+    dist_info = target / "elevenlabs-2.54.0.dist-info"
+    dist_info.mkdir()
+    (dist_info / "METADATA").write_text("Name: elevenlabs\nVersion: 2.54.0\n", encoding="utf-8")
+    (dist_info / "top_level.txt").write_text("elevenlabs\n", encoding="utf-8")
+    keep_dist_info = target / "tokenizers-0.22.2.dist-info"
+    keep_dist_info.mkdir()
+    (keep_dist_info / "METADATA").write_text("Name: tokenizers\nVersion: 0.22.2\n", encoding="utf-8")
+
+    removed = optional_deps.remove_stale_optional_package_artifacts(["elevenlabs==2.55.0"])
+
+    assert sorted(removed) == ["elevenlabs", "elevenlabs-2.54.0.dist-info"]
+    assert not package_dir.exists()
+    assert not dist_info.exists()
+    assert keep_dist_info.exists()
+
+
 def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
     """Packaged launches must not run Wisp.exe as `python -m pip`."""
     from core import optional_deps
@@ -174,6 +234,7 @@ def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
 
     assert command[:3] == [str(uv), "pip", "install"]
     assert "-m" not in command
+    assert "--upgrade" not in command
     assert "--reinstall" not in command
     assert "--python-version" in command
     assert command[command.index("--target") + 1] == str(target)
@@ -322,6 +383,43 @@ def test_optional_tts_installer_can_reinstall_packages(monkeypatch, tmp_path):
 
     assert optional_tts_installer.main() == 0
     assert calls == [(["elevenlabs==2.55.0"], True)]
+
+
+def test_optional_tts_installer_warns_about_duplicate_dist_infos(monkeypatch, tmp_path):
+    """Installer logs should surface duplicate optional package metadata."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    for version in ("1.21.0", "1.22.0"):
+        dist_info = target / f"huggingface_hub-{version}.dist-info"
+        dist_info.mkdir(parents=True)
+        (dist_info / "METADATA").write_text(
+            f"Name: huggingface-hub\nVersion: {version}\n",
+            encoding="utf-8",
+        )
+    plan_path = tmp_path / "plan.json"
+    log_path = tmp_path / "install.log"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "packages": ["kokoro==0.9.4"],
+                "log_path": str(log_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(optional_tts_installer, "_remove_duplicate_dist_infos", lambda *_args: None)
+    monkeypatch.setattr(optional_tts_installer, "_run_install_command", lambda *_args, **_kwargs: 0)
+
+    assert optional_tts_installer.main() == 0
+
+    log = log_path.read_text(encoding="utf-8")
+    assert "Warning: duplicate optional package metadata found" in log
+    assert "huggingface-hub: huggingface_hub-1.21.0.dist-info, huggingface_hub-1.22.0.dist-info" in log
 
 
 def test_optional_tts_installer_ensures_pip_before_running_install(monkeypatch, tmp_path):
