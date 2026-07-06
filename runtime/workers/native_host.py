@@ -440,6 +440,111 @@ def _win_context_window_id(raw_hwnd: int = 0) -> int:
     return int(raw_hwnd or 0)
 
 
+def _linux_process_name(pid: int) -> str:
+    """Return the process name for *pid* on Linux ("" when unavailable)."""
+    if pid <= 0:
+        return ""
+    try:
+        import psutil
+
+        return str(psutil.Process(pid).name() or "")
+    except Exception:
+        return ""
+
+
+def _linux_is_own_window_pid(pid: int) -> bool:
+    """Return True when an X11 window's pid belongs to Wisp's own process tree."""
+    pid = int(pid or 0)
+    if pid <= 0:
+        return False
+    own = {int(os.getpid())}
+    try:
+        supervisor_pid = int(os.environ.get("WISP_SUPERVISOR_PID") or 0)
+    except ValueError:
+        supervisor_pid = 0
+    if supervisor_pid > 0:
+        own.add(supervisor_pid)
+    if pid in own:
+        return True
+    try:
+        import psutil
+
+        proc = psutil.Process(pid)
+        if str(proc.name() or "").strip().lower() == "wisp":
+            return True
+        ancestors = {int(parent.pid) for parent in proc.parents()}
+    except Exception:
+        return False
+    return bool(own & ancestors)
+
+
+def _linux_context_window_id() -> int:
+    """Return the X11 window to read context from, skipping Wisp's own windows.
+
+    The icon overlay can hold X11 activation while the user works elsewhere,
+    so the raw _NET_ACTIVE_WINDOW may be Wisp itself. Mirror the Windows
+    correction: fall back to the topmost non-Wisp window in stacking order.
+    """
+    global _last_context_window_debug
+    if IS_WIN or IS_MAC:
+        return 0
+    _last_context_window_debug = {}
+    try:
+        from core.platform_utils import (
+            get_foreground_window,
+            get_window_pid,
+            get_window_title,
+            list_visible_windows_stacking,
+        )
+
+        raw_wid = int(get_foreground_window() or 0)
+        raw_pid = int(get_window_pid(raw_wid) or 0) if raw_wid else 0
+        raw_title = get_window_title(raw_wid) if raw_wid else ""
+        raw_process = _linux_process_name(raw_pid)
+        _last_context_window_debug = {
+            "raw_hwnd": raw_wid,
+            "raw_title": raw_title,
+            "raw_pid": raw_pid,
+            "raw_process": raw_process,
+            "corrected": False,
+            "chosen_hwnd": raw_wid,
+            "chosen_title": raw_title,
+            "chosen_pid": raw_pid,
+            "chosen_process": raw_process,
+        }
+        if raw_wid and not _linux_is_own_window_pid(raw_pid):
+            return raw_wid
+        for candidate in list_visible_windows_stacking():
+            candidate = int(candidate or 0)
+            if not candidate or candidate == raw_wid:
+                continue
+            cand_pid = int(get_window_pid(candidate) or 0)
+            if _linux_is_own_window_pid(cand_pid):
+                continue
+            cand_title = str(get_window_title(candidate) or "")
+            if not cand_title.strip():
+                continue
+            _last_context_window_debug.update(
+                {
+                    "corrected": True,
+                    "chosen_hwnd": candidate,
+                    "chosen_title": cand_title,
+                    "chosen_pid": cand_pid,
+                    "chosen_process": _linux_process_name(cand_pid),
+                }
+            )
+            print(
+                "[context.snapshot] corrected foreground "
+                f"raw_hwnd={raw_wid} raw_title={raw_title!r} "
+                f"-> hwnd={candidate} title={cand_title!r}",
+                flush=True,
+            )
+            return candidate
+        return raw_wid
+    except Exception:
+        return 0
+
+
 def _runtime_debug() -> dict[str, Any]:
     """Handle runtime debug for runtime workers native host."""
     debug = {
@@ -468,7 +573,10 @@ def _active_app() -> dict[str, Any]:
                 get_window_title,
             )
 
-            wid = _win_context_window_id() if IS_WIN else 0
+            if IS_WIN:
+                wid = _win_context_window_id()
+            else:
+                wid = _linux_context_window_id()
             if not wid:
                 from core.platform_utils import get_foreground_window
 
@@ -483,17 +591,21 @@ def _active_app() -> dict[str, Any]:
                 except Exception:
                     process_name = ""
             title = get_window_title(wid)
-            _last_context_window_debug = {
-                "raw_hwnd": wid,
-                "raw_title": title,
-                "raw_pid": pid,
-                "raw_process": process_name,
-                "corrected": False,
-                "chosen_hwnd": wid,
-                "chosen_title": title,
-                "chosen_pid": pid,
-                "chosen_process": process_name,
-            }
+            if not _last_context_window_debug:
+                # The per-OS context-window helpers populate this with the
+                # raw-vs-chosen correction trail; only fill the plain form
+                # when no helper ran (e.g. raw foreground fallback).
+                _last_context_window_debug = {
+                    "raw_hwnd": wid,
+                    "raw_title": title,
+                    "raw_pid": pid,
+                    "raw_process": process_name,
+                    "corrected": False,
+                    "chosen_hwnd": wid,
+                    "chosen_title": title,
+                    "chosen_pid": pid,
+                    "chosen_process": process_name,
+                }
             return {
                 "name": title,
                 "process_name": process_name,
@@ -1083,12 +1195,19 @@ def context_snapshot(
                     "url": getattr(win, "url", ""),
                 }
             else:
-                # Linux/X11: keep the hotkey-time active browser id before the
+                # Linux/X11: keep the hotkey-time browser window id before the
                 # overlay takes focus. Page text is still deferred.
                 from core.context_fetcher import _BROWSER_PROCS, get_browser_window_for_context
 
                 active_hwnd = int(active.get("window_id") or 0)
                 win = get_browser_window_for_context(active_hwnd)
+                snapshot["debug"]["browser_window"] = {
+                    "title": getattr(win, "title", ""),
+                    "process_name": getattr(win, "process_name", ""),
+                    "pid": getattr(win, "pid", 0),
+                    "hwnd": getattr(win, "hwnd", 0),
+                    "url": getattr(win, "url", ""),
+                }
                 if getattr(win, "url", ""):
                     snapshot["browser_url"] = getattr(win, "url", "")
                 active_process = str(active.get("process_name") or "").strip().lower()

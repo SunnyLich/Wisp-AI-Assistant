@@ -586,3 +586,122 @@ def test_linux_active_app_includes_real_process_name(monkeypatch):
     assert active["process_name"] == "kwrite"
     assert active["pid"] == 1651464
     assert native_host._last_context_window_debug["raw_process"] == "kwrite"
+
+
+def test_linux_active_app_skips_wisp_own_window(monkeypatch):
+    """Verify the Linux active-app lookup corrects past Wisp's own overlay window."""
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+
+    import core.platform_utils as platform_utils
+
+    titles = {111: "AI Assistant Icon \u2014 Wisp", 222: "Example \u2014 Mozilla Firefox"}
+    pids = {111: 999, 222: 1234}
+    monkeypatch.setattr(platform_utils, "get_foreground_window", lambda: 111)
+    monkeypatch.setattr(platform_utils, "get_window_title", lambda wid: titles.get(wid, ""))
+    monkeypatch.setattr(platform_utils, "get_window_pid", lambda wid: pids.get(wid, 0))
+    monkeypatch.setattr(platform_utils, "list_visible_windows_stacking", lambda: [111, 222, 333])
+    monkeypatch.setattr(native_host, "_linux_is_own_window_pid", lambda pid: pid == 999)
+
+    class FakeProcess:
+        """Test case for fake process behavior."""
+        def __init__(self, pid):
+            """Initialize the fake process instance."""
+            self.pid = pid
+
+        def name(self):
+            """Verify name behavior."""
+            return {999: "python", 1234: "firefox"}.get(self.pid, "")
+
+    psutil = pytest.importorskip("psutil")
+    monkeypatch.setattr(psutil, "Process", FakeProcess)
+
+    active = native_host._active_app()
+
+    assert active["window_id"] == 222
+    assert active["name"] == "Example \u2014 Mozilla Firefox"
+    assert active["process_name"] == "firefox"
+    assert active["pid"] == 1234
+    debug = native_host._last_context_window_debug
+    assert debug["corrected"] is True
+    assert debug["raw_hwnd"] == 111
+    assert debug["chosen_hwnd"] == 222
+
+
+def test_linux_get_browser_window_scans_stacking(monkeypatch):
+    """Verify Linux browser discovery falls back to the X11 stacking order."""
+    monkeypatch.setattr(context_fetcher, "_IS_WIN", False)
+    monkeypatch.setattr(context_fetcher, "_IS_MAC", False)
+    monkeypatch.setattr(context_fetcher, "_BROWSER_PROCS", {"firefox"})
+
+    import core.platform_utils as platform_utils
+
+    titles = {11: "Files", 22: "Example \u2014 Mozilla Firefox"}
+    pids = {11: 10, 22: 20}
+    monkeypatch.setattr(platform_utils, "get_window_title", lambda wid: titles.get(wid, ""))
+    monkeypatch.setattr(platform_utils, "get_window_pid", lambda wid: pids.get(wid, 0))
+    monkeypatch.setattr(platform_utils, "list_visible_windows_stacking", lambda: [11, 22])
+    monkeypatch.setattr(
+        context_fetcher,
+        "_fetch_active_window",
+        lambda: context_fetcher.WindowInfo(title="Files", process_name="nautilus", pid=10, hwnd=11),
+    )
+
+    class FakeProcess:
+        """Test case for fake process behavior."""
+        def __init__(self, pid):
+            """Initialize the fake process instance."""
+            self.pid = pid
+
+        def name(self):
+            """Verify name behavior."""
+            return {10: "nautilus", 20: "firefox"}.get(self.pid, "")
+
+    psutil = pytest.importorskip("psutil")
+    monkeypatch.setattr(psutil, "Process", FakeProcess)
+
+    win = context_fetcher.get_browser_window_for_context(0)
+
+    assert win.hwnd == 22
+    assert win.process_name == "firefox"
+    assert win.title == "Example \u2014 Mozilla Firefox"
+
+
+def test_linux_get_browser_window_prefers_hotkey_window(monkeypatch):
+    """Verify the hotkey-time X11 window wins over the stacking scan."""
+    monkeypatch.setattr(context_fetcher, "_IS_WIN", False)
+    monkeypatch.setattr(context_fetcher, "_IS_MAC", False)
+    monkeypatch.setattr(context_fetcher, "_BROWSER_PROCS", {"firefox"})
+
+    import core.platform_utils as platform_utils
+
+    monkeypatch.setattr(platform_utils, "get_window_title", lambda wid: "Docs \u2014 Mozilla Firefox")
+    monkeypatch.setattr(platform_utils, "get_window_pid", lambda wid: 20)
+    monkeypatch.setattr(
+        platform_utils,
+        "list_visible_windows_stacking",
+        lambda: pytest.fail("stacking scan should not run when the hotkey window is a browser"),
+    )
+    monkeypatch.setattr(
+        context_fetcher,
+        "_fetch_active_window",
+        lambda: pytest.fail("active-window lookup should not run when the hotkey window is a browser"),
+    )
+
+    class FakeProcess:
+        """Test case for fake process behavior."""
+        def __init__(self, pid):
+            """Initialize the fake process instance."""
+            self.pid = pid
+
+        def name(self):
+            """Verify name behavior."""
+            return "firefox"
+
+    psutil = pytest.importorskip("psutil")
+    monkeypatch.setattr(psutil, "Process", FakeProcess)
+
+    win = context_fetcher.get_browser_window_for_context(77)
+
+    assert win.hwnd == 77
+    assert win.process_name == "firefox"

@@ -313,6 +313,22 @@ def list_visible_windows() -> list[int]:
         return []
 
 
+def list_visible_windows_stacking() -> list[int]:
+    """Return X11 client window IDs in top-to-bottom stacking order.
+
+    Linux only: _NET_CLIENT_LIST_STACKING is bottom-to-top, so it is reversed
+    here. Windows/macOS callers get [] (they have their own z-order walks).
+    """
+    if IS_WIN or IS_MAC:
+        return []
+    try:
+        ew = _get_ewmh()
+        wins = list(ew.getClientListStacking() or [])
+        return [win.id for win in reversed(wins)]
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # macOS window helpers — backed by Quartz (CoreGraphics) + AppKit (pyobjc)
 # ---------------------------------------------------------------------------

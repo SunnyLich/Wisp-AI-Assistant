@@ -704,11 +704,16 @@ def get_browser_window_for_context(preferred_hwnd: int = 0) -> WindowInfo:
     if _IS_MAC:
         return _find_visible_browser_window_macos()
 
-    # Linux
+    # Linux: prefer the hotkey-time window, then the active window, then scan
+    # the X11 stacking order so a background browser still provides context.
+    if preferred_hwnd:
+        preferred = _fetch_window_info_linux(int(preferred_hwnd))
+        if (preferred.process_name or "").lower() in _BROWSER_PROCS:
+            return preferred
     active = _fetch_active_window()
     if (active.process_name or "").lower() in _BROWSER_PROCS:
         return active
-    return WindowInfo()
+    return _find_visible_browser_window_linux()
 
 
 def _find_visible_browser_window_macos() -> WindowInfo:
@@ -782,14 +787,24 @@ def _find_visible_browser_window_win() -> WindowInfo:
 
 def _fetch_active_window_linux() -> WindowInfo:
     """Handle fetch active window linux for context fetcher."""
-    from core.platform_utils import get_foreground_window, get_window_title, get_window_pid
-    info = WindowInfo()
+    from core.platform_utils import get_foreground_window
     with swallow():
         wid = get_foreground_window()
-        if not wid:
-            return info
+        if wid:
+            return _fetch_window_info_linux(int(wid))
+    return WindowInfo()
+
+
+def _fetch_window_info_linux(wid: int) -> WindowInfo:
+    """Build WindowInfo for a specific X11 window id without requiring focus."""
+    from core.platform_utils import get_window_pid, get_window_title
+    info = WindowInfo()
+    if not wid:
+        return info
+    with swallow():
+        info.hwnd = int(wid)
         info.title = get_window_title(wid)
-        pid = get_window_pid(wid)
+        pid = int(get_window_pid(wid) or 0)
         info.pid = pid
         if pid:
             with swallow():
@@ -799,6 +814,19 @@ def _fetch_active_window_linux() -> WindowInfo:
                 with swallow():
                     info.exe_path = proc.exe()
     return info
+
+
+def _find_visible_browser_window_linux() -> WindowInfo:
+    """Return the topmost visible X11 browser window without requiring focus."""
+    if _IS_WIN or _IS_MAC:
+        return WindowInfo()
+    from core.platform_utils import list_visible_windows_stacking
+    with swallow():
+        for wid in list_visible_windows_stacking():
+            win = _fetch_window_info_linux(int(wid or 0))
+            if (win.process_name or "").lower() in _BROWSER_PROCS:
+                return win
+    return WindowInfo()
 
 
 def _fetch_active_window_macos() -> WindowInfo:
