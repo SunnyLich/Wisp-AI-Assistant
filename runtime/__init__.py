@@ -7,4 +7,4 @@ by responsibility.
 
 from __future__ import annotations
 
-VERSION = "0.7.3"
+VERSION = "0.8.0"
