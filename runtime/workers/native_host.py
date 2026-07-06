@@ -805,6 +805,68 @@ def _mac_clipboard_file_paths() -> list[str]:
         return []
 
 
+def _linux_file_uri_to_path(value: str) -> str:
+    """Convert a Linux file URI or plain absolute path to a local path."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("/"):
+        return text
+    try:
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(text)
+        if parsed.scheme != "file":
+            return ""
+        if parsed.netloc and parsed.netloc not in {"localhost", "127.0.0.1"}:
+            return ""
+        return unquote(parsed.path or "").strip()
+    except Exception:
+        return ""
+
+
+def _parse_linux_uri_list(data: str) -> list[str]:
+    """Parse Linux clipboard URI lists used by file managers."""
+    paths: list[str] = []
+    for raw_line in str(data or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line in {"copy", "cut"}:
+            continue
+        path = _linux_file_uri_to_path(line)
+        if path:
+            paths.append(path)
+    return paths
+
+
+def _linux_clipboard_file_paths() -> list[str]:
+    """Return selected file paths from Linux clipboard MIME targets."""
+    if IS_WIN or IS_MAC:
+        return []
+
+    targets = (
+        "x-special/gnome-copied-files",
+        "text/uri-list",
+    )
+    commands: list[list[str]] = []
+    if os.environ.get("WAYLAND_DISPLAY"):
+        for target in targets:
+            commands.append(["wl-paste", "--no-newline", "--type", target])
+    for target in targets:
+        commands.append(["xclip", "-selection", "clipboard", "-t", target, "-o"])
+
+    for cmd in commands:
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=1.0)
+        except Exception:
+            continue
+        if out.returncode != 0:
+            continue
+        paths = _parse_linux_uri_list(out.stdout or "")
+        if paths:
+            return paths
+    return []
+
+
 def selected_paths() -> list[str]:
     """Capture selected files/folders from the foreground shell via Copy."""
     previous_text = clipboard_get().get("text", "")
@@ -816,7 +878,12 @@ def selected_paths() -> list[str]:
         deadline = time.monotonic() + (0.60 if IS_WIN else 0.35)
         while time.monotonic() < deadline:
             time.sleep(0.05)
-            paths = _windows_clipboard_file_paths() if IS_WIN else _mac_clipboard_file_paths()
+            if IS_WIN:
+                paths = _windows_clipboard_file_paths()
+            elif IS_MAC:
+                paths = _mac_clipboard_file_paths()
+            else:
+                paths = _linux_clipboard_file_paths()
             if paths:
                 break
     except Exception:
@@ -849,6 +916,19 @@ def _selection_source_kind(active: dict[str, Any]) -> str:
         "finder",
         "file explorer",
         "windows explorer",
+        "caja",
+        "dolphin",
+        "io.elementary.files",
+        "krusader",
+        "nautilus",
+        "nemo",
+        "org.gnome.nautilus",
+        "org.kde.dolphin",
+        "pantheon-files",
+        "pcmanfm",
+        "pcmanfm-qt",
+        "spacefm",
+        "thunar",
     }
     if process in shell_names or name in shell_names or bundle == "com.apple.finder":
         return "paths"

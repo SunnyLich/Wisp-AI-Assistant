@@ -1286,6 +1286,37 @@ def test_intent_overlay_stale_selection_toggle_skips_interactive_capture(qapp):
         _close_overlay_if_valid(overlay, qapp)
 
 
+def test_intent_overlay_selection_toggle_can_disable_interactive_capture(qapp):
+    """Verify Linux-style Selection chips toggle without requesting a new selection."""
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[
+            {
+                "id": "selection",
+                "key": "3",
+                "label": "Selection",
+                "available": True,
+                "state": "off",
+                "capture_on_enable": False,
+                "tokens": "~12 tok",
+                "preview": "last selected words",
+            }
+        ]
+    )
+    captures: list[str] = []
+    overlay.selection_capture_requested.connect(captures.append)
+    try:
+        assert overlay._cycle_context_key("3") is True
+        qapp.processEvents()
+        selection = overlay.context_choices()[0]
+        assert selection["state"] == "on"
+        assert captures == []
+        assert ("Selection", "last selected words", "selection", "") in overlay._context_preview_entries()
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
+
+
 def test_intent_overlay_previews_wrap_to_two_lines(qapp):
     """Verify long context previews paint on two lines and short ones on one."""
     from PySide6.QtGui import QFontMetrics

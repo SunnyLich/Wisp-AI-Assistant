@@ -1231,8 +1231,14 @@ class FlowController:
             pending.context_ready.set()
         elif not pending.context_ready.is_set():
             pending.context_ready.wait(timeout=3.0)
-        pending.caller = self._apply_intent_context_choices(pending.caller, context_choices or [])
+        choices = context_choices or []
+        pending.caller = self._apply_intent_context_choices(pending.caller, choices)
         context = pending.context if isinstance(pending.context, dict) else {}
+        if (
+            str(context.get("platform") or "").strip().lower().startswith("linux")
+            and not any(str(item.get("id") or "") == "selection" for item in choices)
+        ):
+            pending.caller["_context_selection_enabled"] = False
         if (
             pending.caller.get("_context_selection_enabled")
             and not str(context.get("selected_text") or "").strip()
@@ -4267,6 +4273,8 @@ class FlowController:
         selected_context_text = "\n\n".join(
             part for part in (selected_text, selected_path_text) if part.strip()
         )
+        platform_name = str(context.get("platform") or "").strip().lower()
+        linux_selection_off_by_default = platform_name.startswith("linux")
         # A selection this picker surface already auto-filled once: offered
         # off-by-default so a cleared highlight never rides along silently,
         # while one toggle re-attaches it after an accidental close.
@@ -4296,6 +4304,28 @@ class FlowController:
             )
         selected_preview = self._context_preview_text(selected_context_text or stale_selected_text)
         clipboard_preview = self._context_preview_text(clipboard_text)
+        selected_state = (
+            "off"
+            if linux_selection_off_by_default
+            else ("on" if selected_context_text else "off")
+        )
+        if selected_context_text and linux_selection_off_by_default:
+            selected_warning = (
+                "Selection captured from the last focused app but not attached. "
+                "Toggle Selection on to attach it."
+            )
+        elif selected_context_text:
+            selected_warning = self._context_warning(
+                self._estimate_context_tokens(selected_context_text),
+                available=True,
+            )
+        elif stale_selected_text:
+            selected_warning = (
+                "Earlier selection available but not attached (it may no "
+                "longer be highlighted). Toggle Selection on to attach it."
+            )
+        else:
+            selected_warning = ""
 
         screenshot_state = "on" if (screenshot_mode == "auto" or (pending and pending.screenshot_b64)) else (
             "auto" if screenshot_mode == "model" else "off"
@@ -4357,8 +4387,9 @@ class FlowController:
                 "key": keys[2],
                 "label": "Selection",
                 "available": True,
-                "state": "on" if selected_context_text else "off",
+                "state": selected_state,
                 "stale": bool(stale_selected_text),
+                "capture_on_enable": not linux_selection_off_by_default,
                 "tokens": (
                     self._token_label(selected_context_text or stale_selected_text)
                     if (selected_context_text or stale_selected_text)
@@ -4367,14 +4398,7 @@ class FlowController:
                 "preview": selected_preview,
                 "privacy_count": selected_redactions,
                 "warning": self._with_privacy_warning(
-                    self._context_warning(
-                        self._estimate_context_tokens(selected_context_text),
-                        available=bool(selected_context_text),
-                    ) if selected_context_text else (
-                        "Earlier selection available but not attached (it may no "
-                        "longer be highlighted). Toggle Selection on to attach it."
-                        if stale_selected_text else ""
-                    ),
+                    selected_warning,
                     selected_redactions,
                 ),
             },

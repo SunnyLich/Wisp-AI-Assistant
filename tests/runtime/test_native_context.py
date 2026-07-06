@@ -140,6 +140,69 @@ def test_context_snapshot_explorer_selection_uses_paths_not_text(monkeypatch):
     assert snapshot["clipboard_text"] == "previous clipboard"
 
 
+def test_context_snapshot_linux_file_manager_selection_uses_paths_not_text(monkeypatch):
+    """Verify Linux file manager selection capture uses file paths directly."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "Files", "process_name": "nautilus", "pid": 42, "window_id": 777},
+    )
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(native_host, "selected_paths", lambda: ["/home/sunny/repo/note.txt"])
+    monkeypatch.setattr(
+        native_host,
+        "_selected_text_and_stale",
+        lambda **_kwargs: pytest.fail("file managers should not read PRIMARY text"),
+    )
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False,
+        include_selection=True,
+        include_selected_paths=True,
+    )
+
+    assert snapshot["selected_paths"] == ["/home/sunny/repo/note.txt"]
+    assert snapshot["selected_text"] == ""
+
+
+def test_linux_selected_paths_reads_uri_list(monkeypatch):
+    """Verify Linux selected file capture parses file-manager URI clipboard data."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": "previous clipboard"})
+    restored: list[str] = []
+    monkeypatch.setattr(native_host, "clipboard_set", lambda text="": restored.append(text) or {"ok": True})
+    monkeypatch.setattr(native_host.time, "sleep", lambda _seconds: None)
+
+    import core.platform_utils as platform_utils
+
+    copied: list[str] = []
+    monkeypatch.setattr(platform_utils, "send_keys", lambda combo: copied.append(combo))
+
+    class Result:
+        returncode = 0
+        stdout = "copy\nfile:///home/sunny/repo/hello%20there.md\n# ignored\nfile:///tmp/notes.txt\n"
+
+    seen_commands: list[list[str]] = []
+
+    def fake_run(cmd, **_kwargs):
+        seen_commands.append(list(cmd))
+        return Result()
+
+    monkeypatch.setattr(native_host.subprocess, "run", fake_run)
+
+    assert native_host.selected_paths() == [
+        "/home/sunny/repo/hello there.md",
+        "/tmp/notes.txt",
+    ]
+    assert copied == [platform_utils.COPY_COMBO]
+    assert restored == ["previous clipboard"]
+    assert seen_commands[0][4] == "x-special/gnome-copied-files"
+
+
 def test_context_snapshot_text_app_selection_uses_text_not_paths(monkeypatch):
     """Verify non-shell selection capture uses selected text directly."""
     monkeypatch.setattr(native_host, "IS_MAC", False)

@@ -1111,6 +1111,7 @@ class IntentOverlay(QWidget):
             and state == "off"
             and item["state"] == "on"
             and not item.get("stale")
+            and item.get("capture_on_enable", True)
         ):
             # A stale chip already carries an earlier selection supervisor-side;
             # plain re-enable attaches it without a new interactive capture.

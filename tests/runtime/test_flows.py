@@ -519,6 +519,62 @@ def test_intent_stale_selection_stays_detached_without_toggle():
     assert "earlier words" not in str(params)
 
 
+def test_linux_intent_selection_context_is_off_by_default():
+    """Verify Linux offers the detected selection without attaching it by default."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "platform": "linux",
+            "selected_text": "last selected words",
+            "clipboard_text": "",
+            "active_app": {"name": "Editor", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config([{}]):
+        flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        shown = ui.calls_for("ui.intent.context_items")[-1]["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        assert chips["selection"]["state"] == "off"
+        assert chips["selection"]["capture_on_enable"] is False
+        assert chips["selection"]["preview"] == "last selected words"
+        assert chips["selection"]["tokens"].startswith("~")
+
+        ui.emit("ui.intent.chosen", {"prompt": "do not use selection"})
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["selected"] == ""
+    assert "last selected words" not in str(params)
+
+
+def test_linux_intent_selection_toggle_attaches_existing_selection():
+    """Verify Linux Selection On uses the already detected text, not a new capture."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "platform": "linux",
+            "selected_text": "last selected words",
+            "clipboard_text": "",
+            "active_app": {"name": "Editor", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config([{}]):
+        flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "prompt": "use selection",
+                "context_choices": [{"id": "selection", "state": "on", "touched": True}],
+            },
+        )
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["selected"] == "last selected words"
+
+
 def test_intent_context_source_removal_filters_items_and_disables_empty_group():
     """Verify per-row X removals drop sources and switch an emptied App chip off."""
     def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
