@@ -1060,6 +1060,9 @@ def test_agent_approval_bubble_notice_does_not_timeout() -> None:
         def raise_(self) -> None:
             pass
 
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style fake
+            return True
+
     class Bubble:
         def __init__(self) -> None:
             self.notice = None
@@ -1073,6 +1076,13 @@ def test_agent_approval_bubble_notice_does_not_timeout() -> None:
     timer = Timer()
     overlay._icon_hide_timer = timer
     overlay._icon_label = Icon()
+    # _run_bubble_after_icon shows the notice inline only when the icon is
+    # already up; satisfy its gating state so the action runs synchronously.
+    overlay._icon_ready_for_bubble = True
+    overlay._pending_bubble_actions = []
+    overlay._pending_bubble_flush_scheduled = False
+    overlay._show_icon = lambda: None  # type: ignore[method-assign]
+    overlay._position_bubble_next_to_icon = lambda: None  # type: ignore[method-assign]
     overlay._set_icon_pixmap = lambda _name: None  # type: ignore[method-assign]
     overlay._icon_backstop_ms = lambda: 4000  # type: ignore[method-assign]
 

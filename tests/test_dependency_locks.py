@@ -81,6 +81,12 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "ctranslate2",
         "ctranslate2-*.dist-info",
         "ctranslate2.libs",
+        "av",
+        "av-*.dist-info",
+        "av.libs",
+        "onnxruntime",
+        "onnxruntime-*.dist-info",
+        "onnxruntime.libs",
     ]
     assert optional_deps.kokoro_remove_artifacts() == [
         "kokoro",

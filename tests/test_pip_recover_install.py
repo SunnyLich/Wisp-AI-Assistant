@@ -33,6 +33,7 @@ def test_recover_install_repairs_missing_record_package_from_lock(monkeypatch, t
             return self.returncode
 
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["-r", str(requirements)]) == 0
@@ -79,6 +80,7 @@ def test_recover_install_repairs_multiple_missing_record_packages(monkeypatch, t
             return self.returncode
 
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["-r", str(requirements)]) == 0
@@ -127,6 +129,7 @@ def test_recover_install_removes_only_broken_metadata_before_repair(monkeypatch,
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
     monkeypatch.setattr(pip_recover_install.sys, "path", [str(site_packages)])
     monkeypatch.setattr(pip_recover_install.sysconfig, "get_path", lambda _name: "")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["-r", str(requirements)]) == 0
@@ -153,6 +156,7 @@ def test_recover_install_does_not_recover_unrelated_pip_failures(monkeypatch):
             return 1
 
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["missing==1"]) == 1
