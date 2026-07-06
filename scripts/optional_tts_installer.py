@@ -392,7 +392,7 @@ def _run_staged_restart_install(
             **plan,
             "staging_path": str(staging_path),
             "target_path": str(optional_deps.OPTIONAL_PACKAGES_DIR),
-            "wait_pid": updater.wisp_wait_pid(),
+            "wait_pid": int(plan.get("wait_pid") or updater.wisp_wait_pid()),
             "log_path": str(log_path),
             "status_path": str(status_path) if status_path else "",
         }
