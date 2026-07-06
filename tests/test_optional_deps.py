@@ -574,7 +574,7 @@ def test_optional_tts_installer_stages_restart_apply_plan(monkeypatch, tmp_path)
     calls: list[tuple[list[str], bool, object]] = []
 
     monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", active)
-    monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 4321)
+    monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 1111)
     monkeypatch.setattr(
         optional_tts_installer,
         "_launch_staged_apply",
@@ -593,7 +593,7 @@ def test_optional_tts_installer_stages_restart_apply_plan(monkeypatch, tmp_path)
     monkeypatch.setattr(optional_tts_installer, "_run_install_command", fake_run_install)
 
     result = optional_tts_installer._run_staged_restart_install(
-        plan={"display_name": "STT", "post_install": "stt_prepare"},
+        plan={"display_name": "STT", "post_install": "stt_prepare", "wait_pid": 4321},
         display_name="STT",
         log_path=log_path,
         status_path=status_path,

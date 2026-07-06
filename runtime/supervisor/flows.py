@@ -93,6 +93,10 @@ _AUDIO_CONFIG_KEYS = {
     "STT_BACKGROUND_CHUNK_STEP_SECONDS",
     "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
     "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+    "LIVE_VOICE_MODEL",
+    "LIVE_VOICE_VOICE_NAME",
+    "LIVE_VOICE_HALF_DUPLEX",
+    "LIVE_VOICE_SYSTEM_PROMPT",
 }
 
 
@@ -233,6 +237,8 @@ class FlowController:
         self._voice_state = "idle"
         # Dictation push-to-talk (paste transcript into the focused field).
         self._dictate_state = "idle"
+        # Live voice conversation (toggle hotkey, Gemini Live in the audio worker).
+        self._live_voice_state = "idle"  # idle | starting | active | stopping
         self._dictate_target_pid = 0
         self._dictate_focus_token = 0
         self._generation = itertools.count(1)
@@ -316,6 +322,16 @@ class FlowController:
         self.audio.on_event("audio.warmup.done", self._on_audio_warmup_done)
         self.audio.on_event("audio.playback.started", self._on_audio_playback_started)
         self.audio.on_event("audio.playback.done", self._on_audio_playback_done)
+        self.audio.on_event("audio.live.state", self._on_audio_live_state)
+        self.audio.on_event("audio.live.transcript", self._on_audio_live_transcript)
+        self.audio.on_event("audio.live.error", self._on_audio_live_error)
+        self.audio.on_event("audio.live.ended", self._on_audio_live_ended)
+        # A live voice session dies with the audio worker; clean up the toggle
+        # state so the hotkey works again after the worker restarts. Guarded:
+        # test FakeWorkers don't implement on_exit.
+        audio_on_exit = getattr(self.audio, "on_exit", None)
+        if callable(audio_on_exit):
+            audio_on_exit(self._on_audio_worker_exit)
         self.ui.call("ui.show_overlay", timeout=30.0)
         try:
             self.ui.call("ui.prewarm_intent", timeout=30.0, wait=False)
@@ -370,6 +386,14 @@ class FlowController:
             if self._claim_voice_stop():
                 log.info("hotkey received: kind=%s", kind)
                 self._schedule(self.voice_stop)
+        elif kind == "voice_live":
+            action = self._claim_live_voice_toggle()
+            if action == "start":
+                log.info("hotkey received: kind=%s action=start", kind)
+                self._schedule(self.live_voice_start)
+            elif action == "stop":
+                log.info("hotkey received: kind=%s action=stop", kind)
+                self._schedule(self.live_voice_stop)
         elif kind == "dictate_start":
             if self._claim_dictate_start():
                 log.info("hotkey received: kind=%s", kind)
@@ -717,6 +741,60 @@ class FlowController:
             return
         self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
         self._set_idle()
+
+    def _on_audio_live_state(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Drive the overlay doll from live voice session state."""
+        state = str((data or {}).get("state") or "")
+        overlay = {
+            "connecting": "thinking",
+            "listening": "listening",
+            "speaking": "speaking",
+        }.get(state)
+        if overlay and self._live_voice_busy():
+            self._fire(self.ui, "ui.overlay.state", {"state": overlay})
+
+    def _on_audio_live_transcript(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle live voice transcript events."""
+        self._live_transcript_sink(data or {})
+
+    def _live_transcript_sink(self, payload: dict[str, Any]) -> None:
+        """Forward one live transcript fragment to the bubble captions."""
+        role = str(payload.get("role") or "")
+        text = str(payload.get("text") or "")
+        if role in ("user", "assistant") and text:
+            self._fire(self.ui, "ui.live_voice.transcript", {"role": role, "text": text})
+
+    def _on_audio_live_error(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle advisory live voice errors (session keeps running or is ending)."""
+        code = str((data or {}).get("code") or "")
+        message = str((data or {}).get("message") or "")
+        if code == "expiring":
+            self._notice(t("Live voice session will end soon (server time limit)."))
+            return
+        self._notice(
+            f"{t('Live voice error')}: {self._friendly_error(message or code or 'unknown error')}",
+            severity="warning",
+        )
+
+    def _on_audio_live_ended(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle the (exactly-once) end of a live voice session."""
+        if not self._live_voice_busy():
+            return  # already cleaned up by live_voice_stop or worker-exit handling
+        reason = str((data or {}).get("reason") or "")
+        self._mark_live_voice_idle()
+        self._fire(self.ui, "ui.live_voice.session", {"active": False})
+        self._set_idle()
+        if reason == "server_closed":
+            self._notice(t("Live voice session ended (server time limit). Press the hotkey to start again."))
+
+    def _on_audio_worker_exit(self, _returncode: int | None = None) -> None:
+        """The audio worker died; any live voice session died with it."""
+        if not self._live_voice_busy():
+            return
+        self._mark_live_voice_idle()
+        self._fire(self.ui, "ui.live_voice.session", {"active": False})
+        self._set_idle()
+        self._notice(t("Live voice stopped because the audio worker restarted."), severity="warning")
 
     def _on_reply_chunk(self, data: dict[str, Any], _req_id: Any = None) -> list[tuple[str, bool, bool]]:
         """Handle reply chunk events."""
@@ -1418,6 +1496,9 @@ class FlowController:
 
     def read_selection_aloud(self) -> None:
         """Speak the currently selected text without sending it to a model."""
+        if self._live_voice_busy():
+            self._notice(t("Stop the live voice conversation first."))
+            return
         if not self._tts_enabled():
             self._notice(t("TTS is off. Choose a voice provider in Settings first."))
             return
@@ -1558,6 +1639,57 @@ class FlowController:
             self._query(text, pending, preserve_reply_bubble=True)
         finally:
             self._mark_voice_idle()
+
+    def live_voice_start(self) -> None:
+        """Begin a hands-free live voice conversation (toggle hotkey)."""
+        # Acknowledge the keypress instantly; "thinking" covers the connect.
+        self._fire(self.ui, "ui.overlay.state", {"state": "thinking"})
+        self._reload_supervisor_config_if_changed()
+        with self._lock:
+            recorder_busy = self._voice_state != "idle" or self._dictate_state != "idle"
+        if recorder_busy:
+            self._notice(t("Finish the current voice recording first."))
+            self._mark_live_voice_idle()
+            self._set_idle()
+            return
+        self._fire(self.audio, "audio.stop")
+        try:
+            result = self.audio.call("audio.live.start", timeout=20.0)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("live voice start failed")
+            self._notice(f"{t('Could not start live voice')}: {self._friendly_error(exc)}")
+            self._mark_live_voice_idle()
+            self._set_idle()
+            return
+        result = result if isinstance(result, dict) else {}
+        if not result.get("started"):
+            error = str(result.get("error") or "")
+            if error == "already_active":
+                # The worker still runs a session (e.g. a lost stop); adopt it.
+                self._mark_live_voice_active()
+                self._fire(self.ui, "ui.live_voice.session", {"active": True})
+                return
+            if error == "missing_key":
+                self._notice(t("Live voice needs a Google API key. Add one in Settings."))
+            elif error == "missing_package":
+                self._notice(t("Live voice support is not installed. Install it in Settings > TTS / Voice."))
+            elif error == "mic_busy":
+                self._notice(t("Finish the current voice recording first."))
+            else:
+                self._notice(f"{t('Could not start live voice')}: {error or 'unknown error'}")
+            self._mark_live_voice_idle()
+            self._set_idle()
+            return
+        self._mark_live_voice_active()
+        self._fire(self.ui, "ui.live_voice.session", {"active": True})
+        log.info("live voice session started: model=%s", result.get("model"))
+
+    def live_voice_stop(self) -> None:
+        """End the live voice conversation (second toggle press)."""
+        self._safe_call(self.audio, "audio.live.stop", timeout=10.0)
+        self._mark_live_voice_idle()
+        self._fire(self.ui, "ui.live_voice.session", {"active": False})
+        self._set_idle()
 
     def dictate_start(self) -> None:
         """Push-to-talk dictation: capture the focused text field (so the result
@@ -2975,7 +3107,8 @@ class FlowController:
     def _claim_voice_start(self) -> bool:
         """Handle claim voice start for flow controller."""
         with self._lock:
-            if self._voice_state != "idle":
+            # Mutually exclusive with the live voice conversation (one mic).
+            if self._voice_state != "idle" or self._live_voice_state != "idle":
                 return False
             self._voice_state = "starting"
             self._voice_active = True
@@ -3037,8 +3170,13 @@ class FlowController:
     def _claim_dictate_start(self) -> bool:
         """Handle claim dictate start for flow controller."""
         with self._lock:
-            # Mutually exclusive with voice push-to-talk (one shared recorder).
-            if self._dictate_state != "idle" or self._voice_state != "idle":
+            # Mutually exclusive with voice push-to-talk and the live voice
+            # conversation (one shared recorder/mic).
+            if (
+                self._dictate_state != "idle"
+                or self._voice_state != "idle"
+                or self._live_voice_state != "idle"
+            ):
                 return False
             self._dictate_state = "recording"
             return True
@@ -3063,6 +3201,36 @@ class FlowController:
         """Handle mark dictate idle for flow controller."""
         with self._lock:
             self._dictate_state = "idle"
+
+    def _claim_live_voice_toggle(self) -> str | None:
+        """Resolve one toggle-hotkey press: "start", "stop", or None.
+
+        None while a start/stop is already in flight, so hammering the key
+        can't stack transitions."""
+        with self._lock:
+            if self._live_voice_state == "idle":
+                self._live_voice_state = "starting"
+                return "start"
+            if self._live_voice_state == "active":
+                self._live_voice_state = "stopping"
+                return "stop"
+            return None
+
+    def _mark_live_voice_active(self) -> None:
+        """Handle mark live voice active for flow controller."""
+        with self._lock:
+            if self._live_voice_state == "starting":
+                self._live_voice_state = "active"
+
+    def _mark_live_voice_idle(self) -> None:
+        """Handle mark live voice idle for flow controller."""
+        with self._lock:
+            self._live_voice_state = "idle"
+
+    def _live_voice_busy(self) -> bool:
+        """Handle live voice busy for flow controller."""
+        with self._lock:
+            return self._live_voice_state != "idle"
 
     def _set_idle(self) -> None:
         # Fire-and-forget. This runs inline on the worker event-reader thread
@@ -4706,6 +4874,8 @@ class FlowController:
         """Return whether assistant replies should be spoken automatically."""
         import config
 
+        if self._live_voice_busy():
+            return False  # the live conversation owns the speaker; don't talk over it
         return self._tts_enabled() and bool(getattr(config, "TTS_SPEAK_REPLIES", False))
 
     def _tts_sequence_is_active(self) -> bool:

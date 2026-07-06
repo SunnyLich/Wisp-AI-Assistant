@@ -276,6 +276,7 @@ class HotkeyListener:
         on_voice_stop: Callable[[], None] | None = None,
         on_dictate_start: Callable[[], None] | None = None,
         on_dictate_stop: Callable[[], None] | None = None,
+        on_voice_live: Callable[[], None] | None = None,
         extra_hotkeys: list[tuple[str, Callable[[], None]]] | None = None,
     ):
         """Initialize the hotkey listener instance."""
@@ -294,6 +295,9 @@ class HotkeyListener:
         read_selection_hotkey = getattr(config, "HOTKEY_READ_SELECTION_ALOUD", "")
         if on_read_selection_aloud and read_selection_hotkey:
             self._hotkey_defs.append((read_selection_hotkey, on_read_selection_aloud))
+        voice_live_hotkey = getattr(config, "HOTKEY_VOICE_LIVE", "")
+        if on_voice_live and voice_live_hotkey:
+            self._hotkey_defs.append((voice_live_hotkey, on_voice_live))
         for hotkey, cb in extra_hotkeys or []:
             if hotkey and cb:
                 self._hotkey_defs.append((hotkey, cb))

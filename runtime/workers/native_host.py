@@ -177,6 +177,7 @@ class _DirectHotkeys:
                 on_voice_stop=lambda: emit_hotkey("voice_stop"),
                 on_dictate_start=lambda: emit_hotkey("dictate_start"),
                 on_dictate_stop=lambda: emit_hotkey("dictate_stop"),
+                on_voice_live=lambda: emit_hotkey("voice_live"),
                 extra_hotkeys=extra_hotkeys,
             )
             started = bool(self.listener.start())

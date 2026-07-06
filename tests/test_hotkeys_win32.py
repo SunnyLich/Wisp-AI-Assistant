@@ -44,3 +44,31 @@ def test_win32_stop_waits_for_message_pump_to_unregister(monkeypatch):
     assert join_calls == [2.0]
     assert impl._pump_tid == 0
     assert impl._pump_thread is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows hotkey backend is tested on Windows")
+def test_voice_live_toggle_registers_as_plain_hotkey(monkeypatch):
+    """The live voice toggle is a press-only hotkey (not push-to-talk)."""
+    import config
+    import core.hotkeys as hotkeys
+
+    monkeypatch.setattr(config, "HOTKEY_VOICE_LIVE", "shift+f9", raising=False)
+    on_voice_live = lambda: None  # noqa: E731
+
+    listener = hotkeys.HotkeyListener(on_callers=[], on_voice_live=on_voice_live)
+
+    assert ("shift+f9", on_voice_live) in listener._hotkey_defs
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows hotkey backend is tested on Windows")
+def test_voice_live_toggle_disabled_when_unbound(monkeypatch):
+    """An empty HOTKEY_VOICE_LIVE turns the feature's hotkey off entirely."""
+    import config
+    import core.hotkeys as hotkeys
+
+    monkeypatch.setattr(config, "HOTKEY_VOICE_LIVE", "", raising=False)
+    on_voice_live = lambda: None  # noqa: E731
+
+    listener = hotkeys.HotkeyListener(on_callers=[], on_voice_live=on_voice_live)
+
+    assert on_voice_live not in [cb for _combo, cb in listener._hotkey_defs]
