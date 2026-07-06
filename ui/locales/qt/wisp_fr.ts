@@ -3528,6 +3528,134 @@ Continuer ?</translation>
       <source>Preparing local voice... {detail}</source>
       <translation>Préparation de la voix locale... {detail}</translation>
     </message>
+    <message>
+      <source>Finish the current voice recording first.</source>
+      <translation>Terminez d'abord l'enregistrement vocal en cours.</translation>
+    </message>
+    <message>
+      <source>Could not start live voice</source>
+      <translation>Impossible de démarrer la voix en direct</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one in Settings.</source>
+      <translation>La voix en direct nécessite une clé API Google. Ajoutez-en une dans les réglages.</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it in Settings &gt; TTS / Voice.</source>
+      <translation>La prise en charge de la voix en direct n'est pas installée. Installez-la dans Réglages &gt; TTS / Voix.</translation>
+    </message>
+    <message>
+      <source>Live voice session will end soon (server time limit).</source>
+      <translation>La session de voix en direct se terminera bientôt (limite de temps du serveur).</translation>
+    </message>
+    <message>
+      <source>Live voice error</source>
+      <translation>Erreur de voix en direct</translation>
+    </message>
+    <message>
+      <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
+      <translation>La session de voix en direct est terminée (limite de temps du serveur). Appuyez sur le raccourci pour recommencer.</translation>
+    </message>
+    <message>
+      <source>Live voice stopped because the audio worker restarted.</source>
+      <translation>La voix en direct s'est arrêtée car le processus audio a redémarré.</translation>
+    </message>
+    <message>
+      <source>Stop the live voice conversation first.</source>
+      <translation>Arrêtez d'abord la conversation vocale en direct.</translation>
+    </message>
+    <message>
+      <source>Live voice conversation</source>
+      <translation>Conversation vocale en direct</translation>
+    </message>
+    <message>
+      <source>Hands-free conversation with Gemini Live: press the toggle hotkey, talk naturally, and interrupt Wisp by speaking over it. Set the hotkey on the Keybinds tab.</source>
+      <translation>Conversation mains libres avec Gemini Live : appuyez sur le raccourci de bascule, parlez naturellement et interrompez Wisp en parlant par-dessus. Définissez le raccourci dans l'onglet Raccourcis.</translation>
+    </message>
+    <message>
+      <source>Install live voice</source>
+      <translation>Installer la voix en direct</translation>
+    </message>
+    <message>
+      <source>Reinstall live voice</source>
+      <translation>Réinstaller la voix en direct</translation>
+    </message>
+    <message>
+      <source>Installing Live voice...</source>
+      <translation>Installation de la voix en direct...</translation>
+    </message>
+    <message>
+      <source>Pause mic while Wisp talks (for speakers; disables barge-in)</source>
+      <translation>Mettre le micro en pause pendant que Wisp parle (pour haut-parleurs ; désactive l'interruption)</translation>
+    </message>
+    <message>
+      <source>Uses the Google API key from the LLM tab.</source>
+      <translation>Utilise la clé API Google de l'onglet LLM.</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one on the LLM tab first.</source>
+      <translation>La voix en direct nécessite une clé API Google. Ajoutez-en une d'abord dans l'onglet LLM.</translation>
+    </message>
+    <message>
+      <source>Conversation model</source>
+      <translation>Modèle de conversation</translation>
+    </message>
+    <message>
+      <source>Conversation voice</source>
+      <translation>Voix de conversation</translation>
+    </message>
+    <message>
+      <source>Speaker mode</source>
+      <translation>Mode haut-parleur</translation>
+    </message>
+    <message>
+      <source>Toggle live voice conversation</source>
+      <translation>Basculer la conversation vocale en direct</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp va réinstaller la prise en charge de la voix en direct (google-genai) dans son dossier de paquets optionnels.
+
+Paquet : {package}
+
+L'installation peut nécessiter un accès internet et survivra aux reconstructions de Wisp.
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>Wisp will install live voice support (google-genai) into its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp va installer la prise en charge de la voix en direct (google-genai) dans son dossier de paquets optionnels.
+
+Paquet : {package}
+
+L'installation peut nécessiter un accès internet et survivra aux reconstructions de Wisp.
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>Live voice support is installed.</source>
+      <translation>La prise en charge de la voix en direct est installée.</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it to enable hands-free conversations.</source>
+      <translation>La prise en charge de la voix en direct n'est pas installée. Installez-la pour activer les conversations mains libres.</translation>
+    </message>
+    <message>
+      <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
+      <translation>Voix en direct installée. Appuyez sur le raccourci de bascule pour démarrer une conversation.</translation>
+    </message>
   </context>
   <context>
     <name>Wisp</name>

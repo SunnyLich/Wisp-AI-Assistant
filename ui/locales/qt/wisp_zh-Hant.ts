@@ -3492,6 +3492,134 @@ Continue?</source>
       <source>Preparing local voice... {detail}</source>
       <translation>正在準備本機語音……{detail}</translation>
     </message>
+    <message>
+      <source>Finish the current voice recording first.</source>
+      <translation>請先完成目前的語音錄製。</translation>
+    </message>
+    <message>
+      <source>Could not start live voice</source>
+      <translation>無法啟動即時語音</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one in Settings.</source>
+      <translation>即時語音需要 Google API 金鑰。請在設定中新增。</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it in Settings &gt; TTS / Voice.</source>
+      <translation>尚未安裝即時語音支援。請在設定 &gt; TTS / 語音 中安裝。</translation>
+    </message>
+    <message>
+      <source>Live voice session will end soon (server time limit).</source>
+      <translation>即時語音工作階段即將結束（伺服器時間限制）。</translation>
+    </message>
+    <message>
+      <source>Live voice error</source>
+      <translation>即時語音錯誤</translation>
+    </message>
+    <message>
+      <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
+      <translation>即時語音工作階段已結束（伺服器時間限制）。按下快速鍵即可重新開始。</translation>
+    </message>
+    <message>
+      <source>Live voice stopped because the audio worker restarted.</source>
+      <translation>即時語音已停止，因為音訊處理程序已重新啟動。</translation>
+    </message>
+    <message>
+      <source>Stop the live voice conversation first.</source>
+      <translation>請先停止即時語音對話。</translation>
+    </message>
+    <message>
+      <source>Live voice conversation</source>
+      <translation>即時語音對話</translation>
+    </message>
+    <message>
+      <source>Hands-free conversation with Gemini Live: press the toggle hotkey, talk naturally, and interrupt Wisp by speaking over it. Set the hotkey on the Keybinds tab.</source>
+      <translation>與 Gemini Live 進行免持對話：按下切換快速鍵，自然交談，說話即可打斷 Wisp。請在按鍵設定分頁設定快速鍵。</translation>
+    </message>
+    <message>
+      <source>Install live voice</source>
+      <translation>安裝即時語音</translation>
+    </message>
+    <message>
+      <source>Reinstall live voice</source>
+      <translation>重新安裝即時語音</translation>
+    </message>
+    <message>
+      <source>Installing Live voice...</source>
+      <translation>正在安裝即時語音...</translation>
+    </message>
+    <message>
+      <source>Pause mic while Wisp talks (for speakers; disables barge-in)</source>
+      <translation>Wisp 說話時暫停麥克風（適用於喇叭；停用插話打斷）</translation>
+    </message>
+    <message>
+      <source>Uses the Google API key from the LLM tab.</source>
+      <translation>使用 LLM 分頁中的 Google API 金鑰。</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one on the LLM tab first.</source>
+      <translation>即時語音需要 Google API 金鑰。請先在 LLM 分頁新增。</translation>
+    </message>
+    <message>
+      <source>Conversation model</source>
+      <translation>對話模型</translation>
+    </message>
+    <message>
+      <source>Conversation voice</source>
+      <translation>對話語音</translation>
+    </message>
+    <message>
+      <source>Speaker mode</source>
+      <translation>喇叭模式</translation>
+    </message>
+    <message>
+      <source>Toggle live voice conversation</source>
+      <translation>切換即時語音對話</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 將在其使用者可寫入的選用套件資料夾中重新安裝即時語音支援（google-genai）。
+
+套件：{package}
+
+安裝可能需要網路連線，並且在 Wisp 重建後仍會保留。
+
+繼續？</translation>
+    </message>
+    <message>
+      <source>Wisp will install live voice support (google-genai) into its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 將在其使用者可寫入的選用套件資料夾中安裝即時語音支援（google-genai）。
+
+套件：{package}
+
+安裝可能需要網路連線，並且在 Wisp 重建後仍會保留。
+
+繼續？</translation>
+    </message>
+    <message>
+      <source>Live voice support is installed.</source>
+      <translation>已安裝即時語音支援。</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it to enable hands-free conversations.</source>
+      <translation>尚未安裝即時語音支援。安裝後即可進行免持對話。</translation>
+    </message>
+    <message>
+      <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
+      <translation>即時語音已安裝。按下切換快速鍵即可開始對話。</translation>
+    </message>
   </context>
   <context>
     <name>Wisp</name>

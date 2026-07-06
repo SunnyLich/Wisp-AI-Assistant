@@ -3528,6 +3528,134 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
       <source>Preparing local voice... {detail}</source>
       <translation>Preparando la voz local... {detail}</translation>
     </message>
+    <message>
+      <source>Finish the current voice recording first.</source>
+      <translation>Termina primero la grabación de voz actual.</translation>
+    </message>
+    <message>
+      <source>Could not start live voice</source>
+      <translation>No se pudo iniciar la voz en vivo</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one in Settings.</source>
+      <translation>La voz en vivo necesita una clave de API de Google. Añade una en Ajustes.</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it in Settings &gt; TTS / Voice.</source>
+      <translation>La compatibilidad con voz en vivo no está instalada. Instálala en Ajustes &gt; TTS / Voz.</translation>
+    </message>
+    <message>
+      <source>Live voice session will end soon (server time limit).</source>
+      <translation>La sesión de voz en vivo terminará pronto (límite de tiempo del servidor).</translation>
+    </message>
+    <message>
+      <source>Live voice error</source>
+      <translation>Error de voz en vivo</translation>
+    </message>
+    <message>
+      <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
+      <translation>La sesión de voz en vivo terminó (límite de tiempo del servidor). Pulsa el atajo para empezar de nuevo.</translation>
+    </message>
+    <message>
+      <source>Live voice stopped because the audio worker restarted.</source>
+      <translation>La voz en vivo se detuvo porque el proceso de audio se reinició.</translation>
+    </message>
+    <message>
+      <source>Stop the live voice conversation first.</source>
+      <translation>Detén primero la conversación de voz en vivo.</translation>
+    </message>
+    <message>
+      <source>Live voice conversation</source>
+      <translation>Conversación de voz en vivo</translation>
+    </message>
+    <message>
+      <source>Hands-free conversation with Gemini Live: press the toggle hotkey, talk naturally, and interrupt Wisp by speaking over it. Set the hotkey on the Keybinds tab.</source>
+      <translation>Conversación manos libres con Gemini Live: pulsa el atajo de alternancia, habla con naturalidad e interrumpe a Wisp hablando por encima. Configura el atajo en la pestaña Atajos.</translation>
+    </message>
+    <message>
+      <source>Install live voice</source>
+      <translation>Instalar voz en vivo</translation>
+    </message>
+    <message>
+      <source>Reinstall live voice</source>
+      <translation>Reinstalar voz en vivo</translation>
+    </message>
+    <message>
+      <source>Installing Live voice...</source>
+      <translation>Instalando voz en vivo...</translation>
+    </message>
+    <message>
+      <source>Pause mic while Wisp talks (for speakers; disables barge-in)</source>
+      <translation>Pausar el micrófono mientras Wisp habla (para altavoces; desactiva la interrupción)</translation>
+    </message>
+    <message>
+      <source>Uses the Google API key from the LLM tab.</source>
+      <translation>Usa la clave de API de Google de la pestaña LLM.</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one on the LLM tab first.</source>
+      <translation>La voz en vivo necesita una clave de API de Google. Añade una primero en la pestaña LLM.</translation>
+    </message>
+    <message>
+      <source>Conversation model</source>
+      <translation>Modelo de conversación</translation>
+    </message>
+    <message>
+      <source>Conversation voice</source>
+      <translation>Voz de conversación</translation>
+    </message>
+    <message>
+      <source>Speaker mode</source>
+      <translation>Modo altavoz</translation>
+    </message>
+    <message>
+      <source>Toggle live voice conversation</source>
+      <translation>Alternar conversación de voz en vivo</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp reinstalará la compatibilidad con voz en vivo (google-genai) en su carpeta de paquetes opcionales del usuario.
+
+Paquete: {package}
+
+La instalación puede necesitar acceso a internet y sobrevivirá a las reconstrucciones de Wisp.
+
+¿Continuar?</translation>
+    </message>
+    <message>
+      <source>Wisp will install live voice support (google-genai) into its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp instalará la compatibilidad con voz en vivo (google-genai) en su carpeta de paquetes opcionales del usuario.
+
+Paquete: {package}
+
+La instalación puede necesitar acceso a internet y sobrevivirá a las reconstrucciones de Wisp.
+
+¿Continuar?</translation>
+    </message>
+    <message>
+      <source>Live voice support is installed.</source>
+      <translation>La compatibilidad con voz en vivo está instalada.</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it to enable hands-free conversations.</source>
+      <translation>La compatibilidad con voz en vivo no está instalada. Instálala para activar las conversaciones manos libres.</translation>
+    </message>
+    <message>
+      <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
+      <translation>Voz en vivo instalada. Pulsa el atajo de alternancia para iniciar una conversación.</translation>
+    </message>
   </context>
   <context>
     <name>Wisp</name>
