@@ -37,6 +37,13 @@ OPTIONAL_AI_COMPAT_PACKAGES = [
 KOKORO_PACKAGE = "kokoro==0.9.4"
 SOUNDFILE_PACKAGE = "soundfile==0.14.0"
 ELEVENLABS_PACKAGE = "elevenlabs==2.55.0"
+# Live voice conversation (Gemini Live). Pin verified against the bundled
+# locks: its httpx/pydantic/websockets/anyio/requests ranges all accept the
+# lock versions, so pip --target won't vendor shadowing duplicates of bundled
+# packages into the optional dir (google-auth/tenacity are not bundled and
+# install fresh). No remove-artifacts list: the google/ namespace dir is
+# shared with google-auth, so blind removal would break other packages.
+GOOGLE_GENAI_PACKAGE = "google-genai==2.10.0"
 STT_PACKAGE = "faster-whisper==1.2.1"
 KOKORO_BASE_INSTALL_PACKAGES = [
     KOKORO_PACKAGE,

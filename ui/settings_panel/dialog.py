@@ -206,6 +206,19 @@ _DICTATE_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Light LLM cleanup", "llm"),
 )
 
+_LIVE_VOICE_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Fast - lowest latency", "gemini-3.1-flash-live-preview"),
+    ("Expressive - nicer voice, slower", "gemini-2.5-flash-native-audio-preview-12-2025"),
+)
+
+_LIVE_VOICE_VOICE_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Model default", ""),
+    ("Puck", "Puck"),
+    ("Kore", "Kore"),
+    ("Charon", "Charon"),
+    ("Aoede", "Aoede"),
+)
+
 _CHAT_REASONING_EFFORT_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Provider default", ""),
     ("Minimal", "minimal"),
@@ -1183,7 +1196,7 @@ class SettingsDialog(QDialog):
         if key.startswith("CALLER_") or key.startswith("VOICE_") or key.startswith("SNIP_") or key in {
             "HOTKEY_VOICE", "HOTKEY_DICTATE", "DICTATE_MODE",
             "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP",
-            "HOTKEY_READ_SELECTION_ALOUD",
+            "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_VOICE_LIVE",
             "INTENT_CONTEXT_TOGGLE_KEYS", "INTENT_OVERLAY_TIMEOUT_MS",
         }:
             return "Keybinds"
@@ -3079,6 +3092,67 @@ class SettingsDialog(QDialog):
         playback_cv.addWidget(playback_w)
         outer.addWidget(playback_card)
 
+        # ── LIVE VOICE CONVERSATION card ─────────────────────────────────
+        live_card, live_cv = self._card("Live voice conversation")
+        live_note = QLabel(
+            "<small>"
+            + t(
+                "Hands-free conversation with Gemini Live: press the toggle "
+                "hotkey, talk naturally, and interrupt Wisp by speaking over "
+                "it. Set the hotkey on the Keybinds tab."
+            )
+            + "</small>"
+        )
+        live_note.setWordWrap(True)
+        live_cv.addWidget(live_note)
+        self._live_voice_key_note_lbl = QLabel()
+        self._live_voice_key_note_lbl.setWordWrap(True)
+        live_cv.addWidget(self._live_voice_key_note_lbl)
+        self._live_voice_install_btn = QPushButton(t("Install live voice"))
+        self._live_voice_install_btn.clicked.connect(self._install_live_voice)
+        self._live_voice_install_status_lbl = QLabel()
+        self._live_voice_install_status_lbl.setWordWrap(True)
+
+        live_model = _NoScrollCombo()
+        live_model.setProperty("allow_custom_saved_value", True)
+        for label, value in _LIVE_VOICE_MODEL_OPTIONS:
+            live_model.addItem(label, value)
+        live_model_tip = (
+            "Fast responds quickest and hears best; Expressive has a nicer "
+            "voice but answers noticeably slower."
+        )
+        self._fields["LIVE_VOICE_MODEL"] = live_model
+        live_voice_name = _NoScrollCombo()
+        live_voice_name.setProperty("allow_custom_saved_value", True)
+        for label, value in _LIVE_VOICE_VOICE_OPTIONS:
+            live_voice_name.addItem(label, value)
+        live_voice_name_tip = "Prebuilt Gemini voice for spoken replies."
+        self._fields["LIVE_VOICE_VOICE_NAME"] = live_voice_name
+        self._fields["LIVE_VOICE_HALF_DUPLEX"] = QCheckBox(
+            t("Pause mic while Wisp talks (for speakers; disables barge-in)")
+        )
+        live_half_duplex_tip = (
+            "Turn this on when Wisp plays through speakers, so it does not "
+            "hear and interrupt itself. With headphones, leave it off to talk "
+            "over Wisp naturally."
+        )
+
+        live_fw = QWidget()
+        lvf = _expanding_form_layout(live_fw)
+        lvf.setContentsMargins(0, 0, 0, 0)
+        lvf.setSpacing(8)
+        lvf.addRow(self._live_voice_install_status_lbl, self._live_voice_install_btn)
+        lvf.addRow(_tooltip_label("Conversation model", live_model_tip), live_model)
+        lvf.addRow(_tooltip_label("Conversation voice", live_voice_name_tip), live_voice_name)
+        lvf.addRow(
+            _tooltip_label("Speaker mode", live_half_duplex_tip),
+            self._fields["LIVE_VOICE_HALF_DUPLEX"],
+        )
+        live_cv.addWidget(live_fw)
+        outer.addWidget(live_card)
+        self._refresh_live_voice_install_status()
+        self._refresh_live_voice_key_note()
+
         advanced_group, advanced_layout = self._collapsible_group("Advanced settings")
         advanced_note = QLabel(
             f"<small>{t('Chunking controls for read-aloud TTS and long speech-to-text recordings.')}</small>"
@@ -3501,6 +3575,50 @@ class SettingsDialog(QDialog):
         self._tts_install_status_checked = True
         self._tts_install_status_result = None
 
+    def _live_voice_installed(self) -> bool:
+        """Return True when the optional google-genai package is importable."""
+        try:
+            from core import live_voice
+
+            return live_voice.genai_available()
+        except Exception:
+            return False
+
+    def _refresh_live_voice_install_status(self) -> None:
+        """Refresh the live voice install button and status copy."""
+        label = getattr(self, "_live_voice_install_status_lbl", None)
+        button = getattr(self, "_live_voice_install_btn", None)
+        if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
+            return
+        if self._live_voice_installed():
+            button.setText(t("Reinstall live voice"))
+            self._set_test_status(label, True, "Live voice support is installed.")
+        else:
+            button.setText(t("Install live voice"))
+            self._set_test_status(
+                label,
+                "warn",
+                "Live voice support is not installed. Install it to enable hands-free conversations.",
+            )
+
+    def _refresh_live_voice_key_note(self) -> None:
+        """Show whether the shared Google API key that live voice needs exists."""
+        label = getattr(self, "_live_voice_key_note_lbl", None)
+        if not isinstance(label, QLabel):
+            return
+        import config as cfg
+
+        if str(getattr(cfg, "GOOGLE_API_KEY", "") or "").strip():
+            label.setText(f"<small>{t('Uses the Google API key from the LLM tab.')}</small>")
+            label.setStyleSheet("")
+        else:
+            label.setText(
+                "<small>"
+                + t("Live voice needs a Google API key. Add one on the LLM tab first.")
+                + "</small>"
+            )
+            label.setStyleSheet("color: #d8932a;")
+
     def _apply_kokoro_install_status(
         self,
         *,
@@ -3873,6 +3991,50 @@ class SettingsDialog(QDialog):
             reinstall=installed,
         )
 
+    def _install_live_voice(self) -> None:
+        """Confirm and install the optional google-genai package for live voice."""
+        from core import optional_deps
+
+        installed = self._live_voice_installed()
+        message_source = (
+            "Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.\n\n"
+            "Package: {package}\n\n"
+            "The install may need internet access and will survive Wisp rebuilds.\n\n"
+            "Continue?"
+            if installed
+            else (
+                "Wisp will install live voice support (google-genai) into its user-writable optional packages folder.\n\n"
+                "Package: {package}\n\n"
+                "The install may need internet access and will survive Wisp rebuilds.\n\n"
+                "Continue?"
+            )
+        )
+        message = t(message_source).format(package=optional_deps.GOOGLE_GENAI_PACKAGE)
+        answer = QMessageBox.question(
+            self,
+            t("Reinstall live voice" if installed else "Install live voice"),
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._install_optional_tts_package(
+            test_key="live_voice_install",
+            display_name="Live voice",
+            packages=[optional_deps.GOOGLE_GENAI_PACKAGE],
+            button_attr="_live_voice_install_btn",
+            status_attr="_live_voice_install_status_lbl",
+            success_message="Live voice installed. Press the toggle hotkey to start a conversation.",
+            thread_name="live-voice-install",
+            # Nothing has imported google-genai yet in a running Wisp, so the
+            # staged restart-apply dance Windows needs for kokoro/whisper
+            # upgrades is unnecessary here — install straight into place.
+            external_plan_extra={"restart_apply": False},
+            reinstall=installed,
+        )
+
     def _try_launch_external_optional_tts_install(
         self,
         *,
@@ -3894,7 +4056,7 @@ class SettingsDialog(QDialog):
         if not isinstance(status, QLabel):
             return False
         try:
-            from core import optional_deps
+            from core import optional_deps, updater
 
             if getattr(sys, "frozen", False):
                 root = Path(sys.executable).resolve().parent
@@ -3919,6 +4081,7 @@ class SettingsDialog(QDialog):
                 "remove_artifacts": remove_artifacts or [],
                 "reinstall": bool(reinstall),
                 "restart_apply": sys.platform == "win32",
+                "wait_pid": updater.wisp_wait_pid(),
                 "log_path": str(log_path),
                 "status_path": str(status_path),
                 **(external_plan_extra or {}),
@@ -4004,6 +4167,8 @@ class SettingsDialog(QDialog):
                 button.setText(t("Install Kokoro"))
             elif test_key == "elevenlabs_install":
                 button.setText(t("Install ElevenLabs"))
+            elif test_key == "live_voice_install":
+                button.setText(t("Install live voice"))
         if isinstance(status, QLabel):
             message = ""
             ok: bool | str = exit_code == 0
@@ -4045,6 +4210,8 @@ class SettingsDialog(QDialog):
             self._tts_install_status_checked = False
             self._tts_install_status_result = None
             self._refresh_tts_optional_install_status()
+        elif test_key == "live_voice_install":
+            self._refresh_live_voice_install_status()
         elif test_key == "stt_install":
             self._refresh_stt_active_backend()
         if getattr(dialog, "exit_code", None) == 0:
@@ -4457,6 +4624,7 @@ class SettingsDialog(QDialog):
         self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
         self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
         self._fields["HOTKEY_READ_SELECTION_ALOUD"] = self._kb_special_row("Read selection aloud")
+        self._fields["HOTKEY_VOICE_LIVE"] = self._kb_special_row("Toggle live voice conversation")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("12345678")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].hide()
@@ -6142,6 +6310,18 @@ class SettingsDialog(QDialog):
         _set(self._fields["KOKORO_DEVICE"], self._env.get("KOKORO_DEVICE", getattr(cfg, "KOKORO_DEVICE", "auto")))
         _set(self._fields["KOKORO_SPEED"], self._env.get("KOKORO_SPEED", str(cfg.KOKORO_SPEED)))
         _set(self._fields["KOKORO_SAMPLE_RATE"], self._env.get("KOKORO_SAMPLE_RATE", str(cfg.KOKORO_SAMPLE_RATE)))
+        _set(
+            self._fields["LIVE_VOICE_MODEL"],
+            self._env.get("LIVE_VOICE_MODEL", getattr(cfg, "LIVE_VOICE_MODEL", "gemini-3.1-flash-live-preview")),
+        )
+        _set(
+            self._fields["LIVE_VOICE_VOICE_NAME"],
+            self._env.get("LIVE_VOICE_VOICE_NAME", getattr(cfg, "LIVE_VOICE_VOICE_NAME", "")),
+        )
+        _set(
+            self._fields["LIVE_VOICE_HALF_DUPLEX"],
+            self._env.get("LIVE_VOICE_HALF_DUPLEX", str(getattr(cfg, "LIVE_VOICE_HALF_DUPLEX", False))),
+        )
         _set(self._fields["TTS_VOLUME"], self._env.get("TTS_VOLUME", str(getattr(cfg, "TTS_VOLUME", 1.0))))
         _set(
             self._fields["TTS_READ_ALOUD_MIN_WORDS"],
@@ -6195,6 +6375,10 @@ class SettingsDialog(QDialog):
                 "HOTKEY_READ_SELECTION_ALOUD",
                 getattr(cfg, "HOTKEY_READ_SELECTION_ALOUD", ""),
             ),
+        )
+        _set(
+            self._fields["HOTKEY_VOICE_LIVE"],
+            self._env.get("HOTKEY_VOICE_LIVE", getattr(cfg, "HOTKEY_VOICE_LIVE", "shift+f9")),
         )
         _set(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"], self._env.get(
             "INTENT_CONTEXT_TOGGLE_KEYS",
@@ -7401,6 +7585,7 @@ class SettingsDialog(QDialog):
                 "GPT_SOVITS_URL", "GPT_SOVITS_REF_AUDIO_PATH", "GPT_SOVITS_PROMPT_TEXT",
                 "GPT_SOVITS_PROMPT_LANG", "GPT_SOVITS_TEXT_LANG", "GPT_SOVITS_SAMPLE_RATE",
                 "KOKORO_VOICE", "KOKORO_LANG_CODE", "KOKORO_DEVICE", "KOKORO_SPEED", "KOKORO_SAMPLE_RATE",
+                "LIVE_VOICE_MODEL", "LIVE_VOICE_VOICE_NAME", "LIVE_VOICE_HALF_DUPLEX",
                 "TTS_VOLUME", "TTS_READ_ALOUD_MIN_WORDS", "TTS_READ_ALOUD_MAX_WORDS",
                 "STT_MODEL", "STT_COMPUTE_TYPE", "STT_LANGUAGE", "STT_BEAM_SIZE", "STT_DEVICE",
                 "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS", "STT_BACKGROUND_CHUNK_STEP_SECONDS",
@@ -7411,7 +7596,8 @@ class SettingsDialog(QDialog):
             },
             "Keybinds": {
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
-                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "INTENT_CONTEXT_TOGGLE_KEYS",
+                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "HOTKEY_VOICE_LIVE",
+                "INTENT_CONTEXT_TOGGLE_KEYS",
                 "INTENT_OVERLAY_TIMEOUT_MS",
                 "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_CLIPBOARD", "SNIP_CONTEXT_DOCUMENTS",
                 "SNIP_CONTEXT_DOCUMENTS_MODE", "SNIP_CONTEXT_BROWSER_MODE", "SNIP_CONTEXT_GITHUB_MODE",
@@ -7774,6 +7960,9 @@ class SettingsDialog(QDialog):
             "TTS_VOLUME": _get(self._fields["TTS_VOLUME"]),
             "TTS_READ_ALOUD_MIN_WORDS": _get(self._fields["TTS_READ_ALOUD_MIN_WORDS"]),
             "TTS_READ_ALOUD_MAX_WORDS": _get(self._fields["TTS_READ_ALOUD_MAX_WORDS"]),
+            "LIVE_VOICE_MODEL": _get(self._fields["LIVE_VOICE_MODEL"]),
+            "LIVE_VOICE_VOICE_NAME": _get(self._fields["LIVE_VOICE_VOICE_NAME"]),
+            "LIVE_VOICE_HALF_DUPLEX": _get(self._fields["LIVE_VOICE_HALF_DUPLEX"]),
             "STT_MODEL":         _get(self._fields["STT_MODEL"]),
             "STT_COMPUTE_TYPE":  _get(self._fields["STT_COMPUTE_TYPE"]),
             "STT_LANGUAGE":      _get(self._fields["STT_LANGUAGE"]),
@@ -7795,6 +7984,7 @@ class SettingsDialog(QDialog):
             "HOTKEY_CLEAR_CONTEXT": _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
             "HOTKEY_SNIP":         _get(self._fields["HOTKEY_SNIP"]),
             "HOTKEY_READ_SELECTION_ALOUD": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD"]),
+            "HOTKEY_VOICE_LIVE":   _get(self._fields["HOTKEY_VOICE_LIVE"]),
             "INTENT_CONTEXT_TOGGLE_KEYS": _get(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"]),
             "INTENT_OVERLAY_TIMEOUT_MS": _get(self._fields["INTENT_OVERLAY_TIMEOUT_MS"]),
             "CONTEXT_BROWSER_MAX_CHARS": _get(self._fields["CONTEXT_BROWSER_MAX_CHARS"]),
@@ -7890,6 +8080,7 @@ class SettingsDialog(QDialog):
                     "HOTKEY_READ_SELECTION_ALOUD",
                     "HOTKEY_VOICE",
                     "HOTKEY_DICTATE",
+                    "HOTKEY_VOICE_LIVE",
                 )
             ]
         )
