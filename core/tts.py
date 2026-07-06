@@ -33,6 +33,7 @@ import wave
 from pathlib import Path
 from typing import Generator, Iterable
 
+from core import tts_assets
 from core.system import macos_safety
 from core.system.native_locks import ssl_init_lock
 from core.system import sdk_clients
@@ -93,6 +94,7 @@ _cartesia_ws_lock = threading.Lock()
 _kokoro_pipeline = None
 _kokoro_pipeline_lang = ""
 _kokoro_pipeline_device = ""
+_kokoro_pipeline_offline = False
 _kokoro_lock = threading.RLock()
 _kokoro_stage_lock = threading.Lock()
 _kokoro_stage = ""
@@ -214,7 +216,26 @@ def prewarm():
         if not kokoro_installed():
             _kokoro_diag("Kokoro prewarm skipped: package is not importable.")
             return
-        prepare_kokoro_assets()
+        # Warmup must never touch the network: verify the pinned assets from
+        # the local cache and surface an actionable error instead of stalling
+        # on HuggingFace checks or silently re-downloading.
+        status = verify_kokoro_assets()
+        if status.state != "ok":
+            detail = "; ".join(status.problems) or "model files are missing"
+            _kokoro_diag(f"Kokoro prewarm blocked: {detail}")
+            raise RuntimeError(
+                "Kokoro voice model files are missing or damaged "
+                f"({detail}). Open Settings > Voice and reinstall Kokoro to repair them."
+            )
+        if status.missing_voices:
+            # The model itself is intact; a ~0.5 MB voice file is fetched on
+            # the next user-initiated synthesis (e.g. Test TTS), not here.
+            _kokoro_diag(
+                "Kokoro prewarm: voice(s) not downloaded yet "
+                f"{status.missing_voices!r}; warming pipeline only."
+            )
+            _get_kokoro_pipeline()
+            return
         for chunk in _stream_kokoro("ok"):
             if chunk:
                 break
@@ -397,15 +418,22 @@ def kokoro_installed() -> bool:
         return False
 
 
+def verify_kokoro_assets(voice: str | None = None) -> tts_assets.AssetStatus:
+    """Check Kokoro's pinned model files against the local cache. No network."""
+    voices = tts_assets.parse_voices(voice or getattr(config, "KOKORO_VOICE", "af_heart"))
+    return tts_assets.verify(tts_assets.KOKORO, voices=voices)
+
+
 def prepare_kokoro_assets(voice: str | None = None) -> dict[str, str]:
-    """Download Kokoro's model/config/voice files before first synthesis."""
+    """Ensure Kokoro's model/config/voice files exist locally at the pinned revision.
+
+    Cache-first: files already present and intact are resolved without any
+    network access; only missing or damaged files are downloaded. Only call
+    this from user-initiated flows (install, repair, update) — warmup and
+    synthesis must stay offline.
+    """
     resolved_voice = (voice or getattr(config, "KOKORO_VOICE", "af_heart") or "af_heart").strip()
-    if not resolved_voice:
-        raise ValueError("KOKORO_VOICE is not configured.")
-    if "," in resolved_voice:
-        voices = [part.strip() for part in resolved_voice.split(",") if part.strip()]
-    else:
-        voices = [resolved_voice]
+    voices = tts_assets.parse_voices(resolved_voice, default="")
     if not voices:
         raise ValueError("KOKORO_VOICE is not configured.")
 
@@ -415,29 +443,29 @@ def prepare_kokoro_assets(voice: str | None = None) -> dict[str, str]:
     optional_deps.add_optional_packages_to_path(prepend=True)
     importlib.invalidate_caches()
     try:
-        from huggingface_hub import hf_hub_download  # type: ignore
+        import huggingface_hub  # type: ignore  # noqa: F401
     except ImportError as exc:
         raise RuntimeError(
             "Kokoro support is not installed. Open Settings > Voice and click Install Kokoro."
         ) from exc
 
-    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-    _kokoro_diag(f"Kokoro asset prepare starting voice={resolved_voice!r} {_kokoro_runtime_context()}")
+    manifest = tts_assets.KOKORO
+    _kokoro_diag(
+        f"Kokoro asset prepare starting voice={resolved_voice!r} "
+        f"revision={tts_assets.effective_revision(manifest)!r} {_kokoro_runtime_context()}"
+    )
     paths: dict[str, str] = {}
     try:
-        _set_kokoro_stage("downloading Kokoro config")
-        paths["config"] = hf_hub_download(repo_id=_KOKORO_REPO_ID, filename="config.json")
+        _set_kokoro_stage("checking Kokoro config")
+        paths["config"] = tts_assets.download_file(manifest, "config.json")
         _kokoro_diag(f"Kokoro config ready path={paths['config']!r}")
-        _set_kokoro_stage("downloading Kokoro model weights")
-        paths["model"] = hf_hub_download(repo_id=_KOKORO_REPO_ID, filename=_KOKORO_MODEL_FILENAME)
+        _set_kokoro_stage("checking Kokoro model weights")
+        paths["model"] = tts_assets.download_file(manifest, _KOKORO_MODEL_FILENAME)
         _kokoro_diag(f"Kokoro model ready path={paths['model']!r}")
         for name in voices:
-            if name.endswith(".pt"):
-                paths[f"voice:{name}"] = name
-                continue
-            _set_kokoro_stage(f"downloading Kokoro voice {name!r}")
+            _set_kokoro_stage(f"checking Kokoro voice {name!r}")
             key = f"voice:{name}"
-            paths[key] = hf_hub_download(repo_id=_KOKORO_REPO_ID, filename=f"voices/{name}.pt")
+            paths[key] = tts_assets.download_voice(manifest, name)
             _kokoro_diag(f"Kokoro voice ready voice={name!r} path={paths[key]!r}")
         return paths
     finally:
@@ -446,7 +474,7 @@ def prepare_kokoro_assets(voice: str | None = None) -> dict[str, str]:
 
 def _reset_kokoro_pipeline() -> None:
     """Discard the cached Kokoro pipeline so language changes apply."""
-    global _kokoro_pipeline, _kokoro_pipeline_lang, _kokoro_pipeline_device
+    global _kokoro_pipeline, _kokoro_pipeline_lang, _kokoro_pipeline_device, _kokoro_pipeline_offline
     if not _kokoro_lock.acquire(timeout=1.0):
         _kokoro_diag(f"Kokoro reset skipped: {_kokoro_busy_message()}")
         return
@@ -454,6 +482,7 @@ def _reset_kokoro_pipeline() -> None:
         _kokoro_pipeline = None
         _kokoro_pipeline_lang = ""
         _kokoro_pipeline_device = ""
+        _kokoro_pipeline_offline = False
     finally:
         _kokoro_lock.release()
 
@@ -503,8 +532,56 @@ def _resolve_kokoro_device(requested: str | None = None) -> str:
     return "cpu"
 
 
+def _locate_kokoro_assets() -> dict[str, str]:
+    """Return locally cached pinned asset paths, or {} when incomplete. No network."""
+    try:
+        status = verify_kokoro_assets()
+    except Exception as exc:  # noqa: BLE001
+        _kokoro_diag(f"Kokoro asset locate failed: {type(exc).__name__}: {exc}")
+        return {}
+    if status.state != "ok":
+        return {}
+    return dict(status.paths)
+
+
+def _build_kokoro_pipeline_offline(KPipeline, KModel, *, lang_code: str, device: str, assets: dict[str, str]):
+    """Construct KPipeline from verified local files so kokoro never hits the Hub.
+
+    Returns (pipeline, effective_device) or None when this kokoro version
+    does not support injecting a prebuilt model.
+    """
+    try:
+        accepts_model = "model" in inspect.signature(KPipeline).parameters
+    except (TypeError, ValueError):
+        accepts_model = False
+    if not accepts_model:
+        return None
+    _set_kokoro_stage(f"loading local model lang={lang_code!r} device={device!r}")
+    try:
+        kmodel = KModel(
+            repo_id=_KOKORO_REPO_ID,
+            config=assets["config.json"],
+            model=assets[_KOKORO_MODEL_FILENAME],
+        )
+    except TypeError as exc:
+        _kokoro_diag(f"Installed Kokoro KModel does not accept local paths ({exc}); using its default loader.")
+        return None
+    try:
+        kmodel = kmodel.to(device).eval()
+    except RuntimeError as exc:
+        if device == "cpu":
+            raise
+        _kokoro_diag(f"Kokoro model failed on {device}: {exc}; falling back to CPU.")
+        device = "cpu"
+        kmodel = kmodel.to(device).eval()
+    _set_kokoro_stage(f"building pipeline lang={lang_code!r} device={device!r}")
+    pipeline = KPipeline(lang_code=lang_code, repo_id=_KOKORO_REPO_ID, model=kmodel)
+    _kokoro_diag(f"Kokoro pipeline ready from local assets on device={device!r}")
+    return pipeline, device
+
+
 def _build_kokoro_pipeline(KPipeline, *, lang_code: str, device: str):
-    """Construct KPipeline, returning the pipeline and effective device."""
+    """Construct KPipeline via kokoro's own loader (may hit the Hub); legacy path."""
     kwargs = {"lang_code": lang_code}
     try:
         accepts_device = "device" in inspect.signature(KPipeline).parameters
@@ -575,18 +652,43 @@ def _import_kokoro_pipeline():
         ) from exc
 
 
+def _create_kokoro_pipeline(lang_code: str, device: str):
+    """Build a pipeline, preferring verified local assets over kokoro's loader.
+
+    Returns (pipeline, effective_device, offline). offline=True means the
+    model was loaded from pinned local files and voices should also be fed
+    as local paths so the kokoro package never contacts the Hub.
+    """
+    KPipeline = _import_kokoro_pipeline()
+    KModel = getattr(sys.modules.get("kokoro"), "KModel", None)
+    assets = _locate_kokoro_assets()
+    if KModel is not None and "config.json" in assets and _KOKORO_MODEL_FILENAME in assets:
+        built = _build_kokoro_pipeline_offline(
+            KPipeline, KModel, lang_code=lang_code, device=device, assets=assets
+        )
+        if built is not None:
+            pipeline, device = built
+            return pipeline, device, True
+    else:
+        _kokoro_diag(
+            "Kokoro local assets or KModel unavailable; using kokoro's default loader "
+            f"(assets={sorted(assets)!r} kmodel={KModel is not None})"
+        )
+    pipeline, device = _build_kokoro_pipeline(KPipeline, lang_code=lang_code, device=device)
+    return pipeline, device, False
+
+
 def _get_kokoro_pipeline():
     """Return a cached Kokoro pipeline for the configured language code."""
-    global _kokoro_pipeline, _kokoro_pipeline_lang, _kokoro_pipeline_device
+    global _kokoro_pipeline, _kokoro_pipeline_lang, _kokoro_pipeline_device, _kokoro_pipeline_offline
     lang_code = (getattr(config, "KOKORO_LANG_CODE", "a") or "a").strip()
     if not _kokoro_lock.acquire(timeout=_KOKORO_LOCK_TIMEOUT_SECONDS):
         raise RuntimeError(_kokoro_busy_message())
     try:
         if _kokoro_pipeline is None or _kokoro_pipeline_lang != lang_code:
             _set_kokoro_stage(f"preparing pipeline lang={lang_code!r}")
-            KPipeline = _import_kokoro_pipeline()
             device = _resolve_kokoro_device()
-            _kokoro_pipeline, device = _build_kokoro_pipeline(KPipeline, lang_code=lang_code, device=device)
+            _kokoro_pipeline, device, _kokoro_pipeline_offline = _create_kokoro_pipeline(lang_code, device)
             _kokoro_pipeline_lang = lang_code
             _kokoro_pipeline_device = device
             return _kokoro_pipeline
@@ -595,8 +697,7 @@ def _get_kokoro_pipeline():
             _kokoro_pipeline_device != device
         ):
             _set_kokoro_stage(f"rebuilding pipeline for device={device!r}")
-            KPipeline = _import_kokoro_pipeline()
-            _kokoro_pipeline, device = _build_kokoro_pipeline(KPipeline, lang_code=lang_code, device=device)
+            _kokoro_pipeline, device, _kokoro_pipeline_offline = _create_kokoro_pipeline(lang_code, device)
             _kokoro_pipeline_device = device
         return _kokoro_pipeline
     finally:
@@ -626,6 +727,25 @@ def _float_audio_to_pcm16(audio, *, source_rate: int, target_rate: int) -> bytes
     return pcm.tobytes()
 
 
+def _kokoro_voice_arg(voice: str) -> str:
+    """Return the voice argument for the pipeline as pinned local file paths.
+
+    Each blend part resolves to its cached .pt file; a voice the user newly
+    picked is fetched at the pinned revision here (synthesis is always
+    user-initiated) instead of letting kokoro query the Hub for it.
+    """
+    parts = tts_assets.parse_voices(voice)
+    resolved: list[str] = []
+    for name in parts:
+        path = tts_assets.resolve_voice(tts_assets.KOKORO, name)
+        if path is None:
+            _set_kokoro_stage(f"downloading Kokoro voice {name!r}")
+            path = tts_assets.download_voice(tts_assets.KOKORO, name)
+            _kokoro_diag(f"Kokoro voice fetched on demand voice={name!r} path={path!r}")
+        resolved.append(path)
+    return ",".join(resolved) if resolved else voice
+
+
 def _stream_kokoro(text: str) -> Generator[bytes, None, None]:
     """Synthesize speech with the local Kokoro Python package."""
     if not text.strip():
@@ -636,6 +756,8 @@ def _stream_kokoro(text: str) -> Generator[bytes, None, None]:
         _set_kokoro_stage("getting pipeline")
         pipeline = _get_kokoro_pipeline()
         voice = (getattr(config, "KOKORO_VOICE", "af_heart") or "af_heart").strip()
+        if _kokoro_pipeline_offline:
+            voice = _kokoro_voice_arg(voice)
         speed = float(getattr(config, "KOKORO_SPEED", 1.0) or 1.0)
         split_pattern = getattr(config, "KOKORO_SPLIT_PATTERN", r"\n+")
         target_rate = int(getattr(config, "KOKORO_SAMPLE_RATE", _KOKORO_SAMPLE_RATE) or _KOKORO_SAMPLE_RATE)

@@ -3034,8 +3034,14 @@ class SettingsDialog(QDialog):
         self._kokoro_install_btn.clicked.connect(self._install_kokoro)
         self._kokoro_install_status_lbl = QLabel()
         self._kokoro_install_status_lbl.setWordWrap(True)
+        self._kokoro_assets_btn = QPushButton()
+        self._kokoro_assets_btn.clicked.connect(self._kokoro_assets_action)
+        self._kokoro_assets_btn.setVisible(False)
+        self._kokoro_assets_mode = ""
+        self._kokoro_assets_update_revision = ""
         kf.addRow(kokoro_note)
         kf.addRow(self._kokoro_install_status_lbl, self._kokoro_install_btn)
+        kf.addRow(QLabel(), self._kokoro_assets_btn)
         kf.addRow(_tooltip_label("Voice", kokoro_voice_tip), self._fields["KOKORO_VOICE"])
         kf.addRow(_tooltip_label("Language code", kokoro_lang_tip), self._fields["KOKORO_LANG_CODE"])
         kf.addRow(_tooltip_label("Device", kokoro_device_tip), self._fields["KOKORO_DEVICE"])
@@ -3340,12 +3346,16 @@ class SettingsDialog(QDialog):
             button = getattr(self, attr, None)
             if isinstance(button, QPushButton):
                 button.setEnabled(False)
+        assets_button = getattr(self, "_kokoro_assets_btn", None)
+        if isinstance(assets_button, QPushButton):
+            assets_button.setVisible(False)
 
         self._tts_install_status_running = True
         self._tts_install_status_token += 1
         self._tts_install_status_result = None
         token = self._tts_install_status_token
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
+        kokoro_voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
         carrier = _TtsInstallStatusSignals(self)
         carrier.done.connect(self._finish_tts_optional_install_status)
         self._tts_install_status_signal_carriers.append(carrier)
@@ -3381,6 +3391,24 @@ class SettingsDialog(QDialog):
                     torch_status=torch_status,
                     system_cuda_available=system_has_cuda,
                 )
+                kokoro_assets: dict[str, object] = {}
+                if kokoro_installed:
+                    try:
+                        from core import tts_assets
+
+                        assets_status = tts_assets.verify(
+                            tts_assets.KOKORO,
+                            voices=tts_assets.parse_voices(kokoro_voice),
+                        )
+                        kokoro_assets = {
+                            "state": assets_status.state,
+                            "problems": list(assets_status.problems),
+                            "missing_voices": list(assets_status.missing_voices),
+                        }
+                        if assets_status.state == "ok":
+                            kokoro_assets["update_revision"] = tts_assets.check_update(tts_assets.KOKORO) or ""
+                    except Exception:  # noqa: BLE001 - asset status is best-effort
+                        kokoro_assets = {}
                 result: dict[str, object] = {
                     "ok": True,
                     "elevenlabs_installed": elevenlabs_installed,
@@ -3389,6 +3417,7 @@ class SettingsDialog(QDialog):
                     "kokoro_install_status": kokoro_install_status,
                     "kokoro_torch_status": torch_status,
                     "kokoro_needs_gpu": needs_gpu,
+                    "kokoro_assets": kokoro_assets,
                     "system_cuda_available": system_has_cuda,
                 }
             except Exception as exc:  # noqa: BLE001
@@ -3443,6 +3472,7 @@ class SettingsDialog(QDialog):
             install_status=install_status,
             torch_status=torch_status,
             needs_gpu=needs_gpu,
+            assets=result.get("kokoro_assets") if isinstance(result.get("kokoro_assets"), dict) else None,
         )
         return True
 
@@ -3479,12 +3509,14 @@ class SettingsDialog(QDialog):
         torch_status: dict[str, object],
         needs_gpu: bool,
         install_status: dict[str, object] | None = None,
+        assets: dict[str, object] | None = None,
     ) -> None:
         """Apply Kokoro install state to the settings controls."""
         label = getattr(self, "_kokoro_install_status_lbl", None)
         button = getattr(self, "_kokoro_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
+        self._apply_kokoro_assets_status(installed=installed, assets=assets)
         failed_install_message = _failed_optional_install_message(install_status)
         if installed and failed_install_message:
             button.setEnabled(True)
@@ -3498,10 +3530,34 @@ class SettingsDialog(QDialog):
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support"))
             self._set_test_status(label, "warn", "Kokoro GPU support is not installed.")
+        elif installed and isinstance(assets, dict) and assets.get("state") in ("damaged", "not_installed"):
+            button.setEnabled(True)
+            button.setText(t("Reinstall Kokoro"))
+            problems = "; ".join(str(item) for item in assets.get("problems") or [])
+            self._set_test_status(
+                label,
+                "warn",
+                f"Kokoro voice model files are missing or damaged ({problems}). Click Repair voice files to redownload them.",
+            )
         elif installed:
             button.setEnabled(True)
             button.setText(t("Reinstall Kokoro"))
-            if bool(torch_status.get("fast")):
+            missing_voices = [str(name) for name in (assets or {}).get("missing_voices") or []]
+            update_revision = str((assets or {}).get("update_revision") or "")
+            if missing_voices:
+                self._set_test_status(
+                    label,
+                    "warn",
+                    f"Kokoro is installed, but voice(s) {', '.join(missing_voices)} are not downloaded yet. "
+                    "Click Test TTS to download and try them.",
+                )
+            elif update_revision:
+                self._set_test_status(
+                    label,
+                    True,
+                    "Kokoro is installed. A voice model update is available; click Update voice model to fetch it.",
+                )
+            elif bool(torch_status.get("fast")):
                 self._set_test_status(label, True, "Kokoro is installed.")
             elif bool(torch_status.get("cuda_available")):
                 device = str(torch_status.get("device") or "CUDA device")
@@ -3519,6 +3575,88 @@ class SettingsDialog(QDialog):
                 )
             else:
                 self._set_test_status(label, "warn", "Kokoro is not installed.")
+
+    def _apply_kokoro_assets_status(self, *, installed: bool, assets: dict[str, object] | None) -> None:
+        """Show the voice-asset repair/update button when the local check asks for it."""
+        button = getattr(self, "_kokoro_assets_btn", None)
+        if not isinstance(button, QPushButton):
+            return
+        self._kokoro_assets_mode = ""
+        self._kokoro_assets_update_revision = ""
+        if not installed or not isinstance(assets, dict):
+            button.setVisible(False)
+            return
+        state = str(assets.get("state") or "")
+        update_revision = str(assets.get("update_revision") or "")
+        if state in ("damaged", "not_installed"):
+            self._kokoro_assets_mode = "repair"
+            button.setText(t("Repair voice files"))
+            button.setEnabled(True)
+            button.setVisible(True)
+        elif update_revision:
+            self._kokoro_assets_mode = "update"
+            self._kokoro_assets_update_revision = update_revision
+            button.setText(t("Update voice model"))
+            button.setEnabled(True)
+            button.setVisible(True)
+        else:
+            button.setVisible(False)
+
+    def _kokoro_assets_action(self) -> None:
+        """Repair damaged Kokoro voice files or apply a model update (user-initiated download)."""
+        mode = getattr(self, "_kokoro_assets_mode", "")
+        if mode not in ("repair", "update"):
+            return
+        voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
+        update_revision = getattr(self, "_kokoro_assets_update_revision", "")
+        if mode == "repair":
+            title = t("Repair voice files")
+            message = t(
+                "Wisp will redownload Kokoro's damaged or missing voice model files "
+                "(up to about 330 MB).\n\nContinue?"
+            )
+        else:
+            title = t("Update voice model")
+            message = t(
+                "Wisp will download the updated Kokoro voice model (about 330 MB) and switch to it "
+                "only after the download is verified. The current voice keeps working if the update fails.\n\n"
+                "Continue?"
+            )
+        answer = QMessageBox.question(
+            self,
+            title,
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        button = getattr(self, "_kokoro_assets_btn", None)
+        if isinstance(button, QPushButton):
+            button.setEnabled(False)
+
+        def _run() -> tuple[bool, str]:
+            from core import tts
+            from core import tts_assets
+
+            if mode == "repair":
+                tts.prepare_kokoro_assets(voice=voice)
+                return True, "Kokoro voice files repaired."
+            tts_assets.apply_update(
+                tts_assets.KOKORO,
+                update_revision,
+                voices=tts_assets.parse_voices(voice),
+            )
+            tts.reset_connections()
+            return True, "Kokoro voice model updated."
+
+        self._tts_install_status_checked = False
+        self._start_async_test(
+            "kokoro_assets",
+            self._kokoro_install_status_lbl,
+            _run,
+            pending_message="Downloading voice model files...",
+        )
 
     def _refresh_kokoro_install_status(self) -> None:
         """Refresh Kokoro install button and status copy."""

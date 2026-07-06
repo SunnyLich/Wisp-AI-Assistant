@@ -3047,6 +3047,30 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>重新安裝 Kokoro</translation>
     </message>
     <message>
+      <source>Repair voice files</source>
+      <translation>修復語音檔案</translation>
+    </message>
+    <message>
+      <source>Update voice model</source>
+      <translation>更新語音模型</translation>
+    </message>
+    <message>
+      <source>Wisp will redownload Kokoro's damaged or missing voice model files (up to about 330 MB).
+
+Continue?</source>
+      <translation>Wisp 將重新下載 Kokoro 損壞或缺失的語音模型檔案（最多約 330 MB）。
+
+繼續？</translation>
+    </message>
+    <message>
+      <source>Wisp will download the updated Kokoro voice model (about 330 MB) and switch to it only after the download is verified. The current voice keeps working if the update fails.
+
+Continue?</source>
+      <translation>Wisp 將下載更新後的 Kokoro 語音模型（約 330 MB），並僅在下載驗證通過後切換。若更新失敗，目前語音仍可繼續使用。
+
+繼續？</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro 已安裝</translation>
     </message>

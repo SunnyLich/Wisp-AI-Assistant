@@ -3083,6 +3083,30 @@ Dejar decidir al modelo — expone una herramienta de documentos abiertos durant
       <translation>Reinstalar Kokoro</translation>
     </message>
     <message>
+      <source>Repair voice files</source>
+      <translation>Reparar archivos de voz</translation>
+    </message>
+    <message>
+      <source>Update voice model</source>
+      <translation>Actualizar modelo de voz</translation>
+    </message>
+    <message>
+      <source>Wisp will redownload Kokoro's damaged or missing voice model files (up to about 330 MB).
+
+Continue?</source>
+      <translation>Wisp volverá a descargar los archivos del modelo de voz de Kokoro dañados o faltantes (hasta unos 330 MB).
+
+¿Continuar?</translation>
+    </message>
+    <message>
+      <source>Wisp will download the updated Kokoro voice model (about 330 MB) and switch to it only after the download is verified. The current voice keeps working if the update fails.
+
+Continue?</source>
+      <translation>Wisp descargará el modelo de voz de Kokoro actualizado (unos 330 MB) y solo cambiará a él cuando la descarga se haya verificado. La voz actual sigue funcionando si la actualización falla.
+
+¿Continuar?</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro instalado</translation>
     </message>

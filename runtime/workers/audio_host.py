@@ -548,8 +548,33 @@ HANDLERS = {
 }
 
 
+def _prewarm_native_extensions() -> None:
+    """Import numpy/soundfile on the MAIN thread before any request threads exist.
+
+    Warmups and requests run on daemon threads, and numpy's OpenBLAS can
+    deadlock Windows' DLL loader when its extension is first loaded from a
+    worker thread (observed as `from kokoro import KPipeline` hanging forever
+    in `create_module`; the brain host documents the same failure). Import
+    from the optional-packages path set so this loads the same numpy Kokoro
+    resolves later. Best-effort: an incomplete install must not stop the
+    worker from booting and answering ping.
+    """
+    try:
+        from core import optional_deps
+
+        optional_deps.add_optional_packages_to_path(prepend=True)
+    except Exception:  # noqa: BLE001
+        pass
+    for name in ("numpy", "soundfile"):
+        try:
+            __import__(name)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def main() -> int:
     """Handle main for runtime workers audio host."""
+    _prewarm_native_extensions()
     return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink, threaded=True)
 
 
