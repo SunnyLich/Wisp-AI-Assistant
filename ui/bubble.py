@@ -272,6 +272,9 @@ class SpeechBubble(QWidget):
         self._pre_audio_timestamps: list[tuple] = []  # batches that arrived before audio start
         self._speed_boosting = False
         self._highlight_generation = 0
+        # Live voice captions (interleaved "You / Wisp" lines, instant reveal)
+        self._live_mode = False
+        self._live_last_role = ""
         self._auto_hide_holds = 0
         self._auto_hide_pending_ms: int | None = None
         self._hide_timer_elapsed = QElapsedTimer()
@@ -906,6 +909,45 @@ class SpeechBubble(QWidget):
         self._close_cancels = True
         self._sync_text_view()
         self.hide()
+
+    def set_live_mode(self, active: bool) -> None:
+        """Enter/leave live voice caption mode.
+
+        While active the bubble never auto-hides (the conversation is open-
+        ended); on deactivate the remaining captions flush and the normal hide
+        countdown takes over."""
+        active = bool(active)
+        if active == self._live_mode:
+            return
+        self._live_mode = active
+        if active:
+            self.clear()  # also resets _auto_hide_holds, so hold after clearing
+            self._live_last_role = ""
+            self._pause_auto_hide()
+            return
+        self._live_last_role = ""
+        self._resume_auto_hide()
+        self.finish(flush_remaining=True)
+
+    def append_live_transcript(self, role: str, text: str) -> None:
+        """Append one live-caption fragment, labelling speaker changes.
+
+        Fragments already arrive roughly speech-paced from the live session's
+        transcription, so they reveal instantly — a reading-speed animation
+        would only lag behind the actual voice."""
+        if not text:
+            return
+        if role != self._live_last_role:
+            label = t("You") if role == "user" else "Wisp"
+            newline = "\n" if self._full_text else ""
+            text = f"{newline}{label} ▸ {text}"
+            self._live_last_role = role
+        self.append_chunk(text)
+        self._reveal_timer.stop()
+        self._reveal_mode = False
+        self._revealed_count = len(self._pending_words)
+        self._rewrap()
+        self.update()
 
     def show_notice(
         self,

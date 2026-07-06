@@ -2172,6 +2172,10 @@ class QtProtocolHost:
             return self._reply_chunk(**params)
         if method == "ui.reply.done":
             return self._reply_done(**params)
+        if method == "ui.live_voice.session":
+            return self._live_voice_session(**params)
+        if method == "ui.live_voice.transcript":
+            return self._live_voice_transcript(**params)
         if method == "ui.context.clear":
             return self._context_clear()
         if method == "ui.context.add_item":
@@ -2789,6 +2793,16 @@ class QtProtocolHost:
         else:
             bubble.append_chunk(text, is_thought=is_thought, annotations=annotations)
         return {"appended": len(text or ""), "is_progress": bool(is_progress)}
+
+    def _live_voice_session(self, active: bool = False) -> dict[str, Any]:
+        """Enter/leave live voice caption mode (bubble held open while active)."""
+        self._ensure_bubble().set_live_mode(bool(active))
+        return {"active": bool(active)}
+
+    def _live_voice_transcript(self, role: str = "", text: str = "") -> dict[str, Any]:
+        """Append one live voice caption fragment to the bubble."""
+        self._ensure_bubble().append_live_transcript(str(role or ""), str(text or ""))
+        return {"appended": len(str(text or ""))}
 
     def _reply_done(self, flush: bool = True) -> dict[str, Any]:
         """Finish the reply bubble.
