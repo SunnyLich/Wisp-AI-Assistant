@@ -3918,6 +3918,7 @@ class SettingsDialog(QDialog):
                 "pre_install_packages": pre_install_packages or [],
                 "remove_artifacts": remove_artifacts or [],
                 "reinstall": bool(reinstall),
+                "restart_apply": sys.platform == "win32",
                 "log_path": str(log_path),
                 "status_path": str(status_path),
                 **(external_plan_extra or {}),
@@ -4006,6 +4007,7 @@ class SettingsDialog(QDialog):
         if isinstance(status, QLabel):
             message = ""
             ok: bool | str = exit_code == 0
+            install_status: dict[str, object] = {}
             try:
                 from core import optional_deps
 
@@ -4018,6 +4020,15 @@ class SettingsDialog(QDialog):
                     message = str(install_status.get("message") or "")
             except Exception:
                 message = ""
+            if install_status.get("restart_apply"):
+                if isinstance(button, QPushButton):
+                    button.setEnabled(False)
+                    button.setText(t("Applying..."))
+                self._set_test_pending(status, message or f"{display_name} staged install is applying after Wisp closes.")
+                app = QApplication.instance()
+                if app is not None:
+                    QTimer.singleShot(1500, app.quit)
+                return
             if not message:
                 message = (
                     f"{display_name} installed successfully."

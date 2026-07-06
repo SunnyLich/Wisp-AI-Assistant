@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -855,6 +856,86 @@ def _update_wait_pid(pid: int | None = None) -> int:
     return os.getpid()
 
 
+def wisp_wait_pid(pid: int | None = None) -> int:
+    """Return the Wisp process ID restart/apply helpers should wait for."""
+    return _update_wait_pid(pid)
+
+
+def app_restart_command() -> tuple[list[str], Path]:
+    """Return the command/cwd pair that reopens this Wisp instance."""
+    if getattr(sys, "frozen", False):
+        executable = Path(sys.executable).resolve()
+        return [str(executable)], executable.parent
+    return [sys.executable, "-m", "runtime.supervisor.app"], source_checkout_root()
+
+
+def launch_detached_helper(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
+    """Launch a helper process using the same detachment policy as app updates."""
+    kwargs: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if cwd is not None:
+        kwargs["cwd"] = str(cwd)
+    if env is not None:
+        kwargs["env"] = env
+    if sys.platform == "win32":
+        creationflags = 0
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+        if creationflags:
+            kwargs["creationflags"] = creationflags
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen(command, **kwargs)
+
+
+def _process_exists(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _single_instance_lock_released(path: Path = SINGLE_INSTANCE_LOCK) -> bool:
+    if sys.platform == "win32":
+        import msvcrt
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a+") as handle:
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                return True
+            except OSError:
+                return False
+    return True
+
+
+def wait_for_wisp_exit(
+    pid: int | None = None,
+    *,
+    timeout: float = 300.0,
+    lock_path: Path = SINGLE_INSTANCE_LOCK,
+) -> None:
+    """Wait until the supervisor process is gone and the single-instance lock is free."""
+    wait_pid = _update_wait_pid(pid)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if (not _process_exists(wait_pid)) and _single_instance_lock_released(lock_path):
+            time.sleep(1.0)
+            return
+        time.sleep(0.5)
+    raise UpdateError("Timed out waiting for Wisp to exit.")
+
+
 def apply_update(update_path: Path, pid: int | None = None) -> Path:
     """Start a detached helper that applies an update after Wisp exits."""
     update_path = Path(update_path).resolve()
@@ -867,35 +948,16 @@ def apply_update(update_path: Path, pid: int | None = None) -> Path:
 
     if sys.platform == "win32":
         script_path = _write_windows_apply_script(update_path, root, restart_target, wait_pid)
-        creationflags = 0
-        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-            creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-        if hasattr(subprocess, "CREATE_NO_WINDOW"):
-            creationflags |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-        subprocess.Popen(
-            [
-                "powershell",
-                "-NoProfile",
-                "-STA",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(script_path),
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-            creationflags=creationflags,
-        )
+        launch_detached_helper([
+            "powershell",
+            "-NoProfile",
+            "-STA",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script_path),
+        ])
     else:
         script_path = _write_posix_apply_script(update_path, root, restart_target, wait_pid)
-        subprocess.Popen(
-            [str(script_path)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-            start_new_session=True,
-        )
+        launch_detached_helper([str(script_path)])
     return script_path

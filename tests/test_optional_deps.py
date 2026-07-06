@@ -81,6 +81,22 @@ def test_optional_deps_dev_reinstall_can_force_replacement(monkeypatch, tmp_path
     assert command[-1] == "torch"
 
 
+def test_optional_deps_install_can_target_staging_dir(monkeypatch, tmp_path):
+    """Windows restart installs should download packages away from the locked active layer."""
+    from core import optional_deps
+
+    active = tmp_path / "python_packages"
+    staging = tmp_path / "_staged_installs" / "stt"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", active)
+    monkeypatch.setattr(optional_deps.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(optional_deps.sys, "executable", sys.executable)
+
+    command = optional_deps.pip_install_command(["faster-whisper==1.2.1"], target_dir=staging)
+
+    assert command[command.index("--target") + 1] == str(staging)
+    assert str(active) not in command
+
+
 def test_optional_deps_bootstraps_pip_for_source_installs(monkeypatch):
     """Fresh source environments without pip should be repaired with ensurepip."""
     from core import optional_deps
@@ -544,6 +560,131 @@ def test_optional_tts_installer_stt_prepare_reports_model_verification_failure(m
         status["message"]
         == "STT installed, but model verification failed: ImportError: missing faster_whisper"
     )
+
+
+def test_optional_tts_installer_stages_restart_apply_plan(monkeypatch, tmp_path):
+    """The Windows repair path should install into staging and hand off an apply plan."""
+    from core import optional_deps, updater
+    from scripts import optional_tts_installer
+
+    active = tmp_path / "python_packages"
+    log_path = tmp_path / "install.log"
+    status_path = tmp_path / "status.json"
+    launched: dict[str, object] = {}
+    calls: list[tuple[list[str], bool, object]] = []
+
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", active)
+    monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 4321)
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_launch_staged_apply",
+        lambda plan_path: launched.update(plan_path=plan_path),
+    )
+
+    def fake_run_install(_log, _prefix, packages, *, reinstall=False, target_dir=None):
+        calls.append((packages, reinstall, target_dir))
+        assert target_dir is not None
+        (target_dir / "av").mkdir(parents=True, exist_ok=True)
+        dist_info = target_dir / "av-17.0.0.dist-info"
+        dist_info.mkdir(exist_ok=True)
+        (dist_info / "METADATA").write_text("Name: av\nVersion: 17.0.0\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(optional_tts_installer, "_run_install_command", fake_run_install)
+
+    result = optional_tts_installer._run_staged_restart_install(
+        plan={"display_name": "STT", "post_install": "stt_prepare"},
+        display_name="STT",
+        log_path=log_path,
+        status_path=status_path,
+        prefix="[stt install]",
+        pre_install_packages=[],
+        packages=["faster-whisper==1.2.1"],
+        reinstall=False,
+    )
+
+    assert result == 0
+    assert len(calls) == 1
+    assert calls[0][0] == ["faster-whisper==1.2.1"]
+    assert calls[0][1] is False
+    staging_path = calls[0][2]
+    assert staging_path != active
+    assert active not in staging_path.parents
+    apply_plan = json.loads(launched["plan_path"].read_text(encoding="utf-8"))
+    assert apply_plan["staging_path"] == str(staging_path)
+    assert apply_plan["target_path"] == str(active)
+    assert apply_plan["wait_pid"] == 4321
+    assert "restart_command" not in apply_plan
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["restart_apply"] is True
+    assert status["ok"] is None
+
+
+def test_optional_install_apply_replaces_active_av_artifacts(tmp_path):
+    """Applying staged packages should remove old active transitive artifacts first."""
+    from scripts import optional_tts_installer
+
+    target = tmp_path / "python_packages"
+    staging = tmp_path / "stage"
+    old_codec = target / "av" / "audio" / "codeccontext.pyd"
+    old_codec.parent.mkdir(parents=True)
+    old_codec.write_text("old", encoding="utf-8")
+    old_dist = target / "av-16.0.0.dist-info"
+    old_dist.mkdir()
+    (old_dist / "METADATA").write_text("Name: av\nVersion: 16.0.0\n", encoding="utf-8")
+    (target / "av.libs").mkdir()
+
+    new_codec = staging / "av" / "audio" / "codeccontext.pyd"
+    new_codec.parent.mkdir(parents=True)
+    new_codec.write_text("new", encoding="utf-8")
+    new_dist = staging / "av-17.0.0.dist-info"
+    new_dist.mkdir()
+    (new_dist / "METADATA").write_text("Name: av\nVersion: 17.0.0\n", encoding="utf-8")
+
+    with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+        optional_tts_installer._apply_staging(staging, target, log, "[stt install]")
+
+    assert (target / "av" / "audio" / "codeccontext.pyd").read_text(encoding="utf-8") == "new"
+    assert not old_dist.exists()
+    assert not (target / "av.libs").exists()
+    assert (target / "av-17.0.0.dist-info").exists()
+    assert not staging.exists() or not any(staging.iterdir())
+
+
+def test_optional_install_apply_reopens_wisp_after_post_install_failure(monkeypatch, tmp_path):
+    """Once Wisp has closed for staged apply, verification failure should still reopen it."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    status_path = tmp_path / "status.json"
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "STT",
+                "log_path": str(tmp_path / "install.log"),
+                "status_path": str(status_path),
+                "staging_path": str(staging),
+                "target_path": str(tmp_path / "python_packages"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    restarts: list[tuple[list[str], object]] = []
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(updater, "app_restart_command", lambda: (["python", "-m", "runtime.supervisor.app"], tmp_path))
+    monkeypatch.setattr(updater, "launch_detached_helper", lambda command, **kwargs: restarts.append((command, kwargs.get("cwd"))))
+    monkeypatch.setattr(optional_tts_installer, "_apply_staging", lambda *_args: None)
+    monkeypatch.setattr(optional_tts_installer, "_post_install_result", lambda *_args: (False, "STT verification failed."))
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 1
+
+    assert restarts == [(["python", "-m", "runtime.supervisor.app"], tmp_path)]
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is False
+    assert status["message"] == "STT verification failed."
 
 
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):

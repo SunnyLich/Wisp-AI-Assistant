@@ -354,6 +354,7 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
     monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
     monkeypatch.setattr(dialog_mod, "OptionalInstallDialog", FakeInstallDialog)
     monkeypatch.setattr(dialog_mod.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(dialog_mod.sys, "platform", "linux")
 
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._kokoro_install_btn = QPushButton()
@@ -381,6 +382,7 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
         plan = Path(command[-1]).read_text(encoding="utf-8")
         assert '"kokoro==0.9.4"' in plan
         assert '"post_install": "kokoro_prepare"' in plan
+        assert '"restart_apply": false' in plan
         assert "Wisp installer window" in dialog._kokoro_install_status_lbl.text()
     finally:
         dialog._kokoro_install_btn.deleteLater()
@@ -457,6 +459,7 @@ def test_optional_tts_install_launches_external_terminal_in_frozen_build(monkeyp
         plan = Path(launched["command"][-1]).read_text(encoding="utf-8")
         assert '"post_install": "stt_prepare"' in plan
         assert '"stt_model": "base"' in plan
+        assert '"restart_apply": true' in plan
     finally:
         dialog._stt_download_btn.deleteLater()
         dialog._stt_active_lbl.deleteLater()
@@ -536,6 +539,56 @@ def test_optional_installer_finish_refreshes_stt_detection(monkeypatch):
         assert refreshes == ["stt"]
         assert dialog._stt_active_lbl.text() == "STT installed."
         assert dialog._stt_download_btn.text() == "Install STT"
+    finally:
+        dialog._stt_download_btn.deleteLater()
+        dialog._stt_active_lbl.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_optional_installer_finish_closes_for_restart_apply(monkeypatch):
+    """A staged Windows install should close Wisp and leave final detection to the reopened app."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    refreshes: list[str] = []
+    single_shots: list[tuple[int, object]] = []
+    monkeypatch.setattr(
+        dialog_mod,
+        "_read_optional_install_status",
+        lambda *_args, **_kwargs: {
+            "ok": None,
+            "message": "STT packages are staged. Wisp will close, replace locked files, verify the install, and reopen.",
+            "restart_apply": True,
+        },
+    )
+    monkeypatch.setattr(SettingsDialog, "_refresh_stt_active_backend", lambda self: refreshes.append("stt"))
+    monkeypatch.setattr(dialog_mod.QTimer, "singleShot", lambda ms, callback: single_shots.append((ms, callback)))
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._stt_download_btn = QPushButton()
+    dialog._stt_active_lbl = QLabel()
+
+    try:
+        SettingsDialog._finish_optional_install_dialog(
+            dialog,
+            test_key="stt_install",
+            display_name="STT",
+            button_attr="_stt_download_btn",
+            status_attr="_stt_active_lbl",
+            exit_code=0,
+            dialog=object(),
+        )
+
+        assert refreshes == []
+        assert dialog._stt_download_btn.isEnabled() is False
+        assert dialog._stt_download_btn.text() == "Applying..."
+        assert "Wisp will close" in dialog._stt_active_lbl.text()
+        assert single_shots and single_shots[0][0] == 1500
     finally:
         dialog._stt_download_btn.deleteLater()
         dialog._stt_active_lbl.deleteLater()

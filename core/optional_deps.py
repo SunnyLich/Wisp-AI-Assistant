@@ -79,6 +79,12 @@ STT_REMOVE_ARTIFACTS = [
     "ctranslate2",
     "ctranslate2-*.dist-info",
     "ctranslate2.libs",
+    "av",
+    "av-*.dist-info",
+    "av.libs",
+    "onnxruntime",
+    "onnxruntime-*.dist-info",
+    "onnxruntime.libs",
 ]
 _DIST_INFO_SUFFIX = ".dist-info"
 
@@ -684,8 +690,14 @@ def kokoro_runtime_import_status_subprocess() -> dict[str, object]:
     )
 
 
-def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list[str]:
+def pip_install_command(
+    packages: list[str],
+    *,
+    reinstall: bool = False,
+    target_dir: Path | str | None = None,
+) -> list[str]:
     """Return a command that installs packages into Wisp's optional dir."""
+    target = Path(target_dir) if target_dir is not None else OPTIONAL_PACKAGES_DIR
     if _is_frozen():
         uv = _find_uv()
         if not uv:
@@ -705,7 +717,7 @@ def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list
             "--python-version",
             f"{sys.version_info.major}.{sys.version_info.minor}",
             "--target",
-            str(OPTIONAL_PACKAGES_DIR),
+            str(target),
             *(["--reinstall"] if reinstall else []),
             *packages,
         ]
@@ -718,7 +730,7 @@ def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list
         "--progress-bar=raw",
         "--upgrade",
         "--target",
-        str(OPTIONAL_PACKAGES_DIR),
+        str(target),
         *(["--force-reinstall"] if reinstall else []),
         *packages,
     ]
