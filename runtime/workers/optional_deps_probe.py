@@ -33,6 +33,7 @@ def _torch_status() -> dict[str, object]:
         "subprocess": True,
     }
     try:
+        if importlib.machinery.PathFinder.find_spec("torch", [sys.path[0]]) is None: return status
         import torch  # type: ignore
 
         status["installed"] = True
@@ -65,11 +66,12 @@ def _kokoro_runtime_status() -> dict[str, object]:
         "subprocess": True,
     }
     try:
+        if (spec := importlib.machinery.PathFinder.find_spec("kokoro", [sys.path[0]])) is None:
+            return status
         from kokoro import KPipeline  # type: ignore
 
         status["installed"] = True
         status["valid"] = KPipeline is not None
-        spec = importlib.util.find_spec("kokoro")
         status["origin"] = str(getattr(spec, "origin", "") or "")
     except Exception as exc:  # noqa: BLE001
         status["error"] = f"{type(exc).__name__}: {exc}"
@@ -86,11 +88,12 @@ def _stt_runtime_status() -> dict[str, object]:
         "subprocess": True,
     }
     try:
+        if (spec := importlib.machinery.PathFinder.find_spec("faster_whisper", [sys.path[0]])) is None:
+            return status
         from faster_whisper import WhisperModel  # type: ignore
 
         status["installed"] = True
         status["valid"] = WhisperModel is not None
-        spec = importlib.util.find_spec("faster_whisper")
         status["origin"] = str(getattr(spec, "origin", "") or "")
         try:
             from importlib import metadata
@@ -114,6 +117,7 @@ def _stt_model_status(model_name: str, requested_device: str, requested_compute:
         "subprocess": True,
     }
     try:
+        if importlib.machinery.PathFinder.find_spec("faster_whisper", [sys.path[0]]) is None: return status
         from faster_whisper import WhisperModel  # type: ignore
         from core.stt_device import build_model, resolve_compute_type, resolve_device
 

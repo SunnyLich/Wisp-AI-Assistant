@@ -845,9 +845,9 @@ def test_kokoro_torch_status_fast_does_not_import_torch(monkeypatch):
     original_import = __import__
     monkeypatch.setattr("builtins.__import__", fail_import)
     monkeypatch.setattr(
-        optional_deps.importlib.util,
+        optional_deps.importlib.machinery.PathFinder,
         "find_spec",
-        lambda name: SimpleNamespace(origin="C:/app/python_packages/torch/__init__.py") if name == "torch" else None,
+        lambda name, _path=None: SimpleNamespace(origin="C:/app/python_packages/torch/__init__.py") if name == "torch" else None,
     )
     monkeypatch.setattr("importlib.metadata.version", lambda name: "2.12.1+cu128")
 
@@ -866,9 +866,9 @@ def test_kokoro_torch_status_fast_flags_namespace_torch(monkeypatch):
     from core import optional_deps
 
     monkeypatch.setattr(
-        optional_deps.importlib.util,
+        optional_deps.importlib.machinery.PathFinder,
         "find_spec",
-        lambda name: SimpleNamespace(origin=None) if name == "torch" else None,
+        lambda name, _path=None: SimpleNamespace(origin=None) if name == "torch" else None,
     )
 
     status = optional_deps.kokoro_torch_status_fast()
@@ -942,6 +942,7 @@ def test_kokoro_torch_status_flags_incomplete_torch_import(monkeypatch):
 
     from core import optional_deps
 
+    monkeypatch.setattr(optional_deps.importlib.machinery.PathFinder, "find_spec", lambda name, _path=None: object())
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(__file__="python_packages/torch"))
 
     status = optional_deps.kokoro_torch_status()
@@ -961,6 +962,7 @@ def test_kokoro_runtime_import_status_flags_broken_dependency(monkeypatch):
         return original_import(name, *args, **kwargs)
 
     original_import = __import__
+    monkeypatch.setattr(optional_deps.importlib.machinery.PathFinder, "find_spec", lambda name, _path=None: object())
     monkeypatch.setattr("builtins.__import__", fail_import)
 
     status = optional_deps.kokoro_runtime_import_status()

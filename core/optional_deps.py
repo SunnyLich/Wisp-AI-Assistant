@@ -141,11 +141,11 @@ def add_optional_packages_to_path(*, prepend: bool = False) -> None:
 
 
 def is_importable(module_name: str) -> bool:
-    """Return whether an optional dependency module can be imported."""
+    """Return whether an optional dependency exists in Wisp's managed package dir."""
     add_optional_packages_to_path()
     importlib.invalidate_caches()
     try:
-        return importlib.util.find_spec(module_name) is not None
+        return importlib.machinery.PathFinder.find_spec(module_name, [str(OPTIONAL_PACKAGES_DIR)]) is not None
     except Exception:
         return False
 
@@ -458,6 +458,7 @@ def kokoro_torch_status() -> dict[str, object]:
         "valid": False,
     }
     try:
+        if importlib.machinery.PathFinder.find_spec("torch", [str(OPTIONAL_PACKAGES_DIR)]) is None: return status
         import torch  # type: ignore
 
         status["installed"] = True
@@ -559,7 +560,7 @@ def stt_runtime_import_status_fast() -> dict[str, object]:
         "fast": True,
     }
     try:
-        spec = importlib.util.find_spec("faster_whisper")
+        spec = importlib.machinery.PathFinder.find_spec("faster_whisper", [str(OPTIONAL_PACKAGES_DIR)])
         if spec is None:
             return status
         status["installed"] = True
@@ -631,7 +632,7 @@ def kokoro_torch_status_fast() -> dict[str, object]:
         "valid": False,
     }
     try:
-        spec = importlib.util.find_spec("torch")
+        spec = importlib.machinery.PathFinder.find_spec("torch", [str(OPTIONAL_PACKAGES_DIR)])
         if spec is None:
             return status
         status["installed"] = True
@@ -665,11 +666,12 @@ def kokoro_runtime_import_status() -> dict[str, object]:
         "error": "",
     }
     try:
+        if (spec := importlib.machinery.PathFinder.find_spec("kokoro", [str(OPTIONAL_PACKAGES_DIR)])) is None:
+            return status
         from kokoro import KPipeline  # type: ignore
 
         status["installed"] = True
         status["valid"] = KPipeline is not None
-        spec = importlib.util.find_spec("kokoro")
         status["origin"] = str(getattr(spec, "origin", "") or "")
     except Exception as exc:
         status["error"] = f"{type(exc).__name__}: {exc}"
