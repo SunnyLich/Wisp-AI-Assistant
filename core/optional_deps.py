@@ -529,6 +529,44 @@ def pip_install_command(packages: list[str], *, reinstall: bool = False) -> list
     ]
 
 
+def ensure_pip_available() -> None:
+    """Bootstrap pip for source-checkout optional package installs if needed."""
+    if _is_frozen():
+        return
+
+    def run_python(args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            env=pip_install_env(),
+            **subprocess_no_window_kwargs(),
+        )
+
+    check = run_python(["-m", "pip", "--version"])
+    if check.returncode == 0:
+        return
+
+    bootstrap = run_python(["-m", "ensurepip", "--upgrade"])
+    if bootstrap.returncode != 0:
+        detail = (bootstrap.stderr or bootstrap.stdout or "").strip()
+        raise RuntimeError(
+            "Python is missing pip, and ensurepip could not bootstrap it. "
+            f"{detail or f'exit code {bootstrap.returncode}'}"
+        )
+
+    verify = run_python(["-m", "pip", "--version"])
+    if verify.returncode != 0:
+        detail = (verify.stderr or verify.stdout or "").strip()
+        raise RuntimeError(
+            "Python is missing pip even after ensurepip completed. "
+            f"{detail or f'exit code {verify.returncode}'}"
+        )
+
+
 def pip_install_env() -> dict[str, str]:
     """Return an environment for optional dependency installs."""
     env = os.environ.copy()

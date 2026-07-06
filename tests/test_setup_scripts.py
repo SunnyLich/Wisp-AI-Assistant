@@ -1,6 +1,8 @@
 import re
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from scripts import check_dev_environment
 
@@ -28,12 +30,44 @@ def batch_inline_imports(script_name: str) -> tuple[str, ...]:
 
 
 class SetupScriptTests(unittest.TestCase):
+    def test_pip_recover_install_bootstraps_missing_pip(self) -> None:
+        from scripts import pip_recover_install
+
+        calls: list[list[str]] = []
+        pip_checks = iter([1, 0])
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            if command[2:] == ["pip", "--version"]:
+                return SimpleNamespace(returncode=next(pip_checks))
+            if command[2:] == ["ensurepip", "--upgrade"]:
+                return SimpleNamespace(returncode=0)
+            raise AssertionError(f"unexpected command: {command}")
+
+        installs: list[list[str]] = []
+
+        def fake_pip_install(args):
+            installs.append(args)
+            return 0, ""
+
+        with mock.patch.object(pip_recover_install.subprocess, "run", fake_run), \
+             mock.patch.object(pip_recover_install, "_run_pip_install", fake_pip_install):
+            self.assertEqual(pip_recover_install.main(["demo-package==1.0"]), 0)
+
+        self.assertEqual(calls[0][2:], ["pip", "--version"])
+        self.assertEqual(calls[1][2:], ["ensurepip", "--upgrade"])
+        self.assertEqual(calls[2][2:], ["pip", "--version"])
+        self.assertEqual(installs, [["demo-package==1.0"]])
+
     def test_windows_setup_wraps_failure_prone_native_commands(self) -> None:
         script = (ROOT / "scripts" / "setup_dev.ps1").read_text(encoding="utf-8")
 
         self.assertIn("function Invoke-Native", script)
         self.assertIn('Invoke-Native "virtual environment creation"', script)
         self.assertIn('Invoke-Native "uv virtual environment creation"', script)
+        self.assertIn("function Ensure-Pip", script)
+        self.assertIn('Invoke-Native "pip bootstrap"', script)
+        self.assertIn('Invoke-Native "pip verification"', script)
         self.assertIn('Invoke-Native "pip upgrade"', script)
         self.assertIn('Invoke-Native "dependency install"', script)
         self.assertIn('Invoke-Native "developer environment preflight"', script)

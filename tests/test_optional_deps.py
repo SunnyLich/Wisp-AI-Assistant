@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+from types import SimpleNamespace
 
 
 def test_optional_packages_default_to_shared_user_data_dir(monkeypatch, tmp_path):
@@ -78,6 +79,47 @@ def test_optional_deps_dev_reinstall_can_force_replacement(monkeypatch, tmp_path
     assert "--force-reinstall" in command
     assert command[command.index("--target") + 1] == str(target)
     assert command[-1] == "torch"
+
+
+def test_optional_deps_bootstraps_pip_for_source_installs(monkeypatch):
+    """Fresh source environments without pip should be repaired with ensurepip."""
+    from core import optional_deps
+
+    calls: list[list[str]] = []
+    pip_checks = iter([1, 0])
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[2:] == ["pip", "--version"]:
+            return SimpleNamespace(returncode=next(pip_checks), stdout="", stderr="")
+        if command[2:] == ["ensurepip", "--upgrade"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(optional_deps.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(optional_deps.subprocess, "run", fake_run)
+
+    optional_deps.ensure_pip_available()
+
+    assert calls == [
+        [sys.executable, "-m", "pip", "--version"],
+        [sys.executable, "-m", "ensurepip", "--upgrade"],
+        [sys.executable, "-m", "pip", "--version"],
+    ]
+
+
+def test_optional_deps_frozen_install_does_not_bootstrap_pip(monkeypatch):
+    """Packaged builds use bundled uv, so Wisp.exe should not run ensurepip."""
+    from core import optional_deps
+
+    monkeypatch.setattr(optional_deps.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(
+        optional_deps.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected subprocess")),
+    )
+
+    optional_deps.ensure_pip_available()
 
 
 def test_remove_optional_package_artifacts_is_scoped(monkeypatch, tmp_path):
@@ -280,6 +322,45 @@ def test_optional_tts_installer_can_reinstall_packages(monkeypatch, tmp_path):
 
     assert optional_tts_installer.main() == 0
     assert calls == [(["elevenlabs==2.55.0"], True)]
+
+
+def test_optional_tts_installer_ensures_pip_before_running_install(monkeypatch, tmp_path):
+    """The STT/TTS installer terminal should repair missing pip before pip install."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    log_path = tmp_path / "install.log"
+    calls: list[str] = []
+
+    class FakeProcess:
+        pid = 1234
+        stdout = iter(["installed\n"])
+
+        def wait(self):
+            return 0
+
+    def fake_popen(command, **_kwargs):
+        calls.append("popen")
+        assert command == ["python", "-m", "pip", "install", "faster-whisper==1.2.1"]
+        return FakeProcess()
+
+    monkeypatch.setattr(optional_deps, "ensure_pip_available", lambda: calls.append("ensure"))
+    monkeypatch.setattr(
+        optional_deps,
+        "pip_install_command",
+        lambda packages, reinstall=False: calls.append("command")
+        or ["python", "-m", "pip", "install", *packages],
+    )
+    monkeypatch.setattr(optional_tts_installer.subprocess, "Popen", fake_popen)
+
+    with log_path.open("w", encoding="utf-8") as log:
+        assert optional_tts_installer._run_install_command(
+            log,
+            "[stt install]",
+            ["faster-whisper==1.2.1"],
+        ) == 0
+
+    assert calls == ["ensure", "command", "popen"]
 
 
 def test_optional_tts_installer_stt_prepare_requires_model_verification(monkeypatch, tmp_path):

@@ -97,6 +97,18 @@ function Ensure-Uv {
     return Find-Uv
 }
 
+function Ensure-Pip {
+    param([string]$Python)
+
+    & $Python -m pip --version *> $null
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+
+    Invoke-Native "pip bootstrap" $Python @("-m", "ensurepip", "--upgrade")
+    Invoke-Native "pip verification" $Python @("-m", "pip", "--version")
+}
+
 function Move-VenvForRebuild {
     if (-not (Test-Path -LiteralPath $VenvDir)) {
         return $false
@@ -185,6 +197,7 @@ try {
         throw "Development setup requires Python $Want, but $Python is $ActualVersion."
     }
 
+    Ensure-Pip $Python
     Invoke-Native "pip upgrade" $Python @("-m", "pip", "install", "--upgrade", "pip")
     Invoke-Native "dependency install" $Python @("scripts\pip_recover_install.py", "-r", $RequirementsFile, "-r", $DevRequirementsFile)
     Invoke-Native "developer environment preflight" $Python @("scripts\check_dev_environment.py")

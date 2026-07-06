@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -79,7 +78,12 @@ def _run_install_command(log, prefix: str, packages: list[str], *, reinstall: bo
     """Run one optional package install command, streaming output to the terminal."""
     from core import optional_deps
 
-    command = optional_deps.pip_install_command(packages, reinstall=reinstall)
+    try:
+        optional_deps.ensure_pip_available()
+        command = optional_deps.pip_install_command(packages, reinstall=reinstall)
+    except Exception as exc:
+        _log(log, prefix, f"Failed to prepare installer: {type(exc).__name__}: {exc}")
+        return 1
     _log(log, prefix, f"Running: {' '.join(command)}")
     try:
         process = subprocess.Popen(
