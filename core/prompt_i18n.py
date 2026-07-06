@@ -37,6 +37,12 @@ DEFAULT_SYSTEM_PROMPT_UTILITY = (
     "</format>"
 )
 
+DEFAULT_LIVE_VOICE_SYSTEM_PROMPT = (
+    "You are Wisp, a friendly, concise desktop voice assistant. Keep spoken "
+    "replies short - one or two sentences unless the user asks for more. Be "
+    "natural and conversational, never read out lists or markup."
+)
+
 SYSTEM_PROMPT_UTILITY_TEMPLATES: dict[str, str] = {
     "English": DEFAULT_SYSTEM_PROMPT_UTILITY,
     "Chinese": (
