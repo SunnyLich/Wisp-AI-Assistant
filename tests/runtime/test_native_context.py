@@ -475,6 +475,46 @@ def test_context_snapshot_reads_background_browser_when_foreground_is_document(m
     assert snapshot["debug"]["browser_window"]["process_name"] == "chrome.exe"
 
 
+def test_linux_context_snapshot_reads_browser_target(monkeypatch):
+    """Verify Linux snapshots capture Browser/Web before the overlay takes focus."""
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(context_fetcher, "_IS_WIN", False)
+    monkeypatch.setattr(context_fetcher, "_IS_MAC", False)
+    monkeypatch.setattr(context_fetcher, "_BROWSER_PROCS", {"firefox"})
+    monkeypatch.setattr(
+        native_host,
+        "_active_app",
+        lambda: {"name": "Example - Firefox", "process_name": "firefox", "pid": 42, "window_id": 777},
+    )
+    monkeypatch.setattr(native_host, "_selected_text_and_stale", lambda **_kwargs: ("", ""))
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": ""})
+
+    calls: list[int] = []
+
+    def fake_browser_window(preferred_hwnd: int = 0):
+        calls.append(preferred_hwnd)
+        return context_fetcher.WindowInfo(
+            title="Example - Firefox",
+            process_name="firefox",
+            pid=42,
+            hwnd=0,
+            url="https://example.test/linux",
+        )
+
+    monkeypatch.setattr(context_fetcher, "get_browser_window_for_context", fake_browser_window)
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False,
+        include_selection=False,
+        include_browser_url=True,
+    )
+
+    assert calls == [777]
+    assert snapshot["browser_url"] == "https://example.test/linux"
+    assert snapshot["browser_hwnd"] == 777
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS native context behavior is tested on macOS")
 def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
     """Verify macOS snapshots collect front document and browser independently."""

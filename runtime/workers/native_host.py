@@ -1082,6 +1082,21 @@ def context_snapshot(
                     "hwnd": getattr(win, "hwnd", 0),
                     "url": getattr(win, "url", ""),
                 }
+            else:
+                # Linux/X11: keep the hotkey-time active browser id before the
+                # overlay takes focus. Page text is still deferred.
+                from core.context_fetcher import _BROWSER_PROCS, get_browser_window_for_context
+
+                active_hwnd = int(active.get("window_id") or 0)
+                win = get_browser_window_for_context(active_hwnd)
+                if getattr(win, "url", ""):
+                    snapshot["browser_url"] = getattr(win, "url", "")
+                active_process = str(active.get("process_name") or "").strip().lower()
+                browser_hwnd = int(getattr(win, "hwnd", 0) or 0)
+                if not browser_hwnd and active_hwnd and active_process in _BROWSER_PROCS:
+                    browser_hwnd = active_hwnd
+                if browser_hwnd:
+                    snapshot["browser_hwnd"] = browser_hwnd
         except Exception as exc:  # noqa: BLE001 - browser context should not block the picker
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s
