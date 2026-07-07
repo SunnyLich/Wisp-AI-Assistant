@@ -3479,6 +3479,8 @@ class SettingsDialog(QDialog):
         selected = selected_device.strip().lower()
         if not installed or selected == "cpu" or bool(torch_status.get("cuda_available")):
             return False
+        if bool(torch_status.get("timed_out")):
+            return False
         if torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
             if selected == "cuda":
                 return True
@@ -3904,6 +3906,14 @@ class SettingsDialog(QDialog):
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
             self._set_test_status(label, "warn", failed_install_message)
+        elif installed and torch_status and torch_status.get("timed_out"):
+            button.setEnabled(True)
+            button.setText(t("Reinstall Kokoro"))
+            self._set_test_status(
+                label,
+                "warn",
+                "Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.",
+            )
         elif installed and torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))

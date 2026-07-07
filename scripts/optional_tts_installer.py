@@ -200,6 +200,43 @@ def _warn_duplicate_dist_infos(log, prefix: str) -> None:
     _log(log, prefix, f"Warning: duplicate optional package metadata found: {detail}")
 
 
+def _iter_install_output(stream) -> Any:
+    """Yield installer output records, treating CR progress updates as records.
+
+    pip/uv can redraw download progress with carriage returns instead of
+    newline-terminated lines. Reading by record keeps normal line output
+    unchanged while letting those redraws reach the visible installer log.
+    """
+    read = getattr(stream, "read", None)
+    if not callable(read):
+        for raw_line in stream:
+            line = str(raw_line).strip()
+            if line:
+                yield line
+        return
+
+    pending: list[str] = []
+    while True:
+        chunk = read(1)
+        if chunk in ("", b""):
+            break
+        if isinstance(chunk, bytes):
+            text = chunk.decode("utf-8", errors="replace")
+        else:
+            text = str(chunk)
+        for char in text:
+            if char in "\r\n":
+                line = "".join(pending).strip()
+                pending.clear()
+                if line:
+                    yield line
+            else:
+                pending.append(char)
+    line = "".join(pending).strip()
+    if line:
+        yield line
+
+
 def _run_install_command(
     log,
     prefix: str,
@@ -238,10 +275,8 @@ def _run_install_command(
         return 1
     _log(log, prefix, f"installer started with pid {process.pid}")
     assert process.stdout is not None
-    for raw_line in process.stdout:
-        line = raw_line.strip()
-        if line:
-            _log(log, prefix, line)
+    for line in _iter_install_output(process.stdout):
+        _log(log, prefix, line)
     returncode = process.wait()
     if returncode != 0:
         _log(log, prefix, f"Failed with exit code {returncode}.")
@@ -499,7 +534,6 @@ def _run_staged_apply(plan_path: Path) -> int:
     consumed = False
     try:
         with log_path.open("a", encoding="utf-8") as log:
-            _launch_apply_status_window(display_name, status_path, log_path, app_language=_plan_app_language(plan))
             _write_status(
                 status_path,
                 ok=None,
@@ -535,6 +569,7 @@ def _run_staged_apply(plan_path: Path) -> int:
             plan["apply_attempts"] = attempts
             _write_plan(plan_path, plan)
             _write_status(status_path, ok=None, message=f"{display_name} staged install is applying package files.")
+            _launch_apply_status_window(display_name, status_path, log_path, app_language=_plan_app_language(plan))
             _apply_staging(staging_path, _path_from_plan(plan, "target_path"), log, prefix)
             consumed = True
             _write_status(status_path, ok=None, message=f"{display_name} staged install is verifying package files.")

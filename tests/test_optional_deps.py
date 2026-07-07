@@ -622,6 +622,35 @@ def test_optional_tts_installer_ensures_pip_before_running_install(monkeypatch, 
     assert calls == ["ensure", "command", "popen"]
 
 
+def test_optional_tts_installer_streams_carriage_return_progress(monkeypatch, tmp_path):
+    """Installer output with CR progress redraws should still reach the log."""
+    import io
+
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    log_path = tmp_path / "install.log"
+
+    class FakeProcess:
+        pid = 1234
+        stdout = io.StringIO("Downloading torch (0%)\rDownloading torch (50%)\rDone\n")
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(optional_deps, "ensure_pip_available", lambda: None)
+    monkeypatch.setattr(optional_deps, "pip_install_command", lambda *_args, **_kwargs: ["uv", "pip", "install"])
+    monkeypatch.setattr(optional_tts_installer.subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+
+    with log_path.open("w", encoding="utf-8") as log:
+        assert optional_tts_installer._run_install_command(log, "[kokoro install]", ["torch==2.11.0+cu128"]) == 0
+
+    text = log_path.read_text(encoding="utf-8")
+    assert "[kokoro install] Downloading torch (0%)" in text
+    assert "[kokoro install] Downloading torch (50%)" in text
+    assert "[kokoro install] Done" in text
+
+
 def test_optional_tts_installer_log_survives_legacy_console_encoding(monkeypatch, tmp_path):
     """Localized installer output must not crash on Windows cp1252 consoles."""
     import io
@@ -983,6 +1012,48 @@ def test_optional_install_apply_reopens_wisp_after_post_install_failure(monkeypa
     assert status["message"] == "STT verification failed."
 
 
+def test_optional_install_apply_status_window_starts_after_wisp_exits(monkeypatch, tmp_path):
+    """The visible apply helper should appear only after Wisp has closed."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    status_path = tmp_path / "status.json"
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "log_path": str(tmp_path / "install.log"),
+                "status_path": str(status_path),
+                "staging_path": str(staging),
+                "target_path": str(tmp_path / "python_packages"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    events: list[str] = []
+
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: events.append("wait"))
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_launch_apply_status_window",
+        lambda *_args, **_kwargs: events.append("window"),
+    )
+    monkeypatch.setattr(optional_tts_installer, "_apply_staging", lambda *_args: events.append("apply"))
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_post_install_result",
+        lambda *_args: events.append("verify") or (True, "Kokoro installed successfully."),
+    )
+    monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: events.append("restart"))
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 0
+
+    assert events == ["wait", "window", "apply", "verify", "restart"]
+
+
 def test_optional_install_staged_apply_keeps_staging_when_wisp_stays_open(monkeypatch, tmp_path):
     """A missed restart window must not delete the staged download."""
     from core import updater
@@ -1010,10 +1081,13 @@ def test_optional_install_staged_apply_keeps_staging_when_wisp_stays_open(monkey
     def raise_timeout(*_args, **_kwargs):
         raise updater.UpdateError("Timed out waiting for Wisp to exit.")
 
+    launched: list[str] = []
     monkeypatch.setattr(updater, "wait_for_wisp_exit", raise_timeout)
+    monkeypatch.setattr(optional_tts_installer, "_launch_apply_status_window", lambda *_args, **_kwargs: launched.append("window"))
 
     assert optional_tts_installer._run_staged_apply(plan_path) == 0
 
+    assert launched == []
     assert (staging / "marker.txt").exists()
     assert plan_path.exists()
     status = json.loads(status_path.read_text(encoding="utf-8"))
@@ -1505,6 +1579,22 @@ def test_kokoro_torch_status_subprocess_parses_status(monkeypatch):
     assert status["version"] == "2.11.0+cu128"
     assert captured["command"][:4] == [sys.executable, "-m", "runtime.workers.optional_deps_probe", "torch-status"]
     assert captured["capture_output"] is True
+
+
+def test_kokoro_torch_status_subprocess_marks_timeout(monkeypatch):
+    """A slow packaged Torch probe is inconclusive, not package metadata damage."""
+    from core import optional_deps
+
+    def fake_run(*_args, **kwargs):
+        raise optional_deps.subprocess.TimeoutExpired(["probe"], kwargs.get("timeout"))
+
+    monkeypatch.setattr(optional_deps.subprocess, "run", fake_run)
+
+    status = optional_deps.kokoro_torch_status_subprocess()
+
+    assert status["timed_out"] is True
+    assert status["valid"] is False
+    assert "timed out" in status["error"]
 
 
 def test_kokoro_runtime_status_subprocess_parses_status(monkeypatch):

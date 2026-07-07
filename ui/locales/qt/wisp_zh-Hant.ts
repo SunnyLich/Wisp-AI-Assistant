@@ -3363,6 +3363,10 @@ Continue?</source>
       <translation>Kokoro 安裝不完整。請重新安裝 Kokoro。</translation>
     </message>
     <message>
+      <source>Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.</source>
+      <translation>Kokoro 已安裝，但 Torch/GPU 驗證仍在啟動。點擊測試 TTS 以驗證本地語音。</translation>
+    </message>
+    <message>
       <source>Kokoro is installed with CPU support.</source>
       <translation>Kokoro 已安裝 CPU 支援。</translation>
     </message>

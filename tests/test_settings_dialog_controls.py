@@ -1625,6 +1625,20 @@ def test_kokoro_broken_torch_status_requests_repair():
     assert needs_gpu is True
 
 
+def test_kokoro_torch_timeout_does_not_request_repair():
+    """A slow Torch probe should not be flattened into a broken install."""
+    from ui.settings_panel.dialog import SettingsDialog
+
+    needs_gpu = SettingsDialog._kokoro_needs_gpu_install_from_status(
+        installed=True,
+        selected_device="cuda",
+        torch_status={"installed": True, "valid": False, "timed_out": True, "error": "torch-status subprocess timed out."},
+        system_cuda_available=True,
+    )
+
+    assert needs_gpu is False
+
+
 def test_kokoro_background_cuda_status_uses_subprocess(monkeypatch):
     """CUDA status refresh should avoid importing Torch in the Settings process."""
     from core import optional_deps
@@ -1678,6 +1692,43 @@ def test_kokoro_refresh_status_does_not_run_full_torch_check(monkeypatch):
 
         assert dialog._kokoro_install_btn.isEnabled()
         assert dialog._kokoro_install_btn.text() == "Install Kokoro GPU support"
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_status_warns_when_torch_probe_times_out():
+    """Settings should show timeout as inconclusive instead of incomplete."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    combo = QComboBox()
+    combo.addItem("GPU (CUDA)", "cuda")
+    dialog._fields["KOKORO_DEVICE"] = combo
+
+    try:
+        SettingsDialog._apply_kokoro_install_status(
+            dialog,
+            installed=True,
+            mode="gpu",
+            torch_status={"installed": True, "valid": False, "timed_out": True, "error": "torch-status subprocess timed out after 30s."},
+            needs_gpu=False,
+        )
+
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Reinstall Kokoro"
+        assert "verification is still starting" in dialog._kokoro_install_status_lbl.text()
+        assert "incomplete" not in dialog._kokoro_install_status_lbl.text().lower()
     finally:
         dialog._kokoro_install_btn.deleteLater()
         dialog._kokoro_install_status_lbl.deleteLater()

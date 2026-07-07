@@ -264,6 +264,7 @@ def test_setup_health_voice_sources_have_catalog_translations() -> None:
         "Reinstall ElevenLabs",
         "Kokoro GPU support is not installed.",
         "Kokoro install is incomplete. Reinstall Kokoro.",
+        "Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.",
         "Kokoro is installed with CPU support.",
         "Kokoro is installed with GPU support ({device}).",
         "Kokoro is not installed. The selected device will install GPU support and may download several GB.",

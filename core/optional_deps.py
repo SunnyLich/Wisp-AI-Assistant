@@ -762,6 +762,11 @@ def _optional_probe_status(
         status = dict(default)
         status["error"] = f"{probe} subprocess returned invalid JSON."
         return status
+    except subprocess.TimeoutExpired:
+        status = dict(default)
+        status["timed_out"] = True
+        status["error"] = f"{probe} subprocess timed out after {timeout:g}s." if timeout else f"{probe} subprocess timed out."
+        return status
     except Exception as exc:
         status = dict(default)
         status["error"] = f"{type(exc).__name__}: {exc}"

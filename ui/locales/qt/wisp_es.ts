@@ -3399,6 +3399,10 @@ Continuar?</translation>
       <translation>La instalación de Kokoro está incompleta. Reinstala Kokoro.</translation>
     </message>
     <message>
+      <source>Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.</source>
+      <translation>Kokoro está instalado, pero la verificación de Torch/GPU todavía se está iniciando. Haz clic en Probar TTS para verificar la voz local.</translation>
+    </message>
+    <message>
       <source>Kokoro is installed with CPU support.</source>
       <translation>Kokoro está instalado con soporte de CPU.</translation>
     </message>
