@@ -397,14 +397,14 @@ def _run_staged_restart_install(
             "status_path": str(status_path) if status_path else "",
         }
         apply_plan_path.write_text(json.dumps(apply_plan, indent=2, sort_keys=True), encoding="utf-8")
-        _log(log, prefix, "Staged packages downloaded. Wisp will close so locked package files can be replaced.")
+        _log(log, prefix, "Staged packages downloaded. Restart Wisp to replace locked package files.")
         _launch_staged_apply(apply_plan_path)
         _write_status(
             status_path,
             ok=None,
             message=(
-                f"{display_name} packages are staged. Wisp will close, replace locked files, "
-                "verify the install, and reopen."
+                f"{display_name} packages are staged. Click Restart app now to close Wisp, "
+                "replace locked files, verify the install, and reopen."
             ),
             extra={"restart_apply": True},
         )

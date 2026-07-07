@@ -624,6 +624,16 @@ def stt_model_status_subprocess(model: str, device: str, compute_type: str) -> d
     )
 
 
+def _torch_version_from_package_files() -> str:
+    """Return torch's version from version.py when dist-info metadata is missing."""
+    try:
+        text = (OPTIONAL_PACKAGES_DIR / "torch" / "version.py").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r"^__version__\s*=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
 def kokoro_torch_status_fast() -> dict[str, object]:
     """Return cheap Torch package metadata for Settings without importing Torch."""
     add_optional_packages_to_path(prepend=True)
@@ -653,7 +663,10 @@ def kokoro_torch_status_fast() -> dict[str, object]:
 
             status["version"] = metadata.version("torch")
         except Exception:
-            status["version"] = ""
+            # A failed pip --target upgrade can strip torch's dist-info while
+            # leaving a working torch package behind; read the version from
+            # the package files so Settings does not report a broken install.
+            status["version"] = _torch_version_from_package_files()
         status["valid"] = bool(status["version"])
         version = str(status.get("version") or "").lower()
         status["cuda_version"] = "unknown" if any(marker in version for marker in ("+cu", "cuda", "cu12", "cu11")) else ""

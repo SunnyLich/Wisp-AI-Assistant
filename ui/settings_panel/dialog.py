@@ -4028,10 +4028,10 @@ class SettingsDialog(QDialog):
             status_attr="_live_voice_install_status_lbl",
             success_message="Live voice installed. Press the toggle hotkey to start a conversation.",
             thread_name="live-voice-install",
-            # Nothing has imported google-genai yet in a running Wisp, so the
-            # staged restart-apply dance Windows needs for kokoro/whisper
-            # upgrades is unnecessary here — install straight into place.
-            external_plan_extra={"restart_apply": False},
+            # google-genai itself is never imported by a running Wisp, but its
+            # dependencies (charset_normalizer, pydantic, ...) overlap with
+            # already-loaded optional packages, so Windows still needs the
+            # staged restart-apply path to replace locked .pyd files.
             reinstall=installed,
         )
 
@@ -4187,12 +4187,14 @@ class SettingsDialog(QDialog):
                 message = ""
             if install_status.get("restart_apply"):
                 if isinstance(button, QPushButton):
-                    button.setEnabled(False)
-                    button.setText(t("Applying..."))
-                self._set_test_pending(status, message or f"{display_name} staged install is applying after Wisp closes.")
-                app = QApplication.instance()
-                if app is not None:
-                    QTimer.singleShot(1500, app.quit)
+                    button.setEnabled(True)
+                    button.setText(t("Restart app now"))
+                    try:
+                        button.clicked.disconnect()
+                    except (RuntimeError, TypeError):
+                        pass
+                    button.clicked.connect(lambda _checked=False: QApplication.instance().quit() if QApplication.instance() else None)
+                self._set_test_pending(status, f"{display_name} packages are staged. Click Restart app now to close Wisp and apply them.")
                 return
             if not message:
                 message = (

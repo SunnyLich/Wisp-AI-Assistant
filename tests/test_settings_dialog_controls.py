@@ -546,8 +546,8 @@ def test_optional_installer_finish_refreshes_stt_detection(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_optional_installer_finish_closes_for_restart_apply(monkeypatch):
-    """A staged Windows install should close Wisp and leave final detection to the reopened app."""
+def test_optional_installer_finish_prompts_restart_for_restart_apply(monkeypatch):
+    """A staged Windows install should wait for an explicit restart click."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
@@ -585,10 +585,10 @@ def test_optional_installer_finish_closes_for_restart_apply(monkeypatch):
         )
 
         assert refreshes == []
-        assert dialog._stt_download_btn.isEnabled() is False
-        assert dialog._stt_download_btn.text() == "Applying..."
-        assert "Wisp will close" in dialog._stt_active_lbl.text()
-        assert single_shots and single_shots[0][0] == 1500
+        assert dialog._stt_download_btn.isEnabled() is True
+        assert dialog._stt_download_btn.text() == "Restart app now"
+        assert "Click Restart app now" in dialog._stt_active_lbl.text()
+        assert single_shots == []
     finally:
         dialog._stt_download_btn.deleteLater()
         dialog._stt_active_lbl.deleteLater()

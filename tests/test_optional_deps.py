@@ -859,6 +859,35 @@ def test_kokoro_torch_status_fast_does_not_import_torch(monkeypatch):
     assert status["version"] == "2.12.1+cu128"
 
 
+def test_kokoro_torch_status_fast_survives_missing_dist_info(monkeypatch, tmp_path):
+    """A torch install whose dist-info was lost to a failed pip upgrade is still valid."""
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    torch_dir = tmp_path / "python_packages" / "torch"
+    torch_dir.mkdir(parents=True)
+    (torch_dir / "version.py").write_text("__version__ = '2.12.1+cpu'\n", encoding="utf-8")
+
+    def missing_metadata(name):
+        raise ModuleNotFoundError(f"No package metadata was found for {name}")
+
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.setattr(
+        optional_deps.importlib.machinery.PathFinder,
+        "find_spec",
+        lambda name, _path=None: SimpleNamespace(origin=str(torch_dir / "__init__.py")) if name == "torch" else None,
+    )
+    monkeypatch.setattr("importlib.metadata.version", missing_metadata)
+
+    status = optional_deps.kokoro_torch_status_fast()
+
+    assert status["installed"] is True
+    assert status["valid"] is True
+    assert status["version"] == "2.12.1+cpu"
+    assert status["error"] == ""
+
+
 def test_kokoro_torch_status_fast_flags_namespace_torch(monkeypatch):
     """A namespace-only torch folder is not a usable PyTorch install."""
     from types import SimpleNamespace
