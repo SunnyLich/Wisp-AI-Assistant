@@ -756,6 +756,8 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
     assert torch_packages == [
         "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
+        "--extra-index-url",
+        optional_deps.PYPI_WHEEL_INDEX,
         "torch==2.11.0+cu128",
         *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
     ]

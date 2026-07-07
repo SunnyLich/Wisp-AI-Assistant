@@ -115,6 +115,8 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
     assert optional_deps.kokoro_torch_install_packages("cuda") == [
         "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
+        "--extra-index-url",
+        optional_deps.PYPI_WHEEL_INDEX,
         "torch==2.11.0+cu128",
         "protobuf==6.33.2",
         "tokenizers==0.22.2",

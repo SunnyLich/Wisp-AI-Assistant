@@ -29,6 +29,7 @@ KOKORO_EN_MODEL_URL = (
     "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 )
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
+PYPI_WHEEL_INDEX = "https://pypi.org/simple"
 OPTIONAL_AI_COMPAT_PACKAGES = [
     "protobuf==6.33.2",
     "tokenizers==0.22.2",
@@ -52,9 +53,13 @@ KOKORO_BASE_INSTALL_PACKAGES = [
     KOKORO_EN_MODEL_URL,
 ]
 KOKORO_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
+# The compat pins only exist on PyPI; the cu128 index hosts torch wheels
+# alone, so it needs PyPI as a fallback index or pip finds zero versions.
 KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
     "--index-url",
     PYTORCH_CUDA_WHEEL_INDEX,
+    "--extra-index-url",
+    PYPI_WHEEL_INDEX,
     "torch==2.11.0+cu128",
     *OPTIONAL_AI_COMPAT_PACKAGES,
 ]
