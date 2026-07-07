@@ -101,6 +101,17 @@ _AUDIO_CONFIG_KEYS = {
 }
 
 
+def _is_transient_local_tts_warmup_error(text: str) -> bool:
+    """Return True when local TTS is merely busy importing/warming."""
+    lowered = " ".join(str(text or "").lower().split())
+    if not lowered or "local speech is ready" not in lowered:
+        return False
+    if "still warming" not in lowered and "warming up" not in lowered:
+        return False
+    speech_terms = ("kokoro", "local tts", "local voice", "tts")
+    return any(term in lowered for term in speech_terms)
+
+
 _file_context_text = flow_context.file_context_text
 _normalized_tool_context = flow_context.normalized_tool_context
 _all_context_off_policy = flow_context.all_context_off_policy
@@ -674,6 +685,9 @@ class FlowController:
             )
             return
         if status.startswith("error:"):
+            if item == "tts" and _is_transient_local_tts_warmup_error(status):
+                log.info("suppressed transient local TTS warmup progress error: %s", status)
+                return
             self._safe_call(
                 self.ui,
                 "ui.reply.notice",
@@ -693,6 +707,7 @@ class FlowController:
             f"{name}: {status}"
             for name, status in result.items()
             if str(status).startswith("error:")
+            and not (name == "tts" and _is_transient_local_tts_warmup_error(str(status)))
         ]
         if failures:
             self._safe_call(

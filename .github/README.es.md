@@ -26,6 +26,10 @@ Wisp te da IA controlada por atajos de teclado que puede leer tu selección, por
 
 ---
 
+## Problemas conocidos
+
+[Problemas conocidos](https://sunnylich.github.io/Wisp-AI-Assistant/#known-issues)
+
 ## Qué hace Wisp
 
 Wisp es para los momentos en que abrir una aplicación de chat interrumpiría tu flujo de trabajo.

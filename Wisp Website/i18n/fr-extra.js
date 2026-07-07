@@ -757,6 +757,23 @@ Object.assign(I18N.reg['fr'].tr, {
   'Use context chips, keep only needed sources enabled, prefer smaller models for simple tasks, and use context budgets for large documents or browser pages.':
     "Utilisez les pastilles de contexte, ne gardez que les sources nécessaires, préférez des modèles plus petits pour les tâches simples et utilisez les budgets de contexte pour les gros documents ou pages web.",
   /* Common issues */
+  'Known issues': 'Problèmes connus',
+  'Kokoro TTS falls back to CPU on older NVIDIA GPUs': 'Kokoro TTS repasse sur CPU avec les anciens GPU NVIDIA',
+  'Wisp falls back to CPU automatically when CUDA is not compatible.':
+    'Wisp repasse automatiquement sur CPU lorsque CUDA n’est pas compatible.',
+  'Details': 'Détails',
+  'What users see': 'Ce que voient les utilisateurs',
+  'The log says Kokoro model failed on cuda: cuDNN version 91900 is not compatible with devices with SM < 7.5, then Wisp falls back to CPU.':
+    'Le journal indique que le modèle Kokoro a échoué sur <code>cuda</code> : la version cuDNN 91900 n’est pas compatible avec les appareils dont le SM est inférieur à 7.5, puis Wisp repasse sur CPU.',
+  'Affected systems': 'Systèmes concernés',
+  'NVIDIA GPUs with compute capability below 7.5 when paired with a PyTorch/cuDNN build that requires newer CUDA hardware.':
+    'GPU NVIDIA avec une capacité de calcul inférieure à 7.5 lorsqu’ils sont associés à un build PyTorch/cuDNN qui exige du matériel CUDA plus récent.',
+  'Impact': 'Impact',
+  'Local Kokoro TTS still works, but speech synthesis uses CPU and may be slower.':
+    'Le TTS local Kokoro fonctionne toujours, mais la synthèse vocale utilise le CPU et peut être plus lente.',
+  'Fix status': 'État du correctif',
+  'Wisp already falls back safely. We may add a preflight CUDA capability check so unsupported GPUs skip the failed CUDA attempt.':
+    'Wisp effectue déjà un repli sûr. Nous pourrons ajouter une vérification préalable de la capacité CUDA afin que les GPU non pris en charge évitent la tentative CUDA vouée à l’échec.',
   'Start here': 'Commencez ici',
   'Most problems are either missing configuration, blocked OS permissions, a provider key/model mismatch, or a hotkey conflict. These checks catch the common cases quickly.':
     "La plupart des problèmes viennent d'une configuration manquante, d'autorisations système bloquées, d'une incohérence clé/modèle fournisseur ou d'un conflit de raccourcis. Ces vérifications couvrent vite les cas courants.",

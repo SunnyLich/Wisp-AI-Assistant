@@ -748,6 +748,23 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
   'Use context chips, keep only needed sources enabled, prefer smaller models for simple tasks, and use context budgets for large documents or browser pages.':
     '使用情境標籤，只啟用需要的來源，簡單任務優先使用較小模型，並為大型文件或瀏覽器頁面使用情境預算。',
   /* Common issues */
+  'Known issues': '已知問題',
+  'Kokoro TTS falls back to CPU on older NVIDIA GPUs': 'Kokoro TTS 在較舊的 NVIDIA GPU 上回退到 CPU',
+  'Wisp falls back to CPU automatically when CUDA is not compatible.':
+    '當 CUDA 不相容時，Wisp 會自動回退到 CPU。',
+  'Details': '詳細資訊',
+  'What users see': '使用者會看到什麼',
+  'The log says Kokoro model failed on cuda: cuDNN version 91900 is not compatible with devices with SM < 7.5, then Wisp falls back to CPU.':
+    '日誌會顯示 Kokoro 模型在 <code>cuda</code> 上失敗：cuDNN 版本 91900 與 SM 低於 7.5 的裝置不相容，隨後 Wisp 會回退到 CPU。',
+  'Affected systems': '受影響系統',
+  'NVIDIA GPUs with compute capability below 7.5 when paired with a PyTorch/cuDNN build that requires newer CUDA hardware.':
+    '計算能力低於 7.5 的 NVIDIA GPU，並且搭配了需要更新 CUDA 硬體的 PyTorch/cuDNN 建置。',
+  'Impact': '影響',
+  'Local Kokoro TTS still works, but speech synthesis uses CPU and may be slower.':
+    '本機 Kokoro TTS 仍可運作，但語音合成會使用 CPU，速度可能較慢。',
+  'Fix status': '修復狀態',
+  'Wisp already falls back safely. We may add a preflight CUDA capability check so unsupported GPUs skip the failed CUDA attempt.':
+    'Wisp 已經會安全回退。之後可能會加入 CUDA 能力預先檢查，讓不支援的 GPU 跳過注定失敗的 CUDA 嘗試。',
   'Start here': '從這裡開始',
   'Most problems are either missing configuration, blocked OS permissions, a provider key/model mismatch, or a hotkey conflict. These checks catch the common cases quickly.':
     '大多數問題來自缺少設定、系統權限被阻止、供應商金鑰/模型不匹配，或快速鍵衝突。這些檢查可以快速涵蓋常見情況。',

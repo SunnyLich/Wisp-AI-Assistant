@@ -222,6 +222,37 @@ def test_speech_warmup_failure_notice_still_shows_during_reply() -> None:
     assert bubble.notices == [("Local speech warmup failed: tts: missing model", 6000)]
 
 
+def test_transient_local_tts_warmup_notices_do_not_show_in_bubble() -> None:
+    """Kokoro lock/import contention is transient and should stay out of the bubble."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+
+    def fail_bubble():
+        raise AssertionError("transient warmup notices should not create or use a bubble")
+
+    host._ensure_bubble = fail_bubble  # type: ignore[attr-defined]
+
+    messages = [
+        "Local voice is still warming up. Try again when Wisp says local speech is ready.",
+        (
+            "Local speech warmup failed: tts: error: RuntimeError: Kokoro is still warming up. "
+            "Current stage: importing kokoro.KPipeline (17s). Try again when local speech is ready."
+        ),
+        (
+            "[tts] Kokoro warmup failed: error: RuntimeError: Kokoro is still warming up. "
+            "Current stage: importing kokoro.KPipeline (17s). Try again when local speech is ready."
+        ),
+    ]
+
+    for message in messages:
+        assert host._reply_notice(message, timeout_ms=6000) == {
+            "shown": False,
+            "text": message,
+            "reason": "transient_local_tts_warmup",
+        }
+
+
 def test_memory_proxy_accepts_project_scope() -> None:
     """Verify UI memory proxy forwards project-scoped add/update payloads."""
     from runtime.workers.ui_host import MemoryProxy

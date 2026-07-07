@@ -26,6 +26,10 @@ Wisp 为您提供快捷键驱动的 AI，能够读取您的选中内容、剪贴
 
 ---
 
+## 已知问题
+
+[已知问题](https://sunnylich.github.io/Wisp-AI-Assistant/#known-issues)
+
 ## Wisp 的功能
 
 Wisp 专为那些打开聊天应用会打断工作流的时刻而设计。

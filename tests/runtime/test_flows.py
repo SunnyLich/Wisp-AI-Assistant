@@ -385,6 +385,28 @@ def test_audio_warmup_failure_surfaces_user_notice():
     assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Local speech warmup failed:")
 
 
+def test_transient_kokoro_warmup_failure_does_not_surface_user_notice():
+    """Kokoro import contention is not a broken install and should not show a bubble."""
+    _flow, _native, ui, _brain, audio = make_flow()
+    status = (
+        "error: RuntimeError: Kokoro is still warming up. "
+        "Current stage: importing kokoro.KPipeline (17s). Try again when local speech is ready."
+    )
+
+    audio.emit("audio.warmup.progress", {"item": "tts", "status": status, "items": ["tts"]})
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["tts"],
+            "provider": "kokoro",
+            "ok": False,
+            "result": {"tts": status},
+        },
+    )
+
+    assert not ui.calls_for("ui.reply.notice")
+
+
 def test_caller_hotkey_captures_selection_before_intent_steals_focus():
     """Verify selected text is captured before the Wisp picker becomes focused."""
     rows = [

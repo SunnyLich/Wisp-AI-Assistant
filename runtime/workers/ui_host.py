@@ -220,6 +220,17 @@ def _is_speech_status_notice(text: str) -> bool:
     )
 
 
+def _is_transient_local_tts_warmup_notice(text: str) -> bool:
+    """Return True when Kokoro/TTS is busy importing, not actually broken."""
+    lowered = " ".join(str(text or "").lower().split())
+    if not lowered or "local speech is ready" not in lowered:
+        return False
+    if "still warming" not in lowered and "warming up" not in lowered:
+        return False
+    speech_terms = ("kokoro", "local tts", "local voice", "tts")
+    return any(term in lowered for term in speech_terms)
+
+
 def _bubble_has_active_prompt_reply(bubble: Any) -> bool:
     """Whether replacing the bubble would interrupt an active prompt reply."""
     if bubble is None:
@@ -2698,6 +2709,9 @@ class QtProtocolHost:
         collapsed = " | ".join(part for part in str(text or "").splitlines() if part)
         log.info("bubble notice: %s", collapsed or "(empty)")
         translated = _translate_notice_text(text)
+        if _is_transient_local_tts_warmup_notice(text):
+            log.info("suppressed transient local TTS warmup notice: %s", collapsed or "(empty)")
+            return {"shown": False, "text": translated, "reason": "transient_local_tts_warmup"}
         bubble = self._ensure_bubble()
         notice_key = str(key or "").strip()
         if notice_key and getattr(self, "_active_notice_key", "") == notice_key and not bubble.isVisible():

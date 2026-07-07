@@ -26,6 +26,10 @@ Wisp gives you hotkey-driven AI that can read your selection, clipboard, app, br
 
 ---
 
+## Known Issues
+
+[Known issues](https://sunnylich.github.io/Wisp-AI-Assistant/#known-issues)
+
 ## What Wisp Does
 
 Wisp is for the moments when opening a chat app would break your flow.
