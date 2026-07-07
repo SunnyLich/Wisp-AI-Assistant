@@ -563,10 +563,13 @@ def audio_live_start() -> dict[str, Any]:
     global _live_session
     from core import live_voice
     from core.macos_helper import handlers as stt_handlers
+    import config
 
+    provider = str(getattr(config, "LIVE_VOICE_PROVIDER", "google") or "google").strip().lower()
+    if provider != "google":
+        return {"started": False, "error": "unsupported_provider", "provider": provider}
     if not live_voice.genai_available():
         return {"started": False, "error": "missing_package"}
-    import config
 
     api_key = str(getattr(config, "GOOGLE_API_KEY", "") or "").strip()
     if not api_key:

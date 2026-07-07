@@ -904,6 +904,11 @@ def _process_exists(pid: int) -> bool:
         return False
 
 
+def process_exists(pid: int) -> bool:
+    """Return whether a process with this pid is still alive."""
+    return _process_exists(int(pid or 0))
+
+
 def _single_instance_lock_released(path: Path = SINGLE_INSTANCE_LOCK) -> bool:
     if sys.platform == "win32":
         import msvcrt

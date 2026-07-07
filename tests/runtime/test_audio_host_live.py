@@ -56,6 +56,7 @@ def startable(monkeypatch):
     monkeypatch.setattr(live_voice, "LiveVoiceSession", FakeLiveSession)
     monkeypatch.setattr(stt_handlers, "stt_is_recording", lambda: False)
     monkeypatch.setattr(config, "GOOGLE_API_KEY", "test-key", raising=False)
+    monkeypatch.setattr(config, "LIVE_VOICE_PROVIDER", "google", raising=False)
     monkeypatch.setattr(config, "LIVE_VOICE_MODEL", "gemini-test-live", raising=False)
     monkeypatch.setattr(config, "LIVE_VOICE_VOICE_NAME", "Puck", raising=False)
     monkeypatch.setattr(config, "LIVE_VOICE_HALF_DUPLEX", True, raising=False)
@@ -65,6 +66,9 @@ def startable(monkeypatch):
 
 
 def test_start_requires_google_genai(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config, "LIVE_VOICE_PROVIDER", "google", raising=False)
     monkeypatch.setattr(live_voice, "genai_available", lambda: False)
 
     assert audio_host.audio_live_start() == {"started": False, "error": "missing_package"}
@@ -74,6 +78,7 @@ def test_start_requires_api_key(monkeypatch):
     import config
 
     monkeypatch.setattr(live_voice, "genai_available", lambda: True)
+    monkeypatch.setattr(config, "LIVE_VOICE_PROVIDER", "google", raising=False)
     monkeypatch.setattr(config, "GOOGLE_API_KEY", "", raising=False)
 
     assert audio_host.audio_live_start() == {"started": False, "error": "missing_key"}
@@ -84,10 +89,24 @@ def test_start_refuses_while_hold_to_talk_recording(monkeypatch):
     from core.macos_helper import handlers as stt_handlers
 
     monkeypatch.setattr(live_voice, "genai_available", lambda: True)
+    monkeypatch.setattr(config, "LIVE_VOICE_PROVIDER", "google", raising=False)
     monkeypatch.setattr(config, "GOOGLE_API_KEY", "test-key", raising=False)
     monkeypatch.setattr(stt_handlers, "stt_is_recording", lambda: True)
 
     assert audio_host.audio_live_start() == {"started": False, "error": "mic_busy"}
+
+
+def test_start_rejects_unsupported_provider(monkeypatch):
+    import config
+
+    monkeypatch.setattr(live_voice, "genai_available", lambda: True)
+    monkeypatch.setattr(config, "LIVE_VOICE_PROVIDER", "openai", raising=False)
+
+    assert audio_host.audio_live_start() == {
+        "started": False,
+        "error": "unsupported_provider",
+        "provider": "openai",
+    }
 
 
 def test_start_builds_session_from_config(startable):

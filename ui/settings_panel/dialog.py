@@ -207,9 +207,16 @@ _DICTATE_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 _LIVE_VOICE_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("Fast - lowest latency", "gemini-3.1-flash-live-preview"),
-    ("Expressive - nicer voice, slower", "gemini-2.5-flash-native-audio-preview-12-2025"),
+    ("gemini-3.1-flash-live-preview", "gemini-3.1-flash-live-preview"),
+    ("gemini-2.5-flash-native-audio-preview-12-2025", "gemini-2.5-flash-native-audio-preview-12-2025"),
 )
+
+_LIVE_VOICE_PROVIDER_OPTIONS: tuple[str, ...] = ("google",)
+
+_LIVE_VOICE_PROVIDER_MODELS: dict[str, list[str]] = {
+    provider: [value for _label, value in _LIVE_VOICE_MODEL_OPTIONS]
+    for provider in _LIVE_VOICE_PROVIDER_OPTIONS
+}
 
 _LIVE_VOICE_VOICE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Model default", ""),
@@ -1223,6 +1230,8 @@ class SettingsDialog(QDialog):
                 snapshot[key] = _get(widget).strip()
             elif isinstance(widget, QCheckBox):
                 snapshot[key] = str(widget.isChecked())
+            elif key == "LIVE_VOICE_MODEL":
+                snapshot[key] = self._live_voice_model_value()
             elif isinstance(widget, (QLineEdit, QComboBox, QTextEdit)):
                 snapshot[key] = _get(widget)
 
@@ -2009,7 +2018,7 @@ class SettingsDialog(QDialog):
     def _get_api_key_display_options(self) -> "list[tuple[str, str]]":
         """Return api key display options."""
         options: list[tuple[str, str]] = []
-        for row in self._api_key_rows:
+        for row in getattr(self, "_api_key_rows", []):
             provider = _get(row["provider"])
             alias = row["alias"].text().strip()
             label = t(_PROVIDER_LABELS.get(provider, provider))
@@ -2097,6 +2106,11 @@ class SettingsDialog(QDialog):
         for section_rows in self._model_section_rows.values():
             for row in section_rows:
                 combo = row["api_key_combo"]
+                self._fill_credential_combo(combo, combo.currentData())
+        live_row = getattr(self, "_live_voice_model_row", None)
+        if isinstance(live_row, dict):
+            combo = live_row.get("api_key_combo")
+            if isinstance(combo, QComboBox):
                 self._fill_credential_combo(combo, combo.currentData())
 
     # ---- Model section row helpers ----
@@ -3113,15 +3127,59 @@ class SettingsDialog(QDialog):
         self._live_voice_install_status_lbl = QLabel()
         self._live_voice_install_status_lbl.setWordWrap(True)
 
+        live_provider = _NoScrollCombo()
+        self._fill_credential_combo(live_provider, "google")
+        live_provider.setMinimumWidth(140)
+        live_provider_tip = (
+            "Provider/API key used for the live conversation. Gemini Live "
+            "currently uses the Google API key from the LLM tab."
+        )
+        self._fields["LIVE_VOICE_PROVIDER"] = live_provider
+
+        live_model_container = QWidget()
+        live_model_layout = QHBoxLayout(live_model_container)
+        live_model_layout.setContentsMargins(0, 0, 0, 0)
+        live_model_layout.setSpacing(6)
+        live_model_stack = QWidget()
+        live_model_stack_layout = QVBoxLayout(live_model_stack)
+        live_model_stack_layout.setContentsMargins(0, 0, 0, 0)
+        live_model_stack_layout.setSpacing(2)
         live_model = _NoScrollCombo()
-        live_model.setProperty("allow_custom_saved_value", True)
-        for label, value in _LIVE_VOICE_MODEL_OPTIONS:
-            live_model.addItem(label, value)
+        live_model_edit = QLineEdit()
+        live_model_edit.hide()
+        live_model_stack_layout.addWidget(live_model)
+        live_model_stack_layout.addWidget(live_model_edit)
+        live_model_refresh = QPushButton("↻")
+        live_model_refresh.setFixedWidth(34)
+        live_model_refresh.setStyleSheet("QPushButton { padding: 5px 4px; }")
+        live_model_refresh.setToolTip("Fetch the latest model names from the provider")
+        live_model_layout.addWidget(live_model_stack, 1)
+        live_model_layout.addWidget(live_model_refresh)
         live_model_tip = (
-            "Fast responds quickest and hears best; Expressive has a nicer "
-            "voice but answers noticeably slower."
+            "Pick a common live model, or choose Custom / enter manually to "
+            "type the exact model name."
         )
         self._fields["LIVE_VOICE_MODEL"] = live_model
+        self._live_voice_model_row = {
+            "api_key_combo": live_provider,
+            "model_combo": live_model,
+            "model_edit": live_model_edit,
+            "refresh_btn": live_model_refresh,
+        }
+        self._fill_live_voice_model_combo("google", "")
+        live_model.currentIndexChanged.connect(
+            lambda _: self._on_model_combo_changed(self._live_voice_model_row)
+        )
+
+        def _on_live_voice_provider_change() -> None:
+            provider = _get(live_provider).strip() or "google"
+            self._fill_live_voice_model_combo(provider, self._live_voice_model_value())
+            self._refresh_live_voice_key_note()
+
+        live_provider.currentIndexChanged.connect(lambda _: _on_live_voice_provider_change())
+        live_model.currentIndexChanged.connect(lambda _: self._schedule_dirty_refresh())
+        live_model_edit.textChanged.connect(lambda _: self._schedule_dirty_refresh())
+        live_model_refresh.clicked.connect(lambda: self._refresh_models_for_row(self._live_voice_model_row))
         live_voice_name = _NoScrollCombo()
         live_voice_name.setProperty("allow_custom_saved_value", True)
         for label, value in _LIVE_VOICE_VOICE_OPTIONS:
@@ -3142,7 +3200,8 @@ class SettingsDialog(QDialog):
         lvf.setContentsMargins(0, 0, 0, 0)
         lvf.setSpacing(8)
         lvf.addRow(self._live_voice_install_status_lbl, self._live_voice_install_btn)
-        lvf.addRow(_tooltip_label("Conversation model", live_model_tip), live_model)
+        lvf.addRow(_tooltip_label("Conversation provider", live_provider_tip), live_provider)
+        lvf.addRow(_tooltip_label("Conversation model", live_model_tip), live_model_container)
         lvf.addRow(_tooltip_label("Conversation voice", live_voice_name_tip), live_voice_name)
         lvf.addRow(
             _tooltip_label("Speaker mode", live_half_duplex_tip),
@@ -3602,13 +3661,21 @@ class SettingsDialog(QDialog):
             )
 
     def _refresh_live_voice_key_note(self) -> None:
-        """Show whether the shared Google API key that live voice needs exists."""
+        """Show whether the selected live voice provider has the key it needs."""
         label = getattr(self, "_live_voice_key_note_lbl", None)
         if not isinstance(label, QLabel):
             return
         import config as cfg
 
-        if str(getattr(cfg, "GOOGLE_API_KEY", "") or "").strip():
+        provider = _get(self._fields.get("LIVE_VOICE_PROVIDER")).strip() or "google"
+        if provider != "google":
+            label.setText(
+                "<small>"
+                + t("Live voice currently supports Gemini Live through the Google provider.")
+                + "</small>"
+            )
+            label.setStyleSheet("color: #d8932a;")
+        elif str(getattr(cfg, "GOOGLE_API_KEY", "") or "").strip():
             label.setText(f"<small>{t('Uses the Google API key from the LLM tab.')}</small>")
             label.setStyleSheet("")
         else:
@@ -3618,6 +3685,24 @@ class SettingsDialog(QDialog):
                 + "</small>"
             )
             label.setStyleSheet("color: #d8932a;")
+
+    def _fill_live_voice_model_combo(self, provider: str, selected: str) -> None:
+        """Populate the live voice model picker with built-ins plus Custom."""
+        row = getattr(self, "_live_voice_model_row", None)
+        if not isinstance(row, dict):
+            return
+        models = _LIVE_VOICE_PROVIDER_MODELS.get(provider, [])
+        if not models:
+            models = _PROVIDER_MODELS.get(provider, [])
+        self._fill_model_combo(row, list(models), provider, selected)
+
+    def _live_voice_model_value(self) -> str:
+        """Return the effective live voice model, including custom text."""
+        row = getattr(self, "_live_voice_model_row", None)
+        if isinstance(row, dict):
+            return self._model_value(row)
+        field = self._fields.get("LIVE_VOICE_MODEL")
+        return _get(field).strip() if field is not None else ""
 
     def _apply_kokoro_install_status(
         self,
@@ -4057,44 +4142,21 @@ class SettingsDialog(QDialog):
         if not isinstance(status, QLabel):
             return False
         try:
-            from core import optional_deps, updater
+            from core import optional_deps
 
-            if getattr(sys, "frozen", False):
-                root = Path(sys.executable).resolve().parent
-                command = [
-                    sys.executable,
-                    "-m",
-                    "runtime.workers.optional_speech_installer",
-                ]
-            else:
-                root = Path(__file__).resolve().parents[2]
-                script_path = root / "scripts" / "optional_tts_installer.py"
-                if not script_path.exists():
-                    return False
-                command = [sys.executable, str(script_path)]
-            log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
-            status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
-            plan_path = log_path.with_suffix(".plan.json")
-            plan = {
-                "display_name": display_name,
-                "packages": packages,
-                "pre_install_packages": pre_install_packages or [],
-                "remove_artifacts": remove_artifacts or [],
-                "reinstall": bool(reinstall),
-                "restart_apply": sys.platform == "win32",
-                "wait_pid": updater.wisp_wait_pid(),
-                "log_path": str(log_path),
-                "status_path": str(status_path),
-                **(external_plan_extra or {}),
-            }
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            command, root, log_path, status_path = _optional_install_plan_command(
+                display_name=display_name,
+                packages=packages,
+                pre_install_packages=pre_install_packages,
+                remove_artifacts=remove_artifacts,
+                reinstall=reinstall,
+                external_plan_extra=external_plan_extra,
+            )
             _write_optional_install_status(
                 status_path,
                 ok=None,
                 message=f"{display_name} install is running.",
             )
-            command = [*command, "--plan", str(plan_path)]
             dialog = OptionalInstallDialog(
                 title=t("Wisp {display_name} installer").format(display_name=display_name),
                 subtitle=t("Installing {display_name} into Wisp's optional packages folder.").format(
@@ -4237,7 +4299,14 @@ class SettingsDialog(QDialog):
         reinstall: bool = False,
         post_install: Callable[[Callable[[str], None], Callable[[str], None]], tuple[bool, str]] | None = None,
     ) -> None:
-        """Install optional TTS packages into Wisp's user package folder."""
+        """Install optional TTS packages via the staged installer.
+
+        Both the installer-window path and the inline fallback stage the
+        packages and apply them on the next restart, so the live package
+        folder is never modified while Wisp runs. ``post_install`` and
+        ``post_install_progress_detail`` are unused here: verification runs
+        in the apply helper via the plan's ``post_install`` field.
+        """
         if self._try_launch_external_optional_tts_install(
             test_key=test_key,
             display_name=display_name,
@@ -4295,31 +4364,26 @@ class SettingsDialog(QDialog):
                 message=f"{display_name} install is running.",
             )
 
-            if remove_artifacts:
-                _progress(f"Installing {display_name}: removing previous install.")
-                _write_log(f"{log_prefix} Removing previous optional package artifacts before install.")
-                removed = optional_deps.remove_optional_package_artifacts(remove_artifacts)
-                if removed:
-                    _write_log(f"{log_prefix} Removed: {', '.join(sorted(removed))}")
-                else:
-                    _write_log(f"{log_prefix} No previous artifacts found.")
-
-            stale_removed = optional_deps.remove_stale_optional_package_artifacts([
-                *(pre_install_packages or []),
-                *(packages or []),
-            ])
-            if stale_removed:
-                _write_log(
-                    f"{log_prefix} Removed stale optional package artifacts before install: "
-                    f"{', '.join(sorted(stale_removed))}"
+            if not packages and not pre_install_packages:
+                return False, f"No packages selected for {display_name} install."
+            # This fallback runs the same staged installer as the installer
+            # window: pip writes into a staging folder and the live package
+            # dir is only touched after Wisp exits, so a locked DLL cannot
+            # corrupt a working install. The staged installer owns artifact
+            # cleanup, logging, and post-install verification.
+            try:
+                install_command, install_root, _log_path, _status_path = _optional_install_plan_command(
+                    display_name=display_name,
+                    packages=packages,
+                    pre_install_packages=pre_install_packages,
+                    remove_artifacts=remove_artifacts,
+                    reinstall=reinstall,
+                    external_plan_extra=external_plan_extra,
                 )
-
-            duplicate_removed = optional_deps.remove_duplicate_optional_package_artifacts()
-            if duplicate_removed:
-                _write_log(
-                    f"{log_prefix} Removed stale duplicate optional package artifacts: "
-                    f"{', '.join(sorted(duplicate_removed))}"
-                )
+            except Exception as exc:
+                message = f"{display_name} install failed: {exc}"
+                _write_optional_install_status(status_path, ok=False, message=message)
+                return False, message
 
             def _heartbeat() -> None:
                 while not stop_heartbeat.wait(20.0):
@@ -4345,13 +4409,7 @@ class SettingsDialog(QDialog):
                                 pass
                         return
 
-            commands = []
-            if pre_install_packages:
-                commands.append(("installing CUDA Torch", optional_deps.pip_install_command(pre_install_packages, reinstall=True)))
-            if packages:
-                commands.append(("installing packages", optional_deps.pip_install_command(packages, reinstall=reinstall)))
-            if not commands:
-                return False, f"No packages selected for {display_name} install."
+            commands = [("running the staged installer", install_command)]
 
             threading.Thread(target=_heartbeat, daemon=True, name=f"{display_name.lower()}-install-heartbeat").start()
             returncode = 0
@@ -4364,6 +4422,7 @@ class SettingsDialog(QDialog):
                     try:
                         process = subprocess.Popen(
                             command,
+                            cwd=str(install_root),
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
                             text=True,
@@ -4389,8 +4448,9 @@ class SettingsDialog(QDialog):
                         if not line:
                             continue
                         last_output_at["value"] = time.monotonic()
+                        # The staged installer already writes its own lines to
+                        # the shared log file; only mirror them to the console.
                         print(f"{log_prefix} {line}", flush=True)
-                        _write_log(f"{log_prefix} {line}")
                         _settings_log.info("%s install: %s", display_name, line)
                         tail.append(line)
                         tail = tail[-30:]
@@ -4407,50 +4467,17 @@ class SettingsDialog(QDialog):
                 stop_heartbeat.set()
             if returncode == 0:
                 importlib.invalidate_caches()
-                duplicates = optional_deps.duplicate_optional_dist_infos()
-                if duplicates:
-                    detail = "; ".join(
-                        f"{package}: {', '.join(names)}"
-                        for package, names in sorted(duplicates.items())
-                    )
-                    _write_log(f"{log_prefix} Warning: duplicate optional package metadata found: {detail}")
                 optional_deps.add_optional_packages_to_path()
-                post_install_message = ""
-                if post_install is not None:
-                    prepare_started_at = time.monotonic()
-                    prepare_stop = threading.Event()
-
-                    def _prepare_heartbeat() -> None:
-                        while not prepare_stop.wait(20.0):
-                            elapsed = int(time.monotonic() - prepare_started_at)
-                            detail = post_install_progress_detail or "preparing local assets for {elapsed}"
-                            _progress(
-                                f"Installing {display_name}: "
-                                f"{detail.format(elapsed=_format_duration(elapsed))}."
-                            )
-
-                    threading.Thread(
-                        target=_prepare_heartbeat,
-                        daemon=True,
-                        name=f"{display_name.lower()}-prepare-heartbeat",
-                    ).start()
-                    try:
-                        ok, message = post_install(_progress, _write_log)
-                    finally:
-                        prepare_stop.set()
-                    if not ok:
-                        _write_optional_install_status(status_path, ok=False, message=message)
-                        return False, message
-                    post_install_message = message
-                print(f"{log_prefix} Completed successfully.", flush=True)
-                _write_log(f"{log_prefix} Completed successfully.")
-                _write_optional_install_status(
-                    status_path,
-                    ok=True,
-                    message=post_install_message or success_message,
-                )
-                _progress(f"Installing {display_name}: completed successfully.")
-                return True, post_install_message or success_message
+                # The staged installer wrote the durable status: usually
+                # "packages are staged, restart to apply". Verification runs
+                # in the apply helper after Wisp exits, not in this process.
+                install_status = _read_optional_install_status(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+                message = str(install_status.get("message") or "").strip() or success_message
+                if install_status.get("ok") is False:
+                    return False, message
+                print(f"{log_prefix} {message}", flush=True)
+                _progress(message)
+                return True, message
             detail = _optional_install_failure_detail(tail)
             if stopped_reason["value"]:
                 detail = stopped_reason["value"]
@@ -6313,10 +6340,18 @@ class SettingsDialog(QDialog):
         _set(self._fields["KOKORO_DEVICE"], self._env.get("KOKORO_DEVICE", getattr(cfg, "KOKORO_DEVICE", "auto")))
         _set(self._fields["KOKORO_SPEED"], self._env.get("KOKORO_SPEED", str(cfg.KOKORO_SPEED)))
         _set(self._fields["KOKORO_SAMPLE_RATE"], self._env.get("KOKORO_SAMPLE_RATE", str(cfg.KOKORO_SAMPLE_RATE)))
-        _set(
-            self._fields["LIVE_VOICE_MODEL"],
-            self._env.get("LIVE_VOICE_MODEL", getattr(cfg, "LIVE_VOICE_MODEL", "gemini-3.1-flash-live-preview")),
+        live_voice_provider = self._env.get(
+            "LIVE_VOICE_PROVIDER",
+            getattr(cfg, "LIVE_VOICE_PROVIDER", "google"),
         )
+        live_voice_model = self._env.get(
+            "LIVE_VOICE_MODEL",
+            getattr(cfg, "LIVE_VOICE_MODEL", "gemini-3.1-flash-live-preview"),
+        )
+        live_voice_provider_combo = self._fields["LIVE_VOICE_PROVIDER"]
+        if isinstance(live_voice_provider_combo, QComboBox):
+            self._fill_credential_combo(live_voice_provider_combo, live_voice_provider)
+        self._fill_live_voice_model_combo(_get(self._fields["LIVE_VOICE_PROVIDER"]).strip() or "google", live_voice_model)
         _set(
             self._fields["LIVE_VOICE_VOICE_NAME"],
             self._env.get("LIVE_VOICE_VOICE_NAME", getattr(cfg, "LIVE_VOICE_VOICE_NAME", "")),
@@ -7588,7 +7623,7 @@ class SettingsDialog(QDialog):
                 "GPT_SOVITS_URL", "GPT_SOVITS_REF_AUDIO_PATH", "GPT_SOVITS_PROMPT_TEXT",
                 "GPT_SOVITS_PROMPT_LANG", "GPT_SOVITS_TEXT_LANG", "GPT_SOVITS_SAMPLE_RATE",
                 "KOKORO_VOICE", "KOKORO_LANG_CODE", "KOKORO_DEVICE", "KOKORO_SPEED", "KOKORO_SAMPLE_RATE",
-                "LIVE_VOICE_MODEL", "LIVE_VOICE_VOICE_NAME", "LIVE_VOICE_HALF_DUPLEX",
+                "LIVE_VOICE_PROVIDER", "LIVE_VOICE_MODEL", "LIVE_VOICE_VOICE_NAME", "LIVE_VOICE_HALF_DUPLEX",
                 "TTS_VOLUME", "TTS_READ_ALOUD_MIN_WORDS", "TTS_READ_ALOUD_MAX_WORDS",
                 "STT_MODEL", "STT_COMPUTE_TYPE", "STT_LANGUAGE", "STT_BEAM_SIZE", "STT_DEVICE",
                 "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS", "STT_BACKGROUND_CHUNK_STEP_SECONDS",
@@ -7963,7 +7998,8 @@ class SettingsDialog(QDialog):
             "TTS_VOLUME": _get(self._fields["TTS_VOLUME"]),
             "TTS_READ_ALOUD_MIN_WORDS": _get(self._fields["TTS_READ_ALOUD_MIN_WORDS"]),
             "TTS_READ_ALOUD_MAX_WORDS": _get(self._fields["TTS_READ_ALOUD_MAX_WORDS"]),
-            "LIVE_VOICE_MODEL": _get(self._fields["LIVE_VOICE_MODEL"]),
+            "LIVE_VOICE_PROVIDER": _get(self._fields["LIVE_VOICE_PROVIDER"]),
+            "LIVE_VOICE_MODEL": self._live_voice_model_value(),
             "LIVE_VOICE_VOICE_NAME": _get(self._fields["LIVE_VOICE_VOICE_NAME"]),
             "LIVE_VOICE_HALF_DUPLEX": _get(self._fields["LIVE_VOICE_HALF_DUPLEX"]),
             "STT_MODEL":         _get(self._fields["STT_MODEL"]),
@@ -8694,6 +8730,52 @@ def _optional_install_log_path(display_name: str, optional_packages_dir: Path) -
         base = optional_packages_dir / "_logs"
     slug = re.sub(r"[^a-z0-9]+", "-", display_name.lower()).strip("-") or "optional-package"
     return base / f"{slug}-install.log"
+
+
+def _optional_install_plan_command(
+    *,
+    display_name: str,
+    packages: list[str],
+    pre_install_packages: list[str] | None = None,
+    remove_artifacts: list[str] | None = None,
+    reinstall: bool = False,
+    external_plan_extra: dict[str, object] | None = None,
+) -> tuple[list[str], Path, Path, Path]:
+    """Write a staged installer plan and return its command, cwd, and log paths.
+
+    Every optional package install runs through the staged installer with
+    restart_apply, so pip never writes into the live package folder while Wisp
+    is running — a locked DLL can then no longer corrupt a working install.
+    """
+    from core import optional_deps, updater
+
+    if getattr(sys, "frozen", False):
+        root = Path(sys.executable).resolve().parent
+        command = [sys.executable, "-m", "runtime.workers.optional_speech_installer"]
+    else:
+        root = Path(__file__).resolve().parents[2]
+        script_path = root / "scripts" / "optional_tts_installer.py"
+        if not script_path.exists():
+            raise FileNotFoundError(f"installer script is missing: {script_path}")
+        command = [sys.executable, str(script_path)]
+    log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+    status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+    plan_path = log_path.with_suffix(".plan.json")
+    plan = {
+        "display_name": display_name,
+        "packages": packages,
+        "pre_install_packages": pre_install_packages or [],
+        "remove_artifacts": remove_artifacts or [],
+        "reinstall": bool(reinstall),
+        "restart_apply": True,
+        "wait_pid": updater.wisp_wait_pid(),
+        "log_path": str(log_path),
+        "status_path": str(status_path),
+        **(external_plan_extra or {}),
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+    return [*command, "--plan", str(plan_path)], root, log_path, status_path
 
 
 def _optional_install_status_path(display_name: str, optional_packages_dir: Path) -> Path:

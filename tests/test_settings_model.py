@@ -84,6 +84,7 @@ def test_audio_settings_include_live_voice_fields():
         with patch("config.load_dotenv"), patch.dict(
             os.environ,
             {
+                "LIVE_VOICE_PROVIDER": "google",
                 "LIVE_VOICE_MODEL": "gemini-test-live",
                 "LIVE_VOICE_VOICE_NAME": "Kore",
                 "LIVE_VOICE_HALF_DUPLEX": "true",
@@ -93,6 +94,7 @@ def test_audio_settings_include_live_voice_fields():
             config.reload()
 
         audio = config.get_settings().audio
+        assert audio.live_voice_provider == "google"
         assert audio.live_voice_model == "gemini-test-live"
         assert audio.live_voice_voice == "Kore"
         assert audio.live_voice_half_duplex is True

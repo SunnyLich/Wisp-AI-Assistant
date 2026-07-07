@@ -102,6 +102,7 @@ class AudioSettings:
     stt_device: str
     stt_language: str
     stt_beam_size: int
+    live_voice_provider: str
     live_voice_model: str
     live_voice_voice: str
     live_voice_half_duplex: bool
@@ -210,6 +211,7 @@ class AppSettings:
                 stt_device=str(values.get("STT_DEVICE", "")),
                 stt_language=str(values.get("STT_LANGUAGE", "")),
                 stt_beam_size=int(values.get("STT_BEAM_SIZE", 0)),
+                live_voice_provider=str(values.get("LIVE_VOICE_PROVIDER", "")),
                 live_voice_model=str(values.get("LIVE_VOICE_MODEL", "")),
                 live_voice_voice=str(values.get("LIVE_VOICE_VOICE_NAME", "")),
                 live_voice_half_duplex=_copy_bool(values.get("LIVE_VOICE_HALF_DUPLEX"), False),

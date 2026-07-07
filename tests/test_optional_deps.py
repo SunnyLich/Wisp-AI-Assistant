@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 from types import SimpleNamespace
 
@@ -752,6 +753,225 @@ def test_optional_install_apply_reopens_wisp_after_post_install_failure(monkeypa
     status = json.loads(status_path.read_text(encoding="utf-8"))
     assert status["ok"] is False
     assert status["message"] == "STT verification failed."
+
+
+def test_optional_install_staged_apply_keeps_staging_when_wisp_stays_open(monkeypatch, tmp_path):
+    """A missed restart window must not delete the staged download."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    (staging / "marker.txt").write_text("staged", encoding="utf-8")
+    status_path = tmp_path / "status.json"
+    plan_path = tmp_path / "kokoro-install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "log_path": str(tmp_path / "install.log"),
+                "status_path": str(status_path),
+                "staging_path": str(staging),
+                "target_path": str(tmp_path / "python_packages"),
+                "wait_pid": 4321,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def raise_timeout(*_args, **_kwargs):
+        raise updater.UpdateError("Timed out waiting for Wisp to exit.")
+
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", raise_timeout)
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 0
+
+    assert (staging / "marker.txt").exists()
+    assert plan_path.exists()
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is None
+    assert status["restart_apply"] is True
+    assert "will be applied" in status["message"]
+
+
+def test_optional_install_staged_apply_consumes_staging_and_plan_on_success(monkeypatch, tmp_path):
+    """A successful apply moves the packages and removes staging and plan."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    staging = tmp_path / "stage"
+    (staging / "pkg").mkdir(parents=True)
+    (staging / "pkg" / "__init__.py").write_text("data", encoding="utf-8")
+    target = tmp_path / "python_packages"
+    status_path = tmp_path / "status.json"
+    plan_path = tmp_path / "kokoro-install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "log_path": str(tmp_path / "install.log"),
+                "status_path": str(status_path),
+                "staging_path": str(staging),
+                "target_path": str(target),
+            }
+        ),
+        encoding="utf-8",
+    )
+    restarts: list[str] = []
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_post_install_result",
+        lambda *_args: (True, "Kokoro installed successfully."),
+    )
+    monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: restarts.append("restart"))
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 0
+
+    assert (target / "pkg" / "__init__.py").read_text(encoding="utf-8") == "data"
+    assert not staging.exists()
+    assert not plan_path.exists()
+    assert restarts == ["restart"]
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is True
+
+
+def test_optional_install_staged_apply_discards_superseded_staging(monkeypatch, tmp_path):
+    """An apply plan replaced by a newer install must not apply its old staging."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    staging = tmp_path / "stage"
+    (staging / "pkg").mkdir(parents=True)
+    target = tmp_path / "python_packages"
+    status_path = tmp_path / "status.json"
+    plan_path = tmp_path / "kokoro-install.apply-plan.json"
+    plan_data = {
+        "display_name": "Kokoro",
+        "log_path": str(tmp_path / "install.log"),
+        "status_path": str(status_path),
+        "staging_path": str(staging),
+        "target_path": str(target),
+    }
+    plan_path.write_text(json.dumps(plan_data), encoding="utf-8")
+    newer_staging = tmp_path / "stage-newer"
+
+    def fake_wait(*_args, **_kwargs):
+        # While this helper waited, a newer install rewrote the plan file.
+        plan_path.write_text(
+            json.dumps({**plan_data, "staging_path": str(newer_staging)}),
+            encoding="utf-8",
+        )
+
+    verified: list[str] = []
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", fake_wait)
+    monkeypatch.setattr(optional_tts_installer, "_post_install_result", lambda *_args: verified.append("verify") or (True, ""))
+    monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: None)
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 0
+
+    assert not staging.exists()
+    assert not (target / "pkg").exists()
+    assert verified == []
+    assert json.loads(plan_path.read_text(encoding="utf-8"))["staging_path"] == str(newer_staging)
+
+
+def test_optional_tts_installer_stages_plan_on_all_platforms(monkeypatch, tmp_path):
+    """restart_apply plans stage on every platform, not just Windows."""
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "packages": ["kokoro==0.9.4"],
+                "restart_apply": True,
+                "log_path": str(tmp_path / "install.log"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    called: dict[str, object] = {}
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(optional_tts_installer.sys, "platform", "linux")
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_run_staged_restart_install",
+        lambda **kwargs: called.update(kwargs) or 0,
+    )
+
+    assert optional_tts_installer.main() == 0
+    assert called["display_name"] == "Kokoro"
+    assert called["packages"] == ["kokoro==0.9.4"]
+
+
+def test_resume_pending_staged_applies_rearms_dead_helper(monkeypatch, tmp_path):
+    """Startup re-arms staged applies whose helper is gone and prunes stale plans."""
+    from core import optional_deps, updater
+    from scripts import optional_tts_installer
+
+    logs = tmp_path / "python_packages" / "_logs"
+    logs.mkdir(parents=True)
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    plan_path = logs / "kokoro-install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps({"display_name": "Kokoro", "staging_path": str(staging)}),
+        encoding="utf-8",
+    )
+    stale_plan = logs / "stt-install.apply-plan.json"
+    stale_plan.write_text(
+        json.dumps({"display_name": "STT", "staging_path": str(tmp_path / "missing")}),
+        encoding="utf-8",
+    )
+
+    launched: list[object] = []
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 4242)
+    monkeypatch.setattr(optional_tts_installer, "_launch_staged_apply", lambda path: launched.append(path))
+
+    assert optional_tts_installer.resume_pending_staged_applies() == 1
+
+    assert launched == [plan_path]
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert plan["wait_pid"] == 4242
+    assert plan["reopen_after_apply"] is False
+    assert not stale_plan.exists()
+
+
+def test_resume_pending_staged_applies_skips_running_helper(monkeypatch, tmp_path):
+    """A staged apply already watched by a live helper is not re-armed."""
+    from core import optional_deps, updater
+    from scripts import optional_tts_installer
+
+    logs = tmp_path / "python_packages" / "_logs"
+    logs.mkdir(parents=True)
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    plan_path = logs / "kokoro-install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "staging_path": str(staging),
+                "helper_pid": os.getpid(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    launched: list[object] = []
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 4242)
+    monkeypatch.setattr(optional_tts_installer, "_launch_staged_apply", lambda path: launched.append(path))
+
+    assert optional_tts_installer.resume_pending_staged_applies() == 0
+
+    assert launched == []
+    assert json.loads(plan_path.read_text(encoding="utf-8"))["helper_pid"] == os.getpid()
 
 
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):

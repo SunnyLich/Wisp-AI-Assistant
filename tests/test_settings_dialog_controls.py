@@ -382,7 +382,9 @@ def test_optional_tts_install_launches_external_terminal(monkeypatch, tmp_path):
         plan = Path(command[-1]).read_text(encoding="utf-8")
         assert '"kokoro==0.9.4"' in plan
         assert '"post_install": "kokoro_prepare"' in plan
-        assert '"restart_apply": false' in plan
+        # Staged restart-apply installs are used on every platform so pip
+        # never writes into the live package folder while Wisp is running.
+        assert '"restart_apply": true' in plan
         assert "Wisp installer window" in dialog._kokoro_install_status_lbl.text()
     finally:
         dialog._kokoro_install_btn.deleteLater()

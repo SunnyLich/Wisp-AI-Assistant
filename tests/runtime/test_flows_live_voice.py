@@ -78,6 +78,7 @@ def test_start_error_notices():
         ("missing_key", "Google API key"),
         ("missing_package", "not installed"),
         ("mic_busy", "voice recording"),
+        ("unsupported_provider", "Google provider"),
         ("boom", "Could not start live voice"),
     ):
         flow, native, ui, _brain, audio = make_flow(

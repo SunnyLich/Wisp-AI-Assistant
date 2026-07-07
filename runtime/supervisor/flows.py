@@ -93,6 +93,7 @@ _AUDIO_CONFIG_KEYS = {
     "STT_BACKGROUND_CHUNK_STEP_SECONDS",
     "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
     "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+    "LIVE_VOICE_PROVIDER",
     "LIVE_VOICE_MODEL",
     "LIVE_VOICE_VOICE_NAME",
     "LIVE_VOICE_HALF_DUPLEX",
@@ -1686,6 +1687,8 @@ class FlowController:
                 self._notice(t("Live voice support is not installed. Install it in Settings > TTS / Voice."))
             elif error == "mic_busy":
                 self._notice(t("Finish the current voice recording first."))
+            elif error == "unsupported_provider":
+                self._notice(t("Live voice currently supports Gemini Live through the Google provider."))
             else:
                 self._notice(f"{t('Could not start live voice')}: {error or 'unknown error'}")
             self._mark_live_voice_idle()

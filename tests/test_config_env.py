@@ -123,6 +123,7 @@ class ConfigEnvTests(unittest.TestCase):
         """LIVE_VOICE_*/HOTKEY_VOICE_LIVE env vars reach globals and typed settings."""
         previous = {
             "HOTKEY_VOICE_LIVE": getattr(config, "HOTKEY_VOICE_LIVE", "shift+f9"),
+            "LIVE_VOICE_PROVIDER": getattr(config, "LIVE_VOICE_PROVIDER", "google"),
             "LIVE_VOICE_MODEL": getattr(config, "LIVE_VOICE_MODEL", ""),
             "LIVE_VOICE_VOICE_NAME": getattr(config, "LIVE_VOICE_VOICE_NAME", ""),
             "LIVE_VOICE_HALF_DUPLEX": getattr(config, "LIVE_VOICE_HALF_DUPLEX", False),
@@ -135,6 +136,7 @@ class ConfigEnvTests(unittest.TestCase):
                 os.environ,
                 {
                     "HOTKEY_VOICE_LIVE": "ctrl+shift+f10",
+                    "LIVE_VOICE_PROVIDER": "google",
                     "LIVE_VOICE_MODEL": "gemini-2.5-flash-native-audio-preview-12-2025",
                     "LIVE_VOICE_VOICE_NAME": "Puck",
                     "LIVE_VOICE_HALF_DUPLEX": "yes",
@@ -146,6 +148,7 @@ class ConfigEnvTests(unittest.TestCase):
                 config.reload()
 
             self.assertEqual(config.HOTKEY_VOICE_LIVE, "ctrl+shift+f10")
+            self.assertEqual(config.LIVE_VOICE_PROVIDER, "google")
             self.assertEqual(
                 config.LIVE_VOICE_MODEL, "gemini-2.5-flash-native-audio-preview-12-2025"
             )
@@ -153,6 +156,7 @@ class ConfigEnvTests(unittest.TestCase):
             self.assertTrue(config.LIVE_VOICE_HALF_DUPLEX)
             self.assertEqual(config.get_live_voice_system_prompt(), "Talk like a pirate.")
             audio = config.get_settings().audio
+            self.assertEqual(audio.live_voice_provider, "google")
             self.assertEqual(
                 audio.live_voice_model, "gemini-2.5-flash-native-audio-preview-12-2025"
             )

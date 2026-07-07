@@ -15,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# How long an apply helper watches for Wisp to close. A missed window no
+# longer discards the staged download; the supervisor re-arms the plan on the
+# next launch, so this only bounds how long one helper process lingers.
+STAGED_APPLY_WAIT_SECONDS = 24 * 60 * 60.0
+# A staged apply that keeps failing is retried at later restarts, but only
+# this many times before the staging is discarded for good.
+STAGED_APPLY_MAX_ATTEMPTS = 3
+
 
 def _log(handle, prefix: str, message: str) -> None:
     line = f"{prefix} {message}"
@@ -59,6 +67,13 @@ def _load_plan(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("installer plan must be a JSON object")
     return data
+
+
+def _write_plan(path: Path, plan: dict[str, Any]) -> None:
+    """Persist plan updates for apply helpers and later re-arming."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(plan, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _package_list(plan: dict[str, Any], key: str) -> list[str]:
@@ -320,35 +335,85 @@ def _run_staged_apply(plan_path: Path) -> int:
     log_path = _path_from_plan(plan, "log_path")
     status_path = Path(str(plan.get("status_path") or "")).expanduser() if plan.get("status_path") else None
     staging_path = _path_from_plan(plan, "staging_path")
+    reopen = bool(plan.get("reopen_after_apply", True))
+    attempts = int(plan.get("apply_attempts") or 0)
+    # Record this helper so a later Wisp launch does not arm a second helper
+    # against the same staging (two concurrent applies would corrupt it).
+    try:
+        plan["helper_pid"] = os.getpid()
+        _write_plan(plan_path, plan)
+    except OSError:
+        pass
     wisp_closed = False
+    consumed = False
     try:
         with log_path.open("a", encoding="utf-8") as log:
-            _write_status(status_path, ok=None, message=f"{display_name} staged install is waiting for Wisp to close.")
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} staged install is waiting for Wisp to close.",
+                extra={"restart_apply": True},
+            )
             _log(log, prefix, "Waiting for Wisp to exit before applying staged packages.")
-            updater.wait_for_wisp_exit(int(plan.get("wait_pid") or 0), timeout=300.0)
+            try:
+                updater.wait_for_wisp_exit(int(plan.get("wait_pid") or 0), timeout=STAGED_APPLY_WAIT_SECONDS)
+            except updater.UpdateError:
+                # Wisp never closed while this helper watched. Keep the staged
+                # download and the plan; the supervisor re-arms them on the
+                # next launch instead of throwing the download away.
+                message = (
+                    f"{display_name} packages stay staged and will be applied "
+                    "the next time Wisp restarts."
+                )
+                _log(log, prefix, message)
+                _write_status(status_path, ok=None, message=message, extra={"restart_apply": True})
+                return 0
             wisp_closed = True
+            try:
+                current_plan = _load_plan(plan_path)
+            except Exception:
+                current_plan = {}
+            if str(current_plan.get("staging_path") or "") != str(plan.get("staging_path") or ""):
+                # A newer install replaced this plan while we waited; its own
+                # helper owns the apply now. Drop this stale staging quietly.
+                _log(log, prefix, "Staged packages were superseded by a newer install; discarding them.")
+                consumed = True
+                return 0
+            attempts += 1
+            plan["apply_attempts"] = attempts
+            _write_plan(plan_path, plan)
             _write_status(status_path, ok=None, message=f"{display_name} staged install is replacing package files.")
             _apply_staging(staging_path, _path_from_plan(plan, "target_path"), log, prefix)
+            consumed = True
             ok, message = _post_install_result(log, prefix, plan, status_path)
             _log(log, prefix, message)
             _write_status(status_path, ok=ok, message=message)
-            _restart_wisp(log, prefix)
-            if ok:
-                _write_status(status_path, ok=True, message=f"{message} Wisp is reopening.")
+            plan_path.unlink(missing_ok=True)
+            if reopen:
+                _restart_wisp(log, prefix)
+                if ok:
+                    _write_status(status_path, ok=True, message=f"{message} Wisp is reopening.")
             return 0 if ok else 1
     except Exception as exc:  # noqa: BLE001 - helper failures must be visible in status/logs
+        give_up = consumed or attempts >= STAGED_APPLY_MAX_ATTEMPTS
         message = f"{display_name} staged install failed: {type(exc).__name__}: {exc}"
+        if not give_up:
+            message = f"{message} Wisp will retry at the next restart."
         with log_path.open("a", encoding="utf-8") as log:
             _log(log, prefix, message)
             _write_status(status_path, ok=False, message=message)
-            if wisp_closed:
+            if wisp_closed and reopen:
                 try:
                     _restart_wisp(log, prefix)
                 except Exception as restart_exc:  # noqa: BLE001
                     _log(log, prefix, f"Failed to reopen Wisp: {type(restart_exc).__name__}: {restart_exc}")
+        if give_up:
+            consumed = True
+            plan_path.unlink(missing_ok=True)
         return 1
     finally:
-        shutil.rmtree(staging_path, ignore_errors=True)
+        if consumed:
+            shutil.rmtree(staging_path, ignore_errors=True)
 
 
 def _slug(value: str) -> str:
@@ -364,6 +429,56 @@ def _launch_staged_apply(plan_path: Path) -> None:
         cwd=ROOT,
         env=optional_deps.pip_install_env(),
     )
+
+
+def pending_apply_plan_paths() -> list[Path]:
+    """Return staged apply plans recorded next to the optional install logs."""
+    from core import optional_deps
+
+    bases = [optional_deps.OPTIONAL_PACKAGES_DIR / "_logs"]
+    run_root = os.environ.get("WISP_RUN_LOG_DIR")
+    if run_root:
+        bases.append(Path(run_root).expanduser() / "installers")
+    plans: list[Path] = []
+    for base in bases:
+        try:
+            plans.extend(sorted(base.glob("*.apply-plan.json")))
+        except OSError:
+            continue
+    return plans
+
+
+def resume_pending_staged_applies() -> int:
+    """Re-arm apply helpers for staged installs that were never applied.
+
+    Called at Wisp startup. An apply helper that gave up waiting (or died with
+    the machine) leaves its staging directory and apply plan behind; arming a
+    fresh helper lets the staged packages land at the next shutdown instead of
+    forcing the user to reinstall.
+    """
+    from core import updater
+
+    resumed = 0
+    for plan_path in pending_apply_plan_paths():
+        try:
+            plan = _load_plan(plan_path)
+            staging = Path(str(plan.get("staging_path") or "")).expanduser()
+            if not str(plan.get("staging_path") or "") or not staging.is_dir():
+                plan_path.unlink(missing_ok=True)
+                continue
+            helper_pid = int(plan.get("helper_pid") or 0)
+            if helper_pid and updater.process_exists(helper_pid):
+                continue
+            plan["wait_pid"] = updater.wisp_wait_pid()
+            # A re-armed apply runs at whatever shutdown comes next, possibly
+            # hours later; popping Wisp back open then would be intrusive.
+            plan["reopen_after_apply"] = False
+            _write_plan(plan_path, plan)
+            _launch_staged_apply(plan_path)
+            resumed += 1
+        except Exception:
+            continue
+    return resumed
 
 
 def _run_staged_restart_install(
@@ -421,10 +536,10 @@ def _run_staged_restart_install(
             "wait_pid": int(plan.get("wait_pid") or updater.wisp_wait_pid()),
             "log_path": str(log_path),
             "status_path": str(status_path) if status_path else "",
+            "reopen_after_apply": True,
         }
-        apply_plan_path.write_text(json.dumps(apply_plan, indent=2, sort_keys=True), encoding="utf-8")
+        _write_plan(apply_plan_path, apply_plan)
         _log(log, prefix, "Staged packages downloaded. Restart Wisp to replace locked package files.")
-        _launch_staged_apply(apply_plan_path)
         _write_status(
             status_path,
             ok=None,
@@ -434,6 +549,7 @@ def _run_staged_restart_install(
             ),
             extra={"restart_apply": True},
         )
+        _launch_staged_apply(apply_plan_path)
         return 0
 
 
@@ -467,7 +583,7 @@ def main() -> int:
     prefix = f"[{display_name.lower()} install]"
 
     with log_path.open("a", encoding="utf-8") as log:
-        if bool(plan.get("restart_apply")) and sys.platform == "win32":
+        if bool(plan.get("restart_apply")):
             return _run_staged_restart_install(
                 plan=plan,
                 display_name=display_name,

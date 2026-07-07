@@ -805,7 +805,7 @@ def _load_config() -> None:
     global GITHUB_DEFAULT_CLIENT_ID, GITHUB_CLIENT_ID, GITHUB_OAUTH_SCOPES
     global COPILOT_CLI_URL, COPILOT_CLI_PATH
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP, HOTKEY_READ_SELECTION_ALOUD, HOTKEY_VOICE, HOTKEY_DICTATE, DICTATE_MODE
-    global HOTKEY_VOICE_LIVE, LIVE_VOICE_MODEL, LIVE_VOICE_VOICE_NAME, LIVE_VOICE_HALF_DUPLEX, LIVE_VOICE_SYSTEM_PROMPT
+    global HOTKEY_VOICE_LIVE, LIVE_VOICE_PROVIDER, LIVE_VOICE_MODEL, LIVE_VOICE_VOICE_NAME, LIVE_VOICE_HALF_DUPLEX, LIVE_VOICE_SYSTEM_PROMPT
     global VOICE_TRANSCRIPT_CONFIRM, VOICE_REVIEW_TRANSCRIPT
     global INTENT_CONTEXT_TOGGLE_KEYS, INTENT_OVERLAY_TIMEOUT_MS
     global SNIP_CONTEXT_AMBIENT, SNIP_CONTEXT_DOCUMENTS, SNIP_CONTEXT_TOOLS, SNIP_CALLER
@@ -1006,6 +1006,7 @@ def _load_config() -> None:
     # Runs entirely in the audio worker; needs GOOGLE_API_KEY and the optional
     # google-genai package. The "fast" model is the default on purpose: the
     # native-audio model sounds nicer but responds slower and hears worse.
+    LIVE_VOICE_PROVIDER    = os.getenv("LIVE_VOICE_PROVIDER", "google").strip().lower() or "google"
     LIVE_VOICE_MODEL       = os.getenv("LIVE_VOICE_MODEL", "gemini-3.1-flash-live-preview")
     LIVE_VOICE_VOICE_NAME  = os.getenv("LIVE_VOICE_VOICE_NAME", "")
     LIVE_VOICE_HALF_DUPLEX = env_bool("LIVE_VOICE_HALF_DUPLEX", False)
