@@ -114,6 +114,49 @@ def test_live_state_events_drive_overlay():
     assert states[-1] == "listening"
 
 
+def test_first_listening_state_fires_ready_notice_once():
+    flow, native, ui, _brain, audio = make_flow(audio=live_audio_worker())
+    native.emit("native.hotkey", {"kind": "voice_live"})
+
+    audio.emit("audio.live.state", {"state": "connecting"})
+    audio.emit("audio.live.state", {"state": "listening"})
+    audio.emit("audio.live.state", {"state": "speaking"})
+    audio.emit("audio.live.state", {"state": "listening"})
+
+    assert len(ui.calls_for("ui.live_voice.ready")) == 1
+
+
+def test_ready_notice_fires_again_for_a_new_session():
+    flow, native, ui, _brain, audio = make_flow(audio=live_audio_worker())
+
+    native.emit("native.hotkey", {"kind": "voice_live"})
+    audio.emit("audio.live.state", {"state": "listening"})
+    native.emit("native.hotkey", {"kind": "voice_live"})  # stop
+    native.emit("native.hotkey", {"kind": "voice_live"})  # start again
+    audio.emit("audio.live.state", {"state": "listening"})
+
+    assert len(ui.calls_for("ui.live_voice.ready")) == 2
+
+
+def test_ready_notice_suppressed_when_idle():
+    flow, _native, ui, _brain, audio = make_flow(audio=live_audio_worker())
+
+    audio.emit("audio.live.state", {"state": "listening"})
+
+    assert ui.calls_for("ui.live_voice.ready") == []
+
+
+def test_adopted_session_gets_no_ready_notice():
+    flow, native, ui, _brain, audio = make_flow(
+        audio=live_audio_worker({"started": False, "error": "already_active"})
+    )
+    native.emit("native.hotkey", {"kind": "voice_live"})
+
+    audio.emit("audio.live.state", {"state": "listening"})
+
+    assert ui.calls_for("ui.live_voice.ready") == []
+
+
 def test_live_state_events_ignored_when_idle():
     flow, _native, ui, _brain, audio = make_flow(audio=live_audio_worker())
 

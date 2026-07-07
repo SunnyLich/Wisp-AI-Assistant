@@ -1002,6 +1002,49 @@ def test_live_captions_interleave_roles_with_prefixed_lines():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_live_ready_hint_shows_once_then_captions_follow():
+    """The connected hint appears once per session, before any captions."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = ""
+    bubble = SpeechBubble()
+    hint = "Live voice is ready - speak anytime."
+
+    try:
+        bubble.show_live_ready()  # not live yet: ignored
+        assert bubble._full_text == ""
+
+        bubble.set_live_mode(True)
+        bubble.show_live_ready()
+        bubble.show_live_ready()  # duplicate event: ignored
+
+        assert bubble._full_text == hint
+        assert bubble._revealed_count == len(bubble._pending_words)
+
+        bubble.append_live_transcript("user", "hello")
+        assert bubble._full_text == f"{hint}\nYou ▸ hello"
+
+        bubble.show_live_ready()  # captions running: ignored
+        assert bubble._full_text == f"{hint}\nYou ▸ hello"
+
+        # a new session shows the hint again
+        bubble.set_live_mode(False)
+        bubble.set_live_mode(True)
+        bubble.show_live_ready()
+        assert bubble._full_text == hint
+    finally:
+        config.APP_LANGUAGE = old_language
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_live_mode_holds_auto_hide_until_deactivated():
     """The caption bubble must not fade out mid-conversation."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
