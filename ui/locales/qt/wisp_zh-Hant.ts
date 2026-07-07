@@ -3517,6 +3517,10 @@ Continue?</source>
       <translation>即時語音錯誤</translation>
     </message>
     <message>
+      <source>Live voice is ready - speak anytime.</source>
+      <translation>即時語音已就緒 - 隨時可以開口。</translation>
+    </message>
+    <message>
       <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
       <translation>即時語音工作階段已結束（伺服器時間限制）。按下快速鍵即可重新開始。</translation>
     </message>

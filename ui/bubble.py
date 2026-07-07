@@ -275,6 +275,7 @@ class SpeechBubble(QWidget):
         # Live voice captions (interleaved "You / Wisp" lines, instant reveal)
         self._live_mode = False
         self._live_last_role = ""
+        self._live_ready_shown = False
         self._auto_hide_holds = 0
         self._auto_hide_pending_ms: int | None = None
         self._hide_timer_elapsed = QElapsedTimer()
@@ -923,11 +924,24 @@ class SpeechBubble(QWidget):
         if active:
             self.clear()  # also resets _auto_hide_holds, so hold after clearing
             self._live_last_role = ""
+            self._live_ready_shown = False
             self._pause_auto_hide()
             return
         self._live_last_role = ""
         self._resume_auto_hide()
         self.finish(flush_remaining=True)
+
+    def show_live_ready(self) -> None:
+        """Show a one-time hint that the live conversation is connected.
+
+        Fired on the session's first listening state — before it, speech goes
+        nowhere, so the hint is what tells the user it is safe to start
+        talking. Skipped if captions already arrived (the transcript itself
+        proves the session is live)."""
+        if not self._live_mode or self._live_ready_shown or self._full_text:
+            return
+        self._live_ready_shown = True
+        self.append_live_transcript("", t("Live voice is ready - speak anytime."))
 
     def append_live_transcript(self, role: str, text: str) -> None:
         """Append one live-caption fragment, labelling speaker changes.

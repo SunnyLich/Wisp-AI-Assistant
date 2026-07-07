@@ -2176,6 +2176,8 @@ class QtProtocolHost:
             return self._live_voice_session(**params)
         if method == "ui.live_voice.transcript":
             return self._live_voice_transcript(**params)
+        if method == "ui.live_voice.ready":
+            return self._live_voice_ready(**params)
         if method == "ui.context.clear":
             return self._context_clear()
         if method == "ui.context.add_item":
@@ -2803,6 +2805,11 @@ class QtProtocolHost:
         """Append one live voice caption fragment to the bubble."""
         self._ensure_bubble().append_live_transcript(str(role or ""), str(text or ""))
         return {"appended": len(str(text or ""))}
+
+    def _live_voice_ready(self) -> dict[str, Any]:
+        """Show the connected hint in the caption bubble (session is live)."""
+        self._ensure_bubble().show_live_ready()
+        return {"shown": True}
 
     def _reply_done(self, flush: bool = True) -> dict[str, Any]:
         """Finish the reply bubble.

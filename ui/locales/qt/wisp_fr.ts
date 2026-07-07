@@ -3553,6 +3553,10 @@ Continuer ?</translation>
       <translation>Erreur de voix en direct</translation>
     </message>
     <message>
+      <source>Live voice is ready - speak anytime.</source>
+      <translation>La voix en direct est prête - parlez quand vous voulez.</translation>
+    </message>
+    <message>
       <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
       <translation>La session de voix en direct est terminée (limite de temps du serveur). Appuyez sur le raccourci pour recommencer.</translation>
     </message>

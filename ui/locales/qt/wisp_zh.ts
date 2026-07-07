@@ -3553,6 +3553,10 @@ Continue?</source>
       <translation>实时语音错误</translation>
     </message>
     <message>
+      <source>Live voice is ready - speak anytime.</source>
+      <translation>实时语音已就绪 - 随时可以开口。</translation>
+    </message>
+    <message>
       <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
       <translation>实时语音会话已结束（服务器时间限制）。按下快捷键可重新开始。</translation>
     </message>

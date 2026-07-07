@@ -3553,6 +3553,10 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
       <translation>Error de voz en vivo</translation>
     </message>
     <message>
+      <source>Live voice is ready - speak anytime.</source>
+      <translation>La voz en vivo está lista - habla cuando quieras.</translation>
+    </message>
+    <message>
       <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
       <translation>La sesión de voz en vivo terminó (límite de tiempo del servidor). Pulsa el atajo para empezar de nuevo.</translation>
     </message>

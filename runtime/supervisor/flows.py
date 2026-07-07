@@ -239,6 +239,8 @@ class FlowController:
         self._dictate_state = "idle"
         # Live voice conversation (toggle hotkey, Gemini Live in the audio worker).
         self._live_voice_state = "idle"  # idle | starting | active | stopping
+        # One "ready" bubble notice per session, on the first listening state.
+        self._live_voice_ready_notified = False
         self._dictate_target_pid = 0
         self._dictate_focus_token = 0
         self._generation = itertools.count(1)
@@ -752,6 +754,11 @@ class FlowController:
         }.get(state)
         if overlay and self._live_voice_busy():
             self._fire(self.ui, "ui.overlay.state", {"state": overlay})
+        if state == "listening" and self._live_voice_busy() and not self._live_voice_ready_notified:
+            # First listening state = the Gemini websocket is connected and the
+            # mic is streaming; tell the user the conversation is actually live.
+            self._live_voice_ready_notified = True
+            self._fire(self.ui, "ui.live_voice.ready", {})
 
     def _on_audio_live_transcript(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle live voice transcript events."""
@@ -1644,6 +1651,7 @@ class FlowController:
         """Begin a hands-free live voice conversation (toggle hotkey)."""
         # Acknowledge the keypress instantly; "thinking" covers the connect.
         self._fire(self.ui, "ui.overlay.state", {"state": "thinking"})
+        self._live_voice_ready_notified = False
         self._reload_supervisor_config_if_changed()
         with self._lock:
             recorder_busy = self._voice_state != "idle" or self._dictate_state != "idle"
@@ -1666,6 +1674,9 @@ class FlowController:
             error = str(result.get("error") or "")
             if error == "already_active":
                 # The worker still runs a session (e.g. a lost stop); adopt it.
+                # It is mid-conversation, so no "ready" notice on its next
+                # speaking -> listening flip.
+                self._live_voice_ready_notified = True
                 self._mark_live_voice_active()
                 self._fire(self.ui, "ui.live_voice.session", {"active": True})
                 return
