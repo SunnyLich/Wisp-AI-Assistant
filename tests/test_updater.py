@@ -226,6 +226,8 @@ def test_apply_update_writes_windows_helper_without_running_it(monkeypatch, tmp_
     monkeypatch.setattr(updater, "UPDATE_DOWNLOAD_DIR", updates_dir)
     monkeypatch.setattr(updater, "SINGLE_INSTANCE_LOCK", tmp_path / "wisp.lock")
     monkeypatch.setattr(updater.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(updater.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200, raising=False)
+    monkeypatch.setattr(updater.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
 
     script = updater.apply_update(update, pid=123)
 

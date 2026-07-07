@@ -202,6 +202,11 @@ def test_tts_voice_tab_does_not_import_stt_stack(monkeypatch):
     monkeypatch.setattr(dialog_mod, "_read_optional_install_status", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(
         optional_deps,
+        "optional_package_spec_status",
+        lambda package, *_args, **_kwargs: {"installed": package == "stt", "valid": package == "stt"},
+    )
+    monkeypatch.setattr(
+        optional_deps,
         "stt_runtime_import_status_fast",
         lambda: {"installed": True, "valid": True, "version": "1.2.1", "origin": "fake"},
     )
@@ -2005,6 +2010,11 @@ def test_kokoro_reinstall_click_passes_reinstall(monkeypatch):
     dialog._tts_install_status_result = None
     captured: dict[str, object] = {}
     monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda package, *_args, **_kwargs: {"installed": package == "kokoro", "valid": package == "kokoro"},
+    )
     monkeypatch.setattr(
         SettingsDialog,
         "_kokoro_torch_status_fast",
