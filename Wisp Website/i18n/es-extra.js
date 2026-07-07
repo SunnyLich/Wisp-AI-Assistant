@@ -757,6 +757,23 @@ Object.assign(I18N.reg['es'].tr, {
   'Use context chips, keep only needed sources enabled, prefer smaller models for simple tasks, and use context budgets for large documents or browser pages.':
     'Usa las fichas de contexto, mantén activas solo las fuentes necesarias, prefiere modelos más pequeños para tareas simples y usa presupuestos de contexto para documentos o páginas grandes.',
   /* Common issues */
+  'Known issues': 'Problemas conocidos',
+  'Kokoro TTS falls back to CPU on older NVIDIA GPUs': 'Kokoro TTS vuelve a CPU en GPU NVIDIA antiguas',
+  'Wisp falls back to CPU automatically when CUDA is not compatible.':
+    'Wisp vuelve automáticamente a CPU cuando CUDA no es compatible.',
+  'Details': 'Detalles',
+  'What users see': 'Qué ven los usuarios',
+  'The log says Kokoro model failed on cuda: cuDNN version 91900 is not compatible with devices with SM < 7.5, then Wisp falls back to CPU.':
+    'El registro dice que el modelo Kokoro falló en <code>cuda</code>: la versión cuDNN 91900 no es compatible con dispositivos con SM inferior a 7.5, y luego Wisp vuelve a CPU.',
+  'Affected systems': 'Sistemas afectados',
+  'NVIDIA GPUs with compute capability below 7.5 when paired with a PyTorch/cuDNN build that requires newer CUDA hardware.':
+    'GPU NVIDIA con capacidad de cómputo inferior a 7.5 cuando se usan con un build de PyTorch/cuDNN que requiere hardware CUDA más reciente.',
+  'Impact': 'Impacto',
+  'Local Kokoro TTS still works, but speech synthesis uses CPU and may be slower.':
+    'El TTS local Kokoro sigue funcionando, pero la síntesis de voz usa CPU y puede ser más lenta.',
+  'Fix status': 'Estado de la corrección',
+  'Wisp already falls back safely. We may add a preflight CUDA capability check so unsupported GPUs skip the failed CUDA attempt.':
+    'Wisp ya vuelve a CPU de forma segura. Podemos añadir una comprobación previa de capacidad CUDA para que las GPU no compatibles omitan el intento CUDA que fallaría.',
   'Start here': 'Empieza aquí',
   'Most problems are either missing configuration, blocked OS permissions, a provider key/model mismatch, or a hotkey conflict. These checks catch the common cases quickly.':
     'La mayoría de los problemas son configuración ausente, permisos del sistema bloqueados, una clave/modelo de proveedor que no coincide o un conflicto de atajos. Estas comprobaciones detectan rápido los casos comunes.',

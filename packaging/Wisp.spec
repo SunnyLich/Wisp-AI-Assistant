@@ -35,6 +35,7 @@ BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
 PIP_HIDDENIMPORTS = collect_submodules("pip")
 MODULE_MODE_HIDDENIMPORTS = [
     "core.addon_host",
+    "scripts.optional_tts_installer",
 ]
 # Optional packages are installed after PyInstaller analysis and can therefore
 # import stdlib modules that the frozen app did not otherwise need. Torch (used

@@ -26,6 +26,9 @@ secrets.*
 /.agents/
 /.codex/
 
+# Local prototypes (standalone experiments, not part of the app)
+/prototypes/
+
 # Local planning docs (living, not for VCS)
 MACOS_NATIVE_PLAN.md
 FLOWS_SPLIT_PLAN.md

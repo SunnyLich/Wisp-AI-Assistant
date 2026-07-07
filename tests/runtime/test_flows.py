@@ -284,6 +284,7 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert ui.last_call("ui.prewarm_intent")["wait"] is False
     assert audio.last_call("audio.prewarm")["wait"] is False
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
+    assert native.last_call("native.context.snapshot")["params"]["selection_dedupe_key"] == "intent"
     assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
     assert not ui.calls_for("ui.reply.listening")
 
@@ -331,6 +332,42 @@ def test_audio_warmup_events_surface_user_notices():
     assert ui.calls_for("ui.reply.notice")[0]["params"]["key"] == "audio-warmup"
 
 
+def test_audio_warmup_done_does_not_announce_skipped_tts():
+    """Skipped optional TTS should not be reported as warmed or ready."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["stt", "tts"],
+            "provider": "kokoro",
+            "ok": True,
+            "result": {"stt": "ok", "tts": "skipped"},
+        },
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == "Local speech recognition is ready."
+
+
+def test_audio_warmup_done_uses_remote_tts_wording():
+    """Remote/API TTS prewarm should not be described as a local voice install."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["stt", "tts"],
+            "provider": "cartesia",
+            "ok": True,
+            "result": {"stt": "ok", "tts": "ok"},
+        },
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "TTS connection and speech recognition are ready."
+    )
+
+
 def test_audio_warmup_failure_surfaces_user_notice():
     """Verify local audio warmup failures are visible to the user."""
     _flow, _native, ui, _brain, audio = make_flow()
@@ -346,6 +383,28 @@ def test_audio_warmup_failure_surfaces_user_notice():
     )
 
     assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Local speech warmup failed:")
+
+
+def test_transient_kokoro_warmup_failure_does_not_surface_user_notice():
+    """Kokoro import contention is not a broken install and should not show a bubble."""
+    _flow, _native, ui, _brain, audio = make_flow()
+    status = (
+        "error: RuntimeError: Kokoro is still warming up. "
+        "Current stage: importing kokoro.KPipeline (17s). Try again when local speech is ready."
+    )
+
+    audio.emit("audio.warmup.progress", {"item": "tts", "status": status, "items": ["tts"]})
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["tts"],
+            "provider": "kokoro",
+            "ok": False,
+            "result": {"tts": status},
+        },
+    )
+
+    assert not ui.calls_for("ui.reply.notice")
 
 
 def test_caller_hotkey_captures_selection_before_intent_steals_focus():
@@ -439,6 +498,267 @@ def test_caller_hotkey_captures_selected_file_before_intent_steals_focus(tmp_pat
     assert "stale clipboard" not in params["ambient_text"]
 
 
+def test_intent_stale_selection_offers_off_by_default_chip():
+    """Verify an already-served X11 selection arrives as an off, stale chip."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "selected_text": "",
+            "stale_selected_text": "earlier words",
+            "clipboard_text": "",
+            "active_app": {"name": "Notes", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    with caller_config([{}]):
+        flow, native, ui, _brain, _audio = make_flow(native=native)
+        flow.begin_caller(0)
+
+    shown = ui.calls_for("ui.intent.context_items")[-1]["params"]
+    chips = {item["id"]: item for item in shown["context_items"]}
+    assert chips["selection"]["state"] == "off"
+    assert chips["selection"]["stale"] is True
+    assert "earlier words" in chips["selection"]["preview"]
+    assert chips["selection"]["tokens"].startswith("~")
+    assert "not attached" in chips["selection"]["warning"]
+
+
+def test_intent_stale_selection_attaches_when_chip_toggled_on():
+    """Verify toggling the stale Selection chip on attaches the earlier text."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "selected_text": "",
+            "stale_selected_text": "earlier words",
+            "clipboard_text": "",
+            "active_app": {"name": "Notes", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config([{}]):
+        flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "prompt": "use it",
+                "context_choices": [{"id": "selection", "state": "on", "touched": True}],
+            },
+        )
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["selected"] == "earlier words"
+
+
+def test_intent_stale_selection_stays_detached_without_toggle():
+    """Verify an untouched stale Selection chip sends no selection text."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "selected_text": "",
+            "stale_selected_text": "earlier words",
+            "clipboard_text": "",
+            "active_app": {"name": "Notes", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config([{}]):
+        flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "prompt": "no selection",
+                "context_choices": [{"id": "selection", "state": "off", "touched": False}],
+            },
+        )
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["selected"] == ""
+    assert "earlier words" not in str(params)
+
+
+def test_linux_intent_selection_context_is_off_by_default():
+    """Verify Linux offers the detected selection without attaching it by default."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "platform": "linux",
+            "selected_text": "last selected words",
+            "clipboard_text": "",
+            "active_app": {"name": "Editor", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config([{}]):
+        flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        shown = ui.calls_for("ui.intent.context_items")[-1]["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        assert chips["selection"]["state"] == "off"
+        assert chips["selection"]["capture_on_enable"] is False
+        assert chips["selection"]["preview"] == "last selected words"
+        assert chips["selection"]["tokens"].startswith("~")
+
+        ui.emit("ui.intent.chosen", {"prompt": "do not use selection"})
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["selected"] == ""
+    assert "last selected words" not in str(params)
+
+
+def test_linux_intent_selection_toggle_attaches_existing_selection():
+    """Verify Linux Selection On uses the already detected text, not a new capture."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "platform": "linux",
+            "selected_text": "last selected words",
+            "clipboard_text": "",
+            "active_app": {"name": "Editor", "pid": 42},
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("done")})
+    with caller_config([{}]):
+        flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "prompt": "use selection",
+                "context_choices": [{"id": "selection", "state": "on", "touched": True}],
+            },
+        )
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["selected"] == "last selected words"
+
+
+def test_intent_context_source_removal_filters_items_and_disables_empty_group():
+    """Verify per-row X removals drop sources and switch an emptied App chip off."""
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "selected_text": "",
+            "clipboard_text": "",
+            "active_app": {"name": "Notes", "pid": 42},
+            "active_document_text": "[Doc A]\nalpha body\n[Doc B]\nbeta body",
+            "active_document_sources": [
+                {"label": "Doc A", "preview": "alpha body"},
+                {"label": "Doc B", "preview": "beta body"},
+            ],
+        }
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    rows = [{"context_ambient": True, "context_documents": True}]
+    with caller_config(rows):
+        flow, native, ui, _brain, _audio = make_flow(native=native)
+        flow.begin_caller(0)
+        ui.emit("ui.intent.context.remove", {"id": "ambient", "source_id": "Doc A"})
+
+        shown = ui.calls_for("ui.intent.context_items")[-1]["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        assert [s["label"] for s in chips["ambient"]["sources"]] == ["Doc B"]
+        assert chips["ambient"]["state"] != "off"
+
+        pending = flow._pending
+        assert pending is not None
+        assert "alpha body" not in str(pending.context.get("active_document_text"))
+        assert "beta body" in str(pending.context.get("active_document_text"))
+
+        ui.emit("ui.intent.context.remove", {"id": "ambient", "source_id": "Doc B"})
+        shown = ui.calls_for("ui.intent.context_items")[-1]["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        assert chips["ambient"]["sources"] == []
+        assert chips["ambient"]["state"] == "off"
+        assert chips["ambient"]["tokens"].startswith("~")
+
+
+def test_intent_app_context_reenable_restores_removed_document_sources():
+    """Verify App recaptures all document rows after an emptied group is re-enabled."""
+    active_doc = "[Doc A]\nalpha body\n\n[Doc B]\nbeta body\n\n[Doc C]\ngamma body"
+
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": True,
+            "context_documents_mode": "auto",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        }
+    ]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(
+        handlers={"brain.context.active_document": lambda _params: {"text": active_doc}},
+        stream_handlers={"brain.query": query_stream("ok")},
+    )
+    with caller_config(rows):
+        flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+
+        shown = ui.last_call("ui.intent.context_items")["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        original_tokens = chips["ambient"]["tokens"]
+        assert [source["label"] for source in chips["ambient"]["sources"]] == ["Doc A", "Doc B", "Doc C"]
+        assert original_tokens.startswith("~")
+
+        for label in ("Doc A", "Doc B", "Doc C"):
+            ui.emit("ui.intent.context.remove", {"id": "ambient", "source_id": label})
+
+        emptied = ui.last_call("ui.intent.context_items")["params"]
+        emptied_chips = {item["id"]: item for item in emptied["context_items"]}
+        assert emptied_chips["ambient"]["state"] == "off"
+        assert emptied_chips["ambient"]["sources"] == []
+        assert emptied_chips["ambient"]["tokens"].startswith("~")
+
+        ui.emit(
+            "ui.intent.context.reenabled",
+            {
+                "id": "ambient",
+                "context_choices": [
+                    {"id": "ambient", "state": "on", "default_state": "off", "touched": True}
+                ],
+            },
+        )
+
+        restored = ui.last_call("ui.intent.context_items")["params"]
+        restored_chips = {item["id"]: item for item in restored["context_items"]}
+        assert restored_chips["ambient"]["state"] == "on"
+        assert restored_chips["ambient"]["tokens"] == original_tokens
+        assert [source["label"] for source in restored_chips["ambient"]["sources"]] == [
+            "Doc A",
+            "Doc B",
+            "Doc C",
+        ]
+
+        ui.emit(
+            "ui.intent.chosen",
+            {
+                "custom": "Use all docs",
+                "context_choices": [
+                    {"id": "ambient", "state": "on", "default_state": "off", "touched": True}
+                ],
+            },
+        )
+
+    query = brain.last_call("brain.query")["params"]
+    assert "[Doc A]\nalpha body" in query["active_document_text"]
+    assert "[Doc B]\nbeta body" in query["active_document_text"]
+    assert "[Doc C]\ngamma body" in query["active_document_text"]
+
+
+def test_strip_removed_document_sources_drops_only_matching_blocks():
+    """Verify removed labels drop their blocks and everything else survives."""
+    text = "[Doc A]\nalpha body\n[Doc B]\nbeta body"
+    assert FlowController._strip_removed_document_sources(text, {"Doc A"}) == "[Doc B]\nbeta body"
+    assert FlowController._strip_removed_document_sources(text, set()) == text
+    assert FlowController._strip_removed_document_sources("plain text", {"Doc A"}) == "plain text"
+    assert (
+        FlowController._strip_removed_document_sources(text, {"Doc A", "Doc B"}) == ""
+    )
+
+
 def test_intent_selection_chip_can_start_capture_without_selected_text():
     """Verify empty selection can still be toggled to start capture."""
     rows = [
@@ -466,8 +786,8 @@ def test_intent_selection_chip_can_start_capture_without_selected_text():
     assert chips["selection"]["tokens"] == ""
 
 
-def test_intent_context_uses_unknown_tokens_for_deferred_sources():
-    """Verify deferred context chips do not show fake-small token estimates."""
+def test_intent_context_estimates_known_text_and_marks_unknown_deferred_sources():
+    """Verify known context text is estimated while truly unknown sources stay deferred."""
     rows = [
         {
             "paste_back": False,
@@ -489,7 +809,7 @@ def test_intent_context_uses_unknown_tokens_for_deferred_sources():
         for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
     }
 
-    assert chips["ambient"]["tokens"] == "? tok"
+    assert chips["ambient"]["tokens"].startswith("~")
     assert "not known yet" in chips["ambient"]["warning"]
     assert chips["selection"]["tokens"] != "? tok"
     assert chips["clipboard"]["tokens"] != "? tok"
@@ -532,6 +852,54 @@ def test_intent_screenshot_estimates_from_screen_size_without_capture():
     assert screenshot_chip["tokens"] == "~1.1k tok"
     assert screenshot_chip["warning"] == ""
     assert not native.calls_for("native.capture.fullscreen")
+
+
+def test_intent_off_context_sources_keep_available_estimates():
+    """Verify off context chips still show estimates when metadata is available."""
+    rows = [
+        {
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "file_access": "off",
+        }
+    ]
+
+    def snapshot(_params: dict[str, Any]) -> dict[str, Any]:
+        result = context_handler(selected="", clipboard="clipboard text")(_params)
+        result["browser_url"] = "https://example.test/page"
+        result["browser_content"] = "Browser page estimate text."
+        result["screen_size"] = {"width": 1920, "height": 1080}
+        return result
+
+    native = FakeWorker({"native.context.snapshot": snapshot})
+    with caller_config(rows):
+        _flow, _native, ui, _brain, _audio = make_flow(native=native)
+        _flow.begin_caller(0)
+
+    chips = {
+        item["id"]: item
+        for item in ui.last_call("ui.intent.context_items")["params"]["context_items"]
+    }
+    assert chips["ambient"]["state"] == "off"
+    assert chips["ambient"]["tokens"].startswith("~")
+    assert chips["browser"]["state"] == "off"
+    assert chips["browser"]["tokens"].startswith("~")
+    assert chips["clipboard"]["state"] == "off"
+    assert chips["clipboard"]["tokens"].startswith("~")
+    assert chips["screenshot"]["state"] == "off"
+    assert chips["screenshot"]["tokens"] == "~1.1k tok"
+    assert chips["github"]["state"] == "off"
+    assert chips["github"]["tokens"] == "0 tok"
+    assert chips["memory"]["state"] == "off"
+    assert chips["memory"]["tokens"] == "0 tok"
+    assert chips["files"]["state"] == "off"
+    assert chips["files"]["tokens"] == ""
 
 
 def test_begin_caller_reloads_supervisor_config_when_env_changed(monkeypatch):
@@ -1175,7 +1543,7 @@ def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
             if item["id"] == "browser"
         )
         assert browser_chip["state"] == "on"
-        assert browser_chip["tokens"] == "? tok"
+        assert browser_chip["tokens"].startswith("~")
         assert "not known yet" in browser_chip["warning"]
         updated_browser_chip = next(
             item
@@ -4061,7 +4429,7 @@ def test_chat_context_preview_updates_token_estimates_before_send():
     calls = ui.calls_for("ui.chat.context_preview")
     assert len(calls) == 2
     first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
-    assert first_browser["tokens"] == "? tok"
+    assert first_browser["tokens"].startswith("~")
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["tokens"].startswith("~")
     assert updated_browser["warning"] == ""
@@ -4113,7 +4481,7 @@ def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
     assert len(calls) == 2
     first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
     assert first_browser["state"] == "on"
-    assert first_browser["tokens"] == "? tok"
+    assert first_browser["tokens"].startswith("~")
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["state"] == "on"
     assert updated_browser["tokens"].startswith("~")
@@ -4163,7 +4531,7 @@ def test_chat_context_preview_keeps_requested_browser_on_while_detecting():
     assert len(calls) == 2
     first_browser = next(item for item in calls[0]["params"]["context_items"] if item["id"] == "browser")
     assert first_browser["state"] == "on"
-    assert first_browser["tokens"] == "? tok"
+    assert first_browser["tokens"] == "0 tok"
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["state"] == "on"
     assert updated_browser["tokens"].startswith("~")

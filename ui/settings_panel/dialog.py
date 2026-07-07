@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from PySide6.QtCore import Qt, QTimer, QObject, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPainter, QPalette
 from core import secret_store
 from core.system.env_utils import (
     format_tool_modes, normalize_file_access_mode, normalize_screenshot_mode,
@@ -44,6 +44,7 @@ from ui.settings_panel.helpers import (
     parse_fallback_rows,
 )
 from ui.i18n import COMBO_I18N_SOURCE_ROLE, LANGUAGE_OPTIONS, localize_widget_tree, t
+from ui.optional_install_dialog import OptionalInstallDialog
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 ENV_PATH = settings_env.ENV_PATH
@@ -75,6 +76,59 @@ _CUSTOM_MODEL_SENTINEL = "__custom__"
 _CUSTOM_MODEL_LABEL = "Custom / enter manually…"
 # Fixed width of the leading "Priority" column shown beside each model row.
 _MODEL_PRIORITY_COL_W = 46
+_SECRET_MASK_PLACEHOLDER = "●" * 16
+
+
+class _SecretLineEdit(QLineEdit):
+    """Password field that can show a stored secret as password dots."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._stored_secret_placeholder = False
+
+    def setStoredSecretPlaceholder(self, stored: bool) -> None:
+        self._stored_secret_placeholder = bool(stored)
+        self.setProperty("storedSecret", self._stored_secret_placeholder)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        stored_placeholder = (
+            self._stored_secret_placeholder
+            and not self.text()
+            and bool(self.placeholderText())
+        )
+        placeholder = ""
+        if stored_placeholder:
+            placeholder = self.placeholderText()
+            super().setPlaceholderText("")
+        try:
+            super().paintEvent(event)
+        finally:
+            if stored_placeholder:
+                super().setPlaceholderText(placeholder)
+        if not stored_placeholder:
+            return
+
+        painter = QPainter(self)
+        font = QFont(self.font())
+        size = font.pointSizeF()
+        if size > 0:
+            font.setPointSizeF(size + 4)
+        painter.setFont(font)
+        painter.setPen(self.palette().color(QPalette.ColorRole.Text))
+        rect = self.rect().adjusted(12, 0, -10, 0)
+        mask = painter.fontMetrics().elidedText(
+            _SECRET_MASK_PLACEHOLDER,
+            Qt.TextElideMode.ElideRight,
+            max(0, rect.width()),
+        )
+        painter.drawText(
+            rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            mask,
+        )
 
 _ASSISTANT_LANGUAGE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("System default", ""),
@@ -136,9 +190,40 @@ _STT_DEVICE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("GPU (CUDA)", "cuda"),
 )
 
+
+def _local_speech_device_options() -> tuple[tuple[str, str], ...]:
+    """Return device choices that are valid for local speech installs."""
+    if sys.platform == "darwin":
+        return (
+            ("Auto (CPU)", "auto"),
+            ("CPU", "cpu"),
+        )
+    return _STT_DEVICE_OPTIONS
+
+
 _DICTATE_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Paste raw transcript", "raw"),
     ("Light LLM cleanup", "llm"),
+)
+
+_LIVE_VOICE_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("gemini-3.1-flash-live-preview", "gemini-3.1-flash-live-preview"),
+    ("gemini-2.5-flash-native-audio-preview-12-2025", "gemini-2.5-flash-native-audio-preview-12-2025"),
+)
+
+_LIVE_VOICE_PROVIDER_OPTIONS: tuple[str, ...] = ("google",)
+
+_LIVE_VOICE_PROVIDER_MODELS: dict[str, list[str]] = {
+    provider: [value for _label, value in _LIVE_VOICE_MODEL_OPTIONS]
+    for provider in _LIVE_VOICE_PROVIDER_OPTIONS
+}
+
+_LIVE_VOICE_VOICE_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Model default", ""),
+    ("Puck", "Puck"),
+    ("Kore", "Kore"),
+    ("Charon", "Charon"),
+    ("Aoede", "Aoede"),
 )
 
 _CHAT_REASONING_EFFORT_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -387,7 +472,7 @@ class SettingsDialog(QDialog):
                     copilot_auth.save_token(value)
                     _settings_log.info("Saved GitHub Copilot token to OS keychain")
                     row["key"].clear()
-                    row["key"].setPlaceholderText(t("stored in keychain"))
+                    self._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
                     continue
                 except Exception as exc:  # noqa: BLE001 - reported with other keychain failures
                     _settings_log.error("Could not save GitHub Copilot token to OS keychain: %s", exc)
@@ -398,7 +483,7 @@ class SettingsDialog(QDialog):
                 continue
             if _store(key_name, value, label):
                 row["key"].clear()
-                row["key"].setPlaceholderText(t("stored in keychain"))
+                self._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
 
         # TTS and custom keys still live in self._fields
         for name, label in [
@@ -414,7 +499,11 @@ class SettingsDialog(QDialog):
                 continue
             if _store(name, value, label):
                 self._fields[name].clear()  # type: ignore[attr-defined]
-                self._fields[name].setPlaceholderText(t(f"{label} key stored in OS keychain"))  # type: ignore[attr-defined]
+                self._set_secret_placeholder(
+                    self._fields[name],  # type: ignore[arg-type]
+                    f"{label} key stored in OS keychain",
+                    stored=True,
+                )
 
         if failures:
             QMessageBox.warning(
@@ -1114,7 +1203,7 @@ class SettingsDialog(QDialog):
         if key.startswith("CALLER_") or key.startswith("VOICE_") or key.startswith("SNIP_") or key in {
             "HOTKEY_VOICE", "HOTKEY_DICTATE", "DICTATE_MODE",
             "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP",
-            "HOTKEY_READ_SELECTION_ALOUD",
+            "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_VOICE_LIVE",
             "INTENT_CONTEXT_TOGGLE_KEYS", "INTENT_OVERLAY_TIMEOUT_MS",
         }:
             return "Keybinds"
@@ -1141,6 +1230,10 @@ class SettingsDialog(QDialog):
                 snapshot[key] = _get(widget).strip()
             elif isinstance(widget, QCheckBox):
                 snapshot[key] = str(widget.isChecked())
+            elif key == "LIVE_VOICE_MODEL":
+                snapshot[key] = self._live_voice_model_value()
+            elif key == "LIVE_VOICE_VOICE_NAME":
+                snapshot[key] = self._live_voice_voice_value()
             elif isinstance(widget, (QLineEdit, QComboBox, QTextEdit)):
                 snapshot[key] = _get(widget)
 
@@ -1379,6 +1472,13 @@ class SettingsDialog(QDialog):
 
     def _set_value_for_env_key(self, key: str, value: str) -> bool:
         """Set value for env key."""
+        if key == "LIVE_VOICE_MODEL":
+            provider = _get(self._fields["LIVE_VOICE_PROVIDER"]).strip() or "google"
+            self._fill_live_voice_model_combo(provider, value)
+            return True
+        if key == "LIVE_VOICE_VOICE_NAME":
+            self._fill_live_voice_voice_combo(value)
+            return True
         if key in self._fields:
             widget = self._fields[key]
             if isinstance(widget, QCheckBox):
@@ -1650,7 +1750,11 @@ class SettingsDialog(QDialog):
         self._fields["CUSTOM_BASE_URL"] = QLineEdit()
         self._fields["CUSTOM_BASE_URL"].setPlaceholderText("https://api.example.com/v1")
         self._fields["CUSTOM_API_KEY"] = self._password()
-        self._fields["CUSTOM_API_KEY"].setPlaceholderText("Stored in OS keychain")
+        self._set_secret_placeholder(
+            self._fields["CUSTOM_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain",
+            stored=False,
+        )
 
         custom_card, custom_cv = self._card("Custom provider")
         custom_note = QLabel(
@@ -1865,7 +1969,6 @@ class SettingsDialog(QDialog):
         alias_edit.setMinimumWidth(80)
 
         key_edit = self._password()
-        key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
 
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(40)
@@ -1902,13 +2005,15 @@ class SettingsDialog(QDialog):
         provider = _get(row_info["provider"])
         key_edit = row_info["key"]
         if provider == "copilot":
-            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("github_pat_… (not saved to .env)"))
+            text = "stored in keychain" if stored else "github_pat_… (not saved to .env)"
         elif provider == "ollama":
-            key_edit.setPlaceholderText(t("not required"))
+            text = "not required"
+            stored = False
         elif provider == "custom":
-            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("custom endpoint API key"))
+            text = "stored in keychain" if stored else "custom endpoint API key"
         else:
-            key_edit.setPlaceholderText(t("stored in keychain") if stored else t("enter API key"))
+            text = "stored in keychain" if stored else "enter API key"
+        self._set_secret_placeholder(key_edit, text, stored=stored)
 
     def _remove_api_key_row(self, row_info: dict) -> None:
         """Remove api key row."""
@@ -1922,7 +2027,7 @@ class SettingsDialog(QDialog):
     def _get_api_key_display_options(self) -> "list[tuple[str, str]]":
         """Return api key display options."""
         options: list[tuple[str, str]] = []
-        for row in self._api_key_rows:
+        for row in getattr(self, "_api_key_rows", []):
             provider = _get(row["provider"])
             alias = row["alias"].text().strip()
             label = t(_PROVIDER_LABELS.get(provider, provider))
@@ -2010,6 +2115,11 @@ class SettingsDialog(QDialog):
         for section_rows in self._model_section_rows.values():
             for row in section_rows:
                 combo = row["api_key_combo"]
+                self._fill_credential_combo(combo, combo.currentData())
+        live_row = getattr(self, "_live_voice_model_row", None)
+        if isinstance(live_row, dict):
+            combo = live_row.get("api_key_combo")
+            if isinstance(combo, QComboBox):
                 self._fill_credential_combo(combo, combo.currentData())
 
     # ---- Model section row helpers ----
@@ -2536,7 +2646,7 @@ class SettingsDialog(QDialog):
                     if token.strip():
                         copilot_auth.save_token(token)
                         row["key"].clear()
-                        row["key"].setPlaceholderText(t("stored in keychain"))
+                        self._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
                         break
             if not token.strip():
                 raise ValueError("Add a GitHub Copilot provider row and paste a token first.")
@@ -2678,11 +2788,15 @@ class SettingsDialog(QDialog):
         self._fields["STT_BEAM_SIZE"] = stt_beam
 
         stt_device = _NoScrollCombo()
-        for label, value in _STT_DEVICE_OPTIONS:
+        for label, value in _local_speech_device_options():
             stt_device.addItem(label, value)
         stt_device_tip = (
-            "Where Whisper runs. GPU (CUDA) is much faster, especially for large-v3, but needs an "
-            "NVIDIA GPU with CUDA installed. Auto uses the GPU when present and falls back to CPU."
+            "Where Whisper runs. macOS uses CPU for local STT in this release."
+            if sys.platform == "darwin"
+            else (
+                "Where Whisper runs. GPU (CUDA) is much faster, especially for large-v3, but needs an "
+                "NVIDIA GPU with CUDA installed. Auto uses the GPU when present and falls back to CPU."
+            )
         )
         self._fields["STT_DEVICE"] = stt_device
 
@@ -2713,14 +2827,10 @@ class SettingsDialog(QDialog):
         # that pulls in NumPy/faster-whisper and can freeze the Qt UI thread.
         # If STT is already loaded in this process, the label below can still
         # show the live backend; otherwise it shows the configured request.
-        stt_status_row = QWidget()
-        ssr = QHBoxLayout(stt_status_row)
-        ssr.setContentsMargins(0, 0, 0, 0)
-        ssr.setSpacing(8)
         self._stt_active_lbl = QLabel()
         self._stt_active_lbl.setWordWrap(True)
         self._stt_install_status_lbl = self._stt_active_lbl
-        self._stt_download_btn = QPushButton(t("Install / load STT"))
+        self._stt_download_btn = QPushButton(t("Install STT"))
         self._stt_download_btn.setToolTip(
             t(
                 "Install or repair faster-whisper, then download and load the speech "
@@ -2729,14 +2839,12 @@ class SettingsDialog(QDialog):
             )
         )
         self._stt_download_btn.clicked.connect(self._preload_stt_model)
-        stt_recheck = QPushButton(t("Recheck"))
-        stt_recheck.setToolTip(
-            t("Refresh the speech backend readout without loading the speech model.")
-        )
-        stt_recheck.clicked.connect(self._refresh_stt_active_backend)
+        stt_status_row = QWidget()
+        ssr = QHBoxLayout(stt_status_row)
+        ssr.setContentsMargins(0, 0, 0, 0)
+        ssr.setSpacing(8)
         ssr.addWidget(self._stt_active_lbl, 1)
         ssr.addWidget(self._stt_download_btn, 0)
-        ssr.addWidget(stt_recheck, 0)
         stt_cv.addWidget(stt_status_row)
         self._refresh_stt_active_backend()
 
@@ -2755,12 +2863,20 @@ class SettingsDialog(QDialog):
 
         # Fields shared/created up front so save + load can always reach them.
         self._fields["CARTESIA_API_KEY"] = self._password()
-        self._fields["CARTESIA_API_KEY"].setPlaceholderText("Stored in OS keychain")
+        self._set_secret_placeholder(
+            self._fields["CARTESIA_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain",
+            stored=False,
+        )
         self._fields["CARTESIA_VOICE_ID"] = QLineEdit()
         self._fields["CARTESIA_VOICE_ID"].setPlaceholderText("e.g. a0e99841-438c-4a64-b679-ae501e7d6091")
         cartesia_voice_tip = "The Cartesia voice identifier to use for speech. Copy it from your Cartesia voices page."
         self._fields["ELEVENLABS_API_KEY"] = self._password()
-        self._fields["ELEVENLABS_API_KEY"].setPlaceholderText("Stored in OS keychain")
+        self._set_secret_placeholder(
+            self._fields["ELEVENLABS_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain",
+            stored=False,
+        )
         self._fields["ELEVENLABS_VOICE_ID"] = QLineEdit()
         self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText("blank = account default voice")
         eleven_voice_tip = "Leave blank for the account default voice, or paste a specific ElevenLabs voice ID."
@@ -2777,7 +2893,11 @@ class SettingsDialog(QDialog):
         self._fields["TTS_CUSTOM_BASE_URL"].setPlaceholderText("e.g. http://localhost:8880/v1")
         custom_tts_base_tip = "Base URL for an OpenAI-compatible speech server, ending at the API root such as /v1."
         self._fields["TTS_CUSTOM_API_KEY"] = self._password()
-        self._fields["TTS_CUSTOM_API_KEY"].setPlaceholderText("Stored in OS keychain (blank if not needed)")
+        self._set_secret_placeholder(
+            self._fields["TTS_CUSTOM_API_KEY"],  # type: ignore[arg-type]
+            "Stored in OS keychain (blank if not needed)",
+            stored=False,
+        )
         self._fields["TTS_CUSTOM_VOICE"] = QLineEdit()
         self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText("server-specific voice name")
         custom_tts_voice_tip = "Voice name or ID expected by your custom speech server."
@@ -2812,10 +2932,12 @@ class SettingsDialog(QDialog):
         self._fields["KOKORO_LANG_CODE"].setPlaceholderText("a")
         kokoro_lang_tip = "Kokoro language code. Use a for American English, b for British English, e for Spanish, f for French."
         kokoro_device = _NoScrollCombo()
-        for label, value in _STT_DEVICE_OPTIONS:
+        for label, value in _local_speech_device_options():
             kokoro_device.addItem(label, value)
         kokoro_device_tip = (
-            "Where local Kokoro TTS runs. Auto uses CUDA when Torch can see an NVIDIA GPU and falls back to CPU."
+            "Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release."
+            if sys.platform == "darwin"
+            else "Where local Kokoro TTS runs. Auto uses CUDA when Torch can see an NVIDIA GPU and falls back to CPU."
         )
         self._fields["KOKORO_DEVICE"] = kokoro_device
         kokoro_device.currentIndexChanged.connect(lambda _idx: self._handle_kokoro_device_changed())
@@ -2881,7 +3003,7 @@ class SettingsDialog(QDialog):
         self._elevenlabs_install_status_lbl = QLabel()
         self._elevenlabs_install_status_lbl.setWordWrap(True)
         ef.addRow(eleven_note)
-        ef.addRow(self._elevenlabs_install_btn, self._elevenlabs_install_status_lbl)
+        ef.addRow(self._elevenlabs_install_status_lbl, self._elevenlabs_install_btn)
         ef.addRow(_link_label("ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys"), self._fields["ELEVENLABS_API_KEY"])
         ef.addRow(_tooltip_label("ElevenLabs Voice ID", eleven_voice_tip), self._fields["ELEVENLABS_VOICE_ID"])
         ef.addRow(_tooltip_label("ElevenLabs Model", eleven_model_tip), self._fields["ELEVENLABS_MODEL"])
@@ -2948,8 +3070,14 @@ class SettingsDialog(QDialog):
         self._kokoro_install_btn.clicked.connect(self._install_kokoro)
         self._kokoro_install_status_lbl = QLabel()
         self._kokoro_install_status_lbl.setWordWrap(True)
+        self._kokoro_assets_btn = QPushButton()
+        self._kokoro_assets_btn.clicked.connect(self._kokoro_assets_action)
+        self._kokoro_assets_btn.setVisible(False)
+        self._kokoro_assets_mode = ""
+        self._kokoro_assets_update_revision = ""
         kf.addRow(kokoro_note)
-        kf.addRow(self._kokoro_install_btn, self._kokoro_install_status_lbl)
+        kf.addRow(self._kokoro_install_status_lbl, self._kokoro_install_btn)
+        kf.addRow(QLabel(), self._kokoro_assets_btn)
         kf.addRow(_tooltip_label("Voice", kokoro_voice_tip), self._fields["KOKORO_VOICE"])
         kf.addRow(_tooltip_label("Language code", kokoro_lang_tip), self._fields["KOKORO_LANG_CODE"])
         kf.addRow(_tooltip_label("Device", kokoro_device_tip), self._fields["KOKORO_DEVICE"])
@@ -2986,6 +3114,130 @@ class SettingsDialog(QDialog):
         playback_f.addRow(_tooltip_label("Volume", tts_volume_tip), volume_row)
         playback_cv.addWidget(playback_w)
         outer.addWidget(playback_card)
+
+        # ── LIVE VOICE CONVERSATION card ─────────────────────────────────
+        live_card, live_cv = self._card("Live voice conversation")
+        live_note = QLabel(
+            "<small>"
+            + t(
+                "Hands-free conversation with Gemini Live: press the toggle "
+                "hotkey, talk naturally, and interrupt Wisp by speaking over "
+                "it. Set the hotkey on the Keybinds tab."
+            )
+            + "</small>"
+        )
+        live_note.setWordWrap(True)
+        live_cv.addWidget(live_note)
+        self._live_voice_key_note_lbl = QLabel()
+        self._live_voice_key_note_lbl.setWordWrap(True)
+        live_cv.addWidget(self._live_voice_key_note_lbl)
+        self._live_voice_install_btn = QPushButton(t("Install live voice"))
+        self._live_voice_install_btn.clicked.connect(self._install_live_voice)
+        self._live_voice_install_status_lbl = QLabel()
+        self._live_voice_install_status_lbl.setWordWrap(True)
+
+        live_provider = _NoScrollCombo()
+        self._fill_credential_combo(live_provider, "google")
+        live_provider.setMinimumWidth(140)
+        live_provider_tip = (
+            "Provider/API key used for the live conversation. Gemini Live "
+            "currently uses the Google API key from the LLM tab."
+        )
+        self._fields["LIVE_VOICE_PROVIDER"] = live_provider
+
+        live_model_container = QWidget()
+        live_model_layout = QHBoxLayout(live_model_container)
+        live_model_layout.setContentsMargins(0, 0, 0, 0)
+        live_model_layout.setSpacing(6)
+        live_model_stack = QWidget()
+        live_model_stack_layout = QVBoxLayout(live_model_stack)
+        live_model_stack_layout.setContentsMargins(0, 0, 0, 0)
+        live_model_stack_layout.setSpacing(2)
+        live_model = _NoScrollCombo()
+        live_model_edit = QLineEdit()
+        live_model_edit.hide()
+        live_model_stack_layout.addWidget(live_model)
+        live_model_stack_layout.addWidget(live_model_edit)
+        live_model_refresh = QPushButton("↻")
+        live_model_refresh.setFixedWidth(34)
+        live_model_refresh.setStyleSheet("QPushButton { padding: 5px 4px; }")
+        live_model_refresh.setToolTip("Fetch the latest model names from the provider")
+        live_model_layout.addWidget(live_model_stack, 1)
+        live_model_layout.addWidget(live_model_refresh)
+        live_model_tip = (
+            "Pick a common live model, or choose Custom / enter manually to "
+            "type the exact model name."
+        )
+        self._fields["LIVE_VOICE_MODEL"] = live_model
+        self._live_voice_model_row = {
+            "api_key_combo": live_provider,
+            "model_combo": live_model,
+            "model_edit": live_model_edit,
+            "refresh_btn": live_model_refresh,
+        }
+        self._fill_live_voice_model_combo("google", "")
+        live_model.currentIndexChanged.connect(
+            lambda _: self._on_model_combo_changed(self._live_voice_model_row)
+        )
+
+        def _on_live_voice_provider_change() -> None:
+            provider = _get(live_provider).strip() or "google"
+            self._fill_live_voice_model_combo(provider, self._live_voice_model_value())
+            self._refresh_live_voice_key_note()
+
+        live_provider.currentIndexChanged.connect(lambda _: _on_live_voice_provider_change())
+        live_model.currentIndexChanged.connect(lambda _: self._schedule_dirty_refresh())
+        live_model_edit.textChanged.connect(lambda _: self._schedule_dirty_refresh())
+        live_model_refresh.clicked.connect(lambda: self._refresh_models_for_row(self._live_voice_model_row))
+        live_voice_container = QWidget()
+        live_voice_layout = QVBoxLayout(live_voice_container)
+        live_voice_layout.setContentsMargins(0, 0, 0, 0)
+        live_voice_layout.setSpacing(2)
+        live_voice_name = _NoScrollCombo()
+        live_voice_name_edit = QLineEdit()
+        live_voice_name_edit.hide()
+        live_voice_layout.addWidget(live_voice_name)
+        live_voice_layout.addWidget(live_voice_name_edit)
+        live_voice_name_tip = (
+            "Pick a prebuilt Gemini voice, use the model default, or choose "
+            "Custom / enter manually to type an exact voice name."
+        )
+        self._fields["LIVE_VOICE_VOICE_NAME"] = live_voice_name
+        self._live_voice_voice_row = {
+            "model_combo": live_voice_name,
+            "model_edit": live_voice_name_edit,
+        }
+        self._fill_live_voice_voice_combo("")
+        live_voice_name.currentIndexChanged.connect(
+            lambda _: self._on_model_combo_changed(self._live_voice_voice_row)
+        )
+        live_voice_name.currentIndexChanged.connect(lambda _: self._schedule_dirty_refresh())
+        live_voice_name_edit.textChanged.connect(lambda _: self._schedule_dirty_refresh())
+        self._fields["LIVE_VOICE_HALF_DUPLEX"] = QCheckBox(
+            t("Pause mic while Wisp talks (for speakers; disables barge-in)")
+        )
+        live_half_duplex_tip = (
+            "Turn this on when Wisp plays through speakers, so it does not "
+            "hear and interrupt itself. With headphones, leave it off to talk "
+            "over Wisp naturally."
+        )
+
+        live_fw = QWidget()
+        lvf = _expanding_form_layout(live_fw)
+        lvf.setContentsMargins(0, 0, 0, 0)
+        lvf.setSpacing(8)
+        lvf.addRow(self._live_voice_install_status_lbl, self._live_voice_install_btn)
+        lvf.addRow(_tooltip_label("Conversation provider", live_provider_tip), live_provider)
+        lvf.addRow(_tooltip_label("Conversation model", live_model_tip), live_model_container)
+        lvf.addRow(_tooltip_label("Conversation voice", live_voice_name_tip), live_voice_container)
+        lvf.addRow(
+            _tooltip_label("Speaker mode", live_half_duplex_tip),
+            self._fields["LIVE_VOICE_HALF_DUPLEX"],
+        )
+        live_cv.addWidget(live_fw)
+        outer.addWidget(live_card)
+        self._refresh_live_voice_install_status()
+        self._refresh_live_voice_key_note()
 
         advanced_group, advanced_layout = self._collapsible_group("Advanced settings")
         advanced_note = QLabel(
@@ -3107,6 +3359,12 @@ class SettingsDialog(QDialog):
 
     def _elevenlabs_installed(self) -> bool:
         """Return True when the optional ElevenLabs package is importable."""
+        try:
+            from core import optional_deps
+
+            return bool(optional_deps.optional_package_spec_status("elevenlabs").get("valid"))
+        except Exception:
+            pass
         return self._optional_package_installed("elevenlabs")
 
     def _kokoro_installed(self) -> bool:
@@ -3164,22 +3422,27 @@ class SettingsDialog(QDialog):
         installed = self._kokoro_installed()
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
         selected = selected_device.strip().lower()
+        install_status: dict[str, object] = {}
+        try:
+            from core import optional_deps
+
+            install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
+        except Exception:
+            install_status = {}
         result = getattr(self, "_tts_install_status_result", None)
         if isinstance(result, dict) and result.get("ok"):
             torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
-            install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else {}
+            install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else install_status
             system_has_cuda = bool(result.get("system_cuda_available"))
             installed = bool(result.get("kokoro_installed"))
         else:
+            try:
+                spec_device = "cuda" if selected == "cuda" else "cpu"
+                spec_status = optional_deps.optional_package_spec_status("kokoro", device=spec_device)
+                installed = bool(spec_status.get("valid"))
+            except Exception:
+                pass
             torch_status = self._kokoro_torch_status_fast() if installed else {}
-            install_status = {}
-            if installed:
-                try:
-                    from core import optional_deps
-
-                    install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
-                except Exception:
-                    install_status = {}
             system_has_cuda = False
         mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
         needs_gpu = self._kokoro_needs_gpu_install_from_status(
@@ -3215,6 +3478,8 @@ class SettingsDialog(QDialog):
         """Return whether selected Kokoro settings need a CUDA Torch install."""
         selected = selected_device.strip().lower()
         if not installed or selected == "cpu" or bool(torch_status.get("cuda_available")):
+            return False
+        if bool(torch_status.get("timed_out")):
             return False
         if torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
             if selected == "cuda":
@@ -3254,12 +3519,16 @@ class SettingsDialog(QDialog):
             button = getattr(self, attr, None)
             if isinstance(button, QPushButton):
                 button.setEnabled(False)
+        assets_button = getattr(self, "_kokoro_assets_btn", None)
+        if isinstance(assets_button, QPushButton):
+            assets_button.setVisible(False)
 
         self._tts_install_status_running = True
         self._tts_install_status_token += 1
         self._tts_install_status_result = None
         token = self._tts_install_status_token
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
+        kokoro_voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
         carrier = _TtsInstallStatusSignals(self)
         carrier.done.connect(self._finish_tts_optional_install_status)
         self._tts_install_status_signal_carriers.append(carrier)
@@ -3268,21 +3537,20 @@ class SettingsDialog(QDialog):
             try:
                 from core import optional_deps
 
-                elevenlabs_installed = self._optional_package_installed("elevenlabs")
-                kokoro_installed = all(
-                    self._optional_package_installed(module_name)
-                    for module_name in ("kokoro", "en_core_web_sm")
-                )
-                kokoro_install_status = (
-                    _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
-                    if kokoro_installed
-                    else {}
-                )
+                elevenlabs_spec_status = optional_deps.optional_package_spec_status("elevenlabs")
+                elevenlabs_installed = bool(elevenlabs_spec_status.get("valid"))
+                elevenlabs_install_status = _read_optional_install_status("ElevenLabs", optional_deps.OPTIONAL_PACKAGES_DIR)
+                kokoro_install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
                 system_has_cuda = optional_deps.system_cuda_available()
                 selected = selected_device.strip().lower()
                 mode = "gpu" if selected == "auto" and system_has_cuda else (
                     "gpu" if selected == "cuda" else "cpu"
                 )
+                kokoro_spec_status = optional_deps.optional_package_spec_status(
+                    "kokoro",
+                    device="cuda" if mode == "gpu" else "cpu",
+                )
+                kokoro_installed = bool(kokoro_spec_status.get("valid"))
                 needs_cuda_status = selected == "cuda" or (selected == "auto" and system_has_cuda)
                 torch_status = (
                     optional_deps.kokoro_torch_status_subprocess()
@@ -3295,14 +3563,34 @@ class SettingsDialog(QDialog):
                     torch_status=torch_status,
                     system_cuda_available=system_has_cuda,
                 )
+                kokoro_assets: dict[str, object] = {}
+                if kokoro_installed:
+                    try:
+                        from core import tts_assets
+
+                        assets_status = tts_assets.verify(
+                            tts_assets.KOKORO,
+                            voices=tts_assets.parse_voices(kokoro_voice),
+                        )
+                        kokoro_assets = {
+                            "state": assets_status.state,
+                            "problems": list(assets_status.problems),
+                            "missing_voices": list(assets_status.missing_voices),
+                        }
+                        if assets_status.state == "ok":
+                            kokoro_assets["update_revision"] = tts_assets.check_update(tts_assets.KOKORO) or ""
+                    except Exception:  # noqa: BLE001 - asset status is best-effort
+                        kokoro_assets = {}
                 result: dict[str, object] = {
                     "ok": True,
                     "elevenlabs_installed": elevenlabs_installed,
+                    "elevenlabs_install_status": elevenlabs_install_status,
                     "kokoro_installed": kokoro_installed,
                     "kokoro_mode": mode,
                     "kokoro_install_status": kokoro_install_status,
                     "kokoro_torch_status": torch_status,
                     "kokoro_needs_gpu": needs_gpu,
+                    "kokoro_assets": kokoro_assets,
                     "system_cuda_available": system_has_cuda,
                 }
             except Exception as exc:  # noqa: BLE001
@@ -3330,7 +3618,10 @@ class SettingsDialog(QDialog):
                     button.setEnabled(True)
             return
         self._tts_install_status_result = dict(result)
-        self._apply_elevenlabs_install_status(bool(result.get("elevenlabs_installed")))
+        self._apply_elevenlabs_install_status(
+            bool(result.get("elevenlabs_installed")),
+            install_status=result.get("elevenlabs_install_status") if isinstance(result.get("elevenlabs_install_status"), dict) else {},
+        )
         self._apply_cached_kokoro_install_status()
 
     def _apply_cached_kokoro_install_status(self) -> bool:
@@ -3357,18 +3648,71 @@ class SettingsDialog(QDialog):
             install_status=install_status,
             torch_status=torch_status,
             needs_gpu=needs_gpu,
+            assets=result.get("kokoro_assets") if isinstance(result.get("kokoro_assets"), dict) else None,
         )
         return True
 
-    def _apply_elevenlabs_install_status(self, installed: bool) -> None:
+    def _connect_button_action(self, button: QPushButton, callback: Callable[[], None]) -> None:
+        """Replace a button's click handler after restart/apply state changes."""
+        try:
+            button.clicked.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        button.clicked.connect(callback)
+
+    def _restart_for_staged_apply(self) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _apply_restart_apply_status(
+        self,
+        label: QLabel,
+        button: QPushButton,
+        *,
+        display_name: str,
+        install_status: dict[str, object] | None,
+    ) -> bool:
+        """Show durable staged-apply state instead of flattening it to uninstalled."""
+        if not isinstance(install_status, dict) or not install_status.get("restart_apply"):
+            return False
+        button.setEnabled(True)
+        button.setText(t("Restart app now"))
+        self._connect_button_action(button, self._restart_for_staged_apply)
+        message = str(install_status.get("message") or "").strip()
+        if not message:
+            message = f"{display_name} packages are staged. Click Restart app now to close Wisp and apply them."
+        self._set_test_status(label, "warn", _translate_status_message(message))
+        return True
+
+    def _apply_elevenlabs_install_status(
+        self,
+        installed: bool,
+        *,
+        install_status: dict[str, object] | None = None,
+    ) -> None:
         """Apply ElevenLabs install state to the settings controls."""
         label = getattr(self, "_elevenlabs_install_status_lbl", None)
         button = getattr(self, "_elevenlabs_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
+        if self._apply_restart_apply_status(
+            label,
+            button,
+            display_name="ElevenLabs",
+            install_status=install_status,
+        ):
+            return
+        self._connect_button_action(button, self._install_elevenlabs)
+        failed_install_message = _failed_optional_install_message(install_status)
+        if failed_install_message:
+            button.setEnabled(True)
+            button.setText(t("Install ElevenLabs"))
+            self._set_test_status(label, "warn", failed_install_message)
+            return
         if installed:
-            button.setEnabled(False)
-            button.setText(t("ElevenLabs installed"))
+            button.setEnabled(True)
+            button.setText(t("Reinstall ElevenLabs"))
             self._set_test_status(label, True, "ElevenLabs is installed.")
         else:
             button.setEnabled(True)
@@ -3381,9 +3725,157 @@ class SettingsDialog(QDialog):
 
     def _refresh_elevenlabs_install_status(self) -> None:
         """Refresh ElevenLabs install button and status copy."""
-        self._apply_elevenlabs_install_status(self._elevenlabs_installed())
+        install_status: dict[str, object] = {}
+        try:
+            from core import optional_deps
+
+            install_status = _read_optional_install_status("ElevenLabs", optional_deps.OPTIONAL_PACKAGES_DIR)
+        except Exception:
+            install_status = {}
+        self._apply_elevenlabs_install_status(self._elevenlabs_installed(), install_status=install_status)
         self._tts_install_status_checked = True
         self._tts_install_status_result = None
+
+    def _live_voice_installed(self) -> bool:
+        """Return True when the optional google-genai package is importable."""
+        try:
+            from core import optional_deps
+
+            return bool(optional_deps.optional_package_spec_status("live_voice").get("valid"))
+        except Exception:
+            pass
+        try:
+            from core import live_voice
+
+            return live_voice.genai_available()
+        except Exception:
+            return False
+
+    def _refresh_live_voice_install_status(self) -> None:
+        """Refresh the live voice install button and status copy."""
+        label = getattr(self, "_live_voice_install_status_lbl", None)
+        button = getattr(self, "_live_voice_install_btn", None)
+        if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
+            return
+        install_status: dict[str, object] = {}
+        try:
+            from core import optional_deps
+
+            install_status = _read_optional_install_status("Live voice", optional_deps.OPTIONAL_PACKAGES_DIR)
+        except Exception:
+            install_status = {}
+        if self._apply_restart_apply_status(
+            label,
+            button,
+            display_name="Live voice",
+            install_status=install_status,
+        ):
+            return
+        self._connect_button_action(button, self._install_live_voice)
+        failed_install_message = _failed_optional_install_message(install_status)
+        if failed_install_message:
+            button.setText(t("Install live voice"))
+            self._set_test_status(label, "warn", failed_install_message)
+            return
+        if self._live_voice_installed():
+            button.setText(t("Reinstall live voice"))
+            self._set_test_status(label, True, "Live voice support is installed.")
+        else:
+            button.setText(t("Install live voice"))
+            self._set_test_status(
+                label,
+                "warn",
+                "Live voice support is not installed. Install it to enable hands-free conversations.",
+            )
+
+    def _refresh_live_voice_key_note(self) -> None:
+        """Show whether the selected live voice provider has the key it needs."""
+        label = getattr(self, "_live_voice_key_note_lbl", None)
+        if not isinstance(label, QLabel):
+            return
+        import config as cfg
+
+        provider = _get(self._fields.get("LIVE_VOICE_PROVIDER")).strip() or "google"
+        if provider != "google":
+            label.setText(
+                "<small>"
+                + t("Live voice currently supports Gemini Live through the Google provider.")
+                + "</small>"
+            )
+            label.setStyleSheet("color: #d8932a;")
+        elif str(getattr(cfg, "GOOGLE_API_KEY", "") or "").strip():
+            label.setText(f"<small>{t('Uses the Google API key from the LLM tab.')}</small>")
+            label.setStyleSheet("")
+        else:
+            label.setText(
+                "<small>"
+                + t("Live voice needs a Google API key. Add one on the LLM tab first.")
+                + "</small>"
+            )
+            label.setStyleSheet("color: #d8932a;")
+
+    def _fill_live_voice_model_combo(self, provider: str, selected: str) -> None:
+        """Populate the live voice model picker with built-ins plus Custom."""
+        row = getattr(self, "_live_voice_model_row", None)
+        if not isinstance(row, dict):
+            return
+        models = _LIVE_VOICE_PROVIDER_MODELS.get(provider, [])
+        if not models:
+            models = _PROVIDER_MODELS.get(provider, [])
+        self._fill_model_combo(row, list(models), provider, selected)
+
+    def _live_voice_model_value(self) -> str:
+        """Return the effective live voice model, including custom text."""
+        row = getattr(self, "_live_voice_model_row", None)
+        if isinstance(row, dict):
+            return self._model_value(row)
+        field = self._fields.get("LIVE_VOICE_MODEL")
+        return _get(field).strip() if field is not None else ""
+
+    def _fill_live_voice_voice_combo(self, selected: str) -> None:
+        """Populate the live voice picker with built-ins plus Custom."""
+        row = getattr(self, "_live_voice_voice_row", None)
+        if not isinstance(row, dict):
+            return
+        combo = row["model_combo"]
+        edit = row["model_edit"]
+        options = list(_LIVE_VOICE_VOICE_OPTIONS)
+        values = [value for _label, value in options]
+
+        combo.blockSignals(True)
+        combo.clear()
+        for label, value in options:
+            combo.addItem(label, value)
+        combo.addItem(_CUSTOM_MODEL_LABEL, _CUSTOM_MODEL_SENTINEL)
+
+        selected = (selected or "").strip()
+        if selected in values:
+            combo.setCurrentIndex(combo.findData(selected))
+            edit.clear()
+            edit.hide()
+        elif selected:
+            combo.setCurrentIndex(combo.findData(_CUSTOM_MODEL_SENTINEL))
+            edit.setText(selected)
+            edit.show()
+        else:
+            combo.setCurrentIndex(combo.findData(""))
+            edit.clear()
+            edit.hide()
+
+        edit.setPlaceholderText("voice name")
+        completer = QCompleter([value for value in values if value], edit)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        edit.setCompleter(completer)
+        combo.blockSignals(False)
+
+    def _live_voice_voice_value(self) -> str:
+        """Return the effective live voice name, including custom text."""
+        row = getattr(self, "_live_voice_voice_row", None)
+        if isinstance(row, dict):
+            return self._model_value(row)
+        field = self._fields.get("LIVE_VOICE_VOICE_NAME")
+        return _get(field).strip() if field is not None else ""
 
     def _apply_kokoro_install_status(
         self,
@@ -3393,17 +3885,35 @@ class SettingsDialog(QDialog):
         torch_status: dict[str, object],
         needs_gpu: bool,
         install_status: dict[str, object] | None = None,
+        assets: dict[str, object] | None = None,
     ) -> None:
         """Apply Kokoro install state to the settings controls."""
         label = getattr(self, "_kokoro_install_status_lbl", None)
         button = getattr(self, "_kokoro_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
+        if self._apply_restart_apply_status(
+            label,
+            button,
+            display_name="Kokoro",
+            install_status=install_status,
+        ):
+            return
+        self._connect_button_action(button, self._install_kokoro)
+        self._apply_kokoro_assets_status(installed=installed, assets=assets)
         failed_install_message = _failed_optional_install_message(install_status)
-        if installed and failed_install_message:
+        if failed_install_message:
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
             self._set_test_status(label, "warn", failed_install_message)
+        elif installed and torch_status and torch_status.get("timed_out"):
+            button.setEnabled(True)
+            button.setText(t("Reinstall Kokoro"))
+            self._set_test_status(
+                label,
+                "warn",
+                "Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.",
+            )
         elif installed and torch_status and (torch_status.get("error") or torch_status.get("valid") is False):
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
@@ -3412,10 +3922,34 @@ class SettingsDialog(QDialog):
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support"))
             self._set_test_status(label, "warn", "Kokoro GPU support is not installed.")
+        elif installed and isinstance(assets, dict) and assets.get("state") in ("damaged", "not_installed"):
+            button.setEnabled(True)
+            button.setText(t("Reinstall Kokoro"))
+            problems = "; ".join(str(item) for item in assets.get("problems") or [])
+            self._set_test_status(
+                label,
+                "warn",
+                f"Kokoro voice model files are missing or damaged ({problems}). Click Repair voice files to redownload them.",
+            )
         elif installed:
-            button.setEnabled(False)
-            button.setText(t("Kokoro installed"))
-            if bool(torch_status.get("fast")):
+            button.setEnabled(True)
+            button.setText(t("Reinstall Kokoro"))
+            missing_voices = [str(name) for name in (assets or {}).get("missing_voices") or []]
+            update_revision = str((assets or {}).get("update_revision") or "")
+            if missing_voices:
+                self._set_test_status(
+                    label,
+                    "warn",
+                    f"Kokoro is installed, but voice(s) {', '.join(missing_voices)} are not downloaded yet. "
+                    "Click Test TTS to download and try them.",
+                )
+            elif update_revision:
+                self._set_test_status(
+                    label,
+                    True,
+                    "Kokoro is installed. A voice model update is available; click Update voice model to fetch it.",
+                )
+            elif bool(torch_status.get("fast")):
                 self._set_test_status(label, True, "Kokoro is installed.")
             elif bool(torch_status.get("cuda_available")):
                 device = str(torch_status.get("device") or "CUDA device")
@@ -3433,6 +3967,88 @@ class SettingsDialog(QDialog):
                 )
             else:
                 self._set_test_status(label, "warn", "Kokoro is not installed.")
+
+    def _apply_kokoro_assets_status(self, *, installed: bool, assets: dict[str, object] | None) -> None:
+        """Show the voice-asset repair/update button when the local check asks for it."""
+        button = getattr(self, "_kokoro_assets_btn", None)
+        if not isinstance(button, QPushButton):
+            return
+        self._kokoro_assets_mode = ""
+        self._kokoro_assets_update_revision = ""
+        if not installed or not isinstance(assets, dict):
+            button.setVisible(False)
+            return
+        state = str(assets.get("state") or "")
+        update_revision = str(assets.get("update_revision") or "")
+        if state in ("damaged", "not_installed"):
+            self._kokoro_assets_mode = "repair"
+            button.setText(t("Repair voice files"))
+            button.setEnabled(True)
+            button.setVisible(True)
+        elif update_revision:
+            self._kokoro_assets_mode = "update"
+            self._kokoro_assets_update_revision = update_revision
+            button.setText(t("Update voice model"))
+            button.setEnabled(True)
+            button.setVisible(True)
+        else:
+            button.setVisible(False)
+
+    def _kokoro_assets_action(self) -> None:
+        """Repair damaged Kokoro voice files or apply a model update (user-initiated download)."""
+        mode = getattr(self, "_kokoro_assets_mode", "")
+        if mode not in ("repair", "update"):
+            return
+        voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
+        update_revision = getattr(self, "_kokoro_assets_update_revision", "")
+        if mode == "repair":
+            title = t("Repair voice files")
+            message = t(
+                "Wisp will redownload Kokoro's damaged or missing voice model files "
+                "(up to about 330 MB).\n\nContinue?"
+            )
+        else:
+            title = t("Update voice model")
+            message = t(
+                "Wisp will download the updated Kokoro voice model (about 330 MB) and switch to it "
+                "only after the download is verified. The current voice keeps working if the update fails.\n\n"
+                "Continue?"
+            )
+        answer = QMessageBox.question(
+            self,
+            title,
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        button = getattr(self, "_kokoro_assets_btn", None)
+        if isinstance(button, QPushButton):
+            button.setEnabled(False)
+
+        def _run() -> tuple[bool, str]:
+            from core import tts
+            from core import tts_assets
+
+            if mode == "repair":
+                tts.prepare_kokoro_assets(voice=voice)
+                return True, "Kokoro voice files repaired."
+            tts_assets.apply_update(
+                tts_assets.KOKORO,
+                update_revision,
+                voices=tts_assets.parse_voices(voice),
+            )
+            tts.reset_connections()
+            return True, "Kokoro voice model updated."
+
+        self._tts_install_status_checked = False
+        self._start_async_test(
+            "kokoro_assets",
+            self._kokoro_install_status_lbl,
+            _run,
+            pending_message="Downloading voice model files...",
+        )
 
     def _refresh_kokoro_install_status(self) -> None:
         """Refresh Kokoro install button and status copy."""
@@ -3455,9 +4071,6 @@ class SettingsDialog(QDialog):
         installed = bool(snapshot.get("installed"))
         needs_gpu = bool(snapshot.get("needs_gpu"))
         needs_repair = bool(snapshot.get("needs_repair"))
-        if installed and not needs_gpu and not needs_repair:
-            self._refresh_kokoro_install_status()
-            return
         voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
         lang_code = _get(self._fields["KOKORO_LANG_CODE"]).strip() or "a"
         device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
@@ -3466,9 +4079,9 @@ class SettingsDialog(QDialog):
         pre_install_packages = optional_deps.kokoro_torch_install_packages(install_device)
         packages = optional_deps.kokoro_install_packages(install_device)
         remove_artifacts = optional_deps.kokoro_remove_artifacts()
+        reinstall = bool(installed)
         if installed and needs_gpu and not needs_repair:
-            packages = []
-            remove_artifacts = []
+            reinstall = False
         base_package_label = f"{optional_deps.KOKORO_PACKAGE}, {optional_deps.SOUNDFILE_PACKAGE}"
         package_label = (
             t("CUDA-enabled Torch")
@@ -3483,6 +4096,8 @@ class SettingsDialog(QDialog):
         action_note = t(
             "Wisp will upgrade Kokoro's optional package layer with GPU support.\n\n"
             if needs_gpu
+            else "Wisp will reinstall Kokoro in its user-writable optional packages folder.\n\n"
+            if reinstall
             else "Wisp will install Kokoro into its user-writable optional packages folder.\n\n"
         )
         speed = _get(self._fields["KOKORO_SPEED"]).strip() or "1.0"
@@ -3501,7 +4116,8 @@ class SettingsDialog(QDialog):
             "Speed: {speed}\n"
             "Sample rate: {sample_rate} Hz\n"
             "Volume: {volume}\n\n"
-            "On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.\n\n"
+            "Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error "
+            "(Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).\n\n"
             "Continue?"
         ).format(
             action_note=action_note,
@@ -3516,7 +4132,13 @@ class SettingsDialog(QDialog):
         )
         answer = QMessageBox.question(
             self,
-            t("Install Kokoro"),
+            t(
+                "Install Kokoro GPU support"
+                if installed and needs_gpu and not needs_repair
+                else "Reinstall Kokoro"
+                if reinstall
+                else "Install Kokoro"
+            ),
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
@@ -3535,13 +4157,17 @@ class SettingsDialog(QDialog):
             success_message=(
                 "Kokoro GPU support installed and local voice is ready."
                 if mode == "gpu"
+                else "Kokoro reinstalled and local voice is ready."
+                if reinstall
                 else "Kokoro installed and local voice is ready."
             ),
             thread_name="kokoro-install",
+            reinstall=reinstall,
             external_plan_extra={
                 "post_install": "kokoro_prepare",
                 "kokoro_voice": voice,
                 "kokoro_require_gpu": mode == "gpu",
+                "kokoro_install_device": install_device,
                 "pre_install_packages": pre_install_packages,
             },
             post_install=lambda progress, write_log: self._prepare_kokoro_after_install(
@@ -3579,8 +4205,9 @@ class SettingsDialog(QDialog):
                 detail = str(torch_status.get("error") or "Torch verification failed.")
                 return False, f"Kokoro installed, but Torch verification failed: {detail}"
             if require_gpu and not torch_status.get("cuda_available"):
-                write_log("[kokoro install] CUDA Torch verification failed.")
-                return False, "Kokoro installed, but CUDA Torch verification failed."
+                detail = optional_deps.kokoro_cuda_failure_detail(torch_status)
+                write_log(f"[kokoro install] CUDA Torch verification failed: {detail}")
+                return False, f"Kokoro installed, but CUDA Torch verification failed: {detail}"
             if require_gpu:
                 return True, "Kokoro GPU support installed and local voice is ready."
             return True, "Kokoro installed and local voice is ready."
@@ -3588,27 +4215,34 @@ class SettingsDialog(QDialog):
             write_log(f"[kokoro install] Voice preparation failed: {type(exc).__name__}: {exc}")
             return (
                 False,
-                "Kokoro installed, but local voice preparation failed: "
+                "Kokoro package installed, but voice asset preparation failed: "
                 f"{exc}. Connect to the internet and click Test TTS once to finish setup.",
             )
 
     def _install_elevenlabs(self) -> None:
         """Confirm and install optional ElevenLabs dependencies into Wisp's Python."""
-        if self._elevenlabs_installed():
-            self._refresh_elevenlabs_install_status()
-            return
         from core import optional_deps
 
-        message = t(
-            "Wisp will install ElevenLabs support into its user-writable optional packages folder.\n\n"
+        installed = self._elevenlabs_installed()
+        message_source = (
+            "Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.\n\n"
             "Package: {package}\n\n"
             "Use this when the packaged exe skipped ElevenLabs because the build path was too long. "
             "The install may need internet access and will survive Wisp rebuilds.\n\n"
             "Continue?"
-        ).format(package=optional_deps.ELEVENLABS_PACKAGE)
+            if installed
+            else (
+                "Wisp will install ElevenLabs support into its user-writable optional packages folder.\n\n"
+                "Package: {package}\n\n"
+                "Use this when the packaged exe skipped ElevenLabs because the build path was too long. "
+                "The install may need internet access and will survive Wisp rebuilds.\n\n"
+                "Continue?"
+            )
+        )
+        message = t(message_source).format(package=optional_deps.ELEVENLABS_PACKAGE)
         answer = QMessageBox.question(
             self,
-            t("Install ElevenLabs"),
+            t("Reinstall ElevenLabs" if installed else "Install ElevenLabs"),
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
@@ -3622,8 +4256,57 @@ class SettingsDialog(QDialog):
             packages=[optional_deps.ELEVENLABS_PACKAGE],
             button_attr="_elevenlabs_install_btn",
             status_attr="_elevenlabs_install_status_lbl",
-            success_message="ElevenLabs installed. Add your API key, then click Test TTS.",
+            success_message=(
+                "ElevenLabs reinstalled. Add your API key, then click Test TTS."
+                if installed
+                else "ElevenLabs installed. Add your API key, then click Test TTS."
+            ),
             thread_name="elevenlabs-install",
+            reinstall=installed,
+        )
+
+    def _install_live_voice(self) -> None:
+        """Confirm and install the optional google-genai package for live voice."""
+        from core import optional_deps
+
+        installed = self._live_voice_installed()
+        message_source = (
+            "Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.\n\n"
+            "Package: {package}\n\n"
+            "The install may need internet access and will survive Wisp rebuilds.\n\n"
+            "Continue?"
+            if installed
+            else (
+                "Wisp will install live voice support (google-genai) into its user-writable optional packages folder.\n\n"
+                "Package: {package}\n\n"
+                "The install may need internet access and will survive Wisp rebuilds.\n\n"
+                "Continue?"
+            )
+        )
+        message = t(message_source).format(package=optional_deps.GOOGLE_GENAI_PACKAGE)
+        answer = QMessageBox.question(
+            self,
+            t("Reinstall live voice" if installed else "Install live voice"),
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._install_optional_tts_package(
+            test_key="live_voice_install",
+            display_name="Live voice",
+            packages=[optional_deps.GOOGLE_GENAI_PACKAGE],
+            button_attr="_live_voice_install_btn",
+            status_attr="_live_voice_install_status_lbl",
+            success_message="Live voice installed. Press the toggle hotkey to start a conversation.",
+            thread_name="live-voice-install",
+            # google-genai itself is never imported by a running Wisp, but its
+            # dependencies (charset_normalizer, pydantic, ...) overlap with
+            # already-loaded optional packages, so Windows still needs the
+            # staged restart-apply path to replace locked .pyd files.
+            reinstall=installed,
         )
 
     def _try_launch_external_optional_tts_install(
@@ -3637,11 +4320,10 @@ class SettingsDialog(QDialog):
         button_attr: str,
         status_attr: str,
         external_plan_extra: dict[str, object] | None = None,
+        reinstall: bool = False,
     ) -> bool:
-        """Launch an optional TTS install in a separate terminal when possible."""
+        """Launch an optional speech install in a Wisp-owned installer window."""
         if os.environ.get("WISP_OPTIONAL_INSTALL_INLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
-            return False
-        if getattr(sys, "frozen", False):
             return False
         status = getattr(self, status_attr, None)
         button = getattr(self, button_attr, None)
@@ -3650,44 +4332,143 @@ class SettingsDialog(QDialog):
         try:
             from core import optional_deps
 
-            root = Path(__file__).resolve().parents[2]
-            script_path = root / "scripts" / "optional_tts_installer.py"
-            if not script_path.exists():
-                return False
-            log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
-            status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
-            plan_path = log_path.with_suffix(".plan.json")
-            plan = {
-                "display_name": display_name,
-                "packages": packages,
-                "pre_install_packages": pre_install_packages or [],
-                "remove_artifacts": remove_artifacts or [],
-                "log_path": str(log_path),
-                "status_path": str(status_path),
-                **(external_plan_extra or {}),
-            }
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            command, root, log_path, status_path = _optional_install_plan_command(
+                display_name=display_name,
+                packages=packages,
+                pre_install_packages=pre_install_packages,
+                remove_artifacts=remove_artifacts,
+                reinstall=reinstall,
+                external_plan_extra=external_plan_extra,
+            )
             _write_optional_install_status(
                 status_path,
                 ok=None,
                 message=f"{display_name} install is running.",
             )
-            command = [sys.executable, str(script_path), "--plan", str(plan_path)]
-            if not _launch_terminal_command(command, cwd=root, title=f"Wisp {display_name} installer"):
-                return False
+            dialog = OptionalInstallDialog(
+                title=t("Wisp {display_name} installer").format(display_name=display_name),
+                subtitle=t("Installing {display_name} into Wisp's optional packages folder.").format(
+                    display_name=display_name
+                ),
+                command=command,
+                cwd=root,
+                log_path=log_path,
+                env=_optional_install_env(),
+                mirror_output_to_log=False,
+                parent=self,
+                auto_start=True,
+            )
         except Exception as exc:  # noqa: BLE001
             self._set_test_status(status, "warn", f"Installer window could not be opened; continuing inside Settings: {exc}")
             return False
+
+        dialogs = getattr(self, "_optional_install_dialogs", None)
+        if not isinstance(dialogs, list):
+            dialogs = []
+            self._optional_install_dialogs = dialogs
+        dialogs.append(dialog)
+        dialog.install_finished.connect(
+            lambda code, _dialog=dialog: self._finish_optional_install_dialog(
+                test_key=test_key,
+                display_name=display_name,
+                button_attr=button_attr,
+                status_attr=status_attr,
+                exit_code=int(code),
+                dialog=_dialog,
+            )
+        )
+        dialog.destroyed.connect(lambda _obj=None, _dialog=dialog: self._forget_optional_install_dialog(_dialog))
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
         if isinstance(button, QPushButton):
             button.setEnabled(False)
             button.setText(t(f"Installing {display_name}..."))
         self._set_test_pending(
             status,
-            "Installer opened in a terminal window. It will close automatically when it finishes.",
+            "Installer opened in a Wisp installer window. Progress and errors will appear there.",
         )
         return True
+
+    def _forget_optional_install_dialog(self, dialog: OptionalInstallDialog) -> None:
+        """Drop a finished optional installer dialog reference."""
+        dialogs = getattr(self, "_optional_install_dialogs", None)
+        if isinstance(dialogs, list) and dialog in dialogs:
+            dialogs.remove(dialog)
+
+    def _finish_optional_install_dialog(
+        self,
+        *,
+        test_key: str,
+        display_name: str,
+        button_attr: str,
+        status_attr: str,
+        exit_code: int,
+        dialog: OptionalInstallDialog,
+    ) -> None:
+        """Refresh Settings after a Wisp-owned optional installer exits."""
+        button = getattr(self, button_attr, None)
+        status = getattr(self, status_attr, None)
+        if isinstance(button, QPushButton):
+            button.setEnabled(True)
+            if test_key == "stt_install":
+                button.setText(t("Install STT"))
+            elif test_key == "kokoro_install":
+                button.setText(t("Install Kokoro"))
+            elif test_key == "elevenlabs_install":
+                button.setText(t("Install ElevenLabs"))
+            elif test_key == "live_voice_install":
+                button.setText(t("Install live voice"))
+        if isinstance(status, QLabel):
+            message = ""
+            ok: bool | str = exit_code == 0
+            install_status: dict[str, object] = {}
+            try:
+                from core import optional_deps
+
+                install_status = _read_optional_install_status(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+                if install_status:
+                    if install_status.get("ok") is None:
+                        ok = exit_code == 0
+                    else:
+                        ok = bool(install_status.get("ok"))
+                    message = str(install_status.get("message") or "")
+            except Exception:
+                message = ""
+            if install_status.get("restart_apply"):
+                if isinstance(button, QPushButton):
+                    button.setEnabled(True)
+                    button.setText(t("Restart app now"))
+                    try:
+                        button.clicked.disconnect()
+                    except (RuntimeError, TypeError):
+                        pass
+                    button.clicked.connect(lambda _checked=False: QApplication.instance().quit() if QApplication.instance() else None)
+                self._set_test_pending(status, f"{display_name} packages are staged. Click Restart app now to close Wisp and apply them.")
+                return
+            if not message:
+                message = (
+                    f"{display_name} installed successfully."
+                    if exit_code == 0
+                    else f"{display_name} install failed with exit code {exit_code}."
+                )
+            self._set_test_status(status, ok, _translate_status_message(message))
+
+        if test_key == "kokoro_install":
+            self._tts_install_status_checked = False
+            self._tts_install_status_result = None
+            self._refresh_tts_optional_install_status()
+        elif test_key == "elevenlabs_install":
+            self._tts_install_status_checked = False
+            self._tts_install_status_result = None
+            self._refresh_tts_optional_install_status()
+        elif test_key == "live_voice_install":
+            self._refresh_live_voice_install_status()
+        elif test_key == "stt_install":
+            self._refresh_stt_active_backend()
+        if getattr(dialog, "exit_code", None) == 0:
+            self._forget_optional_install_dialog(dialog)
 
     def _install_optional_tts_package(
         self,
@@ -3703,9 +4484,17 @@ class SettingsDialog(QDialog):
         thread_name: str,
         external_plan_extra: dict[str, object] | None = None,
         post_install_progress_detail: str | None = None,
+        reinstall: bool = False,
         post_install: Callable[[Callable[[str], None], Callable[[str], None]], tuple[bool, str]] | None = None,
     ) -> None:
-        """Install optional TTS packages into Wisp's user package folder."""
+        """Install optional TTS packages via the staged installer.
+
+        Both the installer-window path and the inline fallback stage the
+        packages and apply them on the next restart, so the live package
+        folder is never modified while Wisp runs. ``post_install`` and
+        ``post_install_progress_detail`` are unused here: verification runs
+        in the apply helper via the plan's ``post_install`` field.
+        """
         if self._try_launch_external_optional_tts_install(
             test_key=test_key,
             display_name=display_name,
@@ -3715,6 +4504,7 @@ class SettingsDialog(QDialog):
             button_attr=button_attr,
             status_attr=status_attr,
             external_plan_extra=external_plan_extra,
+            reinstall=reinstall,
         ):
             return
         button = getattr(self, button_attr, None)
@@ -3762,14 +4552,26 @@ class SettingsDialog(QDialog):
                 message=f"{display_name} install is running.",
             )
 
-            if remove_artifacts:
-                _progress(f"Installing {display_name}: removing previous install.")
-                _write_log(f"{log_prefix} Removing previous optional package artifacts before install.")
-                removed = optional_deps.remove_optional_package_artifacts(remove_artifacts)
-                if removed:
-                    _write_log(f"{log_prefix} Removed: {', '.join(sorted(removed))}")
-                else:
-                    _write_log(f"{log_prefix} No previous artifacts found.")
+            if not packages and not pre_install_packages:
+                return False, f"No packages selected for {display_name} install."
+            # This fallback runs the same staged installer as the installer
+            # window: pip writes into a staging folder and the live package
+            # dir is only touched after Wisp exits, so a locked DLL cannot
+            # corrupt a working install. The staged installer owns artifact
+            # cleanup, logging, and post-install verification.
+            try:
+                install_command, install_root, _log_path, _status_path = _optional_install_plan_command(
+                    display_name=display_name,
+                    packages=packages,
+                    pre_install_packages=pre_install_packages,
+                    remove_artifacts=remove_artifacts,
+                    reinstall=reinstall,
+                    external_plan_extra=external_plan_extra,
+                )
+            except Exception as exc:
+                message = f"{display_name} install failed: {exc}"
+                _write_optional_install_status(status_path, ok=False, message=message)
+                return False, message
 
             def _heartbeat() -> None:
                 while not stop_heartbeat.wait(20.0):
@@ -3795,13 +4597,7 @@ class SettingsDialog(QDialog):
                                 pass
                         return
 
-            commands = []
-            if pre_install_packages:
-                commands.append(("installing CUDA Torch", optional_deps.pip_install_command(pre_install_packages, reinstall=True)))
-            if packages:
-                commands.append(("installing packages", optional_deps.pip_install_command(packages)))
-            if not commands:
-                return False, f"No packages selected for {display_name} install."
+            commands = [("running the staged installer", install_command)]
 
             threading.Thread(target=_heartbeat, daemon=True, name=f"{display_name.lower()}-install-heartbeat").start()
             returncode = 0
@@ -3814,13 +4610,14 @@ class SettingsDialog(QDialog):
                     try:
                         process = subprocess.Popen(
                             command,
+                            cwd=str(install_root),
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
                             text=True,
                             encoding="utf-8",
                             errors="replace",
                             bufsize=1,
-                            env=optional_deps.pip_install_env(),
+                            env=_optional_install_env(),
                             **optional_deps.subprocess_no_window_kwargs(),
                         )
                     except Exception as exc:
@@ -3839,8 +4636,9 @@ class SettingsDialog(QDialog):
                         if not line:
                             continue
                         last_output_at["value"] = time.monotonic()
+                        # The staged installer already writes its own lines to
+                        # the shared log file; only mirror them to the console.
                         print(f"{log_prefix} {line}", flush=True)
-                        _write_log(f"{log_prefix} {line}")
                         _settings_log.info("%s install: %s", display_name, line)
                         tail.append(line)
                         tail = tail[-30:]
@@ -3858,42 +4656,16 @@ class SettingsDialog(QDialog):
             if returncode == 0:
                 importlib.invalidate_caches()
                 optional_deps.add_optional_packages_to_path()
-                post_install_message = ""
-                if post_install is not None:
-                    prepare_started_at = time.monotonic()
-                    prepare_stop = threading.Event()
-
-                    def _prepare_heartbeat() -> None:
-                        while not prepare_stop.wait(20.0):
-                            elapsed = int(time.monotonic() - prepare_started_at)
-                            detail = post_install_progress_detail or "preparing local assets for {elapsed}"
-                            _progress(
-                                f"Installing {display_name}: "
-                                f"{detail.format(elapsed=_format_duration(elapsed))}."
-                            )
-
-                    threading.Thread(
-                        target=_prepare_heartbeat,
-                        daemon=True,
-                        name=f"{display_name.lower()}-prepare-heartbeat",
-                    ).start()
-                    try:
-                        ok, message = post_install(_progress, _write_log)
-                    finally:
-                        prepare_stop.set()
-                    if not ok:
-                        _write_optional_install_status(status_path, ok=False, message=message)
-                        return False, message
-                    post_install_message = message
-                print(f"{log_prefix} Completed successfully.", flush=True)
-                _write_log(f"{log_prefix} Completed successfully.")
-                _write_optional_install_status(
-                    status_path,
-                    ok=True,
-                    message=post_install_message or success_message,
-                )
-                _progress(f"Installing {display_name}: completed successfully.")
-                return True, post_install_message or success_message
+                # The staged installer wrote the durable status: usually
+                # "packages are staged, restart to apply". Verification runs
+                # in the apply helper after Wisp exits, not in this process.
+                install_status = _read_optional_install_status(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+                message = str(install_status.get("message") or "").strip() or success_message
+                if install_status.get("ok") is False:
+                    return False, message
+                print(f"{log_prefix} {message}", flush=True)
+                _progress(message)
+                return True, message
             detail = _optional_install_failure_detail(tail)
             if stopped_reason["value"]:
                 detail = stopped_reason["value"]
@@ -4070,6 +4842,7 @@ class SettingsDialog(QDialog):
         self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
         self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
         self._fields["HOTKEY_READ_SELECTION_ALOUD"] = self._kb_special_row("Read selection aloud")
+        self._fields["HOTKEY_VOICE_LIVE"] = self._kb_special_row("Toggle live voice conversation")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("12345678")
         self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].hide()
@@ -5486,9 +6259,15 @@ class SettingsDialog(QDialog):
 
         return w
 
+    def _set_secret_placeholder(self, edit: QLineEdit, text: str, *, stored: bool) -> None:
+        """Set placeholder text and render stored secrets as masked dots."""
+        edit.setPlaceholderText(t(text))
+        if isinstance(edit, _SecretLineEdit):
+            edit.setStoredSecretPlaceholder(stored)
+
     def _password(self) -> QLineEdit:
         """Handle password for settings dialog."""
-        le = QLineEdit()
+        le = _SecretLineEdit()
         le.setEchoMode(QLineEdit.EchoMode.Password)
         return le
 
@@ -5713,8 +6492,13 @@ class SettingsDialog(QDialog):
             if name not in self._fields:
                 continue
             self._fields[name].clear()  # type: ignore[attr-defined]
-            status = "stored in OS keychain" if self._secret_configured_fast(name) else "not configured"
-            self._fields[name].setPlaceholderText(t(status))  # type: ignore[attr-defined]
+            stored = self._secret_configured_fast(name)
+            status = "stored in OS keychain" if stored else "not configured"
+            self._set_secret_placeholder(
+                self._fields[name],  # type: ignore[arg-type]
+                status,
+                stored=stored,
+            )
 
         _set(self._fields["TTS_PROVIDER"], self._env.get("TTS_PROVIDER", cfg.TTS_PROVIDER))
         _set(
@@ -5744,6 +6528,25 @@ class SettingsDialog(QDialog):
         _set(self._fields["KOKORO_DEVICE"], self._env.get("KOKORO_DEVICE", getattr(cfg, "KOKORO_DEVICE", "auto")))
         _set(self._fields["KOKORO_SPEED"], self._env.get("KOKORO_SPEED", str(cfg.KOKORO_SPEED)))
         _set(self._fields["KOKORO_SAMPLE_RATE"], self._env.get("KOKORO_SAMPLE_RATE", str(cfg.KOKORO_SAMPLE_RATE)))
+        live_voice_provider = self._env.get(
+            "LIVE_VOICE_PROVIDER",
+            getattr(cfg, "LIVE_VOICE_PROVIDER", "google"),
+        )
+        live_voice_model = self._env.get(
+            "LIVE_VOICE_MODEL",
+            getattr(cfg, "LIVE_VOICE_MODEL", "gemini-3.1-flash-live-preview"),
+        )
+        live_voice_provider_combo = self._fields["LIVE_VOICE_PROVIDER"]
+        if isinstance(live_voice_provider_combo, QComboBox):
+            self._fill_credential_combo(live_voice_provider_combo, live_voice_provider)
+        self._fill_live_voice_model_combo(_get(self._fields["LIVE_VOICE_PROVIDER"]).strip() or "google", live_voice_model)
+        self._fill_live_voice_voice_combo(
+            self._env.get("LIVE_VOICE_VOICE_NAME", getattr(cfg, "LIVE_VOICE_VOICE_NAME", ""))
+        )
+        _set(
+            self._fields["LIVE_VOICE_HALF_DUPLEX"],
+            self._env.get("LIVE_VOICE_HALF_DUPLEX", str(getattr(cfg, "LIVE_VOICE_HALF_DUPLEX", False))),
+        )
         _set(self._fields["TTS_VOLUME"], self._env.get("TTS_VOLUME", str(getattr(cfg, "TTS_VOLUME", 1.0))))
         _set(
             self._fields["TTS_READ_ALOUD_MIN_WORDS"],
@@ -5797,6 +6600,10 @@ class SettingsDialog(QDialog):
                 "HOTKEY_READ_SELECTION_ALOUD",
                 getattr(cfg, "HOTKEY_READ_SELECTION_ALOUD", ""),
             ),
+        )
+        _set(
+            self._fields["HOTKEY_VOICE_LIVE"],
+            self._env.get("HOTKEY_VOICE_LIVE", getattr(cfg, "HOTKEY_VOICE_LIVE", "shift+f9")),
         )
         _set(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"], self._env.get(
             "INTENT_CONTEXT_TOGGLE_KEYS",
@@ -6386,7 +7193,6 @@ class SettingsDialog(QDialog):
                 button = getattr(self, "_stt_download_btn", None)
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
-                    button.setText(t("Install / load STT"))
                 self._refresh_stt_active_backend()
         if not self._running_test_tokens and not pending and not progress:
             self._test_result_timer.stop()
@@ -6585,6 +7391,12 @@ class SettingsDialog(QDialog):
         lbl = getattr(self, "_stt_active_lbl", None)
         if lbl is None:
             return
+        button = getattr(self, "_stt_download_btn", None)
+
+        def _set_stt_action(installed: bool) -> None:
+            if isinstance(button, QPushButton):
+                self._connect_button_action(button, self._preload_stt_model)
+                button.setText(t("Reinstall STT") if installed else t("Install STT"))
 
         import config as cfg
 
@@ -6611,22 +7423,32 @@ class SettingsDialog(QDialog):
             try:
                 from core import optional_deps
 
-                runtime_status = optional_deps.stt_runtime_import_status_fast()
-                installed = bool(runtime_status.get("installed") and runtime_status.get("valid"))
+                spec_status = optional_deps.optional_package_spec_status("stt")
+                installed = bool(spec_status.get("valid"))
                 install_status = _read_optional_install_status("STT", optional_deps.OPTIONAL_PACKAGES_DIR)
             except Exception:
                 installed = False
                 install_status = {}
 
+            if isinstance(button, QPushButton) and self._apply_restart_apply_status(
+                lbl,
+                button,
+                display_name="STT",
+                install_status=install_status,
+            ):
+                return
             failed_install_message = _failed_optional_install_message(install_status)
             if failed_install_message:
+                _set_stt_action(False)
                 lbl.setText(_translate_status_message(failed_install_message))
                 lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
             elif bool(install_status.get("ok")):
+                _set_stt_action(True)
                 message = str(install_status.get("message") or f"STT installed and model ready: {configured_summary}.")
                 lbl.setText(_translate_status_message(message))
                 lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
             elif installed:
+                _set_stt_action(True)
                 lbl.setText(
                     t("STT package installed. Configured backend: {summary}; model loads on first use.").format(
                         summary=configured_summary
@@ -6634,12 +7456,14 @@ class SettingsDialog(QDialog):
                 )
                 lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
             else:
+                _set_stt_action(False)
                 lbl.setText(
-                    t("STT package is not installed. Click Install / load STT to install and verify it.")
+                    t("STT package is not installed. Click Install STT to install and verify it.")
                 )
                 lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
             return
 
+        _set_stt_action(True)
         summary = f"{info['model']} · {info['device']} / {info['compute']}"
         if info["degraded"]:
             lbl.setText(
@@ -6722,7 +7546,7 @@ class SettingsDialog(QDialog):
         btn = getattr(self, "_stt_download_btn", None)
         if btn is not None:
             btn.setEnabled(True)
-            btn.setText(t("Install / load STT"))
+            btn.setText(t("Install STT"))
         lbl = getattr(self, "_stt_active_lbl", None)
         if err:
             if lbl is not None:
@@ -6755,12 +7579,12 @@ class SettingsDialog(QDialog):
             status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
             if status.get("error") or status.get("valid") is False:
                 detail = str(status.get("error") or "STT model verification failed.")
-                return False, f"STT installed, but model verification failed: {detail}"
+                return False, f"STT package installed, but model download/load failed: {detail}"
             resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
             return True, f"STT installed and model ready: {resolved}."
         except Exception as exc:  # noqa: BLE001
             write_log(f"[stt install] Model verification failed: {type(exc).__name__}: {exc}")
-            return False, f"STT install failed: {exc}"
+            return False, f"STT package installed, but model download/load failed: {exc}"
 
     def _stt_fields_changed(self, old_env: dict[str, str]) -> bool:
         """Handle STT fields changed for settings dialog."""
@@ -6994,6 +7818,7 @@ class SettingsDialog(QDialog):
                 "GPT_SOVITS_URL", "GPT_SOVITS_REF_AUDIO_PATH", "GPT_SOVITS_PROMPT_TEXT",
                 "GPT_SOVITS_PROMPT_LANG", "GPT_SOVITS_TEXT_LANG", "GPT_SOVITS_SAMPLE_RATE",
                 "KOKORO_VOICE", "KOKORO_LANG_CODE", "KOKORO_DEVICE", "KOKORO_SPEED", "KOKORO_SAMPLE_RATE",
+                "LIVE_VOICE_PROVIDER", "LIVE_VOICE_MODEL", "LIVE_VOICE_VOICE_NAME", "LIVE_VOICE_HALF_DUPLEX",
                 "TTS_VOLUME", "TTS_READ_ALOUD_MIN_WORDS", "TTS_READ_ALOUD_MAX_WORDS",
                 "STT_MODEL", "STT_COMPUTE_TYPE", "STT_LANGUAGE", "STT_BEAM_SIZE", "STT_DEVICE",
                 "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS", "STT_BACKGROUND_CHUNK_STEP_SECONDS",
@@ -7004,7 +7829,8 @@ class SettingsDialog(QDialog):
             },
             "Keybinds": {
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
-                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "INTENT_CONTEXT_TOGGLE_KEYS",
+                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "HOTKEY_VOICE_LIVE",
+                "INTENT_CONTEXT_TOGGLE_KEYS",
                 "INTENT_OVERLAY_TIMEOUT_MS",
                 "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_CLIPBOARD", "SNIP_CONTEXT_DOCUMENTS",
                 "SNIP_CONTEXT_DOCUMENTS_MODE", "SNIP_CONTEXT_BROWSER_MODE", "SNIP_CONTEXT_GITHUB_MODE",
@@ -7367,6 +8193,10 @@ class SettingsDialog(QDialog):
             "TTS_VOLUME": _get(self._fields["TTS_VOLUME"]),
             "TTS_READ_ALOUD_MIN_WORDS": _get(self._fields["TTS_READ_ALOUD_MIN_WORDS"]),
             "TTS_READ_ALOUD_MAX_WORDS": _get(self._fields["TTS_READ_ALOUD_MAX_WORDS"]),
+            "LIVE_VOICE_PROVIDER": _get(self._fields["LIVE_VOICE_PROVIDER"]),
+            "LIVE_VOICE_MODEL": self._live_voice_model_value(),
+            "LIVE_VOICE_VOICE_NAME": self._live_voice_voice_value(),
+            "LIVE_VOICE_HALF_DUPLEX": _get(self._fields["LIVE_VOICE_HALF_DUPLEX"]),
             "STT_MODEL":         _get(self._fields["STT_MODEL"]),
             "STT_COMPUTE_TYPE":  _get(self._fields["STT_COMPUTE_TYPE"]),
             "STT_LANGUAGE":      _get(self._fields["STT_LANGUAGE"]),
@@ -7388,6 +8218,7 @@ class SettingsDialog(QDialog):
             "HOTKEY_CLEAR_CONTEXT": _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
             "HOTKEY_SNIP":         _get(self._fields["HOTKEY_SNIP"]),
             "HOTKEY_READ_SELECTION_ALOUD": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD"]),
+            "HOTKEY_VOICE_LIVE":   _get(self._fields["HOTKEY_VOICE_LIVE"]),
             "INTENT_CONTEXT_TOGGLE_KEYS": _get(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"]),
             "INTENT_OVERLAY_TIMEOUT_MS": _get(self._fields["INTENT_OVERLAY_TIMEOUT_MS"]),
             "CONTEXT_BROWSER_MAX_CHARS": _get(self._fields["CONTEXT_BROWSER_MAX_CHARS"]),
@@ -7483,6 +8314,7 @@ class SettingsDialog(QDialog):
                     "HOTKEY_READ_SELECTION_ALOUD",
                     "HOTKEY_VOICE",
                     "HOTKEY_DICTATE",
+                    "HOTKEY_VOICE_LIVE",
                 )
             ]
         )
@@ -8090,9 +8922,83 @@ def _optional_install_log_path(display_name: str, optional_packages_dir: Path) -
     if root:
         base = Path(root).expanduser() / "installers"
     else:
-        base = optional_packages_dir / "_logs"
+        base = optional_packages_dir.parent / "installers"
     slug = re.sub(r"[^a-z0-9]+", "-", display_name.lower()).strip("-") or "optional-package"
     return base / f"{slug}-install.log"
+
+
+def _optional_install_app_language() -> str:
+    """Return the app UI language to pass into detached installer helpers."""
+    try:
+        from ui import i18n
+
+        return i18n.current_language()
+    except Exception:
+        try:
+            import config as cfg
+
+            return str(getattr(cfg, "APP_LANGUAGE", "") or "").strip()
+        except Exception:
+            return ""
+
+
+def _optional_install_env() -> dict[str, str]:
+    """Return the optional installer subprocess environment with UI language."""
+    from core import optional_deps
+
+    env = optional_deps.pip_install_env()
+    language = _optional_install_app_language()
+    if language:
+        env["APP_LANGUAGE"] = language
+    return env
+
+
+def _optional_install_plan_command(
+    *,
+    display_name: str,
+    packages: list[str],
+    pre_install_packages: list[str] | None = None,
+    remove_artifacts: list[str] | None = None,
+    reinstall: bool = False,
+    external_plan_extra: dict[str, object] | None = None,
+) -> tuple[list[str], Path, Path, Path]:
+    """Write a staged installer plan and return its command, cwd, and log paths.
+
+    Every optional package install runs through the staged installer with
+    restart_apply, so pip never writes into the live package folder while Wisp
+    is running — a locked DLL can then no longer corrupt a working install.
+    """
+    from core import optional_deps, updater
+
+    if getattr(sys, "frozen", False):
+        root = Path(sys.executable).resolve().parent
+        command = [sys.executable, "-m", "runtime.workers.optional_speech_installer"]
+    else:
+        root = Path(__file__).resolve().parents[2]
+        script_path = root / "scripts" / "optional_tts_installer.py"
+        if not script_path.exists():
+            raise FileNotFoundError(f"installer script is missing: {script_path}")
+        command = [sys.executable, str(script_path)]
+    log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+    status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
+    plan_path = log_path.with_suffix(".plan.json")
+    app_language = _optional_install_app_language()
+    plan = {
+        "display_name": display_name,
+        "packages": packages,
+        "pre_install_packages": pre_install_packages or [],
+        "remove_artifacts": remove_artifacts or [],
+        "reinstall": bool(reinstall),
+        "restart_apply": True,
+        "wait_pid": updater.wisp_wait_pid(),
+        "log_path": str(log_path),
+        "status_path": str(status_path),
+        "app_language": app_language,
+        **(external_plan_extra or {}),
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+    return [*command, "--plan", str(plan_path)], root, log_path, status_path
 
 
 def _optional_install_status_path(display_name: str, optional_packages_dir: Path) -> Path:
@@ -8179,21 +9085,43 @@ def _collapse_spaces(text: str) -> str:
     return " ".join(str(text or "").split())
 
 
+def _cmd_control_escape(text: str) -> str:
+    """Escape cmd.exe control characters in simple command literals."""
+    return (
+        str(text)
+        .replace("^", "^^")
+        .replace("&", "^&")
+        .replace("|", "^|")
+        .replace("<", "^<")
+        .replace(">", "^>")
+    )
+
+
 def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bool:
     """Launch a command in a user-visible terminal window."""
     try:
         if sys.platform == "win32":
             inner = subprocess.list2cmdline(command)
             quoted_cwd = subprocess.list2cmdline([str(cwd)])
+            failure_prompt = (
+                "if errorlevel 1 ("
+                "set WISP_INSTALL_EXIT=!errorlevel! & "
+                "echo. & "
+                "echo Wisp installer failed with exit code !WISP_INSTALL_EXIT!. & "
+                "echo This window stayed open so you can copy the error above. & "
+                "echo Press any key to close this window. & "
+                "pause > nul"
+                ")"
+            )
             cmdline = (
-                f"title {title} & chcp 65001 > nul & cd /d {quoted_cwd} & "
-                f"{inner}"
+                f"title {_cmd_control_escape(title)} & chcp 65001 > nul & cd /d {quoted_cwd} & "
+                f"{inner} & {failure_prompt}"
             )
             flags = int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0) or 0)
             subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], cwd=str(cwd), creationflags=flags)
             return True
         if sys.platform == "darwin":
-            command_text = f"cd {shlex.quote(str(cwd))}; {shlex.join(command)}; exit"
+            command_text = _terminal_shell_command(command, cwd, title)
             script = (
                 f"set commandText to {json.dumps(command_text)}\n"
                 "tell application \"Terminal\"\n"
@@ -8221,7 +9149,17 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
 def _terminal_shell_command(command: list[str], cwd: Path, title: str) -> str:
     """Return the shell body run inside a visible terminal."""
     title_cmd = f"printf '\\033]0;%s\\007' {shlex.quote(str(title))}"
-    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; exec {shlex.join(command)}"
+    failure_prompt = (
+        "status=$?; "
+        "if [ $status -ne 0 ]; then "
+        "printf '\\nWisp installer failed with exit code %s.\\n' \"$status\"; "
+        "printf 'This window stayed open so you can copy the error above.\\n'; "
+        "printf 'Press Enter to close this window.\\n'; "
+        "read -r _; "
+        "fi; "
+        "exit $status"
+    )
+    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; {shlex.join(command)}; {failure_prompt}"
 
 
 def _linux_terminal_candidates(shell_cmd: str, *, cwd: Path, title: str) -> list[tuple[str, list[str]]]:
@@ -8338,9 +9276,21 @@ def _translate_status_message(message: str) -> str:
         (r"^Kokoro install failed: (?P<message>.+)$", "Kokoro install failed: {message}"),
         (r"^Kokoro installed, but runtime verification failed: (?P<message>.+)$", "Kokoro installed, but runtime verification failed: {message}"),
         (r"^Kokoro installed, but Torch verification failed: (?P<message>.+)$", "Kokoro installed, but Torch verification failed: {message}"),
+        (r"^Kokoro installed, but CUDA Torch verification failed: (?P<message>.+)$", "Kokoro installed, but CUDA Torch verification failed: {message}"),
+        (r"^Kokoro package installed, but voice asset preparation failed: (?P<message>.+)$", "Kokoro package installed, but voice asset preparation failed: {message}"),
+        (r"^Kokoro package installed; (?P<detail>.+)\.$", "Kokoro package installed; {detail}."),
+        (r"^Kokoro package install failed: (?P<message>.+)$", "Kokoro package install failed: {message}"),
+        (r"^(?P<display_name>.+) package files match this Wisp release\.$", "{display_name} package files match this Wisp release."),
+        (r"^(?P<display_name>.+) package files do not match this Wisp release: (?P<message>.+)\.$", "{display_name} package files do not match this Wisp release: {message}."),
+        (r"^(?P<display_name>.+) packages are staged\. Click Restart app now to close Wisp and apply them\.$", "{display_name} packages are staged. Click Restart app now to close Wisp and apply them."),
+        (r"^(?P<display_name>.+) packages are staged\. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen\.$", "{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen."),
+        (r"^(?P<display_name>.+) packages stay staged and will be applied the next time Wisp restarts\.$", "{display_name} packages stay staged and will be applied the next time Wisp restarts."),
         (r"^ElevenLabs install failed: (?P<message>.+)$", "ElevenLabs install failed: {message}"),
         (r"^STT install failed: (?P<message>.+)$", "STT install failed: {message}"),
+        (r"^STT package install failed: (?P<message>.+)$", "STT package install failed: {message}"),
         (r"^STT installed, but model verification failed: (?P<message>.+)$", "STT installed, but model verification failed: {message}"),
+        (r"^STT package installed, but model download/load failed: (?P<message>.+)$", "STT package installed, but model download/load failed: {message}"),
+        (r"^STT package installed; downloading or loading Whisper model (?P<model>.+)\.$", "STT package installed; downloading or loading Whisper model {model}."),
         (r"^STT installed and model ready: (?P<summary>.+)\.$", "STT installed and model ready: {summary}."),
         (r"^Installing STT: downloading or loading Whisper model (?P<model>.+)\.$", "Installing STT: downloading or loading Whisper model {model}."),
         (r"^Kokoro is installed with GPU support \((?P<device>.+)\)\.$", "Kokoro is installed with GPU support ({device})."),
@@ -8359,6 +9309,8 @@ def _translate_status_message(message: str) -> str:
                 groups["value"] = _translate_status_value(groups["value"])
             if "detail" in groups:
                 groups["detail"] = _translate_install_detail(groups["detail"])
+            if "display_name" in groups:
+                groups["display_name"] = t(groups["display_name"])
             return t(template).format(**groups)
     for prefix in (
         "Error reading status: ",

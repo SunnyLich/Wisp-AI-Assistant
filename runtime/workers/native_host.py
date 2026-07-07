@@ -177,6 +177,7 @@ class _DirectHotkeys:
                 on_voice_stop=lambda: emit_hotkey("voice_stop"),
                 on_dictate_start=lambda: emit_hotkey("dictate_start"),
                 on_dictate_stop=lambda: emit_hotkey("dictate_stop"),
+                on_voice_live=lambda: emit_hotkey("voice_live"),
                 extra_hotkeys=extra_hotkeys,
             )
             started = bool(self.listener.start())
@@ -440,6 +441,111 @@ def _win_context_window_id(raw_hwnd: int = 0) -> int:
     return int(raw_hwnd or 0)
 
 
+def _linux_process_name(pid: int) -> str:
+    """Return the process name for *pid* on Linux ("" when unavailable)."""
+    if pid <= 0:
+        return ""
+    try:
+        import psutil
+
+        return str(psutil.Process(pid).name() or "")
+    except Exception:
+        return ""
+
+
+def _linux_is_own_window_pid(pid: int) -> bool:
+    """Return True when an X11 window's pid belongs to Wisp's own process tree."""
+    pid = int(pid or 0)
+    if pid <= 0:
+        return False
+    own = {int(os.getpid())}
+    try:
+        supervisor_pid = int(os.environ.get("WISP_SUPERVISOR_PID") or 0)
+    except ValueError:
+        supervisor_pid = 0
+    if supervisor_pid > 0:
+        own.add(supervisor_pid)
+    if pid in own:
+        return True
+    try:
+        import psutil
+
+        proc = psutil.Process(pid)
+        if str(proc.name() or "").strip().lower() == "wisp":
+            return True
+        ancestors = {int(parent.pid) for parent in proc.parents()}
+    except Exception:
+        return False
+    return bool(own & ancestors)
+
+
+def _linux_context_window_id() -> int:
+    """Return the X11 window to read context from, skipping Wisp's own windows.
+
+    The icon overlay can hold X11 activation while the user works elsewhere,
+    so the raw _NET_ACTIVE_WINDOW may be Wisp itself. Mirror the Windows
+    correction: fall back to the topmost non-Wisp window in stacking order.
+    """
+    global _last_context_window_debug
+    if IS_WIN or IS_MAC:
+        return 0
+    _last_context_window_debug = {}
+    try:
+        from core.platform_utils import (
+            get_foreground_window,
+            get_window_pid,
+            get_window_title,
+            list_visible_windows_stacking,
+        )
+
+        raw_wid = int(get_foreground_window() or 0)
+        raw_pid = int(get_window_pid(raw_wid) or 0) if raw_wid else 0
+        raw_title = get_window_title(raw_wid) if raw_wid else ""
+        raw_process = _linux_process_name(raw_pid)
+        _last_context_window_debug = {
+            "raw_hwnd": raw_wid,
+            "raw_title": raw_title,
+            "raw_pid": raw_pid,
+            "raw_process": raw_process,
+            "corrected": False,
+            "chosen_hwnd": raw_wid,
+            "chosen_title": raw_title,
+            "chosen_pid": raw_pid,
+            "chosen_process": raw_process,
+        }
+        if raw_wid and not _linux_is_own_window_pid(raw_pid):
+            return raw_wid
+        for candidate in list_visible_windows_stacking():
+            candidate = int(candidate or 0)
+            if not candidate or candidate == raw_wid:
+                continue
+            cand_pid = int(get_window_pid(candidate) or 0)
+            if _linux_is_own_window_pid(cand_pid):
+                continue
+            cand_title = str(get_window_title(candidate) or "")
+            if not cand_title.strip():
+                continue
+            _last_context_window_debug.update(
+                {
+                    "corrected": True,
+                    "chosen_hwnd": candidate,
+                    "chosen_title": cand_title,
+                    "chosen_pid": cand_pid,
+                    "chosen_process": _linux_process_name(cand_pid),
+                }
+            )
+            print(
+                "[context.snapshot] corrected foreground "
+                f"raw_hwnd={raw_wid} raw_title={raw_title!r} "
+                f"-> hwnd={candidate} title={cand_title!r}",
+                flush=True,
+            )
+            return candidate
+        return raw_wid
+    except Exception:
+        return 0
+
+
 def _runtime_debug() -> dict[str, Any]:
     """Handle runtime debug for runtime workers native host."""
     debug = {
@@ -468,7 +574,10 @@ def _active_app() -> dict[str, Any]:
                 get_window_title,
             )
 
-            wid = _win_context_window_id() if IS_WIN else 0
+            if IS_WIN:
+                wid = _win_context_window_id()
+            else:
+                wid = _linux_context_window_id()
             if not wid:
                 from core.platform_utils import get_foreground_window
 
@@ -483,17 +592,21 @@ def _active_app() -> dict[str, Any]:
                 except Exception:
                     process_name = ""
             title = get_window_title(wid)
-            _last_context_window_debug = {
-                "raw_hwnd": wid,
-                "raw_title": title,
-                "raw_pid": pid,
-                "raw_process": process_name,
-                "corrected": False,
-                "chosen_hwnd": wid,
-                "chosen_title": title,
-                "chosen_pid": pid,
-                "chosen_process": process_name,
-            }
+            if not _last_context_window_debug:
+                # The per-OS context-window helpers populate this with the
+                # raw-vs-chosen correction trail; only fill the plain form
+                # when no helper ran (e.g. raw foreground fallback).
+                _last_context_window_debug = {
+                    "raw_hwnd": wid,
+                    "raw_title": title,
+                    "raw_pid": pid,
+                    "raw_process": process_name,
+                    "corrected": False,
+                    "chosen_hwnd": wid,
+                    "chosen_title": title,
+                    "chosen_pid": pid,
+                    "chosen_process": process_name,
+                }
             return {
                 "name": title,
                 "process_name": process_name,
@@ -637,13 +750,60 @@ def clipboard_set(text: str = "") -> dict[str, Any]:
     return {"ok": bool(ok)}
 
 
+# Last PRIMARY acquisition auto-filled per surface (owner id, timestamp, digest).
+# X11 apps keep serving a selection after the user clears the highlight, so a
+# repeat of the exact same acquisition is treated as stale instead of being
+# auto-filled again; re-selecting (even the same text) makes a new timestamp.
+_AUTOFILLED_PRIMARY_SELECTIONS: dict[str, tuple[int, int, str]] = {}
+
+
+def _primary_selection_identity(text: str) -> tuple[int, int, str] | None:
+    """Return (owner id, acquisition timestamp, text digest) for X11 PRIMARY."""
+    try:
+        import hashlib
+
+        from core.capture import _linux_x11_primary_selection_identity
+
+        identity = _linux_x11_primary_selection_identity()
+        if not identity:
+            return None
+        digest = hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
+        return int(identity[0]), int(identity[1]), digest
+    except Exception:
+        return None
+
+
 def selected_text(
     *,
     allow_clipboard_fallback: bool = True,
     active_pid: int | None = None,
     require_active_owner: bool = False,
+    selection_dedupe_key: str = "",
 ) -> str:
     """Handle selected text for runtime workers native host."""
+    return _selected_text_and_stale(
+        allow_clipboard_fallback=allow_clipboard_fallback,
+        active_pid=active_pid,
+        require_active_owner=require_active_owner,
+        selection_dedupe_key=selection_dedupe_key,
+    )[0]
+
+
+def _selected_text_and_stale(
+    *,
+    allow_clipboard_fallback: bool = True,
+    active_pid: int | None = None,
+    require_active_owner: bool = False,
+    selection_dedupe_key: str = "",
+) -> tuple[str, str]:
+    """Return (live selected text, stale selection already auto-filled once).
+
+    The stale slot is only populated on Linux/X11 when a dedupe key is given
+    and PRIMARY still serves the exact acquisition that key already received:
+    the highlight may be long gone (X11 owners keep serving cleared
+    selections), so the caller can offer it off-by-default instead of
+    attaching it silently.
+    """
     if IS_MAC:
         # Prefer Accessibility: reading AXSelectedText injects no keystrokes. The
         # old clipboard path synthesises Cmd+C, and System Events clearing the
@@ -655,12 +815,12 @@ def selected_text(
         # don't expose selection, e.g. some web/Electron views).
         ax = _ax_selected_text()
         if ax is not None:
-            return ax.strip()
+            return ax.strip(), ""
         if not allow_clipboard_fallback:
-            return ""
+            return "", ""
         from core.platform import macos_native
 
-        return macos_native.get_selected_text() or ""
+        return macos_native.get_selected_text() or "", ""
     try:
         if not IS_WIN and not IS_MAC and require_active_owner:
             from core.capture import _get_primary_selection_linux
@@ -672,19 +832,28 @@ def selected_text(
                 )
                 or ""
             ).strip()
+            if text and selection_dedupe_key:
+                identity = _primary_selection_identity(text)
+                if identity is not None:
+                    if _AUTOFILLED_PRIMARY_SELECTIONS.get(selection_dedupe_key) == identity:
+                        # Same acquisition this surface already auto-filled once;
+                        # hand it back as stale only. Skip the Ctrl+C fallback
+                        # too - it would just re-copy the same text.
+                        return "", text
+                    _AUTOFILLED_PRIMARY_SELECTIONS[selection_dedupe_key] = identity
             if text or not allow_clipboard_fallback:
-                return text
+                return text, ""
             from core.capture import _get_selected_text_clipboard
 
-            return (_get_selected_text_clipboard() or "").strip()
+            return (_get_selected_text_clipboard() or "").strip(), ""
         if allow_clipboard_fallback:
             from core.capture import get_selected_text
 
-            return get_selected_text() or ""
+            return get_selected_text() or "", ""
         if IS_WIN:
             from core.capture import _get_selected_text_uia
 
-            return (_get_selected_text_uia() or "").strip()
+            return (_get_selected_text_uia() or "").strip(), ""
         from core.capture import _get_primary_selection_linux
 
         return (
@@ -693,9 +862,9 @@ def selected_text(
                 require_active_owner=require_active_owner,
             )
             or ""
-        ).strip()
+        ).strip(), ""
     except Exception:
-        return ""
+        return "", ""
 
 
 def _windows_clipboard_file_paths() -> list[str]:
@@ -749,6 +918,68 @@ def _mac_clipboard_file_paths() -> list[str]:
         return []
 
 
+def _linux_file_uri_to_path(value: str) -> str:
+    """Convert a Linux file URI or plain absolute path to a local path."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("/"):
+        return text
+    try:
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(text)
+        if parsed.scheme != "file":
+            return ""
+        if parsed.netloc and parsed.netloc not in {"localhost", "127.0.0.1"}:
+            return ""
+        return unquote(parsed.path or "").strip()
+    except Exception:
+        return ""
+
+
+def _parse_linux_uri_list(data: str) -> list[str]:
+    """Parse Linux clipboard URI lists used by file managers."""
+    paths: list[str] = []
+    for raw_line in str(data or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line in {"copy", "cut"}:
+            continue
+        path = _linux_file_uri_to_path(line)
+        if path:
+            paths.append(path)
+    return paths
+
+
+def _linux_clipboard_file_paths() -> list[str]:
+    """Return selected file paths from Linux clipboard MIME targets."""
+    if IS_WIN or IS_MAC:
+        return []
+
+    targets = (
+        "x-special/gnome-copied-files",
+        "text/uri-list",
+    )
+    commands: list[list[str]] = []
+    if os.environ.get("WAYLAND_DISPLAY"):
+        for target in targets:
+            commands.append(["wl-paste", "--no-newline", "--type", target])
+    for target in targets:
+        commands.append(["xclip", "-selection", "clipboard", "-t", target, "-o"])
+
+    for cmd in commands:
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=1.0)
+        except Exception:
+            continue
+        if out.returncode != 0:
+            continue
+        paths = _parse_linux_uri_list(out.stdout or "")
+        if paths:
+            return paths
+    return []
+
+
 def selected_paths() -> list[str]:
     """Capture selected files/folders from the foreground shell via Copy."""
     previous_text = clipboard_get().get("text", "")
@@ -760,7 +991,12 @@ def selected_paths() -> list[str]:
         deadline = time.monotonic() + (0.60 if IS_WIN else 0.35)
         while time.monotonic() < deadline:
             time.sleep(0.05)
-            paths = _windows_clipboard_file_paths() if IS_WIN else _mac_clipboard_file_paths()
+            if IS_WIN:
+                paths = _windows_clipboard_file_paths()
+            elif IS_MAC:
+                paths = _mac_clipboard_file_paths()
+            else:
+                paths = _linux_clipboard_file_paths()
             if paths:
                 break
     except Exception:
@@ -793,6 +1029,19 @@ def _selection_source_kind(active: dict[str, Any]) -> str:
         "finder",
         "file explorer",
         "windows explorer",
+        "caja",
+        "dolphin",
+        "io.elementary.files",
+        "krusader",
+        "nautilus",
+        "nemo",
+        "org.gnome.nautilus",
+        "org.kde.dolphin",
+        "pantheon-files",
+        "pcmanfm",
+        "pcmanfm-qt",
+        "spacefm",
+        "thunar",
     }
     if process in shell_names or name in shell_names or bundle == "com.apple.finder":
         return "paths"
@@ -835,6 +1084,7 @@ def context_snapshot(
     include_browser_url: bool = False,
     capture_focus: bool = False,
     require_active_selection_owner: bool = True,
+    selection_dedupe_key: str = "",
 ) -> dict[str, Any]:
     """Handle context snapshot for runtime workers native host."""
     t0 = time.monotonic()
@@ -846,6 +1096,7 @@ def context_snapshot(
         "active_app": active,
         "document_window": document_window,
         "selected_text": "",
+        "stale_selected_text": "",
         "selected_paths": [],
         "clipboard_text": "",
         "browser_url": "",
@@ -869,10 +1120,11 @@ def context_snapshot(
     selection_kind = _selection_source_kind(active) if include_selected_paths else "text"
     if include_selection and selection_kind != "paths":
         _s = time.monotonic()
-        snapshot["selected_text"] = selected_text(
+        snapshot["selected_text"], snapshot["stale_selected_text"] = _selected_text_and_stale(
             allow_clipboard_fallback=True,
             active_pid=int(active.get("pid") or 0),
             require_active_owner=bool(require_active_selection_owner),
+            selection_dedupe_key=str(selection_dedupe_key or ""),
         )
         sel_dt = time.monotonic() - _s
     if include_clipboard:
@@ -943,6 +1195,28 @@ def context_snapshot(
                     "hwnd": getattr(win, "hwnd", 0),
                     "url": getattr(win, "url", ""),
                 }
+            else:
+                # Linux/X11: keep the hotkey-time browser window id before the
+                # overlay takes focus. Page text is still deferred.
+                from core.context_fetcher import _BROWSER_PROCS, get_browser_window_for_context
+
+                active_hwnd = int(active.get("window_id") or 0)
+                win = get_browser_window_for_context(active_hwnd)
+                snapshot["debug"]["browser_window"] = {
+                    "title": getattr(win, "title", ""),
+                    "process_name": getattr(win, "process_name", ""),
+                    "pid": getattr(win, "pid", 0),
+                    "hwnd": getattr(win, "hwnd", 0),
+                    "url": getattr(win, "url", ""),
+                }
+                if getattr(win, "url", ""):
+                    snapshot["browser_url"] = getattr(win, "url", "")
+                active_process = str(active.get("process_name") or "").strip().lower()
+                browser_hwnd = int(getattr(win, "hwnd", 0) or 0)
+                if not browser_hwnd and active_hwnd and active_process in _BROWSER_PROCS:
+                    browser_hwnd = active_hwnd
+                if browser_hwnd:
+                    snapshot["browser_hwnd"] = browser_hwnd
         except Exception as exc:  # noqa: BLE001 - browser context should not block the picker
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s
@@ -1047,7 +1321,9 @@ def context_browser_content(url: str = "", hwnd: int = 0, app: str = "") -> dict
     On Windows this reads the rendered window by handle (UIA does not need
     focus), then falls back to an HTTP fetch of the URL. On macOS it asks the
     named browser app (*app*) for its active tab text via AppleScript, which
-    works even though the overlay now holds focus. Returns {"url", "content"}.
+    works even though the overlay now holds focus. On Linux/X11 the tab URL
+    is resolved from the captured window id via AT-SPI2 and the page text is
+    an HTTP fetch of that URL. Returns {"url", "content"}.
     """
     try:
         from core.context_fetcher import WindowInfo, _browser_content

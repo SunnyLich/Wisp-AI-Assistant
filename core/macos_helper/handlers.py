@@ -118,7 +118,7 @@ def _get_model():
             from core.stt_device import resolve_device, resolve_compute_type, build_model
             device = resolve_device(config.STT_DEVICE, log=_log)
             compute_type = resolve_compute_type(device, config.STT_COMPUTE_TYPE, log=_log)
-            _model, compute_type = build_model(
+            _model, device, compute_type = build_model(
                 WhisperModel, config.STT_MODEL, device, compute_type, log=_log
             )
             _model_ready = True
@@ -160,6 +160,12 @@ def stt_is_ready() -> dict[str, Any]:
     prewarm is still loading on its background thread — letting the GUI show a
     "warming up" indicator instead of a silent slow first transcription."""
     return {"ready": _model_ready}
+
+
+def stt_is_recording() -> bool:
+    """Return whether a hold-to-talk/dictation mic capture is currently open."""
+    with _recording_lock:
+        return _recording
 
 
 def _audio_callback(indata, frames, time_info, status) -> None:

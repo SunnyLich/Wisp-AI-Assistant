@@ -127,10 +127,14 @@ class WorkerClient:
         with self._spawn_lock:
             if self._proc is proc:
                 self._fail_pending("worker exited")
+        # stdout EOF arrives before the OS publishes the exit code, so give the
+        # process time to finish dying — this thread is dedicated to the worker,
+        # so a bounded wait delays nothing. A short wait here used to race the
+        # kernel and report exit code None for a process that had a real code.
         returncode = proc.poll()
         if returncode is None:
             try:
-                returncode = proc.wait(timeout=0.2)
+                returncode = proc.wait(timeout=10.0)
             except Exception:  # noqa: BLE001
                 returncode = proc.poll()
         self._notify_exit(returncode)
@@ -356,13 +360,20 @@ class WorkerClient:
             with self._write_lock:
                 if proc.stdin and not proc.stdin.closed:
                     protocol.write_message(proc.stdin, protocol.make_request(0, "__shutdown__"))
+                    # EOF is the deterministic quit signal: worker stdin readers
+                    # unblock on it even if the __shutdown__ request is missed.
+                    proc.stdin.close()
         except Exception:  # noqa: BLE001
             pass
         try:
             proc.wait(timeout=2.0)
         except Exception:  # noqa: BLE001
-            proc.kill()
-            proc.wait(timeout=5.0)
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except Exception:  # noqa: BLE001
+                proc.kill()
+                proc.wait(timeout=5.0)
 
 
 def default_specs() -> dict[str, WorkerSpec]:

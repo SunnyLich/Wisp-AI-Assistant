@@ -26,6 +26,10 @@ Wisp vous offre une IA pilotée par raccourcis clavier qui peut lire votre séle
 
 ---
 
+## Problèmes connus
+
+[Problèmes connus](https://sunnylich.github.io/Wisp-AI-Assistant/#known-issues)
+
 ## Ce que fait Wisp
 
 Wisp est conçu pour les moments où ouvrir une application de chat briserait votre flux de travail.

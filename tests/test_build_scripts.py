@@ -65,6 +65,28 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('HAVE_VERSION="$(python_version "$PYTHON")"', script)
         self.assertIn('if ! python_matches_want "$PYTHON"; then', script)
 
+    def test_linux_build_opens_terminal_for_gui_launches(self) -> None:
+        linux = (ROOT / "tools" / "build_exe.sh").read_text(encoding="utf-8")
+
+        self.assertIn("relaunch_in_terminal()", linux)
+        self.assertIn("--relaunched-in-terminal", linux)
+        self.assertIn("[[ ! -t 0 && ! -t 1 && ! -t 2 ]]", linux)
+        self.assertIn('[[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]', linux)
+        self.assertIn('[[ -z "${CI:-}" ]]', linux)
+        self.assertIn('[[ "$(uname -s)" == "Linux" ]]', linux)
+        for emulator in ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm"):
+            self.assertIn(emulator, linux)
+        self.assertIn("trap report_result_and_hold EXIT", linux)
+        self.assertIn("Press Enter to close this window", linux)
+        # The relaunch must run before the option parser consumes "$@".
+        self.assertLess(
+            linux.index("relaunch_in_terminal"),
+            linux.index("while [[ $# -gt 0 ]]"),
+        )
+
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+        self.assertIn("opens a terminal window automatically", docs)
+
     def test_macos_build_script_uses_macos_spec_and_lockfile(self) -> None:
         script = (ROOT / "tools" / "build_macos_app.sh").read_text(encoding="utf-8")
 
@@ -75,6 +97,18 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('require_file "$ICON_PNG_PATH" "assets/app.png"', script)
         self.assertIn('"$PYTHON" -m PyInstaller --noconfirm "$SPEC"', script)
         self.assertIn('Built app bundle: $ROOT/dist/$APP_NAME.app', script)
+
+    def test_posix_build_scripts_stage_uv_for_packaged_optional_installs(self) -> None:
+        for script_name in ("tools/build_exe.sh", "tools/build_macos_app.sh"):
+            with self.subTest(script=script_name):
+                script = (ROOT / script_name).read_text(encoding="utf-8")
+                self.assertIn("find_uv_for_python()", script)
+                self.assertIn("install_uv_with_python()", script)
+                self.assertIn("stage_portable_uv()", script)
+                self.assertIn('portable_uv="$ROOT/tools/uv"', script)
+                self.assertIn("Runtime package installs in packaged Wisp require bundled uv.", script)
+                self.assertIn('stage_portable_uv "$PYTHON"', script)
+                self.assertLess(script.index('stage_portable_uv "$PYTHON"'), script.index('"$PYTHON" -m PyInstaller --noconfirm "$SPEC"'))
 
     def test_build_scripts_check_dependency_manifests_before_mutating_outputs(self) -> None:
         powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
@@ -197,6 +231,8 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn("dedicated `.venv-build` environment", docs)
         self.assertIn(".venv-build/", gitignore)
         self.assertIn(".venv-dev/", gitignore)
+        self.assertIn("/tools/uv", gitignore)
+        self.assertIn("/tools/uv.exe", gitignore)
 
     def test_build_scripts_provision_python_with_uv_when_missing(self) -> None:
         powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
@@ -306,6 +342,7 @@ class BuildScriptTests(unittest.TestCase):
                 self.assertIn("collect_submodules", spec)
                 self.assertIn("MODULE_MODE_HIDDENIMPORTS", spec)
                 self.assertIn('"core.addon_host"', spec)
+                self.assertIn('"scripts.optional_tts_installer"', spec)
                 self.assertIn('collect_submodules("runtime.workers")', spec)
                 self.assertIn("RUNTIME_WORKER_HIDDENIMPORTS", spec)
                 self.assertIn('collect_submodules("wisp_brain")', spec)
@@ -329,6 +366,8 @@ class BuildScriptTests(unittest.TestCase):
                 self.assertIn("OPTIONAL_RUNTIME_HIDDENIMPORTS", spec)
                 for module in ("cProfile", "pickletools", "pstats", "timeit"):
                     self.assertIn(f'"{module}"', spec)
+        linux = (ROOT / "packaging" / "WispLinux.spec").read_text(encoding="utf-8")
+        self.assertIn('"cmath"', linux)
 
 
 if __name__ == "__main__":

@@ -433,6 +433,24 @@ python -m runtime.supervisor.app</code></pre>
 </table>`
 },
 
+'known-issues': {
+  title: 'Known issues',
+  sub: 'Current tracked problems and status.',
+  toc: ['kokoro-cuda-sm'],
+  html: `
+<h2 id="kokoro-cuda-sm">Kokoro TTS falls back to CPU on older NVIDIA GPUs</h2>
+<div class="callout warn"><div class="callout-label">Status</div><p>Wisp falls back to CPU automatically when CUDA is not compatible.</p></div>
+<table>
+  <thead><tr><th>Field</th><th>Details</th></tr></thead>
+  <tbody>
+    <tr><td>What users see</td><td>The log says Kokoro model failed on cuda: cuDNN version 91900 is not compatible with devices with SM &lt; 7.5, then Wisp falls back to CPU.</td></tr>
+    <tr><td>Affected systems</td><td>NVIDIA GPUs with compute capability below 7.5 when paired with a PyTorch/cuDNN build that requires newer CUDA hardware.</td></tr>
+    <tr><td>Impact</td><td>Local Kokoro TTS still works, but speech synthesis uses CPU and may be slower.</td></tr>
+    <tr><td>Fix status</td><td>Wisp already falls back safely. We may add a preflight CUDA capability check so unsupported GPUs skip the failed CUDA attempt.</td></tr>
+  </tbody>
+</table>`
+},
+
 /* -------------------------------------------------------
    CORE FEATURES
 ------------------------------------------------------- */
@@ -2014,6 +2032,7 @@ const NAV_TREE = [
     { id: 'quickstart',    label: 'Quick start' },
     { id: 'faq',           label: 'Q&A' },
     { id: 'common-issues', label: 'Common issues' },
+    { id: 'known-issues',  label: 'Known issues' },
   ]},
   { section: 'Core Features', pages: [
     { id: 'overlay',         label: 'Overlay' },

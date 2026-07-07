@@ -2,6 +2,62 @@
 # Builds the Linux Wisp executable with PyInstaller and required assets.
 set -euo pipefail
 
+# A GUI launch (double-clicking the script in a file manager) attaches no
+# terminal, so build progress is invisible and the confirm prompts read EOF.
+# Re-launch inside a terminal emulator on Linux desktops to match the console
+# window that double-clicking build_exe.bat opens on Windows.
+HOLD_TERMINAL_OPEN=false
+for arg in "$@"; do
+    if [[ "$arg" == "--relaunched-in-terminal" ]]; then
+        HOLD_TERMINAL_OPEN=true
+    fi
+done
+
+relaunch_in_terminal() {
+    local term="$1"
+    shift
+    case "$(basename "$term")" in
+        gnome-terminal|ptyxis|tilix)
+            exec "$term" -- "$@" ;;
+        kgx)
+            exec "$term" -e "$(printf '%q ' "$@")" ;;
+        xfce4-terminal|mate-terminal)
+            exec "$term" -x "$@" ;;
+        kitty)
+            exec "$term" "$@" ;;
+        *)
+            exec "$term" -e "$@" ;;
+    esac
+}
+
+if [[ "$(uname -s)" == "Linux" ]] && ! $HOLD_TERMINAL_OPEN && [[ -z "${CI:-}" ]] \
+    && [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]] \
+    && [[ ! -t 0 && ! -t 1 && ! -t 2 ]]; then
+    SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    for candidate in x-terminal-emulator gnome-terminal ptyxis kgx konsole xfce4-terminal mate-terminal lxterminal tilix kitty alacritty xterm; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            relaunch_in_terminal "$(command -v "$candidate")" bash "$SELF" --relaunched-in-terminal "$@"
+        fi
+    done
+    echo "WARNING: no terminal emulator found; building without a visible console." >&2
+fi
+
+# Keep the spawned terminal open once the build ends so the outcome stays
+# readable, matching the pause in build_exe.bat.
+if $HOLD_TERMINAL_OPEN; then
+    report_result_and_hold() {
+        local status=$?
+        echo ""
+        if [[ $status -eq 0 ]]; then
+            echo "Build finished successfully."
+        else
+            echo "Build failed with exit code $status. Scroll up to see what went wrong."
+        fi
+        read -rp "Press Enter to close this window... " || true
+    }
+    trap report_result_and_hold EXIT
+fi
+
 CLEAN=false
 SKIP_INSTALL=false
 YES=false
@@ -15,6 +71,7 @@ while [[ $# -gt 0 ]]; do
         --yes|-y)   YES=true ;;
         --use-dev-venv) USE_DEV_VENV=true ;;
         --use-global-python) USE_GLOBAL_PYTHON=true ;;
+        --relaunched-in-terminal) ;; # internal: set when re-launched from a GUI start
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
     shift
@@ -134,6 +191,32 @@ find_uv() {
     return 1
 }
 
+find_uv_for_python() {
+    local python="$1"
+    local scripts_dir candidate
+    if [[ -z "$python" || ! -x "$python" ]]; then
+        return 1
+    fi
+    scripts_dir="$("$python" -c 'import sysconfig; print(sysconfig.get_path("scripts") or "")' 2>/dev/null || true)"
+    candidate="$scripts_dir/uv"
+    if [[ -n "$scripts_dir" && -x "$candidate" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+    return 1
+}
+
+install_uv_with_python() {
+    local python="$1"
+    if [[ -z "$python" || ! -x "$python" ]]; then
+        return 1
+    fi
+    echo "Installing uv into the build Python so it can be bundled with Wisp..." >&2
+    ensure_pip "$python" >&2
+    "$python" -m pip install uv >&2
+    find_uv_for_python "$python"
+}
+
 ensure_uv() {
     local uv
     uv="$(find_uv || true)"
@@ -145,6 +228,34 @@ ensure_uv() {
     echo "No local Python $WANT found; installing uv to provision it..." >&2
     curl -LsSf https://astral.sh/uv/install.sh | sh >&2
     find_uv
+}
+
+stage_portable_uv() {
+    local python="$1"
+    local uv portable_uv
+    uv="$(find_uv || true)"
+    if [[ -z "$uv" ]]; then
+        uv="$(install_uv_with_python "$python" || true)"
+    fi
+    if [[ -z "$uv" ]]; then
+        uv="$(ensure_uv || true)"
+    fi
+    if [[ -z "$uv" ]]; then
+        uv="$(install_uv_with_python "$python" || true)"
+    fi
+    if [[ -z "$uv" || ! -x "$uv" ]]; then
+        echo "Could not find or install uv. Runtime package installs in packaged Wisp require bundled uv." >&2
+        exit 1
+    fi
+
+    mkdir -p "$ROOT/tools"
+    portable_uv="$ROOT/tools/uv"
+    if [[ "$(cd "$(dirname "$uv")" && pwd -P)/$(basename "$uv")" != "$(cd "$ROOT/tools" && pwd -P)/uv" ]]; then
+        cp "$uv" "$portable_uv"
+    fi
+    chmod +x "$portable_uv"
+    echo "Bundling uv for runtime optional package installs:"
+    echo "  $portable_uv"
 }
 
 confirm() {
@@ -241,6 +352,8 @@ if ! "$PYTHON" -m PyInstaller --version > /dev/null 2>&1; then
     echo "PyInstaller is not installed. Run without --skip-install, or: $PYTHON -m pip install -r requirements/requirements-build.lock" >&2
     exit 1
 fi
+
+stage_portable_uv "$PYTHON"
 
 "$PYTHON" -m PyInstaller --noconfirm "$SPEC"
 

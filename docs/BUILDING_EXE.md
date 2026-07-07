@@ -84,8 +84,8 @@ Tagged releases are built by `.github/workflows/build.yml`.
 Create a release tag that matches the current `pyproject.toml` version:
 
 ```powershell
-git tag v0.7.2
-git push origin v0.7.2
+git tag v0.8.0
+git push origin v0.8.0
 ```
 
 The workflow builds:
@@ -112,6 +112,11 @@ Manual platform build entry points:
 ./tools/build_exe.sh --clean --yes
 ./tools/build_macos_app.sh --clean --yes
 ```
+
+On Linux desktops, starting `tools/build_exe.sh` from a file manager
+(double-click) opens a terminal window automatically so build progress stays
+visible, and the window waits for Enter before closing so the result stays
+readable. Terminal launches behave as before.
 
 For the closest local match to GitHub release artifacts, use the same commands
 the workflow uses:

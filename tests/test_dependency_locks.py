@@ -81,6 +81,12 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "ctranslate2",
         "ctranslate2-*.dist-info",
         "ctranslate2.libs",
+        "av",
+        "av-*.dist-info",
+        "av.libs",
+        "onnxruntime",
+        "onnxruntime-*.dist-info",
+        "onnxruntime.libs",
     ]
     assert optional_deps.kokoro_remove_artifacts() == [
         "kokoro",
@@ -91,6 +97,11 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "soundfile-*.dist-info",
         "_soundfile.py",
         "_soundfile_data",
+        "numpy",
+        "numpy-*.dist-info",
+        "numpy.libs",
+        "huggingface_hub",
+        "huggingface_hub-*.dist-info",
         "en_core_web_sm",
         "en_core_web_sm-*.dist-info",
     ]
@@ -104,8 +115,16 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
     assert optional_deps.kokoro_torch_install_packages("cuda") == [
         "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
+        "--extra-index-url",
+        optional_deps.PYPI_WHEEL_INDEX,
         "torch==2.11.0+cu128",
         "protobuf==6.33.2",
         "tokenizers==0.22.2",
         "setuptools==81.0.0",
+    ]
+    assert optional_deps.kokoro_install_packages("cuda") == [
+        "--extra-index-url",
+        optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
+        "torch==2.11.0+cu128",
+        *optional_deps.KOKORO_BASE_INSTALL_PACKAGES,
     ]

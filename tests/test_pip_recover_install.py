@@ -2,6 +2,48 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+
+def test_ensure_pip_available_bootstraps_missing_pip(monkeypatch):
+    """A Python without pip should be repaired with ensurepip before installing."""
+    from scripts import pip_recover_install
+
+    calls: list[list[str]] = []
+    pip_checks = iter([1, 0])  # missing before ensurepip, present after
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[2:] == ["pip", "--version"]:
+            return SimpleNamespace(returncode=next(pip_checks))
+        if command[2:] == ["ensurepip", "--upgrade"]:
+            return SimpleNamespace(returncode=0)
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install.subprocess, "run", fake_run)
+
+    assert pip_recover_install._ensure_pip_available() == 0
+    assert calls == [
+        ["python", "-m", "pip", "--version"],
+        ["python", "-m", "ensurepip", "--upgrade"],
+        ["python", "-m", "pip", "--version"],
+    ]
+
+
+def test_main_aborts_when_pip_cannot_be_provisioned(monkeypatch):
+    """main() must run the pip preflight and stop before any install attempt."""
+    from scripts import pip_recover_install
+
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 7)
+    monkeypatch.setattr(
+        pip_recover_install,
+        "_run_pip_install",
+        lambda _args: (_ for _ in ()).throw(AssertionError("install ran without pip")),
+    )
+
+    assert pip_recover_install.main(["tqdm==4.68.2"]) == 7
+
 
 def test_recover_install_repairs_missing_record_package_from_lock(monkeypatch, tmp_path):
     from scripts import pip_recover_install
@@ -33,6 +75,7 @@ def test_recover_install_repairs_missing_record_package_from_lock(monkeypatch, t
             return self.returncode
 
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["-r", str(requirements)]) == 0
@@ -79,6 +122,7 @@ def test_recover_install_repairs_multiple_missing_record_packages(monkeypatch, t
             return self.returncode
 
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["-r", str(requirements)]) == 0
@@ -127,6 +171,7 @@ def test_recover_install_removes_only_broken_metadata_before_repair(monkeypatch,
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
     monkeypatch.setattr(pip_recover_install.sys, "path", [str(site_packages)])
     monkeypatch.setattr(pip_recover_install.sysconfig, "get_path", lambda _name: "")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["-r", str(requirements)]) == 0
@@ -153,6 +198,7 @@ def test_recover_install_does_not_recover_unrelated_pip_failures(monkeypatch):
             return 1
 
     monkeypatch.setattr(pip_recover_install.sys, "executable", "python")
+    monkeypatch.setattr(pip_recover_install, "_ensure_pip_available", lambda: 0)
     monkeypatch.setattr(pip_recover_install.subprocess, "Popen", FakeProcess)
 
     assert pip_recover_install.main(["missing==1"]) == 1

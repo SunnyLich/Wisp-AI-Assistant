@@ -119,6 +119,77 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_live_voice_settings_load_from_env(self):
+        """LIVE_VOICE_*/HOTKEY_VOICE_LIVE env vars reach globals and typed settings."""
+        previous = {
+            "HOTKEY_VOICE_LIVE": getattr(config, "HOTKEY_VOICE_LIVE", "shift+f9"),
+            "LIVE_VOICE_PROVIDER": getattr(config, "LIVE_VOICE_PROVIDER", "google"),
+            "LIVE_VOICE_MODEL": getattr(config, "LIVE_VOICE_MODEL", ""),
+            "LIVE_VOICE_VOICE_NAME": getattr(config, "LIVE_VOICE_VOICE_NAME", ""),
+            "LIVE_VOICE_HALF_DUPLEX": getattr(config, "LIVE_VOICE_HALF_DUPLEX", False),
+            "LIVE_VOICE_SYSTEM_PROMPT": getattr(config, "LIVE_VOICE_SYSTEM_PROMPT", ""),
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "HOTKEY_VOICE_LIVE": "ctrl+shift+f10",
+                    "LIVE_VOICE_PROVIDER": "google",
+                    "LIVE_VOICE_MODEL": "gemini-2.5-flash-native-audio-preview-12-2025",
+                    "LIVE_VOICE_VOICE_NAME": "Puck",
+                    "LIVE_VOICE_HALF_DUPLEX": "yes",
+                    "LIVE_VOICE_SYSTEM_PROMPT": "Talk like a pirate.",
+                    "ASSISTANT_LANGUAGE": "",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.HOTKEY_VOICE_LIVE, "ctrl+shift+f10")
+            self.assertEqual(config.LIVE_VOICE_PROVIDER, "google")
+            self.assertEqual(
+                config.LIVE_VOICE_MODEL, "gemini-2.5-flash-native-audio-preview-12-2025"
+            )
+            self.assertEqual(config.LIVE_VOICE_VOICE_NAME, "Puck")
+            self.assertTrue(config.LIVE_VOICE_HALF_DUPLEX)
+            self.assertEqual(config.get_live_voice_system_prompt(), "Talk like a pirate.")
+            audio = config.get_settings().audio
+            self.assertEqual(audio.live_voice_provider, "google")
+            self.assertEqual(
+                audio.live_voice_model, "gemini-2.5-flash-native-audio-preview-12-2025"
+            )
+            self.assertEqual(audio.live_voice_voice, "Puck")
+            self.assertTrue(audio.live_voice_half_duplex)
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_live_voice_prompt_defaults_and_appends_assistant_language(self):
+        """The default live prompt exists and follows ASSISTANT_LANGUAGE."""
+        previous = {
+            "LIVE_VOICE_SYSTEM_PROMPT": getattr(config, "LIVE_VOICE_SYSTEM_PROMPT", ""),
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"ASSISTANT_LANGUAGE": "Chinese"},
+                clear=False,
+            ):
+                os.environ.pop("LIVE_VOICE_SYSTEM_PROMPT", None)
+                config.reload()
+
+            self.assertTrue(config.LIVE_VOICE_SYSTEM_PROMPT.strip())
+            prompt = config.get_live_voice_system_prompt()
+            self.assertTrue(prompt.startswith(config.LIVE_VOICE_SYSTEM_PROMPT))
+            self.assertIn("Respond in Simplified Chinese", prompt)
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_assistant_language_is_appended_to_system_prompt(self):
         """Verify assistant language is appended to system prompt behavior."""
         previous = {

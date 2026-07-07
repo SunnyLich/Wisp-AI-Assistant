@@ -38,3 +38,27 @@ def test_install_app_icon_sets_application_metadata_without_qt(monkeypatch) -> N
 
 def test_windows_app_user_model_id_is_noop_off_windows() -> None:
     assert app_icon.set_windows_app_user_model_id(platform="linux") is False
+
+
+def test_linux_desktop_entry_written_and_stable(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+    path = app_icon.ensure_linux_desktop_entry(platform="linux")
+
+    assert path == tmp_path / "applications" / "wisp.desktop"
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("[Desktop Entry]\n")
+    assert "Name=Wisp\n" in text
+    assert "Exec=" in text
+    assert "StartupWMClass=wisp\n" in text
+
+    first_write = path.stat().st_mtime_ns
+    assert app_icon.ensure_linux_desktop_entry(platform="linux") == path
+    assert path.stat().st_mtime_ns == first_write
+
+
+def test_linux_desktop_entry_noop_off_linux(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+    assert app_icon.ensure_linux_desktop_entry(platform="win32") is None
+    assert not (tmp_path / "applications").exists()

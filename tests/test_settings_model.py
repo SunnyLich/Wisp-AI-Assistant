@@ -77,6 +77,31 @@ def test_get_settings_returns_typed_snapshot():
         _restore_config_globals(previous_config)
 
 
+def test_audio_settings_include_live_voice_fields():
+    """Verify AudioSettings maps the LIVE_VOICE_* config globals."""
+    previous_config = _snapshot_config_globals()
+    try:
+        with patch("config.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "LIVE_VOICE_PROVIDER": "google",
+                "LIVE_VOICE_MODEL": "gemini-test-live",
+                "LIVE_VOICE_VOICE_NAME": "Kore",
+                "LIVE_VOICE_HALF_DUPLEX": "true",
+            },
+            clear=False,
+        ):
+            config.reload()
+
+        audio = config.get_settings().audio
+        assert audio.live_voice_provider == "google"
+        assert audio.live_voice_model == "gemini-test-live"
+        assert audio.live_voice_voice == "Kore"
+        assert audio.live_voice_half_duplex is True
+    finally:
+        _restore_config_globals(previous_config)
+
+
 def test_active_profile_overrides_model_and_budgets():
     """Verify active profile owns model choices and budget settings."""
     previous_config = _snapshot_config_globals()

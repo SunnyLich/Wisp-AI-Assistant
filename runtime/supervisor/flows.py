@@ -93,7 +93,23 @@ _AUDIO_CONFIG_KEYS = {
     "STT_BACKGROUND_CHUNK_STEP_SECONDS",
     "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
     "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+    "LIVE_VOICE_PROVIDER",
+    "LIVE_VOICE_MODEL",
+    "LIVE_VOICE_VOICE_NAME",
+    "LIVE_VOICE_HALF_DUPLEX",
+    "LIVE_VOICE_SYSTEM_PROMPT",
 }
+
+
+def _is_transient_local_tts_warmup_error(text: str) -> bool:
+    """Return True when local TTS is merely busy importing/warming."""
+    lowered = " ".join(str(text or "").lower().split())
+    if not lowered or "local speech is ready" not in lowered:
+        return False
+    if "still warming" not in lowered and "warming up" not in lowered:
+        return False
+    speech_terms = ("kokoro", "local tts", "local voice", "tts")
+    return any(term in lowered for term in speech_terms)
 
 
 _file_context_text = flow_context.file_context_text
@@ -144,6 +160,8 @@ class PendingInvocation:
     intent_target_pid: int = 0
     paste_target_pid: int = 0
     is_snip: bool = False
+    # (item_id, source_id) pairs removed via the intent picker's per-row X.
+    removed_context_sources: set = field(default_factory=set)
     context_ready: threading.Event = field(default_factory=threading.Event)
 
 
@@ -231,6 +249,10 @@ class FlowController:
         self._voice_state = "idle"
         # Dictation push-to-talk (paste transcript into the focused field).
         self._dictate_state = "idle"
+        # Live voice conversation (toggle hotkey, Gemini Live in the audio worker).
+        self._live_voice_state = "idle"  # idle | starting | active | stopping
+        # One "ready" bubble notice per session, on the first listening state.
+        self._live_voice_ready_notified = False
         self._dictate_target_pid = 0
         self._dictate_focus_token = 0
         self._generation = itertools.count(1)
@@ -262,6 +284,8 @@ class FlowController:
         self.ui.on_event("ui.intent.snip.region", self._on_intent_snip_region)
         self.ui.on_event("ui.intent.snip.cancelled", self._on_intent_snip_cancelled)
         self.ui.on_event("ui.intent.selection.requested", self._on_intent_selection_requested)
+        self.ui.on_event("ui.intent.context.remove", self._on_intent_context_remove)
+        self.ui.on_event("ui.intent.context.reenabled", self._on_intent_context_reenabled)
         self.ui.on_event("ui.chat.snip.region", self._on_chat_snip_region)
         self.ui.on_event("ui.chat.snip.cancelled", self._on_chat_snip_cancelled)
         self.ui.on_event("ui.chat.selection.requested", self._on_chat_selection_requested)
@@ -312,6 +336,16 @@ class FlowController:
         self.audio.on_event("audio.warmup.done", self._on_audio_warmup_done)
         self.audio.on_event("audio.playback.started", self._on_audio_playback_started)
         self.audio.on_event("audio.playback.done", self._on_audio_playback_done)
+        self.audio.on_event("audio.live.state", self._on_audio_live_state)
+        self.audio.on_event("audio.live.transcript", self._on_audio_live_transcript)
+        self.audio.on_event("audio.live.error", self._on_audio_live_error)
+        self.audio.on_event("audio.live.ended", self._on_audio_live_ended)
+        # A live voice session dies with the audio worker; clean up the toggle
+        # state so the hotkey works again after the worker restarts. Guarded:
+        # test FakeWorkers don't implement on_exit.
+        audio_on_exit = getattr(self.audio, "on_exit", None)
+        if callable(audio_on_exit):
+            audio_on_exit(self._on_audio_worker_exit)
         self.ui.call("ui.show_overlay", timeout=30.0)
         try:
             self.ui.call("ui.prewarm_intent", timeout=30.0, wait=False)
@@ -366,6 +400,14 @@ class FlowController:
             if self._claim_voice_stop():
                 log.info("hotkey received: kind=%s", kind)
                 self._schedule(self.voice_stop)
+        elif kind == "voice_live":
+            action = self._claim_live_voice_toggle()
+            if action == "start":
+                log.info("hotkey received: kind=%s action=start", kind)
+                self._schedule(self.live_voice_start)
+            elif action == "stop":
+                log.info("hotkey received: kind=%s action=stop", kind)
+                self._schedule(self.live_voice_stop)
         elif kind == "dictate_start":
             if self._claim_dictate_start():
                 log.info("hotkey received: kind=%s", kind)
@@ -425,6 +467,20 @@ class FlowController:
         choices = list((data or {}).get("context_choices") or [])
         custom_text = str((data or {}).get("custom_text") or "")
         self._schedule(self.intent_selection_capture_requested, choices, custom_text)
+
+    def _on_intent_context_remove(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle per-row context removals from an open intent picker."""
+        item_id = str((data or {}).get("id") or "")
+        source_id = str((data or {}).get("source_id") or "")
+        if item_id:
+            self._schedule(self.intent_context_source_removed, item_id, source_id)
+
+    def _on_intent_context_reenabled(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle context groups toggled back on after per-row removals."""
+        item_id = str((data or {}).get("id") or "")
+        choices = list((data or {}).get("context_choices") or [])
+        if item_id:
+            self._schedule(self.intent_context_source_reenabled, item_id, choices)
 
     def _on_chat_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle a selected chat screenshot snip region."""
@@ -629,6 +685,9 @@ class FlowController:
             )
             return
         if status.startswith("error:"):
+            if item == "tts" and _is_transient_local_tts_warmup_error(status):
+                log.info("suppressed transient local TTS warmup progress error: %s", status)
+                return
             self._safe_call(
                 self.ui,
                 "ui.reply.notice",
@@ -642,11 +701,13 @@ class FlowController:
         items = set((data or {}).get("items") or [])
         if not items:
             return
+        provider = str((data or {}).get("provider") or "").strip().lower()
         result = (data or {}).get("result") if isinstance((data or {}).get("result"), dict) else {}
         failures = [
             f"{name}: {status}"
             for name, status in result.items()
             if str(status).startswith("error:")
+            and not (name == "tts" and _is_transient_local_tts_warmup_error(str(status)))
         ]
         if failures:
             self._safe_call(
@@ -656,12 +717,22 @@ class FlowController:
                 timeout=30.0,
             )
             return
-        if "tts" in items and "stt" in items:
-            text = "Local voice and speech recognition are ready."
-        elif "tts" in items:
-            text = "Local voice is ready."
-        else:
+
+        ready_items = {name for name, status in result.items() if status == "ok"}
+        if not result:
+            ready_items = set(items)
+        if not ready_items:
+            return
+
+        tts_label = "Local voice" if provider == "kokoro" else "TTS connection"
+        if "tts" in ready_items and "stt" in ready_items:
+            text = f"{tts_label} and speech recognition are ready."
+        elif "tts" in ready_items:
+            text = f"{tts_label} is ready."
+        elif "stt" in ready_items:
             text = "Local speech recognition is ready."
+        else:
+            return
         self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 6000}, timeout=30.0)
 
     def _on_bubble_speed(self, data: dict[str, Any], _req_id: Any = None) -> None:
@@ -688,6 +759,65 @@ class FlowController:
             return
         self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
         self._set_idle()
+
+    def _on_audio_live_state(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Drive the overlay doll from live voice session state."""
+        state = str((data or {}).get("state") or "")
+        overlay = {
+            "connecting": "thinking",
+            "listening": "listening",
+            "speaking": "speaking",
+        }.get(state)
+        if overlay and self._live_voice_busy():
+            self._fire(self.ui, "ui.overlay.state", {"state": overlay})
+        if state == "listening" and self._live_voice_busy() and not self._live_voice_ready_notified:
+            # First listening state = the Gemini websocket is connected and the
+            # mic is streaming; tell the user the conversation is actually live.
+            self._live_voice_ready_notified = True
+            self._fire(self.ui, "ui.live_voice.ready", {})
+
+    def _on_audio_live_transcript(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle live voice transcript events."""
+        self._live_transcript_sink(data or {})
+
+    def _live_transcript_sink(self, payload: dict[str, Any]) -> None:
+        """Forward one live transcript fragment to the bubble captions."""
+        role = str(payload.get("role") or "")
+        text = str(payload.get("text") or "")
+        if role in ("user", "assistant") and text:
+            self._fire(self.ui, "ui.live_voice.transcript", {"role": role, "text": text})
+
+    def _on_audio_live_error(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle advisory live voice errors (session keeps running or is ending)."""
+        code = str((data or {}).get("code") or "")
+        message = str((data or {}).get("message") or "")
+        if code == "expiring":
+            self._notice(t("Live voice session will end soon (server time limit)."))
+            return
+        self._notice(
+            f"{t('Live voice error')}: {self._friendly_error(message or code or 'unknown error')}",
+            severity="warning",
+        )
+
+    def _on_audio_live_ended(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Handle the (exactly-once) end of a live voice session."""
+        if not self._live_voice_busy():
+            return  # already cleaned up by live_voice_stop or worker-exit handling
+        reason = str((data or {}).get("reason") or "")
+        self._mark_live_voice_idle()
+        self._fire(self.ui, "ui.live_voice.session", {"active": False})
+        self._set_idle()
+        if reason == "server_closed":
+            self._notice(t("Live voice session ended (server time limit). Press the hotkey to start again."))
+
+    def _on_audio_worker_exit(self, _returncode: int | None = None) -> None:
+        """The audio worker died; any live voice session died with it."""
+        if not self._live_voice_busy():
+            return
+        self._mark_live_voice_idle()
+        self._fire(self.ui, "ui.live_voice.session", {"active": False})
+        self._set_idle()
+        self._notice(t("Live voice stopped because the audio worker restarted."), severity="warning")
 
     def _on_reply_chunk(self, data: dict[str, Any], _req_id: Any = None) -> list[tuple[str, bool, bool]]:
         """Handle reply chunk events."""
@@ -828,6 +958,7 @@ class FlowController:
                 include_browser=False,
                 include_selected_paths=True,
                 preview_context_sources=True,
+                dedupe_selection=True,
             )
         except Exception:
             log.exception("pre-picker context snapshot failed")
@@ -906,7 +1037,7 @@ class FlowController:
             pending = PendingInvocation(
                 caller_idx=0,
                 caller=caller,
-                context=self._context_snapshot(caller),
+                context=self._context_snapshot(caller, dedupe_selection=True),
                 screenshot_b64=screenshot_b64,
                 is_snip=True,
             )
@@ -1029,6 +1160,122 @@ class FlowController:
         self._notice("Select text or files/folders.")
         self._complete_selection_after_user_selects(capture)
 
+    def intent_context_source_removed(self, item_id: str, source_id: str) -> None:
+        """Drop one removed context row from the pending invocation.
+
+        Item-level rows (selection, clipboard, ...) are handled inside the
+        overlay by switching the chip off; only per-source rows need the
+        supervisor so the removed document block also leaves the prompt.
+        """
+        with self._lock:
+            pending = self._pending
+        if pending is None:
+            return
+        pending.removed_context_sources.add((str(item_id), str(source_id)))
+        context = pending.context if isinstance(pending.context, dict) else {}
+        if item_id == "ambient":
+            context.setdefault("_active_document_text_full", str(context.get("active_document_text") or ""))
+            context.setdefault(
+                "_active_document_sources_full",
+                [
+                    dict(item)
+                    for item in (context.get("active_document_sources") or [])
+                    if isinstance(item, dict)
+                ],
+            )
+            removed = {
+                sid for iid, sid in pending.removed_context_sources if iid == "ambient" and sid
+            }
+            sources = [
+                item
+                for item in (context.get("active_document_sources") or [])
+                if isinstance(item, dict)
+                and " ".join(str(item.get("label") or "").split()) not in removed
+            ]
+            context["active_document_sources"] = sources
+            if context.get("active_document_text"):
+                context["active_document_text"] = self._strip_removed_document_sources(
+                    str(context.get("active_document_text") or ""), removed
+                )
+            if not sources:
+                # The last app document row was removed: disable App context for
+                # this invocation so the top chip switches off with the list.
+                pending.caller["_context_ambient_enabled"] = False
+        self._fire(
+            self.ui,
+            "ui.intent.context_items",
+            {"context_items": self._intent_context_items(pending)},
+        )
+
+    def intent_context_source_reenabled(
+        self,
+        item_id: str,
+        context_choices: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Restore a context group that was emptied by per-row removals."""
+        with self._lock:
+            pending = self._pending
+        if pending is None:
+            return
+
+        item_id = str(item_id or "")
+        pending.caller = self._apply_intent_context_choices(
+            pending.caller,
+            context_choices or [],
+        )
+        if item_id == "ambient":
+            pending.caller["_context_ambient_enabled"] = True
+            pending.removed_context_sources = {
+                pair for pair in pending.removed_context_sources if pair[0] != "ambient"
+            }
+            context = pending.context if isinstance(pending.context, dict) else {}
+            full_text = str(context.get("_active_document_text_full") or "")
+            full_sources = [
+                dict(item)
+                for item in (context.get("_active_document_sources_full") or [])
+                if isinstance(item, dict)
+            ]
+            if full_text or full_sources:
+                context["active_document_text"] = full_text
+                context["active_document_sources"] = full_sources
+            else:
+                context.pop("active_document_text", None)
+                context.pop("active_document_sources", None)
+                text = self._fetch_active_document_text(context)
+                if text:
+                    context["active_document_text"] = text
+            pending.context = context
+
+        with self._lock:
+            if self._pending is pending:
+                self._pending = pending
+        self._fire(
+            self.ui,
+            "ui.intent.context_items",
+            {"context_items": self._intent_context_items(pending)},
+        )
+
+    @staticmethod
+    def _strip_removed_document_sources(text: str, removed_labels: set[str]) -> str:
+        """Drop labelled document blocks the user removed in the intent picker."""
+        raw = str(text or "")
+        if not raw or not removed_labels:
+            return raw
+        matches = list(re.finditer(r"(?m)^\[([^\]\n]{1,160})\]\n", raw))
+        if not matches:
+            return raw
+        kept: list[str] = []
+        prefix = raw[: matches[0].start()].strip()
+        if prefix:
+            kept.append(prefix)
+        for idx, match in enumerate(matches):
+            label = " ".join(match.group(1).split()).strip()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+            if label in removed_labels:
+                continue
+            kept.append(raw[match.start():end].strip())
+        return "\n\n".join(part for part in kept if part).strip()
+
     def _complete_selection_after_user_selects(self, capture: dict[str, Any]) -> None:
         """Capture Selection automatically after the user finishes selecting."""
         try:
@@ -1096,7 +1343,22 @@ class FlowController:
             pending.context_ready.set()
         elif not pending.context_ready.is_set():
             pending.context_ready.wait(timeout=3.0)
-        pending.caller = self._apply_intent_context_choices(pending.caller, context_choices or [])
+        choices = context_choices or []
+        pending.caller = self._apply_intent_context_choices(pending.caller, choices)
+        context = pending.context if isinstance(pending.context, dict) else {}
+        if (
+            str(context.get("platform") or "").strip().lower().startswith("linux")
+            and not any(str(item.get("id") or "") == "selection" for item in choices)
+        ):
+            pending.caller["_context_selection_enabled"] = False
+        if (
+            pending.caller.get("_context_selection_enabled")
+            and not str(context.get("selected_text") or "").strip()
+            and str(context.get("stale_selected_text") or "").strip()
+        ):
+            # The user toggled the off-by-default Selection chip back on:
+            # attach the earlier (stale) selection it was offering.
+            context["selected_text"] = str(context.get("stale_selected_text") or "")
         if not prompt:
             prompt = "What is this?"
         if pending.caller.get("paste_back") and self._is_local_file_request(prompt):
@@ -1257,6 +1519,9 @@ class FlowController:
 
     def read_selection_aloud(self) -> None:
         """Speak the currently selected text without sending it to a model."""
+        if self._live_voice_busy():
+            self._notice(t("Stop the live voice conversation first."))
+            return
         if not self._tts_enabled():
             self._notice(t("TTS is off. Choose a voice provider in Settings first."))
             return
@@ -1397,6 +1662,63 @@ class FlowController:
             self._query(text, pending, preserve_reply_bubble=True)
         finally:
             self._mark_voice_idle()
+
+    def live_voice_start(self) -> None:
+        """Begin a hands-free live voice conversation (toggle hotkey)."""
+        # Acknowledge the keypress instantly; "thinking" covers the connect.
+        self._fire(self.ui, "ui.overlay.state", {"state": "thinking"})
+        self._live_voice_ready_notified = False
+        self._reload_supervisor_config_if_changed()
+        with self._lock:
+            recorder_busy = self._voice_state != "idle" or self._dictate_state != "idle"
+        if recorder_busy:
+            self._notice(t("Finish the current voice recording first."))
+            self._mark_live_voice_idle()
+            self._set_idle()
+            return
+        self._fire(self.audio, "audio.stop")
+        try:
+            result = self.audio.call("audio.live.start", timeout=20.0)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("live voice start failed")
+            self._notice(f"{t('Could not start live voice')}: {self._friendly_error(exc)}")
+            self._mark_live_voice_idle()
+            self._set_idle()
+            return
+        result = result if isinstance(result, dict) else {}
+        if not result.get("started"):
+            error = str(result.get("error") or "")
+            if error == "already_active":
+                # The worker still runs a session (e.g. a lost stop); adopt it.
+                # It is mid-conversation, so no "ready" notice on its next
+                # speaking -> listening flip.
+                self._live_voice_ready_notified = True
+                self._mark_live_voice_active()
+                self._fire(self.ui, "ui.live_voice.session", {"active": True})
+                return
+            if error == "missing_key":
+                self._notice(t("Live voice needs a Google API key. Add one in Settings."))
+            elif error == "missing_package":
+                self._notice(t("Live voice support is not installed. Install it in Settings > TTS / Voice."))
+            elif error == "mic_busy":
+                self._notice(t("Finish the current voice recording first."))
+            elif error == "unsupported_provider":
+                self._notice(t("Live voice currently supports Gemini Live through the Google provider."))
+            else:
+                self._notice(f"{t('Could not start live voice')}: {error or 'unknown error'}")
+            self._mark_live_voice_idle()
+            self._set_idle()
+            return
+        self._mark_live_voice_active()
+        self._fire(self.ui, "ui.live_voice.session", {"active": True})
+        log.info("live voice session started: model=%s", result.get("model"))
+
+    def live_voice_stop(self) -> None:
+        """End the live voice conversation (second toggle press)."""
+        self._safe_call(self.audio, "audio.live.stop", timeout=10.0)
+        self._mark_live_voice_idle()
+        self._fire(self.ui, "ui.live_voice.session", {"active": False})
+        self._set_idle()
 
     def dictate_start(self) -> None:
         """Push-to-talk dictation: capture the focused text field (so the result
@@ -1747,7 +2069,10 @@ class FlowController:
         self._safe_call(
             self.ui,
             "ui.chat.context_preview",
-            {"preview_id": preview_id, "context_items": self._intent_context_items(pending)},
+            {
+                "preview_id": preview_id,
+                "context_items": self._intent_context_items(pending),
+            },
             timeout=30.0,
         )
         changed = False
@@ -1769,7 +2094,10 @@ class FlowController:
             self._safe_call(
                 self.ui,
                 "ui.chat.context_preview",
-                {"preview_id": preview_id, "context_items": self._intent_context_items(pending)},
+                {
+                    "preview_id": preview_id,
+                    "context_items": self._intent_context_items(pending),
+                },
                 timeout=30.0,
             )
 
@@ -2808,7 +3136,8 @@ class FlowController:
     def _claim_voice_start(self) -> bool:
         """Handle claim voice start for flow controller."""
         with self._lock:
-            if self._voice_state != "idle":
+            # Mutually exclusive with the live voice conversation (one mic).
+            if self._voice_state != "idle" or self._live_voice_state != "idle":
                 return False
             self._voice_state = "starting"
             self._voice_active = True
@@ -2870,8 +3199,13 @@ class FlowController:
     def _claim_dictate_start(self) -> bool:
         """Handle claim dictate start for flow controller."""
         with self._lock:
-            # Mutually exclusive with voice push-to-talk (one shared recorder).
-            if self._dictate_state != "idle" or self._voice_state != "idle":
+            # Mutually exclusive with voice push-to-talk and the live voice
+            # conversation (one shared recorder/mic).
+            if (
+                self._dictate_state != "idle"
+                or self._voice_state != "idle"
+                or self._live_voice_state != "idle"
+            ):
                 return False
             self._dictate_state = "recording"
             return True
@@ -2896,6 +3230,36 @@ class FlowController:
         """Handle mark dictate idle for flow controller."""
         with self._lock:
             self._dictate_state = "idle"
+
+    def _claim_live_voice_toggle(self) -> str | None:
+        """Resolve one toggle-hotkey press: "start", "stop", or None.
+
+        None while a start/stop is already in flight, so hammering the key
+        can't stack transitions."""
+        with self._lock:
+            if self._live_voice_state == "idle":
+                self._live_voice_state = "starting"
+                return "start"
+            if self._live_voice_state == "active":
+                self._live_voice_state = "stopping"
+                return "stop"
+            return None
+
+    def _mark_live_voice_active(self) -> None:
+        """Handle mark live voice active for flow controller."""
+        with self._lock:
+            if self._live_voice_state == "starting":
+                self._live_voice_state = "active"
+
+    def _mark_live_voice_idle(self) -> None:
+        """Handle mark live voice idle for flow controller."""
+        with self._lock:
+            self._live_voice_state = "idle"
+
+    def _live_voice_busy(self) -> bool:
+        """Handle live voice busy for flow controller."""
+        with self._lock:
+            return self._live_voice_state != "idle"
 
     def _set_idle(self) -> None:
         # Fire-and-forget. This runs inline on the worker event-reader thread
@@ -3074,6 +3438,7 @@ class FlowController:
         include_browser: bool = True,
         include_selected_paths: bool = False,
         preview_context_sources: bool = False,
+        dedupe_selection: bool = False,
     ) -> dict[str, Any]:
         # The browser-page fetch is a ~2-3s network read (requests.get). Keep it
         # OFF the hotkey -> picker path (include_browser=False) and fetch it lazily
@@ -3094,6 +3459,10 @@ class FlowController:
                 # Paste-back callers capture the focused text element so the rewrite
                 # can be written back in place (AX) without refocusing the app.
                 "capture_focus": bool(caller.get("paste_back")),
+                # Intent-picker captures suppress re-serving the exact same X11
+                # PRIMARY acquisition they already auto-filled once (stale after
+                # the user deselects); other flows keep plain reads.
+                "selection_dedupe_key": "intent" if dedupe_selection else "",
             },
             timeout=30.0,
         ) or {}
@@ -3186,6 +3555,7 @@ class FlowController:
                     pending.caller,
                     include_browser=False,
                     preview_context_sources=True,
+                    dedupe_selection=True,
                 )
             t_ctx = time.monotonic()
             if not self._is_current(generation):
@@ -3457,6 +3827,15 @@ class FlowController:
         active_document_text = str(context.get("active_document_text") or "") if include_active_document else ""
         if include_active_document:
             active_document_text = active_document_text or self._fetch_active_document_text(context)
+            removed_doc_labels = {
+                sid for iid, sid in pending.removed_context_sources if iid == "ambient" and sid
+            }
+            if removed_doc_labels and active_document_text:
+                # Rows removed via the picker's X buttons must also leave the
+                # prompt; the document text is (re)fetched at submit time.
+                active_document_text = self._strip_removed_document_sources(
+                    active_document_text, removed_doc_labels
+                )
         if caller.get("context_ambient", True):
             active_app = context.get("active_app")
             if isinstance(active_app, dict) and active_app.get("name"):
@@ -4040,10 +4419,14 @@ class FlowController:
         active_app = context.get("active_app") if isinstance(context.get("active_app"), dict) else {}
         document_window = context.get("document_window") if isinstance(context.get("document_window"), dict) else {}
         active_document_text = str(context.get("active_document_text") or "")
+        removed_sources = pending.removed_context_sources if pending else set()
+        removed_app_labels = {sid for iid, sid in removed_sources if iid == "ambient" and sid}
         app_source_previews = [
             dict(item)
             for item in (context.get("active_document_sources") or [])
-            if isinstance(item, dict) and str(item.get("preview") or "").strip()
+            if isinstance(item, dict)
+            and str(item.get("preview") or "").strip()
+            and " ".join(str(item.get("label") or "").split()) not in removed_app_labels
         ]
         active_text = " ".join(
             str(part)
@@ -4061,6 +4444,9 @@ class FlowController:
         document_state = self._mode_to_context_state(self._effective_document_mode(caller))
         app_on = bool(caller.get("context_ambient", True)) and app_available
         app_state = "on" if app_on or (document_state == "on" and app_available) else ("auto" if document_state == "auto" and app_available else "off")
+        if caller.get("_context_ambient_enabled") is False:
+            # Every app document row was removed via the picker's X buttons.
+            app_state = "off"
         app_deferred = app_state != "off" and document_state in {"on", "auto"} and app_available and not active_document_text
 
         browser_text = "\n".join(
@@ -4079,7 +4465,7 @@ class FlowController:
         browser_state = self._mode_to_context_state(self._context_mode(caller, "browser"))
         browser_tokens = self._estimate_context_tokens(browser_text)
         browser_requested = browser_state != "off"
-        browser_deferred = browser_requested and not context.get("browser_content")
+        browser_deferred = browser_requested and browser_available and not context.get("browser_content")
 
         selected_text = str(context.get("selected_text") or "")
         selected_paths = self._selected_paths_from_context(context)
@@ -4095,6 +4481,14 @@ class FlowController:
         selected_context_text = "\n\n".join(
             part for part in (selected_text, selected_path_text) if part.strip()
         )
+        platform_name = str(context.get("platform") or "").strip().lower()
+        linux_selection_off_by_default = platform_name.startswith("linux")
+        # A selection this picker surface already auto-filled once: offered
+        # off-by-default so a cleared highlight never rides along silently,
+        # while one toggle re-attaches it after an accidental close.
+        stale_selected_text = (
+            "" if selected_context_text else str(context.get("stale_selected_text") or "")
+        )
         clipboard_text = str(context.get("clipboard_text") or "")
         github_mode = self._context_mode(caller, "github")
         memory_mode = self._context_mode(caller, "memory")
@@ -4102,14 +4496,9 @@ class FlowController:
         screenshot_mode = str(caller.get("context_screenshot") or "off").strip().lower()
         screenshot_preview = (pending.screenshot_b64 or pending.screenshot_tool_b64) if pending else None
         has_screenshot = bool(screenshot_preview)
-        screenshot_tokens = (
-            self._image_token_label(screenshot_preview)
-            if has_screenshot
-            else self._screen_token_label(context)
-        )
         app_redactions = self._redaction_count(active_text)
         browser_redactions = self._redaction_count(browser_text)
-        selected_redactions = self._redaction_count(selected_context_text)
+        selected_redactions = self._redaction_count(selected_context_text or stale_selected_text)
         clipboard_redactions = self._redaction_count(clipboard_text)
         app_preview = self._context_preview_text(active_document_text or active_text)
         if app_source_previews:
@@ -4121,11 +4510,38 @@ class FlowController:
                 or context.get("browser_app")
                 or "Browser page text may be fetched after you send the prompt."
             )
-        selected_preview = self._context_preview_text(selected_context_text)
+        selected_preview = self._context_preview_text(selected_context_text or stale_selected_text)
         clipboard_preview = self._context_preview_text(clipboard_text)
+        selected_state = (
+            "off"
+            if linux_selection_off_by_default
+            else ("on" if selected_context_text else "off")
+        )
+        if selected_context_text and linux_selection_off_by_default:
+            selected_warning = (
+                "Selection captured from the last focused app but not attached. "
+                "Toggle Selection on to attach it."
+            )
+        elif selected_context_text:
+            selected_warning = self._context_warning(
+                self._estimate_context_tokens(selected_context_text),
+                available=True,
+            )
+        elif stale_selected_text:
+            selected_warning = (
+                "Earlier selection available but not attached (it may no "
+                "longer be highlighted). Toggle Selection on to attach it."
+            )
+        else:
+            selected_warning = ""
 
         screenshot_state = "on" if (screenshot_mode == "auto" or (pending and pending.screenshot_b64)) else (
             "auto" if screenshot_mode == "model" else "off"
+        )
+        screenshot_tokens = (
+            self._image_token_label(screenshot_preview)
+            if has_screenshot
+            else self._screen_token_label(context)
         )
 
         return [
@@ -4134,7 +4550,7 @@ class FlowController:
                 "key": keys[0],
                 "label": "App",
                 "state": app_state,
-                "tokens": self._deferred_token_label() if app_deferred else self._token_label(active_text),
+                "tokens": self._token_label(active_text),
                 "preview": app_preview,
                 "sources": app_source_previews,
                 "privacy_count": app_redactions,
@@ -4153,7 +4569,11 @@ class FlowController:
                 "key": keys[1],
                 "label": "Browser/Web",
                 "state": browser_state if browser_requested else "off",
-                "tokens": self._deferred_token_label() if browser_deferred else self._token_label(browser_text),
+                "tokens": (
+                    self._deferred_token_label()
+                    if browser_deferred and not browser_text
+                    else self._token_label(browser_text)
+                ),
                 "preview": browser_preview,
                 "privacy_count": browser_redactions,
                 "warning": self._with_privacy_warning(
@@ -4171,15 +4591,18 @@ class FlowController:
                 "key": keys[2],
                 "label": "Selection",
                 "available": True,
-                "state": "on" if selected_context_text else "off",
-                "tokens": self._token_label(selected_context_text) if selected_context_text else "",
+                "state": selected_state,
+                "stale": bool(stale_selected_text),
+                "capture_on_enable": not linux_selection_off_by_default,
+                "tokens": (
+                    self._token_label(selected_context_text or stale_selected_text)
+                    if (selected_context_text or stale_selected_text)
+                    else ""
+                ),
                 "preview": selected_preview,
                 "privacy_count": selected_redactions,
                 "warning": self._with_privacy_warning(
-                    self._context_warning(
-                        self._estimate_context_tokens(selected_context_text),
-                        available=bool(selected_context_text),
-                    ) if selected_context_text else "",
+                    selected_warning,
                     selected_redactions,
                 ),
             },
@@ -4480,6 +4903,8 @@ class FlowController:
         """Return whether assistant replies should be spoken automatically."""
         import config
 
+        if self._live_voice_busy():
+            return False  # the live conversation owns the speaker; don't talk over it
         return self._tts_enabled() and bool(getattr(config, "TTS_SPEAK_REPLIES", False))
 
     def _tts_sequence_is_active(self) -> bool:

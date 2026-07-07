@@ -34,11 +34,14 @@ BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
 PIP_HIDDENIMPORTS = collect_submodules("pip")
 MODULE_MODE_HIDDENIMPORTS = [
     "core.addon_host",
+    "scripts.optional_tts_installer",
 ]
 # Runtime-installed audio packages are invisible to PyInstaller analysis.
-# Torch (used by Kokoro) imports timeit while it initializes.
+# Torch and Kokoro pull these in during startup, so keep them in the base
+# bundle.
 OPTIONAL_RUNTIME_HIDDENIMPORTS = [
     "cProfile",
+    "cmath",
     "pickletools",
     "pstats",
     "timeit",

@@ -21,6 +21,7 @@ from core.prompt_i18n import (
     ASSISTANT_RESPONSE_LANGUAGE_NAMES as _ASSISTANT_RESPONSE_LANGUAGE_NAMES,
     CALLER_INTENT_TEMPLATES as _CALLER_INTENT_TEMPLATES,
     CALLER_TEMPLATE_FIELDS as _CALLER_TEMPLATE_FIELDS,
+    DEFAULT_LIVE_VOICE_SYSTEM_PROMPT,
     DEFAULT_SYSTEM_PROMPT_UTILITY,
     LEGACY_TOOL_PROMPT_SENTENCE as _LEGACY_TOOL_PROMPT_SENTENCE,
     SYSTEM_PROMPT_UTILITY_TEMPLATES as _SYSTEM_PROMPT_UTILITY_TEMPLATES,
@@ -804,6 +805,7 @@ def _load_config() -> None:
     global GITHUB_DEFAULT_CLIENT_ID, GITHUB_CLIENT_ID, GITHUB_OAUTH_SCOPES
     global COPILOT_CLI_URL, COPILOT_CLI_PATH
     global HOTKEY_ADD_CONTEXT, HOTKEY_CLEAR_CONTEXT, HOTKEY_SNIP, HOTKEY_READ_SELECTION_ALOUD, HOTKEY_VOICE, HOTKEY_DICTATE, DICTATE_MODE
+    global HOTKEY_VOICE_LIVE, LIVE_VOICE_PROVIDER, LIVE_VOICE_MODEL, LIVE_VOICE_VOICE_NAME, LIVE_VOICE_HALF_DUPLEX, LIVE_VOICE_SYSTEM_PROMPT
     global VOICE_TRANSCRIPT_CONFIRM, VOICE_REVIEW_TRANSCRIPT
     global INTENT_CONTEXT_TOGGLE_KEYS, INTENT_OVERLAY_TIMEOUT_MS
     global SNIP_CONTEXT_AMBIENT, SNIP_CONTEXT_DOCUMENTS, SNIP_CONTEXT_TOOLS, SNIP_CALLER
@@ -963,6 +965,9 @@ def _load_config() -> None:
     # transcript verbatim; "llm" runs it through the LLM for punctuation/cleanup.
     HOTKEY_DICTATE       = os.getenv("HOTKEY_DICTATE",       "f8")
     DICTATE_MODE         = os.getenv("DICTATE_MODE",         "raw")
+    # Live voice conversation: toggle a hands-free Gemini Live session (talk,
+    # hear replies, barge in by speaking). Set empty to disable the hotkey.
+    HOTKEY_VOICE_LIVE    = os.getenv("HOTKEY_VOICE_LIVE",    "shift+f9")
     VOICE_TRANSCRIPT_CONFIRM = env_bool("VOICE_TRANSCRIPT_CONFIRM", False)
     VOICE_REVIEW_TRANSCRIPT = env_bool("VOICE_REVIEW_TRANSCRIPT", False)
     INTENT_CONTEXT_TOGGLE_KEYS = _intent_context_toggle_keys(
@@ -996,6 +1001,20 @@ def _load_config() -> None:
     # more accurate than greedy (1); clamp to a sane range so a bad .env value
     # can't wedge the decoder.
     STT_BEAM_SIZE    = max(1, min(env_int("STT_BEAM_SIZE", 5), 10))
+
+    # --- Live voice conversation (Gemini Live API) ---
+    # Runs entirely in the audio worker; needs GOOGLE_API_KEY and the optional
+    # google-genai package. The "fast" model is the default on purpose: the
+    # native-audio model sounds nicer but responds slower and hears worse.
+    LIVE_VOICE_PROVIDER    = os.getenv("LIVE_VOICE_PROVIDER", "google").strip().lower() or "google"
+    LIVE_VOICE_MODEL       = os.getenv("LIVE_VOICE_MODEL", "gemini-3.1-flash-live-preview")
+    LIVE_VOICE_VOICE_NAME  = os.getenv("LIVE_VOICE_VOICE_NAME", "")
+    LIVE_VOICE_HALF_DUPLEX = env_bool("LIVE_VOICE_HALF_DUPLEX", False)
+    LIVE_VOICE_SYSTEM_PROMPT = os.getenv(
+        "LIVE_VOICE_SYSTEM_PROMPT",
+        DEFAULT_LIVE_VOICE_SYSTEM_PROMPT,
+    )
+
     TTS_READ_ALOUD_MIN_WORDS = max(1, env_int("TTS_READ_ALOUD_MIN_WORDS", 50))
     TTS_READ_ALOUD_MAX_WORDS = max(TTS_READ_ALOUD_MIN_WORDS, env_int("TTS_READ_ALOUD_MAX_WORDS", 110))
     STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS = max(
@@ -1137,6 +1156,14 @@ def get_system_prompt() -> str:
     if not language_instruction:
         return SYSTEM_PROMPT_UTILITY
     return f"{SYSTEM_PROMPT_UTILITY}\n\n{language_instruction}"
+
+
+def get_live_voice_system_prompt() -> str:
+    """Return the live-voice session prompt, honoring ASSISTANT_LANGUAGE."""
+    language_instruction = _assistant_language_instruction(ASSISTANT_LANGUAGE)
+    if not language_instruction:
+        return LIVE_VOICE_SYSTEM_PROMPT
+    return f"{LIVE_VOICE_SYSTEM_PROMPT}\n\n{language_instruction}"
 
 
 def get_settings() -> AppSettings:

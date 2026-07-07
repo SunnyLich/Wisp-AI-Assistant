@@ -161,6 +161,8 @@ _CTX_TOP       = 8
 _CTX_PREVIEW_TOP = 6
 _CTX_PREVIEW_LINE_H = 22
 _CTX_PREVIEW_MAX = 3
+_CTX_PREVIEW_MAX_LINES = 2
+_CTX_PREVIEW_REMOVE_W = 16
 
 # ── Palette ─────────────────────────────────────────────────────────────────
 _BG         = QColor(20, 20, 30, 248)
@@ -263,6 +265,11 @@ def _context_toggle_keys() -> str:
     return "".join(keys)
 
 
+def _context_chip_token_text(item: dict) -> str:
+    """Return token text that should be painted for a context chip."""
+    return str(item.get("tokens") or "")
+
+
 def _default_context_items() -> list[dict]:
     """Fallback context chips for callers that do not provide live metadata."""
     keys = _context_toggle_keys()
@@ -297,6 +304,8 @@ class IntentOverlay(QWidget):
     cancelled     = Signal()
     screenshot_snip_requested = Signal()
     selection_capture_requested = Signal(str)
+    context_source_removed = Signal(str, str)
+    context_source_reenabled = Signal(str)
     _raw_key      = Signal(str)
 
     def __init__(
@@ -357,6 +366,7 @@ class IntentOverlay(QWidget):
         self._project_menu: QMenu | None = None
         self._conversation_menu: QMenu | None = None
         self._warning_rects: list[tuple[QRect, str]] = []
+        self._ctx_remove_rects: list[tuple[QRect, str, str]] = []
         self._last_warning_idx: int | None = None
         self._auto_custom_mode = self._custom_row_index_without_key()
         h = self._base_height()
@@ -888,7 +898,7 @@ class IntentOverlay(QWidget):
                 p.setPen(QPen(color))
                 p.drawText(rect.x() + 5, rect.y() + 4, 14, 14, Qt.AlignmentFlag.AlignCenter, key)
 
-            warning = str(item.get("warning") or "").strip()
+            warning = "" if state == "off" else str(item.get("warning") or "").strip()
             if warning:
                 warn_rect = QRect(rect.right() - 18, rect.y() + 4, 14, 14)
                 self._warning_rects.append((warn_rect, warning))
@@ -911,7 +921,7 @@ class IntentOverlay(QWidget):
             p.drawText(rect.x() + 6, rect.y() + 34, rect.width() - 12, 12,
                        Qt.AlignmentFlag.AlignCenter, state_label)
 
-            tokens = str(item.get("tokens") or "")
+            tokens = _context_chip_token_text(item)
             if tokens:
                 p.setFont(token_font)
                 p.setPen(QPen(palette["ctx_sub"]))
@@ -921,15 +931,16 @@ class IntentOverlay(QWidget):
                 p.drawText(rect.x() + 4, rect.y() + 46, rect.width() - 8, 11,
                            Qt.AlignmentFlag.AlignCenter, tokens)
 
-    def _context_preview_entries(self) -> list[tuple[str, str]]:
-        """Return numbered preview rows for context that will be sent or fetched."""
-        entries: list[tuple[str, str]] = []
+    def _context_preview_entries(self) -> list[tuple[str, str, str, str]]:
+        """Return (label, preview, item id, source id) rows for enabled context."""
+        entries: list[tuple[str, str, str, str]] = []
         for item in self._context_items:
             if len(entries) >= _CTX_PREVIEW_MAX:
                 break
             state = str(item.get("state") or "off").lower()
             if state == "off":
                 continue
+            item_id = str(item.get("id") or "")
             sources = item.get("sources")
             if isinstance(sources, list) and sources:
                 base_label = " ".join(str(item.get("label") or t("Context")).split())
@@ -946,7 +957,7 @@ class IntentOverlay(QWidget):
                     label = f"{base_label} {source_idx}"
                     if source_label:
                         label = f"{label}: {source_label}"
-                    entries.append((label, preview))
+                    entries.append((label, preview, item_id, source_label))
                     added_source = True
                 if added_source:
                     continue
@@ -954,15 +965,52 @@ class IntentOverlay(QWidget):
             if not preview:
                 continue
             label = " ".join(str(item.get("label") or t("Context")).split())
-            entries.append((label, preview))
+            entries.append((label, preview, item_id, ""))
         return entries
+
+    @staticmethod
+    def _preview_value_font() -> QFont:
+        """Return the font used for bottom context preview text."""
+        return QFont("Segoe UI", 7)
+
+    @staticmethod
+    def _preview_wrap_lines(fm: QFontMetrics, text: str, width: int) -> list[str]:
+        """Split a preview into at most two painted lines (second one elided)."""
+        text = " ".join(str(text or "").split())
+        if not text or width <= 0 or fm.horizontalAdvance(text) <= width:
+            return [text]
+        cut = len(text)
+        for idx in range(1, len(text) + 1):
+            if fm.horizontalAdvance(text[:idx]) > width:
+                cut = max(1, idx - 1)
+                break
+        space = text.rfind(" ", 0, cut + 1)
+        if space > 0:
+            cut = space
+        first = text[:cut].rstrip()
+        rest = text[cut:].strip()
+        if not rest:
+            return [first]
+        return [first, fm.elidedText(rest, Qt.TextElideMode.ElideRight, width)]
+
+    def _context_preview_layout(self) -> list[tuple[str, list[str], str, str]]:
+        """Return (label, preview lines, item id, source id) for each bottom row."""
+        fm = QFontMetrics(self._preview_value_font())
+        preview_x = _PAD_H + _CTX_PREVIEW_REMOVE_W + 18 + 98 + 12
+        preview_w = _W - _PAD_H - preview_x
+        rows: list[tuple[str, list[str], str, str]] = []
+        for label, preview, item_id, source_id in self._context_preview_entries():
+            lines = self._preview_wrap_lines(fm, preview, preview_w)[:_CTX_PREVIEW_MAX_LINES]
+            rows.append((label, lines, item_id, source_id))
+        return rows
 
     def _context_preview_height(self) -> int:
         """Return the extra height needed for bottom context preview lines."""
-        entries = self._context_preview_entries()
-        if not entries:
+        rows = self._context_preview_layout()
+        if not rows:
             return 0
-        return _CTX_PREVIEW_TOP + _CTX_PREVIEW_LINE_H * len(entries)
+        total_lines = sum(max(1, len(lines)) for _label, lines, _iid, _sid in rows)
+        return _CTX_PREVIEW_TOP + _CTX_PREVIEW_LINE_H * total_lines
 
     def _paint_context_preview(
         self,
@@ -973,20 +1021,32 @@ class IntentOverlay(QWidget):
         palette: dict[str, QColor],
     ) -> None:
         """Paint short previews of enabled context at the bottom of the picker."""
-        entries = self._context_preview_entries()
-        if not entries:
+        rows = self._context_preview_layout()
+        self._ctx_remove_rects = []
+        if not rows:
             return
-        top = y + _CTX_PREVIEW_TOP
+        line_y = y + _CTX_PREVIEW_TOP
         number_w = 18
         label_w = 98
-        preview_x = _PAD_H + number_w + label_w + 12
+        preview_x = _PAD_H + _CTX_PREVIEW_REMOVE_W + number_w + label_w + 12
         preview_w = _W - _PAD_H - preview_x
-        for idx, (label, preview) in enumerate(entries, start=1):
-            line_y = top + (idx - 1) * _CTX_PREVIEW_LINE_H
+        remove_font = QFont("Segoe UI", 8, QFont.Weight.Bold)
+        for idx, (label, lines, item_id, source_id) in enumerate(rows, start=1):
+            row_h = _CTX_PREVIEW_LINE_H * max(1, len(lines))
+            remove_rect = QRect(
+                _PAD_H,
+                line_y + (_CTX_PREVIEW_LINE_H - 14) // 2,
+                14,
+                14,
+            )
+            self._ctx_remove_rects.append((remove_rect, item_id, source_id))
+            p.setFont(remove_font)
+            p.setPen(QPen(palette["ctx_sub"]))
+            p.drawText(remove_rect, Qt.AlignmentFlag.AlignCenter, "✕")
             p.setFont(label_font)
             p.setPen(QPen(palette["ctx_sub"]))
             p.drawText(
-                _PAD_H,
+                _PAD_H + _CTX_PREVIEW_REMOVE_W,
                 line_y,
                 number_w,
                 _CTX_PREVIEW_LINE_H,
@@ -999,7 +1059,7 @@ class IntentOverlay(QWidget):
                 label_w,
             )
             p.drawText(
-                _PAD_H + number_w,
+                _PAD_H + _CTX_PREVIEW_REMOVE_W + number_w,
                 line_y,
                 label_w,
                 _CTX_PREVIEW_LINE_H,
@@ -1008,19 +1068,16 @@ class IntentOverlay(QWidget):
             )
             p.setFont(value_font)
             p.setPen(QPen(palette["hint"]))
-            preview_text = QFontMetrics(value_font).elidedText(
-                preview,
-                Qt.TextElideMode.ElideRight,
-                preview_w,
-            )
-            p.drawText(
-                preview_x,
-                line_y,
-                preview_w,
-                _CTX_PREVIEW_LINE_H,
-                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                preview_text,
-            )
+            for line_idx, line in enumerate(lines):
+                p.drawText(
+                    preview_x,
+                    line_y + line_idx * _CTX_PREVIEW_LINE_H,
+                    preview_w,
+                    _CTX_PREVIEW_LINE_H,
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    line,
+                )
+            line_y += row_h
 
     def _cycle_context_key(self, name: str) -> bool:
         """Cycle a context source when its numeric overlay key is pressed."""
@@ -1045,10 +1102,53 @@ class IntentOverlay(QWidget):
         self._note_interaction()
         self._resize_for_context_preview()
         self.update()
+        if item_id == "ambient" and state == "off" and item["state"] != "off":
+            QTimer.singleShot(0, lambda: self.context_source_reenabled.emit(item_id))
         if item_id == "screenshot" and state == "off" and item["state"] == "on":
             QTimer.singleShot(0, self.screenshot_snip_requested.emit)
-        if item_id == "selection" and state == "off" and item["state"] == "on":
+        if (
+            item_id == "selection"
+            and state == "off"
+            and item["state"] == "on"
+            and not item.get("stale")
+            and item.get("capture_on_enable", True)
+        ):
+            # A stale chip already carries an earlier selection supervisor-side;
+            # plain re-enable attaches it without a new interactive capture.
             QTimer.singleShot(0, lambda: self.selection_capture_requested.emit(self.current_custom_text()))
+
+    def _remove_button_at(self, pos: QPoint) -> tuple[str, str] | None:
+        """Return (item id, source id) for the preview-row X under a point."""
+        for rect, item_id, source_id in self._ctx_remove_rects:
+            if rect.adjusted(-3, -3, 3, 3).contains(pos):
+                return item_id, source_id
+        return None
+
+    def _remove_context_entry(self, item_id: str, source_id: str) -> None:
+        """Remove one bottom-list context row; an emptied group switches off."""
+        for item in self._context_items:
+            if str(item.get("id") or "") != item_id:
+                continue
+            if source_id:
+                sources = [s for s in (item.get("sources") or []) if isinstance(s, dict)]
+                kept = [
+                    s for s in sources
+                    if " ".join(str(s.get("label") or "").split()) != source_id
+                ]
+                item["sources"] = kept
+                if not kept:
+                    item["state"] = "off"
+                    item["touched"] = True
+                # The supervisor drops the matching document block from the
+                # prompt as well - the preview list is not just cosmetic.
+                self.context_source_removed.emit(item_id, source_id)
+            else:
+                item["state"] = "off"
+                item["touched"] = True
+            self._note_interaction()
+            self._resize_for_context_preview()
+            self.update()
+            return
 
     def _context_item_at(self, pos: QPoint) -> dict | None:
         """Return the context chip under a mouse position."""
@@ -1246,10 +1346,16 @@ class IntentOverlay(QWidget):
                 self._hovered = row_idx
                 self.setCursor(
                     Qt.CursorShape.PointingHandCursor
-                    if row_idx is not None
+                    if row_idx is not None or self._remove_button_at(pos) is not None
                     else Qt.CursorShape.ArrowCursor
                 )
                 self.update()
+            elif row_idx is None:
+                self.setCursor(
+                    Qt.CursorShape.PointingHandCursor
+                    if self._remove_button_at(pos) is not None
+                    else Qt.CursorShape.ArrowCursor
+                )
         found = self._context_warning_at(pos)
         if found is None:
             if self._last_warning_idx is not None:
@@ -1268,6 +1374,11 @@ class IntentOverlay(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
             if self._handle_conversation_click(pos):
+                event.accept()
+                return
+            removed = self._remove_button_at(pos)
+            if removed is not None:
+                self._remove_context_entry(*removed)
                 event.accept()
                 return
             if self._cycle_context_at(pos):

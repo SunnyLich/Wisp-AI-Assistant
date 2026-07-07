@@ -11,16 +11,20 @@ States:
   speaking  - TTS playing; plays animate_speak()
 """
 from __future__ import annotations
+
 import os
+from collections.abc import Callable
+
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMenu, QSystemTrayIcon
+
 import config
 from core.system.paths import DOLL_ASSETS_DIR
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QSystemTrayIcon, QMenu
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QEvent, QPoint
-from PySide6.QtGui import QPixmap, QIcon, QAction
 from ui.i18n import t
 
-
 ASSETS_DIR = str(DOLL_ASSETS_DIR)
+_BUBBLE_SHOW_DEFER_MS = 75
 
 
 class OverlaySignals(QObject):
@@ -67,7 +71,7 @@ class OverlaySignals(QObject):
 class IconOverlay(QMainWindow):
     """
     The persistent icon window. Always on top, no taskbar entry,
-    no frame. Positioned at bottom-right corner.
+    no frame. Positioned near the bottom-right corner with room for context badges.
     """
 
     @property
@@ -96,7 +100,11 @@ class IconOverlay(QMainWindow):
             lambda text, count, finished: signals.bubble_highlight.emit(text, count, finished)
         )
         self._bubble.set_stop_callback(signals.bubble_stop_requested.emit)
+        self._bubble.set_anchor_callback(self._position_bubble_next_to_icon)
         self._current_state = "idle"
+        self._icon_ready_for_bubble = False
+        self._pending_bubble_actions: list[Callable[[], None]] = []
+        self._pending_bubble_flush_scheduled = False
 
         # Drop-context panel (right side of icon)
         from ui.drop_zone import ContextPanel
@@ -111,18 +119,14 @@ class IconOverlay(QMainWindow):
         signals.set_state.connect(self._on_state_changed)
         signals.set_mouth_amp.connect(self._on_mouth_amp)
         signals.show_text_popup.connect(self._on_show_popup)
-        signals.bubble_listening.connect(self._show_icon)
-        signals.bubble_listening.connect(self._bubble.show_listening)
-        signals.bubble_thinking.connect(self._show_icon)
-        signals.bubble_thinking.connect(self._bubble.start_thinking)
-        signals.bubble_start_reveal.connect(self._show_icon)
-        signals.bubble_start_reveal.connect(self._bubble.start_word_reveal)
+        signals.bubble_listening.connect(self._show_bubble_listening)
+        signals.bubble_thinking.connect(self._show_bubble_thinking)
+        signals.bubble_start_reveal.connect(self._start_bubble_word_reveal)
         signals.bubble_schedule_words.connect(self._bubble.schedule_words)
-        signals.bubble_chunk.connect(lambda *_args: self._show_icon())
-        signals.bubble_chunk.connect(self._bubble.append_chunk)
-        signals.bubble_finish.connect(self._bubble.finish)
+        signals.bubble_chunk.connect(self._append_bubble_chunk)
+        signals.bubble_finish.connect(self._finish_bubble)
         signals.bubble_finish.connect(self._on_bubble_finish)
-        signals.bubble_clear.connect(self._bubble.clear)
+        signals.bubble_clear.connect(self._clear_bubble)
         signals.bubble_clear.connect(self._icon_label_clear)
         signals.show_icon.connect(self._show_icon)
         signals.hide_icon.connect(self._hide_icon)
@@ -138,6 +142,7 @@ class IconOverlay(QMainWindow):
         # so the icon/context panel stay put when the user clicks into another
         # app (independent of our own ICON_AUTO_HIDE logic).
         self._pin_overlay_windows()
+        QTimer.singleShot(_BUBBLE_SHOW_DEFER_MS, self._mark_icon_ready_for_bubble)
 
     def _pin_overlay_windows(self):
         """Stop the Tool overlay windows from auto-hiding on app deactivation (macOS)."""
@@ -165,8 +170,9 @@ class IconOverlay(QMainWindow):
         """Build icon label."""
         sz = config.ICON_SIZE
         margin = 20
+        from ui.drop_zone import context_panel_reserved_width
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.x() + screen.width()  - sz - margin
+        x = screen.x() + screen.width()  - sz - margin - context_panel_reserved_width(sz)
         y = screen.y() + screen.height() - sz - margin
 
         self._icon_label = QLabel(None)
@@ -343,8 +349,7 @@ class IconOverlay(QMainWindow):
         if not message:
             return
         if hasattr(self, "_bubble"):
-            self._show_icon()
-            self._bubble.show_notice(message, timeout_ms=5000)
+            self._run_bubble_after_icon(lambda: self._bubble.show_notice(message, timeout_ms=5000))
         if hasattr(self, "_tray"):
             self._tray.showMessage(
                 title or t("Wisp"),
@@ -379,7 +384,9 @@ class IconOverlay(QMainWindow):
                 if on_feedback:
                     actions.append((t("Request Changes"), on_feedback))
                 actions.append((t("Decline"), on_decline))
-            self._bubble.show_notice(text, timeout_ms=timeout, actions=actions)
+            self._run_bubble_after_icon(
+                lambda: self._bubble.show_notice(text, timeout_ms=timeout, actions=actions)
+            )
             shown = True
         if hasattr(self, "_tray") and not shown:
             self._tray.showMessage(
@@ -617,7 +624,7 @@ class IconOverlay(QMainWindow):
 
     def _process_drop(self, mime, global_pos: QPoint) -> None:
         """Handle a completed drop: extract content, show VFX, update panel, emit signal."""
-        from ui.drop_zone import process_drop_mime, VanishEffect, AddedContextToast
+        from ui.drop_zone import AddedContextToast, VanishEffect, process_drop_mime
 
         items = process_drop_mime(mime)
         if not items:
@@ -639,14 +646,88 @@ class IconOverlay(QMainWindow):
     def _on_icon_dragged(self, icon_pos: QPoint):
         """Reposition bubble and context panel after a drag."""
         sz = config.ICON_SIZE
+        self._position_bubble_next_to_icon(icon_pos)
+        if hasattr(self, "_context_panel"):
+            self._context_panel.reposition(icon_pos, sz)
+
+    def _position_bubble_next_to_icon(self, icon_pos: QPoint | None = None):
+        """Place the speech bubble to the left of the floating icon."""
+        if not hasattr(self, "_bubble") or not hasattr(self, "_icon_label"):
+            return
+        if icon_pos is None:
+            icon_pos = self._icon_label.pos()
+        sz = config.ICON_SIZE
         bw = self._bubble._bubble_w
         bh = self._bubble._bubble_h
         from ui.bubble import _TAIL_W
         bx = icon_pos.x() - bw - _TAIL_W - 6
         by = icon_pos.y() + (sz - bh) // 2
+        screen = QApplication.primaryScreen().availableGeometry()
+        by = max(screen.y() + 8, min(by, screen.y() + screen.height() - bh - 8))
         self._bubble.move(bx, by)
-        if hasattr(self, "_context_panel"):
-            self._context_panel.reposition(icon_pos, sz)
+
+    def _mark_icon_ready_for_bubble(self):
+        """Allow bubbles to show immediately once the startup icon has had a frame."""
+        self._icon_ready_for_bubble = True
+
+    def _run_bubble_after_icon(self, action: Callable[[], None]):
+        """Show the icon first, then run a bubble action once the icon is visible."""
+        if not hasattr(self, "_bubble") or not hasattr(self, "_icon_label"):
+            return
+        icon_ready = self._icon_label.isVisible() and self._icon_ready_for_bubble
+        self._show_icon()
+        if icon_ready and not self._pending_bubble_actions:
+            self._position_bubble_next_to_icon()
+            action()
+            self._position_bubble_next_to_icon()
+            return
+        self._pending_bubble_actions.append(action)
+        if not self._pending_bubble_flush_scheduled:
+            self._pending_bubble_flush_scheduled = True
+            QTimer.singleShot(_BUBBLE_SHOW_DEFER_MS, self._flush_pending_bubble_actions)
+
+    def _flush_pending_bubble_actions(self):
+        """Run delayed bubble actions after the icon show has reached the event loop."""
+        self._pending_bubble_flush_scheduled = False
+        if not self._pending_bubble_actions:
+            return
+        self._icon_ready_for_bubble = True
+        self._show_icon()
+        self._position_bubble_next_to_icon()
+        actions = list(self._pending_bubble_actions)
+        self._pending_bubble_actions.clear()
+        for action in actions:
+            action()
+        self._position_bubble_next_to_icon()
+
+    def _show_bubble_listening(self):
+        """Show recording bubble anchored to the current icon position."""
+        self._run_bubble_after_icon(self._bubble.show_listening)
+
+    def _show_bubble_thinking(self):
+        """Show thinking bubble anchored to the current icon position."""
+        self._run_bubble_after_icon(self._bubble.start_thinking)
+
+    def _start_bubble_word_reveal(self):
+        """Start word reveal anchored to the current icon position."""
+        self._run_bubble_after_icon(self._bubble.start_word_reveal)
+
+    def _append_bubble_chunk(self, text: str, is_thought: bool):
+        """Append reply text anchored to the current icon position."""
+        self._run_bubble_after_icon(lambda: self._bubble.append_chunk(text, is_thought))
+
+    def _finish_bubble(self):
+        """Finish the bubble after any deferred startup chunks have appeared."""
+        if self._pending_bubble_actions:
+            self._pending_bubble_actions.append(self._bubble.finish)
+            return
+        self._bubble.finish()
+
+    def _clear_bubble(self):
+        """Clear visible and deferred bubble work."""
+        self._pending_bubble_actions.clear()
+        self._pending_bubble_flush_scheduled = False
+        self._bubble.clear()
 
     def _on_bubble_dragged(self, bubble_pos: QPoint):
         """Reposition icon to stay to the right of the bubble after a drag."""

@@ -65,6 +65,12 @@ def _scaled(value: int | float, scale: float) -> int:
     return max(1, int(round(value * scale)))
 
 
+def context_panel_reserved_width(icon_size: int) -> int:
+    """Return the horizontal space needed to show the panel beside the icon."""
+    scale = _context_scale(icon_size)
+    return _scaled(_BADGE_W, scale) + _scaled(_BADGE_GAP, scale)
+
+
 # ---------------------------------------------------------------------------
 # process_drop_mime -- pure data extraction, no Qt UI
 # ---------------------------------------------------------------------------

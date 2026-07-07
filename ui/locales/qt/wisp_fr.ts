@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+﻿<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="fr">
   <context>
     <name>Wisp</name>
@@ -563,6 +563,10 @@
       <translation>Auto (GPU si disponible)</translation>
     </message>
     <message>
+      <source>Auto (CPU)</source>
+      <translation>Auto (CPU)</translation>
+    </message>
+    <message>
       <source>Auto document chars</source>
       <translation>Caractères de document automatique</translation>
     </message>
@@ -775,6 +779,62 @@ Laisser le modèle décider — expose la recherche web et les outils de lecture
     <message>
       <source>Close</source>
       <translation>Fermer</translation>
+    </message>
+    <message>
+      <source>Wisp is preparing the optional install.</source>
+      <translation>Wisp prépare l'installation optionnelle.</translation>
+    </message>
+    <message>
+      <source>Ready to start.</source>
+      <translation>Prêt à démarrer.</translation>
+    </message>
+    <message>
+      <source>Copy log</source>
+      <translation>Copier le journal</translation>
+    </message>
+    <message>
+      <source>Open log folder</source>
+      <translation>Ouvrir le dossier du journal</translation>
+    </message>
+    <message>
+      <source>Starting installer...</source>
+      <translation>Démarrage du programme d'installation...</translation>
+    </message>
+    <message>
+      <source>Installer command is empty.</source>
+      <translation>La commande du programme d'installation est vide.</translation>
+    </message>
+    <message>
+      <source>Installer process could not be started.</source>
+      <translation>Impossible de démarrer le processus d'installation.</translation>
+    </message>
+    <message>
+      <source>Installer is running.</source>
+      <translation>Le programme d'installation est en cours d'exécution.</translation>
+    </message>
+    <message>
+      <source>Cancelling installer...</source>
+      <translation>Annulation du programme d'installation...</translation>
+    </message>
+    <message>
+      <source>Installer process failed.</source>
+      <translation>Le processus d'installation a échoué.</translation>
+    </message>
+    <message>
+      <source>Installer cancelled.</source>
+      <translation>Installation annulée.</translation>
+    </message>
+    <message>
+      <source>Installer completed successfully.</source>
+      <translation>Installation terminée avec succès.</translation>
+    </message>
+    <message>
+      <source>Installer failed with exit code {code}.</source>
+      <translation>Le programme d'installation a échoué avec le code de sortie {code}.</translation>
+    </message>
+    <message>
+      <source>Cancel the installer before closing this window.</source>
+      <translation>Annulez l'installation avant de fermer cette fenêtre.</translation>
     </message>
     <message>
       <source>ChatGPT Plus/Pro (OAuth subscription)</source>
@@ -2671,6 +2731,14 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Emplacement d’exécution de Whisper. GPU (CUDA) est beaucoup plus rapide, surtout avec large-v3, mais nécessite un GPU NVIDIA avec CUDA installé. Auto utilise le GPU s’il est présent, sinon repasse au CPU.</translation>
     </message>
     <message>
+      <source>Where Whisper runs. macOS uses CPU for local STT in this release.</source>
+      <translation>Emplacement d’exécution de Whisper. macOS utilise le CPU pour le STT local dans cette version.</translation>
+    </message>
+    <message>
+      <source>Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release.</source>
+      <translation>Emplacement d’exécution de Kokoro TTS local. macOS utilise le CPU pour Kokoro dans cette version.</translation>
+    </message>
+    <message>
       <source>Whisper compute precision. Keep int8 for CPU unless you know you need another mode.</source>
       <translation>Précision de calcul Whisper. Gardez int8 pour le CPU sauf si vous savez qu’un autre mode est nécessaire.</translation>
     </message>
@@ -3011,6 +3079,34 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Installer Kokoro</translation>
     </message>
     <message>
+      <source>Reinstall Kokoro</source>
+      <translation>Réinstaller Kokoro</translation>
+    </message>
+    <message>
+      <source>Repair voice files</source>
+      <translation>Réparer les fichiers de voix</translation>
+    </message>
+    <message>
+      <source>Update voice model</source>
+      <translation>Mettre à jour le modèle de voix</translation>
+    </message>
+    <message>
+      <source>Wisp will redownload Kokoro's damaged or missing voice model files (up to about 330 MB).
+
+Continue?</source>
+      <translation>Wisp retéléchargera les fichiers du modèle de voix de Kokoro endommagés ou manquants (jusqu'à environ 330 Mo).
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>Wisp will download the updated Kokoro voice model (about 330 MB) and switch to it only after the download is verified. The current voice keeps working if the update fails.
+
+Continue?</source>
+      <translation>Wisp téléchargera le modèle de voix Kokoro mis à jour (environ 330 Mo) et ne basculera dessus qu'après vérification du téléchargement. La voix actuelle continue de fonctionner si la mise à jour échoue.
+
+Continuer ?</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro installe</translation>
     </message>
@@ -3091,7 +3187,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp va installer Kokoro dans cet environnement Python.
@@ -3139,8 +3235,16 @@ Continuer ?</translation>
       <translation>La sortie du programme d'installation apparaitra ici.</translation>
     </message>
     <message>
-      <source>Installer opened in a terminal window. It will close automatically when it finishes.</source>
-      <translation>Le programme d'installation s'est ouvert dans une fenetre de terminal. Elle se fermera automatiquement a la fin.</translation>
+      <source>Installer opened in a Wisp installer window. Progress and errors will appear there.</source>
+      <translation>Le programme d'installation s'est ouvert dans une fenetre Wisp. La progression et les erreurs y apparaitront.</translation>
+    </message>
+    <message>
+      <source>Wisp {display_name} installer</source>
+      <translation>Programme d'installation Wisp pour {display_name}</translation>
+    </message>
+    <message>
+      <source>Installing {display_name} into Wisp's optional packages folder.</source>
+      <translation>Installation de {display_name} dans le dossier des paquets optionnels de Wisp.</translation>
     </message>
     <message>
       <source>Installer window launched. You can close Settings; leave the terminal open until it finishes.</source>
@@ -3295,6 +3399,10 @@ Continuer ?</translation>
       <translation>L'installation de Kokoro est incomplète. Réinstallez Kokoro.</translation>
     </message>
     <message>
+      <source>Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.</source>
+      <translation>Kokoro est installé, mais la vérification Torch/GPU est encore en cours de démarrage. Cliquez sur Tester TTS pour vérifier la voix locale.</translation>
+    </message>
+    <message>
       <source>Kokoro is installed with CPU support.</source>
       <translation>Kokoro est installé avec le support CPU.</translation>
     </message>
@@ -3331,6 +3439,14 @@ Continuer ?</translation>
 </translation>
     </message>
     <message>
+      <source>Wisp will reinstall Kokoro in its user-writable optional packages folder.
+
+</source>
+      <translation>Wisp réinstallera Kokoro dans son dossier de paquets optionnels accessible en écriture.
+
+</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, CUDA-enabled Torch, English speech model</source>
       <translation>kokoro&gt;=0.9.4, soundfile, Torch avec CUDA, modèle vocal anglais</translation>
     </message>
@@ -3362,7 +3478,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>{action_note}Paquets : {package_label}
@@ -3389,6 +3505,10 @@ Continuer ?</translation>
       <translation>Kokoro est installé et la voix locale est prête.</translation>
     </message>
     <message>
+      <source>Kokoro reinstalled and local voice is ready.</source>
+      <translation>Kokoro a été réinstallé et la voix locale est prête.</translation>
+    </message>
+    <message>
       <source>Kokoro installed, but Torch verification failed: {message}</source>
       <translation>Kokoro est installé, mais la vérification de Torch a échoué : {message}</translation>
     </message>
@@ -3401,6 +3521,10 @@ Continuer ?</translation>
       <translation>Kokoro est installé, mais la vérification de CUDA Torch a échoué.</translation>
     </message>
     <message>
+      <source>Kokoro installed, but CUDA Torch verification failed: {message}</source>
+      <translation>Kokoro est installé, mais la vérification de CUDA Torch a échoué : {message}</translation>
+    </message>
+    <message>
       <source>Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.</source>
       <translation>Kokoro est installé, mais la préparation de la voix locale a échoué : {exc}. Connectez-vous à Internet et cliquez une fois sur Test TTS pour terminer la configuration.</translation>
     </message>
@@ -3411,6 +3535,138 @@ Continuer ?</translation>
     <message>
       <source>Preparing local voice... {detail}</source>
       <translation>Préparation de la voix locale... {detail}</translation>
+    </message>
+    <message>
+      <source>Finish the current voice recording first.</source>
+      <translation>Terminez d'abord l'enregistrement vocal en cours.</translation>
+    </message>
+    <message>
+      <source>Could not start live voice</source>
+      <translation>Impossible de démarrer la voix en direct</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one in Settings.</source>
+      <translation>La voix en direct nécessite une clé API Google. Ajoutez-en une dans les réglages.</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it in Settings &gt; TTS / Voice.</source>
+      <translation>La prise en charge de la voix en direct n'est pas installée. Installez-la dans Réglages &gt; TTS / Voix.</translation>
+    </message>
+    <message>
+      <source>Live voice session will end soon (server time limit).</source>
+      <translation>La session de voix en direct se terminera bientôt (limite de temps du serveur).</translation>
+    </message>
+    <message>
+      <source>Live voice error</source>
+      <translation>Erreur de voix en direct</translation>
+    </message>
+    <message>
+      <source>Live voice is ready - speak anytime.</source>
+      <translation>La voix en direct est prête - parlez quand vous voulez.</translation>
+    </message>
+    <message>
+      <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
+      <translation>La session de voix en direct est terminée (limite de temps du serveur). Appuyez sur le raccourci pour recommencer.</translation>
+    </message>
+    <message>
+      <source>Live voice stopped because the audio worker restarted.</source>
+      <translation>La voix en direct s'est arrêtée car le processus audio a redémarré.</translation>
+    </message>
+    <message>
+      <source>Stop the live voice conversation first.</source>
+      <translation>Arrêtez d'abord la conversation vocale en direct.</translation>
+    </message>
+    <message>
+      <source>Live voice conversation</source>
+      <translation>Conversation vocale en direct</translation>
+    </message>
+    <message>
+      <source>Hands-free conversation with Gemini Live: press the toggle hotkey, talk naturally, and interrupt Wisp by speaking over it. Set the hotkey on the Keybinds tab.</source>
+      <translation>Conversation mains libres avec Gemini Live : appuyez sur le raccourci de bascule, parlez naturellement et interrompez Wisp en parlant par-dessus. Définissez le raccourci dans l'onglet Raccourcis.</translation>
+    </message>
+    <message>
+      <source>Install live voice</source>
+      <translation>Installer la voix en direct</translation>
+    </message>
+    <message>
+      <source>Reinstall live voice</source>
+      <translation>Réinstaller la voix en direct</translation>
+    </message>
+    <message>
+      <source>Installing Live voice...</source>
+      <translation>Installation de la voix en direct...</translation>
+    </message>
+    <message>
+      <source>Pause mic while Wisp talks (for speakers; disables barge-in)</source>
+      <translation>Mettre le micro en pause pendant que Wisp parle (pour haut-parleurs ; désactive l'interruption)</translation>
+    </message>
+    <message>
+      <source>Uses the Google API key from the LLM tab.</source>
+      <translation>Utilise la clé API Google de l'onglet LLM.</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one on the LLM tab first.</source>
+      <translation>La voix en direct nécessite une clé API Google. Ajoutez-en une d'abord dans l'onglet LLM.</translation>
+    </message>
+    <message>
+      <source>Conversation model</source>
+      <translation>Modèle de conversation</translation>
+    </message>
+    <message>
+      <source>Conversation voice</source>
+      <translation>Voix de conversation</translation>
+    </message>
+    <message>
+      <source>Speaker mode</source>
+      <translation>Mode haut-parleur</translation>
+    </message>
+    <message>
+      <source>Toggle live voice conversation</source>
+      <translation>Basculer la conversation vocale en direct</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp va réinstaller la prise en charge de la voix en direct (google-genai) dans son dossier de paquets optionnels.
+
+Paquet : {package}
+
+L'installation peut nécessiter un accès internet et survivra aux reconstructions de Wisp.
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>Wisp will install live voice support (google-genai) into its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp va installer la prise en charge de la voix en direct (google-genai) dans son dossier de paquets optionnels.
+
+Paquet : {package}
+
+L'installation peut nécessiter un accès internet et survivra aux reconstructions de Wisp.
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>Live voice support is installed.</source>
+      <translation>La prise en charge de la voix en direct est installée.</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it to enable hands-free conversations.</source>
+      <translation>La prise en charge de la voix en direct n'est pas installée. Installez-la pour activer les conversations mains libres.</translation>
+    </message>
+    <message>
+      <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
+      <translation>Voix en direct installée. Appuyez sur le raccourci de bascule pour démarrer une conversation.</translation>
     </message>
   </context>
   <context>
@@ -4146,6 +4402,10 @@ Continuer ?</translation>
       <translation>Installer ElevenLabs</translation>
     </message>
     <message>
+      <source>Reinstall ElevenLabs</source>
+      <translation>Réinstaller ElevenLabs</translation>
+    </message>
+    <message>
       <source>Install ElevenLabs before applying it as the active TTS provider.</source>
       <translation>Installez ElevenLabs avant de l'appliquer comme fournisseur TTS actif.</translation>
     </message>
@@ -4300,6 +4560,26 @@ Utilisez ceci lorsque l'exe empaqueté a ignoré ElevenLabs parce que le chemin 
 Continuer ?</translation>
     </message>
     <message>
+      <source>Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp réinstallera la prise en charge d'ElevenLabs dans son dossier de paquets optionnels accessible en écriture.
+
+Paquet : {package}
+
+Utilisez ceci lorsque l'exe empaqueté a ignoré ElevenLabs parce que le chemin de compilation était trop long. L'installation peut nécessiter un accès Internet et survivra aux recompilations de Wisp.
+
+Continuer ?</translation>
+    </message>
+    <message>
+      <source>ElevenLabs reinstalled. Add your API key, then click Test TTS.</source>
+      <translation>ElevenLabs a été réinstallé. Ajoutez votre clé API, puis cliquez sur Test TTS.</translation>
+    </message>
+    <message>
       <source>Wisp will install Kokoro into its user-writable optional packages folder.
 
 Packages: kokoro&gt;=0.9.4, soundfile, English speech model
@@ -4313,7 +4593,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp installera Kokoro dans son dossier de paquets optionnels accessible en écriture.
@@ -4666,8 +4946,8 @@ Continuer ?</translation>
       <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
     </message>
     <message>
-      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</source>
-      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</translation>
+      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</source>
+      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</translation>
     </message>
     <message>
       <source>Installing STT: {detail}.</source>
@@ -4678,8 +4958,8 @@ Continuer ?</translation>
       <translation>Installing STT...</translation>
     </message>
     <message>
-      <source>Install / load STT</source>
-      <translation>Install / load STT</translation>
+      <source>Reinstall STT</source>
+      <translation>Reinstall STT</translation>
     </message>
     <message>
       <source>Install STT</source>
@@ -4706,8 +4986,8 @@ Continuer ?</translation>
       <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
     </message>
     <message>
-      <source>STT package is not installed. Click Install / load STT to install and verify it.</source>
-      <translation>STT package is not installed. Click Install / load STT to install and verify it.</translation>
+      <source>STT package is not installed. Click Install STT to install and verify it.</source>
+      <translation>STT package is not installed. Click Install STT to install and verify it.</translation>
     </message>
     <message>
       <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>
@@ -4780,6 +5060,98 @@ Continue?</translation>
     <message>
       <source>removing previous install</source>
       <translation>removing previous install</translation>
+    </message>
+    <message>
+      <source>Wisp {display_name} apply</source>
+      <translation>Application de {display_name} par Wisp</translation>
+    </message>
+    <message>
+      <source>Applying {display_name}</source>
+      <translation>Application de {display_name}</translation>
+    </message>
+    <message>
+      <source>Preparing to apply optional speech packages.</source>
+      <translation>Preparation de l'application des paquets vocaux optionnels.</translation>
+    </message>
+    <message>
+      <source>{display_name} applied successfully.</source>
+      <translation>{display_name} applique avec succes.</translation>
+    </message>
+    <message>
+      <source>{display_name} apply failed.</source>
+      <translation>L'application de {display_name} a echoue.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is waiting for Wisp to close.</source>
+      <translation>L'installation preparee de {display_name} attend la fermeture de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is applying package files.</source>
+      <translation>L'installation preparee de {display_name} applique les fichiers du paquet.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is verifying package files.</source>
+      <translation>L'installation preparee de {display_name} verifie les fichiers du paquet.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install failed: {message}</source>
+      <translation>L'installation preparee de {display_name} a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp and apply them.</source>
+      <translation>Les paquets de {display_name} sont prepares. Cliquez sur Redemarrer l'app maintenant pour fermer Wisp et les appliquer.</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen.</source>
+      <translation>Les paquets de {display_name} sont prepares. Cliquez sur Redemarrer l'app maintenant pour fermer Wisp, remplacer les fichiers verrouilles, verifier l'installation et rouvrir.</translation>
+    </message>
+    <message>
+      <source>{display_name} packages stay staged and will be applied the next time Wisp restarts.</source>
+      <translation>Les paquets de {display_name} restent prepares et seront appliques au prochain redemarrage de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} installed and model ready: {summary}.</source>
+      <translation>{display_name} installe et modele pret : {summary}.</translation>
+    </message>
+    <message>
+      <source>{display_name} package files match this Wisp release.</source>
+      <translation>Les fichiers du paquet {display_name} correspondent a cette version de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} package files do not match this Wisp release: {message}.</source>
+      <translation>Les fichiers du paquet {display_name} ne correspondent pas a cette version de Wisp : {message}.</translation>
+    </message>
+    <message>
+      <source>STT package install failed: {message}</source>
+      <translation>L'installation du paquet STT a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>STT package installed, but model download/load failed: {message}</source>
+      <translation>Le paquet STT est installe, mais le telechargement/chargement du modele a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>STT package installed; downloading or loading Whisper model {model}.</source>
+      <translation>Paquet STT installe ; telechargement ou chargement du modele Whisper {model}.</translation>
+    </message>
+    <message>
+      <source>Kokoro package install failed: {message}</source>
+      <translation>L'installation du paquet Kokoro a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed, but voice asset preparation failed: {message}</source>
+      <translation>Le paquet Kokoro est installe, mais la preparation des ressources vocales a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed; {detail}.</source>
+      <translation>Paquet Kokoro installe ; {detail}.</translation>
+    </message>
+    <message>
+      <source>verifying runtime import</source>
+      <translation>verification de l'importation d'execution</translation>
+    </message>
+    <message>
+      <source>verifying Torch</source>
+      <translation>verification de Torch</translation>
     </message>
   </context>
 </TS>

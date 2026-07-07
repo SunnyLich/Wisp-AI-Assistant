@@ -222,6 +222,37 @@ def test_speech_warmup_failure_notice_still_shows_during_reply() -> None:
     assert bubble.notices == [("Local speech warmup failed: tts: missing model", 6000)]
 
 
+def test_transient_local_tts_warmup_notices_do_not_show_in_bubble() -> None:
+    """Kokoro lock/import contention is transient and should stay out of the bubble."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+
+    def fail_bubble():
+        raise AssertionError("transient warmup notices should not create or use a bubble")
+
+    host._ensure_bubble = fail_bubble  # type: ignore[attr-defined]
+
+    messages = [
+        "Local voice is still warming up. Try again when Wisp says local speech is ready.",
+        (
+            "Local speech warmup failed: tts: error: RuntimeError: Kokoro is still warming up. "
+            "Current stage: importing kokoro.KPipeline (17s). Try again when local speech is ready."
+        ),
+        (
+            "[tts] Kokoro warmup failed: error: RuntimeError: Kokoro is still warming up. "
+            "Current stage: importing kokoro.KPipeline (17s). Try again when local speech is ready."
+        ),
+    ]
+
+    for message in messages:
+        assert host._reply_notice(message, timeout_ms=6000) == {
+            "shown": False,
+            "text": message,
+            "reason": "transient_local_tts_warmup",
+        }
+
+
 def test_memory_proxy_accepts_project_scope() -> None:
     """Verify UI memory proxy forwards project-scoped add/update payloads."""
     from runtime.workers.ui_host import MemoryProxy
@@ -315,22 +346,55 @@ def test_reply_labeled_text_keeps_label_out_of_reply_content() -> None:
     assert bubble.chunks == []
 
 
-def test_ui_shutdown_message_closes_stdin_reader() -> None:
-    """Verify UI shutdown unblocks the stdin reader before interpreter teardown."""
+def _install_fake_pyside(monkeypatch, *, top_level_widgets):
+    """Fake the PySide6 pieces the shutdown path imports lazily."""
+    import sys
+    from types import SimpleNamespace
+
+    def single_shot(interval, callback):
+        assert interval == 0
+        callback()
+
+    qtcore = SimpleNamespace(QTimer=SimpleNamespace(singleShot=single_shot))
+    qtwidgets = SimpleNamespace(
+        QApplication=SimpleNamespace(topLevelWidgets=lambda: list(top_level_widgets))
+    )
+    monkeypatch.setitem(sys.modules, "PySide6", SimpleNamespace(QtCore=qtcore, QtWidgets=qtwidgets))
+    monkeypatch.setitem(sys.modules, "PySide6.QtCore", qtcore)
+    monkeypatch.setitem(sys.modules, "PySide6.QtWidgets", qtwidgets)
+
+
+def _fake_window(events, name):
+    """Record close/deleteLater calls for a stand-in top-level widget."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        close=lambda: events.append((name, "close")),
+        deleteLater=lambda: events.append((name, "deleteLater")),
+    )
+
+
+def test_ui_shutdown_message_defers_quit_and_leaves_stdin_open(monkeypatch) -> None:
+    """Verify __shutdown__ tears down windows once, then quits via the loop."""
     import json
     from types import SimpleNamespace
 
     from runtime.workers.ui_host import QtProtocolHost
 
+    window_events = []
+    quit_calls = []
+    _install_fake_pyside(
+        monkeypatch,
+        top_level_widgets=[_fake_window(window_events, "overlay"), _fake_window(window_events, "chat")],
+    )
     host = QtProtocolHost.__new__(QtProtocolHost)
     stopped = []
-    quit_calls = []
+    watchdog_stopped = []
     responses = []
-    closed = []
     host._closing = False
     host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
+    host._watchdog = SimpleNamespace(stop=lambda: watchdog_stopped.append(True))
     host._app = SimpleNamespace(quit=lambda: quit_calls.append(True))
-    host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
     host._respond = lambda req_id, ok, **kwargs: responses.append((req_id, ok, kwargs))  # type: ignore[method-assign]
 
     host._handle_line(json.dumps({"id": 7, "method": "__shutdown__", "params": {}}).encode("utf-8"))
@@ -338,31 +402,44 @@ def test_ui_shutdown_message_closes_stdin_reader() -> None:
     assert responses == [(7, True, {"result": None})]
     assert host._closing is True
     assert stopped == [True]
-    assert closed == [True]
+    assert watchdog_stopped == [True]
+    assert window_events == [
+        ("overlay", "close"),
+        ("overlay", "deleteLater"),
+        ("chat", "close"),
+        ("chat", "deleteLater"),
+    ]
     assert quit_calls == [True]
 
 
-def test_ui_about_to_quit_emits_user_quit_and_closes_stdin() -> None:
+def test_ui_about_to_quit_emits_user_quit_once_and_leaves_stdin_open(monkeypatch) -> None:
     """Verify user-requested Qt quit tells the supervisor not to restart UI."""
     from types import SimpleNamespace
 
     from runtime.workers.ui_host import QtProtocolHost
 
+    window_events = []
+    _install_fake_pyside(
+        monkeypatch,
+        top_level_widgets=[_fake_window(window_events, "overlay")],
+    )
     emitted = []
     stopped = []
-    closed = []
+    watchdog_stopped = []
     host = QtProtocolHost.__new__(QtProtocolHost)
     host._closing = False
     host._pump = SimpleNamespace(stop=lambda: stopped.append(True))
-    host._stdin_stream = SimpleNamespace(close=lambda: closed.append(True))
+    host._watchdog = SimpleNamespace(stop=lambda: watchdog_stopped.append(True))
     host.emit = lambda event, data=None, req_id=None: emitted.append((event, data, req_id))  # type: ignore[method-assign]
 
+    host._on_about_to_quit()
     host._on_about_to_quit()
 
     assert host._closing is True
     assert emitted == [("ui.quit_requested", {"reason": "qt_about_to_quit"}, None)]
     assert stopped == [True]
-    assert closed == [True]
+    assert watchdog_stopped == [True]
+    assert window_events == [("overlay", "close"), ("overlay", "deleteLater")]
 
 
 def test_bubble_highlight_does_not_mutate_chat_window() -> None:
@@ -1014,6 +1091,9 @@ def test_agent_approval_bubble_notice_does_not_timeout() -> None:
         def raise_(self) -> None:
             pass
 
+        def isVisible(self) -> bool:  # noqa: N802 - Qt-style fake
+            return True
+
     class Bubble:
         def __init__(self) -> None:
             self.notice = None
@@ -1027,6 +1107,13 @@ def test_agent_approval_bubble_notice_does_not_timeout() -> None:
     timer = Timer()
     overlay._icon_hide_timer = timer
     overlay._icon_label = Icon()
+    # _run_bubble_after_icon shows the notice inline only when the icon is
+    # already up; satisfy its gating state so the action runs synchronously.
+    overlay._icon_ready_for_bubble = True
+    overlay._pending_bubble_actions = []
+    overlay._pending_bubble_flush_scheduled = False
+    overlay._show_icon = lambda: None  # type: ignore[method-assign]
+    overlay._position_bubble_next_to_icon = lambda: None  # type: ignore[method-assign]
     overlay._set_icon_pixmap = lambda _name: None  # type: ignore[method-assign]
     overlay._icon_backstop_ms = lambda: 4000  # type: ignore[method-assign]
 

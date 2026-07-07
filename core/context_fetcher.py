@@ -704,11 +704,16 @@ def get_browser_window_for_context(preferred_hwnd: int = 0) -> WindowInfo:
     if _IS_MAC:
         return _find_visible_browser_window_macos()
 
-    # Linux
+    # Linux: prefer the hotkey-time window, then the active window, then scan
+    # the X11 stacking order so a background browser still provides context.
+    if preferred_hwnd:
+        preferred = _fetch_window_info_linux(int(preferred_hwnd))
+        if (preferred.process_name or "").lower() in _BROWSER_PROCS:
+            return preferred
     active = _fetch_active_window()
     if (active.process_name or "").lower() in _BROWSER_PROCS:
         return active
-    return WindowInfo()
+    return _find_visible_browser_window_linux()
 
 
 def _find_visible_browser_window_macos() -> WindowInfo:
@@ -782,14 +787,24 @@ def _find_visible_browser_window_win() -> WindowInfo:
 
 def _fetch_active_window_linux() -> WindowInfo:
     """Handle fetch active window linux for context fetcher."""
-    from core.platform_utils import get_foreground_window, get_window_title, get_window_pid
-    info = WindowInfo()
+    from core.platform_utils import get_foreground_window
     with swallow():
         wid = get_foreground_window()
-        if not wid:
-            return info
+        if wid:
+            return _fetch_window_info_linux(int(wid))
+    return WindowInfo()
+
+
+def _fetch_window_info_linux(wid: int) -> WindowInfo:
+    """Build WindowInfo for a specific X11 window id without requiring focus."""
+    from core.platform_utils import get_window_pid, get_window_title
+    info = WindowInfo()
+    if not wid:
+        return info
+    with swallow():
+        info.hwnd = int(wid)
         info.title = get_window_title(wid)
-        pid = get_window_pid(wid)
+        pid = int(get_window_pid(wid) or 0)
         info.pid = pid
         if pid:
             with swallow():
@@ -799,6 +814,19 @@ def _fetch_active_window_linux() -> WindowInfo:
                 with swallow():
                     info.exe_path = proc.exe()
     return info
+
+
+def _find_visible_browser_window_linux() -> WindowInfo:
+    """Return the topmost visible X11 browser window without requiring focus."""
+    if _IS_WIN or _IS_MAC:
+        return WindowInfo()
+    from core.platform_utils import list_visible_windows_stacking
+    with swallow():
+        for wid in list_visible_windows_stacking():
+            win = _fetch_window_info_linux(int(wid or 0))
+            if (win.process_name or "").lower() in _BROWSER_PROCS:
+                return win
+    return WindowInfo()
 
 
 def _fetch_active_window_macos() -> WindowInfo:
@@ -1414,8 +1442,55 @@ def _browser_content_macos(active_win: WindowInfo, max_chars: int) -> str:
 
 
 def _browser_content_linux(active_win: WindowInfo, max_chars: int) -> str:
-    """Linux: no native window read wired up — HTTP fetch of the URL only."""
-    return _fetch_browser_content(active_win.url or "", max_chars)
+    """Linux: resolve the tab URL via AT-SPI2, then HTTP-fetch that URL.
+
+    There is no read-by-window-handle on X11; the accessibility bus provides
+    the document URL (Linux's analog of the Windows UIA address-bar read) and
+    the page text comes from the network, cached per-URL like Windows."""
+    url = (active_win.url or "").strip()
+    if not url:
+        url = _linux_browser_tab_url(active_win)
+        if url:
+            active_win.url = url
+    if not url:
+        return ""
+
+    now = time.time()
+    cached = _browser_cache.get(url)
+    if cached and now - cached[0] < _BROWSER_CACHE_TTL:
+        return cached[1]
+
+    content = _fetch_browser_content(url, max_chars)
+    if content:
+        _browser_cache[url] = (now, content)
+    return content
+
+
+def _linux_browser_tab_url(win: WindowInfo) -> str:
+    """Resolve a Linux browser window's tab URL via AT-SPI2 ("" on failure)."""
+    if _IS_WIN or _IS_MAC:
+        return ""
+    pid = int(win.pid or 0)
+    title = (win.title or "").strip()
+    if win.hwnd and (not pid or not title):
+        from core.platform_utils import get_window_pid, get_window_title
+
+        if not pid:
+            with swallow():
+                pid = int(get_window_pid(win.hwnd) or 0)
+        if not title:
+            with swallow():
+                title = str(get_window_title(win.hwnd) or "").strip()
+    try:
+        from core.platform import linux_atspi
+
+        return linux_atspi.get_browser_tab_url(
+            pid=pid,
+            window_title=title,
+            process_name=win.process_name or "",
+        )
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------------------

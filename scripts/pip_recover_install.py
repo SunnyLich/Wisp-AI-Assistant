@@ -172,6 +172,35 @@ def _run_pip_install(args: list[str]) -> tuple[int, str]:
     return int(process.wait() or 0), "".join(output)
 
 
+def _pip_available() -> bool:
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "--version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _ensure_pip_available() -> int:
+    if _pip_available():
+        return 0
+
+    print("pip is missing from this Python environment; bootstrapping it with ensurepip.", flush=True)
+    result = subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"], check=False)
+    if result.returncode != 0:
+        print(
+            f"ensurepip failed with exit code {result.returncode}; cannot install dependencies.",
+            flush=True,
+        )
+        return int(result.returncode or 1)
+    if _pip_available():
+        return 0
+
+    print("pip is still unavailable after ensurepip; cannot install dependencies.", flush=True)
+    return 1
+
+
 def _run_recovery(spec: str) -> int:
     print()
     print(f"pip reported missing uninstall metadata; repairing {spec} without uninstalling first.", flush=True)
@@ -182,6 +211,10 @@ def _run_recovery(spec: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     repaired: set[str] = set()
+
+    pip_status = _ensure_pip_available()
+    if pip_status != 0:
+        return pip_status
 
     while True:
         returncode, output = _run_pip_install(args)

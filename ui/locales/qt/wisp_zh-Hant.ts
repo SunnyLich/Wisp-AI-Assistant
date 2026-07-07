@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+﻿<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="zh-Hant">
   <context>
     <name>Wisp</name>
@@ -563,6 +563,10 @@
       <translation>自動（有 GPU 時使用）</translation>
     </message>
     <message>
+      <source>Auto (CPU)</source>
+      <translation>自動（CPU）</translation>
+    </message>
+    <message>
       <source>Auto document chars</source>
       <translation>自動文件字符數</translation>
     </message>
@@ -775,6 +779,62 @@ Let model decide — expose web search and browser page fetch tools.</source>
     <message>
       <source>Close</source>
       <translation>關閉</translation>
+    </message>
+    <message>
+      <source>Wisp is preparing the optional install.</source>
+      <translation>Wisp 正在準備選用安裝。</translation>
+    </message>
+    <message>
+      <source>Ready to start.</source>
+      <translation>準備開始。</translation>
+    </message>
+    <message>
+      <source>Copy log</source>
+      <translation>複製記錄</translation>
+    </message>
+    <message>
+      <source>Open log folder</source>
+      <translation>開啟記錄資料夾</translation>
+    </message>
+    <message>
+      <source>Starting installer...</source>
+      <translation>正在啟動安裝程式...</translation>
+    </message>
+    <message>
+      <source>Installer command is empty.</source>
+      <translation>安裝程式命令是空的。</translation>
+    </message>
+    <message>
+      <source>Installer process could not be started.</source>
+      <translation>無法啟動安裝程式程序。</translation>
+    </message>
+    <message>
+      <source>Installer is running.</source>
+      <translation>安裝程式正在執行。</translation>
+    </message>
+    <message>
+      <source>Cancelling installer...</source>
+      <translation>正在取消安裝程式...</translation>
+    </message>
+    <message>
+      <source>Installer process failed.</source>
+      <translation>安裝程式程序失敗。</translation>
+    </message>
+    <message>
+      <source>Installer cancelled.</source>
+      <translation>安裝程式已取消。</translation>
+    </message>
+    <message>
+      <source>Installer completed successfully.</source>
+      <translation>安裝程式已成功完成。</translation>
+    </message>
+    <message>
+      <source>Installer failed with exit code {code}.</source>
+      <translation>安裝程式失敗，結束代碼 {code}。</translation>
+    </message>
+    <message>
+      <source>Cancel the installer before closing this window.</source>
+      <translation>關閉此視窗前請先取消安裝程式。</translation>
     </message>
     <message>
       <source>ChatGPT Plus/Pro (OAuth subscription)</source>
@@ -2671,6 +2731,14 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>Whisper 的運行位置。GPU (CUDA) 快得多，尤其是 large-v3，但需要已安裝 CUDA 的 NVIDIA GPU。自動模式有 GPU 時使用 GPU，否則回退到 CPU。</translation>
     </message>
     <message>
+      <source>Where Whisper runs. macOS uses CPU for local STT in this release.</source>
+      <translation>Whisper 的運行位置。此版本在 macOS 上使用 CPU 執行本地 STT。</translation>
+    </message>
+    <message>
+      <source>Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release.</source>
+      <translation>本地 Kokoro TTS 的運行位置。此版本在 macOS 上使用 CPU 執行 Kokoro。</translation>
+    </message>
+    <message>
       <source>Whisper compute precision. Keep int8 for CPU unless you know you need another mode.</source>
       <translation>Whisper 計算精度。CPU 上建議保持 int8，除非你明確需要其他模式。</translation>
     </message>
@@ -2975,6 +3043,34 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>安裝 Kokoro</translation>
     </message>
     <message>
+      <source>Reinstall Kokoro</source>
+      <translation>重新安裝 Kokoro</translation>
+    </message>
+    <message>
+      <source>Repair voice files</source>
+      <translation>修復語音檔案</translation>
+    </message>
+    <message>
+      <source>Update voice model</source>
+      <translation>更新語音模型</translation>
+    </message>
+    <message>
+      <source>Wisp will redownload Kokoro's damaged or missing voice model files (up to about 330 MB).
+
+Continue?</source>
+      <translation>Wisp 將重新下載 Kokoro 損壞或缺失的語音模型檔案（最多約 330 MB）。
+
+繼續？</translation>
+    </message>
+    <message>
+      <source>Wisp will download the updated Kokoro voice model (about 330 MB) and switch to it only after the download is verified. The current voice keeps working if the update fails.
+
+Continue?</source>
+      <translation>Wisp 將下載更新後的 Kokoro 語音模型（約 330 MB），並僅在下載驗證通過後切換。若更新失敗，目前語音仍可繼續使用。
+
+繼續？</translation>
+    </message>
+    <message>
       <source>Kokoro installed</source>
       <translation>Kokoro 已安裝</translation>
     </message>
@@ -3055,7 +3151,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp 會將 Kokoro 安裝到此 Python 環境中。
@@ -3103,8 +3199,16 @@ Continue?</source>
       <translation>安裝器輸出會顯示在這裡。</translation>
     </message>
     <message>
-      <source>Installer opened in a terminal window. It will close automatically when it finishes.</source>
-      <translation>安裝程式已在終端機視窗中開啟。完成後會自動關閉。</translation>
+      <source>Installer opened in a Wisp installer window. Progress and errors will appear there.</source>
+      <translation>安裝程式已在 Wisp 安裝視窗中開啟。進度和錯誤會顯示在那裡。</translation>
+    </message>
+    <message>
+      <source>Wisp {display_name} installer</source>
+      <translation>Wisp {display_name} 安裝程式</translation>
+    </message>
+    <message>
+      <source>Installing {display_name} into Wisp's optional packages folder.</source>
+      <translation>正在將 {display_name} 安裝到 Wisp 的選用套件資料夾。</translation>
     </message>
     <message>
       <source>Installer window launched. You can close Settings; leave the terminal open until it finishes.</source>
@@ -3259,6 +3363,10 @@ Continue?</source>
       <translation>Kokoro 安裝不完整。請重新安裝 Kokoro。</translation>
     </message>
     <message>
+      <source>Kokoro is installed, but Torch/GPU verification is still starting. Click Test TTS to verify the local voice.</source>
+      <translation>Kokoro 已安裝，但 Torch/GPU 驗證仍在啟動。點擊測試 TTS 以驗證本地語音。</translation>
+    </message>
+    <message>
       <source>Kokoro is installed with CPU support.</source>
       <translation>Kokoro 已安裝 CPU 支援。</translation>
     </message>
@@ -3295,6 +3403,14 @@ Continue?</source>
 </translation>
     </message>
     <message>
+      <source>Wisp will reinstall Kokoro in its user-writable optional packages folder.
+
+</source>
+      <translation>Wisp 會在使用者可寫入的選用套件資料夾中重新安裝 Kokoro。
+
+</translation>
+    </message>
+    <message>
       <source>kokoro&gt;=0.9.4, soundfile, CUDA-enabled Torch, English speech model</source>
       <translation>kokoro&gt;=0.9.4、soundfile、啟用 CUDA 的 Torch、英語語音模型</translation>
     </message>
@@ -3326,7 +3442,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>{action_note}套件：{package_label}
@@ -3353,6 +3469,10 @@ Continue?</source>
       <translation>Kokoro 已安裝，本機語音已準備好。</translation>
     </message>
     <message>
+      <source>Kokoro reinstalled and local voice is ready.</source>
+      <translation>Kokoro 已重新安裝，本機語音已準備好。</translation>
+    </message>
+    <message>
       <source>Kokoro installed, but Torch verification failed: {message}</source>
       <translation>Kokoro 已安裝，但 Torch 驗證失敗：{message}</translation>
     </message>
@@ -3365,6 +3485,10 @@ Continue?</source>
       <translation>Kokoro 已安裝，但 CUDA Torch 驗證失敗。</translation>
     </message>
     <message>
+      <source>Kokoro installed, but CUDA Torch verification failed: {message}</source>
+      <translation>Kokoro 已安裝，但 CUDA Torch 驗證失敗：{message}</translation>
+    </message>
+    <message>
       <source>Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.</source>
       <translation>Kokoro 已安裝，但本機語音準備失敗：{exc}。請連接網際網路並點擊一次 Test TTS 來完成設定。</translation>
     </message>
@@ -3375,6 +3499,138 @@ Continue?</source>
     <message>
       <source>Preparing local voice... {detail}</source>
       <translation>正在準備本機語音……{detail}</translation>
+    </message>
+    <message>
+      <source>Finish the current voice recording first.</source>
+      <translation>請先完成目前的語音錄製。</translation>
+    </message>
+    <message>
+      <source>Could not start live voice</source>
+      <translation>無法啟動即時語音</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one in Settings.</source>
+      <translation>即時語音需要 Google API 金鑰。請在設定中新增。</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it in Settings &gt; TTS / Voice.</source>
+      <translation>尚未安裝即時語音支援。請在設定 &gt; TTS / 語音 中安裝。</translation>
+    </message>
+    <message>
+      <source>Live voice session will end soon (server time limit).</source>
+      <translation>即時語音工作階段即將結束（伺服器時間限制）。</translation>
+    </message>
+    <message>
+      <source>Live voice error</source>
+      <translation>即時語音錯誤</translation>
+    </message>
+    <message>
+      <source>Live voice is ready - speak anytime.</source>
+      <translation>即時語音已就緒 - 隨時可以開口。</translation>
+    </message>
+    <message>
+      <source>Live voice session ended (server time limit). Press the hotkey to start again.</source>
+      <translation>即時語音工作階段已結束（伺服器時間限制）。按下快速鍵即可重新開始。</translation>
+    </message>
+    <message>
+      <source>Live voice stopped because the audio worker restarted.</source>
+      <translation>即時語音已停止，因為音訊處理程序已重新啟動。</translation>
+    </message>
+    <message>
+      <source>Stop the live voice conversation first.</source>
+      <translation>請先停止即時語音對話。</translation>
+    </message>
+    <message>
+      <source>Live voice conversation</source>
+      <translation>即時語音對話</translation>
+    </message>
+    <message>
+      <source>Hands-free conversation with Gemini Live: press the toggle hotkey, talk naturally, and interrupt Wisp by speaking over it. Set the hotkey on the Keybinds tab.</source>
+      <translation>與 Gemini Live 進行免持對話：按下切換快速鍵，自然交談，說話即可打斷 Wisp。請在按鍵設定分頁設定快速鍵。</translation>
+    </message>
+    <message>
+      <source>Install live voice</source>
+      <translation>安裝即時語音</translation>
+    </message>
+    <message>
+      <source>Reinstall live voice</source>
+      <translation>重新安裝即時語音</translation>
+    </message>
+    <message>
+      <source>Installing Live voice...</source>
+      <translation>正在安裝即時語音...</translation>
+    </message>
+    <message>
+      <source>Pause mic while Wisp talks (for speakers; disables barge-in)</source>
+      <translation>Wisp 說話時暫停麥克風（適用於喇叭；停用插話打斷）</translation>
+    </message>
+    <message>
+      <source>Uses the Google API key from the LLM tab.</source>
+      <translation>使用 LLM 分頁中的 Google API 金鑰。</translation>
+    </message>
+    <message>
+      <source>Live voice needs a Google API key. Add one on the LLM tab first.</source>
+      <translation>即時語音需要 Google API 金鑰。請先在 LLM 分頁新增。</translation>
+    </message>
+    <message>
+      <source>Conversation model</source>
+      <translation>對話模型</translation>
+    </message>
+    <message>
+      <source>Conversation voice</source>
+      <translation>對話語音</translation>
+    </message>
+    <message>
+      <source>Speaker mode</source>
+      <translation>喇叭模式</translation>
+    </message>
+    <message>
+      <source>Toggle live voice conversation</source>
+      <translation>切換即時語音對話</translation>
+    </message>
+    <message>
+      <source>Wisp will reinstall live voice support (google-genai) in its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 將在其使用者可寫入的選用套件資料夾中重新安裝即時語音支援（google-genai）。
+
+套件：{package}
+
+安裝可能需要網路連線，並且在 Wisp 重建後仍會保留。
+
+繼續？</translation>
+    </message>
+    <message>
+      <source>Wisp will install live voice support (google-genai) into its user-writable optional packages folder.
+
+Package: {package}
+
+The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 將在其使用者可寫入的選用套件資料夾中安裝即時語音支援（google-genai）。
+
+套件：{package}
+
+安裝可能需要網路連線，並且在 Wisp 重建後仍會保留。
+
+繼續？</translation>
+    </message>
+    <message>
+      <source>Live voice support is installed.</source>
+      <translation>已安裝即時語音支援。</translation>
+    </message>
+    <message>
+      <source>Live voice support is not installed. Install it to enable hands-free conversations.</source>
+      <translation>尚未安裝即時語音支援。安裝後即可進行免持對話。</translation>
+    </message>
+    <message>
+      <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
+      <translation>即時語音已安裝。按下切換快速鍵即可開始對話。</translation>
     </message>
   </context>
   <context>
@@ -4149,6 +4405,10 @@ Continue?</source>
       <translation>安裝 ElevenLabs</translation>
     </message>
     <message>
+      <source>Reinstall ElevenLabs</source>
+      <translation>重新安裝 ElevenLabs</translation>
+    </message>
+    <message>
       <source>Install ElevenLabs before applying it as the active TTS provider.</source>
       <translation>在將 ElevenLabs 設為目前 TTS 提供者之前，請先安裝它。</translation>
     </message>
@@ -4303,6 +4563,26 @@ Continue?</source>
 是否繼續？</translation>
     </message>
     <message>
+      <source>Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.
+
+Package: {package}
+
+Use this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.
+
+Continue?</source>
+      <translation>Wisp 會在其使用者可寫入的選用套件資料夾中重新安裝 ElevenLabs 支援。
+
+套件：{package}
+
+當打包的 exe 因建置路徑過長而略過 ElevenLabs 時可使用此功能。安裝可能需要連網，並會在 Wisp 重新建置後保留。
+
+是否繼續？</translation>
+    </message>
+    <message>
+      <source>ElevenLabs reinstalled. Add your API key, then click Test TTS.</source>
+      <translation>ElevenLabs 已重新安裝。新增 API 金鑰後，按一下 Test TTS。</translation>
+    </message>
+    <message>
       <source>Wisp will install Kokoro into its user-writable optional packages folder.
 
 Packages: kokoro&gt;=0.9.4, soundfile, English speech model
@@ -4316,7 +4596,7 @@ Speed: {speed}
 Sample rate: {sample_rate} Hz
 Volume: {volume}
 
-On Windows, Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error.
+Kokoro may also need eSpeak NG installed separately if Test TTS reports a phoneme/espeak error (Windows: install eSpeak NG; macOS: brew install espeak-ng; Linux: apt install espeak-ng).
 
 Continue?</source>
       <translation>Wisp 會將 Kokoro 安裝到其使用者可寫入的選用套件資料夾中。
@@ -4669,8 +4949,8 @@ Continue?</source>
       <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
     </message>
     <message>
-      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</source>
-      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install / load STT.</translation>
+      <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</source>
+      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</translation>
     </message>
     <message>
       <source>Installing STT: {detail}.</source>
@@ -4681,8 +4961,8 @@ Continue?</source>
       <translation>Installing STT...</translation>
     </message>
     <message>
-      <source>Install / load STT</source>
-      <translation>Install / load STT</translation>
+      <source>Reinstall STT</source>
+      <translation>Reinstall STT</translation>
     </message>
     <message>
       <source>Install STT</source>
@@ -4709,8 +4989,8 @@ Continue?</source>
       <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
     </message>
     <message>
-      <source>STT package is not installed. Click Install / load STT to install and verify it.</source>
-      <translation>STT package is not installed. Click Install / load STT to install and verify it.</translation>
+      <source>STT package is not installed. Click Install STT to install and verify it.</source>
+      <translation>STT package is not installed. Click Install STT to install and verify it.</translation>
     </message>
     <message>
       <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>
@@ -4783,6 +5063,98 @@ Continue?</translation>
     <message>
       <source>removing previous install</source>
       <translation>removing previous install</translation>
+    </message>
+    <message>
+      <source>Wisp {display_name} apply</source>
+      <translation>Wisp 套用 {display_name}</translation>
+    </message>
+    <message>
+      <source>Applying {display_name}</source>
+      <translation>正在套用 {display_name}</translation>
+    </message>
+    <message>
+      <source>Preparing to apply optional speech packages.</source>
+      <translation>正在準備套用選用語音套件。</translation>
+    </message>
+    <message>
+      <source>{display_name} applied successfully.</source>
+      <translation>{display_name} 已成功套用。</translation>
+    </message>
+    <message>
+      <source>{display_name} apply failed.</source>
+      <translation>{display_name} 套用失敗。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is waiting for Wisp to close.</source>
+      <translation>{display_name} 暫存安裝正在等待 Wisp 關閉。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is applying package files.</source>
+      <translation>{display_name} 暫存安裝正在套用套件檔案。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is verifying package files.</source>
+      <translation>{display_name} 暫存安裝正在驗證套件檔案。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install failed: {message}</source>
+      <translation>{display_name} 暫存安裝失敗：{message}</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp and apply them.</source>
+      <translation>{display_name} 套件已暫存。按一下立即重新啟動程式以關閉 Wisp 並套用它們。</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen.</source>
+      <translation>{display_name} 套件已暫存。按一下立即重新啟動程式以關閉 Wisp、取代鎖定檔案、驗證安裝並重新開啟。</translation>
+    </message>
+    <message>
+      <source>{display_name} packages stay staged and will be applied the next time Wisp restarts.</source>
+      <translation>{display_name} 套件會保持暫存，並在 Wisp 下次重新啟動時套用。</translation>
+    </message>
+    <message>
+      <source>{display_name} installed and model ready: {summary}.</source>
+      <translation>{display_name} 已安裝且模型就緒：{summary}。</translation>
+    </message>
+    <message>
+      <source>{display_name} package files match this Wisp release.</source>
+      <translation>{display_name} 套件檔案與此 Wisp 版本相符。</translation>
+    </message>
+    <message>
+      <source>{display_name} package files do not match this Wisp release: {message}.</source>
+      <translation>{display_name} 套件檔案與此 Wisp 版本不相符：{message}。</translation>
+    </message>
+    <message>
+      <source>STT package install failed: {message}</source>
+      <translation>STT 套件安裝失敗：{message}</translation>
+    </message>
+    <message>
+      <source>STT package installed, but model download/load failed: {message}</source>
+      <translation>STT 套件已安裝，但模型下載/載入失敗：{message}</translation>
+    </message>
+    <message>
+      <source>STT package installed; downloading or loading Whisper model {model}.</source>
+      <translation>STT 套件已安裝；正在下載或載入 Whisper 模型 {model}。</translation>
+    </message>
+    <message>
+      <source>Kokoro package install failed: {message}</source>
+      <translation>Kokoro 套件安裝失敗：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed, but voice asset preparation failed: {message}</source>
+      <translation>Kokoro 套件已安裝，但語音資源準備失敗：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed; {detail}.</source>
+      <translation>Kokoro 套件已安裝；{detail}。</translation>
+    </message>
+    <message>
+      <source>verifying runtime import</source>
+      <translation>正在驗證執行階段匯入</translation>
+    </message>
+    <message>
+      <source>verifying Torch</source>
+      <translation>正在驗證 Torch</translation>
     </message>
   </context>
 </TS>

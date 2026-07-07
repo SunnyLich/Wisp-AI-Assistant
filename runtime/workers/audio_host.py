@@ -14,6 +14,8 @@ from runtime.service_host import run_host
 
 _emit: Callable[[str, Any, Any], None] | None = None
 _playback_stop = threading.Event()
+_live_lock = threading.Lock()
+_live_session: Any = None  # core.live_voice.LiveVoiceSession | None (lazy import)
 _config_prewarm_lock = threading.Lock()
 _config_prewarm_generation = 0
 _warmup_lock = threading.Lock()
@@ -273,6 +275,9 @@ def audio_config_reload() -> dict[str, Any]:
     from core import tts
     from core.macos_helper import handlers as stt_handlers
 
+    # A running live voice session was built from the old config (model, voice,
+    # API key); end it rather than keep it half-stale. Silent on the UI side.
+    _stop_live_session("config_reload")
     config.reload()
     tts.reset_connections()
     stt_handlers.stt_reset_model()
@@ -535,6 +540,75 @@ def audio_speed_boost(enabled: bool = False) -> dict[str, Any]:
     return {"enabled": bool(enabled)}
 
 
+def _stop_live_session(reason: str) -> bool:
+    """Detach and stop the live voice session, if any. Returns whether one ran."""
+    global _live_session
+    with _live_lock:
+        session = _live_session
+        _live_session = None
+    if session is None or not session.is_active:
+        return False
+    session.request_stop(reason)
+    session.join(3.0)
+    return True
+
+
+def audio_live_start() -> dict[str, Any]:
+    """Start a hands-free live voice conversation (Gemini Live).
+
+    Returns quickly: the session connects on its own daemon thread and reports
+    progress upstream via audio.live.* events. Structured errors (not raises)
+    so the supervisor can map each one to a user-facing notice.
+    """
+    global _live_session
+    from core import live_voice
+    from core.macos_helper import handlers as stt_handlers
+    import config
+
+    provider = str(getattr(config, "LIVE_VOICE_PROVIDER", "google") or "google").strip().lower()
+    if provider != "google":
+        return {"started": False, "error": "unsupported_provider", "provider": provider}
+    if not live_voice.genai_available():
+        return {"started": False, "error": "missing_package"}
+
+    api_key = str(getattr(config, "GOOGLE_API_KEY", "") or "").strip()
+    if not api_key:
+        return {"started": False, "error": "missing_key"}
+    if stt_handlers.stt_is_recording():
+        return {"started": False, "error": "mic_busy"}
+    with _live_lock:
+        if _live_session is not None and _live_session.is_active:
+            return {"started": False, "error": "already_active"}
+        _playback_stop.set()  # live session owns the speaker now
+        cfg = live_voice.LiveVoiceConfig(
+            api_key=api_key,
+            model=str(getattr(config, "LIVE_VOICE_MODEL", "") or live_voice.DEFAULT_LIVE_MODEL),
+            voice_name=str(getattr(config, "LIVE_VOICE_VOICE_NAME", "") or ""),
+            system_prompt=config.get_live_voice_system_prompt(),
+            half_duplex=bool(getattr(config, "LIVE_VOICE_HALF_DUPLEX", False)),
+        )
+        session = live_voice.LiveVoiceSession(
+            cfg, lambda name, payload: _event(f"audio.live.{name}", payload)
+        )
+        session.start()
+        _live_session = session
+    return {"started": True, "model": cfg.model}
+
+
+def audio_live_stop() -> dict[str, Any]:
+    """Stop the live voice session; no-op when none is running."""
+    return {"stopped": _stop_live_session("user")}
+
+
+def audio_live_status() -> dict[str, Any]:
+    """Handle audio live status for runtime workers audio host."""
+    with _live_lock:
+        session = _live_session
+    if session is None or not session.is_active:
+        return {"active": False, "state": "idle", "model": ""}
+    return {"active": True, "state": session.state, "model": session.cfg.model}
+
+
 HANDLERS = {
     "audio.config.reload": audio_config_reload,
     "audio.prewarm": audio_prewarm,
@@ -545,11 +619,39 @@ HANDLERS = {
     "audio.play_file": play_file,
     "audio.stop": audio_stop,
     "audio.speed_boost": audio_speed_boost,
+    "audio.live.start": audio_live_start,
+    "audio.live.stop": audio_live_stop,
+    "audio.live.status": audio_live_status,
 }
+
+
+def _prewarm_native_extensions() -> None:
+    """Import numpy/soundfile on the MAIN thread before any request threads exist.
+
+    Warmups and requests run on daemon threads, and numpy's OpenBLAS can
+    deadlock Windows' DLL loader when its extension is first loaded from a
+    worker thread (observed as `from kokoro import KPipeline` hanging forever
+    in `create_module`; the brain host documents the same failure). Import
+    from the optional-packages path set so this loads the same numpy Kokoro
+    resolves later. Best-effort: an incomplete install must not stop the
+    worker from booting and answering ping.
+    """
+    try:
+        from core import optional_deps
+
+        optional_deps.add_optional_packages_to_path(prepend=True)
+    except Exception:  # noqa: BLE001
+        pass
+    for name in ("numpy", "soundfile"):
+        try:
+            __import__(name)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def main() -> int:
     """Handle main for runtime workers audio host."""
+    _prewarm_native_extensions()
     return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink, threaded=True)
 
 

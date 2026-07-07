@@ -7,6 +7,8 @@ import unittest
 import wave
 from unittest.mock import patch
 
+import numpy as np
+
 from core import tts
 
 
@@ -145,32 +147,165 @@ class TtsConnectionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "reinstall Kokoro"):
                 tts._import_kokoro_pipeline()
 
+    def test_kokoro_missing_transitive_module_is_not_reported_as_uninstalled(self):
+        """Missing bundled stdlib/native modules should not look like absent Kokoro."""
+        original_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "kokoro":
+                raise ModuleNotFoundError("No module named 'cmath'", name="cmath")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", fake_import):
+            with self.assertRaisesRegex(RuntimeError, "failed to import.*cmath") as ctx:
+                tts._import_kokoro_pipeline()
+
+        self.assertNotIn("not installed", str(ctx.exception))
+
     def test_prepare_kokoro_assets_downloads_model_and_voice(self):
-        """Verify Kokoro asset preparation fetches the model files before synthesis."""
+        """Verify asset preparation checks the local cache first, then fetches at the pin."""
+        from core import tts_assets
+
         calls = []
 
         fake_hf = types.ModuleType("huggingface_hub")
 
-        def fake_download(*, repo_id, filename):
-            calls.append((repo_id, filename))
+        def fake_download(*, repo_id, filename, revision=None, local_files_only=False, force_download=False):
+            calls.append((repo_id, filename, revision, local_files_only))
+            if local_files_only:
+                raise FileNotFoundError(filename)  # simulate an empty cache
+            return f"cache/{filename}"
+
+        fake_hf.hf_hub_download = fake_download
+        pin = tts_assets.KOKORO.revision
+
+        with patch.dict(sys.modules, {"huggingface_hub": fake_hf}), \
+             patch("core.tts_assets._check_size", return_value=None), \
+             patch("core.tts_assets._load_state", return_value={}), \
+             patch("os.path.getsize", return_value=1_000_000):
+            paths = tts.prepare_kokoro_assets(voice="af_heart")
+
+        network_calls = [call for call in calls if not call[3]]
+        self.assertEqual(
+            network_calls,
+            [
+                ("hexgrad/Kokoro-82M", "config.json", pin, False),
+                ("hexgrad/Kokoro-82M", "kokoro-v1_0.pth", pin, False),
+                ("hexgrad/Kokoro-82M", "voices/af_heart.pt", pin, False),
+            ],
+        )
+        # Every network fetch is preceded by a local-cache attempt at the pin.
+        local_calls = [call for call in calls if call[3]]
+        self.assertIn(("hexgrad/Kokoro-82M", "config.json", pin, True), local_calls)
+        self.assertIn(("hexgrad/Kokoro-82M", "kokoro-v1_0.pth", pin, True), local_calls)
+        self.assertIn(("hexgrad/Kokoro-82M", "voices/af_heart.pt", pin, True), local_calls)
+        self.assertEqual(paths["config"], "cache/config.json")
+        self.assertEqual(paths["model"], "cache/kokoro-v1_0.pth")
+        self.assertEqual(paths["voice:af_heart"], "cache/voices/af_heart.pt")
+
+    def test_prepare_kokoro_assets_skips_network_when_cached(self):
+        """Verify asset preparation stays offline when pinned files are already intact."""
+        from core import tts_assets
+
+        calls = []
+
+        fake_hf = types.ModuleType("huggingface_hub")
+
+        def fake_download(*, repo_id, filename, revision=None, local_files_only=False, force_download=False):
+            calls.append((repo_id, filename, revision, local_files_only))
+            if not local_files_only:
+                raise AssertionError(f"unexpected network download for {filename}")
             return f"cache/{filename}"
 
         fake_hf.hf_hub_download = fake_download
 
-        with patch.dict(sys.modules, {"huggingface_hub": fake_hf}):
+        with patch.dict(sys.modules, {"huggingface_hub": fake_hf}), \
+             patch("core.tts_assets._check_size", return_value=None), \
+             patch("core.tts_assets._load_state", return_value={}), \
+             patch("os.path.getsize", return_value=1_000_000):
             paths = tts.prepare_kokoro_assets(voice="af_heart")
 
-        self.assertEqual(
-            calls,
-            [
-                ("hexgrad/Kokoro-82M", "config.json"),
-                ("hexgrad/Kokoro-82M", "kokoro-v1_0.pth"),
-                ("hexgrad/Kokoro-82M", "voices/af_heart.pt"),
-            ],
-        )
-        self.assertEqual(paths["config"], "cache/config.json")
+        self.assertTrue(all(call[3] for call in calls))
         self.assertEqual(paths["model"], "cache/kokoro-v1_0.pth")
-        self.assertEqual(paths["voice:af_heart"], "cache/voices/af_heart.pt")
+
+    def test_kokoro_prewarm_never_downloads_and_reports_repair(self):
+        """Warmup must fail with repair guidance instead of downloading assets."""
+        import config
+        from core import tts_assets
+
+        damaged = tts_assets.AssetStatus(
+            state="damaged",
+            problems=["kokoro-v1_0.pth: expected 327212226 bytes, found 12"],
+        )
+
+        with patch.object(config, "TTS_PROVIDER", "kokoro"), \
+             patch("core.tts.kokoro_installed", return_value=True), \
+             patch("core.tts.verify_kokoro_assets", return_value=damaged), \
+             patch("core.tts._stream_kokoro", side_effect=AssertionError("unexpected synthesis")), \
+             patch("core.tts_assets._fetch", side_effect=AssertionError("unexpected download")):
+            with self.assertRaisesRegex(RuntimeError, "reinstall Kokoro"):
+                tts.prewarm()
+
+    def test_kokoro_prewarm_warms_pipeline_only_when_voice_missing(self):
+        """A not-yet-downloaded voice defers to user-initiated synthesis, no download."""
+        import config
+        from core import tts_assets
+
+        status = tts_assets.AssetStatus(
+            state="ok",
+            paths={"config.json": "cache/config.json", "kokoro-v1_0.pth": "cache/kokoro-v1_0.pth"},
+            missing_voices=["af_new"],
+        )
+
+        with patch.object(config, "TTS_PROVIDER", "kokoro"), \
+             patch("core.tts.kokoro_installed", return_value=True), \
+             patch("core.tts.verify_kokoro_assets", return_value=status), \
+             patch("core.tts._get_kokoro_pipeline") as get_pipeline, \
+             patch("core.tts._stream_kokoro", side_effect=AssertionError("unexpected synthesis")), \
+             patch("core.tts_assets._fetch", side_effect=AssertionError("unexpected download")):
+            tts.prewarm()
+
+        get_pipeline.assert_called_once()
+
+    def test_kokoro_pipeline_builds_offline_from_local_assets(self):
+        """When pinned assets are cached, the model loads from local paths only."""
+        built = {}
+
+        class FakeKModel:
+            def __init__(self, *, repo_id, config, model):
+                built["repo_id"] = repo_id
+                built["config"] = config
+                built["model"] = model
+
+            def to(self, device):
+                built["device"] = device
+                return self
+
+            def eval(self):
+                return self
+
+        class FakeKPipeline:
+            def __init__(self, lang_code, repo_id=None, model=True):
+                built["pipeline_model"] = model
+                built["lang_code"] = lang_code
+
+        fake_module = types.ModuleType("kokoro")
+        fake_module.KPipeline = FakeKPipeline
+        fake_module.KModel = FakeKModel
+
+        assets = {"config.json": "cache/config.json", "kokoro-v1_0.pth": "cache/kokoro-v1_0.pth"}
+
+        with patch.dict(sys.modules, {"kokoro": fake_module}), \
+             patch("core.tts._locate_kokoro_assets", return_value=assets), \
+             patch("core.tts._resolve_kokoro_device", return_value="cpu"):
+            pipeline, device, offline = tts._create_kokoro_pipeline("a", "cpu")
+
+        self.assertTrue(offline)
+        self.assertEqual(device, "cpu")
+        self.assertEqual(built["config"], "cache/config.json")
+        self.assertEqual(built["model"], "cache/kokoro-v1_0.pth")
+        self.assertIsInstance(built["pipeline_model"], FakeKModel)
+        self.assertIsInstance(pipeline, FakeKPipeline)
 
     def test_kokoro_connection_uses_local_pipeline(self):
         """Verify Kokoro connection uses the local Python pipeline."""

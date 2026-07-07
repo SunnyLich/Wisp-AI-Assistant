@@ -159,6 +159,18 @@ def _write_abrupt_log(reason: str, supervisor: WispSupervisor | None, exc_info=N
         return None
 
 
+def _resume_staged_optional_installs() -> None:
+    """Re-arm optional-package staged installs left from an earlier session."""
+    try:
+        from scripts.optional_tts_installer import resume_pending_staged_applies
+
+        resumed = resume_pending_staged_applies()
+        if resumed:
+            logging.info("Re-armed %d staged optional package install(s)", resumed)
+    except Exception:
+        logging.warning("Could not resume staged optional package installs", exc_info=True)
+
+
 def main() -> int:
     # Synthetic copy-Ctrl+C (selected-text capture) reaches the whole console
     # process group; without this the supervisor's SIGINT handler would treat it
@@ -184,6 +196,7 @@ def main() -> int:
     if not single_instance.acquire():
         logging.warning("Another Wisp instance is already running; exiting.")
         return 2
+    _resume_staged_optional_installs()
     supervisor = WispSupervisor()
     stop = threading.Event()
     ui_quit_requested = threading.Event()

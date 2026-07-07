@@ -39,6 +39,34 @@ def test_bubble_chunk_restores_hidden_icon(monkeypatch):
         app.processEvents()
 
 
+def test_default_icon_position_reserves_context_panel_space(monkeypatch):
+    """Verify default icon placement leaves room for right-side context badges."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.drop_zone import context_panel_reserved_width
+    from ui.overlay import IconOverlay, OverlaySignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(IconOverlay, "_pin_overlay_windows", lambda self: None)
+    monkeypatch.setattr(config, "ICON_SIZE", 60, raising=False)
+    signals = OverlaySignals()
+    overlay = IconOverlay(signals)
+
+    try:
+        screen = QApplication.primaryScreen().availableGeometry()
+        pos = overlay._icon_label.pos()
+        right_edge = pos.x() + config.ICON_SIZE + context_panel_reserved_width(config.ICON_SIZE)
+
+        assert right_edge <= screen.x() + screen.width() - 20
+    finally:
+        overlay._bubble.clear()
+        overlay._icon_label.close()
+        overlay.close()
+        app.processEvents()
+
+
 @pytest.mark.workflow
 def test_tray_menu_omits_health_status(monkeypatch):
     """Verify the right-click tray menu does not expose Health Status."""

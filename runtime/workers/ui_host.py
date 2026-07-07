@@ -220,6 +220,17 @@ def _is_speech_status_notice(text: str) -> bool:
     )
 
 
+def _is_transient_local_tts_warmup_notice(text: str) -> bool:
+    """Return True when Kokoro/TTS is busy importing, not actually broken."""
+    lowered = " ".join(str(text or "").lower().split())
+    if not lowered or "local speech is ready" not in lowered:
+        return False
+    if "still warming" not in lowered and "warming up" not in lowered:
+        return False
+    speech_terms = ("kokoro", "local tts", "local voice", "tts")
+    return any(term in lowered for term in speech_terms)
+
+
 def _bubble_has_active_prompt_reply(bubble: Any) -> bool:
     """Whether replacing the bubble would interrupt an active prompt reply."""
     if bubble is None:
@@ -1875,7 +1886,7 @@ class QtProtocolHost:
         self._write_lock = threading.Lock()
         self._lines: "queue.Queue[bytes | None]" = queue.Queue()
         self._closing = False
-        self._stdin_stream = sys.stdin.buffer
+        self._stdin_fd = sys.stdin.fileno()
 
         self._overlay_signals = None
         self._overlay = None
@@ -1933,45 +1944,102 @@ class QtProtocolHost:
         self._send(protocol.make_response(req_id, ok, result=result, error=error))
 
     def _read_loop(self) -> None:
-        """Read loop."""
-        stream = self._stdin_stream
+        """Read stdin as raw fd chunks and queue complete protocol lines.
+
+        os.read is used instead of BufferedReader.readline because this daemon
+        thread would otherwise hold the buffer's internal lock while blocked;
+        interpreter shutdown then aborts with a fatal _enter_buffered_busy
+        error when finalization cannot take that lock to close stdin.
+        """
+        fd = self._stdin_fd
+        pending = b""
         while True:
             try:
-                line = stream.readline()
+                chunk = os.read(fd, 65536)
             except (OSError, ValueError):
-                line = b""
-            if not line:
+                chunk = b""
+            if not chunk:
+                if pending.strip():
+                    self._lines.put(pending)
                 self._lines.put(None)
                 return
-            self._lines.put(line)
+            pending += chunk
+            while True:
+                newline = pending.find(b"\n")
+                if newline < 0:
+                    break
+                self._lines.put(pending[: newline + 1])
+                pending = pending[newline + 1 :]
 
-    def _close_stdin_reader(self) -> None:
-        """Unblock the stdin reader before Python starts interpreter teardown."""
-        try:
-            self._stdin_stream.close()
-        except Exception:
-            pass
+    def _begin_shutdown(self, reason: str, *, notify_supervisor: bool) -> None:
+        """Run every shutdown path through one idempotent teardown sequence.
 
-    def _on_about_to_quit(self) -> None:
-        """Tell the supervisor that Qt is quitting by user request."""
-        if not self._closing:
-            self._closing = True
+        The stdin reader thread is deliberately left blocked in readline():
+        closing the buffered stream from this thread would block on the
+        buffer's internal lock until the supervisor writes or closes the pipe,
+        and closing the raw fd does not interrupt a blocked read on Linux.
+        The reader is a daemon thread that only touches a queue.Queue, so it
+        is safe to leave running until the process exits.
+        """
+        if self._closing:
+            return
+        self._closing = True
+        if notify_supervisor:
             try:
-                self.emit("ui.quit_requested", {"reason": "qt_about_to_quit"})
+                self.emit("ui.quit_requested", {"reason": reason})
             except Exception:
                 pass
         try:
             self._pump.stop()
         except Exception:
             pass
-        self._close_stdin_reader()
+        try:
+            self._watchdog.stop()
+        except Exception:
+            pass
+        self._teardown_windows()
 
-    def _quit_after_shutdown(self) -> None:
-        """Stop UI IPC and quit the Qt event loop."""
-        self._closing = True
-        self._pump.stop()
-        self._close_stdin_reader()
-        self._app.quit()
+    def _teardown_windows(self) -> None:
+        """Close and delete all windows while Qt can still process the deletes."""
+        from PySide6.QtWidgets import QApplication
+
+        for widget in QApplication.topLevelWidgets():
+            try:
+                widget.close()
+            except Exception:
+                pass
+            try:
+                widget.deleteLater()
+            except Exception:
+                pass
+
+    def _on_about_to_quit(self) -> None:
+        """Tell the supervisor that Qt is quitting by user request."""
+        self._begin_shutdown("qt_about_to_quit", notify_supervisor=True)
+
+    def _quit_after_shutdown(self, reason: str) -> None:
+        """Stop UI IPC, tear down windows, and quit the Qt event loop."""
+        from PySide6.QtCore import QTimer
+
+        self._begin_shutdown(reason, notify_supervisor=False)
+        # Quit on the next loop pass so the current IPC dispatch unwinds and
+        # the DeferredDelete events posted by _teardown_windows run while the
+        # event loop is still alive.
+        QTimer.singleShot(0, self._app.quit)
+
+    def finalize_after_exec(self) -> None:
+        """Destroy pending deleteLater objects while QApplication still exists.
+
+        Runs after app.exec() returns; without it, widgets deleted during the
+        aboutToQuit path would be destroyed by interpreter teardown in
+        arbitrary order against QApplication.
+        """
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        try:
+            QCoreApplication.sendPostedEvents(None, int(QEvent.Type.DeferredDelete))
+        except Exception:
+            pass
 
     def _drain(self) -> None:
         """Handle drain for qt protocol host."""
@@ -1982,7 +2050,7 @@ class QtProtocolHost:
             except queue.Empty:
                 return
             if line is None:
-                self._quit_after_shutdown()
+                self._quit_after_shutdown("stdin_eof")
                 return
             if line.strip():
                 self._handle_line(line)
@@ -1997,7 +2065,7 @@ class QtProtocolHost:
             params = msg.get("params") or {}
             if method == "__shutdown__":
                 self._respond(req_id, True, result=None)
-                self._quit_after_shutdown()
+                self._quit_after_shutdown("supervisor_shutdown")
                 return
             if not isinstance(params, dict):
                 raise ValueError("params must be an object")
@@ -2115,6 +2183,12 @@ class QtProtocolHost:
             return self._reply_chunk(**params)
         if method == "ui.reply.done":
             return self._reply_done(**params)
+        if method == "ui.live_voice.session":
+            return self._live_voice_session(**params)
+        if method == "ui.live_voice.transcript":
+            return self._live_voice_transcript(**params)
+        if method == "ui.live_voice.ready":
+            return self._live_voice_ready(**params)
         if method == "ui.context.clear":
             return self._context_clear()
         if method == "ui.context.add_item":
@@ -2365,6 +2439,29 @@ class QtProtocolHost:
                 overlay.hide_without_cancel()
 
         self._intent.selection_capture_requested.connect(_request_selection_capture)
+        def _context_source_removed(item_id: str, source_id: str) -> None:
+            self.emit(
+                "ui.intent.context.remove",
+                {
+                    "caller_idx": caller_idx,
+                    "id": str(item_id or ""),
+                    "source_id": str(source_id or ""),
+                },
+            )
+
+        self._intent.context_source_removed.connect(_context_source_removed)
+        def _context_source_reenabled(item_id: str) -> None:
+            overlay = self._intent
+            self.emit(
+                "ui.intent.context.reenabled",
+                {
+                    "caller_idx": caller_idx,
+                    "id": str(item_id or ""),
+                    "context_choices": overlay.context_choices() if overlay else [],
+                },
+            )
+
+        self._intent.context_source_reenabled.connect(_context_source_reenabled)
         def _cancelled() -> None:
             self._apply_cancelled_intent_conversation_choice(self._intent)
             self.emit("ui.intent.cancelled", {"caller_idx": caller_idx})
@@ -2612,6 +2709,9 @@ class QtProtocolHost:
         collapsed = " | ".join(part for part in str(text or "").splitlines() if part)
         log.info("bubble notice: %s", collapsed or "(empty)")
         translated = _translate_notice_text(text)
+        if _is_transient_local_tts_warmup_notice(text):
+            log.info("suppressed transient local TTS warmup notice: %s", collapsed or "(empty)")
+            return {"shown": False, "text": translated, "reason": "transient_local_tts_warmup"}
         bubble = self._ensure_bubble()
         notice_key = str(key or "").strip()
         if notice_key and getattr(self, "_active_notice_key", "") == notice_key and not bubble.isVisible():
@@ -2709,6 +2809,21 @@ class QtProtocolHost:
         else:
             bubble.append_chunk(text, is_thought=is_thought, annotations=annotations)
         return {"appended": len(text or ""), "is_progress": bool(is_progress)}
+
+    def _live_voice_session(self, active: bool = False) -> dict[str, Any]:
+        """Enter/leave live voice caption mode (bubble held open while active)."""
+        self._ensure_bubble().set_live_mode(bool(active))
+        return {"active": bool(active)}
+
+    def _live_voice_transcript(self, role: str = "", text: str = "") -> dict[str, Any]:
+        """Append one live voice caption fragment to the bubble."""
+        self._ensure_bubble().append_live_transcript(str(role or ""), str(text or ""))
+        return {"appended": len(str(text or ""))}
+
+    def _live_voice_ready(self) -> dict[str, Any]:
+        """Show the connected hint in the caption bubble (session is live)."""
+        self._ensure_bubble().show_live_ready()
+        return {"shown": True}
 
     def _reply_done(self, flush: bool = True) -> dict[str, Any]:
         """Finish the reply bubble.
@@ -4485,9 +4600,10 @@ def main() -> int:
     real_out = _protect_stdout()
 
     from PySide6.QtWidgets import QApplication
-    from ui.shared.app_icon import install_app_icon, set_windows_app_user_model_id
+    from ui.shared.app_icon import ensure_linux_desktop_entry, install_app_icon, set_windows_app_user_model_id
 
     set_windows_app_user_model_id()
+    ensure_linux_desktop_entry()
     app = QApplication(sys.argv)
     install_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
@@ -4503,7 +4619,9 @@ def main() -> int:
     host = QtProtocolHost(app, real_out)
     app._wisp_runtime_ui_host = host
     host.emit("ui.ready", {"repo": str(root)})
-    return int(app.exec())
+    exit_code = int(app.exec())
+    host.finalize_after_exec()
+    return exit_code
 
 
 if __name__ == "__main__":

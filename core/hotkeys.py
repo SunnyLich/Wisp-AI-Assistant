@@ -276,6 +276,7 @@ class HotkeyListener:
         on_voice_stop: Callable[[], None] | None = None,
         on_dictate_start: Callable[[], None] | None = None,
         on_dictate_stop: Callable[[], None] | None = None,
+        on_voice_live: Callable[[], None] | None = None,
         extra_hotkeys: list[tuple[str, Callable[[], None]]] | None = None,
     ):
         """Initialize the hotkey listener instance."""
@@ -294,6 +295,9 @@ class HotkeyListener:
         read_selection_hotkey = getattr(config, "HOTKEY_READ_SELECTION_ALOUD", "")
         if on_read_selection_aloud and read_selection_hotkey:
             self._hotkey_defs.append((read_selection_hotkey, on_read_selection_aloud))
+        voice_live_hotkey = getattr(config, "HOTKEY_VOICE_LIVE", "")
+        if on_voice_live and voice_live_hotkey:
+            self._hotkey_defs.append((voice_live_hotkey, on_voice_live))
         for hotkey, cb in extra_hotkeys or []:
             if hotkey and cb:
                 self._hotkey_defs.append((hotkey, cb))
@@ -319,6 +323,13 @@ class HotkeyListener:
         # Maps a resolved pynput key object -> (on_press, on_release) so one
         # listener can serve both the voice and dictation push-to-talk keys.
         self._ptt_map: dict = {}
+        # Modifier state for the push-to-talk tap: the PTT keys are bare keys
+        # (e.g. plain F9), so a press with any modifier held belongs to some
+        # other hotkey (e.g. shift+F9 = live voice toggle) and must not start
+        # a recording.
+        self._ptt_modifier_keys: frozenset = frozenset()
+        self._ptt_mods_down: set = set()
+        self._ptt_active: set = set()
 
     def start(self) -> bool:
         """Start the global hotkey backend, plus the push-to-talk listener (off macOS)."""
@@ -390,6 +401,18 @@ class HotkeyListener:
 
         if not self._ptt_map:
             return
+        self._ptt_modifier_keys = frozenset(
+            key
+            for name in (
+                "shift", "shift_l", "shift_r",
+                "ctrl", "ctrl_l", "ctrl_r",
+                "alt", "alt_l", "alt_r", "alt_gr",
+                "cmd", "cmd_l", "cmd_r",
+            )
+            if (key := getattr(_kb.Key, name, None)) is not None
+        )
+        self._ptt_mods_down = set()
+        self._ptt_active = set()
         self._voice_listener = _kb.Listener(
             on_press=self._voice_press,
             on_release=self._voice_release,
@@ -399,14 +422,32 @@ class HotkeyListener:
 
     def _voice_press(self, key) -> None:
         """Handle voice press for hotkey listener."""
+        if key in self._ptt_modifier_keys:
+            self._ptt_mods_down.add(key)
+            return
         binding = self._ptt_map.get(key)
-        if binding and binding[0]:
+        if not binding:
+            return
+        if self._ptt_mods_down and key not in self._ptt_active:
+            # A modified press (e.g. shift+F9) is a different hotkey; the OS
+            # backend handles it. Only a bare press starts push-to-talk.
+            return
+        self._ptt_active.add(key)
+        if binding[0]:
             binding[0]()
 
     def _voice_release(self, key) -> None:
         """Handle voice release for hotkey listener."""
+        if key in self._ptt_modifier_keys:
+            self._ptt_mods_down.discard(key)
+            return
         binding = self._ptt_map.get(key)
-        if binding and binding[1]:
+        if not binding:
+            return
+        if key not in self._ptt_active:
+            return  # press was suppressed (modified combo) - nothing to stop
+        self._ptt_active.discard(key)
+        if binding[1]:
             binding[1]()
 
 

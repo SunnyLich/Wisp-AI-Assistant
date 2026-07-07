@@ -121,7 +121,7 @@ def run_setup_check() -> list[dict[str, str]]:
         if not stt_package_ok:
             stt_recommendation = (
                 "Recommendation: STT support is not working. Open Settings > Voice and click "
-                "Install / load STT."
+                "Install STT."
             )
     rows.append(
         {

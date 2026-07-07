@@ -144,6 +144,28 @@ def _clipboard_sequence_number() -> int | None:
         return None
 
 
+def _linux_x11_window_client_pid(display, window) -> int | None:
+    """Resolve a window's owning pid via the X-Resource extension.
+
+    Apps usually own PRIMARY through an invisible helper window that carries
+    no _NET_WM_PID property, so asking the X server which client created the
+    window is the only lookup that works for selection owners.
+    """
+    try:
+        from Xlib.ext import res as xres
+
+        reply = display.res_query_client_ids(
+            [{"client": int(window.id), "mask": int(xres.LocalClientPIDMask)}]
+        )
+        for item in getattr(reply, "ids", None) or []:
+            values = list(getattr(item, "value", None) or [])
+            if values:
+                return int(values[0])
+    except Exception:
+        return None
+    return None
+
+
 def _linux_x11_primary_selection_owner_pid() -> int | None:
     """Return the X11 PRIMARY owner pid when it can be verified."""
     try:
@@ -157,6 +179,9 @@ def _linux_x11_primary_selection_owner_pid() -> int | None:
         owner = display.get_selection_owner(display.intern_atom("PRIMARY"))
         if owner is None:
             return None
+        pid = _linux_x11_window_client_pid(display, owner)
+        if pid:
+            return pid
         pid_atom = display.intern_atom("_NET_WM_PID")
         current = owner
         for _ in range(16):
@@ -179,6 +204,72 @@ def _linux_x11_primary_selection_owner_pid() -> int | None:
         except Exception:
             pass
     return None
+
+
+def _linux_x11_primary_selection_identity(timeout: float = 0.25) -> tuple[int, int] | None:
+    """Return (owner window id, acquisition timestamp) for the X11 PRIMARY selection.
+
+    The ICCCM-mandated TIMESTAMP target reports when the owner acquired
+    PRIMARY. Re-selecting text - even the same text - acquires the selection
+    again with a new timestamp, while a cleared highlight keeps the old one
+    (X11 owners keep serving a selection after the user deselects). That makes
+    the pair a stable identity for "has the user selected anything new since".
+    Returns None when there is no owner or it never answers the request.
+    """
+    import select as select_module
+    import time
+
+    try:
+        from Xlib import X
+        from Xlib.display import Display
+
+        display = Display()
+    except Exception:
+        return None
+    try:
+        primary = display.intern_atom("PRIMARY")
+        owner = display.get_selection_owner(primary)
+        owner_id = int(getattr(owner, "id", 0) or 0)
+        if owner_id == 0:
+            return None
+        timestamp_atom = display.intern_atom("TIMESTAMP")
+        property_atom = display.intern_atom("WISP_SELECTION_TIMESTAMP")
+        screen = display.screen()
+        window = screen.root.create_window(0, 0, 1, 1, 0, screen.root_depth)
+        try:
+            window.convert_selection(primary, timestamp_atom, property_atom, X.CurrentTime)
+            display.flush()
+            deadline = time.monotonic() + timeout
+            while True:
+                while display.pending_events():
+                    ev = display.next_event()
+                    if getattr(ev, "type", None) != X.SelectionNotify:
+                        continue
+                    if int(getattr(getattr(ev, "requestor", None), "id", 0) or 0) != int(window.id):
+                        continue
+                    if int(getattr(ev, "property", 0) or 0) == X.NONE:
+                        return None  # owner refused the TIMESTAMP target
+                    prop = window.get_full_property(property_atom, X.AnyPropertyType)
+                    if prop is None or not len(prop.value):
+                        return None
+                    return owner_id, int(prop.value[0])
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                select_module.select([display.fileno()], [], [], remaining)
+        finally:
+            try:
+                window.destroy()
+                display.flush()
+            except Exception:
+                pass
+    except Exception:
+        return None
+    finally:
+        try:
+            display.close()
+        except Exception:
+            pass
 
 
 def _linux_processes_related(first_pid: int | None, second_pid: int | None) -> bool:

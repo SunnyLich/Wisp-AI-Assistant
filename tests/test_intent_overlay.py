@@ -55,8 +55,8 @@ def test_context_preview_entries_expand_item_sources(monkeypatch):
     )
     try:
         assert overlay._context_preview_entries() == [
-            ("App 1: Notepad", "notepad body"),
-            ("App 2: demo.py", "VS Code paragraph"),
+            ("App 1: Notepad", "notepad body", "ambient", "Notepad"),
+            ("App 2: demo.py", "VS Code paragraph", "ambient", "demo.py"),
         ]
     finally:
         config.CALLER_ROWS[:] = old_rows
@@ -532,8 +532,8 @@ def test_intent_overlay_bottom_context_previews_resize(qapp):
     )
     try:
         assert overlay._context_preview_entries() == [
-            ("App", "This is app context"),
-            ("Browser/Web", "This is browser context"),
+            ("App", "This is app context", "ambient", ""),
+            ("Browser/Web", "This is browser context", "browser", ""),
         ]
         assert overlay._context_preview_height() == (
             intent_overlay._CTX_PREVIEW_TOP + intent_overlay._CTX_PREVIEW_LINE_H * 2
@@ -549,18 +549,18 @@ def test_intent_overlay_bottom_context_previews_resize(qapp):
         ])
 
         assert overlay._context_preview_entries() == [
-            ("Browser/Web", "Browser"),
-            ("Selection", "Selection"),
-            ("Clipboard", "Clipboard"),
+            ("Browser/Web", "Browser", "browser", ""),
+            ("Selection", "Selection", "selection", ""),
+            ("Clipboard", "Clipboard", "clipboard", ""),
         ]
         expanded_h = initial_h + intent_overlay._CTX_PREVIEW_LINE_H
         assert overlay.height() == expanded_h
 
         assert overlay._cycle_context_key("2") is True
         assert overlay._context_preview_entries() == [
-            ("Selection", "Selection"),
-            ("Clipboard", "Clipboard"),
-            ("Memory", "Memory"),
+            ("Selection", "Selection", "selection", ""),
+            ("Clipboard", "Clipboard", "clipboard", ""),
+            ("Memory", "Memory", "memory", ""),
         ]
         assert overlay.height() == expanded_h
     finally:
@@ -602,6 +602,7 @@ def test_intent_overlay_cycles_context_chip(monkeypatch):
         )
         assert overlay.context_choices()[0]["state"] == "off"
         assert overlay.context_choices()[0]["touched"] is True
+        assert intent_overlay._context_chip_token_text(overlay.context_choices()[0]) == "? tok"
 
         overlay.show()
         app.processEvents()
@@ -1209,6 +1210,147 @@ def test_apply_intent_context_choices_updates_caller_policy():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_remove_buttons_remove_rows_and_disable_groups(qapp):
+    """Verify per-row X removal drops sources and an emptied group turns off."""
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[
+            {
+                "id": "ambient",
+                "key": "1",
+                "label": "App",
+                "state": "on",
+                "sources": [
+                    {"label": "Doc A", "preview": "alpha"},
+                    {"label": "Doc B", "preview": "beta"},
+                ],
+            },
+            {"id": "clipboard", "key": "4", "label": "Clipboard", "state": "on", "preview": "Clip"},
+        ]
+    )
+    removed: list[tuple[str, str]] = []
+    overlay.context_source_removed.connect(
+        lambda item_id, source_id: removed.append((item_id, source_id))
+    )
+    try:
+        overlay._remove_context_entry("ambient", "Doc A")
+        assert removed == [("ambient", "Doc A")]
+        assert ("App 1: Doc B", "beta", "ambient", "Doc B") in overlay._context_preview_entries()
+        choices = {c["id"]: c for c in overlay.context_choices()}
+        assert choices["ambient"]["state"] == "on"
+
+        overlay._remove_context_entry("ambient", "Doc B")
+        assert removed == [("ambient", "Doc A"), ("ambient", "Doc B")]
+        choices = {c["id"]: c for c in overlay.context_choices()}
+        assert choices["ambient"]["state"] == "off"
+        assert choices["ambient"]["touched"] is True
+
+        overlay._remove_context_entry("clipboard", "")
+        choices = {c["id"]: c for c in overlay.context_choices()}
+        assert choices["clipboard"]["state"] == "off"
+        assert choices["clipboard"]["touched"] is True
+        assert overlay._context_preview_entries() == []
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_intent_overlay_stale_selection_toggle_skips_interactive_capture(qapp):
+    """Verify enabling a stale Selection chip does not start a new capture."""
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[
+            {
+                "id": "selection",
+                "key": "3",
+                "label": "Selection",
+                "available": True,
+                "state": "off",
+                "stale": True,
+                "tokens": "~12 tok",
+                "preview": "earlier words",
+            }
+        ]
+    )
+    captures: list[str] = []
+    overlay.selection_capture_requested.connect(captures.append)
+    try:
+        assert overlay._cycle_context_key("3") is True
+        qapp.processEvents()
+        selection = overlay.context_choices()[0]
+        assert selection["state"] == "on"
+        assert captures == []
+        assert ("Selection", "earlier words", "selection", "") in overlay._context_preview_entries()
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_intent_overlay_selection_toggle_can_disable_interactive_capture(qapp):
+    """Verify Linux-style Selection chips toggle without requesting a new selection."""
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[
+            {
+                "id": "selection",
+                "key": "3",
+                "label": "Selection",
+                "available": True,
+                "state": "off",
+                "capture_on_enable": False,
+                "tokens": "~12 tok",
+                "preview": "last selected words",
+            }
+        ]
+    )
+    captures: list[str] = []
+    overlay.selection_capture_requested.connect(captures.append)
+    try:
+        assert overlay._cycle_context_key("3") is True
+        qapp.processEvents()
+        selection = overlay.context_choices()[0]
+        assert selection["state"] == "on"
+        assert captures == []
+        assert ("Selection", "last selected words", "selection", "") in overlay._context_preview_entries()
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_intent_overlay_previews_wrap_to_two_lines(qapp):
+    """Verify long context previews paint on two lines and short ones on one."""
+    from PySide6.QtGui import QFontMetrics
+
+    from ui import intent_overlay
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        context_items=[
+            {
+                "id": "clipboard",
+                "key": "4",
+                "label": "Clipboard",
+                "state": "on",
+                "preview": "word " * 60,
+            },
+        ]
+    )
+    try:
+        rows = overlay._context_preview_layout()
+        assert len(rows) == 1
+        assert len(rows[0][1]) == 2
+        assert overlay._context_preview_height() == (
+            intent_overlay._CTX_PREVIEW_TOP + intent_overlay._CTX_PREVIEW_LINE_H * 2
+        )
+        fm = QFontMetrics(overlay._preview_value_font())
+        assert overlay._preview_wrap_lines(fm, "tiny", 400) == ["tiny"]
+        two = overlay._preview_wrap_lines(fm, "alpha beta " * 40, 120)
+        assert len(two) == 2
+        assert two[0]
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
+
+
 def test_selection_context_chip_can_start_capture_when_empty(qapp):
     """Verify empty Selection metadata does not block the capture chip."""
     from ui.intent_overlay import IntentOverlay

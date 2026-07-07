@@ -225,6 +225,7 @@ def _hotkey_specs_from_config(config: Any) -> list[tuple[str, str, dict]]:
         ("HOTKEY_CLEAR_CONTEXT", "clear_context"),
         ("HOTKEY_SNIP", "snip"),
         ("HOTKEY_READ_SELECTION_ALOUD", "read_selection_aloud"),
+        ("HOTKEY_VOICE_LIVE", "voice_live"),
     ):
         combo = getattr(config, attr, "")
         if combo:
@@ -573,6 +574,7 @@ def main() -> int:
             on_read_selection_aloud=lambda: emit_hotkey("read_selection_aloud"),
             on_voice_start=lambda: emit_hotkey("voice_start"),
             on_voice_stop=lambda: emit_hotkey("voice_stop"),
+            on_voice_live=lambda: emit_hotkey("voice_live"),
         )
         started = bool(listener.start())
         _dbg(f"hotkey registration {'started' if started else 'FAILED'} "
