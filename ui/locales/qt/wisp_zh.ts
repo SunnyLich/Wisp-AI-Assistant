@@ -3517,6 +3517,10 @@ Continue?</source>
       <translation>Kokoro 已安装，但 CUDA Torch 验证失败。</translation>
     </message>
     <message>
+      <source>Kokoro installed, but CUDA Torch verification failed: {message}</source>
+      <translation>Kokoro 已安装，但 CUDA Torch 验证失败：{message}</translation>
+    </message>
+    <message>
       <source>Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.</source>
       <translation>Kokoro 已安装，但本地语音准备失败：{exc}。请连接互联网并点击一次 Test TTS 来完成设置。</translation>
     </message>

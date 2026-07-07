@@ -30,6 +30,7 @@ KOKORO_EN_MODEL_URL = (
 )
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
 PYPI_WHEEL_INDEX = "https://pypi.org/simple"
+KOKORO_CUDA_TORCH_PACKAGE = "torch==2.11.0+cu128"
 OPTIONAL_AI_COMPAT_PACKAGES = [
     "protobuf==6.33.2",
     "tokenizers==0.22.2",
@@ -60,10 +61,19 @@ KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
     PYTORCH_CUDA_WHEEL_INDEX,
     "--extra-index-url",
     PYPI_WHEEL_INDEX,
-    "torch==2.11.0+cu128",
+    KOKORO_CUDA_TORCH_PACKAGE,
     *OPTIONAL_AI_COMPAT_PACKAGES,
 ]
-KOKORO_GPU_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
+# pip --target cannot see packages already staged in the target dir, so the
+# Kokoro phase re-resolves kokoro's torch dependency and would overwrite the
+# staged CUDA build with PyPI's CPU wheel. Pin the exact +cu128 build here
+# too; pip reuses the wheel cached during the Torch phase.
+KOKORO_GPU_INSTALL_PACKAGES = [
+    "--extra-index-url",
+    PYTORCH_CUDA_WHEEL_INDEX,
+    KOKORO_CUDA_TORCH_PACKAGE,
+    *KOKORO_BASE_INSTALL_PACKAGES,
+]
 KOKORO_REMOVE_ARTIFACTS = [
     "kokoro",
     "kokoro-*.dist-info",
@@ -446,6 +456,8 @@ def kokoro_install_mode_for_device(device: str | None) -> str:
 
 def kokoro_install_packages(device: str | None) -> list[str]:
     """Return packages/flags for the selected Kokoro device install."""
+    if kokoro_install_mode_for_device(device) == "gpu":
+        return list(KOKORO_GPU_INSTALL_PACKAGES)
     return list(KOKORO_BASE_INSTALL_PACKAGES)
 
 
@@ -465,6 +477,7 @@ def kokoro_torch_status() -> dict[str, object]:
         "version": "",
         "cuda_version": "",
         "cuda_available": False,
+        "cuda_error": "",
         "device": "",
         "error": "",
         "valid": False,
@@ -489,9 +502,28 @@ def kokoro_torch_status() -> dict[str, object]:
                 status["device"] = str(torch.cuda.get_device_name(0))
             except Exception:
                 status["device"] = "CUDA device"
+        else:
+            # is_available() hides the reason (CPU-only wheel, driver too
+            # old, ...); a forced init raises it so Settings can show it.
+            try:
+                torch.cuda.init()
+            except Exception as exc:
+                status["cuda_error"] = f"{type(exc).__name__}: {exc}"
     except Exception as exc:
         status["error"] = f"{type(exc).__name__}: {exc}"
     return status
+
+
+def kokoro_cuda_failure_detail(status: dict[str, object]) -> str:
+    """Describe a failed CUDA verification with the installed Torch's identity."""
+    version = str(status.get("version") or "") or "unknown"
+    cuda_version = str(status.get("cuda_version") or "")
+    build = f"CUDA {cuda_version} build" if cuda_version else "CPU-only build"
+    detail = f"torch {version} ({build})"
+    cuda_error = str(status.get("cuda_error") or "")
+    if cuda_error:
+        detail = f"{detail}: {cuda_error}"
+    return detail
 
 
 def kokoro_torch_status_subprocess() -> dict[str, object]:
@@ -503,6 +535,7 @@ def kokoro_torch_status_subprocess() -> dict[str, object]:
             "version": "",
             "cuda_version": "",
             "cuda_available": False,
+            "cuda_error": "",
             "device": "",
             "error": "",
             "valid": False,

@@ -266,6 +266,7 @@ def test_setup_health_voice_sources_have_catalog_translations() -> None:
         "Kokoro installed, but runtime verification failed: {message}",
         "Kokoro installed, but Torch verification failed: {message}",
         "Kokoro installed, but CUDA Torch verification failed.",
+        "Kokoro installed, but CUDA Torch verification failed: {message}",
         "Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.",
         "Wisp will reinstall ElevenLabs support in its user-writable optional packages folder.\n\nPackage: {package}\n\nUse this when the packaged exe skipped ElevenLabs because the build path was too long. The install may need internet access and will survive Wisp rebuilds.\n\nContinue?",
         "ElevenLabs reinstalled. Add your API key, then click Test TTS.",

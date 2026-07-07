@@ -1625,7 +1625,10 @@ def test_kokoro_post_install_fails_when_required_gpu_is_unavailable(monkeypatch)
     )
 
     assert ok is False
-    assert message == "Kokoro installed, but CUDA Torch verification failed."
+    assert message == (
+        "Kokoro installed, but CUDA Torch verification failed: "
+        "torch 2.12.1+cpu (CPU-only build)"
+    )
 
 
 def test_kokoro_post_install_verifies_runtime_import(monkeypatch):
@@ -1735,7 +1738,7 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
         assert captured["remove_artifacts"] == optional_deps.kokoro_remove_artifacts()
         assert "torch==2.11.0+cu128" in captured["pre_install_packages"]
-        assert "torch==2.11.0+cu128" not in captured["packages"]
+        assert "torch==2.11.0+cu128" in captured["packages"]
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():

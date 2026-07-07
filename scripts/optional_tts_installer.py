@@ -200,7 +200,8 @@ def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Pa
                 detail = str(torch_status.get("error") or "Torch verification failed.")
                 return False, f"Kokoro installed, but Torch verification failed: {detail}"
             if require_gpu and not torch_status.get("cuda_available"):
-                return False, "Kokoro installed, but CUDA Torch verification failed."
+                detail = optional_deps.kokoro_cuda_failure_detail(torch_status)
+                return False, f"Kokoro installed, but CUDA Torch verification failed: {detail}"
         except Exception as exc:
             return False, f"Kokoro installed, but local voice preparation failed: {type(exc).__name__}: {exc}"
     elif post_install == "stt_prepare":

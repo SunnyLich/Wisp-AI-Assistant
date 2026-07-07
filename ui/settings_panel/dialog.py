@@ -3932,8 +3932,9 @@ class SettingsDialog(QDialog):
                 detail = str(torch_status.get("error") or "Torch verification failed.")
                 return False, f"Kokoro installed, but Torch verification failed: {detail}"
             if require_gpu and not torch_status.get("cuda_available"):
-                write_log("[kokoro install] CUDA Torch verification failed.")
-                return False, "Kokoro installed, but CUDA Torch verification failed."
+                detail = optional_deps.kokoro_cuda_failure_detail(torch_status)
+                write_log(f"[kokoro install] CUDA Torch verification failed: {detail}")
+                return False, f"Kokoro installed, but CUDA Torch verification failed: {detail}"
             if require_gpu:
                 return True, "Kokoro GPU support installed and local voice is ready."
             return True, "Kokoro installed and local voice is ready."
@@ -8970,6 +8971,7 @@ def _translate_status_message(message: str) -> str:
         (r"^Kokoro install failed: (?P<message>.+)$", "Kokoro install failed: {message}"),
         (r"^Kokoro installed, but runtime verification failed: (?P<message>.+)$", "Kokoro installed, but runtime verification failed: {message}"),
         (r"^Kokoro installed, but Torch verification failed: (?P<message>.+)$", "Kokoro installed, but Torch verification failed: {message}"),
+        (r"^Kokoro installed, but CUDA Torch verification failed: (?P<message>.+)$", "Kokoro installed, but CUDA Torch verification failed: {message}"),
         (r"^ElevenLabs install failed: (?P<message>.+)$", "ElevenLabs install failed: {message}"),
         (r"^STT install failed: (?P<message>.+)$", "STT install failed: {message}"),
         (r"^STT installed, but model verification failed: (?P<message>.+)$", "STT installed, but model verification failed: {message}"),

@@ -3517,6 +3517,10 @@ En Windows, Kokoro también puede necesitar eSpeak NG instalado por separado si 
       <translation>Kokoro está instalado, pero falló la verificación de CUDA Torch.</translation>
     </message>
     <message>
+      <source>Kokoro installed, but CUDA Torch verification failed: {message}</source>
+      <translation>Kokoro está instalado, pero falló la verificación de CUDA Torch: {message}</translation>
+    </message>
+    <message>
       <source>Kokoro installed, but local voice preparation failed: {exc}. Connect to the internet and click Test TTS once to finish setup.</source>
       <translation>Kokoro está instalado, pero falló la preparación de la voz local: {exc}. Conéctate a internet y haz clic una vez en Test TTS para terminar la configuración.</translation>
     </message>

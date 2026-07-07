@@ -762,7 +762,15 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
         *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
     ]
     assert optional_deps.KOKORO_PACKAGE in packages
-    assert "torch==2.11.0+cu128" not in packages
+    # kokoro depends on torch and pip --target cannot see the staged CUDA
+    # build, so the Kokoro phase must pin the same +cu128 build itself.
+    assert packages == [
+        "--extra-index-url",
+        optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
+        "torch==2.11.0+cu128",
+        *optional_deps.KOKORO_BASE_INSTALL_PACKAGES,
+    ]
+    assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages("cpu")
     assert any(str(item).endswith("/en_core_web_sm-3.8.0-py3-none-any.whl") for item in packages)
 
 
@@ -774,7 +782,7 @@ def test_kokoro_auto_install_selects_gpu_when_cuda_detected(monkeypatch):
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "gpu"
     assert "torch==2.11.0+cu128" in optional_deps.kokoro_torch_install_packages("auto")
-    assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages("auto")
+    assert "torch==2.11.0+cu128" in optional_deps.kokoro_install_packages("auto")
 
 
 def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
