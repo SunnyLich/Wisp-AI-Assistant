@@ -261,6 +261,34 @@ def _remove_active_packages_replaced_by_stage(staging: Path, target: Path) -> li
     return sorted(set(removed))
 
 
+def _move_staged_entry(source: Path, destination: Path) -> None:
+    """Move one staged entry into the target, merging shared namespace dirs.
+
+    Replacing a directory wholesale is right for regular packages (their old
+    artifacts were already removed), but implicit-namespace dirs like google/
+    hold members from several distributions — replacing google/ while
+    installing protobuf would delete google-genai and google-auth.
+    """
+
+    def _plain_dir(path: Path) -> bool:
+        return path.is_dir() and not path.is_symlink()
+
+    if (
+        _plain_dir(source)
+        and _plain_dir(destination)
+        and not source.name.endswith(".dist-info")
+        and not (source / "__init__.py").exists()
+        and not (destination / "__init__.py").exists()
+    ):
+        for child in sorted(source.iterdir(), key=lambda p: p.name.lower()):
+            _move_staged_entry(child, destination / child.name)
+        shutil.rmtree(source, ignore_errors=True)
+        return
+    if destination.exists():
+        _remove_path(destination)
+    shutil.move(str(source), str(destination))
+
+
 def _apply_staging(staging: Path, target: Path, log, prefix: str) -> None:
     if not staging.is_dir():
         raise RuntimeError(f"Staged package directory is missing: {staging}")
@@ -270,10 +298,7 @@ def _apply_staging(staging: Path, target: Path, log, prefix: str) -> None:
         _log(log, prefix, f"Removed active package artifacts before staged apply: {', '.join(removed)}")
     moved: list[str] = []
     for child in sorted(staging.iterdir(), key=lambda p: p.name.lower()):
-        destination = target / child.name
-        if destination.exists():
-            _remove_path(destination)
-        shutil.move(str(child), str(destination))
+        _move_staged_entry(child, target / child.name)
         moved.append(child.name)
     _log(log, prefix, f"Applied staged package files: {', '.join(moved) if moved else '(none)'}")
 

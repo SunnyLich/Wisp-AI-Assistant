@@ -301,14 +301,45 @@ def _dist_info_top_level_names(path: Path, package: str) -> list[str]:
     return sorted(names)
 
 
+def _namespace_owned_paths(root: Path, dist_info: Path, name: str) -> list[Path]:
+    """Return the paths one distribution's RECORD owns inside a namespace dir."""
+    try:
+        record = (dist_info / "RECORD").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    members: set[str] = set()
+    for line in record.splitlines():
+        rel = line.split(",", 1)[0].strip().replace("\\", "/")
+        if not rel.startswith(f"{name}/"):
+            continue
+        member = rel[len(name) + 1 :].split("/", 1)[0]
+        if member:
+            members.add(member)
+    return [root / name / member for member in sorted(members)]
+
+
 def _optional_package_artifact_paths(root: Path, package: str, dist_infos: list[Path]) -> list[Path]:
     """Return package artifacts associated with dist-info metadata."""
     paths: list[Path] = []
     seen: set[Path] = set()
     for dist_info in dist_infos:
         for name in _dist_info_top_level_names(dist_info, package):
+            top = root / name
+            if top.is_dir() and not (top / "__init__.py").exists():
+                # Implicit namespace dir (google/, nvidia/, ...) shared by
+                # several distributions: protobuf's top_level.txt says
+                # "google", but deleting google/ wholesale would also remove
+                # google-genai and google-auth. Remove only the members this
+                # distribution's RECORD lists.
+                owned = _namespace_owned_paths(root, dist_info, name)
+                if owned:
+                    for candidate in owned:
+                        if candidate not in seen:
+                            seen.add(candidate)
+                            paths.append(candidate)
+                    continue
             for candidate in (
-                root / name,
+                top,
                 root / f"{name}.py",
                 root / f"{name}.libs",
             ):

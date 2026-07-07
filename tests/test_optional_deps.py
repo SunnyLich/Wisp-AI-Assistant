@@ -226,6 +226,34 @@ def test_remove_stale_optional_package_artifacts_removes_mismatched_pin(monkeypa
     assert keep_dist_info.exists()
 
 
+def test_remove_stale_artifacts_keeps_other_namespace_members(monkeypatch, tmp_path):
+    """Clearing stale protobuf must not delete google-genai from google/."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    (target / "google" / "protobuf").mkdir(parents=True)
+    (target / "google" / "_upb").mkdir()
+    (target / "google" / "genai").mkdir()
+    dist_info = target / "protobuf-6.30.0.dist-info"
+    dist_info.mkdir()
+    (dist_info / "METADATA").write_text("Name: protobuf\nVersion: 6.30.0\n", encoding="utf-8")
+    (dist_info / "top_level.txt").write_text("google\n", encoding="utf-8")
+    (dist_info / "RECORD").write_text(
+        "google/protobuf/__init__.py,,\n"
+        "google/_upb/_message.pyd,,\n"
+        "protobuf-6.30.0.dist-info/METADATA,,\n",
+        encoding="utf-8",
+    )
+
+    removed = optional_deps.remove_stale_optional_package_artifacts(["protobuf==6.33.2"])
+
+    assert sorted(removed) == ["_upb", "protobuf", "protobuf-6.30.0.dist-info"]
+    assert not (target / "google" / "protobuf").exists()
+    assert not (target / "google" / "_upb").exists()
+    assert (target / "google" / "genai").exists()
+
+
 def test_optional_deps_frozen_install_uses_bundled_uv(monkeypatch, tmp_path):
     """Packaged launches must not run Wisp.exe as `python -m pip`."""
     from core import optional_deps
@@ -648,6 +676,45 @@ def test_optional_install_apply_replaces_active_av_artifacts(tmp_path):
     assert not old_dist.exists()
     assert not (target / "av.libs").exists()
     assert (target / "av-17.0.0.dist-info").exists()
+    assert not staging.exists() or not any(staging.iterdir())
+
+
+def test_optional_install_apply_merges_shared_namespace_dirs(tmp_path):
+    """Applying staged protobuf must not delete google-genai from google/."""
+    from scripts import optional_tts_installer
+
+    target = tmp_path / "python_packages"
+    genai = target / "google" / "genai"
+    genai.mkdir(parents=True)
+    (genai / "__init__.py").write_text("", encoding="utf-8")
+    genai_dist = target / "google_genai-2.10.0.dist-info"
+    genai_dist.mkdir()
+    (genai_dist / "METADATA").write_text("Name: google-genai\nVersion: 2.10.0\n", encoding="utf-8")
+    old_protobuf = target / "google" / "protobuf"
+    old_protobuf.mkdir()
+    (old_protobuf / "__init__.py").write_text("old", encoding="utf-8")
+    old_protobuf_dist = target / "protobuf-6.30.0.dist-info"
+    old_protobuf_dist.mkdir()
+    (old_protobuf_dist / "METADATA").write_text("Name: protobuf\nVersion: 6.30.0\n", encoding="utf-8")
+    (old_protobuf_dist / "top_level.txt").write_text("google\n", encoding="utf-8")
+    (old_protobuf_dist / "RECORD").write_text("google/protobuf/__init__.py,,\n", encoding="utf-8")
+
+    staging = tmp_path / "stage"
+    new_protobuf = staging / "google" / "protobuf"
+    new_protobuf.mkdir(parents=True)
+    (new_protobuf / "__init__.py").write_text("new", encoding="utf-8")
+    new_protobuf_dist = staging / "protobuf-6.33.2.dist-info"
+    new_protobuf_dist.mkdir()
+    (new_protobuf_dist / "METADATA").write_text("Name: protobuf\nVersion: 6.33.2\n", encoding="utf-8")
+
+    with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+        optional_tts_installer._apply_staging(staging, target, log, "[kokoro install]")
+
+    assert (target / "google" / "protobuf" / "__init__.py").read_text(encoding="utf-8") == "new"
+    assert (target / "google" / "genai" / "__init__.py").exists()
+    assert genai_dist.exists()
+    assert not old_protobuf_dist.exists()
+    assert (target / "protobuf-6.33.2.dist-info").exists()
     assert not staging.exists() or not any(staging.iterdir())
 
 
