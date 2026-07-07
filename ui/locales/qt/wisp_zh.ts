@@ -5057,5 +5057,97 @@ Continue?</translation>
       <source>removing previous install</source>
       <translation>removing previous install</translation>
     </message>
+    <message>
+      <source>Wisp {display_name} apply</source>
+      <translation>Wisp 应用 {display_name}</translation>
+    </message>
+    <message>
+      <source>Applying {display_name}</source>
+      <translation>正在应用 {display_name}</translation>
+    </message>
+    <message>
+      <source>Preparing to apply optional speech packages.</source>
+      <translation>正在准备应用可选语音包。</translation>
+    </message>
+    <message>
+      <source>{display_name} applied successfully.</source>
+      <translation>{display_name} 已成功应用。</translation>
+    </message>
+    <message>
+      <source>{display_name} apply failed.</source>
+      <translation>{display_name} 应用失败。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is waiting for Wisp to close.</source>
+      <translation>{display_name} 暂存安装正在等待 Wisp 关闭。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is applying package files.</source>
+      <translation>{display_name} 暂存安装正在应用包文件。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is verifying package files.</source>
+      <translation>{display_name} 暂存安装正在验证包文件。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install failed: {message}</source>
+      <translation>{display_name} 暂存安装失败：{message}</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp and apply them.</source>
+      <translation>{display_name} 软件包已暂存。点击立即重启应用以关闭 Wisp 并应用它们。</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen.</source>
+      <translation>{display_name} 软件包已暂存。点击立即重启应用以关闭 Wisp、替换锁定文件、验证安装并重新打开。</translation>
+    </message>
+    <message>
+      <source>{display_name} packages stay staged and will be applied the next time Wisp restarts.</source>
+      <translation>{display_name} 软件包会保持暂存，并在 Wisp 下次重启时应用。</translation>
+    </message>
+    <message>
+      <source>{display_name} installed and model ready: {summary}.</source>
+      <translation>{display_name} 已安装且模型就绪：{summary}。</translation>
+    </message>
+    <message>
+      <source>{display_name} package files match this Wisp release.</source>
+      <translation>{display_name} 包文件与此 Wisp 版本匹配。</translation>
+    </message>
+    <message>
+      <source>{display_name} package files do not match this Wisp release: {message}.</source>
+      <translation>{display_name} 包文件与此 Wisp 版本不匹配：{message}。</translation>
+    </message>
+    <message>
+      <source>STT package install failed: {message}</source>
+      <translation>STT 包安装失败：{message}</translation>
+    </message>
+    <message>
+      <source>STT package installed, but model download/load failed: {message}</source>
+      <translation>STT 包已安装，但模型下载/加载失败：{message}</translation>
+    </message>
+    <message>
+      <source>STT package installed; downloading or loading Whisper model {model}.</source>
+      <translation>STT 包已安装；正在下载或加载 Whisper 模型 {model}。</translation>
+    </message>
+    <message>
+      <source>Kokoro package install failed: {message}</source>
+      <translation>Kokoro 包安装失败：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed, but voice asset preparation failed: {message}</source>
+      <translation>Kokoro 包已安装，但语音资源准备失败：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed; {detail}.</source>
+      <translation>Kokoro 包已安装；{detail}。</translation>
+    </message>
+    <message>
+      <source>verifying runtime import</source>
+      <translation>正在验证运行时导入</translation>
+    </message>
+    <message>
+      <source>verifying Torch</source>
+      <translation>正在验证 Torch</translation>
+    </message>
   </context>
 </TS>

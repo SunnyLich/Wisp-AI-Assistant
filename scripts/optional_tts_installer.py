@@ -22,11 +22,56 @@ STAGED_APPLY_WAIT_SECONDS = 24 * 60 * 60.0
 # A staged apply that keeps failing is retried at later restarts, but only
 # this many times before the staging is discarded for good.
 STAGED_APPLY_MAX_ATTEMPTS = 3
+STAGED_FILE_RETRY_SECONDS = 12.0
+STAGED_FILE_RETRY_INTERVAL_SECONDS = 0.4
+
+
+def _safe_console_print(line: str) -> None:
+    """Print installer progress without crashing on legacy Windows code pages."""
+    text = str(line)
+    try:
+        print(text, flush=True)
+        return
+    except UnicodeEncodeError:
+        stream = sys.stdout
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        try:
+            print(safe, flush=True)
+        except Exception:
+            pass
+
+
+def _plan_app_language(plan: dict[str, Any]) -> str:
+    return str(plan.get("app_language") or os.environ.get("APP_LANGUAGE") or "").strip()
+
+
+def _installer_env_for_plan(plan: dict[str, Any]) -> dict[str, str]:
+    from core import optional_deps
+
+    env = optional_deps.pip_install_env()
+    language = _plan_app_language(plan)
+    if language:
+        env["APP_LANGUAGE"] = language
+    return env
+
+
+def _apply_plan_language(plan: dict[str, Any]) -> None:
+    language = _plan_app_language(plan)
+    if not language:
+        return
+    os.environ["APP_LANGUAGE"] = language
+    try:
+        import config
+
+        config.APP_LANGUAGE = language
+    except Exception:
+        pass
 
 
 def _log(handle, prefix: str, message: str) -> None:
     line = f"{prefix} {message}"
-    print(line, flush=True)
+    _safe_console_print(line)
     try:
         handle.write(line + "\n")
         handle.flush()
@@ -60,6 +105,19 @@ def _write_status(
         tmp.replace(path)
     except Exception:
         pass
+
+
+def _format_spec_status_message(status: dict[str, object]) -> str:
+    message = str(status.get("message") or "").strip()
+    if message:
+        return message
+    display_name = str(status.get("display_name") or "Optional package")
+    return f"{display_name} package files do not match this Wisp release."
+
+
+def _spec_key_for_display_name(display_name: str) -> str:
+    key = display_name.strip().lower().replace(" ", "-")
+    return "live_voice" if key == "live-voice" else key
 
 
 def _load_plan(path: Path) -> dict[str, Any]:
@@ -196,20 +254,34 @@ def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Pa
     optional_deps.add_optional_packages_to_path()
     display_name = str(plan.get("display_name") or "Optional package")
     post_install = str(plan.get("post_install") or "")
+    spec_key = str(plan.get("spec_key") or _spec_key_for_display_name(display_name))
+    spec_device = plan.get("kokoro_install_device")
+    if spec_device is None and post_install == "kokoro_prepare":
+        spec_device = "cuda" if bool(plan.get("kokoro_require_gpu")) else "cpu"
+    try:
+        spec_status = optional_deps.optional_package_spec_status(spec_key, device=str(spec_device) if spec_device is not None else None)
+    except Exception:
+        spec_status = {}
+    if spec_status and spec_status.get("valid") is not True:
+        detail = _format_spec_status_message(spec_status)
+        return False, f"{display_name} package install failed: {detail}"
     if post_install == "kokoro_prepare":
         voice = str(plan.get("kokoro_voice") or "af_heart")
         require_gpu = bool(plan.get("kokoro_require_gpu"))
         try:
             from core import tts
 
+            _write_status(status_path, ok=None, message="Kokoro package installed; preparing local voice assets.")
             _log(log, prefix, f"Preparing Kokoro model and voice assets for {voice}.")
             paths = tts.prepare_kokoro_assets(voice=voice)
             for name, path in sorted(paths.items()):
                 _log(log, prefix, f"Prepared {name}: {path}")
+            _write_status(status_path, ok=None, message="Kokoro package installed; verifying runtime import.")
             runtime_status = optional_deps.kokoro_runtime_import_status()
             if runtime_status.get("error") or runtime_status.get("valid") is False:
                 detail = str(runtime_status.get("error") or "Kokoro runtime import failed.")
                 return False, f"Kokoro installed, but runtime verification failed: {detail}"
+            _write_status(status_path, ok=None, message="Kokoro package installed; verifying Torch.")
             torch_status = optional_deps.kokoro_torch_status()
             if torch_status.get("error") or torch_status.get("valid") is False:
                 detail = str(torch_status.get("error") or "Torch verification failed.")
@@ -218,17 +290,17 @@ def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Pa
                 detail = optional_deps.kokoro_cuda_failure_detail(torch_status)
                 return False, f"Kokoro installed, but CUDA Torch verification failed: {detail}"
         except Exception as exc:
-            return False, f"Kokoro installed, but local voice preparation failed: {type(exc).__name__}: {exc}"
+            return False, f"Kokoro package installed, but voice asset preparation failed: {type(exc).__name__}: {exc}"
     elif post_install == "stt_prepare":
         model = str(plan.get("stt_model") or "base")
         device = str(plan.get("stt_device") or "auto")
         compute_type = str(plan.get("stt_compute_type") or "int8")
-        _write_status(status_path, ok=None, message=f"Installing STT: downloading or loading Whisper model {model}.")
+        _write_status(status_path, ok=None, message=f"STT package installed; downloading or loading Whisper model {model}.")
         _log(log, prefix, f"Downloading or loading STT model {model} on {device} ({compute_type}).")
         status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
         if status.get("error") or status.get("valid") is False:
             detail = str(status.get("error") or "STT model verification failed.")
-            return False, f"STT installed, but model verification failed: {detail}"
+            return False, f"STT package installed, but model download/load failed: {detail}"
         resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
         return True, f"STT installed and model ready: {resolved}."
 
@@ -243,10 +315,25 @@ def _path_from_plan(plan: dict[str, Any], key: str) -> Path:
 
 
 def _remove_path(path: Path) -> None:
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-    else:
-        path.unlink(missing_ok=True)
+    def _remove() -> None:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+
+    _retry_file_operation(_remove)
+
+
+def _retry_file_operation(operation) -> None:
+    deadline = time.monotonic() + STAGED_FILE_RETRY_SECONDS
+    while True:
+        try:
+            operation()
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(STAGED_FILE_RETRY_INTERVAL_SECONDS)
 
 
 def _remove_active_packages_replaced_by_stage(staging: Path, target: Path) -> list[str]:
@@ -301,21 +388,84 @@ def _move_staged_entry(source: Path, destination: Path) -> None:
         return
     if destination.exists():
         _remove_path(destination)
-    shutil.move(str(source), str(destination))
+    _retry_file_operation(lambda: shutil.move(str(source), str(destination)))
 
 
 def _apply_staging(staging: Path, target: Path, log, prefix: str) -> None:
     if not staging.is_dir():
         raise RuntimeError(f"Staged package directory is missing: {staging}")
-    target.mkdir(parents=True, exist_ok=True)
-    removed = _remove_active_packages_replaced_by_stage(staging, target)
+    target_parent = target.parent
+    target_parent.mkdir(parents=True, exist_ok=True)
+    stamp = f"{int(time.time())}-{os.getpid()}"
+    replacement = target_parent / f".{target.name}.replacement-{stamp}"
+    backup = target_parent / f".{target.name}.backup-{stamp}"
+    if replacement.exists():
+        shutil.rmtree(replacement, ignore_errors=True)
+    if target.exists():
+        shutil.copytree(target, replacement, symlinks=True)
+        _log(log, prefix, f"Prepared replacement package folder from active install: {replacement}")
+    else:
+        replacement.mkdir(parents=True, exist_ok=True)
+        _log(log, prefix, f"Prepared new replacement package folder: {replacement}")
+    removed = _remove_active_packages_replaced_by_stage(staging, replacement)
     if removed:
         _log(log, prefix, f"Removed active package artifacts before staged apply: {', '.join(removed)}")
     moved: list[str] = []
     for child in sorted(staging.iterdir(), key=lambda p: p.name.lower()):
-        _move_staged_entry(child, target / child.name)
+        _move_staged_entry(child, replacement / child.name)
         moved.append(child.name)
-    _log(log, prefix, f"Applied staged package files: {', '.join(moved) if moved else '(none)'}")
+    _log(log, prefix, f"Prepared staged package files: {', '.join(moved) if moved else '(none)'}")
+    target_moved = False
+    try:
+        if target.exists():
+            _retry_file_operation(lambda: target.rename(backup))
+            target_moved = True
+            _log(log, prefix, f"Moved active package folder aside: {backup}")
+        _retry_file_operation(lambda: replacement.rename(target))
+        _log(log, prefix, "Activated replacement package folder.")
+    except Exception:
+        if target_moved and not target.exists() and backup.exists():
+            try:
+                backup.rename(target)
+                _log(log, prefix, "Restored previous package folder after failed apply.")
+            except Exception as rollback_exc:  # noqa: BLE001
+                _log(log, prefix, f"Failed to restore previous package folder: {type(rollback_exc).__name__}: {rollback_exc}")
+        shutil.rmtree(replacement, ignore_errors=True)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+
+
+def _launch_apply_status_window(
+    display_name: str,
+    status_path: Path | None,
+    log_path: Path,
+    *,
+    app_language: str = "",
+) -> None:
+    if status_path is None:
+        return
+    try:
+        from core import updater
+
+        command = [
+            sys.executable,
+            "-m",
+            "runtime.workers.optional_apply_status_window",
+            "--display-name",
+            display_name,
+            "--status-path",
+            str(status_path),
+            "--log-path",
+            str(log_path),
+        ]
+        env = None
+        if app_language:
+            command.extend(["--language", app_language])
+            env = os.environ.copy()
+            env["APP_LANGUAGE"] = app_language
+        updater.launch_detached_helper(command, cwd=ROOT, env=env)
+    except Exception:
+        pass
 
 
 def _restart_wisp(log, prefix: str) -> None:
@@ -330,6 +480,7 @@ def _run_staged_apply(plan_path: Path) -> int:
     from core import updater
 
     plan = _load_plan(plan_path)
+    _apply_plan_language(plan)
     display_name = str(plan.get("display_name") or "Optional package")
     prefix = f"[{display_name.lower()} install]"
     log_path = _path_from_plan(plan, "log_path")
@@ -348,6 +499,7 @@ def _run_staged_apply(plan_path: Path) -> int:
     consumed = False
     try:
         with log_path.open("a", encoding="utf-8") as log:
+            _launch_apply_status_window(display_name, status_path, log_path, app_language=_plan_app_language(plan))
             _write_status(
                 status_path,
                 ok=None,
@@ -382,9 +534,10 @@ def _run_staged_apply(plan_path: Path) -> int:
             attempts += 1
             plan["apply_attempts"] = attempts
             _write_plan(plan_path, plan)
-            _write_status(status_path, ok=None, message=f"{display_name} staged install is replacing package files.")
+            _write_status(status_path, ok=None, message=f"{display_name} staged install is applying package files.")
             _apply_staging(staging_path, _path_from_plan(plan, "target_path"), log, prefix)
             consumed = True
+            _write_status(status_path, ok=None, message=f"{display_name} staged install is verifying package files.")
             ok, message = _post_install_result(log, prefix, plan, status_path)
             _log(log, prefix, message)
             _write_status(status_path, ok=ok, message=message)
@@ -397,11 +550,13 @@ def _run_staged_apply(plan_path: Path) -> int:
     except Exception as exc:  # noqa: BLE001 - helper failures must be visible in status/logs
         give_up = consumed or attempts >= STAGED_APPLY_MAX_ATTEMPTS
         message = f"{display_name} staged install failed: {type(exc).__name__}: {exc}"
+        extra: dict[str, object] | None = None
         if not give_up:
             message = f"{message} Wisp will retry at the next restart."
+            extra = {"restart_apply": True}
         with log_path.open("a", encoding="utf-8") as log:
             _log(log, prefix, message)
-            _write_status(status_path, ok=False, message=message)
+            _write_status(status_path, ok=False, message=message, extra=extra)
             if wisp_closed and reopen:
                 try:
                     _restart_wisp(log, prefix)
@@ -422,12 +577,17 @@ def _slug(value: str) -> str:
 
 
 def _launch_staged_apply(plan_path: Path) -> None:
-    from core import optional_deps, updater
+    from core import updater
+
+    try:
+        plan = _load_plan(plan_path)
+    except Exception:
+        plan = {}
 
     updater.launch_detached_helper(
         [sys.executable, "-m", "runtime.workers.optional_speech_installer", "--apply-plan", str(plan_path)],
         cwd=ROOT,
-        env=optional_deps.pip_install_env(),
+        env=_installer_env_for_plan(plan),
     )
 
 
@@ -435,7 +595,10 @@ def pending_apply_plan_paths() -> list[Path]:
     """Return staged apply plans recorded next to the optional install logs."""
     from core import optional_deps
 
-    bases = [optional_deps.OPTIONAL_PACKAGES_DIR / "_logs"]
+    bases = [
+        optional_deps.OPTIONAL_PACKAGES_DIR.parent / "installers",
+        optional_deps.OPTIONAL_PACKAGES_DIR / "_logs",
+    ]
     run_root = os.environ.get("WISP_RUN_LOG_DIR")
     if run_root:
         bases.append(Path(run_root).expanduser() / "installers")
@@ -568,6 +731,7 @@ def main() -> int:
 
     plan_path = Path(args.plan).expanduser().resolve()
     plan = _load_plan(plan_path)
+    _apply_plan_language(plan)
     display_name = str(plan.get("display_name") or "Optional package")
     remove_artifacts = _package_list(plan, "remove_artifacts")
     pre_install_packages = _package_list(plan, "pre_install_packages")

@@ -5057,5 +5057,97 @@ Continue?</translation>
       <source>removing previous install</source>
       <translation>removing previous install</translation>
     </message>
+    <message>
+      <source>Wisp {display_name} apply</source>
+      <translation>Aplicacion de {display_name} de Wisp</translation>
+    </message>
+    <message>
+      <source>Applying {display_name}</source>
+      <translation>Aplicando {display_name}</translation>
+    </message>
+    <message>
+      <source>Preparing to apply optional speech packages.</source>
+      <translation>Preparando la aplicacion de paquetes de voz opcionales.</translation>
+    </message>
+    <message>
+      <source>{display_name} applied successfully.</source>
+      <translation>{display_name} aplicado correctamente.</translation>
+    </message>
+    <message>
+      <source>{display_name} apply failed.</source>
+      <translation>Fallo la aplicacion de {display_name}.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is waiting for Wisp to close.</source>
+      <translation>La instalacion preparada de {display_name} esta esperando a que Wisp se cierre.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is applying package files.</source>
+      <translation>La instalacion preparada de {display_name} esta aplicando los archivos del paquete.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is verifying package files.</source>
+      <translation>La instalacion preparada de {display_name} esta verificando los archivos del paquete.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install failed: {message}</source>
+      <translation>La instalacion preparada de {display_name} fallo: {message}</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp and apply them.</source>
+      <translation>Los paquetes de {display_name} estan preparados. Haz clic en Reiniciar app ahora para cerrar Wisp y aplicarlos.</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen.</source>
+      <translation>Los paquetes de {display_name} estan preparados. Haz clic en Reiniciar app ahora para cerrar Wisp, reemplazar archivos bloqueados, verificar la instalacion y volver a abrir.</translation>
+    </message>
+    <message>
+      <source>{display_name} packages stay staged and will be applied the next time Wisp restarts.</source>
+      <translation>Los paquetes de {display_name} quedan preparados y se aplicaran la proxima vez que Wisp se reinicie.</translation>
+    </message>
+    <message>
+      <source>{display_name} installed and model ready: {summary}.</source>
+      <translation>{display_name} instalado y modelo listo: {summary}.</translation>
+    </message>
+    <message>
+      <source>{display_name} package files match this Wisp release.</source>
+      <translation>Los archivos del paquete {display_name} coinciden con esta version de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} package files do not match this Wisp release: {message}.</source>
+      <translation>Los archivos del paquete {display_name} no coinciden con esta version de Wisp: {message}.</translation>
+    </message>
+    <message>
+      <source>STT package install failed: {message}</source>
+      <translation>Fallo la instalacion del paquete STT: {message}</translation>
+    </message>
+    <message>
+      <source>STT package installed, but model download/load failed: {message}</source>
+      <translation>El paquete STT esta instalado, pero fallo la descarga/carga del modelo: {message}</translation>
+    </message>
+    <message>
+      <source>STT package installed; downloading or loading Whisper model {model}.</source>
+      <translation>Paquete STT instalado; descargando o cargando el modelo Whisper {model}.</translation>
+    </message>
+    <message>
+      <source>Kokoro package install failed: {message}</source>
+      <translation>Fallo la instalacion del paquete Kokoro: {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed, but voice asset preparation failed: {message}</source>
+      <translation>El paquete Kokoro esta instalado, pero fallo la preparacion de recursos de voz: {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed; {detail}.</source>
+      <translation>Paquete Kokoro instalado; {detail}.</translation>
+    </message>
+    <message>
+      <source>verifying runtime import</source>
+      <translation>verificando la importacion en tiempo de ejecucion</translation>
+    </message>
+    <message>
+      <source>verifying Torch</source>
+      <translation>verificando Torch</translation>
+    </message>
   </context>
 </TS>

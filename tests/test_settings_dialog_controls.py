@@ -1,5 +1,6 @@
 """Tests for test settings dialog controls."""
 
+import json
 import os
 import sys
 import threading
@@ -905,6 +906,47 @@ def test_stt_model_dropdown_preserves_saved_custom_value():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_live_voice_voice_dropdown_supports_custom_value():
+    """Verify live voice voice dropdown supports custom value behavior."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLineEdit
+
+    from ui.settings_panel.dialog import (
+        _CUSTOM_MODEL_SENTINEL,
+        _NoScrollCombo,
+        SettingsDialog,
+    )
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    combo = _NoScrollCombo()
+    edit = QLineEdit()
+    dialog._fields = {"LIVE_VOICE_VOICE_NAME": combo}
+    dialog._live_voice_voice_row = {
+        "model_combo": combo,
+        "model_edit": edit,
+    }
+
+    try:
+        SettingsDialog._fill_live_voice_voice_combo(dialog, "Kore")
+
+        assert combo.currentData() == "Kore"
+        assert edit.isHidden()
+        assert combo.findData(_CUSTOM_MODEL_SENTINEL) >= 0
+
+        SettingsDialog._fill_live_voice_voice_combo(dialog, "Zephyr")
+
+        assert combo.currentData() == _CUSTOM_MODEL_SENTINEL
+        assert edit.text() == "Zephyr"
+        assert not edit.isHidden()
+        assert SettingsDialog._live_voice_voice_value(dialog) == "Zephyr"
+    finally:
+        combo.deleteLater()
+        edit.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_provider_model_lists_include_current_defaults():
     """Verify the static provider model dropdowns include current common choices."""
     from ui.settings_panel.dialog import _PROVIDER_MODELS
@@ -1235,10 +1277,33 @@ def test_kokoro_install_progress_text_classifies_pip_output():
     )
     log_path = _optional_install_log_path("Kokoro", Path("python_packages"))
     assert log_path.name == "kokoro-install.log"
+    assert log_path.parent.name == "installers"
     assert _optional_install_elapsed_text("Kokoro", 600, 600) == (
         "Installing Kokoro: still running for 10m 00s; no installer output for 10m 00s."
     )
     assert _optional_install_no_output_timeout_seconds() == 0
+
+
+def test_optional_install_plan_and_env_follow_app_language(monkeypatch, tmp_path):
+    """Detached optional installers should inherit Wisp's selected UI language."""
+    import config
+
+    from core import optional_deps, updater
+    from ui.settings_panel import dialog as dialog_mod
+
+    monkeypatch.setattr(config, "APP_LANGUAGE", "zh-Hant", raising=False)
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 1234)
+    monkeypatch.setattr(dialog_mod.sys, "frozen", False, raising=False)
+
+    command, _root, _log_path, _status_path = dialog_mod._optional_install_plan_command(
+        display_name="STT",
+        packages=["faster-whisper==1.2.1"],
+    )
+
+    plan = json.loads(Path(command[-1]).read_text(encoding="utf-8"))
+    assert plan["app_language"] == "zh-Hant"
+    assert dialog_mod._optional_install_env()["APP_LANGUAGE"] == "zh-Hant"
 
 
 def test_optional_install_no_output_timeout_is_opt_in(monkeypatch):
@@ -1256,11 +1321,12 @@ def test_optional_install_no_output_timeout_is_opt_in(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_kokoro_status_warns_when_gpu_selected_but_cpu_torch_installed(monkeypatch):
-    """Kokoro status should explain CPU Torch when the selected device is GPU."""
+def test_kokoro_status_explains_gpu_install_when_gpu_spec_missing(monkeypatch):
+    """Kokoro status should explain the selected GPU install when the GPU package spec is missing."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
 
+    from core import optional_deps
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -1273,6 +1339,11 @@ def test_kokoro_status_warns_when_gpu_selected_but_cpu_torch_installed(monkeypat
     dialog._fields["KOKORO_DEVICE"] = combo
     monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
     monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"installed": False, "valid": False},
+    )
+    monkeypatch.setattr(
         SettingsDialog,
         "_kokoro_torch_status_fast",
         lambda self: {"cuda_available": False, "version": "2.12.1+cpu", "cuda_version": ""},
@@ -1283,7 +1354,9 @@ def test_kokoro_status_warns_when_gpu_selected_but_cpu_torch_installed(monkeypat
 
         assert dialog._kokoro_install_btn.isEnabled()
         assert dialog._kokoro_install_btn.text() == "Install Kokoro GPU support"
-        assert dialog._kokoro_install_status_lbl.text() == "Kokoro GPU support is not installed."
+        assert dialog._kokoro_install_status_lbl.text() == (
+            "Kokoro is not installed. The selected device will install GPU support and may download several GB."
+        )
     finally:
         dialog._kokoro_install_btn.deleteLater()
         dialog._kokoro_install_status_lbl.deleteLater()
@@ -1363,6 +1436,49 @@ def test_kokoro_status_preserves_persisted_runtime_failure():
     finally:
         dialog._kokoro_install_btn.deleteLater()
         dialog._kokoro_install_status_lbl.deleteLater()
+        combo.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_status_preserves_staged_apply_retry():
+    """A failed staged apply should stay visible instead of looking uninstalled."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._kokoro_install_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    dialog._kokoro_assets_btn = QPushButton()
+    combo = QComboBox()
+    combo.addItem("CPU", "cpu")
+    dialog._fields["KOKORO_DEVICE"] = combo
+
+    try:
+        SettingsDialog._apply_kokoro_install_status(
+            dialog,
+            installed=False,
+            mode="cpu",
+            torch_status={},
+            needs_gpu=False,
+            install_status={
+                "ok": False,
+                "restart_apply": True,
+                "message": "Kokoro staged install failed: PermissionError: c10.dll. Wisp will retry at the next restart.",
+            },
+        )
+
+        assert dialog._kokoro_install_btn.isEnabled()
+        assert dialog._kokoro_install_btn.text() == "Restart app now"
+        assert "retry at the next restart" in dialog._kokoro_install_status_lbl.text()
+    finally:
+        dialog._kokoro_install_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        dialog._kokoro_assets_btn.deleteLater()
         combo.deleteLater()
         app.processEvents()
 
@@ -1750,7 +1866,7 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
-    """Clicking GPU support should start from metadata/cached status, not full Torch verification."""
+    """Clicking GPU support should use package metadata, not full Torch verification."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
 
@@ -1773,6 +1889,11 @@ def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
     dialog._tts_install_status_result = None
     captured: dict[str, object] = {}
     monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: True)
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"installed": False, "valid": False},
+    )
     monkeypatch.setattr(
         SettingsDialog,
         "_kokoro_torch_status",
@@ -1797,9 +1918,9 @@ def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
     try:
         SettingsDialog._install_kokoro(dialog)
 
-        assert captured["packages"] == []
+        assert captured["packages"] == optional_deps.kokoro_install_packages("cuda")
         assert captured["pre_install_packages"] == optional_deps.kokoro_torch_install_packages("cuda")
-        assert captured["remove_artifacts"] == []
+        assert captured["remove_artifacts"] == optional_deps.kokoro_remove_artifacts()
         assert captured["reinstall"] is False
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
@@ -1882,6 +2003,39 @@ def test_elevenlabs_installed_status_offers_reinstall():
         assert dialog._elevenlabs_install_btn.isEnabled()
         assert dialog._elevenlabs_install_btn.text() == "Reinstall ElevenLabs"
         assert dialog._elevenlabs_install_status_lbl.text() == "ElevenLabs is installed."
+    finally:
+        dialog._elevenlabs_install_btn.deleteLater()
+        dialog._elevenlabs_install_status_lbl.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_elevenlabs_status_preserves_staged_apply_retry():
+    """ElevenLabs should show the same restart-apply state as other optional packages."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._elevenlabs_install_btn = QPushButton()
+    dialog._elevenlabs_install_status_lbl = QLabel()
+
+    try:
+        SettingsDialog._apply_elevenlabs_install_status(
+            dialog,
+            False,
+            install_status={
+                "ok": False,
+                "restart_apply": True,
+                "message": "ElevenLabs staged install failed: PermissionError: locked file. Wisp will retry at the next restart.",
+            },
+        )
+
+        assert dialog._elevenlabs_install_btn.isEnabled()
+        assert dialog._elevenlabs_install_btn.text() == "Restart app now"
+        assert "retry at the next restart" in dialog._elevenlabs_install_status_lbl.text()
     finally:
         dialog._elevenlabs_install_btn.deleteLater()
         dialog._elevenlabs_install_status_lbl.deleteLater()

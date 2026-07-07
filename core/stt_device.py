@@ -79,6 +79,11 @@ def _warmup_encode(model) -> None:
     list(segments)
 
 
+def _float16_unsupported(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "float16" in msg and ("support" in msg or "efficient" in msg)
+
+
 def build_model(WhisperModel, model_name: str, device: str, compute: str, log: Log = print):
     """Construct a WhisperModel and, on GPU, warm it up so the user's first clip
     is fast — not stuck paying CUDA kernel compilation.
@@ -87,13 +92,21 @@ def build_model(WhisperModel, model_name: str, device: str, compute: str, log: L
     newer NVIDIA GPUs (e.g. Blackwell / RTX 50xx) raise
     ``CUBLAS_STATUS_NOT_SUPPORTED`` for int8 GEMM at *encode* time — which can't
     be detected at construction — so we catch it and rebuild with float16.
-    Returns ``(model, effective_compute)``.
+    Returns ``(model, effective_device, effective_compute)``.
     """
     _stt_diag(f"building WhisperModel model={model_name!r} device={device!r} compute={compute!r}")
-    model = WhisperModel(model_name, device=device, compute_type=compute)
+    try:
+        model = WhisperModel(model_name, device=device, compute_type=compute)
+    except ValueError as exc:
+        if compute in ("float16", "int8_float16") and _float16_unsupported(exc):
+            log(f"compute_type {compute!r} is not supported by this STT backend; using 'int8'.")
+            compute = "int8"
+            model = WhisperModel(model_name, device=device, compute_type=compute)
+        else:
+            raise
     _stt_diag(f"WhisperModel constructed model={model_name!r} device={device!r} compute={compute!r}")
     if device != "cuda":
-        return model, compute  # CPU has no kernel-warmup payoff; keep load cheap
+        return model, device, compute  # CPU has no kernel-warmup payoff; keep load cheap
     try:
         _stt_diag("starting CUDA warmup encode")
         _warmup_encode(model)
@@ -103,12 +116,21 @@ def build_model(WhisperModel, model_name: str, device: str, compute: str, log: L
         if "int8" in compute and ("CUBLAS" in msg or "NOT_SUPPORTED" in msg):
             log(f"compute_type {compute!r} not supported on this GPU "
                 f"({type(exc).__name__}); falling back to 'float16'.")
-            model = WhisperModel(model_name, device=device, compute_type="float16")
-            compute = "float16"
+            try:
+                model = WhisperModel(model_name, device=device, compute_type="float16")
+                compute = "float16"
+            except ValueError as float_exc:
+                if not _float16_unsupported(float_exc):
+                    raise
+                log("float16 is not supported by this STT backend either; using CPU int8.")
+                device = "cpu"
+                compute = "int8"
+                model = WhisperModel(model_name, device=device, compute_type=compute)
+                return model, device, compute
             try:
                 _warmup_encode(model)  # warm the fallback model too
             except Exception:  # noqa: BLE001 — best effort; first clip just pays JIT
                 pass
         else:
             raise
-    return model, compute
+    return model, device, compute

@@ -1232,6 +1232,8 @@ class SettingsDialog(QDialog):
                 snapshot[key] = str(widget.isChecked())
             elif key == "LIVE_VOICE_MODEL":
                 snapshot[key] = self._live_voice_model_value()
+            elif key == "LIVE_VOICE_VOICE_NAME":
+                snapshot[key] = self._live_voice_voice_value()
             elif isinstance(widget, (QLineEdit, QComboBox, QTextEdit)):
                 snapshot[key] = _get(widget)
 
@@ -1470,6 +1472,13 @@ class SettingsDialog(QDialog):
 
     def _set_value_for_env_key(self, key: str, value: str) -> bool:
         """Set value for env key."""
+        if key == "LIVE_VOICE_MODEL":
+            provider = _get(self._fields["LIVE_VOICE_PROVIDER"]).strip() or "google"
+            self._fill_live_voice_model_combo(provider, value)
+            return True
+        if key == "LIVE_VOICE_VOICE_NAME":
+            self._fill_live_voice_voice_combo(value)
+            return True
         if key in self._fields:
             widget = self._fields[key]
             if isinstance(widget, QCheckBox):
@@ -3180,12 +3189,30 @@ class SettingsDialog(QDialog):
         live_model.currentIndexChanged.connect(lambda _: self._schedule_dirty_refresh())
         live_model_edit.textChanged.connect(lambda _: self._schedule_dirty_refresh())
         live_model_refresh.clicked.connect(lambda: self._refresh_models_for_row(self._live_voice_model_row))
+        live_voice_container = QWidget()
+        live_voice_layout = QVBoxLayout(live_voice_container)
+        live_voice_layout.setContentsMargins(0, 0, 0, 0)
+        live_voice_layout.setSpacing(2)
         live_voice_name = _NoScrollCombo()
-        live_voice_name.setProperty("allow_custom_saved_value", True)
-        for label, value in _LIVE_VOICE_VOICE_OPTIONS:
-            live_voice_name.addItem(label, value)
-        live_voice_name_tip = "Prebuilt Gemini voice for spoken replies."
+        live_voice_name_edit = QLineEdit()
+        live_voice_name_edit.hide()
+        live_voice_layout.addWidget(live_voice_name)
+        live_voice_layout.addWidget(live_voice_name_edit)
+        live_voice_name_tip = (
+            "Pick a prebuilt Gemini voice, use the model default, or choose "
+            "Custom / enter manually to type an exact voice name."
+        )
         self._fields["LIVE_VOICE_VOICE_NAME"] = live_voice_name
+        self._live_voice_voice_row = {
+            "model_combo": live_voice_name,
+            "model_edit": live_voice_name_edit,
+        }
+        self._fill_live_voice_voice_combo("")
+        live_voice_name.currentIndexChanged.connect(
+            lambda _: self._on_model_combo_changed(self._live_voice_voice_row)
+        )
+        live_voice_name.currentIndexChanged.connect(lambda _: self._schedule_dirty_refresh())
+        live_voice_name_edit.textChanged.connect(lambda _: self._schedule_dirty_refresh())
         self._fields["LIVE_VOICE_HALF_DUPLEX"] = QCheckBox(
             t("Pause mic while Wisp talks (for speakers; disables barge-in)")
         )
@@ -3202,7 +3229,7 @@ class SettingsDialog(QDialog):
         lvf.addRow(self._live_voice_install_status_lbl, self._live_voice_install_btn)
         lvf.addRow(_tooltip_label("Conversation provider", live_provider_tip), live_provider)
         lvf.addRow(_tooltip_label("Conversation model", live_model_tip), live_model_container)
-        lvf.addRow(_tooltip_label("Conversation voice", live_voice_name_tip), live_voice_name)
+        lvf.addRow(_tooltip_label("Conversation voice", live_voice_name_tip), live_voice_container)
         lvf.addRow(
             _tooltip_label("Speaker mode", live_half_duplex_tip),
             self._fields["LIVE_VOICE_HALF_DUPLEX"],
@@ -3332,6 +3359,12 @@ class SettingsDialog(QDialog):
 
     def _elevenlabs_installed(self) -> bool:
         """Return True when the optional ElevenLabs package is importable."""
+        try:
+            from core import optional_deps
+
+            return bool(optional_deps.optional_package_spec_status("elevenlabs").get("valid"))
+        except Exception:
+            pass
         return self._optional_package_installed("elevenlabs")
 
     def _kokoro_installed(self) -> bool:
@@ -3389,22 +3422,27 @@ class SettingsDialog(QDialog):
         installed = self._kokoro_installed()
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
         selected = selected_device.strip().lower()
+        install_status: dict[str, object] = {}
+        try:
+            from core import optional_deps
+
+            install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
+        except Exception:
+            install_status = {}
         result = getattr(self, "_tts_install_status_result", None)
         if isinstance(result, dict) and result.get("ok"):
             torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
-            install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else {}
+            install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else install_status
             system_has_cuda = bool(result.get("system_cuda_available"))
             installed = bool(result.get("kokoro_installed"))
         else:
+            try:
+                spec_device = "cuda" if selected == "cuda" else "cpu"
+                spec_status = optional_deps.optional_package_spec_status("kokoro", device=spec_device)
+                installed = bool(spec_status.get("valid"))
+            except Exception:
+                pass
             torch_status = self._kokoro_torch_status_fast() if installed else {}
-            install_status = {}
-            if installed:
-                try:
-                    from core import optional_deps
-
-                    install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
-                except Exception:
-                    install_status = {}
             system_has_cuda = False
         mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
         needs_gpu = self._kokoro_needs_gpu_install_from_status(
@@ -3497,21 +3535,20 @@ class SettingsDialog(QDialog):
             try:
                 from core import optional_deps
 
-                elevenlabs_installed = self._optional_package_installed("elevenlabs")
-                kokoro_installed = all(
-                    self._optional_package_installed(module_name)
-                    for module_name in ("kokoro", "en_core_web_sm")
-                )
-                kokoro_install_status = (
-                    _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
-                    if kokoro_installed
-                    else {}
-                )
+                elevenlabs_spec_status = optional_deps.optional_package_spec_status("elevenlabs")
+                elevenlabs_installed = bool(elevenlabs_spec_status.get("valid"))
+                elevenlabs_install_status = _read_optional_install_status("ElevenLabs", optional_deps.OPTIONAL_PACKAGES_DIR)
+                kokoro_install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
                 system_has_cuda = optional_deps.system_cuda_available()
                 selected = selected_device.strip().lower()
                 mode = "gpu" if selected == "auto" and system_has_cuda else (
                     "gpu" if selected == "cuda" else "cpu"
                 )
+                kokoro_spec_status = optional_deps.optional_package_spec_status(
+                    "kokoro",
+                    device="cuda" if mode == "gpu" else "cpu",
+                )
+                kokoro_installed = bool(kokoro_spec_status.get("valid"))
                 needs_cuda_status = selected == "cuda" or (selected == "auto" and system_has_cuda)
                 torch_status = (
                     optional_deps.kokoro_torch_status_subprocess()
@@ -3545,6 +3582,7 @@ class SettingsDialog(QDialog):
                 result: dict[str, object] = {
                     "ok": True,
                     "elevenlabs_installed": elevenlabs_installed,
+                    "elevenlabs_install_status": elevenlabs_install_status,
                     "kokoro_installed": kokoro_installed,
                     "kokoro_mode": mode,
                     "kokoro_install_status": kokoro_install_status,
@@ -3578,7 +3616,10 @@ class SettingsDialog(QDialog):
                     button.setEnabled(True)
             return
         self._tts_install_status_result = dict(result)
-        self._apply_elevenlabs_install_status(bool(result.get("elevenlabs_installed")))
+        self._apply_elevenlabs_install_status(
+            bool(result.get("elevenlabs_installed")),
+            install_status=result.get("elevenlabs_install_status") if isinstance(result.get("elevenlabs_install_status"), dict) else {},
+        )
         self._apply_cached_kokoro_install_status()
 
     def _apply_cached_kokoro_install_status(self) -> bool:
@@ -3609,11 +3650,63 @@ class SettingsDialog(QDialog):
         )
         return True
 
-    def _apply_elevenlabs_install_status(self, installed: bool) -> None:
+    def _connect_button_action(self, button: QPushButton, callback: Callable[[], None]) -> None:
+        """Replace a button's click handler after restart/apply state changes."""
+        try:
+            button.clicked.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        button.clicked.connect(callback)
+
+    def _restart_for_staged_apply(self) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _apply_restart_apply_status(
+        self,
+        label: QLabel,
+        button: QPushButton,
+        *,
+        display_name: str,
+        install_status: dict[str, object] | None,
+    ) -> bool:
+        """Show durable staged-apply state instead of flattening it to uninstalled."""
+        if not isinstance(install_status, dict) or not install_status.get("restart_apply"):
+            return False
+        button.setEnabled(True)
+        button.setText(t("Restart app now"))
+        self._connect_button_action(button, self._restart_for_staged_apply)
+        message = str(install_status.get("message") or "").strip()
+        if not message:
+            message = f"{display_name} packages are staged. Click Restart app now to close Wisp and apply them."
+        self._set_test_status(label, "warn", _translate_status_message(message))
+        return True
+
+    def _apply_elevenlabs_install_status(
+        self,
+        installed: bool,
+        *,
+        install_status: dict[str, object] | None = None,
+    ) -> None:
         """Apply ElevenLabs install state to the settings controls."""
         label = getattr(self, "_elevenlabs_install_status_lbl", None)
         button = getattr(self, "_elevenlabs_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
+            return
+        if self._apply_restart_apply_status(
+            label,
+            button,
+            display_name="ElevenLabs",
+            install_status=install_status,
+        ):
+            return
+        self._connect_button_action(button, self._install_elevenlabs)
+        failed_install_message = _failed_optional_install_message(install_status)
+        if failed_install_message:
+            button.setEnabled(True)
+            button.setText(t("Install ElevenLabs"))
+            self._set_test_status(label, "warn", failed_install_message)
             return
         if installed:
             button.setEnabled(True)
@@ -3630,12 +3723,25 @@ class SettingsDialog(QDialog):
 
     def _refresh_elevenlabs_install_status(self) -> None:
         """Refresh ElevenLabs install button and status copy."""
-        self._apply_elevenlabs_install_status(self._elevenlabs_installed())
+        install_status: dict[str, object] = {}
+        try:
+            from core import optional_deps
+
+            install_status = _read_optional_install_status("ElevenLabs", optional_deps.OPTIONAL_PACKAGES_DIR)
+        except Exception:
+            install_status = {}
+        self._apply_elevenlabs_install_status(self._elevenlabs_installed(), install_status=install_status)
         self._tts_install_status_checked = True
         self._tts_install_status_result = None
 
     def _live_voice_installed(self) -> bool:
         """Return True when the optional google-genai package is importable."""
+        try:
+            from core import optional_deps
+
+            return bool(optional_deps.optional_package_spec_status("live_voice").get("valid"))
+        except Exception:
+            pass
         try:
             from core import live_voice
 
@@ -3648,6 +3754,26 @@ class SettingsDialog(QDialog):
         label = getattr(self, "_live_voice_install_status_lbl", None)
         button = getattr(self, "_live_voice_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
+            return
+        install_status: dict[str, object] = {}
+        try:
+            from core import optional_deps
+
+            install_status = _read_optional_install_status("Live voice", optional_deps.OPTIONAL_PACKAGES_DIR)
+        except Exception:
+            install_status = {}
+        if self._apply_restart_apply_status(
+            label,
+            button,
+            display_name="Live voice",
+            install_status=install_status,
+        ):
+            return
+        self._connect_button_action(button, self._install_live_voice)
+        failed_install_message = _failed_optional_install_message(install_status)
+        if failed_install_message:
+            button.setText(t("Install live voice"))
+            self._set_test_status(label, "warn", failed_install_message)
             return
         if self._live_voice_installed():
             button.setText(t("Reinstall live voice"))
@@ -3704,6 +3830,51 @@ class SettingsDialog(QDialog):
         field = self._fields.get("LIVE_VOICE_MODEL")
         return _get(field).strip() if field is not None else ""
 
+    def _fill_live_voice_voice_combo(self, selected: str) -> None:
+        """Populate the live voice picker with built-ins plus Custom."""
+        row = getattr(self, "_live_voice_voice_row", None)
+        if not isinstance(row, dict):
+            return
+        combo = row["model_combo"]
+        edit = row["model_edit"]
+        options = list(_LIVE_VOICE_VOICE_OPTIONS)
+        values = [value for _label, value in options]
+
+        combo.blockSignals(True)
+        combo.clear()
+        for label, value in options:
+            combo.addItem(label, value)
+        combo.addItem(_CUSTOM_MODEL_LABEL, _CUSTOM_MODEL_SENTINEL)
+
+        selected = (selected or "").strip()
+        if selected in values:
+            combo.setCurrentIndex(combo.findData(selected))
+            edit.clear()
+            edit.hide()
+        elif selected:
+            combo.setCurrentIndex(combo.findData(_CUSTOM_MODEL_SENTINEL))
+            edit.setText(selected)
+            edit.show()
+        else:
+            combo.setCurrentIndex(combo.findData(""))
+            edit.clear()
+            edit.hide()
+
+        edit.setPlaceholderText("voice name")
+        completer = QCompleter([value for value in values if value], edit)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        edit.setCompleter(completer)
+        combo.blockSignals(False)
+
+    def _live_voice_voice_value(self) -> str:
+        """Return the effective live voice name, including custom text."""
+        row = getattr(self, "_live_voice_voice_row", None)
+        if isinstance(row, dict):
+            return self._model_value(row)
+        field = self._fields.get("LIVE_VOICE_VOICE_NAME")
+        return _get(field).strip() if field is not None else ""
+
     def _apply_kokoro_install_status(
         self,
         *,
@@ -3719,9 +3890,17 @@ class SettingsDialog(QDialog):
         button = getattr(self, "_kokoro_install_btn", None)
         if not isinstance(label, QLabel) or not isinstance(button, QPushButton):
             return
+        if self._apply_restart_apply_status(
+            label,
+            button,
+            display_name="Kokoro",
+            install_status=install_status,
+        ):
+            return
+        self._connect_button_action(button, self._install_kokoro)
         self._apply_kokoro_assets_status(installed=installed, assets=assets)
         failed_install_message = _failed_optional_install_message(install_status)
-        if installed and failed_install_message:
+        if failed_install_message:
             button.setEnabled(True)
             button.setText(t("Install Kokoro GPU support") if mode == "gpu" else t("Install Kokoro"))
             self._set_test_status(label, "warn", failed_install_message)
@@ -3892,8 +4071,6 @@ class SettingsDialog(QDialog):
         remove_artifacts = optional_deps.kokoro_remove_artifacts()
         reinstall = bool(installed)
         if installed and needs_gpu and not needs_repair:
-            packages = []
-            remove_artifacts = []
             reinstall = False
         base_package_label = f"{optional_deps.KOKORO_PACKAGE}, {optional_deps.SOUNDFILE_PACKAGE}"
         package_label = (
@@ -3980,6 +4157,7 @@ class SettingsDialog(QDialog):
                 "post_install": "kokoro_prepare",
                 "kokoro_voice": voice,
                 "kokoro_require_gpu": mode == "gpu",
+                "kokoro_install_device": install_device,
                 "pre_install_packages": pre_install_packages,
             },
             post_install=lambda progress, write_log: self._prepare_kokoro_after_install(
@@ -4027,7 +4205,7 @@ class SettingsDialog(QDialog):
             write_log(f"[kokoro install] Voice preparation failed: {type(exc).__name__}: {exc}")
             return (
                 False,
-                "Kokoro installed, but local voice preparation failed: "
+                "Kokoro package installed, but voice asset preparation failed: "
                 f"{exc}. Connect to the internet and click Test TTS once to finish setup.",
             )
 
@@ -4165,7 +4343,7 @@ class SettingsDialog(QDialog):
                 command=command,
                 cwd=root,
                 log_path=log_path,
-                env=optional_deps.pip_install_env(),
+                env=_optional_install_env(),
                 mirror_output_to_log=False,
                 parent=self,
                 auto_start=True,
@@ -4429,7 +4607,7 @@ class SettingsDialog(QDialog):
                             encoding="utf-8",
                             errors="replace",
                             bufsize=1,
-                            env=optional_deps.pip_install_env(),
+                            env=_optional_install_env(),
                             **optional_deps.subprocess_no_window_kwargs(),
                         )
                     except Exception as exc:
@@ -6352,9 +6530,8 @@ class SettingsDialog(QDialog):
         if isinstance(live_voice_provider_combo, QComboBox):
             self._fill_credential_combo(live_voice_provider_combo, live_voice_provider)
         self._fill_live_voice_model_combo(_get(self._fields["LIVE_VOICE_PROVIDER"]).strip() or "google", live_voice_model)
-        _set(
-            self._fields["LIVE_VOICE_VOICE_NAME"],
-            self._env.get("LIVE_VOICE_VOICE_NAME", getattr(cfg, "LIVE_VOICE_VOICE_NAME", "")),
+        self._fill_live_voice_voice_combo(
+            self._env.get("LIVE_VOICE_VOICE_NAME", getattr(cfg, "LIVE_VOICE_VOICE_NAME", ""))
         )
         _set(
             self._fields["LIVE_VOICE_HALF_DUPLEX"],
@@ -7208,6 +7385,7 @@ class SettingsDialog(QDialog):
 
         def _set_stt_action(installed: bool) -> None:
             if isinstance(button, QPushButton):
+                self._connect_button_action(button, self._preload_stt_model)
                 button.setText(t("Reinstall STT") if installed else t("Install STT"))
 
         import config as cfg
@@ -7235,13 +7413,20 @@ class SettingsDialog(QDialog):
             try:
                 from core import optional_deps
 
-                runtime_status = optional_deps.stt_runtime_import_status_fast()
-                installed = bool(runtime_status.get("installed") and runtime_status.get("valid"))
+                spec_status = optional_deps.optional_package_spec_status("stt")
+                installed = bool(spec_status.get("valid"))
                 install_status = _read_optional_install_status("STT", optional_deps.OPTIONAL_PACKAGES_DIR)
             except Exception:
                 installed = False
                 install_status = {}
 
+            if isinstance(button, QPushButton) and self._apply_restart_apply_status(
+                lbl,
+                button,
+                display_name="STT",
+                install_status=install_status,
+            ):
+                return
             failed_install_message = _failed_optional_install_message(install_status)
             if failed_install_message:
                 _set_stt_action(False)
@@ -7384,12 +7569,12 @@ class SettingsDialog(QDialog):
             status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
             if status.get("error") or status.get("valid") is False:
                 detail = str(status.get("error") or "STT model verification failed.")
-                return False, f"STT installed, but model verification failed: {detail}"
+                return False, f"STT package installed, but model download/load failed: {detail}"
             resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
             return True, f"STT installed and model ready: {resolved}."
         except Exception as exc:  # noqa: BLE001
             write_log(f"[stt install] Model verification failed: {type(exc).__name__}: {exc}")
-            return False, f"STT install failed: {exc}"
+            return False, f"STT package installed, but model download/load failed: {exc}"
 
     def _stt_fields_changed(self, old_env: dict[str, str]) -> bool:
         """Handle STT fields changed for settings dialog."""
@@ -8000,7 +8185,7 @@ class SettingsDialog(QDialog):
             "TTS_READ_ALOUD_MAX_WORDS": _get(self._fields["TTS_READ_ALOUD_MAX_WORDS"]),
             "LIVE_VOICE_PROVIDER": _get(self._fields["LIVE_VOICE_PROVIDER"]),
             "LIVE_VOICE_MODEL": self._live_voice_model_value(),
-            "LIVE_VOICE_VOICE_NAME": _get(self._fields["LIVE_VOICE_VOICE_NAME"]),
+            "LIVE_VOICE_VOICE_NAME": self._live_voice_voice_value(),
             "LIVE_VOICE_HALF_DUPLEX": _get(self._fields["LIVE_VOICE_HALF_DUPLEX"]),
             "STT_MODEL":         _get(self._fields["STT_MODEL"]),
             "STT_COMPUTE_TYPE":  _get(self._fields["STT_COMPUTE_TYPE"]),
@@ -8727,9 +8912,35 @@ def _optional_install_log_path(display_name: str, optional_packages_dir: Path) -
     if root:
         base = Path(root).expanduser() / "installers"
     else:
-        base = optional_packages_dir / "_logs"
+        base = optional_packages_dir.parent / "installers"
     slug = re.sub(r"[^a-z0-9]+", "-", display_name.lower()).strip("-") or "optional-package"
     return base / f"{slug}-install.log"
+
+
+def _optional_install_app_language() -> str:
+    """Return the app UI language to pass into detached installer helpers."""
+    try:
+        from ui import i18n
+
+        return i18n.current_language()
+    except Exception:
+        try:
+            import config as cfg
+
+            return str(getattr(cfg, "APP_LANGUAGE", "") or "").strip()
+        except Exception:
+            return ""
+
+
+def _optional_install_env() -> dict[str, str]:
+    """Return the optional installer subprocess environment with UI language."""
+    from core import optional_deps
+
+    env = optional_deps.pip_install_env()
+    language = _optional_install_app_language()
+    if language:
+        env["APP_LANGUAGE"] = language
+    return env
 
 
 def _optional_install_plan_command(
@@ -8761,6 +8972,7 @@ def _optional_install_plan_command(
     log_path = _optional_install_log_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
     status_path = _optional_install_status_path(display_name, optional_deps.OPTIONAL_PACKAGES_DIR)
     plan_path = log_path.with_suffix(".plan.json")
+    app_language = _optional_install_app_language()
     plan = {
         "display_name": display_name,
         "packages": packages,
@@ -8771,6 +8983,7 @@ def _optional_install_plan_command(
         "wait_pid": updater.wisp_wait_pid(),
         "log_path": str(log_path),
         "status_path": str(status_path),
+        "app_language": app_language,
         **(external_plan_extra or {}),
     }
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -9054,9 +9267,20 @@ def _translate_status_message(message: str) -> str:
         (r"^Kokoro installed, but runtime verification failed: (?P<message>.+)$", "Kokoro installed, but runtime verification failed: {message}"),
         (r"^Kokoro installed, but Torch verification failed: (?P<message>.+)$", "Kokoro installed, but Torch verification failed: {message}"),
         (r"^Kokoro installed, but CUDA Torch verification failed: (?P<message>.+)$", "Kokoro installed, but CUDA Torch verification failed: {message}"),
+        (r"^Kokoro package installed, but voice asset preparation failed: (?P<message>.+)$", "Kokoro package installed, but voice asset preparation failed: {message}"),
+        (r"^Kokoro package installed; (?P<detail>.+)\.$", "Kokoro package installed; {detail}."),
+        (r"^Kokoro package install failed: (?P<message>.+)$", "Kokoro package install failed: {message}"),
+        (r"^(?P<display_name>.+) package files match this Wisp release\.$", "{display_name} package files match this Wisp release."),
+        (r"^(?P<display_name>.+) package files do not match this Wisp release: (?P<message>.+)\.$", "{display_name} package files do not match this Wisp release: {message}."),
+        (r"^(?P<display_name>.+) packages are staged\. Click Restart app now to close Wisp and apply them\.$", "{display_name} packages are staged. Click Restart app now to close Wisp and apply them."),
+        (r"^(?P<display_name>.+) packages are staged\. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen\.$", "{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen."),
+        (r"^(?P<display_name>.+) packages stay staged and will be applied the next time Wisp restarts\.$", "{display_name} packages stay staged and will be applied the next time Wisp restarts."),
         (r"^ElevenLabs install failed: (?P<message>.+)$", "ElevenLabs install failed: {message}"),
         (r"^STT install failed: (?P<message>.+)$", "STT install failed: {message}"),
+        (r"^STT package install failed: (?P<message>.+)$", "STT package install failed: {message}"),
         (r"^STT installed, but model verification failed: (?P<message>.+)$", "STT installed, but model verification failed: {message}"),
+        (r"^STT package installed, but model download/load failed: (?P<message>.+)$", "STT package installed, but model download/load failed: {message}"),
+        (r"^STT package installed; downloading or loading Whisper model (?P<model>.+)\.$", "STT package installed; downloading or loading Whisper model {model}."),
         (r"^STT installed and model ready: (?P<summary>.+)\.$", "STT installed and model ready: {summary}."),
         (r"^Installing STT: downloading or loading Whisper model (?P<model>.+)\.$", "Installing STT: downloading or loading Whisper model {model}."),
         (r"^Kokoro is installed with GPU support \((?P<device>.+)\)\.$", "Kokoro is installed with GPU support ({device})."),
@@ -9075,6 +9299,8 @@ def _translate_status_message(message: str) -> str:
                 groups["value"] = _translate_status_value(groups["value"])
             if "detail" in groups:
                 groups["detail"] = _translate_install_detail(groups["detail"])
+            if "display_name" in groups:
+                groups["display_name"] = t(groups["display_name"])
             return t(template).format(**groups)
     for prefix in (
         "Error reading status: ",

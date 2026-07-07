@@ -42,6 +42,11 @@ def _torch_status() -> dict[str, object]:
         if not version or not hasattr(torch, "cuda"):
             status["error"] = "Torch import is incomplete."
             return status
+        try:
+            from torch.amp import autocast  # type: ignore  # noqa: F401
+        except Exception as exc:
+            status["error"] = f"Torch import is incomplete for Kokoro: {type(exc).__name__}: {exc}"
+            return status
         status["valid"] = True
         status["version"] = version
         status["cuda_version"] = str(getattr(getattr(torch, "version", None), "cuda", "") or "")
@@ -128,7 +133,7 @@ def _stt_model_status(model_name: str, requested_device: str, requested_compute:
 
         device = resolve_device(requested_device, log=_log)
         compute = resolve_compute_type(device, requested_compute, log=_log)
-        _model, compute = build_model(WhisperModel, model_name, device, compute, log=_log)
+        _model, device, compute = build_model(WhisperModel, model_name, device, compute, log=_log)
         status["device"] = device
         status["compute"] = compute
         status["valid"] = True

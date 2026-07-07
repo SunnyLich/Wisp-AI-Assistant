@@ -58,7 +58,7 @@ def _get_model():
             _log = lambda m: print(f"[stt] {m}")
             device = resolve_device(config.STT_DEVICE, log=_log)
             compute_type = resolve_compute_type(device, config.STT_COMPUTE_TYPE, log=_log)
-            _model, compute_type = build_model(
+            _model, device, compute_type = build_model(
                 WhisperModel, config.STT_MODEL, device, compute_type, log=_log
             )
             _active_device, _active_compute = device, compute_type

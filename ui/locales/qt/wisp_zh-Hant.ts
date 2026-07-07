@@ -5060,5 +5060,97 @@ Continue?</translation>
       <source>removing previous install</source>
       <translation>removing previous install</translation>
     </message>
+    <message>
+      <source>Wisp {display_name} apply</source>
+      <translation>Wisp 套用 {display_name}</translation>
+    </message>
+    <message>
+      <source>Applying {display_name}</source>
+      <translation>正在套用 {display_name}</translation>
+    </message>
+    <message>
+      <source>Preparing to apply optional speech packages.</source>
+      <translation>正在準備套用選用語音套件。</translation>
+    </message>
+    <message>
+      <source>{display_name} applied successfully.</source>
+      <translation>{display_name} 已成功套用。</translation>
+    </message>
+    <message>
+      <source>{display_name} apply failed.</source>
+      <translation>{display_name} 套用失敗。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is waiting for Wisp to close.</source>
+      <translation>{display_name} 暫存安裝正在等待 Wisp 關閉。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is applying package files.</source>
+      <translation>{display_name} 暫存安裝正在套用套件檔案。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is verifying package files.</source>
+      <translation>{display_name} 暫存安裝正在驗證套件檔案。</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install failed: {message}</source>
+      <translation>{display_name} 暫存安裝失敗：{message}</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp and apply them.</source>
+      <translation>{display_name} 套件已暫存。按一下立即重新啟動程式以關閉 Wisp 並套用它們。</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen.</source>
+      <translation>{display_name} 套件已暫存。按一下立即重新啟動程式以關閉 Wisp、取代鎖定檔案、驗證安裝並重新開啟。</translation>
+    </message>
+    <message>
+      <source>{display_name} packages stay staged and will be applied the next time Wisp restarts.</source>
+      <translation>{display_name} 套件會保持暫存，並在 Wisp 下次重新啟動時套用。</translation>
+    </message>
+    <message>
+      <source>{display_name} installed and model ready: {summary}.</source>
+      <translation>{display_name} 已安裝且模型就緒：{summary}。</translation>
+    </message>
+    <message>
+      <source>{display_name} package files match this Wisp release.</source>
+      <translation>{display_name} 套件檔案與此 Wisp 版本相符。</translation>
+    </message>
+    <message>
+      <source>{display_name} package files do not match this Wisp release: {message}.</source>
+      <translation>{display_name} 套件檔案與此 Wisp 版本不相符：{message}。</translation>
+    </message>
+    <message>
+      <source>STT package install failed: {message}</source>
+      <translation>STT 套件安裝失敗：{message}</translation>
+    </message>
+    <message>
+      <source>STT package installed, but model download/load failed: {message}</source>
+      <translation>STT 套件已安裝，但模型下載/載入失敗：{message}</translation>
+    </message>
+    <message>
+      <source>STT package installed; downloading or loading Whisper model {model}.</source>
+      <translation>STT 套件已安裝；正在下載或載入 Whisper 模型 {model}。</translation>
+    </message>
+    <message>
+      <source>Kokoro package install failed: {message}</source>
+      <translation>Kokoro 套件安裝失敗：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed, but voice asset preparation failed: {message}</source>
+      <translation>Kokoro 套件已安裝，但語音資源準備失敗：{message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed; {detail}.</source>
+      <translation>Kokoro 套件已安裝；{detail}。</translation>
+    </message>
+    <message>
+      <source>verifying runtime import</source>
+      <translation>正在驗證執行階段匯入</translation>
+    </message>
+    <message>
+      <source>verifying Torch</source>
+      <translation>正在驗證 Torch</translation>
+    </message>
   </context>
 </TS>

@@ -5057,5 +5057,97 @@ Continue?</translation>
       <source>removing previous install</source>
       <translation>removing previous install</translation>
     </message>
+    <message>
+      <source>Wisp {display_name} apply</source>
+      <translation>Application de {display_name} par Wisp</translation>
+    </message>
+    <message>
+      <source>Applying {display_name}</source>
+      <translation>Application de {display_name}</translation>
+    </message>
+    <message>
+      <source>Preparing to apply optional speech packages.</source>
+      <translation>Preparation de l'application des paquets vocaux optionnels.</translation>
+    </message>
+    <message>
+      <source>{display_name} applied successfully.</source>
+      <translation>{display_name} applique avec succes.</translation>
+    </message>
+    <message>
+      <source>{display_name} apply failed.</source>
+      <translation>L'application de {display_name} a echoue.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is waiting for Wisp to close.</source>
+      <translation>L'installation preparee de {display_name} attend la fermeture de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is applying package files.</source>
+      <translation>L'installation preparee de {display_name} applique les fichiers du paquet.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install is verifying package files.</source>
+      <translation>L'installation preparee de {display_name} verifie les fichiers du paquet.</translation>
+    </message>
+    <message>
+      <source>{display_name} staged install failed: {message}</source>
+      <translation>L'installation preparee de {display_name} a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp and apply them.</source>
+      <translation>Les paquets de {display_name} sont prepares. Cliquez sur Redemarrer l'app maintenant pour fermer Wisp et les appliquer.</translation>
+    </message>
+    <message>
+      <source>{display_name} packages are staged. Click Restart app now to close Wisp, replace locked files, verify the install, and reopen.</source>
+      <translation>Les paquets de {display_name} sont prepares. Cliquez sur Redemarrer l'app maintenant pour fermer Wisp, remplacer les fichiers verrouilles, verifier l'installation et rouvrir.</translation>
+    </message>
+    <message>
+      <source>{display_name} packages stay staged and will be applied the next time Wisp restarts.</source>
+      <translation>Les paquets de {display_name} restent prepares et seront appliques au prochain redemarrage de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} installed and model ready: {summary}.</source>
+      <translation>{display_name} installe et modele pret : {summary}.</translation>
+    </message>
+    <message>
+      <source>{display_name} package files match this Wisp release.</source>
+      <translation>Les fichiers du paquet {display_name} correspondent a cette version de Wisp.</translation>
+    </message>
+    <message>
+      <source>{display_name} package files do not match this Wisp release: {message}.</source>
+      <translation>Les fichiers du paquet {display_name} ne correspondent pas a cette version de Wisp : {message}.</translation>
+    </message>
+    <message>
+      <source>STT package install failed: {message}</source>
+      <translation>L'installation du paquet STT a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>STT package installed, but model download/load failed: {message}</source>
+      <translation>Le paquet STT est installe, mais le telechargement/chargement du modele a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>STT package installed; downloading or loading Whisper model {model}.</source>
+      <translation>Paquet STT installe ; telechargement ou chargement du modele Whisper {model}.</translation>
+    </message>
+    <message>
+      <source>Kokoro package install failed: {message}</source>
+      <translation>L'installation du paquet Kokoro a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed, but voice asset preparation failed: {message}</source>
+      <translation>Le paquet Kokoro est installe, mais la preparation des ressources vocales a echoue : {message}</translation>
+    </message>
+    <message>
+      <source>Kokoro package installed; {detail}.</source>
+      <translation>Paquet Kokoro installe ; {detail}.</translation>
+    </message>
+    <message>
+      <source>verifying runtime import</source>
+      <translation>verification de l'importation d'execution</translation>
+    </message>
+    <message>
+      <source>verifying Torch</source>
+      <translation>verification de Torch</translation>
+    </message>
   </context>
 </TS>

@@ -10,6 +10,7 @@ import shutil
 import site
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from core.system.paths import REPO_ROOT, USER_DATA_DIR
@@ -74,6 +75,7 @@ KOKORO_GPU_INSTALL_PACKAGES = [
     KOKORO_CUDA_TORCH_PACKAGE,
     *KOKORO_BASE_INSTALL_PACKAGES,
 ]
+UV_UNSAFE_BEST_MATCH_INDEX_ARGS = ["--index-strategy", "unsafe-best-match"]
 KOKORO_REMOVE_ARTIFACTS = [
     "kokoro",
     "kokoro-*.dist-info",
@@ -109,6 +111,17 @@ STT_REMOVE_ARTIFACTS = [
     "onnxruntime.libs",
 ]
 _DIST_INFO_SUFFIX = ".dist-info"
+
+
+@dataclass(frozen=True)
+class OptionalPackageSpec:
+    """Release-owned optional package install contract."""
+
+    key: str
+    display_name: str
+    packages: tuple[str, ...]
+    required_modules: tuple[str, ...] = ()
+    remove_artifacts: tuple[str, ...] = ()
 
 
 def _is_frozen() -> bool:
@@ -185,6 +198,133 @@ def stt_remove_artifacts() -> list[str]:
 def kokoro_remove_artifacts() -> list[str]:
     """Return optional-package artifacts to clear before repairing Kokoro."""
     return list(KOKORO_REMOVE_ARTIFACTS)
+
+
+def optional_package_spec(key: str, *, device: str | None = None) -> OptionalPackageSpec:
+    """Return the release spec for an optional package family."""
+    normalized = str(key or "").strip().lower().replace("_", "-")
+    if normalized == "stt":
+        return OptionalPackageSpec(
+            key="stt",
+            display_name="STT",
+            packages=tuple(stt_install_packages()),
+            required_modules=("faster_whisper",),
+            remove_artifacts=tuple(stt_remove_artifacts()),
+        )
+    if normalized == "kokoro":
+        packages = kokoro_install_packages(device)
+        return OptionalPackageSpec(
+            key="kokoro",
+            display_name="Kokoro",
+            packages=tuple(packages),
+            required_modules=("kokoro", "en_core_web_sm"),
+            remove_artifacts=tuple(kokoro_remove_artifacts()),
+        )
+    if normalized == "elevenlabs":
+        return OptionalPackageSpec(
+            key="elevenlabs",
+            display_name="ElevenLabs",
+            packages=(ELEVENLABS_PACKAGE,),
+            required_modules=("elevenlabs",),
+        )
+    if normalized in {"live-voice", "live_voice"}:
+        return OptionalPackageSpec(
+            key="live_voice",
+            display_name="Live voice",
+            packages=(GOOGLE_GENAI_PACKAGE,),
+            required_modules=("google.genai",),
+        )
+    raise KeyError(f"Unknown optional package spec: {key}")
+
+
+def _expected_package_versions(packages: list[str] | tuple[str, ...]) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    for item in packages:
+        parsed = _install_requirement_name_version(item)
+        if parsed is None:
+            continue
+        name, version = parsed
+        expected[name] = version
+    return expected
+
+
+def _dist_info_groups_for_root(root: Path) -> dict[str, list[Path]]:
+    groups: dict[str, list[Path]] = {}
+    if not root.exists():
+        return groups
+    try:
+        candidates = list(root.iterdir())
+    except Exception:
+        return groups
+    for path in candidates:
+        if not path.is_dir() or not path.name.endswith(_DIST_INFO_SUFFIX):
+            continue
+        name, _version = _dist_info_metadata(path)
+        canonical = _canonical_package_name(name)
+        if canonical:
+            groups.setdefault(canonical, []).append(path)
+    return groups
+
+
+def optional_package_spec_status(
+    key: str,
+    *,
+    device: str | None = None,
+    target_dir: Path | str | None = None,
+) -> dict[str, object]:
+    """Return whether the optional package layer matches this release spec."""
+    spec = optional_package_spec(key, device=device)
+    target = Path(target_dir) if target_dir is not None else OPTIONAL_PACKAGES_DIR
+    expected = _expected_package_versions(spec.packages)
+    status: dict[str, object] = {
+        "key": spec.key,
+        "display_name": spec.display_name,
+        "installed": False,
+        "valid": False,
+        "expected": dict(expected),
+        "missing": [],
+        "mismatched": {},
+        "duplicates": {},
+        "message": "",
+    }
+    try:
+        root = target.resolve()
+    except Exception:
+        root = target
+    groups = _dist_info_groups_for_root(root)
+    missing: list[str] = []
+    mismatched: dict[str, object] = {}
+    duplicates: dict[str, list[str]] = {}
+    for package, expected_version in expected.items():
+        dist_infos = groups.get(package) or []
+        if not dist_infos:
+            missing.append(package)
+            continue
+        if len(dist_infos) > 1:
+            duplicates[package] = sorted(path.name for path in dist_infos)
+        installed_versions = sorted({(_dist_info_metadata(path)[1] or "") for path in dist_infos})
+        if installed_versions != [expected_version]:
+            mismatched[package] = {
+                "expected": expected_version,
+                "installed": installed_versions,
+            }
+    status["missing"] = missing
+    status["mismatched"] = mismatched
+    status["duplicates"] = duplicates
+    status["installed"] = bool(expected) and not missing
+    status["valid"] = bool(expected) and not missing and not mismatched and not duplicates
+    if status["valid"]:
+        status["message"] = f"{spec.display_name} package files match this Wisp release."
+    else:
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing {', '.join(missing)}")
+        if mismatched:
+            parts.append(f"version mismatch for {', '.join(sorted(mismatched))}")
+        if duplicates:
+            parts.append(f"duplicate metadata for {', '.join(sorted(duplicates))}")
+        status["message"] = f"{spec.display_name} package files do not match this Wisp release: {'; '.join(parts)}."
+    return status
 
 
 def remove_optional_package_artifacts(patterns: list[str]) -> list[str]:
@@ -477,7 +617,7 @@ def kokoro_install_mode_for_device(device: str | None) -> str:
     """Return cpu/gpu install mode for the selected Kokoro device."""
     if sys.platform == "darwin":
         return "cpu"
-    selected = (device or "auto").strip().lower()
+    selected = "cpu" if device is None else str(device or "auto").strip().lower()
     if selected == "cpu":
         return "cpu"
     if selected == "cuda":
@@ -522,6 +662,11 @@ def kokoro_torch_status() -> dict[str, object]:
         version = str(getattr(torch, "__version__", "") or "")
         if not version or not hasattr(torch, "cuda"):
             status["error"] = "Torch import is incomplete."
+            return status
+        try:
+            from torch.amp import autocast  # type: ignore  # noqa: F401
+        except Exception as exc:
+            status["error"] = f"Torch import is incomplete for Kokoro: {type(exc).__name__}: {exc}"
             return status
         status["valid"] = True
         status["version"] = version
@@ -797,6 +942,7 @@ def pip_install_command(
                 "Packaged Wisp installs optional packages with uv, but uv was not bundled. "
                 f"Place uv{suffix} under bin/ or tools/ before building, then rebuild Wisp."
             )
+        index_args = _uv_index_strategy_args(packages)
         return [
             uv,
             "pip",
@@ -810,6 +956,7 @@ def pip_install_command(
             "--target",
             str(target),
             *(["--reinstall"] if reinstall else []),
+            *index_args,
             *packages,
         ]
     return [
@@ -825,6 +972,13 @@ def pip_install_command(
         *(["--force-reinstall"] if reinstall else []),
         *packages,
     ]
+
+
+def _uv_index_strategy_args(packages: list[str]) -> list[str]:
+    """Return uv-only index flags needed for mixed PyPI/PyTorch CUDA installs."""
+    if PYTORCH_CUDA_WHEEL_INDEX in packages and KOKORO_CUDA_TORCH_PACKAGE in packages:
+        return list(UV_UNSAFE_BEST_MATCH_INDEX_ARGS)
+    return []
 
 
 def ensure_pip_available() -> None:

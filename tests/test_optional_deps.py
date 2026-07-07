@@ -8,6 +8,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_optional_packages_default_to_shared_user_data_dir(monkeypatch, tmp_path):
     """Repo/dev and packaged launches should share the optional package layer."""
@@ -44,6 +46,42 @@ def test_optional_packages_dir_env_override(monkeypatch, tmp_path):
         assert reloaded_optional.OPTIONAL_PACKAGES_DIR == target
 
     importlib.reload(optional_deps)
+
+
+def test_stt_int8_cuda_fallback_uses_cpu_when_float16_is_unsupported():
+    """An int8 CUDA warmup failure must not die if the float16 fallback is unsupported."""
+    from core import stt_device
+
+    calls: list[tuple[str, str]] = []
+
+    class FakeModel:
+        def __init__(self, _model_name: str, *, device: str, compute_type: str):
+            calls.append((device, compute_type))
+            if device == "cuda" and compute_type == "float16":
+                raise ValueError(
+                    "Requested float16 compute type, but the target device or backend "
+                    "do not support efficient float16 computation."
+                )
+            self.device = device
+            self.compute_type = compute_type
+
+        def transcribe(self, _audio, **_kwargs):
+            if self.device == "cuda" and self.compute_type == "int8":
+                raise RuntimeError("CUBLAS_STATUS_NOT_SUPPORTED")
+            return [], None
+
+    model, device, compute = stt_device.build_model(
+        FakeModel,
+        "base",
+        "cuda",
+        "int8",
+        log=lambda _message: None,
+    )
+
+    assert model.device == "cpu"
+    assert device == "cpu"
+    assert compute == "int8"
+    assert calls == [("cuda", "int8"), ("cuda", "float16"), ("cpu", "int8")]
 
 
 def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
@@ -96,6 +134,36 @@ def test_optional_deps_install_can_target_staging_dir(monkeypatch, tmp_path):
 
     assert command[command.index("--target") + 1] == str(staging)
     assert str(active) not in command
+
+
+def test_optional_package_spec_status_checks_release_dist_infos(monkeypatch, tmp_path):
+    """Installed means the optional package folder matches this release's pins."""
+    from core import optional_deps
+
+    target = tmp_path / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+
+    def dist(name: str, version: str) -> None:
+        path = target / f"{name.replace('-', '_')}-{version}.dist-info"
+        path.mkdir(parents=True, exist_ok=True)
+        path.joinpath("METADATA").write_text(f"Name: {name}\nVersion: {version}\n", encoding="utf-8")
+
+    missing = optional_deps.optional_package_spec_status("stt")
+    assert missing["valid"] is False
+    assert "faster-whisper" in missing["missing"]
+
+    dist("faster-whisper", "1.2.1")
+    dist("protobuf", "6.33.2")
+    dist("tokenizers", "0.22.2")
+    dist("setuptools", "81.0.0")
+    valid = optional_deps.optional_package_spec_status("stt")
+    assert valid["valid"] is True
+    assert valid["installed"] is True
+
+    dist("faster-whisper", "1.2.0")
+    mismatch = optional_deps.optional_package_spec_status("stt")
+    assert mismatch["valid"] is False
+    assert "faster-whisper" in mismatch["duplicates"]
 
 
 def test_optional_deps_bootstraps_pip_for_source_installs(monkeypatch):
@@ -310,6 +378,37 @@ def test_optional_deps_frozen_stt_install_uses_bundled_uv(monkeypatch, tmp_path)
     assert "--python-version" in command
     assert command[command.index("--target") + 1] == str(target)
     assert command[-len(optional_deps.stt_install_packages()):] == optional_deps.stt_install_packages()
+    assert "--index-strategy" not in command
+
+
+def test_optional_deps_frozen_kokoro_cuda_uses_uv_best_match_index_strategy(monkeypatch, tmp_path):
+    """Packaged CUDA Kokoro installs need uv to search PyPI and PyTorch indexes."""
+    from core import optional_deps
+
+    suffix = ".exe" if sys.platform == "win32" else ""
+    bundle = tmp_path / "_internal"
+    uv = bundle / "bin" / f"uv{suffix}"
+    uv.parent.mkdir(parents=True)
+    uv.write_text("", encoding="utf-8")
+    target = tmp_path / "data" / "python_packages"
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_deps, "REPO_ROOT", tmp_path / "data")
+    monkeypatch.setattr(optional_deps.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(optional_deps.sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setattr(optional_deps.sys, "executable", str(tmp_path / "Wisp.exe"))
+    monkeypatch.setattr(optional_deps.shutil, "which", lambda _name: "")
+
+    command = optional_deps.pip_install_command(
+        optional_deps.kokoro_torch_install_packages("cuda"),
+        reinstall=True,
+    )
+
+    strategy_index = command.index("--index-strategy")
+    assert command[strategy_index : strategy_index + 2] == ["--index-strategy", "unsafe-best-match"]
+    assert strategy_index < command.index("--index-url")
+    assert command[-len(optional_deps.kokoro_torch_install_packages("cuda")) :] == (
+        optional_deps.kokoro_torch_install_packages("cuda")
+    )
 
 
 def test_optional_deps_frozen_reinstall_can_force_replacement(monkeypatch, tmp_path):
@@ -374,6 +473,7 @@ def test_optional_deps_install_env_sets_uv_http_timeout(monkeypatch):
 
 def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_path):
     """CUDA support repair should not require reinstalling Kokoro packages."""
+    from core import optional_deps
     from scripts import optional_tts_installer
 
     plan_path = tmp_path / "plan.json"
@@ -396,6 +496,11 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
         "_run_install_command",
         lambda _log, _prefix, packages, reinstall=False: calls.append((packages, reinstall)) or 0,
     )
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True},
+    )
 
     assert optional_tts_installer.main() == 0
     assert calls == [(["--index-url", "https://download.pytorch.org/whl/cu128", "torch==2.11.0+cu128"], True)]
@@ -403,6 +508,7 @@ def test_optional_tts_installer_allows_pre_install_only_plan(monkeypatch, tmp_pa
 
 def test_optional_tts_installer_can_reinstall_packages(monkeypatch, tmp_path):
     """Installer plans can force replacement of normal package installs."""
+    from core import optional_deps
     from scripts import optional_tts_installer
 
     plan_path = tmp_path / "plan.json"
@@ -424,6 +530,11 @@ def test_optional_tts_installer_can_reinstall_packages(monkeypatch, tmp_path):
         optional_tts_installer,
         "_run_install_command",
         lambda _log, _prefix, packages, reinstall=False: calls.append((packages, reinstall)) or 0,
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True},
     )
 
     assert optional_tts_installer.main() == 0
@@ -459,6 +570,11 @@ def test_optional_tts_installer_warns_about_duplicate_dist_infos(monkeypatch, tm
     monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
     monkeypatch.setattr(optional_tts_installer, "_remove_duplicate_dist_infos", lambda *_args: None)
     monkeypatch.setattr(optional_tts_installer, "_run_install_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True},
+    )
 
     assert optional_tts_installer.main() == 0
 
@@ -506,6 +622,24 @@ def test_optional_tts_installer_ensures_pip_before_running_install(monkeypatch, 
     assert calls == ["ensure", "command", "popen"]
 
 
+def test_optional_tts_installer_log_survives_legacy_console_encoding(monkeypatch, tmp_path):
+    """Localized installer output must not crash on Windows cp1252 consoles."""
+    import io
+
+    from scripts import optional_tts_installer
+
+    console_bytes = io.BytesIO()
+    fake_stdout = io.TextIOWrapper(console_bytes, encoding="cp1252", errors="strict")
+    monkeypatch.setattr(optional_tts_installer.sys, "stdout", fake_stdout)
+
+    with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+        optional_tts_installer._log(log, "[tts install]", "安裝程式失敗")
+
+    fake_stdout.flush()
+    assert b"???" in console_bytes.getvalue()
+    assert (tmp_path / "install.log").read_text(encoding="utf-8") == "[tts install] 安裝程式失敗\n"
+
+
 def test_optional_tts_installer_stt_prepare_requires_model_verification(monkeypatch, tmp_path):
     """STT installer success is written only after the model probe passes."""
     from core import optional_deps
@@ -541,6 +675,11 @@ def test_optional_tts_installer_stt_prepare_requires_model_verification(monkeypa
             "compute": compute,
             "error": "",
         },
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True},
     )
 
     assert optional_tts_installer.main() == 0
@@ -580,15 +719,46 @@ def test_optional_tts_installer_stt_prepare_reports_model_verification_failure(m
         "stt_model_status_subprocess",
         lambda *_args: {"valid": False, "error": "ImportError: missing faster_whisper"},
     )
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True},
+    )
 
     assert optional_tts_installer.main() == 1
 
     status = json.loads(status_path.read_text(encoding="utf-8"))
     assert status["ok"] is False
-    assert (
-        status["message"]
-        == "STT installed, but model verification failed: ImportError: missing faster_whisper"
-    )
+    assert status["message"] == "STT package installed, but model download/load failed: ImportError: missing faster_whisper"
+
+
+def test_optional_tts_installer_kokoro_cpu_plan_verifies_cpu_spec(monkeypatch, tmp_path):
+    """A non-GPU Kokoro apply plan should not re-auto-detect CUDA during verification."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    seen: dict[str, object] = {}
+
+    def fake_spec_status(key, *, device=None, target_dir=None):
+        seen["key"] = key
+        seen["device"] = device
+        return {"valid": True}
+
+    monkeypatch.setattr(optional_deps, "optional_package_spec_status", fake_spec_status)
+    monkeypatch.setattr("core.tts.prepare_kokoro_assets", lambda **_kwargs: {})
+    monkeypatch.setattr(optional_deps, "kokoro_runtime_import_status", lambda: {"valid": True})
+    monkeypatch.setattr(optional_deps, "kokoro_torch_status", lambda: {"valid": True, "cuda_available": False})
+
+    with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+        ok, _message = optional_tts_installer._post_install_result(
+            log,
+            "[kokoro install]",
+            {"display_name": "Kokoro", "post_install": "kokoro_prepare", "kokoro_require_gpu": False},
+            tmp_path / "status.json",
+        )
+
+    assert ok is True
+    assert seen == {"key": "kokoro", "device": "cpu"}
 
 
 def test_optional_tts_installer_stages_restart_apply_plan(monkeypatch, tmp_path):
@@ -719,6 +889,63 @@ def test_optional_install_apply_merges_shared_namespace_dirs(tmp_path):
     assert not staging.exists() or not any(staging.iterdir())
 
 
+def test_optional_install_apply_restores_active_folder_when_swap_fails(monkeypatch, tmp_path):
+    """A failed replacement activation should restore the previous package folder."""
+    from scripts import optional_tts_installer
+
+    target = tmp_path / "python_packages"
+    old_pkg = target / "oldpkg" / "__init__.py"
+    old_pkg.parent.mkdir(parents=True)
+    old_pkg.write_text("old", encoding="utf-8")
+    staging = tmp_path / "stage"
+    staged_pkg = staging / "newpkg" / "__init__.py"
+    staged_pkg.parent.mkdir(parents=True)
+    staged_pkg.write_text("new", encoding="utf-8")
+    calls = {"count": 0}
+    real_retry = optional_tts_installer._retry_file_operation
+
+    def flaky_retry(operation):
+        calls["count"] += 1
+        if calls["count"] == 3:
+            raise PermissionError("replacement locked")
+        return real_retry(operation)
+
+    monkeypatch.setattr(optional_tts_installer, "_retry_file_operation", flaky_retry)
+
+    with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+        with pytest.raises(PermissionError):
+            optional_tts_installer._apply_staging(staging, target, log, "[stt install]")
+
+    assert (target / "oldpkg" / "__init__.py").read_text(encoding="utf-8") == "old"
+    assert not (target / "newpkg").exists()
+
+
+def test_optional_apply_status_window_receives_app_language(monkeypatch, tmp_path):
+    """Restart-time apply status windows should use the install plan language."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    launched: dict[str, object] = {}
+
+    def fake_launch(command, *, cwd=None, env=None):
+        launched["command"] = command
+        launched["cwd"] = cwd
+        launched["env"] = env
+
+    monkeypatch.setattr(updater, "launch_detached_helper", fake_launch)
+
+    optional_tts_installer._launch_apply_status_window(
+        "STT",
+        tmp_path / "status.json",
+        tmp_path / "install.log",
+        app_language="zh-Hant",
+    )
+
+    assert "--language" in launched["command"]
+    assert launched["command"][launched["command"].index("--language") + 1] == "zh-Hant"
+    assert launched["env"]["APP_LANGUAGE"] == "zh-Hant"
+
+
 def test_optional_install_apply_reopens_wisp_after_post_install_failure(monkeypatch, tmp_path):
     """Once Wisp has closed for staged apply, verification failure should still reopen it."""
     from core import updater
@@ -744,6 +971,7 @@ def test_optional_install_apply_reopens_wisp_after_post_install_failure(monkeypa
     monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(updater, "app_restart_command", lambda: (["python", "-m", "runtime.supervisor.app"], tmp_path))
     monkeypatch.setattr(updater, "launch_detached_helper", lambda command, **kwargs: restarts.append((command, kwargs.get("cwd"))))
+    monkeypatch.setattr(optional_tts_installer, "_launch_apply_status_window", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(optional_tts_installer, "_apply_staging", lambda *_args: None)
     monkeypatch.setattr(optional_tts_installer, "_post_install_result", lambda *_args: (False, "STT verification failed."))
 
@@ -792,6 +1020,43 @@ def test_optional_install_staged_apply_keeps_staging_when_wisp_stays_open(monkey
     assert status["ok"] is None
     assert status["restart_apply"] is True
     assert "will be applied" in status["message"]
+
+
+def test_optional_install_staged_apply_failure_keeps_restart_apply_status(monkeypatch, tmp_path):
+    """A locked DLL failure should keep the retry-on-restart state visible."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    (staging / "torch").mkdir()
+    target = tmp_path / "python_packages"
+    status_path = tmp_path / "status.json"
+    plan_path = tmp_path / "kokoro-install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "log_path": str(tmp_path / "install.log"),
+                "status_path": str(status_path),
+                "staging_path": str(staging),
+                "target_path": str(target),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(optional_tts_installer, "_apply_staging", lambda *_args: (_ for _ in ()).throw(PermissionError("locked c10.dll")))
+    monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: None)
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 1
+
+    assert staging.exists()
+    assert plan_path.exists()
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is False
+    assert status["restart_apply"] is True
+    assert "retry at the next restart" in status["message"]
 
 
 def test_optional_install_staged_apply_consumes_staging_and_plan_on_success(monkeypatch, tmp_path):
@@ -1072,6 +1337,17 @@ def test_kokoro_auto_install_selects_gpu_when_cuda_detected(monkeypatch):
     assert "torch==2.11.0+cu128" in optional_deps.kokoro_install_packages("auto")
 
 
+def test_kokoro_none_install_selects_cpu_even_when_cuda_detected(monkeypatch):
+    """None is an explicit no-device value; only 'auto' should probe CUDA."""
+    from core import optional_deps
+
+    monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: True)
+
+    assert optional_deps.kokoro_install_mode_for_device(None) == "cpu"
+    assert optional_deps.kokoro_torch_install_packages(None) == []
+    assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages(None)
+
+
 def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
     """Auto should keep the smaller CPU stack on machines without CUDA."""
     from core import optional_deps
@@ -1276,6 +1552,38 @@ def test_kokoro_torch_status_flags_incomplete_torch_import(monkeypatch):
     assert status["installed"] is True
     assert status["valid"] is False
     assert "incomplete" in status["error"]
+
+
+def test_kokoro_torch_status_requires_amp_autocast(monkeypatch):
+    """Kokoro needs torch.amp.autocast, so Settings should reject Torch without it."""
+    import builtins
+    from types import SimpleNamespace
+
+    from core import optional_deps
+
+    original_import = builtins.__import__
+    fake_torch = SimpleNamespace(
+        __file__="python_packages/torch/__init__.py",
+        __version__="2.11.0",
+        cuda=SimpleNamespace(is_available=lambda: False, init=lambda: None),
+        version=SimpleNamespace(cuda=""),
+    )
+
+    def fake_import(name, *args, **kwargs):
+        if name == "torch":
+            return fake_torch
+        if name == "torch.amp":
+            raise ImportError("cannot import name 'autocast' from 'torch.amp'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(optional_deps.importlib.machinery.PathFinder, "find_spec", lambda name, _path=None: object())
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    status = optional_deps.kokoro_torch_status()
+
+    assert status["installed"] is True
+    assert status["valid"] is False
+    assert "autocast" in status["error"]
 
 
 def test_kokoro_runtime_import_status_flags_broken_dependency(monkeypatch):
