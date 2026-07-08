@@ -4,6 +4,8 @@ name: Debug Windows exit code
 
 on:
   workflow_dispatch:
+  push:
+    branches: [debug/ci-exit-bisect]
 
 jobs:
   bisect:
