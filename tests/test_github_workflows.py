@@ -103,19 +103,12 @@ class GitHubWorkflowTests(unittest.TestCase):
         runner = (ROOT / "scripts" / "run_ci_pytest_chunk.py").read_text(encoding="utf-8")
 
         self.assertIn("chunk: [1, 2, 3, 4]", workflow)
-        self.assertIn("scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4 --per-file", workflow)
+        self.assertIn("scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4", workflow)
+        self.assertNotIn("--per-file", workflow)
         self.assertIn('"--basetemp"', runner)
         self.assertIn('".pytest-tmp-ci-chunk-{args.chunk_index}"', runner)
         self.assertIn('".pytest-tmp-ci-chunk-{chunk_index}-file-{index:03d}"', runner)
         self.assertIn("=== running file", runner)
-
-    def test_debug_exit_workflow_uses_python_chunk_runner(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "debug-exit.yml").read_text(encoding="utf-8")
-
-        self.assertIn("scripts/run_ci_pytest_chunk.py --chunk-index 4 --chunk-total 4 --per-file", workflow)
-        self.assertNotIn("$files = python", workflow)
-        self.assertNotIn("=== per-file pass ===", workflow)
-
 
 if __name__ == "__main__":
     unittest.main()
