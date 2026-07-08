@@ -1,0 +1,52 @@
+# Temporary diagnostic: locate which chunk-4 test file makes python exit 1
+# on windows-latest despite all tests passing. Dispatch-only; delete after use.
+name: Debug Windows exit code
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bisect:
+    name: Per-file exit codes (windows-latest)
+    runs-on: windows-latest
+    env:
+      PYTHONFAULTHANDLER: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements/requirements-windows.lock
+            requirements/requirements-dev.lock
+
+      - name: Install Windows dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements-windows.lock -r requirements/requirements-dev.lock
+
+      - name: Per-file pytest exit codes
+        run: |
+          $files = python scripts/run_ci_pytest_chunk.py --chunk-index 4 --chunk-total 4 --list-only |
+            Select-String "^  tests" | ForEach-Object { $_.Line.Trim() }
+          Write-Host "=== per-file pass ==="
+          foreach ($f in $files) {
+            $out = python -X faulthandler -m pytest -q --tb=line -k "not platform_macos" --basetemp .tmp-dbg $f 2>&1
+            $code = $LASTEXITCODE
+            $summary = ($out | Select-String "passed|failed|error" | Select-Object -Last 1).Line
+            Write-Host ("code={0}  {1}  [{2}]" -f $code, $f, $summary)
+          }
+          Write-Host "=== cumulative-prefix pass ==="
+          $acc = @()
+          foreach ($f in $files) {
+            $acc += $f
+            $out = python -X faulthandler -m pytest -q --tb=line -k "not platform_macos" --basetemp .tmp-dbg $acc 2>&1
+            $code = $LASTEXITCODE
+            $summary = ($out | Select-String "passed|failed|error" | Select-Object -Last 1).Line
+            Write-Host ("code={0}  +{1}  [{2}]" -f $code, $f, $summary)
+            if ($code -ne 0) { break }
+          }
+          exit 0
