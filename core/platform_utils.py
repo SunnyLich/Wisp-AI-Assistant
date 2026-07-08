@@ -424,6 +424,21 @@ def _mac_focus_window(wid: int) -> None:
     run_on_main(_focus)
 
 
+def _qt_platform_is_cocoa() -> bool:
+    """Return whether Qt is running on the real macOS cocoa platform plugin.
+
+    Under the offscreen/minimal QPA (tests, CI, headless automation)
+    ``winId()`` is a plugin-internal handle, not an ``NSView*`` — handing it to
+    pyobjc dereferences a wild pointer and segfaults past any ``except``.
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+
+        return QGuiApplication.platformName() == "cocoa"
+    except Exception:
+        return False
+
+
 def keep_overlay_visible_across_apps(widget) -> None:
     """Stop a Qt.Tool overlay window from hiding when our app is not frontmost.
 
@@ -433,12 +448,15 @@ def keep_overlay_visible_across_apps(widget) -> None:
     our own ``ICON_AUTO_HIDE`` logic. Clear that flag and let the window float
     across every Space (and over full-screen apps) so it stays put.
 
-    Takes a Qt widget; ``winId()`` is an ``NSView*`` on macOS, whose ``window``
-    is the backing ``NSPanel``. No-op off macOS / when pyobjc is unavailable.
-    The AppKit mutation runs on the main thread (run_on_main is inline when
-    already there).
+    Takes a Qt widget; ``winId()`` is an ``NSView*`` on macOS **only under the
+    cocoa platform plugin**, whose ``window`` is the backing ``NSPanel``.
+    No-op off macOS / off cocoa / when pyobjc is unavailable. The AppKit
+    mutation runs on the main thread (run_on_main is inline when already
+    there).
     """
     if not IS_MAC:
+        return
+    if not _qt_platform_is_cocoa():
         return
     try:
         ptr = int(widget.winId())  # forces native NSView/NSWindow creation
@@ -481,9 +499,12 @@ def activate_self() -> None:
     receive keystrokes: when a global hotkey fires, another app is frontmost, so
     Qt's raise_/activateWindow alone cannot grab keyboard focus until our process
     is the active application. NSApp activation is AppKit automation, so it must
-    run on the main thread. No-op on Windows/Linux (Qt's activateWindow suffices).
+    run on the main thread. No-op on Windows/Linux (Qt's activateWindow suffices)
+    and off the cocoa platform plugin (headless runs have no app to activate).
     """
     if not IS_MAC:
+        return
+    if not _qt_platform_is_cocoa():
         return
 
     def _activate() -> None:

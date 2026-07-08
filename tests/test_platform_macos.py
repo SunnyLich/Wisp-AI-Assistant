@@ -155,6 +155,81 @@ class MacPlatformTests(unittest.TestCase):
             self.assertEqual(self.pu.get_window_pid(42), 0)
 
 
+class MacOverlayNativeGuardTests(unittest.TestCase):
+    """Overlay pinning / app activation must not touch native handles unless Qt
+    runs on the real cocoa platform plugin: under the offscreen QPA, winId() is
+    a plugin-internal handle, and handing it to pyobjc is a wild-pointer
+    dereference that segfaults the UI worker past any except (seen booting the
+    real app headless on the macOS CI runner)."""
+
+    def setUp(self):
+        """Reload platform_utils under a faked darwin platform."""
+        self._platform_patch = patch.object(sys, "platform", "darwin")
+        self._platform_patch.start()
+        import core.platform_utils as pu
+        self.pu = importlib.reload(pu)
+
+    def tearDown(self):
+        """Restore real-platform constants for other tests."""
+        self._platform_patch.stop()
+        import core.platform_utils as pu
+        importlib.reload(pu)
+
+    class _Widget:
+        """Records whether the native handle was requested."""
+
+        def __init__(self):
+            """Initialize the widget stub."""
+            self.win_id_calls = 0
+
+        def winId(self):
+            """Count native-handle requests; 0 keeps cocoa path AppKit-free."""
+            self.win_id_calls += 1
+            return 0
+
+    def test_overlay_pinning_noops_off_cocoa(self):
+        """Verify no native handle is taken under offscreen/minimal QPA."""
+        widget = self._Widget()
+        with patch.object(self.pu, "_qt_platform_is_cocoa", return_value=False):
+            self.pu.keep_overlay_visible_across_apps(widget)
+        self.assertEqual(widget.win_id_calls, 0)
+
+    def test_overlay_pinning_takes_native_handle_on_cocoa(self):
+        """Verify the cocoa path still reaches for the NSView handle."""
+        widget = self._Widget()
+        with patch.object(self.pu, "_qt_platform_is_cocoa", return_value=True):
+            self.pu.keep_overlay_visible_across_apps(widget)
+        self.assertEqual(widget.win_id_calls, 1)
+
+    def test_activate_self_noops_off_cocoa(self):
+        """Verify NSApp activation is not scheduled without a cocoa session."""
+        scheduled: list = []
+        with patch.object(self.pu, "_qt_platform_is_cocoa", return_value=False), \
+             patch.object(self.pu, "run_on_main", side_effect=lambda fn: scheduled.append(fn)):
+            self.pu.activate_self()
+        self.assertEqual(scheduled, [])
+
+    def test_cocoa_detection_reads_qt_platform_name(self):
+        """Verify the guard keys off QGuiApplication.platformName()."""
+        fake = type(sys)("PySide6.QtGui")
+
+        class QGuiApplication:
+            """Static platformName stand-in."""
+
+            _name = "offscreen"
+
+            @classmethod
+            def platformName(cls):
+                """Return the faked Qt platform plugin name."""
+                return cls._name
+
+        fake.QGuiApplication = QGuiApplication
+        with patch.dict(sys.modules, {"PySide6.QtGui": fake}):
+            self.assertFalse(self.pu._qt_platform_is_cocoa())
+            QGuiApplication._name = "cocoa"
+            self.assertTrue(self.pu._qt_platform_is_cocoa())
+
+
 class MacHotkeyTests(unittest.TestCase):
     """Test case for mac hotkey tests behavior."""
     def setUp(self):

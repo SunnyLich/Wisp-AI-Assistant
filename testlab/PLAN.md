@@ -64,6 +64,10 @@ same worker IPC the real supervisor uses. Reports land in `testlab/reports/`.
 - Possible later additions: live-voice (Gemini Live) session check, addon
   host boot check, staged-apply (restart_apply=True) install variant,
   dictation UI paste-back with --real-desktop.
-- Findings so far: STT_COMPUTE_TYPE=auto (hand-edited .env) bypasses the
-  Blackwell cuBLAS self-heal in core/stt_device.py build_model - flagged as a
-  spawned background task.
+- Findings so far:
+  - STT_COMPUTE_TYPE=auto (hand-edited .env) bypasses the Blackwell cuBLAS
+    self-heal in core/stt_device.py build_model - flagged as a background task.
+  - FIXED 2026-07-08: app_boot caught the UI worker segfaulting on macOS under
+    non-cocoa Qt platforms (offscreen CI/headless): keep_overlay_visible_across_apps
+    handed a fake winId() to pyobjc. Guarded via _qt_platform_is_cocoa() in
+    core/platform_utils.py + regression tests in tests/test_platform_macos.py.
