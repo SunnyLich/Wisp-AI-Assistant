@@ -139,4 +139,4 @@ jobs:
         run: python -m compileall -q core ui runtime config.py
 
       - name: Run test suite
-        run: python scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4
+        run: python scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4 --per-file

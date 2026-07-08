@@ -24,11 +24,41 @@ def _chunk_files(files: list[Path], chunk_index: int, chunk_total: int) -> list[
     ]
 
 
+def _pytest_command(root: Path, files: list[Path], basetemp: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-X",
+        "faulthandler",
+        "-m",
+        "pytest",
+        "-ra",
+        "--tb=short",
+        "-k",
+        "not platform_macos",
+        "--basetemp",
+        str(basetemp),
+        *(str(path.relative_to(root)) for path in files),
+    ]
+
+
+def _run_per_file(root: Path, files: list[Path], chunk_index: int) -> int:
+    for index, path in enumerate(files, start=1):
+        rel_path = path.relative_to(root)
+        basetemp = root / f".pytest-tmp-ci-chunk-{chunk_index}-file-{index:03d}"
+        print(f"=== running file {index}/{len(files)}: {rel_path} ===", flush=True)
+        status = subprocess.run(_pytest_command(root, [path], basetemp), cwd=root).returncode
+        print(f"=== file exit code {status}: {rel_path} ===", flush=True)
+        if status != 0:
+            return status
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chunk-index", type=int, required=True)
     parser.add_argument("--chunk-total", type=int, default=4)
     parser.add_argument("--list-only", action="store_true")
+    parser.add_argument("--per-file", action="store_true")
     args = parser.parse_args()
 
     if args.chunk_total < 1:
@@ -49,22 +79,11 @@ def main() -> int:
     if args.list_only:
         return 0
 
+    if args.per_file:
+        return _run_per_file(root, files, args.chunk_index)
+
     basetemp = root / f".pytest-tmp-ci-chunk-{args.chunk_index}"
-    cmd = [
-        sys.executable,
-        "-X",
-        "faulthandler",
-        "-m",
-        "pytest",
-        "-ra",
-        "--tb=short",
-        "-k",
-        "not platform_macos",
-        "--basetemp",
-        str(basetemp),
-        *(str(path.relative_to(root)) for path in files),
-    ]
-    return subprocess.run(cmd, cwd=root).returncode
+    return subprocess.run(_pytest_command(root, files, basetemp), cwd=root).returncode
 
 
 if __name__ == "__main__":

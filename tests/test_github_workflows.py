@@ -103,9 +103,11 @@ class GitHubWorkflowTests(unittest.TestCase):
         runner = (ROOT / "scripts" / "run_ci_pytest_chunk.py").read_text(encoding="utf-8")
 
         self.assertIn("chunk: [1, 2, 3, 4]", workflow)
-        self.assertIn("scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4", workflow)
+        self.assertIn("scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4 --per-file", workflow)
         self.assertIn('"--basetemp"', runner)
         self.assertIn('".pytest-tmp-ci-chunk-{args.chunk_index}"', runner)
+        self.assertIn('".pytest-tmp-ci-chunk-{chunk_index}-file-{index:03d}"', runner)
+        self.assertIn("=== running file", runner)
 
 
 if __name__ == "__main__":
