@@ -12,6 +12,7 @@ disabled for the query; flow_e2e covers the memory-enabled path.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from pathlib import Path
@@ -31,20 +32,37 @@ def main() -> int:
     import config
     from runtime.supervisor.ipc import WorkerClient, WorkerSpec
 
-    provider = str(getattr(config, "LLM_PROVIDER", "") or "").strip()
-    model = str(getattr(config, "LLM_MODEL", "") or "").strip()
+    # WISP_TESTLAB_LLM_PROVIDER/MODEL pin a lab-only route (e.g. a free
+    # AI Studio model) so the lab never spends paid tokens even when the app
+    # itself is configured for a paid provider. Default: the app's own route.
+    provider = (
+        os.environ.get("WISP_TESTLAB_LLM_PROVIDER", "").strip()
+        or str(getattr(config, "LLM_PROVIDER", "") or "").strip()
+    )
+    model = (
+        os.environ.get("WISP_TESTLAB_LLM_MODEL", "").strip()
+        or str(getattr(config, "LLM_MODEL", "") or "").strip()
+    )
     fallbacks = str(getattr(config, "LLM_FALLBACKS", "") or "").strip()
     if not provider or not model:
         return _lab.finish(_lab.SKIP, "no LLM provider/model configured in .env")
-    _lab.log(f"configured route: {provider} / {model} (fallbacks: {fallbacks or 'none'})")
+    _lab.log(f"route under test: {provider} / {model} (fallbacks: {fallbacks or 'none'})")
 
     isolated_root = _lab.isolated_repo_root("llm_query")
+    # .env never overrides existing process env, so pinning the route here
+    # wins inside the worker's own config load.
+    route_env = {
+        "LLM_PROVIDER": provider,
+        "LLM_MODEL": model,
+        "CHAT_LLM_PROVIDER": provider,
+        "CHAT_LLM_MODEL": model,
+    }
     worker = WorkerClient(
         WorkerSpec(
             "lab-brain",
             "runtime.workers.brain_host",
             "brain",
-            env=_lab.env_overrides(isolated_root=isolated_root),
+            env=_lab.env_overrides(isolated_root=isolated_root, extra=route_env),
         )
     )
     watch = _lab.Stopwatch()

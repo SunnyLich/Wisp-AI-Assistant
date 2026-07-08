@@ -18,6 +18,7 @@ the real native worker end to end.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import threading
 import time
@@ -133,7 +134,10 @@ def main() -> int:
     from runtime.supervisor.flows import FlowController
     from runtime.supervisor.ipc import WorkerClient, WorkerSpec
 
-    provider = str(getattr(config, "LLM_PROVIDER", "") or "").strip()
+    # Optional lab-only route pin (e.g. a free AI Studio model) - see llm_query.
+    lab_provider = os.environ.get("WISP_TESTLAB_LLM_PROVIDER", "").strip()
+    lab_model = os.environ.get("WISP_TESTLAB_LLM_MODEL", "").strip()
+    provider = lab_provider or str(getattr(config, "LLM_PROVIDER", "") or "").strip()
     if not provider:
         return _lab.finish(_lab.SKIP, "no LLM provider configured")
     tts_provider = str(getattr(config, "TTS_PROVIDER", "none") or "none").strip().lower()
@@ -145,7 +149,17 @@ def main() -> int:
     config.TTS_SPEAK_REPLIES = bool(tts_expected)
 
     isolated_root = _lab.isolated_repo_root("flow_e2e")
-    overrides = _lab.env_overrides(isolated_root=isolated_root)
+    route_env: dict[str, str] = {}
+    if lab_provider and lab_model:
+        # .env never overrides existing process env, so this pins the brain
+        # worker's route (both the overlay and chat paths).
+        route_env = {
+            "LLM_PROVIDER": lab_provider,
+            "LLM_MODEL": lab_model,
+            "CHAT_LLM_PROVIDER": lab_provider,
+            "CHAT_LLM_MODEL": lab_model,
+        }
+    overrides = _lab.env_overrides(isolated_root=isolated_root, extra=route_env)
     brain = WorkerClient(WorkerSpec("lab-brain", "runtime.workers.brain_host", "brain", env=overrides))
     audio = WorkerClient(
         WorkerSpec(
@@ -174,7 +188,10 @@ def main() -> int:
             "ui.chat.begin_conversation": {"started": True, "conversation_index": 0},
         },
     )
-    _lab.log(f"llm={provider}/{getattr(config, 'LLM_MODEL', '')} tts={tts_provider} native={native_kind}")
+    _lab.log(
+        f"llm={provider}/{lab_model or getattr(config, 'LLM_MODEL', '')} "
+        f"tts={tts_provider} native={native_kind}"
+    )
 
     playback = {"started": threading.Event(), "done": threading.Event()}
     watch = _lab.Stopwatch()

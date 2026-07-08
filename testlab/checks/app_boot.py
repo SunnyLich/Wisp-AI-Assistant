@@ -117,6 +117,10 @@ def _rung2_real_app() -> tuple[bool, str]:
     )
     _lab.log(f"single-instance isolation: {_isolate_single_instance(env)}")
     supervisor_log = log_dir / "supervisor.log"
+    # The supervisor's crash traceback goes to stderr only (in debug log mode
+    # no crash file is written), so capture it or failures are unexplainable.
+    app_output_log = log_dir / "app.output.log"
+    app_output = app_output_log.open("w", encoding="utf-8", errors="replace")
     popen_kwargs: dict = {}
     if sys.platform != "win32":
         popen_kwargs["start_new_session"] = True
@@ -124,11 +128,34 @@ def _rung2_real_app() -> tuple[bool, str]:
         [sys.executable, "-m", "runtime.supervisor.app"],
         cwd=_lab.REPO_ROOT,
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=app_output,
+        stderr=subprocess.STDOUT,
         **popen_kwargs,
     )
     _lab.log(f"real app started (pid {proc.pid}); watching {supervisor_log}")
+
+    def _diagnostics(reason: str) -> str:
+        app_output.flush()
+        _lab.log(f"--- diagnostics: {reason} ---")
+        for name, path in (
+            ("app stdout/stderr", app_output_log),
+            ("supervisor.log", supervisor_log),
+            *(((log_name, log_dir / log_name)) for log_name in WORKER_LOGS),
+        ):
+            text = _read_text(path).strip()
+            if text:
+                _lab.log(f"--- {name} (tail) ---")
+                for line in text.splitlines()[-30:]:
+                    _lab.log(f"    {line}")
+        crash_root = isolated_root / "build_logs"
+        crashes = sorted(crash_root.glob("wisp_crash_*")) if crash_root.exists() else []
+        for crash in crashes:
+            for crash_file in sorted(crash.glob("*")):
+                _lab.log(f"--- crash log {crash_file.name} (tail) ---")
+                for line in _read_text(crash_file).splitlines()[-30:]:
+                    _lab.log(f"    {line}")
+        tail = _read_text(app_output_log).strip()[-400:]
+        return f"{reason}; app output tail: {tail}" if tail else reason
 
     def _kill() -> None:
         if proc.poll() is None:
@@ -153,8 +180,7 @@ def _rung2_real_app() -> tuple[bool, str]:
             if proc.poll() is not None:
                 if proc.returncode == 2:
                     return True, "skipped: another Wisp instance is running (single-instance lock)"
-                text = _read_text(supervisor_log)
-                return False, f"app exited during boot with code {proc.returncode}; log tail: {text[-500:]}"
+                return False, _diagnostics(f"app exited during boot with code {proc.returncode}")
             text = _read_text(supervisor_log)
             if all(marker in text for marker in BOOT_MARKERS) and all(
                 (log_dir / name).exists() for name in WORKER_LOGS
@@ -163,16 +189,15 @@ def _rung2_real_app() -> tuple[bool, str]:
                 break
             time.sleep(1.0)
         if not booted:
-            return False, f"app did not finish booting within {int(BOOT_TIMEOUT)}s; log tail: {_read_text(supervisor_log)[-500:]}"
-        boot_text = _read_text(supervisor_log)
+            return False, _diagnostics(f"app did not finish booting within {int(BOOT_TIMEOUT)}s")
         _lab.log("all four workers spawned; holding steady-state watch")
         time.sleep(STEADY_SECONDS)
         if proc.poll() is not None:
-            return False, f"app died in steady state with code {proc.returncode}"
+            return False, _diagnostics(f"app died in steady state with code {proc.returncode}")
         text = _read_text(supervisor_log)
         if "Traceback" in text:
             snippet = text[text.index("Traceback"):][:400]
-            return False, f"supervisor log has a traceback: {snippet}"
+            return False, _diagnostics(f"supervisor log has a traceback: {snippet}")
         crash_dirs = list((isolated_root / "build_logs").glob("wisp_crash_*")) if (isolated_root / "build_logs").exists() else []
         if crash_dirs:
             return False, f"crash logs were written during boot: {[d.name for d in crash_dirs]}"
@@ -191,12 +216,13 @@ def _rung2_real_app() -> tuple[bool, str]:
             code = proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             _kill()
-            return False, "app ignored SIGTERM for 30s (shutdown hang)"
+            return False, _diagnostics("app ignored SIGTERM for 30s (shutdown hang)")
         if code != 0:
-            return False, f"app exited with code {code} after SIGTERM (expected clean 0)"
+            return False, _diagnostics(f"app exited with code {code} after SIGTERM (expected clean 0)")
         return True, f"real app booted 4 workers, stayed healthy, exited cleanly on SIGTERM; {hotkeys_note}"
     finally:
         _kill()
+        app_output.close()
 
 
 def main() -> int:

@@ -20,7 +20,12 @@ command per platform instead of an afternoon of hand-testing.
 
 Reports: `testlab/reports/<timestamp>/report.md` (+ `report.json` and one log
 per check). Exit code is nonzero when anything failed. `--no-spend` skips the
-two checks that use real LLM tokens (a few hundred tokens per run otherwise).
+two checks that use real LLM tokens (~4 small requests / a few hundred tokens
+per run otherwise - trivially inside the AI Studio free tier).
+
+The spending checks default to the app's configured route. To pin a lab-only
+route (e.g. keep the lab on a free AI Studio model while the app uses a paid
+provider), set `WISP_TESTLAB_LLM_PROVIDER` / `WISP_TESTLAB_LLM_MODEL`.
 
 ## What runs
 

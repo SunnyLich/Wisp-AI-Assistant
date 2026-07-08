@@ -92,5 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: testlab-report-${{ matrix.os }}
-          path: testlab/reports/
+          path: |
+            testlab/reports/
+            testlab/.artifacts/app_boot_process_logs/
           if-no-files-found: warn
