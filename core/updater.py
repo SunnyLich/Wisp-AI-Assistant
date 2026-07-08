@@ -897,6 +897,28 @@ def launch_detached_helper(command: list[str], *, cwd: Path | None = None, env: 
 def _process_exists(pid: int) -> bool:
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        # os.kill(pid, 0) is not a liveness probe on Windows: signal 0 is
+        # CTRL_C_EVENT, so it broadcasts a console Ctrl+C to every process
+        # sharing the caller's console (GenerateConsoleCtrlEvent), interrupting
+        # them. Probe the process handle instead.
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        ERROR_ACCESS_DENIED = 5
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # Access denied means the pid exists but is not openable by us.
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+        try:
+            exit_code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True

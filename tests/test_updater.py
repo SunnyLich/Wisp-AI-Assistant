@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -340,3 +342,26 @@ def test_windows_new_version_helper_asset_is_bundled() -> None:
     assert "Split-Path -LiteralPath" not in text
     assert "Move-Item -LiteralPath $Candidate -Destination $InstallRoot" in text
     assert "Start-Process -FilePath $RestartTarget" in text
+
+
+def test_process_exists_reports_live_and_dead_pids() -> None:
+    assert updater.process_exists(os.getpid())
+    assert not updater.process_exists(0)
+
+    finished = subprocess.Popen([sys.executable, "-c", "pass"])
+    finished.wait()
+    # The Popen handle keeps the pid from being recycled while we probe it.
+    assert not updater.process_exists(finished.pid)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only console Ctrl+C hazard")
+def test_process_exists_on_windows_never_uses_os_kill(monkeypatch) -> None:
+    # os.kill(pid, 0) on Windows is GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid):
+    # it interrupts every process on the shared console (it took down the CI
+    # runner script), so the liveness probe must never reach it.
+    def forbidden_kill(*_args: object) -> None:
+        raise AssertionError("os.kill must not be used to probe pids on Windows")
+
+    monkeypatch.setattr(updater.os, "kill", forbidden_kill)
+
+    assert updater.process_exists(os.getpid())
