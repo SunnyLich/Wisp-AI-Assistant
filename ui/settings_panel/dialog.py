@@ -17,6 +17,7 @@ import threading
 import re
 import shlex
 import time
+import warnings
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
@@ -69,6 +70,20 @@ _TTS_TIMING_NOTICE = (
     "instead of audio-synced word highlighting."
 )
 _AUTH_STATUS_TIMEOUT_MS = 7000
+
+
+def _disconnect_clicked_handlers(button: QPushButton) -> None:
+    """Disconnect a button's clicked handlers without warning when none exist."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r'libpyside: Failed to disconnect .* from signal "clicked\(\)".',
+            category=RuntimeWarning,
+        )
+        try:
+            button.clicked.disconnect()
+        except (RuntimeError, TypeError):
+            pass
 
 
 # Sentinel data value for the "Custom / enter manually…" model combo entry.
@@ -3654,10 +3669,7 @@ class SettingsDialog(QDialog):
 
     def _connect_button_action(self, button: QPushButton, callback: Callable[[], None]) -> None:
         """Replace a button's click handler after restart/apply state changes."""
-        try:
-            button.clicked.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        _disconnect_clicked_handlers(button)
         button.clicked.connect(callback)
 
     def _restart_for_staged_apply(self) -> None:
@@ -4440,10 +4452,7 @@ class SettingsDialog(QDialog):
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
                     button.setText(t("Restart app now"))
-                    try:
-                        button.clicked.disconnect()
-                    except (RuntimeError, TypeError):
-                        pass
+                    _disconnect_clicked_handlers(button)
                     button.clicked.connect(lambda _checked=False: QApplication.instance().quit() if QApplication.instance() else None)
                 self._set_test_pending(status, f"{display_name} packages are staged. Click Restart app now to close Wisp and apply them.")
                 return

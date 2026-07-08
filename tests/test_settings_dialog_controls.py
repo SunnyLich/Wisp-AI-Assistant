@@ -26,6 +26,35 @@ def _default_settings_tests_to_english():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_disconnect_clicked_handlers_ignores_missing_connections_warning():
+    """Disconnecting an unconnected PySide signal should stay quiet."""
+    import warnings
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from ui.settings_panel.dialog import _disconnect_clicked_handlers
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    button = QPushButton("Install")
+
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _disconnect_clicked_handlers(button)
+
+        assert not [
+            warning
+            for warning in caught
+            if issubclass(warning.category, RuntimeWarning)
+            and "Failed to disconnect" in str(warning.message)
+        ]
+    finally:
+        button.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_combo_ignores_wheel_when_popup_closed():
     """Verify settings combo ignores wheel when popup closed behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
