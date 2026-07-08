@@ -1122,6 +1122,9 @@ def test_optional_install_staged_apply_failure_keeps_restart_apply_status(monkey
     monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(optional_tts_installer, "_apply_staging", lambda *_args: (_ for _ in ()).throw(PermissionError("locked c10.dll")))
     monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: None)
+    # The real launcher spawns a detached status-window process that polls the
+    # restart_apply status forever, outliving the test run (and failing CI).
+    monkeypatch.setattr(optional_tts_installer, "_launch_apply_status_window", lambda *_args, **_kwargs: None)
 
     assert optional_tts_installer._run_staged_apply(plan_path) == 1
 
@@ -1164,6 +1167,7 @@ def test_optional_install_staged_apply_consumes_staging_and_plan_on_success(monk
         lambda *_args: (True, "Kokoro installed successfully."),
     )
     monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: restarts.append("restart"))
+    monkeypatch.setattr(optional_tts_installer, "_launch_apply_status_window", lambda *_args, **_kwargs: None)
 
     assert optional_tts_installer._run_staged_apply(plan_path) == 0
 
