@@ -34,8 +34,10 @@ class MacContextFetcherDocumentTests(unittest.TestCase):
             names = {101: "TextEdit", 202: "Finder"}
             return types.SimpleNamespace(name=lambda: names.get(pid, ""))
 
+        fake_psutil = types.SimpleNamespace(Process=fake_process)
+
         with patch("core.platform.macos_native.list_document_windows", return_value=rows), \
-             patch("psutil.Process", side_effect=fake_process):
+             patch.dict(sys.modules, {"psutil": fake_psutil}):
             wins = self.cf._enumerate_open_doc_windows()
 
         self.assertEqual(len(wins), 1)
