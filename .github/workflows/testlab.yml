@@ -1,0 +1,96 @@
+# Runs the Wisp testlab (real-integration release gate) on macOS and Linux
+# runners: real worker-stack boot, real app process boot, offscreen GUI, the
+# macOS native crash harnesses, and - on the deep tier - fresh STT/TTS installs
+# through the real installer into a scratch dir with real inference after.
+#
+# Token-spending checks (llm_query, flow_e2e) are skipped via --no-spend:
+# runners have no API keys. Run those on a real machine per release.
+#
+# Note: macOS runner minutes bill at 10x on private repos. Triggers are scoped
+# to testlab changes + manual dispatch to keep cost down.
+name: Testlab
+
+on:
+  push:
+    paths:
+      - "testlab/**"
+      - ".github/workflows/testlab.yml"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Check tier (deep adds fresh STT/TTS installs)"
+        type: choice
+        default: deep
+        options:
+          - smoke
+          - release
+          - deep
+
+jobs:
+  testlab:
+    name: Testlab (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      PYTHONFAULTHANDLER: "1"
+      QT_QPA_PLATFORM: offscreen
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: |
+            requirements/requirements-linux.lock
+            requirements/requirements-macos.lock
+            pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          # GitHub-hosted Ubuntu images may include Microsoft apt sources we do
+          # not use; transient 403s there can break apt-get update.
+          sudo rm -f \
+            /etc/apt/sources.list.d/azure-cli.list \
+            /etc/apt/sources.list.d/azure-cli.sources \
+            /etc/apt/sources.list.d/microsoft-prod.list \
+            /etc/apt/sources.list.d/microsoft-prod.sources \
+            /etc/apt/sources.list.d/packages-microsoft-prod.list \
+            /etc/apt/sources.list.d/packages-microsoft-prod.sources
+          sudo apt-get update
+          # espeak-ng: misaki/Kokoro phonemizer fallback for the deep-tier install check
+          sudo apt-get install -y libegl1 libportaudio2 libsndfile1 espeak-ng
+
+      - name: Install macOS system dependencies
+        if: runner.os == 'macOS'
+        run: brew install espeak-ng
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements-linux.lock
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          uv pip sync requirements/requirements-macos.lock --python "$(command -v python)" --strict
+
+      - name: Run testlab
+        run: python testlab/run.py --tier ${{ inputs.tier || 'deep' }} --no-spend --timeout-scale 2
+
+      - name: Upload testlab report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlab-report-${{ matrix.os }}
+          path: testlab/reports/
+          if-no-files-found: warn
