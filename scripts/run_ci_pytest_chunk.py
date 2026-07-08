@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 
 
+_PYTEST_NO_TESTS_COLLECTED = 5
+
+
 def _test_files(root: Path) -> list[Path]:
     return sorted(
         path
@@ -52,6 +55,9 @@ def _run_per_file(root: Path, files: list[Path], chunk_index: int) -> int:
             print(f"=== runner interrupted while waiting for file {index}/{len(files)}: {rel_path} ===", flush=True)
             raise
         print(f"=== file exit code {status}: {rel_path} ===", flush=True)
+        if status == _PYTEST_NO_TESTS_COLLECTED:
+            print(f"=== file skipped by selection: {rel_path} ===", flush=True)
+            continue
         if status != 0:
             return status
     return 0

@@ -109,6 +109,8 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn('".pytest-tmp-ci-chunk-{args.chunk_index}"', runner)
         self.assertIn('".pytest-tmp-ci-chunk-{chunk_index}-file-{index:03d}"', runner)
         self.assertIn("=== running file", runner)
+        self.assertIn("_PYTEST_NO_TESTS_COLLECTED = 5", runner)
+        self.assertIn("=== file skipped by selection:", runner)
 
 if __name__ == "__main__":
     unittest.main()
