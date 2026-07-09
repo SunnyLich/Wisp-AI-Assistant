@@ -29,8 +29,12 @@ secrets.*
 # Local prototypes (standalone experiments, not part of the app)
 /prototypes/
 
+# Machine-specific MCP client config snippet (regenerated at addon startup)
+addons/mcp_bridge/claude_config_snippet.json
+
 # Local planning docs (living, not for VCS)
 MACOS_NATIVE_PLAN.md
+MCP_SERVER_PLAN.md
 FLOWS_SPLIT_PLAN.md
 AUTO_AGENT_TOOL_CAPABILITY_PLAN.md
 TEXT_ANNOTATION_ADDON_PLAN.md

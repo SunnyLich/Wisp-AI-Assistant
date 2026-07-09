@@ -640,6 +640,93 @@ def _fetch_active_window() -> WindowInfo:
     return _fetch_active_window_linux()
 
 
+def get_active_window_info(*, exclude_pids: "set[int] | None" = None) -> WindowInfo:
+    """Public: the current foreground window, optionally skipping given pids.
+
+    exclude_pids lets an out-of-process caller (the MCP context server) skip
+    the windows of the app that launched it: when the foreground window
+    belongs to an excluded pid, fall back to the topmost other visible window
+    — the one the user was working in before focusing the assistant.
+    """
+    excluded = {int(pid) for pid in (exclude_pids or set()) if int(pid or 0) > 0}
+    active = _fetch_active_window()
+    if not excluded or int(active.pid or 0) not in excluded:
+        return active
+    return _topmost_window_excluding(excluded)
+
+
+# Shell surfaces that EnumWindows reports as visible titled windows but that
+# never count as "what the user is working in" (desktop, taskbar).
+_SHELL_WINDOW_CLASSES = {"progman", "workerw", "shell_traywnd"}
+
+
+def _topmost_window_excluding(excluded: "set[int]") -> WindowInfo:
+    """Topmost visible titled window whose owner pid is not in `excluded`."""
+    if _IS_WIN:
+        return _topmost_window_excluding_win(excluded)
+    if _IS_MAC:
+        try:
+            from core.platform import macos_native
+
+            rows = macos_native.list_document_windows()
+        except Exception:
+            rows = []
+        for row in sorted(rows, key=lambda item: not bool(item.get("frontmost"))):
+            pid = int(row.get("pid") or 0)
+            title = str(row.get("title") or "").strip()
+            if pid > 0 and pid not in excluded and title:
+                return WindowInfo(
+                    title=title,
+                    process_name=str(row.get("process_name") or "").strip(),
+                    pid=pid,
+                )
+        return WindowInfo()
+    from core.platform_utils import list_visible_windows_stacking
+
+    with swallow():
+        for wid in list_visible_windows_stacking():
+            win = _fetch_window_info_linux(int(wid or 0))
+            if int(win.pid or 0) > 0 and int(win.pid) not in excluded and (win.title or "").strip():
+                return win
+    return WindowInfo()
+
+
+def _topmost_window_excluding_win(excluded: "set[int]") -> WindowInfo:
+    """EnumWindows walks top-level windows in z-order, topmost first."""
+    if not _IS_WIN:
+        return WindowInfo()
+    import ctypes
+    import ctypes.wintypes
+
+    user32 = ctypes.windll.user32
+    found: list[WindowInfo] = []
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+
+    def _callback(hwnd, _lparam):
+        """Stop at the first visible, titled, non-shell, non-excluded window."""
+        with swallow():
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            if user32.GetWindowTextLengthW(hwnd) <= 0:
+                return True
+            class_buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, class_buf, 256)
+            if (class_buf.value or "").lower() in _SHELL_WINDOW_CLASSES:
+                return True
+            win = _fetch_window_info_win(int(hwnd))
+            if int(win.pid or 0) > 0 and int(win.pid) not in excluded:
+                found.append(win)
+                return False
+        return True
+
+    try:
+        user32.EnumWindows(WNDENUMPROC(_callback), 0)
+    except Exception:
+        return WindowInfo()
+    return found[0] if found else WindowInfo()
+
+
 def _fetch_active_window_win() -> WindowInfo:
     """Handle fetch active window win for context fetcher."""
     import ctypes

@@ -147,13 +147,18 @@ def get_selected_text(copy_combo: str = "cmd+c", *, settle_seconds: float = 0.08
     """Copy the current selection, read it, then restore the previous clipboard."""
     if not IS_MAC:
         return None
-    previous = get_clipboard_text()
-    if not send_key_combo(copy_combo):
-        return None
-    time.sleep(max(0.0, settle_seconds))
-    current = get_clipboard_text()
-    if previous is not None:
-        set_clipboard_text(previous)
+    from core.system import clipboard_lock
+
+    # Serialize the save->copy->restore dance with any other Wisp-derived
+    # process (e.g. the MCP context server) doing the same thing.
+    with clipboard_lock.held():
+        previous = get_clipboard_text()
+        if not send_key_combo(copy_combo):
+            return None
+        time.sleep(max(0.0, settle_seconds))
+        current = get_clipboard_text()
+        if previous is not None:
+            set_clipboard_text(previous)
     if current is None:
         return None
     text = current.strip()

@@ -1,13 +1,19 @@
-"""MCP Bridge addon.
+"""MCP Bridge addon — both directions of the Model Context Protocol.
 
-Connects to one or more Model Context Protocol (MCP) servers listed in
+Client side (this module): connects to one or more MCP servers listed in
 ``servers.json`` and re-exposes every tool they advertise as a Wisp tool via
-``get_tools()``. One addon imports an entire external toolkit.
+``get_tools()``. One addon imports an entire external toolkit. Each server
+stays its own process (any language, local or via a launcher), and this addon
+translates between Wisp's tool registry and the MCP wire protocol. The client
+is synchronous on purpose so it matches the addon host's synchronous hook
+model.
 
-This is the *client* side of MCP: each server stays its own process (any
-language, local or via a launcher), and this addon translates between Wisp's
-tool registry and the MCP wire protocol. The client is synchronous on purpose
-so it matches the addon host's synchronous hook model.
+Server side (``context_server.py``): a standalone MCP stdio server that
+external MCP clients (Claude Desktop, Cursor, ...) launch themselves to read
+the user's desktop context — selection, clipboard, active window, browser
+page, screen — through Wisp's capture machinery. This module only publishes
+the ready-to-paste client config snippet for it (see ``on_startup``); the
+running Wisp app never hosts the server.
 """
 from __future__ import annotations
 
@@ -23,6 +29,8 @@ from pathlib import Path
 
 ADDON_DIR = Path(__file__).resolve().parent
 SERVERS_FILE = ADDON_DIR / "servers.json"
+CONTEXT_SERVER_FILE = ADDON_DIR / "context_server.py"
+CLIENT_SNIPPET_FILE = ADDON_DIR / "claude_config_snippet.json"  # gitignored
 _DEFAULT_TIMEOUT = 8.0  # stay under the host's 8s execute_tool cap
 
 # Live clients keyed by server name, and a map from the tool name we expose to
@@ -329,12 +337,46 @@ def get_settings() -> list:
         {"key": "max_tools_per_server", "label": "Max tools per server", "type": "number",
          "default": "50",
          "help": "Cap on how many tools each server may expose to Wisp."},
+        {"key": "server_enabled", "label": "Enable context server", "type": "bool",
+         "default": "true",
+         "help": "Allow external MCP clients (Claude Desktop, Cursor, ...) to launch "
+                 "context_server.py and read desktop context (selection, clipboard, "
+                 "browser page, screen). Off = the server refuses to start."},
     ]
 
 
+def client_config_snippet() -> str:
+    """Ready-to-paste MCP client config pointing at the context server.
+
+    Built from sys.executable so the snippet always names Wisp's own
+    interpreter — the capture stack needs Wisp's installed dependencies, and a
+    hand-typed system-Python path is the most common way this setup fails.
+    """
+    return json.dumps({
+        "mcpServers": {
+            "wisp-context": {
+                "command": sys.executable,
+                "args": [str(CONTEXT_SERVER_FILE)],
+            }
+        }
+    }, indent=2)
+
+
+def _publish_client_snippet() -> None:
+    """Write the client config snippet next to the addon and log it."""
+    snippet = client_config_snippet()
+    try:
+        CLIENT_SNIPPET_FILE.write_text(snippet + "\n", encoding="utf-8")
+        where = f" (written to {CLIENT_SNIPPET_FILE})"
+    except Exception as exc:
+        where = f" (could not write {CLIENT_SNIPPET_FILE}: {exc})"
+    _log(f"context server: paste this into an MCP client's config{where}:\n{snippet}")
+
+
 def on_startup(app_context) -> None:
-    """Lifecycle hook: announce startup (connections happen lazily)."""
+    """Lifecycle hook: announce startup and publish the context-server snippet."""
     _log("starting")
+    _publish_client_snippet()
 
 
 def on_shutdown() -> None:

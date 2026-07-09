@@ -96,38 +96,45 @@ def _get_selected_text_clipboard() -> str | None:
     if _IS_MAC:
         from core.platform import macos_native
 
+        # macos_native.get_selected_text holds the clipboard lock itself (it
+        # is also called directly by native_host), so don't nest it here.
         return macos_native.get_selected_text(COPY_COMBO)
 
-    previous = _safe_get_clipboard()
-    previous_sequence = _clipboard_sequence_number()
-    send_keys(COPY_COMBO)
-    text = ""
-    changed = False
-    deadline = time.monotonic() + (0.50 if sys.platform == "win32" else 0.18)
-    while time.monotonic() < deadline:
-        time.sleep(0.04)
-        current = (_safe_get_clipboard() or "").strip()
-        current_sequence = _clipboard_sequence_number()
-        sequence_changed = (
-            previous_sequence is not None
-            and current_sequence is not None
-            and current_sequence != previous_sequence
-        )
-        if current and (sequence_changed or current != (previous or "").strip()):
-            text = current
-            changed = True
-            break
-        if current and sequence_changed:
-            text = current
-            changed = True
-            break
+    from core.system import clipboard_lock
 
-    # Restore original clipboard content
-    if previous is not None:
-        try:
-            pyperclip.copy(previous)
-        except Exception:
-            pass
+    # Serialize the save->copy->restore dance with any other Wisp-derived
+    # process (e.g. the MCP context server) doing the same thing.
+    with clipboard_lock.held():
+        previous = _safe_get_clipboard()
+        previous_sequence = _clipboard_sequence_number()
+        send_keys(COPY_COMBO)
+        text = ""
+        changed = False
+        deadline = time.monotonic() + (0.50 if sys.platform == "win32" else 0.18)
+        while time.monotonic() < deadline:
+            time.sleep(0.04)
+            current = (_safe_get_clipboard() or "").strip()
+            current_sequence = _clipboard_sequence_number()
+            sequence_changed = (
+                previous_sequence is not None
+                and current_sequence is not None
+                and current_sequence != previous_sequence
+            )
+            if current and (sequence_changed or current != (previous or "").strip()):
+                text = current
+                changed = True
+                break
+            if current and sequence_changed:
+                text = current
+                changed = True
+                break
+
+        # Restore original clipboard content
+        if previous is not None:
+            try:
+                pyperclip.copy(previous)
+            except Exception:
+                pass
 
     return text if changed and text else None
 
@@ -336,13 +343,18 @@ def _get_primary_selection_linux(
     return None
 
 
-def get_selected_text() -> str | None:
+def get_selected_text(*, allow_synthetic_copy: bool = True) -> str | None:
     """
     Returns the currently highlighted text.
 
     Windows: UIA (no clipboard touch), then Ctrl+C fallback.
     Linux:   PRIMARY selection (no keypress), then Ctrl+C fallback.
     macOS:   Ctrl+C fallback.
+
+    allow_synthetic_copy=False skips the Ctrl+C/Cmd+C fallback entirely —
+    callers that can't guarantee the target app has focus (e.g. the MCP
+    context server, whose caller's own window is focused) use it so the copy
+    keystroke never lands in the wrong window.
     """
     try:
         text = _get_selected_text_uia()
@@ -355,7 +367,7 @@ def get_selected_text() -> str | None:
         except Exception:
             _log.exception("Selected-text PRIMARY capture failed.")
             text = None
-    if not text:
+    if not text and allow_synthetic_copy:
         try:
             text = _get_selected_text_clipboard()
         except Exception:
