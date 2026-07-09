@@ -200,7 +200,29 @@ Start Wisp Debug.sh
 
 只要您能用 Python 编写它并且它适合上述某个钩子点，就可以将其连接到您已经使用的同一个快捷键驱动悬浮窗中。
 
-Wisp 内置了一个 **MCP 桥接** 插件（`addons/mcp_bridge`）：在它的 `servers.json` 中列出任意 [Model Context Protocol](https://modelcontextprotocol.io) 服务器，它便会将这些服务器的整套工具作为 Wisp 工具暴露给模型，于是任何 MCP 服务器都能从悬浮窗调用。请参阅 [插件指南](../addons/README.md) 了解完整的清单和钩子合约，或 [Wisp 文档网站](../Wisp%20Website/Wisp%20Docs.html) 中的**插件**页面。
+## MCP 客户端与服务器
+
+### MCP 客户端：在 Wisp 中使用外部服务器
+
+Wisp 内置了一个充当 MCP 客户端的 **MCP 桥接** 插件（`addons/mcp_bridge`）：在它的 `servers.json` 中列出任意 [Model Context Protocol](https://modelcontextprotocol.io) 服务器，Wisp 就会将这些服务器的整套工具作为 Wisp 工具暴露给模型。这样悬浮窗无需离开桌面工作流即可使用外部 MCP 能力。请参阅 [插件指南](../addons/README.md) 了解完整的清单和钩子合约，或 [Wisp 文档网站](../Wisp%20Website/Wisp%20Docs.html) 中的**插件**页面。
+
+### MCP 服务器：Wisp 上下文服务器
+
+Wisp 还内置了一个名为 **Wisp Context Server** 的本地 **MCP stdio 服务器**。受信任的 MCP 客户端（如 Claude Desktop、Cursor 和 Codex）可以启动它以读取实时桌面上下文；Wisp 应用本身无需保持运行。
+
+它提供五个只读工具：
+
+- `get_selected_text`：当前在桌面上选中的文本。
+- `get_clipboard`：剪贴板文本。
+- `get_active_window`：活动应用、窗口标题，以及可用时的浏览器 URL。
+- `read_browser_page`：可见浏览器页面的文本。
+- `take_screen_snip`：主显示器的截图。
+
+### 连接客户端
+
+启动一次 Wisp，然后将 `addons/mcp_bridge/claude_config_snippet.json` 中的 `mcpServers` 条目复制到 MCP 客户端配置中。Wisp 会使用其自身 Python 解释器和 `addons/mcp_bridge/context_server.py` 的正确本地路径生成此配置片段；请勿替换为系统 Python。有关平台说明和故障排除，请参阅 [MCP Bridge 服务器设置指南](../addons/mcp_bridge/README.md)。
+
+只应向受信任的客户端注册该服务器：工具结果可能包含所选文本、剪贴板内容、浏览器内容和桌面截图。
 
 ## 隐私与控制
 

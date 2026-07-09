@@ -200,7 +200,29 @@ Start Wisp Debug.sh
 
 只要您能用 Python 編寫它並且它適合上述某個掛鉤點，就可以將其連接到您已經使用的同一個快捷鍵驅動懸浮視窗中。
 
-Wisp 內建了一個 **MCP 橋接** 附加元件（`addons/mcp_bridge`）：在它的 `servers.json` 中列出任意 [Model Context Protocol](https://modelcontextprotocol.io) 伺服器，它便會將這些伺服器的整套工具作為 Wisp 工具公開給模型，於是任何 MCP 伺服器都能從懸浮視窗呼叫。請參閱 [附加元件指南](../addons/README.md) 了解完整的清單和掛鉤合約，或 [Wisp 文件網站](../Wisp%20Website/Wisp%20Docs.html) 中的**附加元件**頁面。
+## MCP 用戶端與伺服器
+
+### MCP 用戶端：在 Wisp 中使用外部伺服器
+
+Wisp 內建了一個充當 MCP 用戶端的 **MCP 橋接** 附加元件（`addons/mcp_bridge`）：在它的 `servers.json` 中列出任意 [Model Context Protocol](https://modelcontextprotocol.io) 伺服器，Wisp 就會將這些伺服器的整套工具作為 Wisp 工具公開給模型。這讓懸浮視窗無需離開桌面工作流程即可使用外部 MCP 功能。請參閱 [附加元件指南](../addons/README.md) 了解完整的清單和掛鉤合約，或 [Wisp 文件網站](../Wisp%20Website/Wisp%20Docs.html) 中的**附加元件**頁面。
+
+### MCP 伺服器：Wisp 上下文伺服器
+
+Wisp 也內建了一個名為 **Wisp Context Server** 的本機 **MCP stdio 伺服器**。受信任的 MCP 用戶端（例如 Claude Desktop、Cursor 和 Codex）可以啟動它以讀取即時桌面上下文；Wisp 應用程式本身無需保持開啟。
+
+它提供五個唯讀工具：
+
+- `get_selected_text`：目前在桌面上選取的文字。
+- `get_clipboard`：剪貼簿文字。
+- `get_active_window`：作用中的應用程式、視窗標題，以及可用時的瀏覽器 URL。
+- `read_browser_page`：可見瀏覽器頁面的文字。
+- `take_screen_snip`：主顯示器的螢幕截圖。
+
+### 連接用戶端
+
+啟動一次 Wisp，然後將 `addons/mcp_bridge/claude_config_snippet.json` 中的 `mcpServers` 項目複製到 MCP 用戶端設定中。Wisp 會使用其自身 Python 解譯器和 `addons/mcp_bridge/context_server.py` 的正確本機路徑產生此設定片段；請勿替換為系統 Python。有關平台說明與疑難排解，請參閱 [MCP Bridge 伺服器設定指南](../addons/mcp_bridge/README.md)。
+
+只應向受信任的用戶端註冊此伺服器：工具結果可能包含選取文字、剪貼簿內容、瀏覽器內容和桌面螢幕截圖。
 
 ## 隱私與控制
 

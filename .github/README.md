@@ -219,7 +219,29 @@ An addon can hook into Wisp at several points:
 
 If you can write it in Python and it fits one of the hook points above, you can wire it into the same hotkey-driven overlay you already use.
 
-Wisp ships with an **MCP bridge** addon (`addons/mcp_bridge`): list any [Model Context Protocol](https://modelcontextprotocol.io) servers in its `servers.json` and it exposes their whole toolkit to the model as Wisp tools, so any MCP server becomes callable from the overlay. See the [Addon guide](../addons/README.md) for the full manifest and hook contract, or the **Add-ons** page in the [Wisp documentation site](../Wisp%20Website/Wisp%20Docs.html).
+## MCP Client and Server
+
+### MCP Client: use external servers inside Wisp
+
+Wisp ships with an **MCP bridge** addon (`addons/mcp_bridge`) that acts as an MCP client: list any [Model Context Protocol](https://modelcontextprotocol.io) servers in its `servers.json` and Wisp exposes their whole toolkit to its model as Wisp tools. This lets the overlay use external MCP capabilities without leaving the desktop workflow. See the [Addon guide](../addons/README.md) for the full manifest and hook contract, or the **Add-ons** page in the [Wisp documentation site](../Wisp%20Website/Wisp%20Docs.html).
+
+### MCP Server: Wisp Context Server
+
+Wisp also ships a local **MCP stdio server** called **Wisp Context Server**. Trusted MCP clients such as Claude Desktop, Cursor, and Codex can launch it to read live desktop context; the Wisp app itself does not need to stay open.
+
+It provides five read-only tools:
+
+- `get_selected_text` — the text currently selected on the desktop.
+- `get_clipboard` — clipboard text.
+- `get_active_window` — the active app, window title, and browser URL when available.
+- `read_browser_page` — text from the visible browser page.
+- `take_screen_snip` — a screenshot of the primary monitor.
+
+### Connect a client
+
+Start Wisp once, then copy the `mcpServers` entry from `addons/mcp_bridge/claude_config_snippet.json` into your MCP client's configuration. Wisp generates this snippet with the correct local path to its own Python interpreter and `addons/mcp_bridge/context_server.py`; do not substitute system Python. See the [MCP Bridge server setup guide](../addons/mcp_bridge/README.md) for platform notes and troubleshooting.
+
+Only register the server with clients you trust: tool results can contain selected text, clipboard content, browser content, and screenshots from your desktop.
 
 ## Privacy And Control
 

@@ -1798,7 +1798,7 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 'addons': {
   title: 'Add-ons',
   sub: 'Extend Wisp with query hooks, tray actions, settings, and model-callable tools — each in its own process.',
-  toc: ['concept','ideas','isolation','layout','manifest','permissions','hooks','events','dependencies','enabling','reference'],
+  toc: ['concept','ideas','isolation','layout','manifest','permissions','hooks','events','dependencies','enabling','mcp-client','mcp-server'],
   html: `
 <h2 id="concept">Concept</h2>
 <p>Add-ons are the supported way to extend Wisp. An add-on can observe or modify query context, observe responses, contribute tray actions, expose settings, register model-callable tools, and declare its own intents and hotkeys.</p>
@@ -1923,8 +1923,20 @@ Use simple prose on first reply. Use bullets, tables, or code blocks only on sec
 <p>Distribution is supported with <code>.zip</code> or <code>.wisp</code> archives containing one add-on folder; the Addon Manager can also install from an unpacked folder.</p>
 
 <hr />
-<h2 id="reference">Bundled add-on: MCP bridge</h2>
-<p>Wisp ships with an <strong>MCP bridge</strong> add-on (<code>addons/mcp_bridge</code>). List any <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> servers in its <code>servers.json</code> and it connects to each one and exposes their whole toolkit to the model as Wisp tools — so any MCP server becomes callable from the overlay. It includes a small <code>example_server.py</code> you can point it at to try it out. Read <code>addons/README.md</code> for the full add-on contract.</p>`
+<h2 id="mcp-client">MCP client: use external servers inside Wisp</h2>
+<p>Wisp ships with an <strong>MCP bridge</strong> add-on (<code>addons/mcp_bridge</code>) that acts as a <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> client. List servers in its <code>servers.json</code>, and Wisp connects to them and exposes their toolkit to its model as Wisp tools. This lets the overlay use external MCP capabilities without leaving your desktop workflow. A dependency-free <code>example_server.py</code> is included for trying the bridge.</p>
+
+<hr />
+<h2 id="mcp-server">MCP server: give AI clients Wisp desktop context</h2>
+<p>The same bundled add-on also includes the <strong>Wisp Context Server</strong> (<code>context_server.py</code>): a local MCP stdio server that trusted external clients can launch to read desktop context through Wisp's capture machinery. It does not require the Wisp app to stay open.</p>
+<ul style="padding-left:20px;color:var(--text);font-size:14px;line-height:2">
+  <li><code>get_selected_text</code> — highlighted text</li>
+  <li><code>get_clipboard</code> — clipboard text</li>
+  <li><code>get_active_window</code> — active window title, app, and URL when available</li>
+  <li><code>read_browser_page</code> — text from the visible browser page</li>
+  <li><code>take_screen_snip</code> — primary-monitor screenshot</li>
+</ul>
+<p>Start Wisp once, then copy the <code>mcpServers</code> entry from the generated <code>claude_config_snippet.json</code> into your MCP client's configuration. It uses Wisp's bundled Python interpreter, which supplies the capture dependencies. Register the server only with clients you trust: its tools can read the desktop data listed above, and data a client reads may be sent to that client's model provider. See <a href="https://github.com/SunnyLich/Wisp-AI-Assistant/blob/main/addons/mcp_bridge/README.md" target="_blank" rel="noopener">the MCP Bridge README</a> for setup and platform details.</p>`
 },
 
 'fallback-routes': {

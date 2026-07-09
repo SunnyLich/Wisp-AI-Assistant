@@ -200,7 +200,29 @@ Une extension peut s'accrocher à Wisp à plusieurs points :
 
 Si vous pouvez l'écrire en Python et qu'il s'adapte à l'un des points de hook ci-dessus, vous pouvez le connecter à la même superposition pilotée par raccourcis que vous utilisez déjà.
 
-Wisp est fourni avec une extension **pont MCP** (`addons/mcp_bridge`) : indiquez n'importe quels serveurs [Model Context Protocol](https://modelcontextprotocol.io) dans son `servers.json` et elle expose toute leur boîte à outils au modèle en tant qu'outils Wisp, de sorte que n'importe quel serveur MCP devient appelable depuis la superposition. Voir le [Guide des extensions](../addons/README.md) pour le contrat complet de manifeste et de hook, ou la page **Extensions** sur le [site de documentation Wisp](../Wisp%20Website/Wisp%20Docs.html).
+## Client et serveur MCP
+
+### Client MCP : utiliser des serveurs externes dans Wisp
+
+Wisp est fourni avec une extension **pont MCP** (`addons/mcp_bridge`) qui agit comme client MCP : indiquez n'importe quels serveurs [Model Context Protocol](https://modelcontextprotocol.io) dans son `servers.json` et Wisp expose toute leur boîte à outils à son modèle en tant qu'outils Wisp. La superposition peut ainsi utiliser des capacités MCP externes sans quitter le flux de travail du bureau. Voir le [Guide des extensions](../addons/README.md) pour le contrat complet de manifeste et de hook, ou la page **Extensions** sur le [site de documentation Wisp](../Wisp%20Website/Wisp%20Docs.html).
+
+### Serveur MCP : serveur de contexte Wisp
+
+Wisp inclut également un **serveur MCP stdio local** nommé **Wisp Context Server**. Des clients MCP de confiance tels que Claude Desktop, Cursor et Codex peuvent le lancer pour lire le contexte actif du bureau ; l'application Wisp n'a pas besoin de rester ouverte.
+
+Il fournit cinq outils en lecture seule :
+
+- `get_selected_text` : le texte actuellement sélectionné sur le bureau.
+- `get_clipboard` : le texte du presse-papiers.
+- `get_active_window` : l'application active, le titre de la fenêtre et, lorsqu'elle est disponible, l'URL du navigateur.
+- `read_browser_page` : le texte de la page visible dans le navigateur.
+- `take_screen_snip` : une capture de l'écran principal.
+
+### Connecter un client
+
+Démarrez Wisp une fois, puis copiez l'entrée `mcpServers` de `addons/mcp_bridge/claude_config_snippet.json` dans la configuration de votre client MCP. Wisp génère cet extrait avec le chemin local correct vers son propre interpréteur Python et `addons/mcp_bridge/context_server.py` ; ne le remplacez pas par le Python du système. Consultez le [guide de configuration du serveur MCP Bridge](../addons/mcp_bridge/README.md) pour les notes propres à chaque plateforme et le dépannage.
+
+N'enregistrez le serveur qu'auprès de clients de confiance : les résultats des outils peuvent contenir du texte sélectionné, le contenu du presse-papiers, le contenu du navigateur et des captures de votre bureau.
 
 ## Confidentialité et contrôle
 
