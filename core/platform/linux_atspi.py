@@ -29,6 +29,7 @@ _REGISTRY_NAME = "org.a11y.atspi.Registry"
 _ROOT_PATH = "/org/a11y/atspi/accessible/root"
 _IFACE_ACCESSIBLE = "org.a11y.atspi.Accessible"
 _IFACE_DOCUMENT = "org.a11y.atspi.Document"
+_IFACE_TEXT = "org.a11y.atspi.Text"
 _IFACE_PROPERTIES = "org.freedesktop.DBus.Properties"
 
 # atspi-constants.h role numbers (stable protocol values).
@@ -41,6 +42,9 @@ _WALK_DEADLINE = 4.0
 _MAX_NODES = 300
 _MAX_DEPTH = 10
 _MAX_CHILDREN_PER_NODE = 64
+_SELECTION_MAX_NODES = 800
+_SELECTION_MAX_CHARS = 100_000
+_STATE_FOCUSED = 12
 
 # Substrings that identify a browser accessible-application by name when the
 # pid match fails (Flatpak routes the a11y connection through a proxy, so the
@@ -184,6 +188,141 @@ def _get_name(conn, dest: str, path: str) -> str:
             value = value[1]
         return str(value or "")
     except Exception:  # noqa: BLE001 - nameless is fine
+        return ""
+
+
+def _selected_text_for_node(conn, dest: str, path: str) -> str:
+    """Return active Text-interface selections for one accessible node."""
+    try:
+        body = _call(conn, dest, path, _IFACE_TEXT, "GetNSelections")
+        count = max(0, min(32, int(body[0])))
+    except Exception:
+        return ""
+    parts: list[str] = []
+    remaining = _SELECTION_MAX_CHARS
+    for index in range(count):
+        try:
+            bounds = _call(conn, dest, path, _IFACE_TEXT, "GetSelection", "i", (index,))
+            start, end = int(bounds[0]), int(bounds[1])
+            if start < 0 or end <= start:
+                continue
+            end = min(end, start + remaining)
+            text = str(_call(conn, dest, path, _IFACE_TEXT, "GetText", "ii", (start, end))[0] or "")
+        except Exception:
+            continue
+        text = text.strip()
+        if text:
+            parts.append(text)
+            remaining -= len(text)
+            if remaining <= 0:
+                break
+    return "\n".join(parts)
+
+
+def _node_states(conn, dest: str, path: str) -> set[int]:
+    """Return the AT-SPI state enumeration values held by one node."""
+    try:
+        body = _call(conn, dest, path, _IFACE_ACCESSIBLE, "GetState")
+        return {int(value) for value in (body[0] if body else [])}
+    except Exception:
+        return set()
+
+
+def get_focused_context() -> dict[str, object]:
+    """Return focused native-Wayland application/window metadata via AT-SPI2."""
+    if not _IS_LINUX:
+        return {}
+    conn = _open_a11y_connection()
+    if conn is None:
+        return {}
+    deadline = time.monotonic() + _WALK_DEADLINE
+    try:
+        apps = _get_children(conn, _REGISTRY_NAME, _ROOT_PATH)
+        pid_cache: dict[str, int] = {}
+        for app_ref in apps:
+            app_name = _get_name(conn, app_ref[0], app_ref[1])
+            frames = _get_children(conn, app_ref[0], app_ref[1])
+            queue: list[tuple[str, str, str]] = [
+                (dest, path, _get_name(conn, dest, path)) for dest, path in frames
+            ]
+            seen: set[tuple[str, str]] = set()
+            nodes_left = _SELECTION_MAX_NODES
+            while queue and nodes_left > 0 and time.monotonic() < deadline:
+                dest, path, window_title = queue.pop(0)
+                if (dest, path) in seen:
+                    continue
+                seen.add((dest, path))
+                nodes_left -= 1
+                states = _node_states(conn, dest, path)
+                if _STATE_FOCUSED in states:
+                    docs: list[tuple[str, str]] = []
+                    for frame in frames:
+                        docs.extend(
+                            _collect_document_urls(
+                                conn,
+                                frame,
+                                _WalkBudget(deadline, max_nodes=300),
+                            )
+                        )
+                    return {
+                        "app_name": app_name,
+                        "process_name": app_name,
+                        "pid": _connection_pid(conn, app_ref[0], pid_cache),
+                        "window_title": window_title,
+                        "focused_name": _get_name(conn, dest, path),
+                        "browser_url": _choose_document_url(docs, window_title),
+                    }
+                try:
+                    queue.extend(
+                        (child_dest, child_path, window_title)
+                        for child_dest, child_path in _get_children(conn, dest, path)
+                    )
+                except Exception:
+                    continue
+        return {}
+    except Exception as exc:
+        _log.info("AT-SPI focused-context walk failed: %s", exc)
+        _reset_connection()
+        return {}
+
+
+def get_selected_text() -> str:
+    """Return selected text from a native Linux application via AT-SPI2.
+
+    The accessibility tree is searched breadth-first and stops at the first
+    live Text selection. This works for native Wayland clients without global
+    coordinates, X11 selection ownership, or synthetic copy keystrokes.
+    """
+    if not _IS_LINUX:
+        return ""
+    conn = _open_a11y_connection()
+    if conn is None:
+        return ""
+    deadline = time.monotonic() + _WALK_DEADLINE
+    try:
+        apps = _get_children(conn, _REGISTRY_NAME, _ROOT_PATH)
+        queue = [child for app in apps for child in _get_children(conn, app[0], app[1])]
+        seen: set[tuple[str, str]] = set()
+        nodes_left = _SELECTION_MAX_NODES
+        while queue and nodes_left > 0 and time.monotonic() < deadline:
+            dest, path = queue.pop(0)
+            if (dest, path) in seen:
+                continue
+            seen.add((dest, path))
+            nodes_left -= 1
+            states = _node_states(conn, dest, path)
+            text = _selected_text_for_node(conn, dest, path) if _STATE_FOCUSED in states else ""
+            if text:
+                _log.info("selected text via AT-SPI: %s characters", len(text))
+                return text
+            try:
+                queue.extend(_get_children(conn, dest, path))
+            except Exception:
+                continue
+        return ""
+    except Exception as exc:
+        _log.info("AT-SPI selected-text walk failed: %s", exc)
+        _reset_connection()
         return ""
 
 

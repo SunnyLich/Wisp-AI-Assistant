@@ -6,6 +6,7 @@ import types
 import unittest
 from unittest import mock
 
+
 class CaptureTests(unittest.TestCase):
     """Test case for capture tests behavior."""
     def setUp(self):
@@ -427,11 +428,90 @@ class CaptureTests(unittest.TestCase):
             frombytes=lambda mode, size, data, *args: types.SimpleNamespace(size=size, mode=mode)
         )
         with mock.patch.object(self.capture, "_IS_MAC", False), \
+             mock.patch.object(self.capture, "_IS_LINUX", False), \
              mock.patch.object(self.capture, "Image", fake_image_module), \
              mock.patch.dict(sys.modules, {"mss": fake_mss}):
             img = self.capture.get_screen_snippet()
 
         self.assertEqual(img.size, (2, 1))
+
+    def test_wayland_screen_snippet_uses_portal(self):
+        """Native Wayland capture avoids the X11-only mss backend."""
+        expected = object()
+        with mock.patch.object(self.capture, "_IS_MAC", False), \
+             mock.patch.object(self.capture, "_IS_LINUX", True), \
+             mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"}, clear=True), \
+             mock.patch.object(self.capture, "_get_screen_snippet_wayland", return_value=expected) as portal, \
+             mock.patch.dict(sys.modules, {"mss": None}):
+            result = self.capture.get_screen_snippet({"left": 1, "top": 2, "width": 3, "height": 4})
+
+        self.assertIs(result, expected)
+        portal.assert_called_once_with({"left": 1, "top": 2, "width": 3, "height": 4})
+
+    def test_wayland_selected_text_prefers_atspi(self):
+        """Native Wayland selections use accessibility without injected copy keys."""
+        from core.platform import linux_atspi
+
+        with mock.patch.object(self.capture, "_IS_LINUX", True), \
+             mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"}, clear=True), \
+             mock.patch.object(self.capture, "_get_selected_text_uia", return_value=None), \
+             mock.patch.object(linux_atspi, "get_selected_text", return_value="native selection"), \
+             mock.patch.object(self.capture, "_get_primary_selection_linux") as primary, \
+             mock.patch.object(self.capture, "_get_selected_text_clipboard") as synthetic_copy:
+            result = self.capture.get_selected_text()
+
+        self.assertEqual(result, "native selection")
+        primary.assert_not_called()
+        synthetic_copy.assert_not_called()
+
+    def test_kde_wayland_screen_snippet_uses_spectacle(self):
+        """KDE capture uses Spectacle directly and never opens the portal dialog."""
+        import pathlib
+        import subprocess
+
+        class FakeImage:
+            width = 10
+            height = 10
+
+            def convert(self, _mode):
+                return self
+
+            def load(self):
+                return None
+
+            def crop(self, box):
+                return ("crop", box)
+
+        class OpenImage:
+            def __enter__(self):
+                return FakeImage()
+
+            def __exit__(self, *_args):
+                return None
+
+        def fake_run(args, **_kwargs):
+            output = pathlib.Path(args[args.index("--output") + 1])
+            output.write_bytes(b"png")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with mock.patch.dict(
+            os.environ,
+            {"WAYLAND_DISPLAY": "wayland-0", "XDG_CURRENT_DESKTOP": "KDE"},
+            clear=True,
+        ), mock.patch("shutil.which", return_value="/usr/bin/spectacle"), \
+             mock.patch("subprocess.run", side_effect=fake_run), \
+             mock.patch.object(
+                 self.capture,
+                 "Image",
+                 types.SimpleNamespace(open=lambda _path: OpenImage()),
+             ), \
+             mock.patch("jeepney.io.blocking.open_dbus_connection") as portal:
+            image = self.capture._get_screen_snippet_wayland(
+                {"left": 1, "top": 2, "width": 3, "height": 4}
+            )
+
+        self.assertEqual(image, ("crop", (1, 2, 4, 6)))
+        portal.assert_not_called()
 
 
 if __name__ == "__main__":

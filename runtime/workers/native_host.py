@@ -569,6 +569,19 @@ def _active_app() -> dict[str, Any]:
     global _last_context_window_debug
     if not IS_MAC:
         try:
+            if not IS_WIN and os.environ.get("WAYLAND_DISPLAY"):
+                from core.platform import linux_atspi
+
+                focused = linux_atspi.get_focused_context()
+                if focused:
+                    return {
+                        "name": str(focused.get("window_title") or focused.get("app_name") or ""),
+                        "process_name": str(focused.get("process_name") or focused.get("app_name") or ""),
+                        "bundle_id": "",
+                        "pid": int(focused.get("pid") or 0),
+                        "window_id": 0,
+                        "browser_url": str(focused.get("browser_url") or ""),
+                    }
             from core.platform_utils import (
                 get_window_pid,
                 get_window_title,
@@ -823,6 +836,20 @@ def _selected_text_and_stale(
         return macos_native.get_selected_text() or "", ""
     try:
         if not IS_WIN and not IS_MAC and require_active_owner:
+            if os.environ.get("WAYLAND_DISPLAY"):
+                try:
+                    from core.platform import linux_atspi
+
+                    text = linux_atspi.get_selected_text().strip()
+                    if text:
+                        return text, ""
+                except Exception:
+                    pass
+                if not allow_clipboard_fallback:
+                    return "", ""
+                from core.capture import _get_primary_selection_linux
+
+                return (_get_primary_selection_linux() or "").strip(), ""
             from core.capture import _get_primary_selection_linux
 
             text = (
@@ -1138,10 +1165,18 @@ def context_snapshot(
     if include_browser_content:
         _s = time.monotonic()
         try:
-            from core.context_fetcher import _browser_content, get_browser_window_for_context
+            from core.context_fetcher import WindowInfo, _browser_content, get_browser_window_for_context
 
-            active_hwnd = int(active.get("window_id") or 0) if IS_WIN else None
-            browser_window = get_browser_window_for_context(active_hwnd or 0)
+            if not IS_WIN and not IS_MAC and os.environ.get("WAYLAND_DISPLAY"):
+                browser_window = WindowInfo(
+                    title=str(active.get("name") or ""),
+                    process_name=str(active.get("process_name") or ""),
+                    pid=int(active.get("pid") or 0),
+                    url=str(active.get("browser_url") or ""),
+                )
+            else:
+                active_hwnd = int(active.get("window_id") or 0) if IS_WIN else 0
+                browser_window = get_browser_window_for_context(active_hwnd)
             snapshot["browser_url"] = getattr(browser_window, "url", "") or ""
             snapshot["browser_hwnd"] = int(getattr(browser_window, "hwnd", 0) or 0)
             snapshot["browser_content"] = _browser_content(browser_window) if browser_window.hwnd or browser_window.url else ""
@@ -1196,27 +1231,30 @@ def context_snapshot(
                     "url": getattr(win, "url", ""),
                 }
             else:
-                # Linux/X11: keep the hotkey-time browser window id before the
-                # overlay takes focus. Page text is still deferred.
-                from core.context_fetcher import _BROWSER_PROCS, get_browser_window_for_context
+                if os.environ.get("WAYLAND_DISPLAY"):
+                    snapshot["browser_url"] = str(active.get("browser_url") or "")
+                    snapshot["browser_app"] = str(active.get("process_name") or "")
+                else:
+                    # Linux/X11: keep the hotkey-time browser window id.
+                    from core.context_fetcher import _BROWSER_PROCS, get_browser_window_for_context
 
-                active_hwnd = int(active.get("window_id") or 0)
-                win = get_browser_window_for_context(active_hwnd)
-                snapshot["debug"]["browser_window"] = {
-                    "title": getattr(win, "title", ""),
-                    "process_name": getattr(win, "process_name", ""),
-                    "pid": getattr(win, "pid", 0),
-                    "hwnd": getattr(win, "hwnd", 0),
-                    "url": getattr(win, "url", ""),
-                }
-                if getattr(win, "url", ""):
-                    snapshot["browser_url"] = getattr(win, "url", "")
-                active_process = str(active.get("process_name") or "").strip().lower()
-                browser_hwnd = int(getattr(win, "hwnd", 0) or 0)
-                if not browser_hwnd and active_hwnd and active_process in _BROWSER_PROCS:
-                    browser_hwnd = active_hwnd
-                if browser_hwnd:
-                    snapshot["browser_hwnd"] = browser_hwnd
+                    active_hwnd = int(active.get("window_id") or 0)
+                    win = get_browser_window_for_context(active_hwnd)
+                    snapshot["debug"]["browser_window"] = {
+                        "title": getattr(win, "title", ""),
+                        "process_name": getattr(win, "process_name", ""),
+                        "pid": getattr(win, "pid", 0),
+                        "hwnd": getattr(win, "hwnd", 0),
+                        "url": getattr(win, "url", ""),
+                    }
+                    if getattr(win, "url", ""):
+                        snapshot["browser_url"] = getattr(win, "url", "")
+                    active_process = str(active.get("process_name") or "").strip().lower()
+                    browser_hwnd = int(getattr(win, "hwnd", 0) or 0)
+                    if not browser_hwnd and active_hwnd and active_process in _BROWSER_PROCS:
+                        browser_hwnd = active_hwnd
+                    if browser_hwnd:
+                        snapshot["browser_hwnd"] = browser_hwnd
         except Exception as exc:  # noqa: BLE001 - browser context should not block the picker
             snapshot["browser_error"] = f"{type(exc).__name__}: {exc}"
         br_dt = time.monotonic() - _s

@@ -197,6 +197,10 @@ class IconOverlay(QMainWindow):
         self._icon_label.setCursor(Qt.CursorShape.SizeAllCursor)
         self._icon_label.setAcceptDrops(True)
         self._icon_label.installEventFilter(self)
+        # Native Wayland positions popups relative to a parent surface. The
+        # menu is built before this icon exists, so attach it once the visible
+        # icon surface is available while retaining popup window semantics.
+        self._tray_menu.setParent(self._icon_label, Qt.WindowType.Popup)
         self._icon_drag_offset = None
         self._icon_press_pos = QPoint()
         self._icon_dragged = False
@@ -568,14 +572,19 @@ class IconOverlay(QMainWindow):
             if t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.RightButton:
                 if getattr(self, "_right_press_on_icon", False):
                     self._right_press_on_icon = False
-                    self._tray_menu.popup(event.globalPosition().toPoint())
+                    local_anchor = event.position().toPoint()
+                    self._tray_menu.popup(self._icon_label.mapToGlobal(local_anchor))
                 return True
             if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self._icon_press_pos = event.globalPosition().toPoint()
                 self._icon_drag_offset = self._icon_label.pos() - self._icon_press_pos
                 self._icon_dragged = False
                 return True
-            elif t == QEvent.Type.MouseMove and self._icon_drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            elif (
+                t == QEvent.Type.MouseMove
+                and self._icon_drag_offset is not None
+                and event.buttons() & Qt.MouseButton.LeftButton
+            ):
                 cur = event.globalPosition().toPoint()
                 # Only count as a drag once the pointer moves past the OS drag
                 # threshold, so a small jitter during a click still registers as a click.

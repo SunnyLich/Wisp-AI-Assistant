@@ -115,6 +115,79 @@ def test_get_browser_tab_url_off_linux_is_noop(monkeypatch):
     assert linux_atspi.get_browser_tab_url(pid=123) == ""
 
 
+def test_selected_text_for_node_reads_all_live_ranges(monkeypatch):
+    """AT-SPI text selections are resolved from ranges without clipboard use."""
+    def fake_call(_conn, _dest, _path, iface, method, signature=None, body=()):
+        assert iface == linux_atspi._IFACE_TEXT
+        if method == "GetNSelections":
+            return (2,)
+        if method == "GetSelection":
+            return ((2, 7) if body == (0,) else (10, 15))
+        if method == "GetText":
+            return ("first" if body == (2, 7) else "second",)
+        raise AssertionError(method)
+
+    monkeypatch.setattr(linux_atspi, "_call", fake_call)
+    assert linux_atspi._selected_text_for_node(object(), "app", "/field") == "first\nsecond"
+
+
+def test_get_selected_text_walks_accessibility_tree(monkeypatch):
+    """The native Wayland selection walk returns the selected descendant."""
+    monkeypatch.setattr(linux_atspi, "_IS_LINUX", True)
+    monkeypatch.setattr(linux_atspi, "_open_a11y_connection", lambda: object())
+    children = {
+        (linux_atspi._REGISTRY_NAME, linux_atspi._ROOT_PATH): [("app", "/app")],
+        ("app", "/app"): [("app", "/field")],
+    }
+    monkeypatch.setattr(
+        linux_atspi,
+        "_get_children",
+        lambda _conn, dest, path: children.get((dest, path), []),
+    )
+    monkeypatch.setattr(
+        linux_atspi,
+        "_selected_text_for_node",
+        lambda _conn, _dest, path: "native selection" if path == "/field" else "",
+    )
+    monkeypatch.setattr(
+        linux_atspi,
+        "_node_states",
+        lambda _conn, _dest, path: {linux_atspi._STATE_FOCUSED} if path == "/field" else set(),
+    )
+    assert linux_atspi.get_selected_text() == "native selection"
+
+
+def test_get_focused_context_returns_native_app_and_browser(monkeypatch):
+    """Focused Wayland app metadata and document URL come from one AT-SPI tree."""
+    monkeypatch.setattr(linux_atspi, "_IS_LINUX", True)
+    monkeypatch.setattr(linux_atspi, "_open_a11y_connection", lambda: object())
+    children = {
+        (linux_atspi._REGISTRY_NAME, linux_atspi._ROOT_PATH): [("app", "/app")],
+        ("app", "/app"): [("app", "/frame")],
+        ("app", "/frame"): [("app", "/field")],
+    }
+    names = {"/app": "Firefox", "/frame": "Example — Firefox", "/field": "Page"}
+    monkeypatch.setattr(linux_atspi, "_get_children", lambda _c, d, p: children.get((d, p), []))
+    monkeypatch.setattr(linux_atspi, "_get_name", lambda _c, _d, p: names.get(p, ""))
+    monkeypatch.setattr(
+        linux_atspi,
+        "_node_states",
+        lambda _c, _d, p: {linux_atspi._STATE_FOCUSED} if p == "/field" else set(),
+    )
+    monkeypatch.setattr(
+        linux_atspi,
+        "_collect_document_urls",
+        lambda _c, _frame, _budget: [("Example", "https://example.test/page")],
+    )
+    monkeypatch.setattr(linux_atspi, "_connection_pid", lambda _c, _d, _cache: 4242)
+
+    context = linux_atspi.get_focused_context()
+    assert context["app_name"] == "Firefox"
+    assert context["window_title"] == "Example — Firefox"
+    assert context["pid"] == 4242
+    assert context["browser_url"] == "https://example.test/page"
+
+
 def test_browser_content_linux_resolves_url_via_atspi(monkeypatch):
     """Verify the Linux page read resolves the URL, fetches it, and keeps it."""
     monkeypatch.setattr(context_fetcher, "_IS_WIN", False)

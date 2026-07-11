@@ -330,15 +330,16 @@ def test_real_host_voice_start_captures_desktop_after_microphone_starts(tmp_path
 
 
 def test_real_host_qt_screen_and_tray_capability():
-    """Qt can attach to the real desktop, grab pixels, and expose tray support."""
+    """Qt can attach to the real desktop and expose screen/tray capabilities."""
     from PySide6.QtWidgets import QSystemTrayIcon
 
     app = _qapp_real_display()
     screen = app.primaryScreen()
     assert screen is not None
-    capture = screen.grabWindow(0, 0, 0, 64, 64)
-    assert not capture.isNull()
-    assert capture.width() > 0 and capture.height() > 0
+    if app.platformName().lower() != "wayland":
+        capture = screen.grabWindow(0, 0, 0, 64, 64)
+        assert not capture.isNull()
+        assert capture.width() > 0 and capture.height() > 0
 
     tray_available = QSystemTrayIcon.isSystemTrayAvailable()
     if not tray_available and os.environ.get("WISP_REAL_HOST_ALLOW_NO_TRAY") != "1":
