@@ -5331,6 +5331,17 @@ class SettingsDialog(QDialog):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
 
+        profile_card, profile_cv = self._card("Profile setup")
+        profile_cv.addWidget(_desc_label(
+            "",
+            "Run the guided profile setup again to update your languages, theme, provider, and voice preferences.",
+        ))
+        profile_setup_btn = QPushButton(t("Run profile setup"))
+        profile_setup_btn.setToolTip(t("Open the guided first-time setup without resetting your other settings."))
+        profile_setup_btn.clicked.connect(self._open_profile_setup)
+        profile_cv.addWidget(profile_setup_btn)
+        outer.addWidget(profile_card)
+
         card, cv = self._card("App Settings")
         fw = QWidget()
         f = _expanding_form_layout(fw)
@@ -5462,6 +5473,58 @@ class SettingsDialog(QDialog):
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _open_profile_setup(self) -> None:
+        """Open the guided profile wizard from Settings → App."""
+        if self._dirty_keys:
+            QMessageBox.information(
+                self,
+                t("Apply settings first"),
+                t("Apply or discard your pending Settings changes before running profile setup."),
+            )
+            return
+        wizard = getattr(self, "_profile_setup_wizard", None)
+        if wizard is not None and wizard.isVisible():
+            wizard.raise_()
+            wizard.activateWindow()
+            return
+
+        from ui.onboarding import OnboardingWizard
+
+        wizard = OnboardingWizard(parent=None, on_complete=self._profile_setup_completed)
+        self._profile_setup_wizard = wizard
+        wizard.finished.connect(
+            lambda _result, w=wizard: setattr(self, "_profile_setup_wizard", None)
+            if getattr(self, "_profile_setup_wizard", None) is w else None
+        )
+        wizard.show()
+        wizard.raise_()
+        wizard.activateWindow()
+
+    def _profile_setup_completed(self, _open_chat: bool) -> None:
+        """Reload settings written by the standalone profile wizard."""
+        old_env = dict(self._env)
+        new_env = _read_env()
+        changed_keys = sorted(
+            key for key in set(old_env) | set(new_env)
+            if old_env.get(key) != new_env.get(key)
+        )
+        try:
+            if self._on_apply:
+                self._on_apply({"changed_keys": changed_keys, "source": "profile_setup"})
+            else:
+                import config
+                from ui.shared.theme import apply_app_theme
+
+                config.reload()
+                apply_app_theme()
+            self._env = new_env
+            self._load_values()
+            self._reset_dirty_baseline()
+            self._refresh_search_index()
+        except Exception as exc:  # noqa: BLE001 - show a recoverable failure to the user
+            _settings_log.exception("Profile setup reload failed")
+            QMessageBox.warning(self, t("Profile setup"), str(exc))
 
     def _set_update_status(self, message: str, state: str | None = None, **format_args: object) -> None:
         """Update the Settings updater status label."""

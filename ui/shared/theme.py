@@ -232,8 +232,28 @@ def _app_stylesheet(c: dict[str, str]) -> str:
         QPushButton:pressed {{
             background: {c["button_pressed"]};
         }}
-        QCheckBox, QLabel, QGroupBox {{
+        QRadioButton, QCheckBox, QLabel, QGroupBox {{
             color: {c["text"]};
+        }}
+        QRadioButton::indicator, QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            background: {c["surface"]};
+            border: 1px solid {c["border"]};
+        }}
+        QRadioButton::indicator {{
+            border-radius: 8px;
+        }}
+        QRadioButton::indicator:checked {{
+            background: {c["on_accent"]};
+            border: 5px solid {c["accent"]};
+        }}
+        QCheckBox::indicator {{
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked {{
+            background: {c["accent"]};
+            border-color: {c["accent"]};
         }}
         QGroupBox {{
             border: 1px solid {c["border"]};

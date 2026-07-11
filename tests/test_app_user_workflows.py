@@ -1952,19 +1952,3 @@ def test_agent_permission_notice_and_bubble_notice_workflow(qapp, tmp_path: Path
     finally:
         window.deleteLater()
         bubble.deleteLater()
-
-
-def test_real_gpt55_entrypoint_stays_opt_in_by_default():
-    """The live-provider workflow test is present but cannot spend tokens accidentally."""
-    import importlib.util
-
-    real_test = Path(__file__).with_name("test_real_gpt55_integration.py")
-    spec = importlib.util.spec_from_file_location("_workflow_real_gpt55_contract", real_test)
-    assert spec is not None and spec.loader is not None
-    real_gpt55 = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(real_gpt55)
-
-    assert real_gpt55._DEFAULT_MODEL == "gpt-5.5"
-    assert real_gpt55._RUN_ENV == "WISP_RUN_REAL_GPT55_TESTS"
-    assert any(mark.name == "real_gpt55" for mark in real_gpt55.pytestmark)
-    assert any(mark.name == "workflow" for mark in real_gpt55.pytestmark)

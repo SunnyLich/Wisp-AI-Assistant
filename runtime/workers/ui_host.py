@@ -1890,6 +1890,7 @@ class QtProtocolHost:
 
         self._overlay_signals = None
         self._overlay = None
+        self._onboarding = None
         self._intent = None
         self._snip = None
         self._bubble = None
@@ -2343,7 +2344,48 @@ class QtProtocolHost:
         overlay = self._ensure_overlay()
         overlay.show()
         overlay.raise_()
+        self._show_onboarding_if_needed()
         return {"shown": True}
+
+    def _show_onboarding_if_needed(self) -> None:
+        """Queue the profile wizard after the overlay has received its first frame."""
+        try:
+            from PySide6.QtCore import QTimer
+            from ui.onboarding import OnboardingWizard, should_show_onboarding
+            from ui.settings_panel import env as settings_env
+
+            if self._onboarding is not None:
+                return
+            if not should_show_onboarding(
+                settings_env.read_settings_env(),
+                env_file_exists=settings_env.ENV_PATH.exists(),
+            ):
+                return
+
+            def show() -> None:
+                if self._onboarding is not None:
+                    return
+                wizard = OnboardingWizard(on_complete=self._onboarding_complete)
+                self._onboarding = wizard
+                wizard.finished.connect(
+                    lambda _result, w=wizard: setattr(self, "_onboarding", None)
+                    if self._onboarding is w else None
+                )
+                wizard.show()
+                wizard.raise_()
+                wizard.activateWindow()
+
+            QTimer.singleShot(250, show)
+        except Exception:
+            log.exception("could not open first-run profile wizard")
+
+    def _onboarding_complete(self, open_chat: bool) -> None:
+        """Apply saved wizard settings, then optionally open the first chat."""
+        self._settings_applied({"source": "onboarding"})
+        if open_chat:
+            from PySide6.QtCore import QTimer
+
+            QTimer.singleShot(0, lambda: self._show_chat(force_new=True))
 
     def _prewarm_intent(self) -> dict[str, Any]:
         """Warm intent overlay imports and first widget construction."""

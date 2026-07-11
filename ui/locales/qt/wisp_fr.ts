@@ -3668,6 +3668,56 @@ Continuer ?</translation>
       <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
       <translation>Voix en direct installée. Appuyez sur le raccourci de bascule pour démarrer une conversation.</translation>
     </message>
+    <message><source>Welcome to Wisp</source><translation>Bienvenue dans Wisp</translation></message>
+    <message><source>Back</source><translation>Retour</translation></message>
+    <message><source>Finish setup</source><translation>Terminer la configuration</translation></message>
+    <message><source>Step {current} of {total}</source><translation>Étape {current} sur {total}</translation></message>
+    <message><source>Choose a language</source><translation>Choisir une langue</translation></message>
+    <message><source>Choose Wisp’s interface language and the language you want the assistant to use in its replies. You can change both later in Settings.</source><translation>Choisissez la langue de l’interface de Wisp et celle que l’assistant utilisera dans ses réponses. Vous pourrez modifier les deux plus tard dans les Paramètres.</translation></message>
+    <message><source>Wisp interface language</source><translation>Langue de l’interface Wisp</translation></message>
+    <message><source>Assistant response language</source><translation>Langue de réponse de l’assistant</translation></message>
+    <message><source>Let’s set up Wisp</source><translation>Configurons Wisp</translation></message>
+    <message><source>You can change every choice later in Settings. Start simple, or choose advanced if you already know your preferred AI provider.</source><translation>Vous pourrez modifier chaque choix plus tard dans les Paramètres. Commencez simplement, ou choisissez le mode avancé si vous connaissez déjà votre fournisseur d’IA préféré.</translation></message>
+    <message><source>Simple setup — get a working assistant quickly</source><translation>Configuration simple — obtenez rapidement un assistant fonctionnel</translation></message>
+    <message><source>Advanced setup — choose provider and optional API key</source><translation>Configuration avancée — choisissez un fournisseur et une clé API facultative</translation></message>
+    <message><source>What should Wisp call you?</source><translation>Comment Wisp doit-il vous appeler ?</translation></message>
+    <message><source>This creates your local profile. Your name stays on this device and helps Wisp make conversations feel a little more natural.</source><translation>Cela crée votre profil local. Votre nom reste sur cet appareil et aide Wisp à rendre les conversations plus naturelles.</translation></message>
+    <message><source>Your name</source><translation>Votre nom</translation></message>
+    <message><source>Choose your provider</source><translation>Choisissez votre fournisseur</translation></message>
+    <message><source>Optional. Choose any provider Wisp supports, enter a model yourself, and add a key now or later. Keys are saved in your operating system’s secure keychain, never in your profile file.</source><translation>Facultatif. Choisissez un fournisseur pris en charge par Wisp, saisissez un modèle et ajoutez une clé maintenant ou plus tard. Les clés sont enregistrées dans le trousseau sécurisé de votre système, jamais dans votre fichier de profil.</translation></message>
+    <message><source>I’ll choose later</source><translation>Je choisirai plus tard</translation></message>
+    <message><source>Model name</source><translation>Nom du modèle</translation></message>
+    <message><source>Custom OpenAI-compatible endpoint URL, e.g. http://localhost:1234/v1</source><translation>URL d’endpoint personnalisé compatible OpenAI, p. ex. http://localhost:1234/v1</translation></message>
+    <message><source>API key (optional)</source><translation>Clé API (facultative)</translation></message>
+    <message><source>Try a sign-in instead</source><translation>Essayez plutôt une connexion</translation></message>
+    <message><source>A ChatGPT Plus or Pro subscription can be connected without pasting an API key. This is optional — you can also finish setup and configure a provider later.</source><translation>Un abonnement ChatGPT Plus ou Pro peut être connecté sans coller de clé API. C’est facultatif : vous pouvez aussi terminer la configuration et choisir un fournisseur plus tard.</translation></message>
+    <message><source>Not connected</source><translation>Non connecté</translation></message>
+    <message><source>Sign in with ChatGPT</source><translation>Se connecter avec ChatGPT</translation></message>
+    <message><source>Voice preferences</source><translation>Préférences vocales</translation></message>
+    <message><source>Choose what you would like to try first. Local options use on-device speech models; cloud options stay as a preference until you add the matching credentials in Settings.</source><translation>Choisissez ce que vous voulez essayer d’abord. Les options locales utilisent des modèles vocaux sur l’appareil ; les options cloud restent une préférence jusqu’à l’ajout des identifiants correspondants dans les Paramètres.</translation></message>
+    <message><source>Would you like Wisp to speak replies?</source><translation>Voulez-vous que Wisp lise les réponses à voix haute ?</translation></message>
+    <message><source>Would you like to speak to Wisp?</source><translation>Voulez-vous parler à Wisp ?</translation></message>
+    <message><source>Local voice — Kokoro (may download on first use)</source><translation>Voix locale — Kokoro (peut se télécharger lors de la première utilisation)</translation></message>
+    <message><source>Cloud voice — configure in Settings</source><translation>Voix cloud — à configurer dans les Paramètres</translation></message>
+    <message><source>Local speech recognition — Whisper (may download on first use)</source><translation>Reconnaissance vocale locale — Whisper (peut se télécharger lors de la première utilisation)</translation></message>
+    <message><source>Cloud/live voice — configure in Settings</source><translation>Voix cloud/en direct — à configurer dans les Paramètres</translation></message>
+    <message><source>You’re ready to try Wisp</source><translation>Vous êtes prêt à essayer Wisp</translation></message>
+    <message><source>Your profile is ready. Use the floating icon whenever you need help, and open chat only when it suits the task. You can revisit every choice in Settings.</source><translation>Votre profil est prêt. Utilisez l’icône flottante lorsque vous avez besoin d’aide et ouvrez le chat seulement lorsqu’il convient à la tâche. Vous pourrez revoir chaque choix dans les Paramètres.</translation></message>
+    <message><source>Open a new chat after setup</source><translation>Ouvrir une nouvelle discussion après la configuration</translation></message>
+    <message><source>• Click the floating icon, or press {hotkey}, to ask about selected text or your current context.
+• Use the chat window for longer conversations, files, and history when you want it.
+• If you chose local speech, use F9 to talk and F7 to read selected text aloud after its first download.</source><translation>• Cliquez sur l’icône flottante, ou appuyez sur {hotkey}, pour poser une question sur le texte sélectionné ou votre contexte actuel.
+• Utilisez la fenêtre de discussion pour les longues conversations, les fichiers et l’historique lorsque vous le souhaitez.
+• Si vous avez choisi la voix locale, utilisez F9 pour parler et F7 pour lire le texte sélectionné après son premier téléchargement.</translation></message>
+    <message><source>Ollama runs locally and does not use an API key. Enter the local model name you have installed.</source><translation>Ollama s’exécute localement et n’utilise pas de clé API. Saisissez le nom du modèle local que vous avez installé.</translation></message>
+    <message><source>Model names are editable. You can leave the key blank and add it later in Settings.</source><translation>Les noms de modèles sont modifiables. Vous pouvez laisser la clé vide et l’ajouter plus tard dans les Paramètres.</translation></message>
+    <message><source>No provider will be changed yet. The ChatGPT sign-in on the next step is another option.</source><translation>Aucun fournisseur ne sera encore modifié. La connexion à ChatGPT à l’étape suivante est une autre option.</translation></message>
+    <message><source>Profile setup</source><translation>Configuration du profil</translation></message>
+    <message><source>Run the guided profile setup again to update your languages, theme, provider, and voice preferences.</source><translation>Relancez la configuration guidée du profil pour mettre à jour vos langues, votre thème, votre fournisseur et vos préférences vocales.</translation></message>
+    <message><source>Run profile setup</source><translation>Lancer la configuration du profil</translation></message>
+    <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>Ouvrez la configuration guidée sans réinitialiser vos autres paramètres.</translation></message>
+    <message><source>Apply settings first</source><translation>Appliquez d’abord les paramètres</translation></message>
+    <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>Appliquez ou abandonnez vos modifications de paramètres en attente avant de lancer la configuration du profil.</translation></message>
   </context>
   <context>
     <name>Wisp</name>

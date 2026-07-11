@@ -3668,6 +3668,56 @@ Continue?</source>
       <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
       <translation>实时语音已安装。按下切换快捷键即可开始对话。</translation>
     </message>
+    <message><source>Welcome to Wisp</source><translation>欢迎使用 Wisp</translation></message>
+    <message><source>Back</source><translation>返回</translation></message>
+    <message><source>Finish setup</source><translation>完成设置</translation></message>
+    <message><source>Step {current} of {total}</source><translation>第 {current} 步，共 {total} 步</translation></message>
+    <message><source>Choose a language</source><translation>选择语言</translation></message>
+    <message><source>Choose Wisp’s interface language and the language you want the assistant to use in its replies. You can change both later in Settings.</source><translation>选择 Wisp 的界面语言，以及希望助手回复时使用的语言。之后可在“设置”中更改两者。</translation></message>
+    <message><source>Wisp interface language</source><translation>Wisp 界面语言</translation></message>
+    <message><source>Assistant response language</source><translation>助手回复语言</translation></message>
+    <message><source>Let’s set up Wisp</source><translation>开始设置 Wisp</translation></message>
+    <message><source>You can change every choice later in Settings. Start simple, or choose advanced if you already know your preferred AI provider.</source><translation>之后可在“设置”中更改所有选项。可先使用简单设置；若已有偏好的 AI 提供商，也可选择高级设置。</translation></message>
+    <message><source>Simple setup — get a working assistant quickly</source><translation>简单设置 — 快速开始使用助手</translation></message>
+    <message><source>Advanced setup — choose provider and optional API key</source><translation>高级设置 — 选择提供商和可选的 API 密钥</translation></message>
+    <message><source>What should Wisp call you?</source><translation>Wisp 应该如何称呼你？</translation></message>
+    <message><source>This creates your local profile. Your name stays on this device and helps Wisp make conversations feel a little more natural.</source><translation>这会创建你的本地个人资料。姓名只保留在此设备上，可让 Wisp 的对话更自然。</translation></message>
+    <message><source>Your name</source><translation>你的姓名</translation></message>
+    <message><source>Choose your provider</source><translation>选择你的提供商</translation></message>
+    <message><source>Optional. Choose any provider Wisp supports, enter a model yourself, and add a key now or later. Keys are saved in your operating system’s secure keychain, never in your profile file.</source><translation>可选。选择 Wisp 支持的任一提供商，自行输入模型，并可现在或稍后添加密钥。密钥保存在操作系统的安全钥匙串中，绝不会写入个人资料文件。</translation></message>
+    <message><source>I’ll choose later</source><translation>稍后选择</translation></message>
+    <message><source>Model name</source><translation>模型名称</translation></message>
+    <message><source>Custom OpenAI-compatible endpoint URL, e.g. http://localhost:1234/v1</source><translation>自定义的 OpenAI 兼容端点 URL，例如 http://localhost:1234/v1</translation></message>
+    <message><source>API key (optional)</source><translation>API 密钥（可选）</translation></message>
+    <message><source>Try a sign-in instead</source><translation>或者登录</translation></message>
+    <message><source>A ChatGPT Plus or Pro subscription can be connected without pasting an API key. This is optional — you can also finish setup and configure a provider later.</source><translation>可连接 ChatGPT Plus 或 Pro 订阅，无需粘贴 API 密钥。这是可选操作；也可完成设置后再配置提供商。</translation></message>
+    <message><source>Not connected</source><translation>未连接</translation></message>
+    <message><source>Sign in with ChatGPT</source><translation>使用 ChatGPT 登录</translation></message>
+    <message><source>Voice preferences</source><translation>语音偏好</translation></message>
+    <message><source>Choose what you would like to try first. Local options use on-device speech models; cloud options stay as a preference until you add the matching credentials in Settings.</source><translation>选择想先尝试的功能。本地选项使用设备上的语音模型；云端选项会保留为偏好，直到你在“设置”中添加相应凭据。</translation></message>
+    <message><source>Would you like Wisp to speak replies?</source><translation>希望 Wisp 朗读回复吗？</translation></message>
+    <message><source>Would you like to speak to Wisp?</source><translation>希望对 Wisp 说话吗？</translation></message>
+    <message><source>Local voice — Kokoro (may download on first use)</source><translation>本地语音 — Kokoro（首次使用时可能下载）</translation></message>
+    <message><source>Cloud voice — configure in Settings</source><translation>云端语音 — 在“设置”中配置</translation></message>
+    <message><source>Local speech recognition — Whisper (may download on first use)</source><translation>本地语音识别 — Whisper（首次使用时可能下载）</translation></message>
+    <message><source>Cloud/live voice — configure in Settings</source><translation>云端/实时语音 — 在“设置”中配置</translation></message>
+    <message><source>You’re ready to try Wisp</source><translation>现在可以试用 Wisp 了</translation></message>
+    <message><source>Your profile is ready. Use the floating icon whenever you need help, and open chat only when it suits the task. You can revisit every choice in Settings.</source><translation>个人资料已准备就绪。需要帮助时可使用浮动图标；仅在适合任务时打开聊天。所有选项都可在“设置”中重新调整。</translation></message>
+    <message><source>Open a new chat after setup</source><translation>设置后打开新聊天</translation></message>
+    <message><source>• Click the floating icon, or press {hotkey}, to ask about selected text or your current context.
+• Use the chat window for longer conversations, files, and history when you want it.
+• If you chose local speech, use F9 to talk and F7 to read selected text aloud after its first download.</source><translation>• 点击浮动图标，或按 {hotkey} 询问所选文本或当前上下文。
+• 需要时可使用聊天窗口进行较长的对话、处理文件和查看历史记录。
+• 若选择本地语音，首次下载后可按 F9 说话，按 F7 朗读选定文本。</translation></message>
+    <message><source>Ollama runs locally and does not use an API key. Enter the local model name you have installed.</source><translation>Ollama 在本地运行且不使用 API 密钥。请输入已安装的本地模型名称。</translation></message>
+    <message><source>Model names are editable. You can leave the key blank and add it later in Settings.</source><translation>模型名称可编辑。可将密钥留空，之后在“设置”中添加。</translation></message>
+    <message><source>No provider will be changed yet. The ChatGPT sign-in on the next step is another option.</source><translation>暂不更改提供商。下一步也可选择登录 ChatGPT。</translation></message>
+    <message><source>Profile setup</source><translation>个人资料设置</translation></message>
+    <message><source>Run the guided profile setup again to update your languages, theme, provider, and voice preferences.</source><translation>再次运行引导式个人资料设置，以更新语言、主题、提供商和语音偏好。</translation></message>
+    <message><source>Run profile setup</source><translation>运行个人资料设置</translation></message>
+    <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>打开引导式首次设置，而不重置其他设置。</translation></message>
+    <message><source>Apply settings first</source><translation>请先应用设置</translation></message>
+    <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>运行个人资料设置前，请应用或放弃待处理的设置更改。</translation></message>
   </context>
   <context>
     <name>Wisp</name>
