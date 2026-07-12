@@ -3718,6 +3718,13 @@ Continue?</source>
     <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>打开引导式首次设置，而不重置其他设置。</translation></message>
     <message><source>Apply settings first</source><translation>请先应用设置</translation></message>
     <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>运行个人资料设置前，请应用或放弃待处理的设置更改。</translation></message>
+    <message><source>Opening your browser… finish the sign-in there, then return here.</source><translation>正在打开浏览器…请在浏览器中完成登录，然后返回此处。</translation></message>
+    <message><source>Sign-in could not start: {error}</source><translation>登录无法启动：{error}</translation></message>
+    <message><source>Connected. Wisp will use your ChatGPT sign-in unless you selected another provider.</source><translation>已连接。除非你选择了其他提供商，Wisp 将使用你的 ChatGPT 登录。</translation></message>
+    <message><source>Connected</source><translation>已连接</translation></message>
+    <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>仍未连接。你可以继续，稍后在“设置”中重试。</translation></message>
+    <message><source>Profile saved, but the key could not be stored: {error}</source><translation>个人资料已保存，但密钥无法存储：{error}</translation></message>
+    <message><source>Enter a model name</source><translation>请输入模型名称</translation></message>
   </context>
   <context>
     <name>Wisp</name>

@@ -261,6 +261,12 @@ def _prewarm_after_config_reload(generation: int, provider: str) -> None:
     )
 
 
+def _delayed_prewarm_after_config_reload(generation: int, provider: str) -> None:
+    """Give the IPC response writer a chance to flush before model warmup."""
+    time.sleep(0.1)
+    _prewarm_after_config_reload(generation, provider)
+
+
 def audio_config_reload() -> dict[str, Any]:
     """Reload .env-backed config in the audio process after Settings → Apply.
 
@@ -285,8 +291,12 @@ def audio_config_reload() -> dict[str, Any]:
     with _config_prewarm_lock:
         _config_prewarm_generation += 1
         generation = _config_prewarm_generation
+    # Let the service host serialize this handler's response before native
+    # model initialization can take the GIL for an extended period. Starting
+    # the warmup thread immediately can make Settings -> Apply appear to hang
+    # even though the reload itself already succeeded.
     threading.Thread(
-        target=_prewarm_after_config_reload,
+        target=_delayed_prewarm_after_config_reload,
         args=(generation, provider),
         daemon=True,
         name="audio-config-reload-prewarm",

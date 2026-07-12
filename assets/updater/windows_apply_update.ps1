@@ -16,7 +16,10 @@ $BackupRootLeaf = [System.IO.Path]::GetFileName($BackupRoot)
 $ErrorLog = Join-Path $ArchiveParent "apply-update-error.log"
 
 function Restore-Backup {
-    if ((Test-Path -LiteralPath $BackupRoot) -and -not (Test-Path -LiteralPath $InstallRoot)) {
+    if (Test-Path -LiteralPath $BackupRoot) {
+        if (Test-Path -LiteralPath $InstallRoot) {
+            Remove-Item -LiteralPath $InstallRoot -Recurse -Force
+        }
         Rename-Item -LiteralPath $BackupRoot -NewName $InstallRootLeaf
     }
 }

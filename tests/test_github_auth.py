@@ -1,5 +1,6 @@
 """Tests for test github auth."""
 
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -63,6 +64,70 @@ class GithubAuthTests(unittest.TestCase):
 
         self.assertIn("Bad credentials", message)
         self.assertIn("OAuth client ID", message)
+
+
+def test_github_device_flow_pending_then_persists_validated_user(monkeypatch):
+    """Device login polls pending state, validates the user, and saves the token."""
+    responses = iter(
+        [
+            {
+                "verification_uri": "https://github.com/login/device",
+                "user_code": "ABCD-EFGH",
+                "device_code": "device-secret",
+                "expires_in": 900,
+                "interval": 1,
+            },
+            {"error": "authorization_pending"},
+            {"access_token": "github-access", "token_type": "bearer", "scope": "repo"},
+        ]
+    )
+    codes = []
+    successes = []
+    errors = []
+    saved = []
+    finished = threading.Event()
+
+    monkeypatch.setattr(github_auth, "configured_client_id", lambda: "client-id")
+    monkeypatch.setattr(github_auth, "_post_form", lambda _url, _params: next(responses))
+    monkeypatch.setattr(
+        github_auth,
+        "_get_json",
+        lambda _url, token: {"login": "octo-user", "id": 42, "name": "Octo"}
+        if token == "github-access"
+        else {},
+    )
+    monkeypatch.setattr(github_auth, "save_tokens", lambda tokens: saved.append(dict(tokens)))
+    monkeypatch.setattr(github_auth.time, "sleep", lambda _seconds: None)
+
+    github_auth.start_device_login(
+        lambda url, code: codes.append((url, code)),
+        lambda tokens: (successes.append(tokens), finished.set()),
+        lambda error: (errors.append(error), finished.set()),
+    )
+    assert finished.wait(5)
+
+    assert errors == []
+    assert codes == [("https://github.com/login/device", "ABCD-EFGH")]
+    assert successes == saved
+    assert saved[0]["access"] == "github-access"
+    assert saved[0]["user"] == {"login": "octo-user", "id": 42, "name": "Octo"}
+
+
+def test_github_token_file_fallback_and_logout_clear(tmp_path, monkeypatch):
+    """GitHub fallback persistence is readable and logout clears every copy."""
+    token_file = tmp_path / "private" / "github.json"
+    tokens = {"access": "github-contract-token", "user": {"login": "octo-user"}, "saved_at": 1}
+    monkeypatch.setattr(github_auth, "_TOKEN_FILE", token_file)
+    monkeypatch.setattr(github_auth, "_keyring_get", lambda: None)
+    monkeypatch.setattr(github_auth, "_keyring_set", lambda _value: False)
+    monkeypatch.setattr(github_auth, "_keyring_delete", lambda: None)
+
+    github_auth.save_tokens(tokens)
+    assert github_auth.get_tokens() == tokens
+    assert github_auth.get_user_login() == "octo-user"
+    github_auth.clear_tokens()
+    assert github_auth.get_tokens() is None
+    assert not token_file.exists()
 
 
 if __name__ == "__main__":

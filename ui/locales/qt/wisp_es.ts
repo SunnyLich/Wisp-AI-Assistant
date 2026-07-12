@@ -5203,5 +5203,12 @@ Continue?</translation>
     <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>Abre la configuración guiada sin restablecer los demás ajustes.</translation></message>
     <message><source>Apply settings first</source><translation>Aplica primero los ajustes</translation></message>
     <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>Aplica o descarta los cambios pendientes de Configuración antes de ejecutar la configuración de perfil.</translation></message>
+    <message><source>Opening your browser… finish the sign-in there, then return here.</source><translation>Abriendo tu navegador… completa el inicio de sesión allí y vuelve aquí.</translation></message>
+    <message><source>Sign-in could not start: {error}</source><translation>No se pudo iniciar el inicio de sesión: {error}</translation></message>
+    <message><source>Connected. Wisp will use your ChatGPT sign-in unless you selected another provider.</source><translation>Conectado. Wisp usará tu inicio de sesión de ChatGPT a menos que hayas seleccionado otro proveedor.</translation></message>
+    <message><source>Connected</source><translation>Conectado</translation></message>
+    <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>Aún sin conexión. Puedes continuar e intentarlo de nuevo más tarde desde Configuración.</translation></message>
+    <message><source>Profile saved, but the key could not be stored: {error}</source><translation>Perfil guardado, pero la clave no se pudo almacenar: {error}</translation></message>
+    <message><source>Enter a model name</source><translation>Introduce un nombre de modelo</translation></message>
   </context>
 </TS>

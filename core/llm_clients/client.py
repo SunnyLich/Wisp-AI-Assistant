@@ -2678,7 +2678,7 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
     """
     provider = (provider or "").lower()
     if provider == "ollama":
-        _ensure_ollama_running()
+        _ensure_ollama_running(base_url=base_url or None)
     if provider in ("chatgpt", "copilot"):
         raise NotImplementedError(f"{provider} does not support model listing")
 

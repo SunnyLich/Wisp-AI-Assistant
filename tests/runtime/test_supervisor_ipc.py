@@ -307,6 +307,125 @@ def test_real_addon_tools_flow_from_addon_host_through_brain_policy(tmp_path):
         worker.shutdown()
 
 
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+def test_settings_persist_and_reload_across_real_workers(tmp_path, monkeypatch):
+    """Settings persistence changes observable config in every long-lived worker."""
+    import config
+    from runtime.supervisor.flows import FlowController
+    from ui.settings_panel import env as settings_env
+
+    repo = Path(__file__).resolve().parents[2]
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "LLM_PROVIDER=groq",
+                "LLM_MODEL=initial-model",
+                "TTS_PROVIDER=none",
+                "STT_MODEL=tiny",
+                "STT_DEVICE=cpu",
+                "STT_COMPUTE_TYPE=int8",
+                "HOTKEY_VOICE=f9",
+                "CALLER_COUNT=1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    original_env_file = config._ENV_FILE
+    original_loaded_keys = set(config._LOADED_DOTENV_KEYS)
+    original_settings_env = settings_env.ENV_PATH
+    shared_env = {
+        "WISP_REPO_ROOT": str(tmp_path),
+        "WISP_ADDONS_DIR": str(tmp_path / "addons"),
+        "WISP_ADDON_STORE": str(tmp_path / "addons.json"),
+        "WISP_RUN_LOG_DIR": str(tmp_path / "logs"),
+        "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "runtime" / "brain")]),
+    }
+    native = _worker("runtime.workers.native_host", "native", env=shared_env)
+    ui = _worker(
+        "runtime.workers.ui_host",
+        "ui",
+        env={**shared_env, "QT_QPA_PLATFORM": "offscreen"},
+    )
+    brain = _worker("runtime.workers.brain_host", "brain", env=shared_env)
+    audio = _worker("runtime.workers.audio_host", "audio", env=shared_env)
+
+    class RealWorkerProbe:
+        def __init__(self, worker):
+            self.worker = worker
+            self.calls = []
+
+        def call(self, method, params=None, **kwargs):
+            result = self.worker.call(method, params, **kwargs)
+            self.calls.append((method, result))
+            return result
+
+        def call_with_events(self, *args, **kwargs):
+            return self.worker.call_with_events(*args, **kwargs)
+
+        def on_event(self, *args, **kwargs):
+            return self.worker.on_event(*args, **kwargs)
+
+    native_probe = RealWorkerProbe(native)
+    brain_probe = RealWorkerProbe(brain)
+    audio_probe = RealWorkerProbe(audio)
+    flow = FlowController(
+        native=native_probe,
+        ui=ui,
+        brain=brain_probe,
+        audio=audio_probe,
+        run_async=False,
+    )
+    try:
+        monkeypatch.setattr(config, "_ENV_FILE", env_file)
+        monkeypatch.setattr(config, "_LOADED_DOTENV_KEYS", set())
+        monkeypatch.setattr(settings_env, "ENV_PATH", env_file)
+        config.reload()
+
+        before_brain = brain.call("brain.config.reload", timeout=20)
+        before_audio = audio.call("audio.config.reload", timeout=20)
+        before_native = native.call("native.config.reload", timeout=20)
+        assert before_brain["llm_model"] == "initial-model"
+        assert before_audio["tts_provider"] == "none"
+        assert before_native["hotkey_voice"] == "f9"
+
+        settings_env.write_settings_env(
+            {
+                "LLM_PROVIDER": "openai",
+                "LLM_MODEL": "reloaded-model",
+                "TTS_PROVIDER": "none",
+                "HOTKEY_VOICE": "f10",
+                "CALLER_COUNT": "2",
+            }
+        )
+        persisted = settings_env.read_settings_env()
+        assert persisted["LLM_MODEL"] == "reloaded-model"
+        assert persisted["HOTKEY_VOICE"] == "f10"
+
+        assert ui.call("ui.reload_config", timeout=20) == {"ok": True}
+        flow.reload_settings(["LLM_PROVIDER", "LLM_MODEL", "TTS_PROVIDER", "HOTKEY_VOICE"])
+
+        brain_reload = next(result for method, result in brain_probe.calls if method == "brain.config.reload")
+        audio_reload = next(result for method, result in audio_probe.calls if method == "audio.config.reload")
+        native_reload = next(result for method, result in native_probe.calls if method == "native.hotkeys.reload")
+        assert brain_reload["llm_provider"] == "openai"
+        assert brain_reload["llm_model"] == "reloaded-model"
+        assert audio_reload["tts_provider"] == "none"
+        assert native_reload["config"]["hotkey_voice"] == "f10"
+        assert native_reload["config"]["caller_count"] == 2
+    finally:
+        try:
+            native.call("native.hotkeys.stop", timeout=10)
+        except Exception:
+            pass
+        for worker in (native, ui, brain, audio):
+            worker.shutdown()
+        config._ENV_FILE = original_env_file
+        config._LOADED_DOTENV_KEYS = original_loaded_keys
+        settings_env.ENV_PATH = original_settings_env
+        config.reload()
+
+
 def test_brain_worker_query_accepts_screenshot_base64_over_ipc(tmp_path):
     """A real brain worker accepts an image payload without OS screen capture."""
     image_path = tmp_path / "one-pixel.png"
@@ -444,9 +563,112 @@ def test_brain_worker_cancel_stops_active_stream_over_ipc():
         assert 0 < len(chunks) < len(words)
         assert result["text"] != " ".join(words)
         assert [data for event, data, _req_id in events if event == "reply.done"] == [result]
+
+        first_event_count = len(events)
+        second_events = []
+        second = worker.call_with_events(
+            "brain.echo",
+            {"text": "new conversation remains isolated", "delay": 0.001},
+            timeout=10,
+            on_event=lambda event, data, req_id: second_events.append((event, data, req_id)),
+        )
+        assert second == {"text": "new conversation remains isolated"}
+        assert "".join(
+            data["text"] for event, data, _req_id in second_events if event == "reply.chunk"
+        ) == second["text"]
+        time.sleep(0.05)
+        assert len(events) == first_event_count
     finally:
         worker.shutdown()
         thread.join(timeout=2)
+
+
+def test_live_file_edit_crosses_real_brain_approval_boundary(tmp_path):
+    """A real brain request cannot edit until its matching approval is resolved."""
+    repo = Path(__file__).resolve().parents[2]
+    root = tmp_path / "allowed"
+    root.mkdir()
+    note = root / "note.txt"
+    note.write_text("alpha beta", encoding="utf-8")
+    (tmp_path / ".env").write_text(
+        f"TOOL_FILE_ROOTS={root}\nTOOL_FILE_BLOCKED_GLOBS=.env*,**/.env*\n",
+        encoding="utf-8",
+    )
+    worker = _worker(
+        "runtime.workers.brain_host",
+        "brain",
+        env={
+            "WISP_REPO_ROOT": str(tmp_path),
+            "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "runtime" / "brain")]),
+        },
+    )
+
+    def run_edit(*, approved: bool, replacement: str, feedback: str = ""):
+        approval_ready = threading.Event()
+        approval = {}
+        result = {}
+        errors = []
+
+        def on_event(event, data, _req_id):
+            if event == "live_file.approval.request":
+                approval.update(data)
+                approval_ready.set()
+
+        def invoke():
+            try:
+                result.update(
+                    worker.call_with_events(
+                        "brain.debug.live_file.execute",
+                        {
+                            "name": "edit_file",
+                            "inputs": {
+                                "path": str(note),
+                                "old": "beta",
+                                "new": replacement,
+                            },
+                            "access_mode": "ask",
+                        },
+                        timeout=20,
+                        on_event=on_event,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - asserted below
+                errors.append(exc)
+
+        thread = threading.Thread(target=invoke, name="real-file-approval")
+        thread.start()
+        assert approval_ready.wait(10), "brain worker emitted no file approval request"
+        assert approval["action"] == "edit_file"
+        assert Path(approval["path"]).resolve() == note.resolve()
+        assert "-alpha beta" in approval["diff"]
+        response = worker.call(
+            "brain.live_file.approval.respond",
+            {
+                "approval_id": approval["approval_id"],
+                "approved": approved,
+                "feedback": feedback,
+            },
+            timeout=10,
+        )
+        thread.join(timeout=20)
+        expected_response = {"ok": True, "approved": approved}
+        if feedback:
+            expected_response["feedback"] = feedback
+        assert response == expected_response
+        assert not thread.is_alive()
+        assert errors == []
+        return result["result"]
+
+    try:
+        denied = run_edit(approved=False, replacement="gamma", feedback="Keep beta.")
+        assert "Keep beta." in denied
+        assert note.read_text(encoding="utf-8") == "alpha beta"
+
+        accepted = run_edit(approved=True, replacement="gamma")
+        assert "Edited note.txt" in accepted
+        assert note.read_text(encoding="utf-8") == "alpha gamma"
+    finally:
+        worker.shutdown()
 
 
 def test_brain_worker_memory_crud_persists_over_ipc(tmp_path):
@@ -502,6 +724,77 @@ def test_brain_worker_memory_crud_persists_over_ipc(tmp_path):
         assert (tmp_path / "memory" / "facts_fallback.json").is_file()
     finally:
         worker.shutdown()
+
+
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+def test_memory_ui_events_persist_across_real_brain_restart(tmp_path):
+    """Real UI memory mutations survive a brain restart and remain searchable."""
+    from runtime.supervisor.flows import FlowController
+
+    repo = Path(__file__).resolve().parents[2]
+    shared_env = {
+        "WISP_REPO_ROOT": str(tmp_path),
+        "WISP_RUN_LOG_DIR": str(tmp_path / "logs"),
+        "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "runtime" / "brain")]),
+    }
+    ui = _worker(
+        "runtime.workers.ui_host",
+        "ui",
+        env={
+            **shared_env,
+            "QT_QPA_PLATFORM": "offscreen",
+            "WISP_UI_DEBUG_METHODS": "1",
+        },
+    )
+    brain = _worker("runtime.workers.brain_host", "brain", env=shared_env)
+    flow = FlowController(native=brain, ui=ui, brain=brain, audio=brain, run_async=False)
+    ui.on_event("ui.memory.add", flow._on_memory_add)
+    ui.on_event("ui.memory.update", flow._on_memory_update)
+    ui.on_event("ui.memory.delete", flow._on_memory_delete)
+
+    def wait_for_fact(predicate, timeout=10):
+        deadline = time.time() + timeout
+        facts = []
+        while time.time() < deadline:
+            facts = brain.call("brain.memory.list", timeout=10)["facts"]
+            if predicate(facts):
+                return facts
+            time.sleep(0.05)
+        pytest.fail(f"memory state did not converge; facts={facts!r}")
+
+    try:
+        assert ui.call(
+            "ui.debug.memory.add",
+            {"text": "The restart code is amber fox.", "category": "general"},
+            timeout=10,
+        ) == {"emitted": True}
+        facts = wait_for_fact(lambda items: any("amber fox" in item["text"] for item in items))
+        fact_id = next(item["id"] for item in facts if "amber fox" in item["text"])
+
+        assert ui.call(
+            "ui.debug.memory.update",
+            {"id": fact_id, "text": "The restart code is violet fox.", "category": "general"},
+            timeout=10,
+        ) == {"emitted": True}
+        wait_for_fact(lambda items: any("violet fox" in item["text"] for item in items))
+
+        old_pid = brain.pid
+        brain.restart()
+        assert brain.call("brain.ping", timeout=20)["pid"] != old_pid
+        restarted_facts = brain.call("brain.memory.list", timeout=20)["facts"]
+        assert any(item["id"] == fact_id and "violet fox" in item["text"] for item in restarted_facts)
+        search = brain.call(
+            "brain.memory.search",
+            {"query": "What is the restart code?", "top_k": 3},
+            timeout=20,
+        )
+        assert "violet fox" in search["text"]
+
+        assert ui.call("ui.debug.memory.delete", {"id": fact_id}, timeout=10) == {"emitted": True}
+        wait_for_fact(lambda items: all(item["id"] != fact_id for item in items))
+    finally:
+        ui.shutdown()
+        brain.shutdown()
 
 
 def test_brain_worker_agent_run_streams_and_persists_over_ipc(tmp_path):
@@ -599,6 +892,59 @@ def test_worker_respawns_after_process_death():
         assert second["pid"] != first["pid"]
     finally:
         worker.shutdown()
+
+
+def test_brain_worker_death_mid_stream_fails_request_and_recovers():
+    """Killing a real active brain request does not poison the replacement worker."""
+    worker = _worker("runtime.workers.brain_host", "brain")
+    first_chunk = threading.Event()
+    events = []
+    errors = []
+
+    def run_stream():
+        try:
+            worker.call_with_events(
+                "brain.echo",
+                {"text": " ".join(str(index) for index in range(500)), "delay": 0.02},
+                timeout=30,
+                on_event=lambda event, data, req_id: (
+                    events.append((event, data, req_id)),
+                    first_chunk.set() if event == "reply.chunk" else None,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    thread = threading.Thread(target=run_stream, name="brain-death-contract")
+    try:
+        thread.start()
+        assert first_chunk.wait(10), "brain stream did not begin"
+        original_pid = worker.pid
+        assert worker._proc is not None
+        worker._proc.kill()
+        worker._proc.wait(timeout=10)
+        thread.join(timeout=15)
+
+        assert not thread.is_alive()
+        assert len(errors) == 1
+        assert isinstance(errors[0], WorkerError)
+        assert "worker exited" in str(errors[0]).lower()
+        event_count_after_death = len(events)
+
+        recovered = worker.call("brain.ping", timeout=20)
+        assert recovered["pid"] != original_pid
+        reply = worker.call_with_events(
+            "brain.echo",
+            {"text": "replacement worker is clean", "delay": 0.001},
+            timeout=10,
+            on_event=lambda _event, _data, _req_id: None,
+        )
+        assert reply == {"text": "replacement worker is clean"}
+        time.sleep(0.05)
+        assert len(events) == event_count_after_death
+    finally:
+        worker.shutdown()
+        thread.join(timeout=2)
 
 
 def test_worker_exit_handler_fires_when_process_exits():

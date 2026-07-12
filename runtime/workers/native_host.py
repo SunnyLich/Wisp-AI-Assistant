@@ -1931,7 +1931,11 @@ def native_config_reload() -> dict[str, Any]:
 
     config.reload()
     print("[native] config reloaded", flush=True)
-    return {"ok": True}
+    return {
+        "ok": True,
+        "hotkey_voice": str(getattr(config, "HOTKEY_VOICE", "") or ""),
+        "caller_count": len(getattr(config, "CALLER_ROWS", []) or []),
+    }
 
 
 def _stop_current_hotkeys() -> dict[str, Any]:

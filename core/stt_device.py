@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 Log = Callable[[str], None]
 
@@ -111,7 +111,7 @@ def build_model(WhisperModel, model_name: str, device: str, compute: str, log: L
         _stt_diag("starting CUDA warmup encode")
         _warmup_encode(model)
         _stt_diag("finished CUDA warmup encode")
-    except Exception as exc:  # noqa: BLE001 — only swallow the known cuBLAS gap
+    except Exception as exc:  # noqa: BLE001 — handle only the known cuBLAS gap
         msg = str(exc).upper()
         if "int8" in compute and ("CUBLAS" in msg or "NOT_SUPPORTED" in msg):
             log(f"compute_type {compute!r} not supported on this GPU "
@@ -127,10 +127,20 @@ def build_model(WhisperModel, model_name: str, device: str, compute: str, log: L
                 compute = "int8"
                 model = WhisperModel(model_name, device=device, compute_type=compute)
                 return model, device, compute
+            _stt_diag("starting CUDA float16 fallback warmup encode")
             try:
-                _warmup_encode(model)  # warm the fallback model too
-            except Exception:  # noqa: BLE001 — best effort; first clip just pays JIT
-                pass
+                _warmup_encode(model)
+            except Exception as float_exc:  # noqa: BLE001 — an unverified fallback is unusable
+                _stt_diag(
+                    "CUDA float16 fallback warmup failed: "
+                    f"{type(float_exc).__name__}: {float_exc}"
+                )
+                raise RuntimeError(
+                    "CUDA float16 fallback warmup failed after the int8 CUDA warmup failed "
+                    f"with {type(exc).__name__}: {exc}. "
+                    f"Float16 failure: {type(float_exc).__name__}: {float_exc}"
+                ) from float_exc
+            _stt_diag("finished CUDA float16 fallback warmup encode")
         else:
             raise
     return model, device, compute

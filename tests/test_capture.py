@@ -494,6 +494,13 @@ class CaptureTests(unittest.TestCase):
             output.write_bytes(b"png")
             return subprocess.CompletedProcess(args, 0, "", "")
 
+        real_import = __import__
+
+        def reject_portal_import(name, *args, **kwargs):
+            if str(name).startswith("jeepney"):
+                raise AssertionError("KDE Spectacle path must not import the portal client")
+            return real_import(name, *args, **kwargs)
+
         with mock.patch.dict(
             os.environ,
             {"WAYLAND_DISPLAY": "wayland-0", "XDG_CURRENT_DESKTOP": "KDE"},
@@ -505,13 +512,12 @@ class CaptureTests(unittest.TestCase):
                  "Image",
                  types.SimpleNamespace(open=lambda _path: OpenImage()),
              ), \
-             mock.patch("jeepney.io.blocking.open_dbus_connection") as portal:
+             mock.patch("builtins.__import__", side_effect=reject_portal_import):
             image = self.capture._get_screen_snippet_wayland(
                 {"left": 1, "top": 2, "width": 3, "height": 4}
             )
 
         self.assertEqual(image, ("crop", (1, 2, 4, 6)))
-        portal.assert_not_called()
 
 
 if __name__ == "__main__":

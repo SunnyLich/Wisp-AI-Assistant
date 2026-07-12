@@ -3718,6 +3718,13 @@ Continuer ?</translation>
     <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>Ouvrez la configuration guidée sans réinitialiser vos autres paramètres.</translation></message>
     <message><source>Apply settings first</source><translation>Appliquez d’abord les paramètres</translation></message>
     <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>Appliquez ou abandonnez vos modifications de paramètres en attente avant de lancer la configuration du profil.</translation></message>
+    <message><source>Opening your browser… finish the sign-in there, then return here.</source><translation>Ouverture de votre navigateur… terminez la connexion là-bas, puis revenez ici.</translation></message>
+    <message><source>Sign-in could not start: {error}</source><translation>La connexion n’a pas pu démarrer : {error}</translation></message>
+    <message><source>Connected. Wisp will use your ChatGPT sign-in unless you selected another provider.</source><translation>Connecté. Wisp utilisera votre connexion ChatGPT, sauf si vous avez sélectionné un autre fournisseur.</translation></message>
+    <message><source>Connected</source><translation>Connecté</translation></message>
+    <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>Toujours pas connecté. Vous pouvez continuer et réessayer plus tard depuis les Paramètres.</translation></message>
+    <message><source>Profile saved, but the key could not be stored: {error}</source><translation>Profil enregistré, mais la clé n’a pas pu être stockée : {error}</translation></message>
+    <message><source>Enter a model name</source><translation>Saisissez un nom de modèle</translation></message>
   </context>
   <context>
     <name>Wisp</name>

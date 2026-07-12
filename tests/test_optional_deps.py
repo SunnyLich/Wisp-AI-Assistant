@@ -84,6 +84,36 @@ def test_stt_int8_cuda_fallback_uses_cpu_when_float16_is_unsupported():
     assert calls == [("cuda", "int8"), ("cuda", "float16"), ("cpu", "int8")]
 
 
+def test_stt_int8_cuda_fallback_propagates_failed_float16_warmup():
+    """A float16 fallback must pass warmup before STT reports a usable CUDA backend."""
+    from core import stt_device
+
+    calls: list[tuple[str, str]] = []
+
+    class FakeModel:
+        def __init__(self, _model_name: str, *, device: str, compute_type: str):
+            self.device = device
+            self.compute_type = compute_type
+
+        def transcribe(self, _audio, **_kwargs):
+            calls.append((self.device, self.compute_type))
+            if self.compute_type == "int8":
+                raise RuntimeError("CUBLAS_STATUS_NOT_SUPPORTED")
+            raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+
+    with pytest.raises(RuntimeError, match="CUDA float16 fallback warmup failed") as exc_info:
+        stt_device.build_model(
+            FakeModel,
+            "base",
+            "cuda",
+            "int8",
+            log=lambda _message: None,
+        )
+
+    assert "cublas64_12.dll" in str(exc_info.value)
+    assert calls == [("cuda", "int8"), ("cuda", "float16")]
+
+
 def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
     """Repo/dev launches should keep using the active Python's pip."""
     from core import optional_deps

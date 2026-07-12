@@ -2138,6 +2138,24 @@ class QtProtocolHost:
             seconds = max(0.0, min(10.0, float(params.get("seconds") or 0.0)))
             time.sleep(seconds)
             return {"blocked_seconds": seconds}
+        if method == "ui.debug.memory.add" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            self._memory_manager().add_fact_manual(
+                str(params.get("text") or ""),
+                str(params.get("category") or "general"),
+                str(params.get("project") or ""),
+            )
+            return {"emitted": True}
+        if method == "ui.debug.memory.update" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            self._memory_manager().update_fact(
+                str(params.get("id") or params.get("fact_id") or ""),
+                str(params.get("text") or ""),
+                params.get("category"),
+                params.get("project"),
+            )
+            return {"emitted": True}
+        if method == "ui.debug.memory.delete" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            self._memory_manager().delete_fact(str(params.get("id") or params.get("fact_id") or ""))
+            return {"emitted": True}
         if method == "ui.reload_config":
             return self._reload_config()
         if method == "ui.show_overlay":

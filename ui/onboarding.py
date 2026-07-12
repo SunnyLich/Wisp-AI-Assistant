@@ -381,7 +381,7 @@ class OnboardingWizard(QDialog):
         position = sequence.index(index) + 1
         self._progress.setText(t("Step {current} of {total}").format(current=position, total=len(sequence)))
         self._back.setEnabled(position > 1)
-        self._next.setText("Finish setup" if index == sequence[-1] else "Continue")
+        self._next.setText(t("Finish setup") if index == sequence[-1] else t("Continue"))
         self._update_navigation()
 
     def _preview_app_language(self) -> None:
@@ -459,7 +459,7 @@ class OnboardingWizard(QDialog):
         self._provider_model.clear()
         self._provider_model.addItems(_PROVIDER_MODELS.get(provider, []))
         self._provider_model.setCurrentText(previous_model or _PROVIDER_DEFAULTS.get(provider, ""))
-        self._provider_model.setPlaceholderText(_MODEL_HINTS.get(provider, "Enter a model name"))
+        self._provider_model.setPlaceholderText(t(_MODEL_HINTS.get(provider, "Enter a model name")))
         self._provider_model.blockSignals(False)
         self._provider_model.setEnabled(bool(provider))
         self._custom_base_url.setVisible(provider == "custom")
@@ -501,7 +501,7 @@ class OnboardingWizard(QDialog):
         self._oauth_in_progress = True
         self._oauth_error = ""
         self._oauth_button.setEnabled(False)
-        self._oauth_status.setText("Opening your browser… finish the sign-in there, then return here.")
+        self._oauth_status.setText(t("Opening your browser… finish the sign-in there, then return here."))
         self._oauth_status.setStyleSheet("color: palette(highlight);")
         try:
             from core.auth import chatgpt as chatgpt_auth
@@ -522,7 +522,7 @@ class OnboardingWizard(QDialog):
             self._oauth_timer.timeout.connect(self._poll_oauth)
             self._oauth_timer.start()
         except Exception as exc:  # noqa: BLE001 - shown in the wizard
-            self._oauth_status.setText(f"Sign-in could not start: {exc}")
+            self._oauth_status.setText(t("Sign-in could not start: {error}").format(error=exc))
             self._oauth_status.setStyleSheet("color: #c04040;")
             self._oauth_in_progress = False
             self._oauth_button.setEnabled(True)
@@ -530,7 +530,7 @@ class OnboardingWizard(QDialog):
     def _poll_oauth(self) -> None:
         if self._oauth_error:
             self._oauth_timer.stop()
-            self._oauth_status.setText(f"Sign-in could not start: {self._oauth_error}")
+            self._oauth_status.setText(t("Sign-in could not start: {error}").format(error=self._oauth_error))
             self._oauth_status.setStyleSheet("color: #c04040;")
             self._oauth_button.setEnabled(True)
             return
@@ -541,9 +541,9 @@ class OnboardingWizard(QDialog):
                 self._oauth_connected = True
                 self._oauth_in_progress = False
                 self._oauth_timer.stop()
-                self._oauth_status.setText("Connected. Wisp will use your ChatGPT sign-in unless you selected another provider.")
+                self._oauth_status.setText(t("Connected. Wisp will use your ChatGPT sign-in unless you selected another provider."))
                 self._oauth_status.setStyleSheet("color: #408040;")
-                self._oauth_button.setText("Connected")
+                self._oauth_button.setText(t("Connected"))
                 return
         except Exception:
             pass
@@ -552,7 +552,7 @@ class OnboardingWizard(QDialog):
             self._oauth_timer.stop()
             self._oauth_in_progress = False
             self._oauth_button.setEnabled(True)
-            self._oauth_status.setText("Still not connected. You can continue and try again from Settings later.")
+            self._oauth_status.setText(t("Still not connected. You can continue and try again from Settings later."))
             self._oauth_status.setStyleSheet("color: palette(placeholder-text);")
 
     def _finish(self) -> None:
@@ -566,7 +566,7 @@ class OnboardingWizard(QDialog):
                 try:
                     secret_store.set_secret(key_name, key)
                 except Exception as exc:  # noqa: BLE001 - preserve the rest of setup
-                    self._provider_hint.setText(f"Profile saved, but the key could not be stored: {exc}")
+                    self._provider_hint.setText(t("Profile saved, but the key could not be stored: {error}").format(error=exc))
                     self._provider_hint.setStyleSheet("color: #c04040;")
                     return
         values = profile_values(

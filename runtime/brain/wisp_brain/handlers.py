@@ -2257,6 +2257,29 @@ def _live_file_approval_callback(ctx: StreamContext) -> Callable[[dict], dict[st
     return request_approval
 
 
+@handler("brain.debug.live_file.execute", streaming=True)
+def brain_debug_live_file_execute(
+    ctx: StreamContext,
+    name: str = "",
+    inputs: dict[str, Any] | None = None,
+    access_mode: str = "ask",
+) -> dict[str, Any]:
+    """Exercise the real live-file approval boundary in offline contract runs."""
+    if not _offline_brain():
+        raise PermissionError("offline brain mode is required for debug file execution")
+    import config
+    from core.tools.local_files import execute_live_file_tool
+
+    config.reload()
+    result = execute_live_file_tool(
+        str(name or ""),
+        dict(inputs or {}),
+        access_mode=str(access_mode or "ask"),
+        approval_callback=_live_file_approval_callback(ctx),
+    )
+    return {"result": result}
+
+
 @handler("brain.agent.approval.respond")
 def brain_agent_approval_respond(approval_id: str = "", approved: bool = False) -> dict[str, Any]:
     """Resolve one pending agent approval prompt emitted by ``brain.agent.run``."""
