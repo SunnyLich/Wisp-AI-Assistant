@@ -18,6 +18,7 @@ np = pytest.importorskip("numpy")
 @pytest.fixture(autouse=True)
 def _run_log_dir(monkeypatch, request):
     """Keep generated audio files inside the test temp dir."""
+    audio_host._audio_shutdown_requested.clear()
     root = Path.cwd() / ".pytest-audio-host" / request.node.name
     if root.exists():
         shutil.rmtree(root)
@@ -29,6 +30,7 @@ def _run_log_dir(monkeypatch, request):
         root.parent.rmdir()
     except OSError:
         pass
+    audio_host._audio_shutdown_requested.clear()
 
 
 def test_main_starts_ipc_before_loading_tts_stack(monkeypatch):
@@ -56,9 +58,27 @@ def test_main_starts_ipc_before_loading_tts_stack(monkeypatch):
             "role": "audio",
             "handlers": audio_host.HANDLERS,
             "event_sink_setter": audio_host.set_event_sink,
+            "shutdown_handler": audio_host.audio_shutdown,
             "threaded": True,
         }
     ]
+
+
+def test_audio_shutdown_waits_for_native_warmup(monkeypatch):
+    """Kokoro/Torch work must finish before the worker interpreter exits."""
+    calls = []
+    monkeypatch.setattr(audio_host, "audio_stop", lambda: calls.append("stop") or {"stopped": True})
+    monkeypatch.setattr(audio_host, "_stop_live_session", lambda reason: calls.append(reason) or False)
+    monkeypatch.setattr(
+        audio_host,
+        "_wait_for_warmups",
+        lambda timeout: calls.append(timeout) or True,
+    )
+
+    result = audio_host.audio_shutdown()
+
+    assert result == {"warmups_finished": True}
+    assert calls == ["stop", "shutdown", audio_host._AUDIO_SHUTDOWN_WARMUP_TIMEOUT_SECONDS]
 
 
 def test_record_start_reports_mic_open_failure_without_raising(monkeypatch):

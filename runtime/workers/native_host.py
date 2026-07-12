@@ -1107,6 +1107,7 @@ def context_snapshot(
     include_clipboard: bool = True,
     include_selection: bool = True,
     include_selected_paths: bool = False,
+    include_active_window_text: bool = False,
     include_browser_content: bool = False,
     include_browser_url: bool = False,
     capture_focus: bool = False,
@@ -1126,6 +1127,7 @@ def context_snapshot(
         "stale_selected_text": "",
         "selected_paths": [],
         "clipboard_text": "",
+        "active_window_text": "",
         "browser_url": "",
         "browser_hwnd": 0,
         "browser_app": "",
@@ -1143,7 +1145,7 @@ def context_snapshot(
     # in place via Accessibility even if focus has since moved.
     if capture_focus:
         snapshot["focus_token"] = _capture_focus()
-    sel_dt = path_dt = clip_dt = br_dt = 0.0
+    sel_dt = path_dt = clip_dt = window_text_dt = br_dt = 0.0
     selection_kind = _selection_source_kind(active) if include_selected_paths else "text"
     if include_selection and selection_kind != "paths":
         _s = time.monotonic()
@@ -1154,6 +1156,15 @@ def context_snapshot(
             selection_dedupe_key=str(selection_dedupe_key or ""),
         )
         sel_dt = time.monotonic() - _s
+    if include_active_window_text and not IS_WIN and not IS_MAC and os.environ.get("WAYLAND_DISPLAY"):
+        _s = time.monotonic()
+        try:
+            from core.platform import linux_atspi
+
+            snapshot["active_window_text"] = linux_atspi.get_active_window_text()
+        except Exception:
+            snapshot["active_window_text"] = ""
+        window_text_dt = time.monotonic() - _s
     if include_clipboard:
         _s = time.monotonic()
         snapshot["clipboard_text"] = clipboard_get()["text"]
@@ -1260,9 +1271,11 @@ def context_snapshot(
         br_dt = time.monotonic() - _s
     print(
         f"[context.snapshot] active_app={t_app - t0:.2f}s selected={sel_dt:.2f}s paths={path_dt:.2f}s "
+        f"window_text={window_text_dt:.2f}s "
         f"clipboard={clip_dt:.2f}s browser={br_dt:.2f}s total={time.monotonic() - t0:.2f}s "
         f"(app={active.get('name')!r} hwnd={active.get('window_id') or 0} "
         f"selection_kind={selection_kind} sel_len={len(snapshot['selected_text'])} "
+        f"window_text_len={len(snapshot['active_window_text'])} "
         f"paths={len(snapshot['selected_paths'])} url={'y' if snapshot['browser_url'] else 'n'})",
         flush=True,
     )

@@ -240,6 +240,36 @@ def browser_context_handler(selected: str = "selected"):
     return handler
 
 
+def test_wayland_accessibility_text_supplies_active_document_without_brain_read():
+    """Hotkey-time AT-SPI text is reused as generic app-document context."""
+    flow, _native, _ui, brain, _audio = make_flow()
+    context = {
+        "active_app": {"name": "Untitled - Kate", "process_name": "kate"},
+        "active_window_text": "unselected Wayland editor content",
+    }
+
+    assert flow._fetch_active_document_text(context) == "unselected Wayland editor content"
+    assert context["active_document_sources"][0]["label"] == "kate - Untitled - Kate"
+    assert not brain.calls_for("brain.context.active_document")
+
+
+def test_wayland_accessibility_text_falls_back_for_browser_content():
+    """Captured browser accessibility text survives the overlay taking focus."""
+    native = FakeWorker({"native.context.browser_content": lambda _params: {"content": ""}})
+    flow, native, _ui, _brain, _audio = make_flow(native=native)
+    context = {
+        "active_app": {"name": "Example - Firefox", "process_name": "firefox"},
+        "browser_url": "https://example.test/private",
+        "active_window_text": "signed-in page content",
+    }
+
+    assert flow._fetch_browser_content_for_context(context) == {
+        "browser_url": "https://example.test/private",
+        "browser_content": "signed-in page content",
+    }
+    assert native.last_call("native.context.browser_content")["params"]["url"] == "https://example.test/private"
+
+
 def query_stream(reply: str = "reply"):
     """Verify query stream behavior."""
     def handler(_params: dict[str, Any], on_event) -> dict[str, Any]:

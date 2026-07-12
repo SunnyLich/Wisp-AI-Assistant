@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from core import context_fetcher
+from core.platform import linux_atspi
 from runtime.workers import native_host
 
 
@@ -241,6 +242,46 @@ def test_context_snapshot_text_app_selection_uses_text_not_paths(monkeypatch):
     assert snapshot["clipboard_text"] == "clipboard text"
 
 
+def test_context_snapshot_wayland_includes_active_window_accessible_text(monkeypatch):
+    """Wayland can attach unselected active-window text without clipboard reads."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-test")
+    monkeypatch.setattr(native_host, "_active_app", lambda: {"name": "Editor", "pid": 42})
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(linux_atspi, "get_active_window_text", lambda: "unselected editor content")
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False,
+        include_selection=False,
+        include_active_window_text=True,
+    )
+
+    assert snapshot["active_window_text"] == "unselected editor content"
+
+
+def test_context_snapshot_does_not_read_active_window_text_off_wayland(monkeypatch):
+    """The accessibility-content path remains exclusive to Wayland sessions."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr(native_host, "_active_app", lambda: {"name": "Editor", "pid": 42})
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(
+        linux_atspi,
+        "get_active_window_text",
+        lambda: pytest.fail("AT-SPI content read attempted off Wayland"),
+    )
+
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False,
+        include_selection=False,
+        include_active_window_text=True,
+    )
+
+    assert snapshot["active_window_text"] == ""
+
+
 def test_await_selection_context_disables_active_owner_requirement(monkeypatch):
     """Verify explicit Selection capture can use the interactive selection gesture."""
     monkeypatch.setattr(native_host, "IS_MAC", False)
@@ -333,6 +374,7 @@ def test_selected_text_dedupes_repeated_x11_primary_acquisition(monkeypatch):
     """Verify one PRIMARY acquisition auto-fills once, then turns stale."""
     import core.capture as capture
 
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr(native_host, "IS_MAC", False)
     monkeypatch.setattr(native_host, "IS_WIN", False)
     monkeypatch.setattr(native_host, "_AUTOFILLED_PRIMARY_SELECTIONS", {})
@@ -483,6 +525,7 @@ def test_linux_context_snapshot_keeps_browser_hwnd_for_deferred_read(monkeypatch
     window id survives into browser_hwnd/debug so the deferred read has a
     target, and that a URL is passed through untouched if one ever appears.
     """
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr(native_host, "IS_WIN", False)
     monkeypatch.setattr(native_host, "IS_MAC", False)
     monkeypatch.setattr(context_fetcher, "_IS_WIN", False)

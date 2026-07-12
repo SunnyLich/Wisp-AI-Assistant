@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMenu, QSystemT
 import config
 from core.system.paths import DOLL_ASSETS_DIR
 from ui.i18n import t
+from ui.shared.window_utils import is_wayland, start_wayland_system_move
 
 ASSETS_DIR = str(DOLL_ASSETS_DIR)
 _BUBBLE_SHOW_DEFER_MS = 75
@@ -86,8 +87,8 @@ class IconOverlay(QMainWindow):
         self.signals = signals
 
         self._build_window()
-        self._build_tray()
         self._build_icon_label()
+        self._build_tray()
 
         # Speech bubble
         from ui.bubble import SpeechBubble
@@ -197,13 +198,10 @@ class IconOverlay(QMainWindow):
         self._icon_label.setCursor(Qt.CursorShape.SizeAllCursor)
         self._icon_label.setAcceptDrops(True)
         self._icon_label.installEventFilter(self)
-        # Native Wayland positions popups relative to a parent surface. The
-        # menu is built before this icon exists, so attach it once the visible
-        # icon surface is available while retaining popup window semantics.
-        self._tray_menu.setParent(self._icon_label, Qt.WindowType.Popup)
         self._icon_drag_offset = None
         self._icon_press_pos = QPoint()
         self._icon_dragged = False
+        self._icon_system_move_active = False
 
         self._icon_hide_timer = QTimer(self)
         self._icon_hide_timer.setSingleShot(True)
@@ -235,7 +233,12 @@ class IconOverlay(QMainWindow):
 
     def _build_tray_menu(self) -> QMenu:
         """Build tray menu."""
-        menu = QMenu(self)
+        # Wayland needs a live parent surface for a popup. Construct the menu
+        # with the visible icon as its parent before it is registered with the
+        # tray; reparenting an already registered QMenu can leave the native
+        # popup attached to the old, hidden zero-size window.
+        menu = QMenu(self._icon_label)
+        menu.setWindowFlags(Qt.WindowType.Popup)
 
         if os.environ.get("WISP_MACOS_PY_UI_HOST") == "1":
             agent_task_action = QAction(t("Start agent task..."), self)
@@ -560,13 +563,29 @@ class IconOverlay(QMainWindow):
     # Drag support (icon + bubble kept in sync)
     # ------------------------------------------------------------------
 
+    def _popup_tray_menu(self, global_anchor: QPoint) -> None:
+        """Open the icon menu while the Wayland input serial is still valid."""
+        self._tray_menu.popup(global_anchor)
+
     def eventFilter(self, obj, event):
         """Handle event filter for icon overlay."""
         if obj is self._icon_label:
             t = event.type()
 
+            if t == QEvent.Type.Move and self._icon_system_move_active:
+                # Compositor-driven moves are reported back through the widget
+                # geometry. Keep the adjacent UI in step when that happens.
+                self._on_icon_dragged(self._icon_label.pos())
+                return False
+
             # ---- mouse events ----
             if t == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
+                # xdg_popup needs the serial from the input press that opened
+                # it. Waiting for release causes some compositors to place the
+                # menu at their fallback origin instead of beside the icon.
+                if is_wayland():
+                    self._popup_tray_menu(event.globalPosition().toPoint())
+                    return True
                 self._right_press_on_icon = True
                 return True
             if t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.RightButton:
@@ -579,6 +598,7 @@ class IconOverlay(QMainWindow):
                 self._icon_press_pos = event.globalPosition().toPoint()
                 self._icon_drag_offset = self._icon_label.pos() - self._icon_press_pos
                 self._icon_dragged = False
+                self._icon_system_move_active = start_wayland_system_move(self._icon_label)
                 return True
             elif (
                 t == QEvent.Type.MouseMove
@@ -590,13 +610,19 @@ class IconOverlay(QMainWindow):
                 # threshold, so a small jitter during a click still registers as a click.
                 if (cur - self._icon_press_pos).manhattanLength() >= QApplication.startDragDistance():
                     self._icon_dragged = True
-                self._icon_label.move(cur + self._icon_drag_offset)
-                self._on_icon_dragged(cur + self._icon_drag_offset)
+                if not self._icon_system_move_active:
+                    self._icon_label.move(cur + self._icon_drag_offset)
+                    self._on_icon_dragged(cur + self._icon_drag_offset)
                 return True
             elif t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
-                was_drag = self._icon_dragged
+                was_drag = self._icon_dragged or (
+                    self._icon_system_move_active
+                    and (event.globalPosition().toPoint() - self._icon_press_pos).manhattanLength()
+                    >= QApplication.startDragDistance()
+                )
                 self._icon_drag_offset = None
                 self._icon_dragged = False
+                self._icon_system_move_active = False
                 # A clean left-click (no drag) summons the prompt — the
                 # permission-free alternative to the global hotkey.
                 if not was_drag:

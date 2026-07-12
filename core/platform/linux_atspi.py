@@ -1,10 +1,9 @@
-"""Read the current browser tab URL via AT-SPI2 (Linux's UIA equivalent).
+"""Read native-Wayland context through AT-SPI2 (Linux's UIA equivalent).
 
-X11 has no "give me the tab URL" API, so this walks the desktop accessibility
-bus the same way a screen reader would: find the browser's accessible
-application (matched by pid, with a name fallback for sandboxed browsers),
-locate its web document node, and read the DocURL attribute Firefox and
-Chromium both publish there.
+Wayland has no global selected-text or active-window API.  This walks the
+desktop accessibility bus the same way a screen reader would: find the active
+window, read selected text from its focused tree, and locate browser document
+nodes to read the DocURL attribute Firefox and Chromium publish there.
 
 Everything is best-effort: any D-Bus hiccup, missing tree, or timeout returns
 "" so context capture never blocks on accessibility plumbing. Browsers only
@@ -44,7 +43,11 @@ _MAX_DEPTH = 10
 _MAX_CHILDREN_PER_NODE = 64
 _SELECTION_MAX_NODES = 800
 _SELECTION_MAX_CHARS = 100_000
+_WINDOW_TEXT_MAX_CHARS = 30_000
+_WINDOW_TEXT_DEADLINE = 1.5
+_STATE_ACTIVE = 1
 _STATE_FOCUSED = 12
+_STATE_SHOWING = 25
 
 # Substrings that identify a browser accessible-application by name when the
 # pid match fails (Flatpak routes the a11y connection through a proxy, so the
@@ -183,12 +186,16 @@ def _get_name(conn, dest: str, path: str) -> str:
         body = _call(
             conn, dest, path, _IFACE_PROPERTIES, "Get", "ss", (_IFACE_ACCESSIBLE, "Name")
         )
-        value = body[0]
-        if isinstance(value, tuple) and len(value) == 2:
-            value = value[1]
-        return str(value or "")
+        return str(_variant_value(body[0]) or "")
     except Exception:  # noqa: BLE001 - nameless is fine
         return ""
+
+
+def _variant_value(value):
+    """Unwrap a D-Bus variant returned by jeepney when present."""
+    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str):
+        return value[1]
+    return value
 
 
 def _selected_text_for_node(conn, dest: str, path: str) -> str:
@@ -219,11 +226,36 @@ def _selected_text_for_node(conn, dest: str, path: str) -> str:
     return "\n".join(parts)
 
 
+def _text_for_node(conn, dest: str, path: str, max_chars: int) -> str:
+    """Read up to ``max_chars`` of one accessible node's Text interface."""
+    try:
+        body = _call(conn, dest, path, _IFACE_TEXT, "GetCharacterCount")
+        count = int(_variant_value(body[0]) or 0)
+        if count <= 0:
+            return ""
+        end = min(count, max(1, int(max_chars)))
+        text = _call(conn, dest, path, _IFACE_TEXT, "GetText", "ii", (0, end))[0]
+        return str(text or "").strip()
+    except Exception:
+        return ""
+
+
 def _node_states(conn, dest: str, path: str) -> set[int]:
-    """Return the AT-SPI state enumeration values held by one node."""
+    """Return the AT-SPI state enumeration values held by one node.
+
+    AT-SPI serializes its state set as 32-bit bitset words.  A focused state
+    (12), for example, is bit 12 of the first word, not the integer ``12`` in
+    the response array.
+    """
     try:
         body = _call(conn, dest, path, _IFACE_ACCESSIBLE, "GetState")
-        return {int(value) for value in (body[0] if body else [])}
+        words = [int(value) for value in (body[0] if body else [])]
+        states: set[int] = set()
+        for word_index, word in enumerate(words):
+            for bit in range(32):
+                if word & (1 << bit):
+                    states.add(word_index * 32 + bit)
+        return states
     except Exception:
         return set()
 
@@ -237,61 +269,140 @@ def get_focused_context() -> dict[str, object]:
         return {}
     deadline = time.monotonic() + _WALK_DEADLINE
     try:
-        apps = _get_children(conn, _REGISTRY_NAME, _ROOT_PATH)
+        focused = _focused_window(conn, deadline)
+        if focused is None:
+            return {}
+        app_ref, frame_ref, focused_ref = focused
         pid_cache: dict[str, int] = {}
-        for app_ref in apps:
-            app_name = _get_name(conn, app_ref[0], app_ref[1])
-            frames = _get_children(conn, app_ref[0], app_ref[1])
-            queue: list[tuple[str, str, str]] = [
-                (dest, path, _get_name(conn, dest, path)) for dest, path in frames
-            ]
-            seen: set[tuple[str, str]] = set()
-            nodes_left = _SELECTION_MAX_NODES
-            while queue and nodes_left > 0 and time.monotonic() < deadline:
-                dest, path, window_title = queue.pop(0)
-                if (dest, path) in seen:
-                    continue
-                seen.add((dest, path))
-                nodes_left -= 1
-                states = _node_states(conn, dest, path)
-                if _STATE_FOCUSED in states:
-                    docs: list[tuple[str, str]] = []
-                    for frame in frames:
-                        docs.extend(
-                            _collect_document_urls(
-                                conn,
-                                frame,
-                                _WalkBudget(deadline, max_nodes=300),
-                            )
-                        )
-                    return {
-                        "app_name": app_name,
-                        "process_name": app_name,
-                        "pid": _connection_pid(conn, app_ref[0], pid_cache),
-                        "window_title": window_title,
-                        "focused_name": _get_name(conn, dest, path),
-                        "browser_url": _choose_document_url(docs, window_title),
-                    }
-                try:
-                    queue.extend(
-                        (child_dest, child_path, window_title)
-                        for child_dest, child_path in _get_children(conn, dest, path)
-                    )
-                except Exception:
-                    continue
-        return {}
+        app_name = _get_name(conn, app_ref[0], app_ref[1])
+        window_title = _get_name(conn, frame_ref[0], frame_ref[1])
+        docs = _collect_document_urls(conn, frame_ref, _WalkBudget(deadline, max_nodes=300))
+        return {
+            "app_name": app_name,
+            "process_name": app_name,
+            "pid": _connection_pid(conn, app_ref[0], pid_cache),
+            "window_title": window_title,
+            "focused_name": _get_name(conn, focused_ref[0], focused_ref[1]),
+            "browser_url": _choose_document_url(docs, window_title),
+        }
     except Exception as exc:
         _log.info("AT-SPI focused-context walk failed: %s", exc)
         _reset_connection()
         return {}
 
 
-def get_selected_text() -> str:
-    """Return selected text from a native Linux application via AT-SPI2.
+def _focused_window(
+    conn, deadline: float
+) -> tuple[tuple[str, str], tuple[str, str], tuple[str, str]] | None:
+    """Return the active app, its window, and its focused accessible node.
 
-    The accessibility tree is searched breadth-first and stops at the first
-    live Text selection. This works for native Wayland clients without global
-    coordinates, X11 selection ownership, or synthetic copy keystrokes.
+    A Wayland desktop can expose stale ``FOCUSED`` states for background
+    controls.  Requiring an active top-level window before following its
+    focused descendant prevents a background selection from becoming context.
+    """
+    apps = _get_children(conn, _REGISTRY_NAME, _ROOT_PATH)
+    nodes_left = _SELECTION_MAX_NODES
+    active_frames: list[tuple[tuple[str, str], tuple[str, str]]] = []
+    for app_ref in apps:
+        frames = list(_get_children(conn, app_ref[0], app_ref[1]))
+        for frame_ref in frames:
+            if _STATE_ACTIVE in _node_states(conn, frame_ref[0], frame_ref[1]):
+                active_frames.append((app_ref, frame_ref))
+
+    for app_ref, frame_ref in active_frames:
+        queue = [(frame_ref[0], frame_ref[1])]
+        seen: set[tuple[str, str]] = set()
+        while queue and nodes_left > 0 and time.monotonic() < deadline:
+            dest, path = queue.pop(0)
+            if (dest, path) in seen:
+                continue
+            seen.add((dest, path))
+            nodes_left -= 1
+            if _STATE_FOCUSED in _node_states(conn, dest, path):
+                return app_ref, frame_ref, (dest, path)
+            try:
+                queue.extend(_get_children(conn, dest, path))
+            except Exception:
+                continue
+    return None
+
+
+def _selected_text_in_window(conn, window_ref: tuple[str, str], deadline: float) -> str:
+    """Return selection from a focused window, preferring its focused node."""
+    queue = [window_ref]
+    seen: set[tuple[str, str]] = set()
+    focused: list[tuple[str, str]] = []
+    nodes: list[tuple[str, str]] = []
+    while queue and len(nodes) < _SELECTION_MAX_NODES and time.monotonic() < deadline:
+        dest, path = queue.pop(0)
+        if (dest, path) in seen:
+            continue
+        seen.add((dest, path))
+        nodes.append((dest, path))
+        if _STATE_FOCUSED in _node_states(conn, dest, path):
+            focused.append((dest, path))
+        try:
+            queue.extend(_get_children(conn, dest, path))
+        except Exception:
+            continue
+
+    checked: set[tuple[str, str]] = set()
+    for dest, path in focused + nodes:
+        if (dest, path) in checked or time.monotonic() >= deadline:
+            continue
+        checked.add((dest, path))
+        text = _selected_text_for_node(conn, dest, path)
+        if text:
+            return text
+    return ""
+
+
+def _window_text(conn, window_ref: tuple[str, str], deadline: float, max_chars: int) -> str:
+    """Return the best full-text accessible node in one active window."""
+    direct = _text_for_node(conn, window_ref[0], window_ref[1], max_chars)
+    if direct:
+        return direct
+
+    queue = [window_ref]
+    seen: set[tuple[str, str]] = set()
+    fallback: list[tuple[str, str]] = []
+    best = ""
+    while queue and len(seen) < _SELECTION_MAX_NODES and time.monotonic() < deadline:
+        dest, path = queue.pop(0)
+        if (dest, path) in seen:
+            continue
+        seen.add((dest, path))
+        states = _node_states(conn, dest, path)
+        role = _get_role(conn, dest, path)
+        if role in _DOCUMENT_ROLES or _STATE_FOCUSED in states:
+            text = _text_for_node(conn, dest, path, max_chars)
+            if len(text) > len(best):
+                best = text
+        elif _STATE_SHOWING in states and (dest, path) != window_ref:
+            fallback.append((dest, path))
+        try:
+            queue.extend(_get_children(conn, dest, path))
+        except Exception:
+            continue
+
+    if best:
+        return best
+    for dest, path in fallback[:64]:
+        if time.monotonic() >= deadline:
+            break
+        text = _text_for_node(conn, dest, path, max_chars)
+        if len(text) > len(best):
+            best = text
+    return best
+
+
+def get_selected_text() -> str:
+    """Return selected text from the focused native Linux window via AT-SPI2.
+
+    Wayland does not offer a global selected-text API. Search the focused
+    window's accessible descendants rather than only its focused control, so
+    editors and browsers that expose selection on a nearby document node work
+    without falling back to clipboard or injected copy keys.
     """
     if not _IS_LINUX:
         return ""
@@ -300,28 +411,43 @@ def get_selected_text() -> str:
         return ""
     deadline = time.monotonic() + _WALK_DEADLINE
     try:
-        apps = _get_children(conn, _REGISTRY_NAME, _ROOT_PATH)
-        queue = [child for app in apps for child in _get_children(conn, app[0], app[1])]
-        seen: set[tuple[str, str]] = set()
-        nodes_left = _SELECTION_MAX_NODES
-        while queue and nodes_left > 0 and time.monotonic() < deadline:
-            dest, path = queue.pop(0)
-            if (dest, path) in seen:
-                continue
-            seen.add((dest, path))
-            nodes_left -= 1
-            states = _node_states(conn, dest, path)
-            text = _selected_text_for_node(conn, dest, path) if _STATE_FOCUSED in states else ""
-            if text:
-                _log.info("selected text via AT-SPI: %s characters", len(text))
-                return text
-            try:
-                queue.extend(_get_children(conn, dest, path))
-            except Exception:
-                continue
-        return ""
+        focused = _focused_window(conn, deadline)
+        if focused is None:
+            return ""
+        _app_ref, window_ref, _focused_ref = focused
+        text = _selected_text_in_window(conn, window_ref, deadline)
+        if text:
+            _log.info("selected text via AT-SPI: %s characters", len(text))
+        return text
     except Exception as exc:
         _log.info("AT-SPI selected-text walk failed: %s", exc)
+        _reset_connection()
+        return ""
+
+
+def get_active_window_text(max_chars: int = _WINDOW_TEXT_MAX_CHARS) -> str:
+    """Return unselected text exposed by the focused native Wayland window.
+
+    This is a bounded accessibility read, not a screenshot or clipboard
+    operation.  It deliberately reads only the active window that owns focus.
+    """
+    if not _IS_LINUX:
+        return ""
+    conn = _open_a11y_connection()
+    if conn is None:
+        return ""
+    deadline = time.monotonic() + _WINDOW_TEXT_DEADLINE
+    try:
+        focused = _focused_window(conn, deadline)
+        if focused is None:
+            return ""
+        _app_ref, window_ref, _focused_ref = focused
+        text = _window_text(conn, window_ref, deadline, max_chars)
+        if text:
+            _log.info("active-window text via AT-SPI: %s characters", len(text))
+        return text
+    except Exception as exc:
+        _log.info("AT-SPI active-window text walk failed: %s", exc)
         _reset_connection()
         return ""
 

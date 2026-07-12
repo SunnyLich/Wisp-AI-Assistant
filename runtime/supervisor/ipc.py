@@ -34,6 +34,7 @@ class WorkerSpec:
     cwd: Path = field(default_factory=repo_root)
     env: dict[str, str] = field(default_factory=dict)
     restart_limit: int = 3
+    shutdown_timeout: float = 2.0
 
 
 class WorkerClient:
@@ -366,7 +367,7 @@ class WorkerClient:
         except Exception:  # noqa: BLE001
             pass
         try:
-            proc.wait(timeout=2.0)
+            proc.wait(timeout=self.spec.shutdown_timeout)
         except Exception:  # noqa: BLE001
             proc.terminate()
             try:
@@ -393,6 +394,7 @@ def default_specs() -> dict[str, WorkerSpec]:
             "runtime.workers.audio_host",
             "audio",
             env={"WISP_MACOS_ENABLE_AUDIO": "1"},
+            shutdown_timeout=40.0,
         ),
     }
 

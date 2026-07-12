@@ -1,6 +1,26 @@
 from __future__ import annotations
 
 
+def test_wayland_desktop_uses_xwayland_for_positioned_overlay() -> None:
+    """The floating overlay needs global coordinates, unlike native capture."""
+    from runtime.workers import ui_host
+
+    environment = {"WAYLAND_DISPLAY": "wayland-0", "DISPLAY": ":0"}
+
+    assert ui_host._configure_linux_ui_platform(environment, platform="linux") == "xcb"
+    assert environment["QT_QPA_PLATFORM"] == "xcb"
+
+
+def test_ui_platform_respects_native_wayland_opt_in() -> None:
+    """Users can retain the Qt Wayland backend explicitly."""
+    from runtime.workers import ui_host
+
+    environment = {"WAYLAND_DISPLAY": "wayland-0", "DISPLAY": ":0", "WISP_UI_PLATFORM": "wayland"}
+
+    assert ui_host._configure_linux_ui_platform(environment, platform="linux") == ""
+    assert "QT_QPA_PLATFORM" not in environment
+
+
 def test_context_source_labels_translate_without_touching_custom_labels(monkeypatch) -> None:
     """Verify built-in context badge labels are localized but user labels remain."""
     from runtime.workers import ui_host

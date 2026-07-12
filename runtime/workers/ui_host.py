@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import traceback
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,40 @@ from ui.agent.activity_i18n import (
 from ui.i18n import localize_widget_tree, t
 
 log = logging.getLogger("wisp.ui_host")
+
+
+def _configure_linux_ui_platform(
+    environment: MutableMapping[str, str] | None = None,
+    *,
+    platform: str | None = None,
+) -> str:
+    """Choose a placement-capable Qt backend for the floating Linux overlay.
+
+    A Wayland client cannot position its own top-level windows, while Wisp's
+    icon, speech bubble, and context panel are deliberately positioned overlay
+    windows. When XWayland is present, Qt's XCB backend provides the required
+    placement contract. The native capture worker remains a separate process
+    and continues to use Wayland/portal APIs.
+    """
+    env = environment if environment is not None else os.environ
+    selected = str(env.get("QT_QPA_PLATFORM") or "").strip()
+    if selected:
+        return selected
+    if not (platform or sys.platform).startswith("linux"):
+        return ""
+
+    preference = str(env.get("WISP_UI_PLATFORM") or "auto").strip().lower()
+    if preference in {"wayland", "native-wayland"}:
+        return ""
+    if preference in {"xcb", "x11", "xwayland"}:
+        env["QT_QPA_PLATFORM"] = "xcb"
+        return "xcb"
+    if preference != "auto":
+        return ""
+    if env.get("WAYLAND_DISPLAY") and env.get("DISPLAY"):
+        env["QT_QPA_PLATFORM"] = "xcb"
+        return "xcb"
+    return ""
 
 _CONTEXT_SOURCE_LABELS = {
     "App",
@@ -4655,6 +4690,7 @@ def main() -> int:
     """Handle main for runtime workers UI host."""
     root = configure_paths()
     os.chdir(root)
+    selected_platform = _configure_linux_ui_platform()
     os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen=false")
     os.environ.setdefault("WISP_MACOS_PY_UI_HOST", "1")
     real_out = _protect_stdout()
@@ -4665,6 +4701,8 @@ def main() -> int:
     set_windows_app_user_model_id()
     ensure_linux_desktop_entry()
     app = QApplication(sys.argv)
+    if selected_platform:
+        log.info("Qt UI platform selected: %s", selected_platform)
     install_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
     try:

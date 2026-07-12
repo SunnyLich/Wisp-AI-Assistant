@@ -3447,6 +3447,7 @@ class FlowController:
         # by query time the picker has stolen focus and re-detection would fail.
         """Handle context snapshot for flow controller."""
         browser_auto = self._context_mode(caller, "browser") == "auto"
+        documents_auto = self._effective_document_mode(caller) == "auto"
         snapshot = self.native.call(
             "native.context.snapshot",
             {
@@ -3454,6 +3455,9 @@ class FlowController:
                 or preview_context_sources,
                 "include_selection": True,
                 "include_selected_paths": bool(include_selected_paths),
+                # Native Wayland accessibility content must be captured before
+                # the picker/overlay changes focus. Other platforms ignore this.
+                "include_active_window_text": documents_auto or browser_auto,
                 "include_browser_content": include_browser and browser_auto,
                 "include_browser_url": browser_auto or preview_context_sources,
                 # Paste-back callers capture the focused text element so the rewrite
@@ -3621,6 +3625,15 @@ class FlowController:
 
     def _fetch_active_document_text(self, context: dict[str, Any]) -> str:
         """Fetch active document text for preview and query reuse."""
+        accessibility_text = str(context.get("active_window_text") or "").strip()
+        if accessibility_text and not self._is_browser_active_context(context):
+            context["active_document_sources"] = [
+                {
+                    "label": self._active_document_label(context),
+                    "preview": self._context_preview_text(accessibility_text),
+                }
+            ]
+            return accessibility_text
         result = self._safe_call(
             self.brain,
             "brain.context.active_document",
@@ -3728,6 +3741,7 @@ class FlowController:
         browser_hwnd = int(context.get("browser_hwnd") or 0)
         browser_app = str(context.get("browser_app") or "").strip()
         browser_content = str(context.get("browser_content") or "").strip()
+        accessibility_text = str(context.get("active_window_text") or "").strip()
         if (browser_url or browser_hwnd or browser_app) and not browser_content:
             result = self._safe_call(
                 self.native,
@@ -3759,6 +3773,8 @@ class FlowController:
                 len(browser_content),
                 fetched.get("browser_error"),
             )
+        if not browser_content and accessibility_text and self._is_browser_active_context(context):
+            browser_content = accessibility_text
         return {"browser_url": browser_url, "browser_content": browser_content}
 
     def _prefetch_intent_context(self, pending: PendingInvocation, generation: int) -> None:
@@ -3978,7 +3994,12 @@ class FlowController:
             ):
                 context.pop(key, None)
         if not active_document_used:
-            for key in ("active_document_text", "active_document_sources", "document_window"):
+            for key in (
+                "active_document_text",
+                "active_document_sources",
+                "active_window_text",
+                "document_window",
+            ):
                 context.pop(key, None)
         if not app_used:
             context.pop("active_app", None)

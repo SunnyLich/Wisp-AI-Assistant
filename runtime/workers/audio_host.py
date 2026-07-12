@@ -19,6 +19,9 @@ _live_session: Any = None  # core.live_voice.LiveVoiceSession | None (lazy impor
 _config_prewarm_lock = threading.Lock()
 _config_prewarm_generation = 0
 _warmup_lock = threading.Lock()
+_warmup_idle = threading.Condition()
+_active_warmups = 0
+_audio_shutdown_requested = threading.Event()
 _local_tts_warming = False
 _local_tts_ready = False
 _local_tts_error = ""
@@ -26,6 +29,7 @@ _local_tts_warmup_started_at: float | None = None
 _LOCAL_TTS_WARMUP_STALE_SECONDS = 3600.0
 _LOCAL_TTS_WARMUP_PROGRESS_SECONDS = 5.0
 _PLAYBACK_CHUNK_FRAMES = 2048
+_AUDIO_SHUTDOWN_WARMUP_TIMEOUT_SECONDS = 35.0
 
 
 def _local_tts_provider(provider: str) -> bool:
@@ -76,6 +80,34 @@ def _warmup_items(provider: str) -> list[str]:
     return items
 
 
+def _warmup_started() -> None:
+    """Mark a native model warmup as active for orderly worker shutdown."""
+    global _active_warmups
+    with _warmup_idle:
+        _active_warmups += 1
+
+
+def _warmup_finished() -> None:
+    """Mark one native model warmup as complete."""
+    global _active_warmups
+    with _warmup_idle:
+        _active_warmups = max(0, _active_warmups - 1)
+        if _active_warmups == 0:
+            _warmup_idle.notify_all()
+
+
+def _wait_for_warmups(timeout_seconds: float) -> bool:
+    """Wait until Torch/Kokoro work no longer owns Python objects."""
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    with _warmup_idle:
+        while _active_warmups:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            _warmup_idle.wait(remaining)
+    return True
+
+
 def _set_local_tts_warmup(*, warming: bool, ready: bool | None = None, error: str = "") -> None:
     """Track whether local TTS is warming or ready."""
     global _local_tts_warming, _local_tts_ready, _local_tts_error, _local_tts_warmup_started_at
@@ -111,6 +143,19 @@ def _warm_local_audio(
     *,
     on_progress: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
+    """Track one complete native warmup, including its child worker threads."""
+    _warmup_started()
+    try:
+        return _warm_local_audio_impl(provider, on_progress=on_progress)
+    finally:
+        _warmup_finished()
+
+
+def _warm_local_audio_impl(
+    provider: str,
+    *,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> dict[str, Any]:
     """Warm local STT and local TTS, returning per-component status."""
     result: dict[str, Any] = {"stt": "skipped", "tts": "skipped"}
     result_lock = threading.Lock()
@@ -122,6 +167,9 @@ def _warm_local_audio(
     def _warm_stt() -> None:
         if on_progress is not None:
             on_progress("stt", "started")
+        if _audio_shutdown_requested.is_set():
+            _set_result("stt", "stopped")
+            return
         try:
             from core.macos_helper import handlers as stt_handlers
 
@@ -136,6 +184,7 @@ def _warm_local_audio(
     def _warm_tts() -> None:
         is_local_tts = _local_tts_provider(provider)
         stop_progress = threading.Event()
+        progress_thread: threading.Thread | None = None
         if is_local_tts:
             _set_local_tts_warmup(warming=True, ready=False)
         if on_progress is not None:
@@ -151,7 +200,12 @@ def _warm_local_audio(
                     on_progress("tts", f"preparing for {elapsed}s")
 
         if is_local_tts and on_progress is not None:
-            threading.Thread(target=_progress_heartbeat, daemon=True, name="audio-tts-prewarm-progress").start()
+            progress_thread = threading.Thread(
+                target=_progress_heartbeat,
+                daemon=True,
+                name="audio-tts-prewarm-progress",
+            )
+            progress_thread.start()
         try:
             import config
             from core import tts
@@ -171,10 +225,17 @@ def _warm_local_audio(
                 except Exception:
                     pass
 
-            tts.prewarm()
-            status = "ok"
+            if _audio_shutdown_requested.is_set():
+                status = "stopped"
+            else:
+                tts.prewarm()
+                status = "ok"
             if is_local_tts:
-                _set_local_tts_warmup(warming=False, ready=True)
+                _set_local_tts_warmup(
+                    warming=False,
+                    ready=status == "ok",
+                    error="" if status == "ok" else status,
+                )
         except Exception as exc:  # noqa: BLE001
             status = f"error: {type(exc).__name__}: {exc}"
             if is_local_tts:
@@ -185,6 +246,8 @@ def _warm_local_audio(
                     pass
         finally:
             stop_progress.set()
+            if progress_thread is not None:
+                progress_thread.join(timeout=1.0)
         _set_result("tts", status)
         if on_progress is not None:
             on_progress("tts", status)
@@ -277,6 +340,8 @@ def audio_config_reload() -> dict[str, Any]:
     config, drop cached TTS connections, then re-prewarm under the new settings.
     """
     global _config_prewarm_generation
+    if _audio_shutdown_requested.is_set():
+        return {"ok": False, "error": "shutting_down"}
     import config
     from core import tts
     from core.macos_helper import handlers as stt_handlers
@@ -542,6 +607,15 @@ def audio_stop() -> dict[str, Any]:
     return {"stopped": True}
 
 
+def audio_shutdown() -> dict[str, Any]:
+    """Finish native audio work before Python starts interpreter finalization."""
+    _audio_shutdown_requested.set()
+    audio_stop()
+    _stop_live_session("shutdown")
+    warmups_finished = _wait_for_warmups(_AUDIO_SHUTDOWN_WARMUP_TIMEOUT_SECONDS)
+    return {"warmups_finished": warmups_finished}
+
+
 def audio_speed_boost(enabled: bool = False) -> dict[str, Any]:
     """Handle audio speed boost for runtime workers audio host."""
     from core import audio_state
@@ -661,8 +735,15 @@ def _prewarm_native_extensions() -> None:
 
 def main() -> int:
     """Handle main for runtime workers audio host."""
+    _audio_shutdown_requested.clear()
     _prewarm_native_extensions()
-    return run_host(role="audio", handlers=HANDLERS, event_sink_setter=set_event_sink, threaded=True)
+    return run_host(
+        role="audio",
+        handlers=HANDLERS,
+        event_sink_setter=set_event_sink,
+        shutdown_handler=audio_shutdown,
+        threaded=True,
+    )
 
 
 if __name__ == "__main__":
