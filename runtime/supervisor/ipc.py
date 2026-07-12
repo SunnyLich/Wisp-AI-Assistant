@@ -15,10 +15,104 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from runtime import protocol
 from runtime.bootstrap import data_root, repo_root
 
 log = logging.getLogger("wisp.runtime.supervisor")
+
+_MANAGED_CHILD_MODULES = frozenset(
+    {
+        "runtime.workers.hotkey_helper",
+        "core.macos_helper.host",
+        "core.addon_host",
+    }
+)
+
+
+def _is_managed_child_process(process: psutil.Process) -> bool:
+    """Return whether a worker child is an internal process that must die with Wisp.
+
+    Runtime installers, updater helpers, Ollama, and arbitrary addon-launched
+    commands are intentionally absent: some of those are designed to survive an
+    app restart or have an independent lifecycle.
+    """
+    try:
+        command = tuple(str(part) for part in process.cmdline())
+    except (psutil.Error, OSError):
+        return False
+    return any(module in command for module in _MANAGED_CHILD_MODULES)
+
+
+def _snapshot_managed_processes(worker_pids: list[int]) -> list[psutil.Process]:
+    """Snapshot direct workers and known internal descendants before shutdown.
+
+    The snapshot must happen while parent/child relationships still exist. Once
+    a worker exits, an orphaned helper may be re-parented and no longer be
+    discoverable from the supervisor on any of the three desktop platforms.
+    """
+    found: dict[int, psutil.Process] = {}
+
+    def add_internal_tree(process: psutil.Process, *, direct_worker: bool) -> None:
+        if process.pid in found:
+            return
+        if not direct_worker and not _is_managed_child_process(process):
+            return
+        found[process.pid] = process
+        try:
+            children = process.children(recursive=False)
+        except (psutil.Error, OSError):
+            return
+        for child in children:
+            add_internal_tree(child, direct_worker=False)
+
+    for pid in worker_pids:
+        try:
+            add_internal_tree(psutil.Process(pid), direct_worker=True)
+        except (psutil.Error, OSError, ValueError):
+            continue
+    return list(found.values())
+
+
+def _force_stop_managed_processes(
+    processes: list[psutil.Process],
+    *,
+    terminate_timeout: float = 2.0,
+    kill_timeout: float = 5.0,
+) -> list[int]:
+    """Stop survivors from a managed-process snapshot on Windows/macOS/Linux.
+
+    Returns PIDs that were still alive after terminate + kill. ``psutil``
+    validates process identity before signalling, which avoids killing an
+    unrelated process if the operating system has already reused a PID.
+    """
+    candidates: list[psutil.Process] = []
+    # Descendants were appended after their parent; signal them first so a
+    # parent cannot keep a helper alive while it is itself being terminated.
+    for process in reversed(processes):
+        try:
+            if not process.is_running():
+                continue
+            process.terminate()
+            candidates.append(process)
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            log.warning("Could not terminate managed Wisp process %s: %s", process.pid, exc)
+            candidates.append(process)
+    if not candidates:
+        return []
+    _gone, alive = psutil.wait_procs(candidates, timeout=terminate_timeout)
+    for process in alive:
+        try:
+            process.kill()
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            log.error("Could not kill managed Wisp process %s: %s", process.pid, exc)
+    _gone, survivors = psutil.wait_procs(alive, timeout=kill_timeout)
+    return [process.pid for process in survivors if process.is_running()]
 
 
 class WorkerError(RuntimeError):
@@ -368,13 +462,25 @@ class WorkerClient:
             pass
         try:
             proc.wait(timeout=self.spec.shutdown_timeout)
-        except Exception:  # noqa: BLE001
+            return
+        except Exception:  # noqa: BLE001 - escalate below, then let supervisor audit survivors
+            pass
+        try:
             proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except Exception:  # noqa: BLE001
-                proc.kill()
-                proc.wait(timeout=5.0)
+        except Exception:  # noqa: BLE001
+            log.warning("Could not terminate %s pid=%s", self.spec.name, proc.pid, exc_info=True)
+        try:
+            proc.wait(timeout=2.0)
+            return
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            proc.kill()
+            proc.wait(timeout=5.0)
+        except Exception:  # noqa: BLE001
+            # Do not abort shutdown of the remaining workers. WispSupervisor's
+            # cross-platform psutil audit gets one final chance to stop this pid.
+            log.error("Could not kill %s pid=%s", self.spec.name, proc.pid, exc_info=True)
 
 
 def default_specs() -> dict[str, WorkerSpec]:
@@ -427,6 +533,16 @@ class WispSupervisor:
         return self.workers[worker].call(method, params, timeout=timeout)
 
     def shutdown(self) -> None:
-        """Handle shutdown for wisp supervisor."""
-        for worker in self.workers.values():
-            worker.shutdown()
+        """Gracefully stop every worker, then force-stop managed survivors."""
+        worker_pids = [pid for worker in self.workers.values() if (pid := worker.pid) is not None]
+        managed_processes = _snapshot_managed_processes(worker_pids)
+        for name, worker in self.workers.items():
+            try:
+                worker.shutdown()
+            except Exception:  # noqa: BLE001 - one broken worker must not strand the rest
+                log.exception("Worker %s raised during shutdown; continuing", name)
+        survivors = _force_stop_managed_processes(managed_processes)
+        if survivors:
+            log.error("Managed Wisp processes survived shutdown: %s", ", ".join(map(str, survivors)))
+        elif managed_processes:
+            log.info("All managed Wisp worker processes exited")

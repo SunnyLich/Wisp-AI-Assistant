@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
+import re
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -14,12 +14,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
-    QProgressBar,
     QPushButton,
     QVBoxLayout,
 )
 
 from ui.i18n import t
+from ui.shared.activity_spinner import ActivitySpinner
 from ui.shared.theme import is_dark_mode, theme_colors
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
@@ -52,6 +52,7 @@ class OptionalInstallDialog(QDialog):
         self._exit_code: int | None = None
         self._cancel_requested = False
         self._started = False
+        self._progress_tail = ""
 
         self.setWindowTitle(title)
         self.setModal(False)
@@ -130,14 +131,18 @@ class OptionalInstallDialog(QDialog):
         status_layout = QVBoxLayout(status_card)
         status_layout.setContentsMargins(12, 12, 12, 12)
         status_layout.setSpacing(8)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        self._spinner = ActivitySpinner()
+        status_row.addWidget(self._spinner)
         self._status = QLabel(t("Ready to start."))
         self._status.setObjectName("installerStatus")
         self._status.setWordWrap(True)
-        status_layout.addWidget(self._status)
-        self._progress = QProgressBar()
-        self._progress.setRange(0, 1)
-        self._progress.setValue(0)
-        status_layout.addWidget(self._progress)
+        status_row.addWidget(self._status, 1)
+        self._progress_percent = QLabel("—%")
+        self._progress_percent.setObjectName("installerPercent")
+        status_row.addWidget(self._progress_percent)
+        status_layout.addLayout(status_row)
         root.addWidget(status_card)
 
         self._log = QPlainTextEdit()
@@ -187,6 +192,17 @@ class OptionalInstallDialog(QDialog):
                 color: {c["text"]};
                 font-weight: 600;
             }}
+            QLabel#installerPercent {{
+                color: {c["accent"]};
+                font-size: 14pt;
+                font-weight: 700;
+                min-width: 58px;
+            }}
+            QLabel#activitySpinner {{
+                color: {c["accent"]};
+                font-size: 16pt;
+                font-weight: 700;
+            }}
             QFrame#installerCard {{
                 background: {c["card"]};
                 border: 1px solid {c["border"]};
@@ -213,28 +229,16 @@ class OptionalInstallDialog(QDialog):
                 border-color: {c["border"]};
                 color: {c["text_dim"]};
             }}
-            QProgressBar {{
-                background: {c["surface"]};
-                border: 1px solid {c["border"]};
-                border-radius: 6px;
-                min-height: 10px;
-                text-align: center;
-            }}
-            QProgressBar::chunk {{
-                background: {c["accent"]};
-                border-radius: 5px;
-            }}
         """
 
     def _set_running(self, running: bool) -> None:
         if running:
             self._status.setText(t("Installer is running."))
-            self._progress.setRange(0, 0)
+            self._spinner.start()
             self._cancel_btn.setEnabled(True)
             self._close_btn.setEnabled(False)
         else:
-            self._progress.setRange(0, 1)
-            self._progress.setValue(1)
+            self._spinner.stop()
             self._cancel_btn.setEnabled(False)
             self._close_btn.setEnabled(True)
 
@@ -260,6 +264,7 @@ class OptionalInstallDialog(QDialog):
     def _append_text(self, text: str) -> None:
         if not text:
             return
+        self._update_percentage(text)
         self._log.moveCursor(QTextCursor.MoveOperation.End)
         self._log.insertPlainText(text)
         self._log.moveCursor(QTextCursor.MoveOperation.End)
@@ -270,6 +275,20 @@ class OptionalInstallDialog(QDialog):
                     handle.write(text)
             except OSError:
                 pass
+
+    def _update_percentage(self, text: str) -> None:
+        """Show the latest explicit download/install percentage from process output."""
+        combined = self._progress_tail + str(text)
+        self._progress_tail = combined[-160:]
+        percent_matches = list(re.finditer(r"(?<!\d)(100|\d{1,2})(?:\.\d+)?%", combined))
+        if percent_matches:
+            self._progress_percent.setText(f"{int(float(percent_matches[-1].group(0)[:-1]))}%")
+            return
+        fraction_matches = list(re.finditer(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", combined))
+        if fraction_matches:
+            current, total = (int(value) for value in fraction_matches[-1].groups())
+            if total > 0 and 0 <= current <= total:
+                self._progress_percent.setText(f"{round((current / total) * 100)}%")
 
     def _handle_process_error(self, _error: QProcess.ProcessError) -> None:
         process = self._process
@@ -284,12 +303,16 @@ class OptionalInstallDialog(QDialog):
         self._exit_code = code
         self._set_running(False)
         if self._cancel_requested:
+            self._spinner.stop("×")
             self._status.setText(t("Installer cancelled."))
             self._append_line(t("Installer cancelled."))
         elif code == 0:
+            self._spinner.stop("✓")
+            self._progress_percent.setText("100%")
             self._status.setText(t("Installer completed successfully."))
             self._append_line(t("Installer completed successfully."))
         else:
+            self._spinner.stop("×")
             self._status.setText(t("Installer failed with exit code {code}.").format(code=code))
             self._append_line(t("Installer failed with exit code {code}.").format(code=code))
         self.install_finished.emit(code)
@@ -297,6 +320,7 @@ class OptionalInstallDialog(QDialog):
     def _finish_without_process(self, code: int, message: str) -> None:
         self._exit_code = int(code)
         self._set_running(False)
+        self._spinner.stop("×")
         self._status.setText(message)
         self._append_line(message)
         self.install_finished.emit(int(code))

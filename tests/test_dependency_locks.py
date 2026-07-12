@@ -71,10 +71,27 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
     assert optional_deps.STT_PACKAGE == "faster-whisper==1.2.1"
     assert optional_deps.KOKORO_PACKAGE == "kokoro==0.9.4"
     assert optional_deps.SOUNDFILE_PACKAGE == "soundfile==0.14.0"
-    assert optional_deps.stt_install_packages() == [
-        optional_deps.STT_PACKAGE,
-        *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
+    assert optional_deps.stt_install_packages() == optional_deps.STT_LOCKED_PACKAGES
+    assert optional_deps.stt_install_packages("cuda", platform_name="win32") == [
+        *optional_deps.stt_locked_packages("win32"),
+        "nvidia-cuda-runtime-cu12==12.8.90",
+        "nvidia-cublas-cu12==12.8.4.1",
     ]
+    assert optional_deps.stt_install_packages("cuda", platform_name="linux") == optional_deps.stt_locked_packages(
+        "linux"
+    )
+    assert optional_deps.stt_install_packages("cuda", platform_name="darwin") == optional_deps.stt_locked_packages(
+        "darwin"
+    )
+    platform_locks = {
+        "win32": "requirements/requirements-windows.lock",
+        "linux": "requirements/requirements-linux.lock",
+        "darwin": "requirements/requirements-macos.lock",
+    }
+    for platform_name, lock_name in platform_locks.items():
+        for requirement in optional_deps.stt_locked_packages(platform_name):
+            package, expected = requirement.split("==", 1)
+            assert _locked_version(lock_name, package) == expected
     assert optional_deps.stt_remove_artifacts() == [
         "faster_whisper",
         "faster_whisper-*.dist-info",

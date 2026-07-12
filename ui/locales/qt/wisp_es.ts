@@ -5020,6 +5020,14 @@ The installer will then load the selected Whisper model in a separate process. T
 Continue?</translation>
     </message>
     <message>
+      <source>
+
+Windows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
+      <translation>
+
+La compatibilidad con CUDA en Windows también descarga los paquetes NVIDIA CUDA Runtime y cuBLAS (aproximadamente 570 MB), para que la aplicación distribuida no dependa de una instalación independiente de CUDA Toolkit.</translation>
+    </message>
+    <message>
       <source>preparing local assets for {elapsed}</source>
       <translation>preparing local assets for {elapsed}</translation>
     </message>

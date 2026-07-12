@@ -16,13 +16,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
-    QProgressBar,
     QPushButton,
     QVBoxLayout,
 )
 
-from ui.i18n import set_language
-from ui.i18n import t
+from ui.i18n import set_language, t
+from ui.shared.activity_spinner import ActivitySpinner
 from ui.shared.theme import is_dark_mode, theme_colors
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
@@ -45,6 +44,12 @@ def _translate_status_message(message: str) -> str:
         (r"^(?P<display_name>.+) package files match this Wisp release\.$", "{display_name} package files match this Wisp release."),
         (r"^(?P<display_name>.+) package files do not match this Wisp release: (?P<message>.+)\.$", "{display_name} package files do not match this Wisp release: {message}."),
         (r"^STT package installed; downloading or loading Whisper model (?P<model>.+)\.$", "STT package installed; downloading or loading Whisper model {model}."),
+        (
+            r"^STT model (?P<model>.+) is still downloading or loading after (?P<elapsed>.+)\. "
+            r"The first download can be large; Wisp will report an error if verification times out\.$",
+            "STT model {model} is still downloading or loading after {elapsed}. "
+            "The first download can be large; Wisp will report an error if verification times out.",
+        ),
         (r"^STT package installed, but model download/load failed: (?P<message>.+)$", "STT package installed, but model download/load failed: {message}"),
         (r"^Kokoro package installed; (?P<detail>.+)\.$", "Kokoro package installed; {detail}."),
         (r"^Kokoro package installed, but voice asset preparation failed: (?P<message>.+)$", "Kokoro package installed, but voice asset preparation failed: {message}"),
@@ -106,13 +111,17 @@ class ApplyStatusWindow(QDialog):
             }}
             QPushButton:hover {{ background: {c["accent_soft"]}; }}
             QPushButton:disabled {{ border-color: {c["border"]}; color: {c["text_dim"]}; }}
-            QProgressBar {{
-                background: {c["surface"]};
-                border: 1px solid {c["border"]};
-                border-radius: 6px;
-                min-height: 10px;
+            QLabel#activitySpinner {{
+                color: {c["accent"]};
+                font-size: 16pt;
+                font-weight: 700;
             }}
-            QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 5px; }}
+            QLabel#applyPercent {{
+                color: {c["accent"]};
+                font-size: 14pt;
+                font-weight: 700;
+                min-width: 58px;
+            }}
             """
         )
         root = QVBoxLayout(self)
@@ -124,14 +133,19 @@ class ApplyStatusWindow(QDialog):
         title.setWordWrap(True)
         root.addWidget(title)
 
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        self._spinner = ActivitySpinner()
+        self._spinner.start()
+        status_row.addWidget(self._spinner)
         self._status = QLabel(t("Preparing to apply optional speech packages."))
         self._status.setObjectName("subtitle")
         self._status.setWordWrap(True)
-        root.addWidget(self._status)
-
-        self._progress = QProgressBar()
-        self._progress.setRange(0, 0)
-        root.addWidget(self._progress)
+        status_row.addWidget(self._status, 1)
+        self._progress_percent = QLabel("—%")
+        self._progress_percent.setObjectName("applyPercent")
+        status_row.addWidget(self._progress_percent)
+        root.addLayout(status_row)
 
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
@@ -179,6 +193,9 @@ class ApplyStatusWindow(QDialog):
         message = str(status.get("message") or "").strip()
         if message:
             self._status.setText(_translate_status_message(message))
+        raw_percent = status.get("progress_percent")
+        if isinstance(raw_percent, (int, float)):
+            self._progress_percent.setText(f"{max(0, min(100, round(float(raw_percent))))}%")
         ok = status.get("ok")
         if ok is True:
             self._finish(t("{display_name} applied successfully.").format(display_name=self._display_name), auto_close=True)
@@ -190,8 +207,11 @@ class ApplyStatusWindow(QDialog):
             return
         self._finished = True
         self._status.setText(message)
-        self._progress.setRange(0, 1)
-        self._progress.setValue(1)
+        if auto_close:
+            self._spinner.stop("✓")
+            self._progress_percent.setText("100%")
+        else:
+            self._spinner.stop("×")
         self._close_btn.setEnabled(True)
         if auto_close:
             QTimer.singleShot(2500, self.close)

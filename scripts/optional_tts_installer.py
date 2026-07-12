@@ -107,6 +107,22 @@ def _write_status(
         pass
 
 
+def _plan_status_metadata(plan: dict[str, Any]) -> dict[str, object]:
+    """Return the contract fields that make persisted results non-stale."""
+    metadata: dict[str, object] = {}
+    contract = str(plan.get("install_contract") or "").strip()
+    app_version = str(plan.get("app_version") or "").strip()
+    if contract:
+        metadata["install_contract"] = contract
+    if app_version:
+        metadata["app_version"] = app_version
+    return metadata
+
+
+def _status_extra(plan: dict[str, Any], **extra: object) -> dict[str, object]:
+    return {**_plan_status_metadata(plan), **extra}
+
+
 def _format_spec_status_message(status: dict[str, object]) -> str:
     message = str(status.get("message") or "").strip()
     if message:
@@ -293,6 +309,8 @@ def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Pa
     spec_device = plan.get("kokoro_install_device")
     if spec_device is None and post_install == "kokoro_prepare":
         spec_device = "cuda" if bool(plan.get("kokoro_require_gpu")) else "cpu"
+    if spec_device is None and post_install == "stt_prepare":
+        spec_device = str(plan.get("stt_device") or "auto")
     try:
         spec_status = optional_deps.optional_package_spec_status(spec_key, device=str(spec_device) if spec_device is not None else None)
     except Exception:
@@ -330,13 +348,43 @@ def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Pa
         model = str(plan.get("stt_model") or "base")
         device = str(plan.get("stt_device") or "auto")
         compute_type = str(plan.get("stt_compute_type") or "int8")
-        _write_status(status_path, ok=None, message=f"STT package installed; downloading or loading Whisper model {model}.")
+        _write_status(
+            status_path,
+            ok=None,
+            message=f"STT package installed; downloading or loading Whisper model {model}.",
+            extra={"progress_percent": 75},
+        )
         _log(log, prefix, f"Downloading or loading STT model {model} on {device} ({compute_type}).")
-        status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
+
+        def _stt_model_progress(elapsed_seconds: int) -> None:
+            minutes, seconds = divmod(max(0, int(elapsed_seconds)), 60)
+            elapsed = f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
+            message = (
+                f"STT model {model} is still downloading or loading after {elapsed}. "
+                "The first download can be large; Wisp will report an error if verification times out."
+            )
+            _log(log, prefix, message)
+            _write_status(status_path, ok=None, message=message, extra={"progress_percent": 75})
+
+        status = optional_deps.stt_model_status_subprocess(
+            model,
+            device,
+            compute_type,
+            progress=_stt_model_progress,
+        )
+        for diagnostic in status.get("diagnostics") or []:
+            _log(log, prefix, f"STT diagnostic: {diagnostic}")
         if status.get("error") or status.get("valid") is False:
             detail = str(status.get("error") or "STT model verification failed.")
             return False, f"STT package installed, but model download/load failed: {detail}"
         resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
+        effective_device = str(status.get("device") or device)
+        effective_compute = str(status.get("compute") or compute_type)
+        if effective_device != device or effective_compute != compute_type:
+            return True, (
+                f"STT installed and model ready: {resolved}. Requested {device} ({compute_type}); "
+                f"runtime verification selected {effective_device} ({effective_compute})."
+            )
         return True, f"STT installed and model ready: {resolved}."
 
     return True, f"{display_name} installed successfully."
@@ -538,7 +586,7 @@ def _run_staged_apply(plan_path: Path) -> int:
                 status_path,
                 ok=None,
                 message=f"{display_name} staged install is waiting for Wisp to close.",
-                extra={"restart_apply": True},
+                extra=_status_extra(plan, restart_apply=True, progress_percent=5),
             )
             _log(log, prefix, "Waiting for Wisp to exit before applying staged packages.")
             try:
@@ -552,7 +600,12 @@ def _run_staged_apply(plan_path: Path) -> int:
                     "the next time Wisp restarts."
                 )
                 _log(log, prefix, message)
-                _write_status(status_path, ok=None, message=message, extra={"restart_apply": True})
+                _write_status(
+                    status_path,
+                    ok=None,
+                    message=message,
+                    extra=_status_extra(plan, restart_apply=True, progress_percent=5),
+                )
                 return 0
             wisp_closed = True
             try:
@@ -568,19 +621,39 @@ def _run_staged_apply(plan_path: Path) -> int:
             attempts += 1
             plan["apply_attempts"] = attempts
             _write_plan(plan_path, plan)
-            _write_status(status_path, ok=None, message=f"{display_name} staged install is applying package files.")
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} staged install is applying package files.",
+                extra=_status_extra(plan, progress_percent=45),
+            )
             _launch_apply_status_window(display_name, status_path, log_path, app_language=_plan_app_language(plan))
             _apply_staging(staging_path, _path_from_plan(plan, "target_path"), log, prefix)
             consumed = True
-            _write_status(status_path, ok=None, message=f"{display_name} staged install is verifying package files.")
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} staged install is verifying package files.",
+                extra=_status_extra(plan, progress_percent=70),
+            )
             ok, message = _post_install_result(log, prefix, plan, status_path)
             _log(log, prefix, message)
-            _write_status(status_path, ok=ok, message=message)
+            _write_status(
+                status_path,
+                ok=ok,
+                message=message,
+                extra=_status_extra(plan, progress_percent=100 if ok else 70),
+            )
             plan_path.unlink(missing_ok=True)
             if reopen:
                 _restart_wisp(log, prefix)
                 if ok:
-                    _write_status(status_path, ok=True, message=f"{message} Wisp is reopening.")
+                    _write_status(
+                        status_path,
+                        ok=True,
+                        message=f"{message} Wisp is reopening.",
+                        extra=_status_extra(plan, progress_percent=100),
+                    )
             return 0 if ok else 1
     except Exception as exc:  # noqa: BLE001 - helper failures must be visible in status/logs
         give_up = consumed or attempts >= STAGED_APPLY_MAX_ATTEMPTS
@@ -588,7 +661,9 @@ def _run_staged_apply(plan_path: Path) -> int:
         extra: dict[str, object] | None = None
         if not give_up:
             message = f"{message} Wisp will retry at the next restart."
-            extra = {"restart_apply": True}
+            extra = _status_extra(plan, restart_apply=True, progress_percent=70)
+        else:
+            extra = _status_extra(plan, progress_percent=70)
         with log_path.open("a", encoding="utf-8") as log:
             _log(log, prefix, message)
             _write_status(status_path, ok=False, message=message, extra=extra)
@@ -646,6 +721,26 @@ def pending_apply_plan_paths() -> list[Path]:
     return plans
 
 
+def _current_plan_contract(plan: dict[str, Any]) -> tuple[str, str]:
+    """Return the install contract and app version expected by this Wisp."""
+    from core import optional_deps, updater
+
+    display_name = str(plan.get("display_name") or "Optional package")
+    spec_key = str(plan.get("spec_key") or _spec_key_for_display_name(display_name))
+    spec_device = (
+        plan.get("kokoro_install_device")
+        if spec_key == "kokoro"
+        else plan.get("stt_device")
+        if spec_key == "stt"
+        else None
+    )
+    contract = optional_deps.optional_package_contract(
+        spec_key,
+        device=str(spec_device) if spec_device is not None else None,
+    )
+    return contract, updater.current_version()
+
+
 def resume_pending_staged_applies() -> int:
     """Re-arm apply helpers for staged installs that were never applied.
 
@@ -663,6 +758,31 @@ def resume_pending_staged_applies() -> int:
             staging = Path(str(plan.get("staging_path") or "")).expanduser()
             if not str(plan.get("staging_path") or "") or not staging.is_dir():
                 plan_path.unlink(missing_ok=True)
+                continue
+            current_contract, current_app_version = _current_plan_contract(plan)
+            if (
+                str(plan.get("install_contract") or "") != current_contract
+                or str(plan.get("app_version") or "") != current_app_version
+            ):
+                # Never apply packages staged by an older dependency/checker
+                # contract after an application update.  That was the path by
+                # which a canceled v0.9 install could unexpectedly land later.
+                shutil.rmtree(staging, ignore_errors=True)
+                plan_path.unlink(missing_ok=True)
+                raw_status_path = str(plan.get("status_path") or "").strip()
+                status_path = Path(raw_status_path).expanduser() if raw_status_path else None
+                _write_status(
+                    status_path,
+                    ok=False,
+                    message=(
+                        f"{plan.get('display_name') or 'Optional package'} staged install was discarded because "
+                        "Wisp or its dependency contract changed. Run the installer again."
+                    ),
+                    extra={
+                        "install_contract": current_contract,
+                        "app_version": current_app_version,
+                    },
+                )
                 continue
             helper_pid = int(plan.get("helper_pid") or 0)
             if helper_pid and updater.process_exists(helper_pid):
@@ -698,7 +818,12 @@ def _run_staged_restart_install(
     if staging_path.exists():
         shutil.rmtree(staging_path)
     staging_path.mkdir(parents=True, exist_ok=True)
-    _write_status(status_path, ok=None, message=f"{display_name} install is staging packages before restart.")
+    _write_status(
+        status_path,
+        ok=None,
+        message=f"{display_name} install is staging packages before restart.",
+        extra=_status_extra(plan, progress_percent=0),
+    )
 
     with log_path.open("a", encoding="utf-8") as log:
         _log(log, prefix, f"Installing into staging folder: {staging_path}")
@@ -712,7 +837,12 @@ def _run_staged_restart_install(
                 target_dir=staging_path,
             )
             if returncode != 0:
-                _write_status(status_path, ok=False, message=f"{display_name} install failed during staged CUDA Torch install.")
+                _write_status(
+                    status_path,
+                    ok=False,
+                    message=f"{display_name} install failed during staged CUDA Torch install.",
+                    extra=_plan_status_metadata(plan),
+                )
                 return returncode
         if packages:
             returncode = _run_install_command(
@@ -723,7 +853,12 @@ def _run_staged_restart_install(
                 target_dir=staging_path,
             )
             if returncode != 0:
-                _write_status(status_path, ok=False, message=f"{display_name} install failed during staged package install.")
+                _write_status(
+                    status_path,
+                    ok=False,
+                    message=f"{display_name} install failed during staged package install.",
+                    extra=_plan_status_metadata(plan),
+                )
                 return returncode
 
         apply_plan_path = log_path.with_suffix(".apply-plan.json")
@@ -745,7 +880,7 @@ def _run_staged_restart_install(
                 f"{display_name} packages are staged. Click Restart app now to close Wisp, "
                 "replace locked files, verify the install, and reopen."
             ),
-            extra={"restart_apply": True},
+            extra=_status_extra(plan, restart_apply=True, progress_percent=100),
         )
         _launch_staged_apply(apply_plan_path)
         return 0
@@ -756,8 +891,6 @@ def main() -> int:
     parser.add_argument("--plan", help="Path to the installer plan JSON.")
     parser.add_argument("--apply-plan", help="Path to a staged apply plan JSON.")
     args = parser.parse_args()
-
-    from core import optional_deps
 
     if args.apply_plan:
         return _run_staged_apply(Path(args.apply_plan).expanduser().resolve())
@@ -793,7 +926,12 @@ def main() -> int:
                 packages=packages,
                 reinstall=reinstall,
             )
-        _write_status(status_path, ok=None, message=f"{display_name} install is running.")
+        _write_status(
+            status_path,
+            ok=None,
+            message=f"{display_name} install is running.",
+            extra=_plan_status_metadata(plan),
+        )
         _remove_artifacts(log, prefix, remove_artifacts)
         _remove_stale_install_artifacts(log, prefix, [*pre_install_packages, *packages])
         _remove_duplicate_dist_infos(log, prefix)
@@ -801,18 +939,28 @@ def main() -> int:
             _log(log, prefix, "Installing CUDA Torch before Kokoro packages.")
             returncode = _run_install_command(log, prefix, pre_install_packages, reinstall=True)
             if returncode != 0:
-                _write_status(status_path, ok=False, message=f"{display_name} install failed during CUDA Torch install.")
+                _write_status(
+                    status_path,
+                    ok=False,
+                    message=f"{display_name} install failed during CUDA Torch install.",
+                    extra=_plan_status_metadata(plan),
+                )
                 return returncode
         if packages:
             returncode = _run_install_command(log, prefix, packages, reinstall=reinstall)
             if returncode != 0:
-                _write_status(status_path, ok=False, message=f"{display_name} install failed during package install.")
+                _write_status(
+                    status_path,
+                    ok=False,
+                    message=f"{display_name} install failed during package install.",
+                    extra=_plan_status_metadata(plan),
+                )
                 return returncode
 
         _warn_duplicate_dist_infos(log, prefix)
         ok, message = _post_install_result(log, prefix, plan, status_path)
         _log(log, prefix, message if not ok else "Completed successfully.")
-        _write_status(status_path, ok=ok, message=message)
+        _write_status(status_path, ok=ok, message=message, extra=_plan_status_metadata(plan))
         return 0 if ok else 1
 
 

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from runtime.supervisor import ipc as supervisor_ipc
 from runtime.supervisor.ipc import WispSupervisor, WorkerClient, WorkerError, WorkerSpec, default_specs
 
 pytestmark = pytest.mark.workflow
@@ -49,15 +50,127 @@ def _app_supervisor(tmp_path) -> WispSupervisor:
     return WispSupervisor(specs)
 
 
+def test_managed_process_snapshot_excludes_detached_installers(monkeypatch):
+    """Only Wisp-owned helpers join the final process-tree cleanup."""
+
+    class FakeProcess:
+        def __init__(self, pid, command, children=()):
+            self.pid = pid
+            self._command = command
+            self._children = list(children)
+
+        def cmdline(self):
+            return list(self._command)
+
+        def children(self, recursive=False):
+            assert recursive is False
+            return list(self._children)
+
+    addon = FakeProcess(13, ["Wisp.exe", "-m", "core.addon_host"])
+    helper = FakeProcess(12, ["Wisp.exe", "-m", "runtime.workers.hotkey_helper"], [addon])
+    installer_probe = FakeProcess(15, ["Wisp.exe", "-m", "runtime.workers.optional_deps_probe"])
+    installer = FakeProcess(
+        14,
+        ["Wisp.exe", "-m", "runtime.workers.optional_speech_installer"],
+        [installer_probe],
+    )
+    root = FakeProcess(11, ["Wisp.exe", "-m", "runtime.workers.native_host"], [helper, installer])
+    monkeypatch.setattr(supervisor_ipc.psutil, "Process", lambda pid: {11: root}[pid])
+
+    snapshot = supervisor_ipc._snapshot_managed_processes([11])
+
+    assert [process.pid for process in snapshot] == [11, 12, 13]
+
+
+def test_force_stop_managed_processes_terminates_then_kills_survivors(monkeypatch):
+    """The final cleanup is platform-neutral and escalates only survivors."""
+
+    class FakeProcess:
+        def __init__(self, pid, *, stubborn=False):
+            self.pid = pid
+            self.running = True
+            self.stubborn = stubborn
+            self.terminated = False
+            self.killed = False
+
+        def is_running(self):
+            return self.running
+
+        def terminate(self):
+            self.terminated = True
+            if not self.stubborn:
+                self.running = False
+
+        def kill(self):
+            self.killed = True
+            self.running = False
+
+    normal = FakeProcess(21)
+    stubborn = FakeProcess(22, stubborn=True)
+
+    def wait_procs(processes, timeout):
+        assert timeout in {2.0, 5.0}
+        gone = [process for process in processes if not process.running]
+        alive = [process for process in processes if process.running]
+        return gone, alive
+
+    monkeypatch.setattr(supervisor_ipc.psutil, "wait_procs", wait_procs)
+
+    survivors = supervisor_ipc._force_stop_managed_processes([normal, stubborn])
+
+    assert survivors == []
+    assert normal.terminated is True
+    assert normal.killed is False
+    assert stubborn.terminated is True
+    assert stubborn.killed is True
+
+
+def test_supervisor_shutdown_continues_after_one_worker_raises(monkeypatch):
+    """One broken worker cannot prevent cleanup of later workers."""
+    calls = []
+
+    class FakeWorker:
+        def __init__(self, name, pid, *, fail=False):
+            self.name = name
+            self.pid = pid
+            self.fail = fail
+
+        def shutdown(self):
+            calls.append(self.name)
+            if self.fail:
+                raise RuntimeError("stuck worker")
+
+    supervisor = object.__new__(WispSupervisor)
+    supervisor.workers = {
+        "first": FakeWorker("first", 31, fail=True),
+        "second": FakeWorker("second", 32),
+    }
+    snapshot = [object()]
+    forced = []
+    monkeypatch.setattr(supervisor_ipc, "_snapshot_managed_processes", lambda pids: snapshot)
+    monkeypatch.setattr(
+        supervisor_ipc,
+        "_force_stop_managed_processes",
+        lambda processes: forced.append(processes) or [],
+    )
+
+    supervisor.shutdown()
+
+    assert calls == ["first", "second"]
+    assert forced == [snapshot]
+
+
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path):
     """The app architecture starts UI/native/brain/audio as separate workers."""
     supervisor = _app_supervisor(tmp_path)
+    managed_processes = []
     try:
         results = supervisor.start_all()
 
         assert set(results) == {"native", "ui", "brain", "audio"}
         pids = {result["pid"] for result in results.values()}
+        managed_processes = [supervisor_ipc.psutil.Process(pid) for pid in pids]
         assert len(pids) == len(results)
         for name, result in results.items():
             assert result["pong"] is True
@@ -96,6 +209,7 @@ def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path):
         assert not list(tmp_path.glob("ui_freeze_*.log"))
     finally:
         supervisor.shutdown()
+    assert all(not process.is_running() for process in managed_processes)
 
 
 def test_native_worker_ping_and_boundary_status():

@@ -7492,12 +7492,32 @@ class SettingsDialog(QDialog):
         if info is None:
             installed = False
             install_status: dict[str, object] = {}
+            cuda_runtime_error = ""
             try:
-                from core import optional_deps
+                from core import optional_deps, updater
 
-                spec_status = optional_deps.optional_package_spec_status("stt")
+                spec_status = optional_deps.optional_package_spec_status("stt", device=device)
                 installed = bool(spec_status.get("valid"))
                 install_status = _read_optional_install_status("STT", optional_deps.OPTIONAL_PACKAGES_DIR)
+                if install_status and (
+                    str(install_status.get("install_contract") or "")
+                    != optional_deps.optional_package_contract("stt", device=device)
+                    or str(install_status.get("app_version") or "") != updater.current_version()
+                ):
+                    # A status produced by an older app/checker must not keep a
+                    # green result after an update. The live package contract
+                    # below remains authoritative.
+                    install_status = {}
+                if sys.platform == "win32" and device.strip().lower() == "cuda":
+                    from core.stt_device import windows_cuda_runtime_status
+
+                    cuda_status = windows_cuda_runtime_status()
+                    if cuda_status.get("checked") and not cuda_status.get("valid"):
+                        names = ", ".join(sorted(str(name) for name in dict(cuda_status.get("errors") or {})))
+                        cuda_runtime_error = (
+                            "STT packages are present, but the Windows CUDA runtime is incomplete or unloadable"
+                            + (f": {names}." if names else ".")
+                        )
             except Exception:
                 installed = False
                 install_status = {}
@@ -7510,7 +7530,11 @@ class SettingsDialog(QDialog):
             ):
                 return
             failed_install_message = _failed_optional_install_message(install_status)
-            if failed_install_message:
+            if cuda_runtime_error:
+                _set_stt_action(False)
+                lbl.setText(_translate_status_message(cuda_runtime_error))
+                lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
+            elif failed_install_message:
                 _set_stt_action(False)
                 lbl.setText(_translate_status_message(failed_install_message))
                 lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
@@ -7577,6 +7601,11 @@ class SettingsDialog(QDialog):
             language=language,
             beam_size=beam_size,
         )
+        if sys.platform == "win32" and device.lower() == "cuda":
+            message += t(
+                "\n\nWindows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages "
+                "(approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install."
+            )
         answer = QMessageBox.question(
             self,
             t("Install STT"),
@@ -7590,7 +7619,7 @@ class SettingsDialog(QDialog):
         self._install_optional_tts_package(
             test_key="stt_install",
             display_name="STT",
-            packages=optional_deps.stt_install_packages(),
+            packages=optional_deps.stt_install_packages(device),
             remove_artifacts=optional_deps.stt_remove_artifacts(),
             button_attr="_stt_download_btn",
             status_attr="_stt_active_lbl",
@@ -7648,11 +7677,35 @@ class SettingsDialog(QDialog):
 
             progress(f"Installing STT: downloading or loading Whisper model {model}.")
             write_log(f"[stt install] Downloading or loading Whisper model {model} on {device} ({compute_type}).")
-            status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
+
+            def _stt_model_progress(elapsed_seconds: int) -> None:
+                elapsed = _format_duration(elapsed_seconds)
+                message = (
+                    f"Installing STT: Whisper model {model} is still downloading or loading after {elapsed}. "
+                    "The first download can be large."
+                )
+                progress(message)
+                write_log(f"[stt install] {message}")
+
+            status = optional_deps.stt_model_status_subprocess(
+                model,
+                device,
+                compute_type,
+                progress=_stt_model_progress,
+            )
+            for diagnostic in status.get("diagnostics") or []:
+                write_log(f"[stt install] STT diagnostic: {diagnostic}")
             if status.get("error") or status.get("valid") is False:
                 detail = str(status.get("error") or "STT model verification failed.")
                 return False, f"STT package installed, but model download/load failed: {detail}"
             resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
+            effective_device = str(status.get("device") or device)
+            effective_compute = str(status.get("compute") or compute_type)
+            if effective_device != device or effective_compute != compute_type:
+                return True, (
+                    f"STT installed and model ready: {resolved}. Requested {device} ({compute_type}); "
+                    f"runtime verification selected {effective_device} ({effective_compute})."
+                )
             return True, f"STT installed and model ready: {resolved}."
         except Exception as exc:  # noqa: BLE001
             write_log(f"[stt install] Model verification failed: {type(exc).__name__}: {exc}")
@@ -9068,6 +9121,26 @@ def _optional_install_plan_command(
         "app_language": app_language,
         **(external_plan_extra or {}),
     }
+    spec_key = str(plan.get("spec_key") or {
+        "stt": "stt",
+        "kokoro": "kokoro",
+        "elevenlabs": "elevenlabs",
+        "live voice": "live_voice",
+    }.get(display_name.strip().lower(), ""))
+    if spec_key:
+        plan["spec_key"] = spec_key
+        spec_device = (
+            plan.get("kokoro_install_device")
+            if spec_key == "kokoro"
+            else plan.get("stt_device")
+            if spec_key == "stt"
+            else None
+        )
+        plan["install_contract"] = optional_deps.optional_package_contract(
+            spec_key,
+            device=str(spec_device) if spec_device is not None else None,
+        )
+    plan["app_version"] = updater.current_version()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
     return [*command, "--plan", str(plan_path)], root, log_path, status_path

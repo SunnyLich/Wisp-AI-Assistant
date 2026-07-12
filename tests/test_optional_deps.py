@@ -114,6 +114,144 @@ def test_stt_int8_cuda_fallback_propagates_failed_float16_warmup():
     assert calls == [("cuda", "int8"), ("cuda", "float16")]
 
 
+def test_stt_missing_cublas_does_not_masquerade_as_int8_unsupported():
+    """A missing CUDA DLL must fail directly instead of triggering a precision fallback."""
+    from core import stt_device
+
+    constructed: list[str] = []
+
+    class FakeModel:
+        def __init__(self, _model_name: str, *, device: str, compute_type: str):
+            constructed.append(compute_type)
+
+        def transcribe(self, _audio, **_kwargs):
+            raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+
+    messages: list[str] = []
+    with pytest.raises(RuntimeError, match="cublas64_12.dll"):
+        stt_device.build_model(FakeModel, "base", "cuda", "int8", log=messages.append)
+
+    assert constructed == ["int8"]
+    assert any("CUDA 12 cuBLAS is missing" in message for message in messages)
+    assert not any("retrying the same model" in message for message in messages)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (RuntimeError("Library cublas64_12.dll is not found"), "CUDA 12 cuBLAS is missing"),
+        (RuntimeError("cudnn_ops64_9.dll cannot be loaded"), "cuDNN is missing or incompatible"),
+        (RuntimeError("CUDA driver version is insufficient"), "NVIDIA display driver is too old"),
+        (RuntimeError("CUDA out of memory"), "ran out of free VRAM"),
+        (RuntimeError("CUBLAS_STATUS_NOT_SUPPORTED"), "rejected the INT8 operation"),
+    ],
+)
+def test_stt_cuda_failure_hints_are_actionable(error, expected):
+    from core import stt_device
+
+    assert expected in stt_device._cuda_failure_hint(error)
+
+
+def test_windows_cuda_runtime_status_loads_every_required_dll(monkeypatch):
+    """The fast Windows preflight must expose an incomplete native runtime."""
+    from core import stt_device
+
+    loaded: list[str] = []
+    monkeypatch.setattr(stt_device.sys, "platform", "win32")
+
+    def fake_windll(name):
+        loaded.append(name)
+        if name in {"cublas64_12.dll", "cudnn_ops64_9.dll"}:
+            error = OSError("module could not be found")
+            error.winerror = 126
+            raise error
+        return object()
+
+    monkeypatch.setattr(stt_device.ctypes, "WinDLL", fake_windll)
+
+    status = stt_device.windows_cuda_runtime_status()
+
+    assert loaded == list(stt_device._CUDA_DLL_NAMES)
+    assert status["checked"] is True
+    assert status["valid"] is False
+    assert "Win32 126" in status["errors"]["cublas64_12.dll"]
+    assert "Win32 126" in status["optional_errors"]["cudnn_ops64_9.dll"]
+
+
+def test_windows_cuda_runtime_adds_optional_nvidia_bin_directories(monkeypatch, tmp_path):
+    """NVIDIA wheels installed under AppData must be visible to LoadLibrary."""
+    from core import stt_device
+
+    optional_root = tmp_path / "python_packages"
+    runtime_bin = optional_root / "nvidia" / "cuda_runtime" / "bin"
+    cublas_bin = optional_root / "nvidia" / "cublas" / "bin"
+    runtime_bin.mkdir(parents=True)
+    cublas_bin.mkdir(parents=True)
+    handles: list[str] = []
+    monkeypatch.setattr(stt_device.sys, "platform", "win32")
+    monkeypatch.setattr(stt_device.sys, "path", [str(optional_root)])
+    monkeypatch.setattr(stt_device, "_WINDOWS_CUDA_DLL_DIRECTORY_HANDLES", [])
+    monkeypatch.setattr(stt_device, "_WINDOWS_CUDA_DLL_DIRECTORIES", set())
+    monkeypatch.setattr(stt_device.os, "add_dll_directory", lambda path: handles.append(path) or object())
+
+    directories = stt_device._configure_windows_cuda_dll_directories()
+
+    assert set(directories) == {str(runtime_bin.resolve()), str(cublas_bin.resolve())}
+    assert set(handles) == set(directories)
+    path_entries = stt_device.os.environ["PATH"].split(stt_device.os.pathsep)
+    assert str(runtime_bin.resolve()) in path_entries
+    assert str(cublas_bin.resolve()) in path_entries
+
+
+def test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda(monkeypatch):
+    """Install verification cannot call explicit CUDA successful after falling back."""
+    from core import stt_device
+    from runtime.workers import optional_deps_probe
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=object()))
+    monkeypatch.setattr(importlib.machinery.PathFinder, "find_spec", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(stt_device, "resolve_device", lambda _requested, log: "cpu")
+    monkeypatch.setattr(stt_device, "resolve_compute_type", lambda _device, compute, log: compute)
+
+    status = optional_deps_probe._stt_model_status("base", "cuda", "int8")
+
+    assert status["valid"] is False
+    assert "explicitly requested" in status["error"]
+    assert status["device"] == "cpu"
+
+
+def test_stt_model_probe_returns_verbose_resolution_diagnostics(monkeypatch):
+    """The subprocess result should carry diagnostics into the installer log."""
+    from core import stt_device
+    from runtime.workers import optional_deps_probe
+
+    fake_faster_whisper = SimpleNamespace(WhisperModel=object())
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_faster_whisper)
+    monkeypatch.setattr(importlib.machinery.PathFinder, "find_spec", lambda *_args, **_kwargs: object())
+
+    def resolve_device(requested, *, log):
+        log(f"resolved requested device {requested} to cuda")
+        return "cuda"
+
+    def build_model(_model_type, model, device, compute, *, log):
+        log(f"verified {model} on {device} after changing {compute} to float16")
+        return object(), "cuda", "float16"
+
+    monkeypatch.setattr(stt_device, "resolve_device", resolve_device)
+    monkeypatch.setattr(stt_device, "resolve_compute_type", lambda _device, compute, log: compute)
+    monkeypatch.setattr(stt_device, "build_model", build_model)
+
+    status = optional_deps_probe._stt_model_status("base", "cuda", "int8")
+
+    assert status["valid"] is True
+    assert status["requested_device"] == "cuda"
+    assert status["requested_compute"] == "int8"
+    assert status["device"] == "cuda"
+    assert status["compute"] == "float16"
+    assert any("resolved requested device cuda to cuda" in line for line in status["diagnostics"])
+    assert any("effective device='cuda', compute='float16'" in line for line in status["diagnostics"])
+
+
 def test_optional_deps_dev_install_uses_current_python(monkeypatch, tmp_path):
     """Repo/dev launches should keep using the active Python's pip."""
     from core import optional_deps
@@ -182,10 +320,9 @@ def test_optional_package_spec_status_checks_release_dist_infos(monkeypatch, tmp
     assert missing["valid"] is False
     assert "faster-whisper" in missing["missing"]
 
-    dist("faster-whisper", "1.2.1")
-    dist("protobuf", "6.33.2")
-    dist("tokenizers", "0.22.2")
-    dist("setuptools", "81.0.0")
+    for requirement in optional_deps.stt_install_packages():
+        name, version = requirement.split("==", 1)
+        dist(name, version)
     valid = optional_deps.optional_package_spec_status("stt")
     assert valid["valid"] is True
     assert valid["installed"] is True
@@ -194,6 +331,40 @@ def test_optional_package_spec_status_checks_release_dist_infos(monkeypatch, tmp
     mismatch = optional_deps.optional_package_spec_status("stt")
     assert mismatch["valid"] is False
     assert "faster-whisper" in mismatch["duplicates"]
+
+
+def test_optional_package_contract_changes_with_checker_or_platform(monkeypatch):
+    """Persisted install success must be tied to the current checker contract."""
+    from core import optional_deps
+
+    current = optional_deps.optional_package_contract("stt")
+    monkeypatch.setattr(
+        optional_deps,
+        "OPTIONAL_INSTALL_CONTRACT_SCHEMA",
+        optional_deps.OPTIONAL_INSTALL_CONTRACT_SCHEMA + 1,
+    )
+    changed_checker = optional_deps.optional_package_contract("stt")
+
+    assert current != changed_checker
+    assert current.split(":", 1)[0] != changed_checker.split(":", 1)[0]
+
+
+def test_windows_cuda_stt_contract_includes_nvidia_runtime(monkeypatch):
+    """Only explicit Windows CUDA installs should own the large NVIDIA wheels."""
+    from core import optional_deps
+
+    monkeypatch.setattr(optional_deps.sys, "platform", "win32")
+
+    cpu = optional_deps.optional_package_spec("stt", device="cpu")
+    cuda = optional_deps.optional_package_spec("stt", device="cuda")
+
+    assert "nvidia-cublas-cu12==12.8.4.1" not in cpu.packages
+    assert "nvidia-cuda-runtime-cu12==12.8.90" not in cpu.packages
+    assert "nvidia-cublas-cu12==12.8.4.1" in cuda.packages
+    assert "nvidia-cuda-runtime-cu12==12.8.90" in cuda.packages
+    assert optional_deps.optional_package_contract("stt", device="cpu") != optional_deps.optional_package_contract(
+        "stt", device="cuda"
+    )
 
 
 def test_optional_deps_bootstraps_pip_for_source_installs(monkeypatch):
@@ -727,7 +898,7 @@ def test_optional_tts_installer_stt_prepare_requires_model_verification(monkeypa
     monkeypatch.setattr(
         optional_deps,
         "stt_model_status_subprocess",
-        lambda model, device, compute: {
+        lambda model, device, compute, **_kwargs: {
             "valid": True,
             "model": model,
             "device": device,
@@ -776,7 +947,7 @@ def test_optional_tts_installer_stt_prepare_reports_model_verification_failure(m
     monkeypatch.setattr(
         optional_deps,
         "stt_model_status_subprocess",
-        lambda *_args: {"valid": False, "error": "ImportError: missing faster_whisper"},
+        lambda *_args, **_kwargs: {"valid": False, "error": "ImportError: missing faster_whisper"},
     )
     monkeypatch.setattr(
         optional_deps,
@@ -789,6 +960,68 @@ def test_optional_tts_installer_stt_prepare_reports_model_verification_failure(m
     status = json.loads(status_path.read_text(encoding="utf-8"))
     assert status["ok"] is False
     assert status["message"] == "STT package installed, but model download/load failed: ImportError: missing faster_whisper"
+
+
+def test_optional_tts_installer_persists_stt_diagnostics_and_effective_fallback(monkeypatch, tmp_path):
+    """The installer log and status should explain a verified runtime fallback."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    plan_path = tmp_path / "plan.json"
+    log_path = tmp_path / "install.log"
+    status_path = tmp_path / "status.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "STT",
+                "packages": ["faster-whisper==1.2.1"],
+                "log_path": str(log_path),
+                "status_path": str(status_path),
+                "post_install": "stt_prepare",
+                "stt_model": "tiny",
+                "stt_device": "cuda",
+                "stt_compute_type": "int8",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+    monkeypatch.setattr(optional_tts_installer, "_run_install_command", lambda *_args, **_kwargs: 0)
+
+    def fake_stt_status(*_args, progress, **_kwargs):
+        progress(75)
+        return {
+            "valid": True,
+            "model": "tiny",
+            "device": "cuda",
+            "compute": "float16",
+            "error": "",
+            "diagnostics": [
+                "The INT8 warmup hit CUBLAS_STATUS_NOT_SUPPORTED.",
+                "CUDA float16 fallback warmup succeeded.",
+            ],
+        }
+
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_model_status_subprocess",
+        fake_stt_status,
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True},
+    )
+
+    assert optional_tts_installer.main() == 0
+
+    install_log = log_path.read_text(encoding="utf-8")
+    assert "STT model tiny is still downloading or loading after 1m 15s." in install_log
+    assert "STT diagnostic: The INT8 warmup hit CUBLAS_STATUS_NOT_SUPPORTED." in install_log
+    assert "STT diagnostic: CUDA float16 fallback warmup succeeded." in install_log
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is True
+    assert "Requested cuda (int8); runtime verification selected cuda (float16)." in status["message"]
 
 
 def test_optional_tts_installer_kokoro_cpu_plan_verifies_cpu_spec(monkeypatch, tmp_path):
@@ -1290,7 +1523,14 @@ def test_resume_pending_staged_applies_rearms_dead_helper(monkeypatch, tmp_path)
     staging.mkdir()
     plan_path = logs / "kokoro-install.apply-plan.json"
     plan_path.write_text(
-        json.dumps({"display_name": "Kokoro", "staging_path": str(staging)}),
+        json.dumps(
+            {
+                "display_name": "Kokoro",
+                "staging_path": str(staging),
+                "install_contract": "current-contract",
+                "app_version": "0.9.0",
+            }
+        ),
         encoding="utf-8",
     )
     stale_plan = logs / "stt-install.apply-plan.json"
@@ -1303,6 +1543,11 @@ def test_resume_pending_staged_applies_rearms_dead_helper(monkeypatch, tmp_path)
     monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
     monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 4242)
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_current_plan_contract",
+        lambda _plan: ("current-contract", "0.9.0"),
+    )
     monkeypatch.setattr(optional_tts_installer, "_launch_staged_apply", lambda path: launched.append(path))
 
     assert optional_tts_installer.resume_pending_staged_applies() == 1
@@ -1330,6 +1575,8 @@ def test_resume_pending_staged_applies_skips_running_helper(monkeypatch, tmp_pat
                 "display_name": "Kokoro",
                 "staging_path": str(staging),
                 "helper_pid": os.getpid(),
+                "install_contract": "current-contract",
+                "app_version": "0.9.0",
             }
         ),
         encoding="utf-8",
@@ -1339,12 +1586,58 @@ def test_resume_pending_staged_applies_skips_running_helper(monkeypatch, tmp_pat
     monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
     monkeypatch.setattr(updater, "wisp_wait_pid", lambda: 4242)
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_current_plan_contract",
+        lambda _plan: ("current-contract", "0.9.0"),
+    )
     monkeypatch.setattr(optional_tts_installer, "_launch_staged_apply", lambda path: launched.append(path))
 
     assert optional_tts_installer.resume_pending_staged_applies() == 0
 
     assert launched == []
     assert json.loads(plan_path.read_text(encoding="utf-8"))["helper_pid"] == os.getpid()
+
+
+def test_resume_pending_staged_applies_discards_old_app_contract(monkeypatch, tmp_path):
+    """An update must not silently apply packages left by a canceled old installer."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    logs = tmp_path / "python_packages" / "_logs"
+    logs.mkdir(parents=True)
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    status_path = logs / "stt-install.status.json"
+    plan_path = logs / "stt-install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "STT",
+                "staging_path": str(staging),
+                "status_path": str(status_path),
+                "install_contract": "old-contract",
+                "app_version": "0.9.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", tmp_path / "python_packages")
+    monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_current_plan_contract",
+        lambda _plan: ("new-contract", "0.10.0"),
+    )
+
+    assert optional_tts_installer.resume_pending_staged_applies() == 0
+    assert not plan_path.exists()
+    assert not staging.exists()
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["ok"] is False
+    assert status["install_contract"] == "new-contract"
+    assert status["app_version"] == "0.10.0"
+    assert "discarded" in status["message"]
 
 
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):
@@ -1629,6 +1922,51 @@ def test_kokoro_torch_status_subprocess_marks_timeout(monkeypatch):
     assert status["timed_out"] is True
     assert status["valid"] is False
     assert "timed out" in status["error"]
+
+
+def test_stt_model_status_subprocess_reports_heartbeat_while_waiting(monkeypatch):
+    """A first-time model download should update the restart UI instead of looking frozen."""
+    from core import optional_deps
+
+    class FakeProcess:
+        returncode = 0
+
+        def __init__(self):
+            self.communicate_calls = 0
+            self.killed = False
+
+        def communicate(self, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                raise optional_deps.subprocess.TimeoutExpired(["probe"], timeout)
+            return (
+                '{"installed": true, "valid": true, "device": "cuda", "compute": "int8"}\n',
+                "",
+            )
+
+        def kill(self):
+            self.killed = True
+
+    process = FakeProcess()
+    captured: dict[str, object] = {}
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return process
+
+    monkeypatch.delenv("WISP_STT_MODEL_VERIFY_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setattr(optional_deps.subprocess, "Popen", fake_popen)
+    heartbeats: list[int] = []
+
+    status = optional_deps.stt_model_status_subprocess("base", "cuda", "int8", progress=heartbeats.append)
+
+    assert status["valid"] is True
+    assert heartbeats == [1]
+    assert process.communicate_calls == 2
+    assert process.killed is False
+    assert captured["stdout"] is optional_deps.subprocess.PIPE
+    assert captured["stderr"] is optional_deps.subprocess.PIPE
 
 
 def test_kokoro_runtime_status_subprocess_parses_status(monkeypatch):

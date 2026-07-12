@@ -33,7 +33,8 @@ def _torch_status() -> dict[str, object]:
         "subprocess": True,
     }
     try:
-        if importlib.machinery.PathFinder.find_spec("torch", [sys.path[0]]) is None: return status
+        if importlib.machinery.PathFinder.find_spec("torch", [sys.path[0]]) is None:
+            return status
         import torch  # type: ignore
 
         status["installed"] = True
@@ -118,27 +119,51 @@ def _stt_model_status(model_name: str, requested_device: str, requested_compute:
         "model": model_name,
         "device": "",
         "compute": "",
+        "requested_device": requested_device,
+        "requested_compute": requested_compute,
+        "diagnostics": [],
         "error": "",
         "subprocess": True,
     }
+    diagnostics: list[str] = []
     try:
-        if importlib.machinery.PathFinder.find_spec("faster_whisper", [sys.path[0]]) is None: return status
+        if importlib.machinery.PathFinder.find_spec("faster_whisper", [sys.path[0]]) is None:
+            status["error"] = f"faster_whisper was not found in Wisp's optional package directory: {sys.path[0]}"
+            status["diagnostics"] = [str(status["error"])]
+            return status
         from faster_whisper import WhisperModel  # type: ignore
+
         from core.stt_device import build_model, resolve_compute_type, resolve_device
 
         status["installed"] = True
 
         def _log(message: str) -> None:
+            diagnostics.append(str(message))
             print(f"[stt probe] {message}", file=sys.stderr, flush=True)
 
+        _log(
+            f"Model verification requested model={model_name!r}, "
+            f"device={requested_device!r}, compute={requested_compute!r}."
+        )
         device = resolve_device(requested_device, log=_log)
         compute = resolve_compute_type(device, requested_compute, log=_log)
+        status["device"] = device
+        status["compute"] = compute
+        _log(f"Model verification resolved device={device!r}, compute={compute!r} before model construction.")
+        if requested_device.strip().lower() == "cuda" and device != "cuda":
+            raise RuntimeError(
+                "CUDA was explicitly requested, but the NVIDIA/CUDA runtime could not be verified. "
+                "The STT installer will not report a successful CPU fallback for an explicit GPU request."
+            )
         _model, device, compute = build_model(WhisperModel, model_name, device, compute, log=_log)
         status["device"] = device
         status["compute"] = compute
         status["valid"] = True
+        _log(f"Model verification succeeded with effective device={device!r}, compute={compute!r}.")
     except Exception as exc:  # noqa: BLE001
         status["error"] = f"{type(exc).__name__}: {exc}"
+        diagnostics.append(f"Model verification failed: {type(exc).__name__}: {exc}")
+    status["diagnostics"] = diagnostics
     return status
 
 

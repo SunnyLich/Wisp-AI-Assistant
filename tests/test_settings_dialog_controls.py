@@ -497,6 +497,8 @@ def test_optional_tts_install_launches_external_terminal_in_frozen_build(monkeyp
         assert '"post_install": "stt_prepare"' in plan
         assert '"stt_model": "base"' in plan
         assert '"restart_apply": true' in plan
+        assert '"install_contract":' in plan
+        assert '"app_version":' in plan
     finally:
         dialog._stt_download_btn.deleteLater()
         dialog._stt_active_lbl.deleteLater()
