@@ -79,6 +79,43 @@ def test_notice_text_translates_known_bubble_messages(monkeypatch) -> None:
     )
 
 
+def test_speech_notice_translates_structure_but_preserves_runtime_detail(monkeypatch) -> None:
+    """Translate speech timers and states without treating errors as catalog keys."""
+    from runtime.workers import ui_host
+
+    translations = {
+        "Preparing speech services - {elapsed} elapsed.": "\u6b63\u5728\u6e96\u5099\u8a9e\u97f3\u670d\u52d9 - \u5df2\u7528\u6642 {elapsed}\u3002",
+        "Speech warm-up failed.": "\u8a9e\u97f3\u670d\u52d9\u9810\u71b1\u5931\u6557\u3002",
+        "STT (speech recognition)": "STT\uff08\u8a9e\u97f3\u8fa8\u8b58\uff09",
+        "TTS (Kokoro local voice)": "TTS\uff08Kokoro \u672c\u6a5f\u8a9e\u97f3\uff09",
+        "warming up ({elapsed})": "\u6b63\u5728\u9810\u71b1\uff08{elapsed}\uff09",
+        "{minutes}m {seconds}s": "{minutes}\u5206 {seconds}\u79d2",
+        "{seconds}s": "{seconds}\u79d2",
+        "failed - {message}": "\u5931\u6557 - {message}",
+        "{label}: {status}": "{label}\uff1a{status}",
+    }
+    requested: list[str] = []
+
+    def translate(text: str) -> str:
+        requested.append(text)
+        return translations.get(text, text)
+
+    monkeypatch.setattr(ui_host, "t", translate)
+
+    assert ui_host._translate_notice_text(
+        "Preparing speech services - 1m 05s elapsed.\n"
+        "STT (speech recognition): warming up (12s)\n"
+        "Speech warm-up failed.\n"
+        "TTS (Kokoro local voice): failed - RuntimeError: cublas64_12.dll missing"
+    ) == (
+        "\u6b63\u5728\u6e96\u5099\u8a9e\u97f3\u670d\u52d9 - \u5df2\u7528\u6642 1\u5206 05\u79d2\u3002\n"
+        "STT\uff08\u8a9e\u97f3\u8fa8\u8b58\uff09\uff1a\u6b63\u5728\u9810\u71b1\uff0812\u79d2\uff09\n"
+        "\u8a9e\u97f3\u670d\u52d9\u9810\u71b1\u5931\u6557\u3002\n"
+        "TTS\uff08Kokoro \u672c\u6a5f\u8a9e\u97f3\uff09\uff1a\u5931\u6557 - RuntimeError: cublas64_12.dll missing"
+    )
+    assert "RuntimeError: cublas64_12.dll missing" not in requested
+
+
 def test_keyed_notice_updates_respect_user_dismissal() -> None:
     """Repeated warmup progress notices should not reopen after the user closes them."""
     from runtime.workers.ui_host import QtProtocolHost

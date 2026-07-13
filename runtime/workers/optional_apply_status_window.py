@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, QUrl
@@ -76,6 +77,7 @@ class ApplyStatusWindow(QDialog):
         self._log_path = log_path
         self._last_log_text = ""
         self._finished = False
+        self._started_at = time.monotonic()
         self.setWindowTitle(t("Wisp {display_name} apply").format(display_name=display_name))
         enable_standard_window_controls(self)
         self._build_ui()
@@ -122,6 +124,11 @@ class ApplyStatusWindow(QDialog):
                 font-weight: 700;
                 min-width: 58px;
             }}
+            QLabel#applyElapsed {{
+                color: {c["text_dim"]};
+                font-size: 9pt;
+                min-width: 72px;
+            }}
             """
         )
         root = QVBoxLayout(self)
@@ -142,9 +149,13 @@ class ApplyStatusWindow(QDialog):
         self._status.setObjectName("subtitle")
         self._status.setWordWrap(True)
         status_row.addWidget(self._status, 1)
-        self._progress_percent = QLabel("—%")
+        self._progress_percent = QLabel("")
         self._progress_percent.setObjectName("applyPercent")
+        self._progress_percent.setVisible(False)
         status_row.addWidget(self._progress_percent)
+        self._elapsed = QLabel(t("Starting…"))
+        self._elapsed.setObjectName("applyElapsed")
+        status_row.addWidget(self._elapsed)
         root.addLayout(status_row)
 
         self._log = QPlainTextEdit()
@@ -196,6 +207,11 @@ class ApplyStatusWindow(QDialog):
         raw_percent = status.get("progress_percent")
         if isinstance(raw_percent, (int, float)):
             self._progress_percent.setText(f"{max(0, min(100, round(float(raw_percent))))}%")
+            self._progress_percent.setVisible(True)
+        elapsed = max(0, int(time.monotonic() - self._started_at))
+        minutes, seconds = divmod(elapsed, 60)
+        elapsed_text = f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
+        self._elapsed.setText(t("Elapsed {elapsed}").format(elapsed=elapsed_text))
         ok = status.get("ok")
         if ok is True:
             self._finish(t("{display_name} applied successfully.").format(display_name=self._display_name), auto_close=True)
@@ -210,6 +226,8 @@ class ApplyStatusWindow(QDialog):
         if auto_close:
             self._spinner.stop("✓")
             self._progress_percent.setText("100%")
+            self._progress_percent.setVisible(True)
+            self._elapsed.setText("")
         else:
             self._spinner.stop("×")
         self._close_btn.setEnabled(True)

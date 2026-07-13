@@ -833,6 +833,10 @@ Let model decide — expose web search and browser page fetch tools.</source>
       <translation>安裝程式失敗，結束代碼 {code}。</translation>
     </message>
     <message>
+      <source>Not enough free disk space while extracting the downloaded packages. Free at least 15 GB on the drive containing the uv cache and Wisp optional packages, then retry. For a much smaller download, select CPU for Kokoro instead of Auto or GPU.</source>
+      <translation>解壓縮下載的套件時，可用磁碟空間不足。請在包含 uv 快取和 Wisp 選用套件的磁碟機上釋放至少 15 GB 空間，然後重試。若要大幅減少下載量，請為 Kokoro 選擇 CPU，而不是「自動」或 GPU。</translation>
+    </message>
+    <message>
       <source>Cancel the installer before closing this window.</source>
       <translation>關閉此視窗前請先取消安裝程式。</translation>
     </message>
@@ -3427,8 +3431,8 @@ Continue?</source>
       <translation>kokoro&gt;=0.9.4、soundfile、英語語音模型</translation>
     </message>
     <message>
-      <source>The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. </source>
-      <translation>GPU 安裝可能會下載數 GB 資料，並且可能需要很長時間。它需要 NVIDIA GPU 和相容的驅動程式。 </translation>
+      <source>The GPU install downloads several GB and can temporarily require at least 15 GB free for the uv cache, extraction, and Wisp's staging folder. It requires an NVIDIA GPU and compatible driver. </source>
+      <translation>GPU 安裝會下載數 GB 資料，且 uv 快取、解壓縮和 Wisp 暫存資料夾可能暫時需要至少 15 GB 可用空間。它需要 NVIDIA GPU 和相容的驅動程式。 </translation>
     </message>
     <message>
       <source>{action_note}Packages: {package_label}
@@ -5221,5 +5225,27 @@ Continue?</translation>
       <source>verifying Torch</source>
       <translation>正在驗證 Torch</translation>
     </message>
+    <message><source>Speech warm-up failed.</source><translation>語音服務預熱失敗。</translation></message>
+    <message><source>Speech warm-up finished; one service will retry when needed.</source><translation>語音服務預熱已完成；其中一項服務將在需要時重試。</translation></message>
+    <message><source>Speech services are ready.</source><translation>語音服務已就緒。</translation></message>
+    <message><source>Preparing speech services - {elapsed} elapsed.</source><translation>正在準備語音服務 — 已用時間 {elapsed}。</translation></message>
+    <message><source>Speech warm-up was interrupted because the audio service restarted.</source><translation>音訊服務重新啟動，語音預熱已中斷。</translation></message>
+    <message><source>STT (speech recognition)</source><translation>STT（語音辨識）</translation></message>
+    <message><source>TTS (Kokoro local voice)</source><translation>TTS（Kokoro 本機語音）</translation></message>
+    <message><source>TTS (Cartesia connection)</source><translation>TTS（Cartesia 連線）</translation></message>
+    <message><source>TTS ({provider})</source><translation>TTS（{provider}）</translation></message>
+    <message><source>warming up ({elapsed})</source><translation>正在預熱（{elapsed}）</translation></message>
+    <message><source>{minutes}m {seconds}s</source><translation>{minutes}分 {seconds}秒</translation></message>
+    <message><source>{seconds}s</source><translation>{seconds}秒</translation></message>
+    <message><source>ready</source><translation>已就緒</translation></message>
+    <message><source>not needed</source><translation>無需準備</translation></message>
+    <message><source>will retry when first used</source><translation>首次使用時將重試</translation></message>
+    <message><source>failed - {message}</source><translation>失敗 — {message}</translation></message>
+    <message><source>stopped</source><translation>已停止</translation></message>
+    <message><source>waiting to start</source><translation>等待開始</translation></message>
+    <message><source>not completed</source><translation>未完成</translation></message>
+    <message><source>unknown error</source><translation>未知錯誤</translation></message>
+    <message><source>{label}: {status}</source><translation>{label}：{status}</translation></message>
+    <message><source>TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.</source><translation>TTS（本機語音）仍在預熱。請等待語音狀態通知顯示 TTS 已就緒。</translation></message>
   </context>
 </TS>

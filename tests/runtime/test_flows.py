@@ -348,18 +348,24 @@ def test_audio_warmup_events_surface_user_notices():
     audio.emit("audio.warmup.started", {"items": ["stt", "tts"], "provider": "kokoro"})
     audio.emit("audio.warmup.progress", {"item": "stt", "status": "started", "items": ["stt", "tts"]})
     audio.emit("audio.warmup.progress", {"item": "stt", "status": "ok", "items": ["stt", "tts"]})
-    audio.emit("audio.warmup.progress", {"item": "tts", "status": "preparing for 5s", "items": ["stt", "tts"]})
+    audio.emit("audio.warmup.progress", {"item": "tts", "status": "started", "items": ["stt", "tts"]})
     audio.emit(
         "audio.warmup.done",
         {"items": ["stt", "tts"], "provider": "kokoro", "ok": True, "result": {"stt": "ok", "tts": "ok"}},
     )
 
     notices = [call["params"]["text"] for call in ui.calls_for("ui.reply.notice")]
-    assert notices == [
-        "Preparing local voice... for 5s",
-        "Local voice and speech recognition are ready.",
-    ]
-    assert ui.calls_for("ui.reply.notice")[0]["params"]["key"] == "audio-warmup"
+    assert len(notices) == 3
+    assert notices[0].startswith("Preparing speech services - 0s elapsed.")
+    assert "STT (speech recognition): waiting to start" in notices[0]
+    assert "TTS (Kokoro local voice): waiting to start" in notices[0]
+    assert "STT (speech recognition): ready" in notices[1]
+    assert notices[2] == (
+        "Speech services are ready.\n"
+        "STT (speech recognition): ready\n"
+        "TTS (Kokoro local voice): ready"
+    )
+    assert all(call["params"]["key"] == "audio-warmup" for call in ui.calls_for("ui.reply.notice"))
 
 
 def test_audio_warmup_done_does_not_announce_skipped_tts():
@@ -376,7 +382,11 @@ def test_audio_warmup_done_does_not_announce_skipped_tts():
         },
     )
 
-    assert ui.last_call("ui.reply.notice")["params"]["text"] == "Local speech recognition is ready."
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "Speech services are ready.\n"
+        "STT (speech recognition): ready\n"
+        "TTS (Kokoro local voice): not needed"
+    )
 
 
 def test_audio_warmup_done_uses_remote_tts_wording():
@@ -394,7 +404,9 @@ def test_audio_warmup_done_uses_remote_tts_wording():
     )
 
     assert ui.last_call("ui.reply.notice")["params"]["text"] == (
-        "TTS connection and speech recognition are ready."
+        "Speech services are ready.\n"
+        "STT (speech recognition): ready\n"
+        "TTS (Cartesia connection): ready"
     )
 
 
@@ -412,11 +424,17 @@ def test_audio_warmup_failure_surfaces_user_notice():
         },
     )
 
-    assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Local speech warmup failed:")
+    notice = ui.last_call("ui.reply.notice")
+    assert notice["params"]["text"] == (
+        "Speech warm-up failed.\n"
+        "TTS (Kokoro local voice): failed - RuntimeError: missing model"
+    )
+    assert notice["params"]["severity"] == "error"
+    assert notice["params"]["key"] == "audio-warmup"
 
 
-def test_transient_kokoro_warmup_failure_does_not_surface_user_notice():
-    """Kokoro import contention is not a broken install and should not show a bubble."""
+def test_transient_kokoro_warmup_failure_finishes_persistent_notice_as_deferred():
+    """A transient TTS result must replace, not strand, the persistent timer."""
     _flow, _native, ui, _brain, audio = make_flow()
     status = (
         "error: RuntimeError: Kokoro is still warming up. "
@@ -434,7 +452,202 @@ def test_transient_kokoro_warmup_failure_does_not_surface_user_notice():
         },
     )
 
-    assert not ui.calls_for("ui.reply.notice")
+    notice = ui.last_call("ui.reply.notice")
+    assert "one service will retry when needed" in notice["params"]["text"]
+    assert "TTS (Kokoro local voice): will retry when first used" in notice["params"]["text"]
+    assert notice["params"]["severity"] == "warning"
+    assert notice["params"]["key"] == "audio-warmup"
+
+
+def test_audio_warmup_timer_runs_in_supervisor_when_audio_sends_no_progress(monkeypatch):
+    """The bubble timer keeps moving even while the audio worker is blocked."""
+    from runtime.supervisor import flows as flows_module
+
+    monkeypatch.setattr(flows_module, "_SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS", 0.01)
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit("audio.warmup.started", {"items": ["stt", "tts"], "provider": "kokoro"})
+    deadline = time.monotonic() + 0.3
+    while len(ui.calls_for("ui.reply.notice")) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt", "tts"], "provider": "kokoro", "result": {"stt": "ok", "tts": "ok"}},
+    )
+
+    timer_notices = [
+        call["params"]["text"]
+        for call in ui.calls_for("ui.reply.notice")
+        if call["params"]["text"].startswith("Preparing speech services")
+    ]
+    assert len(timer_notices) >= 3
+    assert all("STT (speech recognition):" in text for text in timer_notices)
+    assert all("TTS (Kokoro local voice):" in text for text in timer_notices)
+
+
+def test_stale_audio_warmup_events_cannot_overwrite_newer_notice():
+    """An older startup/config warmup cannot finish a newer keyed timer."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.started",
+        {"items": ["stt"], "provider": "none", "warmup_id": "new"},
+    )
+    audio.emit(
+        "audio.warmup.progress",
+        {"item": "stt", "status": "ok", "items": ["stt"], "warmup_id": "old"},
+    )
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt"], "provider": "none", "warmup_id": "old", "result": {"stt": "ok"}},
+    )
+
+    assert len(ui.calls_for("ui.reply.notice")) == 1
+    assert "waiting to start" in ui.last_call("ui.reply.notice")["params"]["text"]
+
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt"], "provider": "none", "warmup_id": "new", "result": {"stt": "ok"}},
+    )
+    assert ui.last_call("ui.reply.notice")["params"]["text"].endswith(
+        "STT (speech recognition): ready"
+    )
+
+
+def test_audio_worker_exit_finishes_persistent_warmup_notice():
+    """A dead audio worker must not leave a permanent, frozen warm-up timer."""
+    flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.started",
+        {
+            "items": ["stt", "tts"],
+            "provider": "kokoro",
+            "warmup_id": "startup:1",
+        },
+    )
+    audio.emit(
+        "audio.warmup.progress",
+        {
+            "item": "stt",
+            "status": "started",
+            "warmup_id": "startup:1",
+        },
+    )
+    flow._on_audio_worker_exit(1)
+
+    notice = ui.last_call("ui.reply.notice")["params"]
+    assert notice["text"] == (
+        "Speech warm-up was interrupted because the audio service restarted.\n"
+        "STT (speech recognition): stopped\n"
+        "TTS (Kokoro local voice): stopped"
+    )
+    assert notice["key"] == "audio-warmup"
+    assert notice["severity"] == "warning"
+    assert notice["timeout_ms"] == 8000
+
+    # A queued completion event from the dead worker cannot replace the warning.
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["stt", "tts"],
+            "provider": "kokoro",
+            "warmup_id": "startup:1",
+            "result": {"stt": "ok", "tts": "ok"},
+        },
+    )
+    assert ui.last_call("ui.reply.notice")["params"] == notice
+
+
+def test_audio_warmup_terminal_notice_wins_timer_race():
+    """A timer frame already being sent cannot overwrite the final result."""
+    flow, _native, ui, _brain, audio = make_flow()
+    audio.emit(
+        "audio.warmup.started",
+        {"items": ["stt"], "provider": "none", "warmup_id": "startup:race"},
+    )
+    generation = flow._speech_warmup_generation
+    timer_entered = threading.Event()
+    release_timer = threading.Event()
+    original_fire = flow._fire
+
+    def blocking_fire(worker, method, params=None):
+        timer_entered.set()
+        assert release_timer.wait(1.0)
+        original_fire(worker, method, params)
+
+    flow._fire = blocking_fire  # type: ignore[method-assign]
+    timer_thread = threading.Thread(
+        target=flow._show_speech_warmup_notice,
+        args=(generation,),
+    )
+    timer_thread.start()
+    assert timer_entered.wait(1.0)
+
+    done_thread = threading.Thread(
+        target=audio.emit,
+        args=(
+            "audio.warmup.done",
+            {
+                "items": ["stt"],
+                "provider": "none",
+                "warmup_id": "startup:race",
+                "result": {"stt": "ok"},
+            },
+        ),
+    )
+    done_thread.start()
+    deadline = time.monotonic() + 1.0
+    while flow._speech_warmup_generation == generation and time.monotonic() < deadline:
+        time.sleep(0.005)
+    release_timer.set()
+    timer_thread.join(1.0)
+    done_thread.join(1.0)
+
+    assert not timer_thread.is_alive()
+    assert not done_thread.is_alive()
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "Speech services are ready.\nSTT (speech recognition): ready"
+    )
+    assert ui.last_call("ui.reply.notice")["params"]["timeout_ms"] == 6000
+
+
+def test_flow_stop_cancels_speech_timer_and_rejects_new_warmups(monkeypatch):
+    """Application shutdown leaves no timer producing UI work."""
+    from runtime.supervisor import flows as flows_module
+
+    monkeypatch.setattr(flows_module, "_SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS", 0.01)
+    flow, _native, ui, _brain, audio = make_flow()
+    audio.emit("audio.warmup.started", {"items": ["stt"], "provider": "none"})
+    deadline = time.monotonic() + 0.3
+    while len(ui.calls_for("ui.reply.notice")) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    flow.stop()
+    call_count = len(ui.calls_for("ui.reply.notice"))
+    time.sleep(0.05)
+    audio.emit("audio.warmup.started", {"items": ["tts"], "provider": "kokoro"})
+
+    assert len(ui.calls_for("ui.reply.notice")) == call_count
+
+
+def test_late_audio_progress_after_done_cannot_reopen_timer_notice():
+    """Out-of-order progress from warm-up threads is ignored after completion."""
+    _flow, _native, ui, _brain, audio = make_flow()
+    payload = {"items": ["stt"], "provider": "none", "warmup_id": "startup:late"}
+    audio.emit("audio.warmup.started", payload)
+    audio.emit(
+        "audio.warmup.done",
+        {**payload, "result": {"stt": "ok"}},
+    )
+    final_notice = ui.last_call("ui.reply.notice")["params"]
+
+    audio.emit(
+        "audio.warmup.progress",
+        {**payload, "item": "stt", "status": "started"},
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"] == final_notice
 
 
 def test_caller_hotkey_captures_selection_before_intent_steals_focus():

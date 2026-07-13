@@ -4103,7 +4103,8 @@ class SettingsDialog(QDialog):
             else f"{base_package_label}, {t('English speech model')}"
         )
         storage_note = t(
-            "The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. "
+            "The GPU install downloads several GB and can temporarily require at least 15 GB free for the uv cache, extraction, "
+            "and Wisp's staging folder. It requires an NVIDIA GPU and compatible driver. "
         ) if mode == "gpu" else ""
         action_note = t(
             "Wisp will upgrade Kokoro's optional package layer with GPU support.\n\n"
@@ -4365,6 +4366,7 @@ class SettingsDialog(QDialog):
                 command=command,
                 cwd=root,
                 log_path=log_path,
+                status_path=status_path,
                 env=_optional_install_env(),
                 mirror_output_to_log=False,
                 parent=self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -98,6 +99,32 @@ def test_optional_install_mock_command_uses_module_worker():
     assert "unicode" in command
 
 
+def test_optional_install_dialog_preserves_persisted_failure_detail(tmp_path: Path):
+    from PySide6.QtCore import QProcess
+    from PySide6.QtWidgets import QApplication
+
+    from ui.optional_install_dialog import OptionalInstallDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    status_path = tmp_path / "kokoro-install.status.json"
+    detail = "Not enough free disk space while extracting the downloaded packages."
+    status_path.write_text(json.dumps({"ok": False, "message": detail}), encoding="utf-8")
+    dialog = OptionalInstallDialog(
+        title="Kokoro installer",
+        command=[sys.executable, "--version"],
+        status_path=status_path,
+        auto_start=False,
+    )
+    try:
+        dialog._handle_finished(1, QProcess.ExitStatus.NormalExit)
+        assert dialog._status.text() == detail
+        assert detail in dialog.log_text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_optional_install_dialog_shows_percentage_and_spinner(tmp_path: Path):
     from PySide6.QtWidgets import QApplication
 
@@ -117,6 +144,8 @@ def test_optional_install_dialog_shows_percentage_and_spinner(tmp_path: Path):
         app.processEvents()
 
         assert dialog._progress_percent.text() == "37%"
+        assert not dialog._progress_percent.isHidden()
+        assert "Elapsed " in dialog._elapsed.text()
         assert dialog._spinner.is_active()
         assert not hasattr(dialog, "_progress")
     finally:
@@ -126,9 +155,50 @@ def test_optional_install_dialog_shows_percentage_and_spinner(tmp_path: Path):
         app.processEvents()
 
 
-def test_restart_apply_status_uses_percentage_and_spinner(tmp_path: Path):
-    import json
+def test_optional_install_dialog_polls_phase_progress_instead_of_showing_dash_percent(tmp_path: Path):
+    from PySide6.QtWidgets import QApplication
 
+    from ui.optional_install_dialog import OptionalInstallDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    status_path = tmp_path / "stt-install.status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "ok": None,
+                "message": "STT install is resolving and downloading locked packages.",
+                "progress_percent": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    dialog = OptionalInstallDialog(
+        title="STT installer",
+        command=[sys.executable, "--version"],
+        status_path=status_path,
+        auto_start=False,
+    )
+    try:
+        assert dialog._progress_percent.text() == ""
+        assert dialog._progress_percent.isHidden()
+
+        dialog._set_running(True)
+        dialog._refresh_progress_status()
+        app.processEvents()
+
+        assert dialog._progress_percent.text() == "10%"
+        assert not dialog._progress_percent.isHidden()
+        assert dialog._status.text() == "STT install is resolving and downloading locked packages."
+        assert "Elapsed " in dialog._elapsed.text()
+        assert "—%" not in dialog._progress_percent.text()
+    finally:
+        dialog._set_running(False)
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_restart_apply_status_uses_percentage_and_spinner(tmp_path: Path):
     from PySide6.QtWidgets import QApplication
 
     from runtime.workers.optional_apply_status_window import ApplyStatusWindow
@@ -143,6 +213,8 @@ def test_restart_apply_status_uses_percentage_and_spinner(tmp_path: Path):
     try:
         dialog._refresh()
         assert dialog._progress_percent.text() == "45%"
+        assert not dialog._progress_percent.isHidden()
+        assert "Elapsed " in dialog._elapsed.text()
         assert dialog._spinner.is_active()
         assert not hasattr(dialog, "_progress")
 

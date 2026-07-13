@@ -215,9 +215,79 @@ _NOTICE_DYNAMIC_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
+_SPEECH_NOTICE_LINE_RE = re.compile(
+    r"^(?P<label>STT \(speech recognition\)|TTS(?: \((?P<tts_label>[^)]+)\))?): "
+    r"(?P<status>.+)$"
+)
+
+
+def _translate_speech_elapsed(value: str) -> str:
+    """Translate the compact supervisor duration while preserving its numbers."""
+    match = re.fullmatch(r"(?:(?P<minutes>\d+)m )?(?P<seconds>\d+)s", value)
+    if not match:
+        return value
+    minutes = match.group("minutes")
+    seconds = match.group("seconds")
+    if minutes is not None:
+        return t("{minutes}m {seconds}s").format(minutes=minutes, seconds=seconds)
+    return t("{seconds}s").format(seconds=seconds)
+
+
+def _translate_speech_notice_line(line: str) -> str | None:
+    """Translate a structured STT/TTS status line without translating diagnostics."""
+    elapsed_match = re.match(
+        r"^Preparing speech services - (?P<elapsed>.+) elapsed\.$",
+        line,
+    )
+    if elapsed_match:
+        return t("Preparing speech services - {elapsed} elapsed.").format(
+            elapsed=_translate_speech_elapsed(elapsed_match.group("elapsed"))
+        )
+
+    match = _SPEECH_NOTICE_LINE_RE.match(line)
+    if not match:
+        return None
+    label = match.group("label")
+    tts_label = match.group("tts_label")
+    if label == "STT (speech recognition)":
+        translated_label = t("STT (speech recognition)")
+    elif label == "TTS":
+        translated_label = t("TTS")
+    elif tts_label == "Kokoro local voice":
+        translated_label = t("TTS (Kokoro local voice)")
+    elif tts_label == "Cartesia connection":
+        translated_label = t("TTS (Cartesia connection)")
+    else:
+        translated_label = t("TTS ({provider})").format(provider=tts_label or "")
+
+    status = match.group("status")
+    warming_match = re.match(r"^warming up \((?P<elapsed>.+)\)$", status)
+    failure_match = re.match(r"^failed - (?P<message>.+)$", status)
+    if warming_match:
+        translated_status = t("warming up ({elapsed})").format(
+            elapsed=_translate_speech_elapsed(warming_match.group("elapsed"))
+        )
+    elif failure_match:
+        message = failure_match.group("message")
+        if message == "unknown error":
+            message = t("unknown error")
+        translated_status = t("failed - {message}").format(
+            message=message
+        )
+    else:
+        translated_status = t(status)
+    return t("{label}: {status}").format(
+        label=translated_label,
+        status=translated_status,
+    )
+
+
 def _translate_notice_line(line: str) -> str:
     """Translate one bubble/notice line: fixed prefix, dynamic error template, or
     a plain catalog lookup."""
+    speech_line = _translate_speech_notice_line(line)
+    if speech_line is not None:
+        return speech_line
     for prefix in ("Installed addon: ", "Technical detail: "):
         if line.startswith(prefix):
             return t(prefix) + line[len(prefix):]
@@ -241,7 +311,19 @@ def _is_speech_status_notice(text: str) -> bool:
     lowered = " ".join(str(text or "").lower().split())
     if not lowered or "failed" in lowered or "error:" in lowered:
         return False
-    status_terms = ("ready", "warming up", "warmup", "still warming", "preparing")
+    status_terms = (
+        "ready",
+        "warming up",
+        "warmup",
+        "warm-up",
+        "still warming",
+        "preparing",
+        "waiting to start",
+        "will retry",
+        "not needed",
+        "stopped",
+        "interrupted",
+    )
     speech_terms = (
         "tts",
         "stt",

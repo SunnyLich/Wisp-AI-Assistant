@@ -26,6 +26,7 @@ _TTS_SEGMENT_MIN_CHARS = 60
 _TTS_SEGMENT_MAX_CHARS = 520
 _READ_ALOUD_MIN_WORDS = 50
 _READ_ALOUD_MAX_WORDS = 110
+_SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS = 5.0
 _READ_ALOUD_PAUSE_RE = re.compile(r"[.!?;:][\"')\]}]*$")
 _BROWSER_APP_NAMES = {
     "browser",
@@ -270,6 +271,18 @@ class FlowController:
         self._tts_sequence_active = False
         self._reply_bubble_cancelled_generation = 0
         self._config_mtime = self._current_config_mtime()
+        # Speech readiness notices are timed here, outside the audio process.
+        # Native STT/TTS initialization can hold that process's GIL, but should
+        # never freeze the user-visible elapsed timer.
+        self._speech_warmup_lock = threading.RLock()
+        self._speech_warmup_notice_lock = threading.Lock()
+        self._speech_warmup_generation = 0
+        self._speech_warmup_stop = threading.Event()
+        self._speech_warmup_shutdown = False
+        self._speech_warmup_started_at = 0.0
+        self._speech_warmup_provider = ""
+        self._speech_warmup_id = ""
+        self._speech_warmup_states: dict[str, dict[str, Any]] = {}
 
     # -- lifecycle -----------------------------------------------------
 
@@ -355,6 +368,13 @@ class FlowController:
             self.audio.call("audio.prewarm", timeout=30.0, wait=False)
         except Exception:
             log.exception("audio prewarm did not start")
+
+    def stop(self) -> None:
+        """Stop supervisor-owned background activity before worker teardown."""
+        with self._speech_warmup_lock:
+            self._speech_warmup_shutdown = True
+            self._speech_warmup_stop.set()
+            self._speech_warmup_generation += 1
 
     def start_hotkeys(self) -> dict[str, Any]:
         """Start hotkeys."""
@@ -647,93 +667,235 @@ class FlowController:
         self._schedule(self.reload_settings, changed_keys)
 
     def _on_audio_warmup_started(self, data: dict[str, Any], _req_id: Any = None) -> None:
-        """Tell the user local speech models are warming."""
-        items = set((data or {}).get("items") or [])
+        """Start one supervisor-owned, consistently timed speech notice."""
+        items = {str(item) for item in ((data or {}).get("items") or []) if str(item) in {"stt", "tts"}}
         if not items:
             return
-        if "tts" in items:
-            return
-        text = "Warming up local speech recognition..."
-        self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 0}, timeout=30.0)
+        now = time.monotonic()
+        with self._speech_warmup_lock:
+            if self._speech_warmup_shutdown:
+                return
+            self._speech_warmup_stop.set()
+            self._speech_warmup_stop = threading.Event()
+            stop_event = self._speech_warmup_stop
+            self._speech_warmup_generation += 1
+            generation = self._speech_warmup_generation
+            self._speech_warmup_started_at = now
+            self._speech_warmup_provider = str((data or {}).get("provider") or "").strip().lower()
+            self._speech_warmup_id = str((data or {}).get("warmup_id") or "")
+            self._speech_warmup_states = {
+                item: {"status": "waiting", "started_at": None, "detail": ""}
+                for item in sorted(items)
+            }
+        self._show_speech_warmup_notice(generation)
+        threading.Thread(
+            target=self._speech_warmup_notice_loop,
+            args=(generation, stop_event),
+            daemon=True,
+            name="speech-warmup-notice",
+        ).start()
 
     def _on_audio_warmup_progress(self, data: dict[str, Any], _req_id: Any = None) -> None:
-        """Show which speech component is currently warming or ready."""
+        """Track per-component progress; one supervisor timer renders it."""
         item = str((data or {}).get("item") or "")
         status = str((data or {}).get("status") or "")
-        items = set((data or {}).get("items") or [])
         if item not in {"stt", "tts"} or not status:
             return
-        if "tts" in items and item == "stt":
-            return
-        label = "speech recognition" if item == "stt" else "local voice"
-        if status == "started":
-            if item == "tts":
+        warmup_id = str((data or {}).get("warmup_id") or "")
+        now = time.monotonic()
+        terminal = False
+        with self._speech_warmup_lock:
+            if warmup_id and self._speech_warmup_id and warmup_id != self._speech_warmup_id:
                 return
-            text = f"Warming up {label}..."
-            self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 0}, timeout=30.0)
-            return
-        if status.startswith("preparing ") and item == "tts":
-            self._safe_call(
-                self.ui,
-                "ui.reply.notice",
-                {
-                    "text": f"Preparing local voice... {status.removeprefix('preparing ')}",
-                    "timeout_ms": 0,
-                    "key": "audio-warmup",
-                },
-                timeout=30.0,
+            warmup_active = (
+                self._speech_warmup_started_at > 0
+                and not self._speech_warmup_stop.is_set()
+                and not self._speech_warmup_shutdown
             )
-            return
-        if status.startswith("error:"):
-            if item == "tts" and _is_transient_local_tts_warmup_error(status):
-                log.info("suppressed transient local TTS warmup progress error: %s", status)
+            if not warmup_active:
                 return
-            self._safe_call(
-                self.ui,
-                "ui.reply.notice",
-                {"text": f"Local speech warmup failed: {item}: {status}", "timeout_ms": 6000},
-                timeout=30.0,
+            generation = self._speech_warmup_generation
+            state = self._speech_warmup_states.setdefault(
+                item,
+                {"status": "waiting", "started_at": None, "detail": ""},
             )
-            return
+            if status == "started" or status.startswith("preparing "):
+                state["status"] = "warming"
+                state["started_at"] = state.get("started_at") or now
+                state["detail"] = ""
+            elif status == "ok":
+                state["status"] = "ready"
+                state["detail"] = ""
+                terminal = True
+            elif status == "skipped":
+                state["status"] = "skipped"
+                state["detail"] = ""
+                terminal = True
+            elif status == "stopped":
+                state["status"] = "stopped"
+                state["detail"] = ""
+                terminal = True
+            elif status.startswith("error:"):
+                state["status"] = "deferred" if item == "tts" and _is_transient_local_tts_warmup_error(status) else "failed"
+                state["detail"] = status.removeprefix("error:").strip()
+                terminal = True
+        if terminal and warmup_active:
+            self._show_speech_warmup_notice(generation)
 
     def _on_audio_warmup_done(self, data: dict[str, Any], _req_id: Any = None) -> None:
-        """Tell the user local speech warmup finished."""
-        items = set((data or {}).get("items") or [])
+        """Stop the timer and replace it with a complete per-item result."""
+        items = {str(item) for item in ((data or {}).get("items") or []) if str(item) in {"stt", "tts"}}
         if not items:
             return
         provider = str((data or {}).get("provider") or "").strip().lower()
         result = (data or {}).get("result") if isinstance((data or {}).get("result"), dict) else {}
-        failures = [
-            f"{name}: {status}"
-            for name, status in result.items()
-            if str(status).startswith("error:")
-            and not (name == "tts" and _is_transient_local_tts_warmup_error(str(status)))
-        ]
-        if failures:
-            self._safe_call(
+        warmup_id = str((data or {}).get("warmup_id") or "")
+        with self._speech_warmup_lock:
+            if warmup_id and self._speech_warmup_id and warmup_id != self._speech_warmup_id:
+                return
+            self._speech_warmup_stop.set()
+            self._speech_warmup_generation += 1
+            generation = self._speech_warmup_generation
+            self._speech_warmup_provider = provider or self._speech_warmup_provider
+            for item in items:
+                raw_status = str(result.get(item) or ("ok" if not result else "skipped"))
+                state = self._speech_warmup_states.setdefault(
+                    item,
+                    {"status": "waiting", "started_at": None, "detail": ""},
+                )
+                if raw_status == "ok":
+                    state["status"] = "ready"
+                    state["detail"] = ""
+                elif raw_status == "skipped":
+                    state["status"] = "skipped"
+                    state["detail"] = ""
+                elif raw_status == "stopped":
+                    state["status"] = "stopped"
+                    state["detail"] = ""
+                elif raw_status.startswith("error:"):
+                    transient = item == "tts" and _is_transient_local_tts_warmup_error(raw_status)
+                    state["status"] = "deferred" if transient else "failed"
+                    state["detail"] = raw_status.removeprefix("error:").strip()
+            states = {name: dict(state) for name, state in self._speech_warmup_states.items()}
+        has_failure = any(state.get("status") == "failed" for state in states.values())
+        has_deferred = any(state.get("status") == "deferred" for state in states.values())
+        if has_failure:
+            heading = "Speech warm-up failed."
+        elif has_deferred:
+            heading = "Speech warm-up finished; one service will retry when needed."
+        else:
+            heading = "Speech services are ready."
+        lines = [heading, *self._speech_warmup_state_lines(states, provider=provider, final=True)]
+        params: dict[str, Any] = {
+            "text": "\n".join(lines),
+            "timeout_ms": 8000 if has_failure or has_deferred else 6000,
+            "key": "audio-warmup",
+        }
+        if has_failure:
+            params["severity"] = "error"
+        elif has_deferred:
+            params["severity"] = "warning"
+        self._send_speech_warmup_notice(params, generation)
+
+    def _speech_warmup_notice_loop(self, generation: int, stop_event: threading.Event) -> None:
+        """Refresh one keyed notice on a fixed cadence outside the audio worker."""
+        while not stop_event.wait(_SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS):
+            if not self._show_speech_warmup_notice(generation):
+                return
+
+    def _show_speech_warmup_notice(self, generation: int) -> bool:
+        """Send one current timer frame, ordered against terminal frames."""
+        with self._speech_warmup_notice_lock:
+            with self._speech_warmup_lock:
+                if (
+                    generation != self._speech_warmup_generation
+                    or self._speech_warmup_stop.is_set()
+                    or self._speech_warmup_shutdown
+                    or not self._speech_warmup_states
+                ):
+                    return False
+                states = {
+                    name: dict(state)
+                    for name, state in self._speech_warmup_states.items()
+                }
+                provider = self._speech_warmup_provider
+                elapsed = max(0, int(time.monotonic() - self._speech_warmup_started_at))
+            text = "\n".join(
+                [
+                    f"Preparing speech services - {self._speech_elapsed_text(elapsed)} elapsed.",
+                    *self._speech_warmup_state_lines(states, provider=provider, final=False),
+                ]
+            )
+            # This is cosmetic and periodic. Do not make lifecycle/event threads
+            # wait for the UI process on any operating system.
+            self._fire(
                 self.ui,
                 "ui.reply.notice",
-                {"text": "Local speech warmup failed: " + "; ".join(failures), "timeout_ms": 6000},
-                timeout=30.0,
+                {"text": text, "timeout_ms": 0, "key": "audio-warmup"},
             )
-            return
+            return True
 
-        ready_items = {name for name, status in result.items() if status == "ok"}
-        if not result:
-            ready_items = set(items)
-        if not ready_items:
-            return
+    def _send_speech_warmup_notice(
+        self,
+        params: dict[str, Any],
+        generation: int,
+    ) -> bool:
+        """Order a terminal notice after timers and reject obsolete results."""
+        with self._speech_warmup_notice_lock:
+            with self._speech_warmup_lock:
+                if generation != self._speech_warmup_generation:
+                    return False
+            self._fire(self.ui, "ui.reply.notice", params)
+            return True
 
-        tts_label = "Local voice" if provider == "kokoro" else "TTS connection"
-        if "tts" in ready_items and "stt" in ready_items:
-            text = f"{tts_label} and speech recognition are ready."
-        elif "tts" in ready_items:
-            text = f"{tts_label} is ready."
-        elif "stt" in ready_items:
-            text = "Local speech recognition is ready."
-        else:
-            return
-        self._safe_call(self.ui, "ui.reply.notice", {"text": text, "timeout_ms": 6000}, timeout=30.0)
+    @staticmethod
+    def _speech_elapsed_text(elapsed_seconds: int) -> str:
+        minutes, seconds = divmod(max(0, int(elapsed_seconds)), 60)
+        return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
+
+    @staticmethod
+    def _speech_item_label(item: str, provider: str) -> str:
+        if item == "stt":
+            return "STT (speech recognition)"
+        if provider == "kokoro":
+            return "TTS (Kokoro local voice)"
+        if provider == "cartesia":
+            return "TTS (Cartesia connection)"
+        return f"TTS ({provider})" if provider and provider != "none" else "TTS"
+
+    def _speech_warmup_state_lines(
+        self,
+        states: dict[str, dict[str, Any]],
+        *,
+        provider: str,
+        final: bool,
+    ) -> list[str]:
+        now = time.monotonic()
+        lines: list[str] = []
+        for item in ("stt", "tts"):
+            if item not in states:
+                continue
+            state = states[item]
+            status = str(state.get("status") or "waiting")
+            label = self._speech_item_label(item, provider)
+            if status == "warming":
+                started_at = float(state.get("started_at") or self._speech_warmup_started_at or now)
+                value = f"warming up ({self._speech_elapsed_text(int(now - started_at))})"
+            elif status == "ready":
+                value = "ready"
+            elif status == "skipped":
+                value = "not needed"
+            elif status == "deferred":
+                value = "will retry when first used"
+            elif status == "failed":
+                detail = str(state.get("detail") or "unknown error")
+                value = f"failed - {detail}"
+            elif status == "stopped":
+                value = "stopped"
+            else:
+                value = "waiting to start" if not final else "not completed"
+            lines.append(f"{label}: {value}")
+        return lines
 
     def _on_bubble_speed(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle bubble speed events."""
@@ -811,7 +973,48 @@ class FlowController:
             self._notice(t("Live voice session ended (server time limit). Press the hotkey to start again."))
 
     def _on_audio_worker_exit(self, _returncode: int | None = None) -> None:
-        """The audio worker died; any live voice session died with it."""
+        """The audio worker died; finish any state owned by that process."""
+        with self._speech_warmup_lock:
+            warmup_active = (
+                self._speech_warmup_started_at > 0
+                and not self._speech_warmup_stop.is_set()
+            )
+            if warmup_active:
+                self._speech_warmup_stop.set()
+                self._speech_warmup_generation += 1
+                generation = self._speech_warmup_generation
+                self._speech_warmup_id = f"interrupted:{self._speech_warmup_id}"
+                for state in self._speech_warmup_states.values():
+                    if state.get("status") in {"waiting", "warming"}:
+                        state["status"] = "stopped"
+                states = {
+                    name: dict(state)
+                    for name, state in self._speech_warmup_states.items()
+                }
+                provider = self._speech_warmup_provider
+            else:
+                states = {}
+                provider = ""
+                generation = self._speech_warmup_generation
+        if warmup_active:
+            self._send_speech_warmup_notice(
+                {
+                    "text": "\n".join(
+                        [
+                            "Speech warm-up was interrupted because the audio service restarted.",
+                            *self._speech_warmup_state_lines(
+                                states,
+                                provider=provider,
+                                final=True,
+                            ),
+                        ]
+                    ),
+                    "timeout_ms": 8000,
+                    "key": "audio-warmup",
+                    "severity": "warning",
+                },
+                generation,
+            )
         if not self._live_voice_busy():
             return
         self._mark_live_voice_idle()
@@ -5052,7 +5255,10 @@ class FlowController:
                     result = self.audio.call("audio.tts.synthesize", {"text": chunks[0]}, timeout=180.0)
                 except Exception as exc:  # noqa: BLE001 - keep read-aloud user-facing
                     if "warming up" in str(exc).lower():
-                        self._notice("Local voice is still warming up. Try again when Wisp says local speech is ready.")
+                        self._notice(
+                            "TTS (local voice) is still warming up. "
+                            "Wait for the speech status notice to show TTS ready."
+                        )
                         reported_error = True
                     else:
                         log.exception("read selection aloud synthesis failed")
@@ -5122,7 +5328,10 @@ class FlowController:
                 error = item.get("error")
                 if error is not None:
                     if "warming up" in str(error).lower():
-                        self._notice("Local voice is still warming up. Try again when Wisp says local speech is ready.")
+                        self._notice(
+                            "TTS (local voice) is still warming up. "
+                            "Wait for the speech status notice to show TTS ready."
+                        )
                         reported_error = True
                         break
                     log.error(

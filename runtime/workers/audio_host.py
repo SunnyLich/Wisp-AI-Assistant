@@ -27,7 +27,6 @@ _local_tts_ready = False
 _local_tts_error = ""
 _local_tts_warmup_started_at: float | None = None
 _LOCAL_TTS_WARMUP_STALE_SECONDS = 3600.0
-_LOCAL_TTS_WARMUP_PROGRESS_SECONDS = 5.0
 _PLAYBACK_CHUNK_FRAMES = 2048
 _AUDIO_SHUTDOWN_WARMUP_TIMEOUT_SECONDS = 35.0
 
@@ -183,29 +182,10 @@ def _warm_local_audio_impl(
 
     def _warm_tts() -> None:
         is_local_tts = _local_tts_provider(provider)
-        stop_progress = threading.Event()
-        progress_thread: threading.Thread | None = None
         if is_local_tts:
             _set_local_tts_warmup(warming=True, ready=False)
         if on_progress is not None:
             on_progress("tts", "started")
-            if is_local_tts:
-                on_progress("tts", "preparing for 0s")
-
-        def _progress_heartbeat() -> None:
-            started = time.monotonic()
-            while not stop_progress.wait(_LOCAL_TTS_WARMUP_PROGRESS_SECONDS):
-                elapsed = int(time.monotonic() - started)
-                if on_progress is not None:
-                    on_progress("tts", f"preparing for {elapsed}s")
-
-        if is_local_tts and on_progress is not None:
-            progress_thread = threading.Thread(
-                target=_progress_heartbeat,
-                daemon=True,
-                name="audio-tts-prewarm-progress",
-            )
-            progress_thread.start()
         try:
             import config
             from core import tts
@@ -244,10 +224,6 @@ def _warm_local_audio_impl(
                     tts._kokoro_diag(f"Kokoro warmup failed: {status}")
                 except Exception:
                     pass
-        finally:
-            stop_progress.set()
-            if progress_thread is not None:
-                progress_thread.join(timeout=1.0)
         _set_result("tts", status)
         if on_progress is not None:
             on_progress("tts", status)
@@ -301,12 +277,23 @@ def _output_dir() -> Path:
 def _prewarm_after_config_reload(generation: int, provider: str) -> None:
     """Warm STT/TTS after config reload without blocking the IPC response."""
     items = _warmup_items(provider)
-    _event("audio.warmup.started", {"items": items, "provider": provider, "reason": "config_reload"})
+    warmup_id = f"config_reload:{generation}"
+    _event(
+        "audio.warmup.started",
+        {"items": items, "provider": provider, "reason": "config_reload", "warmup_id": warmup_id},
+    )
     result = _warm_local_audio(
         provider,
         on_progress=lambda item, status: _event(
             "audio.warmup.progress",
-            {"item": item, "status": status, "items": items, "provider": provider, "reason": "config_reload"},
+            {
+                "item": item,
+                "status": status,
+                "items": items,
+                "provider": provider,
+                "reason": "config_reload",
+                "warmup_id": warmup_id,
+            },
         ),
     )
     with _config_prewarm_lock:
@@ -315,7 +302,14 @@ def _prewarm_after_config_reload(generation: int, provider: str) -> None:
     ok = not any(str(value).startswith("error:") for value in result.values())
     _event(
         "audio.warmup.done",
-        {"items": items, "provider": provider, "reason": "config_reload", "ok": ok, "result": result},
+        {
+            "items": items,
+            "provider": provider,
+            "reason": "config_reload",
+            "warmup_id": warmup_id,
+            "ok": ok,
+            "result": result,
+        },
     )
     print(
         f"[audio] config reload background prewarm{suffix}: "
@@ -376,18 +370,36 @@ def audio_prewarm() -> dict[str, Any]:
 
     provider = config.TTS_PROVIDER.lower()
     items = _warmup_items(provider)
-    _event("audio.warmup.started", {"items": items, "provider": provider, "reason": "startup"})
+    warmup_id = f"startup:{time.monotonic_ns()}"
+    _event(
+        "audio.warmup.started",
+        {"items": items, "provider": provider, "reason": "startup", "warmup_id": warmup_id},
+    )
     result = _warm_local_audio(
         provider,
         on_progress=lambda item, status: _event(
             "audio.warmup.progress",
-            {"item": item, "status": status, "items": items, "provider": provider, "reason": "startup"},
+            {
+                "item": item,
+                "status": status,
+                "items": items,
+                "provider": provider,
+                "reason": "startup",
+                "warmup_id": warmup_id,
+            },
         ),
     )
     ok = not any(str(value).startswith("error:") for value in result.values())
     _event(
         "audio.warmup.done",
-        {"items": items, "provider": provider, "reason": "startup", "ok": ok, "result": result},
+        {
+            "items": items,
+            "provider": provider,
+            "reason": "startup",
+            "warmup_id": warmup_id,
+            "ok": ok,
+            "result": result,
+        },
     )
     return result
 
@@ -645,9 +657,9 @@ def audio_live_start() -> dict[str, Any]:
     so the supervisor can map each one to a user-facing notice.
     """
     global _live_session
+    import config
     from core import live_voice
     from core.macos_helper import handlers as stt_handlers
-    import config
 
     provider = str(getattr(config, "LIVE_VOICE_PROVIDER", "google") or "google").strip().lower()
     if provider != "google":

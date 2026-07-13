@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,29 @@ STAGED_APPLY_WAIT_SECONDS = 24 * 60 * 60.0
 STAGED_APPLY_MAX_ATTEMPTS = 3
 STAGED_FILE_RETRY_SECONDS = 12.0
 STAGED_FILE_RETRY_INTERVAL_SECONDS = 0.4
+_LAST_INSTALL_FAILURE_DETAIL = ""
+
+_DISK_FULL_MARKERS = (
+    "os error 112",
+    "no space left on device",
+    "not enough space on the disk",
+    "there is not enough space on the disk",
+    "disk full",
+)
+_DISK_FULL_GUIDANCE = (
+    "Not enough free disk space while extracting the downloaded packages. "
+    "Free at least 15 GB on the drive containing the uv cache and Wisp optional packages, then retry. "
+    "For a much smaller download, select CPU for Kokoro instead of Auto or GPU."
+)
+_INSTALLER_DECORATION_PREFIX = re.compile(r"^[\s?\ufffd×╰├│─▶└┌┬┐]+(?=[A-Za-z`(])")
+
+
+def _normalize_installer_output_line(line: str) -> str:
+    """Convert package-manager tree glyphs that commonly mojibake to ASCII."""
+    text = str(line).strip()
+    if _INSTALLER_DECORATION_PREFIX.match(text):
+        return _INSTALLER_DECORATION_PREFIX.sub("-> ", text, count=1)
+    return text
 
 
 def _safe_console_print(line: str) -> None:
@@ -35,7 +59,9 @@ def _safe_console_print(line: str) -> None:
     except UnicodeEncodeError:
         stream = sys.stdout
         encoding = getattr(stream, "encoding", None) or "utf-8"
-        safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        # Preserve unsupported characters as explicit Unicode escapes instead
+        # of turning an entire localized diagnostic into meaningless ?????.
+        safe = text.encode(encoding, errors="backslashreplace").decode(encoding, errors="strict")
         try:
             print(safe, flush=True)
         except Exception:
@@ -253,6 +279,14 @@ def _iter_install_output(stream) -> Any:
         yield line
 
 
+def _install_failure_detail(output_lines: list[str]) -> str:
+    """Turn known low-level package-manager failures into actionable advice."""
+    output = "\n".join(output_lines).lower()
+    if any(marker in output for marker in _DISK_FULL_MARKERS):
+        return _DISK_FULL_GUIDANCE
+    return ""
+
+
 def _run_install_command(
     log,
     prefix: str,
@@ -262,7 +296,11 @@ def _run_install_command(
     target_dir: Path | None = None,
 ) -> int:
     """Run one optional package install command, streaming output to the terminal."""
+    global _LAST_INSTALL_FAILURE_DETAIL
+
     from core import optional_deps
+
+    _LAST_INSTALL_FAILURE_DETAIL = ""
 
     try:
         optional_deps.ensure_pip_available()
@@ -291,12 +329,31 @@ def _run_install_command(
         return 1
     _log(log, prefix, f"installer started with pid {process.pid}")
     assert process.stdout is not None
+    output_tail: list[str] = []
     for line in _iter_install_output(process.stdout):
+        line = _normalize_installer_output_line(line)
+        if not line:
+            continue
+        output_tail.append(line)
+        if len(output_tail) > 200:
+            del output_tail[:-200]
         _log(log, prefix, line)
     returncode = process.wait()
     if returncode != 0:
+        _LAST_INSTALL_FAILURE_DETAIL = _install_failure_detail(output_tail)
+        if _LAST_INSTALL_FAILURE_DETAIL:
+            _log(log, prefix, f"ERROR: {_LAST_INSTALL_FAILURE_DETAIL}")
         _log(log, prefix, f"Failed with exit code {returncode}.")
     return int(returncode or 0)
+
+
+def _run_install_phase(*args, **kwargs) -> tuple[int, str]:
+    """Run an install command and return its exit code plus classified failure."""
+    global _LAST_INSTALL_FAILURE_DETAIL
+
+    _LAST_INSTALL_FAILURE_DETAIL = ""
+    returncode = _run_install_command(*args, **kwargs)
+    return returncode, _LAST_INSTALL_FAILURE_DETAIL
 
 
 def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Path | None) -> tuple[bool, str]:
@@ -822,14 +879,20 @@ def _run_staged_restart_install(
         status_path,
         ok=None,
         message=f"{display_name} install is staging packages before restart.",
-        extra=_status_extra(plan, progress_percent=0),
+        extra=_status_extra(plan, progress_percent=2),
     )
 
     with log_path.open("a", encoding="utf-8") as log:
         _log(log, prefix, f"Installing into staging folder: {staging_path}")
         if pre_install_packages:
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} install is resolving and downloading GPU runtime packages.",
+                extra=_status_extra(plan, progress_percent=5),
+            )
             _log(log, prefix, "Installing CUDA Torch into staging before Kokoro packages.")
-            returncode = _run_install_command(
+            returncode, failure_detail = _run_install_phase(
                 log,
                 prefix,
                 pre_install_packages,
@@ -840,12 +903,25 @@ def _run_staged_restart_install(
                 _write_status(
                     status_path,
                     ok=False,
-                    message=f"{display_name} install failed during staged CUDA Torch install.",
+                    message=failure_detail or f"{display_name} install failed during staged CUDA Torch install.",
                     extra=_plan_status_metadata(plan),
                 )
                 return returncode
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} GPU runtime packages are staged.",
+                extra=_status_extra(plan, progress_percent=40),
+            )
         if packages:
-            returncode = _run_install_command(
+            package_start_percent = 45 if pre_install_packages else 10
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} install is resolving and downloading locked packages.",
+                extra=_status_extra(plan, progress_percent=package_start_percent),
+            )
+            returncode, failure_detail = _run_install_phase(
                 log,
                 prefix,
                 packages,
@@ -856,10 +932,16 @@ def _run_staged_restart_install(
                 _write_status(
                     status_path,
                     ok=False,
-                    message=f"{display_name} install failed during staged package install.",
+                    message=failure_detail or f"{display_name} install failed during staged package install.",
                     extra=_plan_status_metadata(plan),
                 )
                 return returncode
+            _write_status(
+                status_path,
+                ok=None,
+                message=f"{display_name} package download is complete; preparing the staged apply.",
+                extra=_status_extra(plan, progress_percent=90),
+            )
 
         apply_plan_path = log_path.with_suffix(".apply-plan.json")
         apply_plan = {
@@ -937,22 +1019,22 @@ def main() -> int:
         _remove_duplicate_dist_infos(log, prefix)
         if pre_install_packages:
             _log(log, prefix, "Installing CUDA Torch before Kokoro packages.")
-            returncode = _run_install_command(log, prefix, pre_install_packages, reinstall=True)
+            returncode, failure_detail = _run_install_phase(log, prefix, pre_install_packages, reinstall=True)
             if returncode != 0:
                 _write_status(
                     status_path,
                     ok=False,
-                    message=f"{display_name} install failed during CUDA Torch install.",
+                    message=failure_detail or f"{display_name} install failed during CUDA Torch install.",
                     extra=_plan_status_metadata(plan),
                 )
                 return returncode
         if packages:
-            returncode = _run_install_command(log, prefix, packages, reinstall=reinstall)
+            returncode, failure_detail = _run_install_phase(log, prefix, packages, reinstall=reinstall)
             if returncode != 0:
                 _write_status(
                     status_path,
                     ok=False,
-                    message=f"{display_name} install failed during package install.",
+                    message=failure_detail or f"{display_name} install failed during package install.",
                     extra=_plan_status_metadata(plan),
                 )
                 return returncode

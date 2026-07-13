@@ -198,6 +198,7 @@ def main() -> int:
         return 2
     _resume_staged_optional_installs()
     supervisor = WispSupervisor()
+    flows: FlowController | None = None
     stop = threading.Event()
     ui_quit_requested = threading.Event()
     abrupt_reason = ""
@@ -274,6 +275,10 @@ def main() -> int:
                 logging.error("Wrote Wisp crash log: %s", crash_dir)
         raise
     finally:
+        if flows is not None:
+            flow_stop = getattr(flows, "stop", None)
+            if callable(flow_stop):
+                flow_stop()
         supervisor.shutdown()
     if abrupt_reason and log_mode != "debug":
         crash_dir = _write_abrupt_log(abrupt_reason, supervisor)

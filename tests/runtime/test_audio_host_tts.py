@@ -159,10 +159,11 @@ def test_audio_prewarm_reports_local_warmup_events(monkeypatch):
 
     assert result == {"stt": "ok", "tts": "ok"}
     assert stt_calls == [True]
-    assert events[0] == (
-        "audio.warmup.started",
-        {"items": ["stt", "tts"], "provider": "kokoro", "reason": "startup"},
-    )
+    assert events[0][0] == "audio.warmup.started"
+    assert events[0][1]["items"] == ["stt", "tts"]
+    assert events[0][1]["provider"] == "kokoro"
+    assert events[0][1]["reason"] == "startup"
+    assert events[0][1]["warmup_id"].startswith("startup:")
     assert events[-1][0] == "audio.warmup.done"
     assert events[-1][1]["ok"] is True
 
@@ -187,12 +188,10 @@ def test_audio_prewarm_reports_component_progress(monkeypatch):
         ("stt", "started"),
         ("stt", "ok"),
         ("tts", "started"),
-        ("tts", "preparing for 0s"),
         ("tts", "ok"),
     ])
     assert progress.index(("stt", "started")) < progress.index(("stt", "ok"))
     assert progress.index(("tts", "started")) < progress.index(("tts", "ok"))
-    assert progress.index(("tts", "preparing for 0s")) < progress.index(("tts", "ok"))
 
 
 def test_audio_prewarm_skips_missing_kokoro(monkeypatch):
@@ -211,10 +210,11 @@ def test_audio_prewarm_skips_missing_kokoro(monkeypatch):
     result = audio_host.audio_prewarm()
 
     assert result == {"stt": "ok", "tts": "skipped"}
-    assert events[0] == (
-        "audio.warmup.started",
-        {"items": ["stt"], "provider": "kokoro", "reason": "startup"},
-    )
+    assert events[0][0] == "audio.warmup.started"
+    assert events[0][1]["items"] == ["stt"]
+    assert events[0][1]["provider"] == "kokoro"
+    assert events[0][1]["reason"] == "startup"
+    assert events[0][1]["warmup_id"].startswith("startup:")
     assert events[-1][1]["ok"] is True
 
 
@@ -286,10 +286,11 @@ def test_audio_prewarm_warms_cartesia_tts(monkeypatch):
 
     assert result == {"stt": "ok", "tts": "ok"}
     assert sorted(calls) == ["stt:True", "tts"]
-    assert events[0] == (
-        "audio.warmup.started",
-        {"items": ["stt", "tts"], "provider": "cartesia", "reason": "startup"},
-    )
+    assert events[0][0] == "audio.warmup.started"
+    assert events[0][1]["items"] == ["stt", "tts"]
+    assert events[0][1]["provider"] == "cartesia"
+    assert events[0][1]["reason"] == "startup"
+    assert events[0][1]["warmup_id"].startswith("startup:")
     assert events[-1][1]["ok"] is True
 
 

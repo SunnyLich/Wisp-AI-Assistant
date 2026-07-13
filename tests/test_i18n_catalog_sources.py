@@ -7,6 +7,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 QT_DIR = ROOT / "ui" / "locales" / "qt"
 LANGUAGES = ("es", "fr", "zh", "zh-Hant")
+SPEECH_NOTICE_SOURCES = {
+    "Speech warm-up failed.",
+    "Speech warm-up finished; one service will retry when needed.",
+    "Speech services are ready.",
+    "Preparing speech services - {elapsed} elapsed.",
+    "Speech warm-up was interrupted because the audio service restarted.",
+    "STT (speech recognition)",
+    "TTS (Kokoro local voice)",
+    "TTS (Cartesia connection)",
+    "TTS ({provider})",
+    "warming up ({elapsed})",
+    "{minutes}m {seconds}s",
+    "{seconds}s",
+    "ready",
+    "not needed",
+    "will retry when first used",
+    "failed - {message}",
+    "stopped",
+    "waiting to start",
+    "not completed",
+    "unknown error",
+    "{label}: {status}",
+    "TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.",
+}
 
 # These are characteristic artifacts of UTF-8 text decoded as a single-byte
 # encoding.  The narrower patterns avoid flagging legitimate accented text.
@@ -68,3 +92,20 @@ def test_qt_catalogs_contain_no_mojibake() -> None:
         for language in LANGUAGES
     }
     assert not any(problems.values()), problems
+
+
+def test_qt_catalogs_cover_structured_speech_notices() -> None:
+    """Every shipped language contains the timer, component, and state templates."""
+    for language in LANGUAGES:
+        messages = _catalog_messages(language)
+        sources = {source for source, _translation, _unfinished in messages}
+        assert SPEECH_NOTICE_SOURCES <= sources, language
+        translations = {
+            source: translation
+            for source, translation, _unfinished in messages
+            if source in SPEECH_NOTICE_SOURCES
+        }
+        assert all(translations.values()), language
+        for source, translation in translations.items():
+            for placeholder in re.findall(r"\{[^}]+\}", source):
+                assert placeholder in translation, (language, source, placeholder)

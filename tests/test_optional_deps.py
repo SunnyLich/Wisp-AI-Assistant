@@ -852,6 +852,17 @@ def test_optional_tts_installer_streams_carriage_return_progress(monkeypatch, tm
     assert "[kokoro install] Done" in text
 
 
+def test_optional_tts_installer_normalizes_mojibaked_uv_diagnostics():
+    """uv tree glyphs should not become unreadable question-mark prefixes."""
+    from scripts import optional_tts_installer
+
+    normalize = optional_tts_installer._normalize_installer_output_line
+    assert normalize("× Failed to download torch") == "-> Failed to download torch"
+    assert normalize("╰─▶ Failed to extract archive") == "-> Failed to extract archive"
+    assert normalize("??? I/O operation failed during extraction") == "-> I/O operation failed during extraction"
+    assert normalize("???????? (os error 112)") == "-> (os error 112)"
+
+
 def test_optional_tts_installer_log_survives_legacy_console_encoding(monkeypatch, tmp_path):
     """Localized installer output must not crash on Windows cp1252 consoles."""
     import io
@@ -866,8 +877,45 @@ def test_optional_tts_installer_log_survives_legacy_console_encoding(monkeypatch
         optional_tts_installer._log(log, "[tts install]", "安裝程式失敗")
 
     fake_stdout.flush()
-    assert b"???" in console_bytes.getvalue()
+    assert b"\\u" in console_bytes.getvalue()
+    assert b"???" not in console_bytes.getvalue()
     assert (tmp_path / "install.log").read_text(encoding="utf-8") == "[tts install] 安裝程式失敗\n"
+
+
+def test_optional_tts_installer_classifies_windows_disk_full(monkeypatch, tmp_path):
+    """Windows error 112 should become actionable guidance instead of only exit code 1."""
+    import io
+
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    class FakeProcess:
+        pid = 1234
+        stdout = io.StringIO(
+            "Failed to extract archive: torch.whl\n"
+            "failed to write to file C:\\uv\\cache\\torch_cuda.dll: (os error 112)\n"
+        )
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(optional_deps, "ensure_pip_available", lambda: None)
+    monkeypatch.setattr(optional_deps, "pip_install_command", lambda *_args, **_kwargs: ["uv", "pip", "install"])
+    monkeypatch.setattr(optional_tts_installer.subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+
+    log_path = tmp_path / "install.log"
+    with log_path.open("w", encoding="utf-8") as log:
+        code, detail = optional_tts_installer._run_install_phase(
+            log,
+            "[kokoro install]",
+            ["torch==2.11.0+cu128"],
+        )
+
+    assert code == 1
+    assert "Not enough free disk space" in detail
+    assert "at least 15 GB" in detail
+    assert "select CPU for Kokoro" in detail
+    assert detail in log_path.read_text(encoding="utf-8")
 
 
 def test_optional_tts_installer_stt_prepare_requires_model_verification(monkeypatch, tmp_path):

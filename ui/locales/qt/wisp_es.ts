@@ -833,6 +833,10 @@ Dejar decidir al modelo — expone búsqueda web y herramientas para obtener pá
       <translation>El instalador falló con el código de salida {code}.</translation>
     </message>
     <message>
+      <source>Not enough free disk space while extracting the downloaded packages. Free at least 15 GB on the drive containing the uv cache and Wisp optional packages, then retry. For a much smaller download, select CPU for Kokoro instead of Auto or GPU.</source>
+      <translation>No hay suficiente espacio libre en disco al extraer los paquetes descargados. Libera al menos 15 GB en la unidad que contiene la caché de uv y los paquetes opcionales de Wisp, y vuelve a intentarlo. Para una descarga mucho más pequeña, selecciona CPU para Kokoro en lugar de Auto o GPU.</translation>
+    </message>
+    <message>
       <source>Cancel the installer before closing this window.</source>
       <translation>Cancela el instalador antes de cerrar esta ventana.</translation>
     </message>
@@ -3463,8 +3467,8 @@ Continuar?</translation>
       <translation>kokoro&gt;=0.9.4, soundfile, modelo de voz en inglés</translation>
     </message>
     <message>
-      <source>The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. </source>
-      <translation>La instalación de GPU puede descargar varios GB y tardar bastante. Requiere una GPU NVIDIA y un controlador compatible. </translation>
+      <source>The GPU install downloads several GB and can temporarily require at least 15 GB free for the uv cache, extraction, and Wisp's staging folder. It requires an NVIDIA GPU and compatible driver. </source>
+      <translation>La instalación de GPU descarga varios GB y puede requerir temporalmente al menos 15 GB libres para la caché de uv, la extracción y la carpeta de preparación de Wisp. Requiere una GPU NVIDIA y un controlador compatible. </translation>
     </message>
     <message>
       <source>{action_note}Packages: {package_label}
@@ -5218,5 +5222,27 @@ Continue?</translation>
     <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>Aún sin conexión. Puedes continuar e intentarlo de nuevo más tarde desde Configuración.</translation></message>
     <message><source>Profile saved, but the key could not be stored: {error}</source><translation>Perfil guardado, pero la clave no se pudo almacenar: {error}</translation></message>
     <message><source>Enter a model name</source><translation>Introduce un nombre de modelo</translation></message>
+    <message><source>Speech warm-up failed.</source><translation>Error al preparar los servicios de voz.</translation></message>
+    <message><source>Speech warm-up finished; one service will retry when needed.</source><translation>La preparación de los servicios de voz terminó; un servicio volverá a intentarlo cuando sea necesario.</translation></message>
+    <message><source>Speech services are ready.</source><translation>Los servicios de voz están listos.</translation></message>
+    <message><source>Preparing speech services - {elapsed} elapsed.</source><translation>Preparando los servicios de voz: {elapsed} transcurridos.</translation></message>
+    <message><source>Speech warm-up was interrupted because the audio service restarted.</source><translation>La preparación de los servicios de voz se interrumpió porque el servicio de audio se reinició.</translation></message>
+    <message><source>STT (speech recognition)</source><translation>STT (reconocimiento de voz)</translation></message>
+    <message><source>TTS (Kokoro local voice)</source><translation>TTS (voz local de Kokoro)</translation></message>
+    <message><source>TTS (Cartesia connection)</source><translation>TTS (conexión con Cartesia)</translation></message>
+    <message><source>TTS ({provider})</source><translation>TTS ({provider})</translation></message>
+    <message><source>warming up ({elapsed})</source><translation>preparándose ({elapsed})</translation></message>
+    <message><source>{minutes}m {seconds}s</source><translation>{minutes} min {seconds} s</translation></message>
+    <message><source>{seconds}s</source><translation>{seconds} s</translation></message>
+    <message><source>ready</source><translation>disponible</translation></message>
+    <message><source>not needed</source><translation>no es necesario</translation></message>
+    <message><source>will retry when first used</source><translation>volverá a intentarlo al usarlo por primera vez</translation></message>
+    <message><source>failed - {message}</source><translation>falló: {message}</translation></message>
+    <message><source>stopped</source><translation>detenido</translation></message>
+    <message><source>waiting to start</source><translation>esperando para comenzar</translation></message>
+    <message><source>not completed</source><translation>no se completó</translation></message>
+    <message><source>unknown error</source><translation>error desconocido</translation></message>
+    <message><source>{label}: {status}</source><translation>{label}: {status}</translation></message>
+    <message><source>TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.</source><translation>La TTS (voz local) todavía se está preparando. Espera a que el aviso de estado de voz indique que la TTS está lista.</translation></message>
   </context>
 </TS>
