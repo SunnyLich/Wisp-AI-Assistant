@@ -28,18 +28,22 @@ LANGUAGE_TAGS_DATAS, LANGUAGE_TAGS_BINARIES, LANGUAGE_TAGS_HIDDENIMPORTS = colle
 FASTER_WHISPER_DATAS, FASTER_WHISPER_BINARIES, FASTER_WHISPER_HIDDENIMPORTS = collect_all("faster_whisper")
 RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
 BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
-PIP_HIDDENIMPORTS = collect_submodules("pip")
 MODULE_MODE_HIDDENIMPORTS = [
     "core.addon_host",
     "scripts.optional_tts_installer",
 ]
 # Runtime-installed audio packages are invisible to PyInstaller analysis.
-# Torch (used by Kokoro) imports timeit while it initializes.
+# Keep their runtime imports explicit without pulling pip and all of its
+# vendored packages into the release.
 OPTIONAL_RUNTIME_HIDDENIMPORTS = [
     "cProfile",
+    "cmath",
+    "filecmp",
+    "huggingface_hub.dataclasses",
     "pickletools",
     "pstats",
     "timeit",
+    "tqdm.contrib.logging",
 ]
 UV_BINARIES = [
     (str(path), "bin")
@@ -76,11 +80,12 @@ a = Analysis(
         "pynput.mouse._darwin",
         "AppKit",
         "Quartz",
-    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        "pip",
         "pytest",
         "tests",
         "tmp_debug_agent",

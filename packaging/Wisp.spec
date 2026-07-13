@@ -32,19 +32,23 @@ APP_ICON_ICO = ROOT / "assets" / "app.ico"
 PYSIDE6_ROOT = Path(PySide6.__file__).resolve().parent
 RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
 BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
-PIP_HIDDENIMPORTS = collect_submodules("pip")
 MODULE_MODE_HIDDENIMPORTS = [
     "core.addon_host",
     "scripts.optional_tts_installer",
 ]
 # Optional packages are installed after PyInstaller analysis and can therefore
-# import stdlib modules that the frozen app did not otherwise need. Torch (used
-# by Kokoro) imports timeit during startup, so keep it in the base bundle.
+# import modules that the frozen app did not otherwise need. Keep this explicit
+# list in the base bundle without pulling pip and all of its vendored packages
+# into the release.
 OPTIONAL_RUNTIME_HIDDENIMPORTS = [
     "cProfile",
+    "cmath",
+    "filecmp",
+    "huggingface_hub.dataclasses",
     "pickletools",
     "pstats",
     "timeit",
+    "tqdm.contrib.logging",
 ]
 QT_RUNTIME_DLLS = [
     (str(path), "PySide6")
@@ -95,11 +99,12 @@ a = Analysis(
         "win32process",
         "comtypes",
         "comtypes.client",
-    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        "pip",
         "pytest",
         "tests",
         "tmp_debug_agent",

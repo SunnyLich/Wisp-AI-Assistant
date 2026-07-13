@@ -2435,12 +2435,14 @@ def test_app_settings_surface_translates_to_traditional_chinese():
             "Text bubble width (px)",
             "Text bubble lines",
             "Text bubble font size (pt)",
+            "Uninstall Wisp",
         ):
             assert not any(fragment in text for text in visible_texts)
 
         assert "\u4fe1\u4efb\uff0f\u96b1\u79c1\u6a21\u5f0f" in visible_texts
         assert "\u5141\u8a31\u6efe\u8f2a\u6372\u52d5\u6587\u5b57\u6c23\u6ce1" in visible_texts
         assert "\u6717\u8b80\u6642\u81ea\u52d5\u6372\u56de\u76ee\u524d\u4f4d\u7f6e" in visible_texts
+        assert "\u89e3\u9664\u5b89\u88dd Wisp" in visible_texts
     finally:
         config.APP_LANGUAGE = old_language
         i18n.set_language(app=app)

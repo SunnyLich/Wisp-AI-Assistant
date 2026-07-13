@@ -3693,6 +3693,139 @@ Continue?</source>
     <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>仍未連結。你可以繼續，稍後在「設定」中重試。</translation></message>
     <message><source>Profile saved, but the key could not be stored: {error}</source><translation>個人資料已儲存，但無法儲存金鑰：{error}</translation></message>
     <message><source>Enter a model name</source><translation>請輸入模型名稱</translation></message>
+    <message><source>  History</source><translation>  歷史記錄</translation></message>
+    <message><source>  No history yet.</source><translation>  尚無歷史記錄。</translation></message>
+    <message><source>  Selected conversation</source><translation>  已選對話</translation></message>
+    <message><source>+ Add fallback</source><translation>+ 新增備援項目</translation></message>
+    <message><source>+ New project...</source><translation>+ 新增專案...</translation></message>
+    <message><source>Add files or images</source><translation>新增檔案或圖片</translation></message>
+    <message><source>Add files or images as context</source><translation>新增檔案或圖片作為上下文</translation></message>
+    <message><source>Add to project</source><translation>新增至專案</translation></message>
+    <message><source>Addon</source><translation>附加元件</translation></message>
+    <message><source>Addons are Python packages in the add-ons folder. Portable builds create this folder next to Wisp.exe when possible.</source><translation>附加元件是附加元件資料夾中的 Python 套件。可攜式版本會盡可能在 Wisp.exe 旁建立此資料夾。</translation></message>
+    <message><source>Agent Task Cancelled</source><translation>代理任務已取消</translation></message>
+    <message><source>Agent Task Failed</source><translation>代理任務失敗</translation></message>
+    <message><source>Agent Task Finished</source><translation>代理任務已完成</translation></message>
+    <message><source>Agent Task Running</source><translation>代理任務正在執行</translation></message>
+    <message><source>Agent permission</source><translation>代理權限</translation></message>
+    <message><source>Agent permission resolved</source><translation>代理權限已處理</translation></message>
+    <message><source>All files</source><translation>所有檔案</translation></message>
+    <message><source>Ask before write</source><translation>寫入前詢問</translation></message>
+    <message><source>Attached</source><translation>已附加</translation></message>
+    <message><source>Attachments</source><translation>附件</translation></message>
+    <message><source>Branch from here</source><translation>從此處建立分支</translation></message>
+    <message><source>Choose which installed/addon tools snip queries may use</source><translation>選擇截圖查詢可使用的已安裝工具或附加元件工具</translation></message>
+    <message><source>Context included with this message (display only - not part of the reply).</source><translation>此訊息附帶的上下文（僅供顯示，不屬於回覆內容）。</translation></message>
+    <message><source>Continuing</source><translation>正在繼續</translation></message>
+    <message><source>Conversation options</source><translation>對話選項</translation></message>
+    <message><source>Copy full bubble text</source><translation>複製氣泡的完整文字</translation></message>
+    <message><source>Copy selected text</source><translation>複製所選文字</translation></message>
+    <message><source>Delete</source><translation>刪除</translation></message>
+    <message><source>Delete conversation</source><translation>刪除對話</translation></message>
+    <message><source>Delete this conversation? This cannot be undone.</source><translation>要刪除此對話嗎？此操作無法復原。</translation></message>
+    <message><source>Elapsed {elapsed}</source><translation>經過時間 {elapsed}</translation></message>
+    <message><source>Exact words spoken in the reference audio</source><translation>參考音訊中說出的確切文字</translation></message>
+    <message><source>Experimental. For eligible overlay replies, privately plans the answer and emits a few stable visible parts. Tool, file, image, and history requests keep the normal path.</source><translation>實驗性功能。對於符合條件的浮動視窗回覆，會私下規劃答案並輸出幾個穩定的可見部分。工具、檔案、圖片和歷史記錄請求仍使用一般流程。</translation></message>
+    <message><source>Final report is ready.</source><translation>最終報告已就緒。</translation></message>
+    <message><source>Final report is ready. Log:</source><translation>最終報告已就緒。記錄：</translation></message>
+    <message><source>Finished. Log:</source><translation>已完成。記錄：</translation></message>
+    <message><source>Installed addon:</source><translation>已安裝附加元件：</translation></message>
+    <message><source>Live voice currently supports Gemini Live through the Google provider.</source><translation>即時語音目前透過 Google 提供者支援 Gemini Live。</translation></message>
+    <message><source>Memory tokens are estimated after the prompt is known.</source><translation>將在提示詞確定後估算記憶使用的權杖數。</translation></message>
+    <message><source>Message options</source><translation>訊息選項</translation></message>
+    <message><source>Minimum combined prompt/context length before planned chunking can run.</source><translation>啟用計畫分段前，提示詞和上下文合計所需的最小長度。</translation></message>
+    <message><source>New project</source><translation>新增專案</translation></message>
+    <message><source>Nudge queued for</source><translation>提醒已排入佇列，目標：</translation></message>
+    <message><source>Number of visible parts, clamped to 2-4.</source><translation>可見部分的數量，限制為 2 到 4。</translation></message>
+    <message><source>Only settings on this page will be reset. API keys, OAuth sign-ins, stored memory, conversations, addons, and settings on other pages will be left alone.</source><translation>只會重設此頁面上的設定。API 金鑰、OAuth 登入、已儲存的記憶、對話、附加元件和其他頁面上的設定均不受影響。</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; unsupported routes automatically retry without it.</source><translation>聊天使用的 OpenAI Responses 推理強度。使用提供者預設值時不會明確傳送推理欄位；不支援的路由會自動在不含該欄位的情況下重試。</translation></message>
+    <message><source>Permission changes queued</source><translation>權限變更已排入佇列</translation></message>
+    <message><source>Permission needed:</source><translation>需要權限：</translation></message>
+    <message><source>Permissions</source><translation>權限</translation></message>
+    <message><source>Pick a provider first</source><translation>請先選擇提供者</translation></message>
+    <message><source>Pin</source><translation>釘選</translation></message>
+    <message><source>Please review the attached file.</source><translation>請檢視附件。</translation></message>
+    <message><source>Project for new chats (memory is scoped per project)</source><translation>新聊天使用的專案（記憶依專案區隔）</translation></message>
+    <message><source>Project name:</source><translation>專案名稱：</translation></message>
+    <message><source>Region snips already attach the selected image; extra screenshot context is disabled.</source><translation>區域截圖已附加所選圖片，因此額外的螢幕截圖上下文已停用。</translation></message>
+    <message><source>Remove all messages after this one? This cannot be undone.</source><translation>要刪除此訊息之後的所有訊息嗎？此操作無法復原。</translation></message>
+    <message><source>Rename</source><translation>重新命名</translation></message>
+    <message><source>Rename conversation</source><translation>重新命名對話</translation></message>
+    <message><source>Reset Wisp to its defaults? This cannot be undone.</source><translation>要將 Wisp 恢復為預設設定嗎？此操作無法復原。</translation></message>
+    <message><source>Reset all settings?</source><translation>要重設所有設定嗎？</translation></message>
+    <message><source>Reset page?</source><translation>要重設此頁面嗎？</translation></message>
+    <message><source>Reset the {page} page to defaults?</source><translation>要將「{page}」頁面恢復為預設設定嗎？</translation></message>
+    <message><source>Restart app now</source><translation>立即重新啟動應用程式</translation></message>
+    <message><source>Resume</source><translation>繼續</translation></message>
+    <message><source>Rewind conversation</source><translation>回溯對話</translation></message>
+    <message><source>Rewind current chat to here</source><translation>將目前聊天回溯到此處</translation></message>
+    <message><source>Show temporary progress lines in Chat that identify the tool loop and tool calls. Useful for testing; leave off for normal use.</source><translation>在聊天中顯示用來識別工具迴圈和工具呼叫的暫時進度列。此功能適合測試；一般使用時請保持關閉。</translation></message>
+    <message><source>Starting…</source><translation>正在啟動…</translation></message>
+    <message><source>Supported files</source><translation>支援的檔案</translation></message>
+    <message><source>The run is still working.</source><translation>任務仍在執行。</translation></message>
+    <message><source>This context is fetched when you send the message, so this token cost is not known yet.</source><translation>此上下文會在你傳送訊息時擷取，因此目前還不知道其權杖成本。</translation></message>
+    <message><source>This discards every agent and communication you have configured here and restores the default Coordinator / Builder / Reviewer setup. This cannot be undone.</source><translation>這會捨棄你在此處設定的所有代理和通訊，並恢復預設的協調者 / 建構者 / 審閱者設定。此操作無法復原。</translation></message>
+    <message><source>This will permanently:&#10;• DELETE every API key from your OS keychain (Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, Cartesia, ElevenLabs, custom)&#10;• ERASE all saved settings (models, hotkeys, prompts, theme, callers, and everything else in your .env)&#10;• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)&#10;&#10;You will need to re-enter your API keys, sign in again, and reconfigure the app afterwards.&#10;&#10;Continue?</source><translation>這將永久執行以下操作：&#10;• 從作業系統鑰匙串刪除所有 API 金鑰（Groq、OpenAI、Anthropic、Google、DeepSeek、OpenRouter、Mistral、xAI、Together、Cerebras、Z.AI、NVIDIA、SambaNova、GitHub Models、Hugging Face、Chutes、Vercel、Fireworks、Cohere、AI21、Nebius、Cartesia、ElevenLabs、自訂）&#10;• 清除所有已儲存的設定（模型、快速鍵、提示詞、主題、呼叫項目以及 .env 中的所有其他內容）&#10;• 登出所有 OAuth 登入（ChatGPT、GitHub、GitHub Copilot）&#10;&#10;之後，你需要重新輸入 API 金鑰、再次登入並重新設定應用程式。&#10;&#10;要繼續嗎？</translation></message>
+    <message><source>Title:</source><translation>標題：</translation></message>
+    <message><source>Token estimate</source><translation>權杖估算</translation></message>
+    <message><source>Unpin</source><translation>取消釘選</translation></message>
+    <message><source>When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation.</source><translation>啟用後，在浮動視窗提供簡短回覆後開啟聊天，會要求模型提供更完整的說明。</translation></message>
+    <message><source>Will pause after current turn</source><translation>將在目前輪次結束後暫停</translation></message>
+    <message><source>Wisp</source><translation>Wisp</translation></message>
+    <message><source>Wisp Reply</source><translation>Wisp 回覆</translation></message>
+    <message><source>blank = account default voice</source><translation>留白 = 帳戶預設語音</translation></message>
+    <message><source>model</source><translation>模型</translation></message>
+    <message><source>server-specific model name</source><translation>伺服器專用模型名稱</translation></message>
+    <message><source>server-specific voice name</source><translation>伺服器專用語音名稱</translation></message>
+    <message><source>source</source><translation>來源</translation></message>
+    <message><source>unknown</source><translation>未知</translation></message>
+    <message><source>＋ New project…</source><translation>＋ 新增專案…</translation></message>
+    <message><source>UI Lab label</source><translation>UI Lab 標籤</translation></message>
+    <message><source>Tooltip shown on hover</source><translation>游標停留時顯示的提示</translation></message>
+    <message><source>Popup text</source><translation>彈出文字</translation></message>
+    <message><source>Bold</source><translation>粗體</translation></message>
+    <message><source>Italic</source><translation>斜體</translation></message>
+    <message><source>Underline</source><translation>底線</translation></message>
+    <message><source>Strikethrough</source><translation>刪除線</translation></message>
+    <message><source>Pick text color</source><translation>選擇文字顏色</translation></message>
+    <message><source>Pick highlight color</source><translation>選擇醒目提示顏色</translation></message>
+    <message><source>Highlight color</source><translation>醒目提示顏色</translation></message>
+    <message><source>voice name</source><translation>語音名稱</translation></message>
+    <message><source>Primary model</source><translation>主要模型</translation></message>
+    <message><source>Fallback models</source><translation>備援模型</translation></message>
+    <message><source>↓ Drop here</source><translation>↓ 拖放到此處</translation></message>
+    <message><source>API URL</source><translation>API URL</translation></message>
+    <message><source>Applying update. Wisp will close now; installing and reopening can take a few minutes.</source><translation>正在套用更新。Wisp 現在將關閉；安裝並重新開啟可能需要幾分鐘。</translation></message>
+    <message><source>Checking for updates...</source><translation>正在檢查更新...</translation></message>
+    <message><source>Choose Agent Scope Folder</source><translation>選擇代理範圍資料夾</translation></message>
+    <message><source>Conversation provider</source><translation>對話提供者</translation></message>
+    <message><source>Downloaded update file is no longer available.</source><translation>下載的更新檔案已無法使用。</translation></message>
+    <message><source>Downloading update...</source><translation>正在下載更新...</translation></message>
+    <message><source>ElevenLabs Model</source><translation>ElevenLabs 模型</translation></message>
+    <message><source>ElevenLabs Voice ID</source><translation>ElevenLabs 語音 ID</translation></message>
+    <message><source>ElevenLabs is installed.</source><translation>ElevenLabs 已安裝。</translation></message>
+    <message><source>ElevenLabs is not installed. If the exe build skipped it because the build path was too long, install it here.</source><translation>ElevenLabs 尚未安裝。如果 EXE 建置因建置路徑過長而略過了它，請在此處安裝。</translation></message>
+    <message><source>Kokoro is installed. A voice model update is available; click Update voice model to fetch it.</source><translation>Kokoro 已安裝。有可用的語音模型更新；按一下「更新語音模型」即可取得。</translation></message>
+    <message><source>No model configured.</source><translation>尚未設定模型。</translation></message>
+    <message><source>No update is ready to download.</source><translation>沒有可供下載的更新。</translation></message>
+    <message><source>Number of visible parts for eligible planned replies. Runtime clamps this to 2-4.</source><translation>符合條件的計畫回覆所包含的可見部分數量。執行階段會將其限制為 2 到 4。</translation></message>
+    <message><source>OpenAI Model</source><translation>OpenAI 模型</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Unsupported models are retried without this field.</source><translation>聊天使用的 OpenAI Responses 推理強度。不支援的模型會在不含此欄位的情況下重試。</translation></message>
+    <message><source>OpenAI Voice</source><translation>OpenAI 語音</translation></message>
+    <message><source>Output sample rate (Hz)</source><translation>輸出取樣率 (Hz)</translation></message>
+    <message><source>Playback sample rate (Hz)</source><translation>播放取樣率 (Hz)</translation></message>
+    <message><source>Reference audio</source><translation>參考音訊</translation></message>
+    <message><source>Reference language</source><translation>參考語言</translation></message>
+    <message><source>Reference transcript</source><translation>參考文字稿</translation></message>
+    <message><source>Reply language</source><translation>回覆語言</translation></message>
+    <message><source>Wisp is up to date.</source><translation>Wisp 已是最新版本。</translation></message>
+    <message><source>Add a task title.</source><translation>請新增任務標題。</translation></message>
+    <message><source>Describe the task objective.</source><translation>請描述任務目標。</translation></message>
+    <message><source>Choose a model provider.</source><translation>請選擇模型提供者。</translation></message>
+    <message><source>Add a model name.</source><translation>請新增模型名稱。</translation></message>
+    <message><source>Add at least one agent.</source><translation>請至少新增一個代理。</translation></message>
+    <message><source>Agent names must be unique.</source><translation>代理名稱不得重複。</translation></message>
+    <message><source>Every communication must reference existing agents.</source><translation>每項通訊都必須參照現有代理。</translation></message>
   </context>
   <context>
     <name>Wisp</name>
@@ -5247,5 +5380,36 @@ Continue?</translation>
     <message><source>unknown error</source><translation>未知錯誤</translation></message>
     <message><source>{label}: {status}</source><translation>{label}：{status}</translation></message>
     <message><source>TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.</source><translation>TTS（本機語音）仍在預熱。請等待語音狀態通知顯示 TTS 已就緒。</translation></message>
+    <message><source>Uninstall</source><translation>解除安裝</translation></message>
+    <message><source>Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer.</source><translation>從此電腦永久移除 Wisp、其資料以及 Wisp 專用的本機 AI 模型。</translation></message>
+    <message><source>Uninstall Wisp</source><translation>解除安裝 Wisp</translation></message>
+    <message><source>Could not start uninstaller</source><translation>無法啟動解除安裝程式</translation></message>
+    <message><source>Could not build a safe uninstall plan: {error}</source><translation>無法建立安全的解除安裝計畫：{error}</translation></message>
+    <message><source>source checkout</source><translation>原始碼簽出目錄</translation></message>
+    <message><source>release installation</source><translation>發行版安裝目錄</translation></message>
+    <message><source>This will permanently remove:
+• Wisp's current {kind}: {app_root}
+• All Wisp settings, chats, memory, add-ons, tools, logs, updates, and optional packages: {data_root}
+• Wisp API keys and sign-in tokens from the OS keychain
+• Wisp's STT/TTS model repositories from the Hugging Face cache
+• Wisp login and desktop entries
+
+Shared uv/pip caches and unrelated Hugging Face models will not be removed.</source><translation>這將永久移除：
+• Wisp 目前的{kind}：{app_root}
+• Wisp 的所有設定、聊天記錄、記憶、附加元件、工具、記錄、更新和選用套件：{data_root}
+• 作業系統鑰匙圈中的 Wisp API 金鑰和登入權杖
+• Hugging Face 快取中的 Wisp STT/TTS 模型儲存庫
+• Wisp 登入啟動項目和桌面項目
+
+不會移除共用的 uv/pip 快取或無關的 Hugging Face 模型。</translation></message>
+    <message><source>Exact paths scheduled for deletion:</source><translation>排定刪除的確切路徑：</translation></message>
+    <message><source>The source checkout will be deleted, including its Git history, uncommitted changes, and every file inside it.</source><translation>原始碼簽出目錄將被刪除，包括其 Git 歷史記錄、未提交的變更以及其中的所有檔案。</translation></message>
+    <message><source>Uninstall Wisp?</source><translation>解除安裝 Wisp？</translation></message>
+    <message><source>This action cannot be undone.</source><translation>此操作無法復原。</translation></message>
+    <message><source>Confirm uninstall</source><translation>確認解除安裝</translation></message>
+    <message><source>Type UNINSTALL to confirm permanent removal:</source><translation>輸入 UNINSTALL 以確認永久移除：</translation></message>
+    <message><source>Could not start uninstaller: {error}</source><translation>無法啟動解除安裝程式：{error}</translation></message>
+    <message><source>Uninstaller started</source><translation>解除安裝程式已啟動</translation></message>
+    <message><source>Wisp will now close. The uninstaller will remove only the listed Wisp-owned files after all Wisp processes exit.</source><translation>Wisp 現在將關閉。所有 Wisp 處理程序結束後，解除安裝程式只會移除列出的 Wisp 專用檔案。</translation></message>
   </context>
 </TS>

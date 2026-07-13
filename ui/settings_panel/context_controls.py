@@ -244,7 +244,7 @@ def build_context_controls(
     screenshot_combo.setToolTip(screenshot_tip)
     if not screenshot_enabled:
         screenshot_combo.setToolTip(
-            "Region snips already attach the selected image; extra screenshot context is disabled."
+            t("Region snips already attach the selected image; extra screenshot context is disabled.")
         )
     file_combo.setToolTip(file_tip)
     controls = {

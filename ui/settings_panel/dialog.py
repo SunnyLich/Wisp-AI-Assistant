@@ -1886,33 +1886,41 @@ class SettingsDialog(QDialog):
         advanced_group, advanced_layout = self._collapsible_group("Advanced settings")
         self._fields["CHAT_TOOL_TRACE_UI"] = QCheckBox(t("Show chat tool-loop trace"))
         self._fields["CHAT_TOOL_TRACE_UI"].setToolTip(
-            "Show temporary progress lines in Chat that identify the tool loop and tool calls. "
-            "Useful for testing; leave off for normal use."
+            t(
+                "Show temporary progress lines in Chat that identify the tool loop and tool calls. "
+                "Useful for testing; leave off for normal use."
+            )
         )
         self._fields["WISP_PLANNED_CHUNKING"] = QCheckBox(t("Use planned chunked replies"))
         self._fields["WISP_PLANNED_CHUNKING"].setToolTip(
-            "Experimental. For eligible overlay replies, privately plans the answer and emits "
-            "a few stable visible parts. Tool, file, image, and history requests keep the normal path."
+            t(
+                "Experimental. For eligible overlay replies, privately plans the answer and emits "
+                "a few stable visible parts. Tool, file, image, and history requests keep the normal path."
+            )
         )
         self._fields["WISP_PLANNED_CHUNKING_CHUNKS"] = QLineEdit()
         self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setPlaceholderText("e.g. 3")
-        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setToolTip("Number of visible parts, clamped to 2-4.")
+        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setToolTip(
+            t("Number of visible parts, clamped to 2-4.")
+        )
         self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] = QLineEdit()
         self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setPlaceholderText("e.g. 80")
         self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setToolTip(
-            "Minimum combined prompt/context length before planned chunking can run."
+            t("Minimum combined prompt/context length before planned chunking can run.")
         )
         reasoning_combo = _NoScrollCombo()
         reasoning_combo.setToolTip(
-            "OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; "
-            "unsupported routes automatically retry without it."
+            t(
+                "OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; "
+                "unsupported routes automatically retry without it."
+            )
         )
         for label, value in _CHAT_REASONING_EFFORT_OPTIONS:
             reasoning_combo.addItem(t(label), value)
         self._fields["CHAT_REASONING_EFFORT"] = reasoning_combo
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox(t("Auto-elaborate when opening chat"))
         self._fields["CHAT_AUTO_ELABORATE"].setToolTip(
-            "When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation."
+            t("When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation.")
         )
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
         self._fields["CHAT_ELABORATE_PROMPT"].setPlaceholderText(t("e.g. Please elaborate on that."))
@@ -2302,7 +2310,7 @@ class SettingsDialog(QDialog):
         provider = (row_info["api_key_combo"].currentData() or "").strip()
         refresh_btn = row_info["refresh_btn"]
         if not provider:
-            refresh_btn.setToolTip("Pick a provider first")
+            refresh_btn.setToolTip(t("Pick a provider first"))
             return
         api_key = self._effective_secret_value_from_provider(provider)
         base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip() if provider == "custom" else ""
@@ -2893,7 +2901,7 @@ class SettingsDialog(QDialog):
             stored=False,
         )
         self._fields["ELEVENLABS_VOICE_ID"] = QLineEdit()
-        self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText("blank = account default voice")
+        self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText(t("blank = account default voice"))
         eleven_voice_tip = "Leave blank for the account default voice, or paste a specific ElevenLabs voice ID."
         self._fields["ELEVENLABS_MODEL"] = QLineEdit()
         self._fields["ELEVENLABS_MODEL"].setPlaceholderText("e.g. eleven_turbo_v2_5")
@@ -2914,10 +2922,10 @@ class SettingsDialog(QDialog):
             stored=False,
         )
         self._fields["TTS_CUSTOM_VOICE"] = QLineEdit()
-        self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText("server-specific voice name")
+        self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText(t("server-specific voice name"))
         custom_tts_voice_tip = "Voice name or ID expected by your custom speech server."
         self._fields["TTS_CUSTOM_MODEL"] = QLineEdit()
-        self._fields["TTS_CUSTOM_MODEL"].setPlaceholderText("server-specific model name")
+        self._fields["TTS_CUSTOM_MODEL"].setPlaceholderText(t("server-specific model name"))
         custom_tts_model_tip = "Model name expected by your custom speech server."
         self._fields["TTS_CUSTOM_SAMPLE_RATE"] = QLineEdit()
         self._fields["TTS_CUSTOM_SAMPLE_RATE"].setPlaceholderText("e.g. 24000")
@@ -2929,7 +2937,9 @@ class SettingsDialog(QDialog):
         self._fields["GPT_SOVITS_REF_AUDIO_PATH"].setPlaceholderText(r"C:\voices\ref.wav")
         gsv_ref_tip = "Path to a clean reference WAV on the machine running GPT-SoVITS."
         self._fields["GPT_SOVITS_PROMPT_TEXT"] = QLineEdit()
-        self._fields["GPT_SOVITS_PROMPT_TEXT"].setPlaceholderText("Exact words spoken in the reference audio")
+        self._fields["GPT_SOVITS_PROMPT_TEXT"].setPlaceholderText(
+            t("Exact words spoken in the reference audio")
+        )
         gsv_prompt_tip = "Exact transcript of the reference audio. Leave blank only if the GPT-SoVITS model can infer without it."
         self._fields["GPT_SOVITS_PROMPT_LANG"] = QLineEdit()
         self._fields["GPT_SOVITS_PROMPT_LANG"].setPlaceholderText("en")
@@ -3874,7 +3884,7 @@ class SettingsDialog(QDialog):
             edit.clear()
             edit.hide()
 
-        edit.setPlaceholderText("voice name")
+        edit.setPlaceholderText(t("voice name"))
         completer = QCompleter([value for value in values if value], edit)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -4928,7 +4938,7 @@ class SettingsDialog(QDialog):
         hdr_h.addStretch()
 
         tools_btn = QPushButton(t("Allowed tools…"))
-        tools_btn.setToolTip("Choose which installed/addon tools snip queries may use")
+        tools_btn.setToolTip(t("Choose which installed/addon tools snip queries may use"))
         hdr_h.addWidget(tools_btn)
         outer.addWidget(hdr)
 
@@ -5472,9 +5482,94 @@ class SettingsDialog(QDialog):
         updates_cv.addLayout(updates_row)
         updates_cv.addWidget(self._update_status_lbl)
         outer.addWidget(updates_card)
+
+        uninstall_card, uninstall_cv = self._card("Uninstall")
+        uninstall_cv.addWidget(_desc_label(
+            "",
+            t("Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer."),
+        ))
+        self._uninstall_btn = QPushButton(t("Uninstall Wisp"))
+        self._uninstall_btn.setObjectName("settingsUninstallButton")
+        self._uninstall_btn.clicked.connect(self._uninstall_wisp)
+        uninstall_cv.addWidget(self._uninstall_btn)
+        outer.addWidget(uninstall_card)
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _uninstall_wisp(self) -> None:
+        """Confirm and launch the detached, self-removing Wisp uninstaller."""
+        from core import uninstaller
+
+        try:
+            plan = uninstaller.build_uninstall_plan()
+        except Exception as exc:  # noqa: BLE001 - safety validation must be visible
+            QMessageBox.warning(
+                self,
+                t("Could not start uninstaller"),
+                t("Could not build a safe uninstall plan: {error}").format(error=exc),
+            )
+            return
+
+        kind = t("source checkout") if plan.source_checkout else t("release installation")
+        details = t(
+            "This will permanently remove:\n"
+            "• Wisp's current {kind}: {app_root}\n"
+            "• All Wisp settings, chats, memory, add-ons, tools, logs, updates, and optional packages: {data_root}\n"
+            "• Wisp API keys and sign-in tokens from the OS keychain\n"
+            "• Wisp's STT/TTS model repositories from the Hugging Face cache\n"
+            "• Wisp login and desktop entries\n\n"
+            "Shared uv/pip caches and unrelated Hugging Face models will not be removed."
+        ).format(kind=kind, app_root=plan.app_root, data_root=plan.user_data_root)
+        exact_targets = "\n".join(f"• {path}" for path in plan.targets)
+        details += "\n\n" + t("Exact paths scheduled for deletion:") + "\n" + exact_targets
+        if plan.source_checkout:
+            details += "\n\n" + t(
+                "The source checkout will be deleted, including its Git history, uncommitted changes, "
+                "and every file inside it."
+            )
+
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Icon.Critical)
+        confirm.setWindowTitle(t("Uninstall Wisp?"))
+        confirm.setText(t("This action cannot be undone."))
+        confirm.setInformativeText(details)
+        uninstall_button = confirm.addButton(t("Uninstall Wisp"), QMessageBox.ButtonRole.DestructiveRole)
+        cancel_button = confirm.addButton(QMessageBox.StandardButton.Cancel)
+        confirm.setDefaultButton(cancel_button)
+        confirm.exec()
+        if confirm.clickedButton() is not uninstall_button:
+            return
+
+        typed, accepted = QInputDialog.getText(
+            self,
+            t("Confirm uninstall"),
+            t("Type UNINSTALL to confirm permanent removal:"),
+        )
+        if not accepted or typed.strip() != "UNINSTALL":
+            return
+
+        try:
+            uninstaller.launch_uninstaller(plan)
+        except Exception as exc:  # noqa: BLE001 - keep Wisp open after a failed launch
+            QMessageBox.warning(
+                self,
+                t("Could not start uninstaller"),
+                t("Could not start uninstaller: {error}").format(error=exc),
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            t("Uninstaller started"),
+            t(
+                "Wisp will now close. The uninstaller will remove only the listed Wisp-owned files "
+                "after all Wisp processes exit."
+            ),
+        )
+        app = QApplication.instance()
+        if app is not None:
+            QTimer.singleShot(0, app.quit)
 
     def _open_profile_setup(self) -> None:
         """Open the guided profile wizard from Settings → App."""
@@ -6353,7 +6448,7 @@ class SettingsDialog(QDialog):
         providers: list[str] | None = None,
     ) -> None:
         """Add fallback section."""
-        add_btn = QPushButton("+ Add fallback")
+        add_btn = QPushButton(t("+ Add fallback"))
         add_wrap = QHBoxLayout()
         add_wrap.setContentsMargins(0, 0, 0, 0)
         add_wrap.addWidget(add_btn)
@@ -6384,7 +6479,7 @@ class SettingsDialog(QDialog):
         if model:
             model_combo.setCurrentText(model)
         else:
-            model_combo.lineEdit().setPlaceholderText("model")
+            model_combo.lineEdit().setPlaceholderText(t("model"))
         provider_combo.currentIndexChanged.connect(
             lambda _: _refresh_model_combo(model_combo, _get(provider_combo))
         )
@@ -8028,12 +8123,14 @@ class SettingsDialog(QDialog):
         page = self._current_tab_name()
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Icon.Warning)
-        confirm.setWindowTitle("Reset page?")
-        confirm.setText(f"Reset the {page} page to defaults?")
+        confirm.setWindowTitle(t("Reset page?"))
+        confirm.setText(t("Reset the {page} page to defaults?").format(page=t(page)))
         confirm.setInformativeText(
-            "Only settings on this page will be reset. API keys, OAuth sign-ins, "
-            "stored memory, conversations, addons, and settings on other pages "
-            "will be left alone."
+            t(
+                "Only settings on this page will be reset. API keys, OAuth sign-ins, "
+                "stored memory, conversations, addons, and settings on other pages "
+                "will be left alone."
+            )
         )
         confirm.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -8111,21 +8208,23 @@ class SettingsDialog(QDialog):
         """
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Icon.Warning)
-        confirm.setWindowTitle("Reset all settings?")
-        confirm.setText("Reset Wisp to its defaults? This cannot be undone.")
+        confirm.setWindowTitle(t("Reset all settings?"))
+        confirm.setText(t("Reset Wisp to its defaults? This cannot be undone."))
         confirm.setInformativeText(
-            "This will permanently:\n"
-            "• DELETE every API key from your OS keychain "
-            "(Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, "
-            "xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, "
-            "Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, "
-            "Cartesia, ElevenLabs, custom)\n"
-            "• ERASE all saved settings (models, hotkeys, prompts, theme, "
-            "callers, and everything else in your .env)\n"
-            "• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)\n\n"
-            "You will need to re-enter your API keys, sign in again, and "
-            "reconfigure the app afterwards.\n\n"
-            "Continue?"
+            t(
+                "This will permanently:\n"
+                "• DELETE every API key from your OS keychain "
+                "(Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, "
+                "xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, "
+                "Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, "
+                "Cartesia, ElevenLabs, custom)\n"
+                "• ERASE all saved settings (models, hotkeys, prompts, theme, "
+                "callers, and everything else in your .env)\n"
+                "• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)\n\n"
+                "You will need to re-enter your API keys, sign in again, and "
+                "reconfigure the app afterwards.\n\n"
+                "Continue?"
+            )
         )
         confirm.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -8940,7 +9039,7 @@ def _desc_label(title: str, description: str) -> QLabel:
 def _tooltip_label(text: str, tooltip: str) -> QLabel:
     """Build a translated form/grid label that owns a settings tooltip."""
     lbl = QLabel(t(text))
-    lbl.setToolTip(tooltip)
+    lbl.setToolTip(t(tooltip))
     return lbl
 
 

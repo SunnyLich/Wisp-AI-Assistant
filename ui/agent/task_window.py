@@ -450,8 +450,8 @@ class AgentTaskDialog(QDialog):
         model_row.addWidget(copy_app_btn)
         model_widget = QWidget()
         model_widget.setLayout(model_row)
-        form.addRow("Primary model", model_widget)
-        form.addRow("Fallback models", self._fallback_section())
+        form.addRow(t("Primary model"), model_widget)
+        form.addRow(t("Fallback models"), self._fallback_section())
         form.addRow("Objective", self.objective_edit)
         form.addRow("Context", self.required_context_edit)
         return box
@@ -920,7 +920,7 @@ class AgentTaskDialog(QDialog):
         """Handle choose scope for agent task dialog."""
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Choose Agent Scope Folder",
+            t("Choose Agent Scope Folder"),
             self.scope_edit.text() or str(Path.cwd()),
         )
         if folder:
@@ -1202,15 +1202,15 @@ class AgentTaskDialog(QDialog):
         title = self.title_edit.text().strip()
         objective = self.objective_edit.toPlainText().strip()
         if not title:
-            raise ValueError("Add a task title.")
+            raise ValueError(t("Add a task title."))
         if not objective:
-            raise ValueError("Describe the task objective.")
+            raise ValueError(t("Describe the task objective."))
         provider = _combo_value(self.provider_combo).strip()
         model = self.model_edit.currentText().strip()
         if not provider:
-            raise ValueError("Choose a model provider.")
+            raise ValueError(t("Choose a model provider."))
         if not model:
-            raise ValueError("Add a model name.")
+            raise ValueError(t("Add a model name."))
         language = self._assistant_language()
         agents = [
             AgentRoleSpec(
@@ -1224,9 +1224,9 @@ class AgentTaskDialog(QDialog):
             for localized in [localize_agent_spec_if_default(idx, agent, language)]
         ]
         if not agents:
-            raise ValueError("Add at least one agent.")
+            raise ValueError(t("Add at least one agent."))
         if len({agent.name.lower() for agent in agents}) != len(agents):
-            raise ValueError("Agent names must be unique.")
+            raise ValueError(t("Agent names must be unique."))
         agent_names = {agent.name for agent in agents}
         communications = [
             AgentCommunicationSpec(
@@ -1247,7 +1247,7 @@ class AgentTaskDialog(QDialog):
         ]
         for comm in communications:
             if comm.from_agent not in agent_names or comm.to_agent not in agent_names:
-                raise ValueError("Every communication must reference existing agents.")
+                raise ValueError(t("Every communication must reference existing agents."))
 
         scope = resolve_scope_folder(self.scope_edit.text().strip())
         return AgentTaskSpec(

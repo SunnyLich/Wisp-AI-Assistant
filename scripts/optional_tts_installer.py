@@ -572,7 +572,19 @@ def _apply_staging(staging: Path, target: Path, log, prefix: str) -> None:
                 _log(log, prefix, f"Failed to restore previous package folder: {type(rollback_exc).__name__}: {rollback_exc}")
         shutil.rmtree(replacement, ignore_errors=True)
         raise
-    shutil.rmtree(backup, ignore_errors=True)
+    if backup.exists():
+        try:
+            _retry_file_operation(lambda: shutil.rmtree(backup))
+        except OSError as exc:
+            # Native speech DLLs can remain locked briefly on Windows.  Activation
+            # has already succeeded, so keep the app usable and let supervisor
+            # startup retry this exact Wisp-generated backup later.
+            _log(
+                log,
+                prefix,
+                f"Could not remove inactive package backup {backup}: {type(exc).__name__}: {exc}. "
+                "Wisp will retry cleanup on a later startup.",
+            )
 
 
 def _launch_apply_status_window(
@@ -776,6 +788,52 @@ def pending_apply_plan_paths() -> list[Path]:
         except OSError:
             continue
     return plans
+
+
+def cleanup_stale_optional_package_swaps() -> tuple[list[Path], dict[Path, str]]:
+    """Remove inactive package swap folders left by completed applies.
+
+    Cleanup is deliberately deferred while any apply plan exists.  An apply
+    helper does not own the app's single-instance lock, so a manually launched
+    Wisp could otherwise race the helper between moving the active package
+    folder aside and activating its replacement.
+
+    Only exact names emitted by Wisp's current and legacy speech installers are
+    eligible.  The active optional-package folder, staging folders, symlinks,
+    and arbitrary sibling directories are never removed.
+    """
+    from core import optional_deps
+
+    if pending_apply_plan_paths():
+        return [], {}
+
+    target = Path(optional_deps.OPTIONAL_PACKAGES_DIR)
+    parent = target.parent
+    escaped_name = re.escape(target.name)
+    patterns = (
+        re.compile(rf"\.{escaped_name}\.backup-\d+-\d+"),
+        re.compile(rf"\.{escaped_name}\.replacement-\d+-\d+"),
+        # Older releases used a visible timestamped backup directory.
+        re.compile(rf"{escaped_name}\.backup-\d{{8}}-\d{{6}}"),
+    )
+    try:
+        children = list(parent.iterdir())
+    except OSError:
+        return [], {}
+
+    removed: list[Path] = []
+    failed: dict[Path, str] = {}
+    for child in children:
+        if not any(pattern.fullmatch(child.name) for pattern in patterns):
+            continue
+        try:
+            if child.is_symlink() or not child.is_dir():
+                continue
+            _retry_file_operation(lambda child=child: shutil.rmtree(child))
+            removed.append(child)
+        except OSError as exc:
+            failed[child] = f"{type(exc).__name__}: {exc}"
+    return removed, failed
 
 
 def _current_plan_contract(plan: dict[str, Any]) -> tuple[str, str]:

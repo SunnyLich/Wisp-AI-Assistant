@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -76,6 +77,8 @@ def test_qt_catalogs_are_complete_and_in_sync() -> None:
     expected = source_sets[LANGUAGES[0]]
 
     for language, messages in catalogs.items():
+        source_list = [source for source, _translation, _unfinished in messages]
+        assert len(source_list) == len(set(source_list)), f"{language} has duplicate translation keys"
         assert source_sets[language] == expected, language
         incomplete = [
             source
@@ -109,3 +112,53 @@ def test_qt_catalogs_cover_structured_speech_notices() -> None:
         for source, translation in translations.items():
             for placeholder in re.findall(r"\{[^}]+\}", source):
                 assert placeholder in translation, (language, source, placeholder)
+
+
+def test_qt_catalogs_cover_literal_translation_calls() -> None:
+    """Every literal passed to a UI translation entry point has a catalog key."""
+    source_files = [
+        path
+        for package in ("ui", "runtime", "core")
+        for path in (ROOT / package).rglob("*.py")
+    ]
+    translation_calls: dict[str, list[str]] = {}
+    for path in source_files:
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            is_translation_call = (
+                isinstance(node.func, ast.Name) and node.func.id == "t"
+            ) or (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "t"
+            )
+            literal_indexes = (0,) if is_translation_call else ()
+            helper_name = node.func.id if isinstance(node.func, ast.Name) else ""
+            literal_indexes = {
+                "_desc_label": (0, 1),
+                "_set_test_pending": (1,),
+                "_set_test_status": (2,),
+                "_set_update_status": (0,),
+                "_tooltip_label": (0, 1),
+            }.get(helper_name, literal_indexes)
+            for index in literal_indexes:
+                if index >= len(node.args):
+                    continue
+                source = node.args[index]
+                if not isinstance(source, ast.Constant) or not isinstance(source.value, str):
+                    continue
+                if not source.value:
+                    continue
+                location = f"{path.relative_to(ROOT)}:{node.lineno}"
+                translation_calls.setdefault(source.value, []).append(location)
+
+    catalog_sources = {
+        source
+        for source, _translation, _unfinished in _catalog_messages(LANGUAGES[0])
+    }
+    missing = {
+        source: locations
+        for source, locations in translation_calls.items()
+        if source not in catalog_sources
+    }
+    assert not missing, missing

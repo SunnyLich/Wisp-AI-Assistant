@@ -35,13 +35,11 @@ KOKORO_EN_MODEL_URL = (
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
 PYPI_WHEEL_INDEX = "https://pypi.org/simple"
 KOKORO_CUDA_TORCH_PACKAGE = "torch==2.11.0+cu128"
-OPTIONAL_AI_COMPAT_PACKAGES = [
-    "protobuf==6.33.2",
-    "tokenizers==0.22.2",
-    "setuptools==81.0.0",
-]
 KOKORO_PACKAGE = "kokoro==0.9.4"
 SOUNDFILE_PACKAGE = "soundfile==0.14.0"
+KOKORO_TRANSFORMERS_PACKAGE = "transformers==5.13.1"
+KOKORO_MISAKI_PACKAGE = "misaki[en]==0.9.4"
+KOKORO_LOGURU_PACKAGE = "loguru==0.7.3"
 ELEVENLABS_PACKAGE = "elevenlabs==2.55.0"
 # Live voice conversation (Gemini Live). Pin verified against the bundled
 # locks: its httpx/pydantic/websockets/anyio/requests ranges all accept the
@@ -93,27 +91,70 @@ _STT_LOCKED_VERSIONS = {
     "mdurl": "0.1.2",
 }
 
+# STT and Kokoro are installed into one optional-package directory. Any
+# dependency that both stacks can resolve must therefore have one release-owned
+# version, or installing one feature can silently change the other. Provider-
+# specific native/model packages stay out of this shared set.
+_STT_PROVIDER_ONLY_PACKAGES = {
+    "faster-whisper",
+    "av",
+    "ctranslate2",
+    "flatbuffers",
+    "onnxruntime",
+}
+_OPTIONAL_AI_COMPAT_PACKAGE_NAMES = (
+    "protobuf",
+    "tokenizers",
+    "setuptools",
+)
 
-def stt_locked_packages(platform_name: str | None = None) -> list[str]:
-    """Return the exact faster-whisper closure from one platform release lock."""
+
+def _stt_locked_versions(platform_name: str | None = None) -> dict[str, str]:
+    """Return the platform release versions that own the speech shared layer."""
     platform_name = platform_name or sys.platform
     versions = dict(_STT_LOCKED_VERSIONS)
     versions["onnxruntime"] = "1.23.2" if platform_name == "darwin" else "1.27.0"
     if platform_name == "win32":
         versions["colorama"] = "0.4.6"
+    return versions
+
+
+def stt_locked_packages(platform_name: str | None = None) -> list[str]:
+    """Return the exact faster-whisper closure from one platform release lock."""
+    versions = _stt_locked_versions(platform_name)
     return [f"{name}=={version}" for name, version in versions.items()]
 
 
+def speech_shared_locked_packages(platform_name: str | None = None) -> list[str]:
+    """Return identical pins for every dependency shared by STT and Kokoro."""
+    versions = _stt_locked_versions(platform_name)
+    ordered_names = [
+        *_OPTIONAL_AI_COMPAT_PACKAGE_NAMES,
+        *(
+            name
+            for name in versions
+            if name not in _STT_PROVIDER_ONLY_PACKAGES
+            and name not in _OPTIONAL_AI_COMPAT_PACKAGE_NAMES
+        ),
+    ]
+    return [f"{name}=={versions[name]}" for name in ordered_names]
+
+
 STT_LOCKED_PACKAGES = stt_locked_packages()
+SPEECH_SHARED_LOCKED_PACKAGES = speech_shared_locked_packages()
+OPTIONAL_AI_COMPAT_PACKAGES = SPEECH_SHARED_LOCKED_PACKAGES[:len(_OPTIONAL_AI_COMPAT_PACKAGE_NAMES)]
 STT_WINDOWS_CUDA_PACKAGES = [
     "nvidia-cuda-runtime-cu12==12.8.90",
     "nvidia-cublas-cu12==12.8.4.1",
 ]
-OPTIONAL_INSTALL_CONTRACT_SCHEMA = 2
+OPTIONAL_INSTALL_CONTRACT_SCHEMA = 3
 KOKORO_BASE_INSTALL_PACKAGES = [
     KOKORO_PACKAGE,
     SOUNDFILE_PACKAGE,
-    *OPTIONAL_AI_COMPAT_PACKAGES,
+    *SPEECH_SHARED_LOCKED_PACKAGES,
+    KOKORO_TRANSFORMERS_PACKAGE,
+    KOKORO_MISAKI_PACKAGE,
+    KOKORO_LOGURU_PACKAGE,
     KOKORO_EN_MODEL_URL,
 ]
 KOKORO_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
@@ -125,7 +166,7 @@ KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
     "--extra-index-url",
     PYPI_WHEEL_INDEX,
     KOKORO_CUDA_TORCH_PACKAGE,
-    *OPTIONAL_AI_COMPAT_PACKAGES,
+    *SPEECH_SHARED_LOCKED_PACKAGES,
 ]
 # pip --target cannot see packages already staged in the target dir, so the
 # Kokoro phase re-resolves kokoro's torch dependency and would overwrite the

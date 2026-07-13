@@ -1688,6 +1688,63 @@ def test_resume_pending_staged_applies_discards_old_app_contract(monkeypatch, tm
     assert "discarded" in status["message"]
 
 
+def test_startup_cleanup_removes_only_wisp_package_swap_leftovers(monkeypatch, tmp_path):
+    """Startup removes exact current/legacy swap names without touching user data."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    target = tmp_path / "python_packages"
+    target.mkdir()
+    (target / "active.txt").write_text("active", encoding="utf-8")
+    stale = [
+        tmp_path / ".python_packages.backup-1783460451-15252",
+        tmp_path / ".python_packages.replacement-1783460451-15252",
+        tmp_path / "python_packages.backup-20260701-145732",
+    ]
+    for path in stale:
+        path.mkdir()
+        (path / "old.txt").write_text("old", encoding="utf-8")
+    preserved = [
+        tmp_path / "python_packages.backup-manual",
+        tmp_path / ".python_packages.backup-not-a-stamp",
+        tmp_path / "_staged_installs",
+        tmp_path / "unrelated",
+    ]
+    for path in preserved:
+        path.mkdir()
+
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_tts_installer, "pending_apply_plan_paths", lambda: [])
+
+    removed, failed = optional_tts_installer.cleanup_stale_optional_package_swaps()
+
+    assert {path.name for path in removed} == {path.name for path in stale}
+    assert failed == {}
+    assert (target / "active.txt").read_text(encoding="utf-8") == "active"
+    assert all(path.is_dir() for path in preserved)
+
+
+def test_startup_cleanup_defers_while_staged_apply_plan_exists(monkeypatch, tmp_path):
+    """A live or resumable apply plan owns package swap paths until it is consumed."""
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    target = tmp_path / "python_packages"
+    target.mkdir()
+    backup = tmp_path / ".python_packages.backup-1783460451-15252"
+    backup.mkdir()
+    plan = tmp_path / "stt-install.apply-plan.json"
+    plan.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(optional_deps, "OPTIONAL_PACKAGES_DIR", target)
+    monkeypatch.setattr(optional_tts_installer, "pending_apply_plan_paths", lambda: [plan])
+
+    removed, failed = optional_tts_installer.cleanup_stale_optional_package_swaps()
+
+    assert removed == []
+    assert failed == {}
+    assert backup.is_dir()
+
+
 def test_optional_deps_no_window_kwargs_on_windows(monkeypatch):
     """Windows optional-dependency helpers should not flash console windows."""
     from core import optional_deps
@@ -1760,7 +1817,7 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
         "--extra-index-url",
         optional_deps.PYPI_WHEEL_INDEX,
         "torch==2.11.0+cu128",
-        *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
+        *optional_deps.SPEECH_SHARED_LOCKED_PACKAGES,
     ]
     assert optional_deps.KOKORO_PACKAGE in packages
     # kokoro depends on torch and pip --target cannot see the staged CUDA

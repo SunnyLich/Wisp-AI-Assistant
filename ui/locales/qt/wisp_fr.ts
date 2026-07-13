@@ -3729,6 +3729,139 @@ Continuer ?</translation>
     <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>Toujours pas connecté. Vous pouvez continuer et réessayer plus tard depuis les Paramètres.</translation></message>
     <message><source>Profile saved, but the key could not be stored: {error}</source><translation>Profil enregistré, mais la clé n’a pas pu être stockée : {error}</translation></message>
     <message><source>Enter a model name</source><translation>Saisissez un nom de modèle</translation></message>
+    <message><source>  History</source><translation>  Historique</translation></message>
+    <message><source>  No history yet.</source><translation>  Aucun historique pour le moment.</translation></message>
+    <message><source>  Selected conversation</source><translation>  Conversation sélectionnée</translation></message>
+    <message><source>+ Add fallback</source><translation>+ Ajouter une solution de secours</translation></message>
+    <message><source>+ New project...</source><translation>+ Nouveau projet...</translation></message>
+    <message><source>Add files or images</source><translation>Ajouter des fichiers ou des images</translation></message>
+    <message><source>Add files or images as context</source><translation>Ajouter des fichiers ou des images au contexte</translation></message>
+    <message><source>Add to project</source><translation>Ajouter au projet</translation></message>
+    <message><source>Addon</source><translation>Extension</translation></message>
+    <message><source>Addons are Python packages in the add-ons folder. Portable builds create this folder next to Wisp.exe when possible.</source><translation>Les extensions sont des paquets Python placés dans le dossier des extensions. Les versions portables créent ce dossier à côté de Wisp.exe lorsque cela est possible.</translation></message>
+    <message><source>Agent Task Cancelled</source><translation>Tâche d’agent annulée</translation></message>
+    <message><source>Agent Task Failed</source><translation>Échec de la tâche d’agent</translation></message>
+    <message><source>Agent Task Finished</source><translation>Tâche d’agent terminée</translation></message>
+    <message><source>Agent Task Running</source><translation>Tâche d’agent en cours</translation></message>
+    <message><source>Agent permission</source><translation>Autorisation de l’agent</translation></message>
+    <message><source>Agent permission resolved</source><translation>Autorisation de l’agent traitée</translation></message>
+    <message><source>All files</source><translation>Tous les fichiers</translation></message>
+    <message><source>Ask before write</source><translation>Demander avant d’écrire</translation></message>
+    <message><source>Attached</source><translation>Joint</translation></message>
+    <message><source>Attachments</source><translation>Pièces jointes</translation></message>
+    <message><source>Branch from here</source><translation>Créer une branche à partir d’ici</translation></message>
+    <message><source>Choose which installed/addon tools snip queries may use</source><translation>Choisissez les outils installés ou fournis par des extensions que les requêtes de capture peuvent utiliser</translation></message>
+    <message><source>Context included with this message (display only - not part of the reply).</source><translation>Contexte inclus avec ce message (affichage uniquement, ne fait pas partie de la réponse).</translation></message>
+    <message><source>Continuing</source><translation>Suite en cours</translation></message>
+    <message><source>Conversation options</source><translation>Options de la conversation</translation></message>
+    <message><source>Copy full bubble text</source><translation>Copier tout le texte de la bulle</translation></message>
+    <message><source>Copy selected text</source><translation>Copier le texte sélectionné</translation></message>
+    <message><source>Delete</source><translation>Supprimer</translation></message>
+    <message><source>Delete conversation</source><translation>Supprimer la conversation</translation></message>
+    <message><source>Delete this conversation? This cannot be undone.</source><translation>Supprimer cette conversation ? Cette action est irréversible.</translation></message>
+    <message><source>Elapsed {elapsed}</source><translation>Temps écoulé : {elapsed}</translation></message>
+    <message><source>Exact words spoken in the reference audio</source><translation>Mots exacts prononcés dans l’audio de référence</translation></message>
+    <message><source>Experimental. For eligible overlay replies, privately plans the answer and emits a few stable visible parts. Tool, file, image, and history requests keep the normal path.</source><translation>Expérimental. Pour les réponses de superposition compatibles, planifie la réponse en privé et produit quelques parties visibles stables. Les demandes d’outils, de fichiers, d’images et d’historique conservent le parcours normal.</translation></message>
+    <message><source>Final report is ready.</source><translation>Le rapport final est prêt.</translation></message>
+    <message><source>Final report is ready. Log:</source><translation>Le rapport final est prêt. Journal :</translation></message>
+    <message><source>Finished. Log:</source><translation>Terminé. Journal :</translation></message>
+    <message><source>Installed addon:</source><translation>Extension installée :</translation></message>
+    <message><source>Live voice currently supports Gemini Live through the Google provider.</source><translation>Le mode vocal en direct prend actuellement en charge Gemini Live via le fournisseur Google.</translation></message>
+    <message><source>Memory tokens are estimated after the prompt is known.</source><translation>Les jetons de mémoire sont estimés une fois le prompt connu.</translation></message>
+    <message><source>Message options</source><translation>Options du message</translation></message>
+    <message><source>Minimum combined prompt/context length before planned chunking can run.</source><translation>Longueur combinée minimale du prompt et du contexte avant l’activation du découpage planifié.</translation></message>
+    <message><source>New project</source><translation>Nouveau projet</translation></message>
+    <message><source>Nudge queued for</source><translation>Rappel mis en attente pour</translation></message>
+    <message><source>Number of visible parts, clamped to 2-4.</source><translation>Nombre de parties visibles, limité de 2 à 4.</translation></message>
+    <message><source>Only settings on this page will be reset. API keys, OAuth sign-ins, stored memory, conversations, addons, and settings on other pages will be left alone.</source><translation>Seuls les paramètres de cette page seront réinitialisés. Les clés API, les connexions OAuth, la mémoire enregistrée, les conversations, les extensions et les paramètres des autres pages resteront inchangés.</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; unsupported routes automatically retry without it.</source><translation>Effort de raisonnement OpenAI Responses pour le chat. La valeur par défaut du fournisseur n’envoie aucun champ de raisonnement explicite ; les routes non compatibles réessaient automatiquement sans ce champ.</translation></message>
+    <message><source>Permission changes queued</source><translation>Modifications d’autorisations mises en attente</translation></message>
+    <message><source>Permission needed:</source><translation>Autorisation requise :</translation></message>
+    <message><source>Permissions</source><translation>Autorisations</translation></message>
+    <message><source>Pick a provider first</source><translation>Choisissez d’abord un fournisseur</translation></message>
+    <message><source>Pin</source><translation>Épingler</translation></message>
+    <message><source>Please review the attached file.</source><translation>Veuillez examiner le fichier joint.</translation></message>
+    <message><source>Project for new chats (memory is scoped per project)</source><translation>Projet des nouveaux chats (la mémoire est limitée à chaque projet)</translation></message>
+    <message><source>Project name:</source><translation>Nom du projet :</translation></message>
+    <message><source>Region snips already attach the selected image; extra screenshot context is disabled.</source><translation>Les captures de région joignent déjà l’image sélectionnée ; le contexte de capture d’écran supplémentaire est désactivé.</translation></message>
+    <message><source>Remove all messages after this one? This cannot be undone.</source><translation>Supprimer tous les messages après celui-ci ? Cette action est irréversible.</translation></message>
+    <message><source>Rename</source><translation>Renommer</translation></message>
+    <message><source>Rename conversation</source><translation>Renommer la conversation</translation></message>
+    <message><source>Reset Wisp to its defaults? This cannot be undone.</source><translation>Rétablir les valeurs par défaut de Wisp ? Cette action est irréversible.</translation></message>
+    <message><source>Reset all settings?</source><translation>Réinitialiser tous les paramètres ?</translation></message>
+    <message><source>Reset page?</source><translation>Réinitialiser la page ?</translation></message>
+    <message><source>Reset the {page} page to defaults?</source><translation>Rétablir les valeurs par défaut de la page {page} ?</translation></message>
+    <message><source>Restart app now</source><translation>Redémarrer l’application maintenant</translation></message>
+    <message><source>Resume</source><translation>Reprendre</translation></message>
+    <message><source>Rewind conversation</source><translation>Revenir en arrière dans la conversation</translation></message>
+    <message><source>Rewind current chat to here</source><translation>Ramener le chat actuel jusqu’ici</translation></message>
+    <message><source>Show temporary progress lines in Chat that identify the tool loop and tool calls. Useful for testing; leave off for normal use.</source><translation>Affiche dans le chat des lignes de progression temporaires qui identifient la boucle et les appels d’outils. Utile pour les tests ; laissez cette option désactivée en usage normal.</translation></message>
+    <message><source>Starting…</source><translation>Démarrage…</translation></message>
+    <message><source>Supported files</source><translation>Fichiers pris en charge</translation></message>
+    <message><source>The run is still working.</source><translation>L’exécution est toujours en cours.</translation></message>
+    <message><source>This context is fetched when you send the message, so this token cost is not known yet.</source><translation>Ce contexte est récupéré lors de l’envoi du message ; son coût en jetons n’est donc pas encore connu.</translation></message>
+    <message><source>This discards every agent and communication you have configured here and restores the default Coordinator / Builder / Reviewer setup. This cannot be undone.</source><translation>Cela supprime tous les agents et toutes les communications configurés ici, puis restaure la configuration Coordinateur / Constructeur / Réviseur par défaut. Cette action est irréversible.</translation></message>
+    <message><source>This will permanently:&#10;• DELETE every API key from your OS keychain (Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, Cartesia, ElevenLabs, custom)&#10;• ERASE all saved settings (models, hotkeys, prompts, theme, callers, and everything else in your .env)&#10;• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)&#10;&#10;You will need to re-enter your API keys, sign in again, and reconfigure the app afterwards.&#10;&#10;Continue?</source><translation>Cela va définitivement :&#10;• SUPPRIMER toutes les clés API du trousseau du système (Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, Cartesia, ElevenLabs, personnalisé)&#10;• EFFACER tous les paramètres enregistrés (modèles, raccourcis, prompts, thème, appelants et tout le reste dans .env)&#10;• VOUS DÉCONNECTER de toutes les connexions OAuth (ChatGPT, GitHub, GitHub Copilot)&#10;&#10;Vous devrez ensuite saisir à nouveau vos clés API, vous reconnecter et reconfigurer l’application.&#10;&#10;Continuer ?</translation></message>
+    <message><source>Title:</source><translation>Titre :</translation></message>
+    <message><source>Token estimate</source><translation>Estimation des jetons</translation></message>
+    <message><source>Unpin</source><translation>Désépingler</translation></message>
+    <message><source>When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation.</source><translation>Lorsque cette option est activée, ouvrir le chat après une courte réponse de la superposition demande au modèle une explication plus complète.</translation></message>
+    <message><source>Will pause after current turn</source><translation>Sera mis en pause après le tour actuel</translation></message>
+    <message><source>Wisp</source><translation>Wisp</translation></message>
+    <message><source>Wisp Reply</source><translation>Réponse de Wisp</translation></message>
+    <message><source>blank = account default voice</source><translation>vide = voix par défaut du compte</translation></message>
+    <message><source>model</source><translation>modèle</translation></message>
+    <message><source>server-specific model name</source><translation>nom de modèle propre au serveur</translation></message>
+    <message><source>server-specific voice name</source><translation>nom de voix propre au serveur</translation></message>
+    <message><source>source</source><translation>source</translation></message>
+    <message><source>unknown</source><translation>inconnu</translation></message>
+    <message><source>＋ New project…</source><translation>＋ Nouveau projet…</translation></message>
+    <message><source>UI Lab label</source><translation>Étiquette UI Lab</translation></message>
+    <message><source>Tooltip shown on hover</source><translation>Infobulle affichée au survol</translation></message>
+    <message><source>Popup text</source><translation>Texte contextuel</translation></message>
+    <message><source>Bold</source><translation>Gras</translation></message>
+    <message><source>Italic</source><translation>Italique</translation></message>
+    <message><source>Underline</source><translation>Souligné</translation></message>
+    <message><source>Strikethrough</source><translation>Barré</translation></message>
+    <message><source>Pick text color</source><translation>Choisir la couleur du texte</translation></message>
+    <message><source>Pick highlight color</source><translation>Choisir la couleur de surbrillance</translation></message>
+    <message><source>Highlight color</source><translation>Couleur de surbrillance</translation></message>
+    <message><source>voice name</source><translation>nom de voix</translation></message>
+    <message><source>Primary model</source><translation>Modèle principal</translation></message>
+    <message><source>Fallback models</source><translation>Modèles de secours</translation></message>
+    <message><source>↓ Drop here</source><translation>↓ Déposez ici</translation></message>
+    <message><source>API URL</source><translation>URL de l’API</translation></message>
+    <message><source>Applying update. Wisp will close now; installing and reopening can take a few minutes.</source><translation>Application de la mise à jour. Wisp va maintenant se fermer ; l’installation et la réouverture peuvent prendre quelques minutes.</translation></message>
+    <message><source>Checking for updates...</source><translation>Recherche de mises à jour...</translation></message>
+    <message><source>Choose Agent Scope Folder</source><translation>Choisir le dossier de portée des agents</translation></message>
+    <message><source>Conversation provider</source><translation>Fournisseur de conversation</translation></message>
+    <message><source>Downloaded update file is no longer available.</source><translation>Le fichier de mise à jour téléchargé n’est plus disponible.</translation></message>
+    <message><source>Downloading update...</source><translation>Téléchargement de la mise à jour...</translation></message>
+    <message><source>ElevenLabs Model</source><translation>Modèle ElevenLabs</translation></message>
+    <message><source>ElevenLabs Voice ID</source><translation>ID de voix ElevenLabs</translation></message>
+    <message><source>ElevenLabs is installed.</source><translation>ElevenLabs est installé.</translation></message>
+    <message><source>ElevenLabs is not installed. If the exe build skipped it because the build path was too long, install it here.</source><translation>ElevenLabs n’est pas installé. Si la version EXE l’a ignoré parce que le chemin de compilation était trop long, installez-le ici.</translation></message>
+    <message><source>Kokoro is installed. A voice model update is available; click Update voice model to fetch it.</source><translation>Kokoro est installé. Une mise à jour du modèle vocal est disponible ; cliquez sur Mettre à jour le modèle vocal pour la récupérer.</translation></message>
+    <message><source>No model configured.</source><translation>Aucun modèle configuré.</translation></message>
+    <message><source>No update is ready to download.</source><translation>Aucune mise à jour n’est prête à être téléchargée.</translation></message>
+    <message><source>Number of visible parts for eligible planned replies. Runtime clamps this to 2-4.</source><translation>Nombre de parties visibles pour les réponses planifiées compatibles. L’exécution limite cette valeur de 2 à 4.</translation></message>
+    <message><source>OpenAI Model</source><translation>Modèle OpenAI</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Unsupported models are retried without this field.</source><translation>Effort de raisonnement OpenAI Responses pour le chat. Les modèles non compatibles sont réessayés sans ce champ.</translation></message>
+    <message><source>OpenAI Voice</source><translation>Voix OpenAI</translation></message>
+    <message><source>Output sample rate (Hz)</source><translation>Fréquence d’échantillonnage de sortie (Hz)</translation></message>
+    <message><source>Playback sample rate (Hz)</source><translation>Fréquence d’échantillonnage de lecture (Hz)</translation></message>
+    <message><source>Reference audio</source><translation>Audio de référence</translation></message>
+    <message><source>Reference language</source><translation>Langue de référence</translation></message>
+    <message><source>Reference transcript</source><translation>Transcription de référence</translation></message>
+    <message><source>Reply language</source><translation>Langue de réponse</translation></message>
+    <message><source>Wisp is up to date.</source><translation>Wisp est à jour.</translation></message>
+    <message><source>Add a task title.</source><translation>Ajoutez un titre à la tâche.</translation></message>
+    <message><source>Describe the task objective.</source><translation>Décrivez l’objectif de la tâche.</translation></message>
+    <message><source>Choose a model provider.</source><translation>Choisissez un fournisseur de modèles.</translation></message>
+    <message><source>Add a model name.</source><translation>Ajoutez un nom de modèle.</translation></message>
+    <message><source>Add at least one agent.</source><translation>Ajoutez au moins un agent.</translation></message>
+    <message><source>Agent names must be unique.</source><translation>Les noms des agents doivent être uniques.</translation></message>
+    <message><source>Every communication must reference existing agents.</source><translation>Chaque communication doit faire référence à des agents existants.</translation></message>
   </context>
   <context>
     <name>Wisp</name>
@@ -5244,5 +5377,36 @@ Continue?</translation>
     <message><source>unknown error</source><translation>erreur inconnue</translation></message>
     <message><source>{label}: {status}</source><translation>{label} : {status}</translation></message>
     <message><source>TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.</source><translation>La synthèse vocale (voix locale) est encore en cours de préparation. Attendez que l’avis d’état vocal indique que la TTS est prête.</translation></message>
+    <message><source>Uninstall</source><translation>Désinstallation</translation></message>
+    <message><source>Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer.</source><translation>Supprime définitivement Wisp, ses données et les modèles d’IA locaux appartenant à Wisp de cet ordinateur.</translation></message>
+    <message><source>Uninstall Wisp</source><translation>Désinstaller Wisp</translation></message>
+    <message><source>Could not start uninstaller</source><translation>Impossible de démarrer le programme de désinstallation</translation></message>
+    <message><source>Could not build a safe uninstall plan: {error}</source><translation>Impossible de créer un plan de désinstallation sûr : {error}</translation></message>
+    <message><source>source checkout</source><translation>copie du code source</translation></message>
+    <message><source>release installation</source><translation>installation de la version publiée</translation></message>
+    <message><source>This will permanently remove:
+• Wisp's current {kind}: {app_root}
+• All Wisp settings, chats, memory, add-ons, tools, logs, updates, and optional packages: {data_root}
+• Wisp API keys and sign-in tokens from the OS keychain
+• Wisp's STT/TTS model repositories from the Hugging Face cache
+• Wisp login and desktop entries
+
+Shared uv/pip caches and unrelated Hugging Face models will not be removed.</source><translation>Ceci supprimera définitivement :
+• La {kind} actuelle de Wisp : {app_root}
+• Tous les réglages, discussions, éléments de mémoire, extensions, outils, journaux, mises à jour et paquets facultatifs de Wisp : {data_root}
+• Les clés API et jetons de connexion de Wisp du trousseau du système
+• Les dépôts de modèles STT/TTS de Wisp du cache Hugging Face
+• Les entrées de connexion et de bureau de Wisp
+
+Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront pas supprimés.</translation></message>
+    <message><source>Exact paths scheduled for deletion:</source><translation>Chemins exacts dont la suppression est prévue :</translation></message>
+    <message><source>The source checkout will be deleted, including its Git history, uncommitted changes, and every file inside it.</source><translation>La copie du code source sera supprimée, y compris son historique Git, les modifications non validées et tous les fichiers qu’elle contient.</translation></message>
+    <message><source>Uninstall Wisp?</source><translation>Désinstaller Wisp ?</translation></message>
+    <message><source>This action cannot be undone.</source><translation>Cette action est irréversible.</translation></message>
+    <message><source>Confirm uninstall</source><translation>Confirmer la désinstallation</translation></message>
+    <message><source>Type UNINSTALL to confirm permanent removal:</source><translation>Saisissez UNINSTALL pour confirmer la suppression définitive :</translation></message>
+    <message><source>Could not start uninstaller: {error}</source><translation>Impossible de démarrer le programme de désinstallation : {error}</translation></message>
+    <message><source>Uninstaller started</source><translation>Programme de désinstallation démarré</translation></message>
+    <message><source>Wisp will now close. The uninstaller will remove only the listed Wisp-owned files after all Wisp processes exit.</source><translation>Wisp va maintenant se fermer. Le programme de désinstallation supprimera uniquement les fichiers répertoriés appartenant à Wisp après l’arrêt de tous les processus Wisp.</translation></message>
   </context>
 </TS>

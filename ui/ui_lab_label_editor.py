@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from addons.ui_lab import labels
+from ui.i18n import t
 
 
 def edit_label(match: str, parent=None) -> bool:
@@ -45,7 +46,7 @@ class _LabelEditorDialog(QDialog):
     def __init__(self, selected: str, existing: dict[str, str] | None, parent=None):
         """Initialize the label editor."""
         super().__init__(parent)
-        self.setWindowTitle("UI Lab label")
+        self.setWindowTitle(t("UI Lab label"))
         self.setModal(True)
         self.setMinimumWidth(360)
         self._selected = selected
@@ -63,16 +64,16 @@ class _LabelEditorDialog(QDialog):
 
         form = QFormLayout()
         self._tooltip = QLineEdit(tooltip)
-        self._tooltip.setPlaceholderText("Tooltip shown on hover")
-        form.addRow("Popup text", self._tooltip)
+        self._tooltip.setPlaceholderText(t("Tooltip shown on hover"))
+        form.addRow(t("Popup text"), self._tooltip)
         root.addLayout(form)
 
         style_row = QHBoxLayout()
         style_row.setSpacing(6)
-        self._bold = _tool_button("B", "Bold")
-        self._italic = _tool_button("I", "Italic")
-        self._underline = _tool_button("U", "Underline")
-        self._strike = _tool_button("S", "Strikethrough")
+        self._bold = _tool_button("B", t("Bold"))
+        self._italic = _tool_button("I", t("Italic"))
+        self._underline = _tool_button("U", t("Underline"))
+        self._strike = _tool_button("S", t("Strikethrough"))
         for btn in (self._bold, self._italic, self._underline, self._strike):
             style_row.addWidget(btn)
         style_row.addStretch(1)
@@ -81,26 +82,26 @@ class _LabelEditorDialog(QDialog):
         color_form = QFormLayout()
         self._text_color = QLineEdit()
         self._text_color.setPlaceholderText("#ffffff")
-        self._text_color_btn = _color_button("Pick text color")
+        self._text_color_btn = _color_button(t("Pick text color"))
         self._text_color_btn.clicked.connect(
-            lambda: self._pick_color(self._text_color, self._text_color_btn, "Pick text color")
+            lambda: self._pick_color(self._text_color, self._text_color_btn, t("Pick text color"))
         )
         self._highlight_color = QLineEdit()
         self._highlight_color.setPlaceholderText("#ffd166")
-        self._highlight_color_btn = _color_button("Pick highlight color")
+        self._highlight_color_btn = _color_button(t("Pick highlight color"))
         self._highlight_color_btn.clicked.connect(
             lambda: self._pick_color(
                 self._highlight_color,
                 self._highlight_color_btn,
-                "Pick highlight color",
+                t("Pick highlight color"),
             )
         )
         self._text_color.textChanged.connect(lambda: _sync_color_button(self._text_color, self._text_color_btn))
         self._highlight_color.textChanged.connect(
             lambda: _sync_color_button(self._highlight_color, self._highlight_color_btn)
         )
-        color_form.addRow("Text color", _color_row(self._text_color, self._text_color_btn))
-        color_form.addRow("Highlight color", _color_row(self._highlight_color, self._highlight_color_btn))
+        color_form.addRow(t("Text color"), _color_row(self._text_color, self._text_color_btn))
+        color_form.addRow(t("Highlight color"), _color_row(self._highlight_color, self._highlight_color_btn))
         root.addLayout(color_form)
 
         self._load_style(style)

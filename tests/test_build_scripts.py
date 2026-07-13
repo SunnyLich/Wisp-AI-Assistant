@@ -347,8 +347,16 @@ class BuildScriptTests(unittest.TestCase):
                 self.assertIn("RUNTIME_WORKER_HIDDENIMPORTS", spec)
                 self.assertIn('collect_submodules("wisp_brain")', spec)
                 self.assertIn("BRAIN_HIDDENIMPORTS", spec)
-                self.assertIn('collect_submodules("pip")', spec)
-                self.assertIn("PIP_HIDDENIMPORTS", spec)
+
+    def test_specs_exclude_pip_from_release_bundles(self) -> None:
+        """Packaged installs use bundled uv; pip belongs only to build/source environments."""
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertNotIn('collect_submodules("pip")', spec)
+                self.assertNotIn("PIP_HIDDENIMPORTS", spec)
+                excludes = spec[spec.index("    excludes=[") : spec.index("    ],", spec.index("    excludes=["))]
+                self.assertIn('"pip"', excludes)
 
     def test_specs_bundle_language_tags_data_for_local_tts(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
@@ -364,10 +372,17 @@ class BuildScriptTests(unittest.TestCase):
             with self.subTest(spec=spec_name):
                 spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
                 self.assertIn("OPTIONAL_RUNTIME_HIDDENIMPORTS", spec)
-                for module in ("cProfile", "pickletools", "pstats", "timeit"):
+                for module in (
+                    "cProfile",
+                    "cmath",
+                    "filecmp",
+                    "huggingface_hub.dataclasses",
+                    "pickletools",
+                    "pstats",
+                    "timeit",
+                    "tqdm.contrib.logging",
+                ):
                     self.assertIn(f'"{module}"', spec)
-        linux = (ROOT / "packaging" / "WispLinux.spec").read_text(encoding="utf-8")
-        self.assertIn('"cmath"', linux)
 
 
 if __name__ == "__main__":
