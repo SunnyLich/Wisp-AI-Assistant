@@ -167,7 +167,7 @@ def test_windows_cuda_runtime_status_loads_every_required_dll(monkeypatch):
             raise error
         return object()
 
-    monkeypatch.setattr(stt_device.ctypes, "WinDLL", fake_windll)
+    monkeypatch.setattr(stt_device.ctypes, "WinDLL", fake_windll, raising=False)
 
     status = stt_device.windows_cuda_runtime_status()
 
@@ -192,7 +192,12 @@ def test_windows_cuda_runtime_adds_optional_nvidia_bin_directories(monkeypatch, 
     monkeypatch.setattr(stt_device.sys, "path", [str(optional_root)])
     monkeypatch.setattr(stt_device, "_WINDOWS_CUDA_DLL_DIRECTORY_HANDLES", [])
     monkeypatch.setattr(stt_device, "_WINDOWS_CUDA_DLL_DIRECTORIES", set())
-    monkeypatch.setattr(stt_device.os, "add_dll_directory", lambda path: handles.append(path) or object())
+    monkeypatch.setattr(
+        stt_device.os,
+        "add_dll_directory",
+        lambda path: handles.append(path) or object(),
+        raising=False,
+    )
 
     directories = stt_device._configure_windows_cuda_dll_directories()
 

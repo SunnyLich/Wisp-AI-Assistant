@@ -4001,6 +4001,7 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
             dialog._fields[f"{key}_2"].setText(f"ctrl+shift+win+{index}")
         dialog._fields["HOTKEY_ADD_CONTEXT_ENABLED"].setChecked(False)
 
+        _set(dialog._fields["APP_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["CHAT_ELABORATE_PROMPT"], "Please elaborate on that.")
         dialog._fields["WISP_PLANNED_CHUNKING"].setChecked(True)
