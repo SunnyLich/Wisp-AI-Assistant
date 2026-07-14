@@ -16,7 +16,8 @@ from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPainte
 from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMenu, QToolTip, QWidget
 
 import config
-from ui.i18n import t
+from core.prompt_i18n import localize_intent_if_default
+from ui.i18n import current_language, t
 from ui.shared.theme import show_tooltip_text
 
 _IS_WIN = sys.platform == "win32"
@@ -70,14 +71,20 @@ def _build_rows(caller_idx: int = 0) -> list[dict]:
     caller = config.CALLER_ROWS[caller_idx] if caller_idx < len(config.CALLER_ROWS) else {}
     rows = []
     used_keys: set[str] = set()
-    for r in caller.get("intents", []):
+    for intent_idx, r in enumerate(caller.get("intents", [])):
+        display_intent = localize_intent_if_default(
+            caller_idx,
+            intent_idx,
+            r,
+            current_language(),
+        )
         key = str(r.get("key") or "").upper()
         if key:
             used_keys.add(key)
         rows.append({
             "glyph":     key if key else "?",
-            "label":     r["label"],
-            "hint":      r.get("hint", ""),
+            "label":     display_intent.get("label", r.get("label", "")),
+            "hint":      display_intent.get("hint", r.get("hint", "")),
             "prompt":    r["prompt"],
             "is_custom": False,
         })

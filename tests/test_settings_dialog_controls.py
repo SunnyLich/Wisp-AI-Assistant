@@ -93,6 +93,7 @@ def test_settings_memory_tab_does_not_show_stored_facts():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
+    from ui.i18n import t
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -210,6 +211,87 @@ def test_tts_voice_tab_exposes_stt_settings():
     finally:
         tab.deleteLater()
         app.processEvents()
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_speech_settings_group_tts_fields_and_use_compact_actions():
+    """Speech settings keep volume first and present each speech mode consistently."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QSizePolicy
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    tab = SettingsDialog._tab_tts(dialog)
+    tab.show()
+    app.processEvents()
+
+    try:
+        content_layout = tab.widget().layout()
+        card_headers = []
+        for index in range(content_layout.count()):
+            card = content_layout.itemAt(index).widget()
+            if not isinstance(card, QFrame) or card.objectName() != "card":
+                continue
+            header = card.findChild(QLabel, "sectionHeader")
+            if header is not None:
+                card_headers.append(header.text())
+
+        assert card_headers[:4] == [
+            t("Playback").upper(),
+            t("TTS").upper(),
+            t("Speech to Text").upper(),
+            t("Live voice conversation").upper(),
+        ]
+        assert t("Voice & API key").upper() not in card_headers
+
+        def containing_card(widget):
+            parent = widget.parentWidget()
+            while parent is not None:
+                if isinstance(parent, QFrame) and parent.objectName() == "card":
+                    return parent
+                parent = parent.parentWidget()
+            return None
+
+        tts_card = containing_card(dialog._fields["TTS_PROVIDER"])
+        assert tts_card is not None
+        assert containing_card(dialog._fields["CARTESIA_API_KEY"]) is tts_card
+        assert any(
+            button.text() == t("Test TTS")
+            for button in tts_card.findChildren(QPushButton)
+        )
+        assert dialog._fields["TTS_SPEAK_REPLIES"].text() == t(
+            "Read assistant replies aloud automatically"
+        )
+        provider_combo = dialog._fields["TTS_PROVIDER"]
+        provider_combo.setCurrentIndex(provider_combo.findData("none"))
+        dialog._update_tts_provider_fields()
+        assert dialog._fields["TTS_SPEAK_REPLIES"].isHidden()
+        assert dialog._tts_test_row.isHidden()
+        assert dialog._tts_test_status_lbl.isHidden()
+
+        provider_combo.setCurrentIndex(0)
+        dialog._update_tts_provider_fields()
+        assert not dialog._fields["TTS_SPEAK_REPLIES"].isHidden()
+        assert not dialog._tts_test_row.isHidden()
+        assert not dialog._tts_test_status_lbl.isHidden()
+
+        compact_buttons = (
+            dialog._stt_download_btn,
+            dialog._elevenlabs_install_btn,
+            dialog._kokoro_install_btn,
+            dialog._live_voice_install_btn,
+        )
+        assert all(
+            button.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Fixed
+            for button in compact_buttons
+        )
+    finally:
+        tab.deleteLater()
+        app.processEvents()
+
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_does_not_import_stt_stack(monkeypatch):
@@ -1048,8 +1130,8 @@ def test_app_tab_exposes_assistant_language_setting():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_app_tab_exposes_packaged_update_controls(monkeypatch):
-    """Verify the App tab exposes manual update controls."""
+def test_about_page_exposes_packaged_update_controls(monkeypatch):
+    """Verify the About page exposes manual update controls."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
@@ -1061,7 +1143,8 @@ def test_app_tab_exposes_packaged_update_controls(monkeypatch):
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}
-    tab = SettingsDialog._tab_app(dialog)
+    general = SettingsDialog._tab_app(dialog)
+    tab = SettingsDialog._tab_about(dialog)
 
     try:
         update_button = tab.findChild(QPushButton, "settingsUpdateButton")
@@ -1073,12 +1156,13 @@ def test_app_tab_exposes_packaged_update_controls(monkeypatch):
         assert update_status.text() == t("Ready to check for updates.")
     finally:
         tab.deleteLater()
+        general.deleteLater()
         app.processEvents()
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_app_tab_exposes_repo_update_controls(monkeypatch):
-    """Verify source checkouts expose a git fast-forward update action."""
+def test_about_page_exposes_repo_update_controls(monkeypatch):
+    """Verify source checkouts expose a git fast-forward update action on About."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
@@ -1090,7 +1174,8 @@ def test_app_tab_exposes_repo_update_controls(monkeypatch):
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}
-    tab = SettingsDialog._tab_app(dialog)
+    general = SettingsDialog._tab_app(dialog)
+    tab = SettingsDialog._tab_about(dialog)
 
     try:
         update_button = tab.findChild(QPushButton, "settingsUpdateButton")
@@ -1103,6 +1188,7 @@ def test_app_tab_exposes_repo_update_controls(monkeypatch):
         assert dialog._update_mode == "repo"
     finally:
         tab.deleteLater()
+        general.deleteLater()
         app.processEvents()
 
 
@@ -1121,7 +1207,8 @@ def test_update_download_switches_button_to_apply(monkeypatch, tmp_path):
     dialog = SettingsDialog.__new__(SettingsDialog)
     dialog._fields = {}
     dialog._update_signal_carriers = []
-    tab = SettingsDialog._tab_app(dialog)
+    general = SettingsDialog._tab_app(dialog)
+    tab = SettingsDialog._tab_about(dialog)
 
     try:
         carrier = _UpdateSignals()
@@ -1138,6 +1225,7 @@ def test_update_download_switches_button_to_apply(monkeypatch, tmp_path):
         assert dialog._update_download_path == downloaded
     finally:
         tab.deleteLater()
+        general.deleteLater()
         app.processEvents()
 
 
@@ -1256,6 +1344,8 @@ def test_settings_status_messages_translate_nested_values(monkeypatch):
         "LLM route uses {provider} but you are not logged in.": "LLM \u8def\u7531\u4f7f\u7528 {provider}\uff0c\u4f46\u4f60\u5c1a\u672a\u767b\u5165\u3002",
         "Microphone permission: {value}.": "\u9ea5\u514b\u98a8\u6b0a\u9650\uff1a{value}\u3002",
         "Installing Kokoro: {detail}.": "\u6b63\u5728\u5b89\u88dd Kokoro\uff1a{detail}\u3002",
+        "Installing STT: {detail}.": "\u6b63\u5728\u5b89\u88dd STT\uff1a{detail}\u3002",
+        "STT model configured: {model}, but STT verification failed: {error}": "\u5df2\u8a2d\u5b9a STT \u6a21\u578b\uff1a{model}\uff0c\u4f46 STT \u9a57\u8b49\u5931\u6557\uff1a{error}",
         "downloading packages": "\u6b63\u5728\u4e0b\u8f09\u5957\u4ef6",
         "still running for {elapsed}; no installer output for {quiet}": "\u5df2\u57f7\u884c {elapsed}\uff1b{quiet} \u6c92\u6709\u5b89\u88dd\u5668\u8f38\u51fa",
         "unavailable": "\u7121\u6cd5\u4f7f\u7528",
@@ -1277,6 +1367,9 @@ def test_settings_status_messages_translate_nested_values(monkeypatch):
         dialog._translate_status_message("Installing Kokoro: still running for 2m 40s; no installer output for 2m 40s.")
         == "\u6b63\u5728\u5b89\u88dd Kokoro\uff1a\u5df2\u57f7\u884c 2m 40s\uff1b2m 40s \u6c92\u6709\u5b89\u88dd\u5668\u8f38\u51fa\u3002"
     )
+    assert dialog._translate_status_message(
+        "STT model configured: small, but STT verification failed: model unavailable"
+    ) == "\u5df2\u8a2d\u5b9a STT \u6a21\u578b\uff1asmall\uff0c\u4f46 STT \u9a57\u8b49\u5931\u6557\uff1amodel unavailable"
 
 
 def test_kokoro_install_progress_text_classifies_pip_output():
@@ -2226,6 +2319,7 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
     from PySide6.QtWidgets import QApplication, QLabel, QComboBox, QLineEdit, QPushButton
 
     import config
+    from core.prompt_i18n import caller_intent_template
     from ui import i18n
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -2236,6 +2330,11 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
 
     try:
         dialog._add_api_key_row("openai")
+        dialog._add_caller_block(
+            label="General",
+            intents=[{"key": "w", "label": "", "prompt": ""}],
+        )
+        translated_caller = dialog._caller_blocks[-1]
         label_texts = {label.text() for label in dialog.findChildren(QLabel)}
         button_texts = {button.text() for button in dialog.findChildren(QPushButton)}
         placeholder_texts = {
@@ -2274,7 +2373,7 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
             "Sign in or save provider API keys",
             "AUTHENTICATION",
             "Sign in opens GitHub in your browser",
-            "Add a row for each provider",
+            "Add the providers you use",
             "<small><b>Alias</b></small>",
             "alias (optional)",
             "Custom provider",
@@ -2299,7 +2398,7 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
             for text in label_texts
         )
         assert any(
-            "\u70ba\u6bcf\u500b\u8981\u4f7f\u7528\u7684\u63d0\u4f9b\u8005\u65b0\u589e\u4e00\u5217" in text
+            "\u65b0\u589e\u4f60\u4f7f\u7528\u7684\u63d0\u4f9b\u8005" in text
             for text in label_texts
         )
         assert "<small><b>\u5225\u540d</b></small>" in label_texts
@@ -2313,7 +2412,7 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
         assert "5\uff08\u5efa\u8b70\uff09" in all_combo_texts
         assert "\u81ea\u52d5\uff08\u6709 GPU \u6642\u4f7f\u7528\uff09" in all_combo_texts
         assert any("API \u5bc6\u9470\u6703\u4fdd\u5b58\u5230\u7cfb\u7d71\u9470\u5319\u4e32" in text for text in label_texts)
-        assert "+ \u65b0\u589e\u547c\u53eb\u5feb\u6377\u9375" in button_texts
+        assert "\u65b0\u589e\u610f\u5716\u5feb\u901f\u9375" in button_texts
         assert "\u6a21\u578b\u8def\u7531" in label_texts
         assert "\u9078\u64c7\u6bcf\u500b\u7528\u9014\u4f7f\u7528\u54ea\u500b\u5df2\u5132\u5b58\u6191\u8b49\u548c\u6a21\u578b\u3002" in label_texts
         assert "<small><b>\u63d0\u4f9b\u8005</b></small>" in label_texts
@@ -2323,6 +2422,25 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
             text.startswith("ChatGPT Plus/Pro\uff08OAuth \u8a02\u95b1\uff09")
             for text in combo_texts
         )
+        assert translated_caller["label"].text() == i18n.t("General") == "\u901a\u7528"
+        assert dialog._caller_label_value(translated_caller) == "General"
+        expected_intent = caller_intent_template(0, 0, "zh-Hant")
+        built_in_intent = dialog._caller_blocks[0]["intent_rows"][0]
+        assert built_in_intent["label"].text() == expected_intent["label"]
+        assert built_in_intent["prompt"].toPlainText() == expected_intent["prompt"]
+        assert {
+            i18n.t("Paste raw transcript"),
+            i18n.t("Light LLM cleanup"),
+        } == {
+            dialog._fields["DICTATE_MODE"].itemText(index)
+            for index in range(dialog._fields["DICTATE_MODE"].count())
+        }
+        intent_row = translated_caller["intent_rows"][0]
+        assert intent_row["label"].placeholderText() == i18n.t("Label")
+        assert intent_row["prompt"].placeholderText() == i18n.t("Prompt sent to LLM...")
+        assert translated_caller["context_ambient"].toolTip().startswith("\u61c9\u7528\u7a0b\u5f0f\u4e0a\u4e0b\u6587")
+        assert translated_caller["context_clipboard"].toolTip().startswith("\u526a\u8cbc\u7c3f")
+        assert translated_caller["file_access"].toolTip().startswith("\u672c\u6a5f\u6a94\u6848")
     finally:
         config.APP_LANGUAGE = old_language
         i18n.set_language(app=app)
@@ -2972,6 +3090,8 @@ def test_reset_page_key_mapping_is_scoped():
         "CHAT_REASONING_EFFORT": "high",
         "CHAT_AUTO_ELABORATE": "True",
         "CHAT_ELABORATE_PROMPT": "Please elaborate.",
+        "CUSTOM_BASE_URL": "http://localhost:1234/v1",
+        "WISP_CONNECTION_ALIAS_OPENAI": "Work",
     }
 
     assert SettingsDialog._reset_env_keys_for_page("LLM", env) >= {
@@ -2985,6 +3105,10 @@ def test_reset_page_key_mapping_is_scoped():
         "CHAT_ELABORATE_PROMPT",
     }
     assert "GROQ_API_KEY" not in SettingsDialog._reset_env_keys_for_page("LLM", env)
+    assert SettingsDialog._reset_env_keys_for_page("Connections", env) >= {
+        "CUSTOM_BASE_URL",
+        "WISP_CONNECTION_ALIAS_OPENAI",
+    }
     assert SettingsDialog._reset_env_keys_for_page("Keybinds", env) >= {
         "CALLER_COUNT",
         "CALLER_1_HOTKEY",
@@ -3047,8 +3171,8 @@ def test_settings_tab_bar_has_explicit_painted_backing():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_tabs_use_app_first_order_without_memory_tab():
-    """Verify settings tab order starts with App and folds Memory into Advanced."""
+def test_settings_sidebar_uses_task_based_page_order_without_memory_page():
+    """Verify the sidebar separates connections/routes and folds Memory into Advanced."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -3060,15 +3184,190 @@ def test_settings_tabs_use_app_first_order_without_memory_tab():
     try:
         assert dialog._tab_base_names == [
             "App",
+            "Connections",
             "LLM",
             "TTS / Voice",
             "Keybinds",
             "Prompts",
             "Advanced",
+            "About",
         ]
+        assert [
+            dialog._settings_nav.item(i).text().rstrip(" *")
+            for i in range(dialog._settings_nav.count())
+        ] == [
+            "General",
+            "Connections",
+            "Model routing",
+            "Voice & audio",
+            "Shortcuts",
+            "Prompts & context",
+            "Advanced",
+            "About",
+        ]
+        assert dialog._tabs.tabBar().isHidden()
         advanced_tab = dialog._tabs.widget(dialog._tab_base_names.index("Advanced"))
         assert advanced_tab.isAncestorOf(dialog._fields["MEMORY_TOP_K"])
         assert advanced_tab.isAncestorOf(dialog._fields["MEMORY_AUTO_CONSOLIDATE"])
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_theme_is_reapplied_after_sidebar_items_exist(monkeypatch):
+    """The initial theme pass must polish navigation items, not just the empty dialog."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QListWidget
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    original = SettingsDialog._apply_dialog_theme
+    item_counts = []
+
+    def tracked_apply(dialog):
+        nav = getattr(dialog, "_settings_nav", None)
+        item_counts.append(nav.count() if isinstance(nav, QListWidget) else -1)
+        original(dialog)
+
+    monkeypatch.setattr(SettingsDialog, "_apply_dialog_theme", tracked_apply)
+    dialog = SettingsDialog()
+    try:
+        assert item_counts[0] == -1
+        assert item_counts[-1] == len(dialog._tab_base_names) == 8
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_sidebar_uses_uniform_explicit_row_spacing():
+    """Navigation spacing must not depend on a later stylesheet repolish."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog, _SETTINGS_NAV_ITEM_HEIGHT
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    dialog.show()
+    app.processEvents()
+    try:
+        nav = dialog._settings_nav
+        rects = [nav.visualItemRect(nav.item(index)) for index in range(nav.count())]
+
+        assert {rect.height() for rect in rects} == {_SETTINGS_NAV_ITEM_HEIGHT}
+        gaps = [
+            following.top() - current.bottom() - 1
+            for current, following in zip(rects, rects[1:])
+        ]
+        assert len(set(gaps)) == 1
+        assert gaps[0] >= nav.spacing()
+
+        dialog._apply_dialog_theme()
+        app.processEvents()
+        assert [nav.visualItemRect(nav.item(i)).height() for i in range(nav.count())] == [
+            _SETTINGS_NAV_ITEM_HEIGHT
+        ] * nav.count()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_connections_page_filters_and_paginates_large_provider_lists():
+    """Large connection lists stay searchable and show six rows until expanded."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    try:
+        for row in list(dialog._api_key_rows):
+            dialog._remove_api_key_row(row)
+        providers = ["openai", "anthropic", "google", "groq", "mistral", "xai", "ollama", "custom"]
+        rows = [
+            dialog._add_api_key_row(provider, alias=("needle" if index == 7 else f"account-{index}"))
+            for index, provider in enumerate(providers)
+        ]
+        dialog._connections_expanded = False
+        dialog._refresh_connection_rows_filter()
+
+        assert sum(not row["widget"].isHidden() for row in rows) == 6
+        assert not dialog._connections_show_more_btn.isHidden()
+        assert "2" in dialog._connections_show_more_btn.text()
+
+        dialog._connections_search.setText("needle")
+        app.processEvents()
+        assert [row["alias"].text() for row in rows if not row["widget"].isHidden()] == ["needle"]
+
+        dialog._connections_search.clear()
+        dialog._connections_filter.setCurrentIndex(dialog._connections_filter.findData("local"))
+        app.processEvents()
+        assert {
+            row["provider"].currentData()
+            for row in rows
+            if not row["widget"].isHidden()
+        } == {"ollama", "custom"}
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_unconfigured_model_provider_has_no_obsolete_api_key_below_hint():
+    """Model provider options no longer point at the separate Connections page as 'below'."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QComboBox
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    combo = QComboBox()
+
+    try:
+        dialog._get_api_key_display_options = lambda: [("Google AI Studio", "google")]
+        dialog._credential_availability = lambda: {}
+        dialog._fill_credential_combo(combo, "ollama")
+
+        assert combo.currentData() == "ollama"
+        assert combo.currentText() == t("Ollama (local)")
+        assert "add an API key below" not in combo.currentText()
+    finally:
+        combo.deleteLater()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_model_and_voice_workspaces_show_one_scalable_section_at_a_time():
+    """Purpose and speech selectors keep large option groups mutually exclusive."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    try:
+        dialog._show_model_route("VISION_LLM")
+        assert not dialog._model_route_cards["VISION_LLM"].isHidden()
+        assert dialog._model_route_cards["LLM"].isHidden()
+        assert dialog._model_route_cards["MEMORY_LLM"].isHidden()
+        assert dialog._model_route_buttons["VISION_LLM"].isChecked()
+
+        dialog._show_voice_feature("live")
+        assert not dialog._voice_feature_cards["live"].isHidden()
+        assert dialog._voice_feature_cards["tts"].isHidden()
+        assert dialog._voice_feature_cards["stt"].isHidden()
+        assert not dialog._voice_playback_card.isHidden()
+        assert dialog._voice_feature_buttons["live"].isChecked()
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -3261,12 +3560,12 @@ def test_tool_warning_marks_associated_settings_headlines():
         )
         assert warnings
         assert "LLM" in targets
-        assert "Caller Hotkeys" in targets
+        assert "Global shortcuts" in targets
 
         dialog._set_warning_markers(targets)
 
         assert dialog._warning_headers["LLM"].text().startswith("\u26a0 ")
-        assert dialog._warning_headers["Caller Hotkeys"].text().startswith("\u26a0 ")
+        assert dialog._warning_headers["Global shortcuts"].text().startswith("\u26a0 ")
         assert "ChatGPT" in dialog._warning_headers["LLM"].toolTip()
 
         dialog._set_warning_markers({})
@@ -3411,17 +3710,17 @@ def test_warning_markers_refresh_from_loaded_settings():
 
         assert dialog._warning_headers["Provider credentials"].text().startswith("\u26a0 ")
         assert dialog._warning_headers["LLM"].text().startswith("\u26a0 ")
-        assert dialog._warning_headers["Caller Hotkeys"].text().startswith("\u26a0 ")
+        assert dialog._warning_headers["Global shortcuts"].text().startswith("\u26a0 ")
     finally:
         dialog.deleteLater()
         app.processEvents()
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_footer_apply_stays_open_and_confirm_closes():
-    """Verify settings footer apply stays open and confirm closes behavior."""
+def test_settings_footer_uses_cancel_and_save_changes():
+    """Verify the simplified footer exposes Cancel and Save changes."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QDialog, QPushButton
+    from PySide6.QtWidgets import QApplication, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -3429,27 +3728,26 @@ def test_settings_footer_apply_stays_open_and_confirm_closes():
     dialog = SettingsDialog()
 
     try:
-        apply_btn = dialog.findChild(QPushButton, "settingsApplyButton")
-        confirm_btn = dialog.findChild(QPushButton, "settingsConfirmButton")
-        assert apply_btn is not None
-        assert confirm_btn is not None
-        assert apply_btn.text() in {"Apply", "应用", "應用", "Aplicar", "Appliquer"}
-        assert confirm_btn.text() in {"Confirm", "确认", "確認", "Confirmar", "Confirmer"}
-        button_texts = {button.text() for button in dialog.findChildren(QPushButton)}
-        assert not {"Cancel", "取消", "Cancelar", "Annuler"} & button_texts
+        from ui.i18n import t
+
+        save_btn = dialog.findChild(QPushButton, "settingsApplyButton")
+        cancel_btn = dialog.findChild(QPushButton, "settingsCancelButton")
+        assert save_btn is not None
+        assert cancel_btn is not None
+        assert save_btn.text() == t("Save changes")
+        assert cancel_btn.text() == t("Cancel")
+        assert dialog.findChild(QPushButton, "settingsConfirmButton") is None
 
         calls = []
         dialog._apply_settings = lambda: calls.append("saved") or True
 
-        dialog._apply()
-        assert calls == ["saved"]
-        assert dialog.result() == int(QDialog.DialogCode.Rejected)
+        dialog.show()
+        app.processEvents()
 
-        # Nothing edited since Apply, so Confirm just closes without re-applying:
-        # no redundant config reload / model-reconnect "loading" pass.
+        # Nothing edited: skip the redundant reload and keep Settings open.
         dialog._confirm()
-        assert calls == ["saved"]
-        assert dialog.result() == int(QDialog.DialogCode.Accepted)
+        assert calls == []
+        assert dialog.isVisible()
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -3457,9 +3755,9 @@ def test_settings_footer_apply_stays_open_and_confirm_closes():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_confirm_applies_when_there_are_unsaved_changes():
-    """Confirm still saves+applies when the user edited something (the common path)."""
+    """Save changes applies edits without dismissing Settings."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QCheckBox, QDialog
+    from PySide6.QtWidgets import QApplication, QCheckBox
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -3467,6 +3765,8 @@ def test_settings_confirm_applies_when_there_are_unsaved_changes():
     dialog = SettingsDialog()
 
     try:
+        dialog.show()
+        app.processEvents()
         calls = []
         dialog._apply_settings = lambda: calls.append("saved") or True
 
@@ -3477,7 +3777,37 @@ def test_settings_confirm_applies_when_there_are_unsaved_changes():
 
         dialog._confirm()
         assert calls == ["saved"]
-        assert dialog.result() == int(QDialog.DialogCode.Accepted)
+        assert dialog.isVisible()
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_escape_does_not_close_settings_but_cancel_still_does():
+    """Escape is harmless at window level; the explicit Cancel button still closes."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        dialog.show()
+        app.processEvents()
+        QTest.keyClick(dialog, Qt.Key.Key_Escape)
+        app.processEvents()
+        assert dialog.isVisible()
+
+        cancel_btn = dialog.findChild(QPushButton, "settingsCancelButton")
+        assert cancel_btn is not None
+        cancel_btn.click()
+        app.processEvents()
+        assert not dialog.isVisible()
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -3665,14 +3995,18 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
 
         for index, block in enumerate(dialog._caller_blocks, 1):
             block["hotkey"].setText(f"ctrl+alt+{index}")
+            block["hotkey_2"].setText(f"ctrl+win+{index}")
         for index, key in enumerate(("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE", "HOTKEY_DICTATE"), 1):
             dialog._fields[key].setText(f"ctrl+shift+alt+{index}")
+            dialog._fields[f"{key}_2"].setText(f"ctrl+shift+win+{index}")
+        dialog._fields["HOTKEY_ADD_CONTEXT_ENABLED"].setChecked(False)
 
         _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["CHAT_ELABORATE_PROMPT"], "Please elaborate on that.")
         dialog._fields["WISP_PLANNED_CHUNKING"].setChecked(True)
         dialog._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setText("4")
         dialog._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setText("120")
+        dialog._add_api_key_row("openai", alias="Work")
         row = dialog._caller_blocks[0]["intent_rows"][0]
         assert isinstance(row["prompt"], QTextEdit)
         assert not row["prompt"].acceptRichText()
@@ -3689,6 +4023,52 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
         assert captured["WISP_PLANNED_CHUNKING"] == "True"
         assert captured["WISP_PLANNED_CHUNKING_CHUNKS"] == "4"
         assert captured["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] == "120"
+        assert captured["WISP_CONNECTION_ALIAS_OPENAI"] == "Work"
+        assert captured["CALLER_1_HOTKEY_2"] == "ctrl+win+1"
+        assert captured["CALLER_1_ENABLED"] == "True"
+        assert captured["HOTKEY_ADD_CONTEXT_2"] == "ctrl+shift+win+1"
+        assert captured["HOTKEY_ADD_CONTEXT_ENABLED"] == "False"
+        assert captured["HOTKEY_VOICE_2"] == "ctrl+shift+win+4"
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_reports_secondary_shortcut_conflicts_only_when_saving(monkeypatch):
+    """Editing stays quiet; Save changes reports duplicate primary/secondary keys."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        warnings: list[tuple[str, str]] = []
+
+        def capture_warning(_parent, title, message):
+            warnings.append((title, message))
+            return QMessageBox.StandardButton.Ok
+
+        monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
+        monkeypatch.setattr(dialog, "_kokoro_installed", lambda: True)
+        monkeypatch.setattr(dialog, "_elevenlabs_installed", lambda: True)
+        monkeypatch.setattr(QMessageBox, "warning", capture_warning)
+
+        duplicate = dialog._fields["HOTKEY_ADD_CONTEXT"].text()
+        dialog._fields["HOTKEY_CLEAR_CONTEXT_2"].setText(duplicate)
+        app.processEvents()
+        assert warnings == []
+
+        assert dialog._do_save() is False
+        assert len(warnings) == 1
+        assert warnings[0][0] == t("Duplicate keys")
+        assert warnings[0][1] == t(
+            "Two or more bindings share the same key.\nPlease resolve conflicts before saving."
+        )
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -4057,8 +4437,8 @@ def test_settings_advanced_tab_contains_tuning_and_memory_controls():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_caller_memory_context_block_uses_second_row():
-    """Verify caller memory context block stays in the second context row."""
+def test_caller_memory_context_block_uses_third_row_in_responsive_grid():
+    """Verify Memory occupies the third row of the compact two-column grid."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QVBoxLayout, QWidget
 
@@ -4091,7 +4471,7 @@ def test_caller_memory_context_block_uses_second_row():
                 break
 
         assert memory_pos is not None
-        assert memory_pos[:2] == (2, 1)
+        assert memory_pos[:2] == (3, 1)
     finally:
         host.deleteLater()
         app.processEvents()
@@ -4267,6 +4647,7 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
+    from ui.i18n import t
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -4301,7 +4682,7 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
         tools_buttons = [
             b
             for b in dialog.findChildren(QPushButton)
-            if b.text() in {"Allowed tools…", "允许的工具…", "允許的工具…"}
+            if b.text() == t("Allowed tools…")
         ]
         # One per caller block plus snip and voice.
         assert len(tools_buttons) == len(dialog._caller_blocks) + 2
@@ -4311,10 +4692,94 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_context_source_blocks_use_even_columns():
-    """Verify caller context source blocks keep consistent tile widths."""
+def test_settings_shortcuts_are_categorized_with_two_bindings_and_inline_details():
+    """The shortcut page uses categorized rows and inline per-action editors."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("Keybinds"))
+        dialog.resize(760, 736)
+        dialog.show()
+        app.processEvents()
+        assert dialog._tabs.currentWidget().horizontalScrollBar().maximum() == 0
+
+        labels = {label.text() for label in dialog.findChildren(QLabel)}
+        assert {
+            t("Global shortcuts"),
+            t("Voice shortcuts"),
+            t("Context shortcuts"),
+            t("On"),
+            t("Action"),
+            t("Shortcut 1"),
+            t("Shortcut 2"),
+            t("Details"),
+        } <= labels
+
+        for key in (
+            "HOTKEY_ADD_CONTEXT",
+            "HOTKEY_CLEAR_CONTEXT",
+            "HOTKEY_SNIP",
+            "HOTKEY_READ_SELECTION_ALOUD",
+            "HOTKEY_VOICE",
+            "HOTKEY_DICTATE",
+            "HOTKEY_VOICE_LIVE",
+        ):
+            assert {key, f"{key}_2", f"{key}_ENABLED"} <= dialog._fields.keys()
+
+        caller = dialog._caller_blocks[0]
+        assert {"hotkey", "hotkey_2", "enabled", "detail"} <= caller.keys()
+        assert caller["detail"].isHidden()
+
+        detailed_entries = [
+            entry for entry in dialog._shortcut_rows if entry["detail"] is not None
+        ]
+        assert len(detailed_entries) >= 2
+        first, second = detailed_entries[:2]
+        first_button = next(
+            button
+            for button in first["widget"].findChildren(QPushButton)
+            if button.text() == t("Customize")
+        )
+        second_button = next(
+            button
+            for button in second["widget"].findChildren(QPushButton)
+            if button.text() == t("Customize")
+        )
+
+        first_button.click()
+        app.processEvents()
+        assert not first["detail"].isHidden()
+        assert first_button.text() == t("Close")
+
+        second_button.click()
+        app.processEvents()
+        assert first["detail"].isHidden()
+        assert not second["detail"].isHidden()
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_context_source_blocks_use_even_columns():
+    """Verify caller context source blocks stay compact and keep even widths."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QFrame,
+        QLabel,
+        QVBoxLayout,
+        QWidget,
+    )
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -4342,11 +4807,16 @@ def test_settings_context_source_blocks_use_even_columns():
             if frame.y() == first_row_y
         ]
 
-        assert len(first_row_widths) == 4
+        assert len(first_row_widths) == 2
         assert max(first_row_widths) - min(first_row_widths) <= 1
         assert all(frame.minimumWidth() >= 160 for frame in frames)
+        assert all(frame.minimumHeight() == 88 for frame in frames)
         assert all(not frame.findChildren(QCheckBox) for frame in frames)
         assert all(len(frame.findChildren(QComboBox)) == 1 for frame in frames)
+        for frame in frames:
+            title_label, key_label = frame.findChildren(QLabel)[:2]
+            assert title_label.parentWidget() is key_label.parentWidget()
+            assert title_label.geometry().center().y() == key_label.geometry().center().y()
     finally:
         host.deleteLater()
         dialog.deleteLater()
@@ -4368,7 +4838,11 @@ def test_reset_keybinds_page_includes_voice_keys():
         "VOICE_CONTEXT_BROWSER_MODE",
         "CALLER_1_TOOLS",
         "HOTKEY_VOICE",
+        "HOTKEY_VOICE_2",
+        "HOTKEY_VOICE_ENABLED",
         "HOTKEY_READ_SELECTION_ALOUD",
+        "HOTKEY_READ_SELECTION_ALOUD_2",
+        "HOTKEY_READ_SELECTION_ALOUD_ENABLED",
     } <= keys
 
 

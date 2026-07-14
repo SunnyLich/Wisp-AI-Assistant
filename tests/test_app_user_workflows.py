@@ -2027,7 +2027,8 @@ def test_ui_accessibility_layout_and_model_popup_workflow(qapp, monkeypatch: pyt
     try:
         assert settings.findChild(QLineEdit, "settingsSearch") is not None
         assert settings.findChild(QPushButton, "settingsApplyButton") is not None
-        assert settings.findChild(QPushButton, "settingsConfirmButton") is not None
+        assert settings.findChild(QPushButton, "settingsCancelButton") is not None
+        assert settings._settings_nav.count() == 8
         assert "BUBBLE_FONT_SIZE" in settings._fields
         assert "CHAT_ELABORATE_PROMPT" in settings._fields
 

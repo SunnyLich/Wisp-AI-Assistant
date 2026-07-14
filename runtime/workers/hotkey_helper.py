@@ -217,15 +217,23 @@ def _hotkey_specs_from_config(config: Any) -> list[tuple[str, str, dict]]:
     """The same hotkeys the Carbon backend registers, as (combo, kind, extra)."""
     specs: list[tuple[str, str, dict]] = []
     for i, row in enumerate(getattr(config, "CALLER_ROWS", []) or []):
-        combo = (row or {}).get("hotkey")
-        if combo:
-            specs.append((combo, "caller", {"index": i}))
+        if not bool((row or {}).get("enabled", True)):
+            continue
+        for key_name in ("hotkey", "hotkey_2"):
+            combo = (row or {}).get(key_name)
+            if combo:
+                specs.append((combo, "caller", {"index": i}))
     for attr, kind in (
         ("HOTKEY_ADD_CONTEXT", "add_context"),
+        ("HOTKEY_ADD_CONTEXT_2", "add_context"),
         ("HOTKEY_CLEAR_CONTEXT", "clear_context"),
+        ("HOTKEY_CLEAR_CONTEXT_2", "clear_context"),
         ("HOTKEY_SNIP", "snip"),
+        ("HOTKEY_SNIP_2", "snip"),
         ("HOTKEY_READ_SELECTION_ALOUD", "read_selection_aloud"),
+        ("HOTKEY_READ_SELECTION_ALOUD_2", "read_selection_aloud"),
         ("HOTKEY_VOICE_LIVE", "voice_live"),
+        ("HOTKEY_VOICE_LIVE_2", "voice_live"),
     ):
         combo = getattr(config, attr, "")
         if combo:
@@ -247,13 +255,13 @@ def _hotkey_specs_from_config(config: Any) -> list[tuple[str, str, dict]]:
 
 
 def _install_hotkey_tap(
-    table: list[tuple[int, int, str, dict]], emit, voice_keycode: int | None = None
+    table: list[tuple[int, int, str, dict]], emit, release_kinds: dict[int, str] | None = None
 ) -> bool:
     """Install a listen-only tap that fires `emit(kind, **extra)` on a match.
 
     Discrete hotkeys (caller/context/snip and voice *start*) fire on key-down via
-    `table`. Push-to-talk also needs a *release*: when `voice_keycode` is set, a
-    key-up of that key emits ``voice_stop`` (matched on keycode alone so releasing
+    `table`. Push-to-talk also needs a *release*: keys in `release_kinds` emit
+    their mapped stop event on key-up (matched on keycode alone so releasing
     always stops, even if a modifier came up first). Auto-repeat key-downs are
     ignored so holding a key doesn't spam events (mirrors RegisterEventHotKey).
 
@@ -267,14 +275,14 @@ def _install_hotkey_tap(
     accepting that the key then leaks (the previous behaviour).
     """
     global _HOTKEY_TAP
-    if not table and voice_keycode is None:
+    release_kinds = dict(release_kinds or {})
+    if not table and not release_kinds:
         _dbg("hotkey tap: no parseable hotkeys; not installing.")
         return False
     # Keycodes we own: every discrete hotkey key plus the push-to-talk key. Their
     # key-up is swallowed too, so the app never sees a dangling key-up.
     hotkey_keycodes = {kc for kc, _m, _k, _e in table}
-    if voice_keycode is not None:
-        hotkey_keycodes.add(voice_keycode)
+    hotkey_keycodes.update(release_kinds)
     try:
         import Quartz  # type: ignore
 
@@ -300,8 +308,9 @@ def _install_hotkey_tap(
                     event, Quartz.kCGKeyboardEventKeycode
                 ))
                 if type_ == Quartz.kCGEventKeyUp:
-                    if voice_keycode is not None and keycode == voice_keycode:
-                        emit("voice_stop")
+                    stop_kind = release_kinds.get(keycode)
+                    if stop_kind:
+                        emit(stop_kind)
                     # Swallow the key-up of any key we own so the app never sees a
                     # dangling key-up; pass everything else through.
                     return None if keycode in hotkey_keycodes else event
@@ -361,7 +370,7 @@ def _install_hotkey_tap(
         Quartz.CGEventTapEnable(tap, True)
         _HOTKEY_TAP = (tap, source, _on_key)
         _dbg(f"hotkey tap installed for {len(table)} hotkey(s)"
-             f"{' + voice push-to-talk' if voice_keycode is not None else ''} "
+             f"{' + push-to-talk' if release_kinds else ''} "
              f"(off-console backend, {'swallowing' if swallowing else 'listen-only'}).")
         return True
     except Exception as exc:  # noqa: BLE001 - never crash the helper on the fallback
@@ -591,20 +600,25 @@ def main() -> int:
 
             specs = _hotkey_specs_from_config(config)
             table = _build_tap_table(specs, MACOS_VIRTUAL_KEYCODES)
-            # Voice push-to-talk: key-down starts (added to the table as
-            # "voice_start"), key-up stops (handled via voice_keycode).
-            voice_keycode = None
-            voice_combo = getattr(config, "HOTKEY_VOICE", "")
-            if voice_combo:
+            # Voice push-to-talk: either configured key starts on key-down and
+            # stops on key-up.
+            release_kinds: dict[int, str] = {}
+            for voice_combo in (
+                getattr(config, "HOTKEY_VOICE", ""),
+                getattr(config, "HOTKEY_VOICE_2", ""),
+            ):
+                if not voice_combo:
+                    continue
                 parsed = _parse_combo_to_tap(voice_combo, MACOS_VIRTUAL_KEYCODES)
                 if parsed is not None:
                     voice_keycode, voice_mod = parsed
                     table.append((voice_keycode, voice_mod, "voice_start", {}))
+                    release_kinds[voice_keycode] = "voice_stop"
                 else:
                     _dbg(f"hotkey tap: voice key {voice_combo!r} not parseable; "
                          "push-to-talk disabled in tap backend.")
             tap_active = _install_hotkey_tap(
-                table, emit_hotkey, voice_keycode=voice_keycode
+                table, emit_hotkey, release_kinds=release_kinds
             )
 
         # Off-console, Carbon "starts" but never fires; the tap is what makes

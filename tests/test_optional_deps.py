@@ -2170,3 +2170,51 @@ def test_kokoro_runtime_import_status_flags_broken_dependency(monkeypatch):
 
     assert status["valid"] is False
     assert "regex" in status["error"]
+
+
+def test_require_optional_package_runtime_rejects_invalid_managed_install(monkeypatch):
+    """Runtime imports must not fall through to a bundled or global STT copy."""
+    from core import optional_deps
+
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {
+            "display_name": "STT",
+            "valid": False,
+            "message": "STT package files do not match this Wisp release.",
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="Open Settings > Voice"):
+        optional_deps.require_optional_package_runtime("stt", device="cpu")
+
+
+def test_require_optional_package_runtime_prepares_only_the_managed_layer(monkeypatch):
+    """A valid contract should prepend and verify its installer-owned module."""
+    from core import optional_deps
+
+    calls: list[object] = []
+    status = {"display_name": "STT", "valid": True}
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda key, *, device=None: calls.append((key, device)) or status,
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "add_optional_packages_to_path",
+        lambda *, prepend=False: calls.append(("path", prepend)),
+    )
+    monkeypatch.setattr(
+        optional_deps.importlib.machinery.PathFinder,
+        "find_spec",
+        lambda module_name, paths: calls.append((module_name, paths)) or object(),
+    )
+
+    result = optional_deps.require_optional_package_runtime("stt", device="cuda")
+
+    assert result is status
+    assert calls[0] == ("stt", "cuda")
+    assert ("path", True) in calls
+    assert any(call[0] == "faster_whisper" for call in calls if isinstance(call, tuple))

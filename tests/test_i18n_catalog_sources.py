@@ -8,6 +8,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 QT_DIR = ROOT / "ui" / "locales" / "qt"
 LANGUAGES = ("es", "fr", "zh", "zh-Hant")
+STT_INSTALL_NOTICE_SOURCE = (
+    "STT package is not installed. Click Install STT to install and verify it."
+)
+STT_STATUS_SOURCES = {
+    "STT model configured: {model}. faster-whisper is installed.",
+    "STT model configured: {model}, but faster-whisper is not installed.",
+    "STT model configured: {model}, but STT verification failed: {error}",
+    "Recommendation: STT support is not working. Open Settings > Voice and click Install STT.",
+    "Installing STT: {detail}.",
+    "Installing STT...",
+    "Reinstall STT",
+    "Install STT",
+    "STT install failed: {message}",
+    "STT installed, but model verification failed: {message}",
+    "STT installed and model ready: {summary}.",
+    "Installing STT: downloading or loading Whisper model {model}.",
+    "STT package installed. Configured backend: {summary}; model loads on first use.",
+    STT_INSTALL_NOTICE_SOURCE,
+    "downloading or loading Whisper model for {elapsed}",
+    "removing previous install",
+}
 SPEECH_NOTICE_SOURCES = {
     "Speech warm-up failed.",
     "Speech warm-up finished; one service will retry when needed.",
@@ -31,6 +52,19 @@ SPEECH_NOTICE_SOURCES = {
     "unknown error",
     "{label}: {status}",
     "TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.",
+    STT_INSTALL_NOTICE_SOURCE,
+}
+LOCAL_FILE_TOOL_SOURCES = {
+    "list_files",
+    "read_file",
+    "create_file",
+    "edit_file",
+    "write_file",
+    "List configured file roots.",
+    "Read files from configured file roots.",
+    "Create new files in configured file roots.",
+    "Patch files in configured file roots.",
+    "Create or overwrite files in configured file roots.",
 }
 
 # These are characteristic artifacts of UTF-8 text decoded as a single-byte
@@ -109,9 +143,37 @@ def test_qt_catalogs_cover_structured_speech_notices() -> None:
             if source in SPEECH_NOTICE_SOURCES
         }
         assert all(translations.values()), language
+        assert translations[STT_INSTALL_NOTICE_SOURCE] != STT_INSTALL_NOTICE_SOURCE, language
         for source, translation in translations.items():
             for placeholder in re.findall(r"\{[^}]+\}", source):
                 assert placeholder in translation, (language, source, placeholder)
+
+
+def test_qt_catalogs_translate_every_stt_status() -> None:
+    """STT setup and progress states must never fall back to English."""
+    for language in LANGUAGES:
+        translations = {
+            source: translation
+            for source, translation, unfinished in _catalog_messages(language)
+            if source in STT_STATUS_SOURCES and not unfinished
+        }
+        assert set(translations) == STT_STATUS_SOURCES, language
+        for source, translation in translations.items():
+            assert translation != source, (language, source)
+            for placeholder in re.findall(r"\{[^}]+\}", source):
+                assert placeholder in translation, (language, source, placeholder)
+
+
+def test_qt_catalogs_translate_local_file_tool_rows() -> None:
+    """Built-in file tool names and descriptions never fall back to English."""
+    for language in LANGUAGES:
+        translations = {
+            source: translation
+            for source, translation, unfinished in _catalog_messages(language)
+            if source in LOCAL_FILE_TOOL_SOURCES and not unfinished
+        }
+        assert set(translations) == LOCAL_FILE_TOOL_SOURCES, language
+        assert all(translation != source for source, translation in translations.items())
 
 
 def test_qt_catalogs_cover_literal_translation_calls() -> None:

@@ -1059,6 +1059,9 @@ def brain_transcribe(pcm_path: str = "", language: str | None = None) -> dict[st
 
     global _STT_MODEL
     if _STT_MODEL is None:
+        from core import optional_deps
+
+        optional_deps.require_optional_package_runtime("stt", device="cpu")
         from faster_whisper import WhisperModel
         _STT_MODEL = WhisperModel(
             config.STT_MODEL,

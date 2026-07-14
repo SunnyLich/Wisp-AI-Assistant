@@ -21,6 +21,31 @@ def _add_optional_path(path: str) -> None:
     importlib.invalidate_caches()
 
 
+def _managed_distribution_version(package_name: str) -> str:
+    """Read a version only from the managed directory, never bundled metadata."""
+    wanted = package_name.casefold().replace("_", "-")
+    try:
+        candidates = Path(sys.path[0]).glob("*.dist-info")
+        for dist_info in candidates:
+            name = ""
+            version = ""
+            for line in (dist_info / "METADATA").read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).splitlines():
+                if line.casefold().startswith("name:"):
+                    name = line.split(":", 1)[1].strip()
+                elif line.casefold().startswith("version:"):
+                    version = line.split(":", 1)[1].strip()
+                if name and version:
+                    break
+            if name.casefold().replace("_", "-") == wanted:
+                return version
+    except OSError:
+        pass
+    return ""
+
+
 def _torch_status() -> dict[str, object]:
     status: dict[str, object] = {
         "installed": False,
@@ -101,12 +126,7 @@ def _stt_runtime_status() -> dict[str, object]:
         status["installed"] = True
         status["valid"] = WhisperModel is not None
         status["origin"] = str(getattr(spec, "origin", "") or "")
-        try:
-            from importlib import metadata
-
-            status["version"] = metadata.version("faster-whisper")
-        except Exception:
-            status["version"] = ""
+        status["version"] = _managed_distribution_version("faster-whisper")
     except Exception as exc:  # noqa: BLE001
         status["error"] = f"{type(exc).__name__}: {exc}"
     return status

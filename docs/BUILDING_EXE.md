@@ -56,6 +56,10 @@ Notes:
   is writable. Drop addon folders there, or use **Addon Manager > Install
   archive/folder**. If the executable lives in a read-only install location,
   Wisp falls back to the user data addon folder shown by **Open addons folder**.
+- Windows builds place `Uninstall Wisp.bat` beside `Wisp.exe`. Double-click it
+  after closing Wisp to preview the exact Wisp-owned paths that will be removed,
+  confirm permanent removal, and run the same validated uninstaller available in
+  **Settings > App > Uninstall Wisp**.
 - The packaged executable starts the same supervisor worker runtime as the
   launchers.
 - Packaged no-console runs keep runtime logs under `build_logs/`; the latest
@@ -69,6 +73,13 @@ Notes:
   build Python first if needed, and PyInstaller bundles it with Wisp. If you
   build without the script, place `uv.exe` at `bin\uv.exe` or `tools\uv.exe`
   before running PyInstaller.
+- Packaged builds deliberately exclude faster-whisper, CTranslate2, PyAV, and
+  ONNX Runtime. STT has one authoritative pinned installation under Wisp's
+  user-writable `python_packages` directory, created or repaired by
+  Settings > Voice > Install STT; packages present in the build environment do
+  not become a second bundled STT backend. The build scripts also filter the
+  installer-owned native STT wheels from their temporary build requirements,
+  avoiding downloads that PyInstaller would discard.
 - `pip` is used in the build environment but is deliberately excluded from
   packaged Wisp releases. Bundled `uv` is the only package installer used by a
   frozen app; source checkouts retain their normal `pip` fallback.

@@ -164,11 +164,17 @@ def run_setup_check() -> list[dict[str, str]]:
 
     hotkeys = [
         str(getattr(config, "HOTKEY_SNIP", "") or ""),
+        str(getattr(config, "HOTKEY_SNIP_2", "") or ""),
         str(getattr(config, "HOTKEY_VOICE", "") or ""),
+        str(getattr(config, "HOTKEY_VOICE_2", "") or ""),
         str(getattr(config, "HOTKEY_ADD_CONTEXT", "") or ""),
+        str(getattr(config, "HOTKEY_ADD_CONTEXT_2", "") or ""),
     ]
     caller_rows = getattr(config, "CALLER_ROWS", []) or []
-    hotkeys.extend(str(row.get("hotkey") or "") for row in caller_rows if isinstance(row, dict))
+    for row in caller_rows:
+        if not isinstance(row, dict) or not bool(row.get("enabled", True)):
+            continue
+        hotkeys.extend((str(row.get("hotkey") or ""), str(row.get("hotkey_2") or "")))
     enabled_hotkeys = [key for key in hotkeys if key.strip()]
     rows.append(
         {

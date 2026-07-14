@@ -2463,16 +2463,12 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>TTS 提供者</translation>
     </message>
     <message>
-      <source>Speak assistant replies automatically</source>
+      <source>Read assistant replies aloud automatically</source>
       <translation>自動朗讀助理回覆</translation>
     </message>
     <message>
       <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
       <translation>關閉時，已設定的語音仍可用於朗讀選取文字和測試 TTS。</translation>
-    </message>
-    <message>
-      <source>Auto-speak replies</source>
-      <translation>自動朗讀回覆</translation>
     </message>
     <message>
       <source>TTS hold speed</source>
@@ -3826,6 +3822,118 @@ Continue?</source>
     <message><source>Add at least one agent.</source><translation>請至少新增一個代理。</translation></message>
     <message><source>Agent names must be unique.</source><translation>代理名稱不得重複。</translation></message>
     <message><source>Every communication must reference existing agents.</source><translation>每項通訊都必須參照現有代理。</translation></message>
+    <message><source>+ Add connection</source><translation>+ 新增連線</translation></message>
+    <message><source>A private desktop assistant overlay with configurable models, voice, context, and tools.</source><translation>一款可設定模型、語音、上下文與工具的私密桌面助理浮層。</translation></message>
+    <message><source>Add connection</source><translation>新增連線</translation></message>
+    <message><source>Add each provider once, or use aliases for multiple accounts. Search and filtering keep large connection lists manageable.</source><translation>每個提供者新增一次；若有多個帳戶，可使用別名。搜尋與篩選可輕鬆管理較長的連線清單。</translation></message>
+    <message><source>Add fallback</source><translation>新增備援模型</translation></message>
+    <message><source>Add fallback model</source><translation>新增備援模型</translation></message>
+    <message><source>Add fallback to {route}</source><translation>為 {route} 新增備援模型</translation></message>
+    <message><source>All connections</source><translation>所有連線</translation></message>
+    <message><source>Choose a configured connection, then search its models or enter an exact model name.</source><translation>選擇已設定的連線，接著搜尋其模型或輸入確切的模型名稱。</translation></message>
+    <message><source>Choose a provider</source><translation>選擇提供者</translation></message>
+    <message><source>Cloud provider</source><translation>雲端提供者</translation></message>
+    <message><source>Cloud providers</source><translation>雲端提供者</translation></message>
+    <message><source>Connection</source><translation>連線</translation></message>
+    <message><source>Live voice needs a Google API key. Add one in Connections first.</source><translation>即時語音需要 Google API 金鑰。請先在「連線」中新增。</translation></message>
+    <message><source>Local and custom</source><translation>本機與自訂</translation></message>
+    <message><source>Local or self-hosted provider</source><translation>本機或自行託管的提供者</translation></message>
+    <message><source>No catalog match. The text above will be used as a custom model name.</source><translation>目錄中沒有相符項目。上方文字將作為自訂模型名稱。</translation></message>
+    <message><source>No matching connections.</source><translation>沒有相符的連線。</translation></message>
+    <message><source>Reset only the currently selected settings page to defaults</source><translation>僅將目前選取的設定頁面重設為預設值</translation></message>
+    <message><source>Save changes</source><translation>儲存變更</translation></message>
+    <message><source>Search all settings...</source><translation>搜尋所有設定...</translation></message>
+    <message><source>Search models or enter a model name...</source><translation>搜尋模型或輸入模型名稱...</translation></message>
+    <message><source>Search providers or aliases...</source><translation>搜尋提供者或別名...</translation></message>
+    <message><source>Search providers...</source><translation>搜尋提供者...</translation></message>
+    <message><source>Search the provider catalog. You can add multiple accounts using aliases.</source><translation>搜尋提供者目錄。你可以使用別名新增多個帳戶。</translation></message>
+    <message><source>Show fewer</source><translation>收合</translation></message>
+    <message><source>Show {count} more</source><translation>再顯示 {count} 個</translation></message>
+    <message><source>The credential or local endpoint used by this fallback.</source><translation>此備援模型使用的憑證或本機端點。</translation></message>
+    <message><source>Uses the Google API key from Connections.</source><translation>使用「連線」中的 Google API 金鑰。</translation></message>
+    <message><source>Uses your OpenAI API key from Connections.</source><translation>使用「連線」中的 OpenAI API 金鑰。</translation></message>
+    <message><source>{count} catalog models</source><translation>{count} 個目錄模型</translation></message>
+    <message><source>Appearance, languages, privacy, and everyday behavior.</source><translation>外觀、語言、隱私與日常行為。</translation></message>
+    <message><source>Connections</source><translation>連線</translation></message>
+    <message><source>Provider sign-ins, API keys, and custom endpoints.</source><translation>提供者登入、API 金鑰與自訂端點。</translation></message>
+    <message><source>Choose primary and fallback models for each purpose.</source><translation>為每種用途選擇主要與備援模型。</translation></message>
+    <message><source>Voice &amp; audio</source><translation>語音與音訊</translation></message>
+    <message><source>Playback, text to speech, transcription, and live conversation.</source><translation>播放、文字轉語音、語音轉寫與即時對話。</translation></message>
+    <message><source>Shortcuts</source><translation>快捷鍵</translation></message>
+    <message><source>Keyboard controls, caller actions, context, and tool access.</source><translation>鍵盤控制、呼叫操作、上下文與工具存取。</translation></message>
+    <message><source>Prompts &amp; context</source><translation>提示詞與上下文</translation></message>
+    <message><source>Instructions that shape how Wisp responds.</source><translation>決定 Wisp 如何回覆的指令。</translation></message>
+    <message><source>Context limits, local file access, memory, and timing.</source><translation>上下文限制、本機檔案存取、記憶與計時。</translation></message>
+    <message><source>About</source><translation>關於</translation></message>
+    <message><source>Version, updates, and uninstall options.</source><translation>版本、更新與解除安裝選項。</translation></message>
+    <message><source>Text to speech</source><translation>文字轉語音</translation></message>
+    <message><source>Live conversation</source><translation>即時對話</translation></message>
+    <message><source>Load or create a profile for common Wisp setups. Review changes before saving.</source><translation>為常用的 Wisp 設定載入或建立設定檔。儲存前請檢查變更。</translation></message>
+    <message><source>{profile} profile created. Review changes, then Save changes to use it.</source><translation>已建立 {profile} 設定檔。檢查變更後，選擇「儲存變更」以使用它。</translation></message>
+    <message><source>{profile} profile selected. Review changes, then Save changes.</source><translation>已選取 {profile} 設定檔。檢查變更後，請選擇「儲存變更」。</translation></message>
+    <message><source>{profile} profile selected. Edits saved with Save changes will update this profile.</source><translation>已選取 {profile} 設定檔。透過「儲存變更」儲存的編輯將更新此設定檔。</translation></message>
+    <message><source>Save settings first</source><translation>請先儲存設定</translation></message>
+    <message><source>Save or discard your pending Settings changes before running profile setup.</source><translation>執行設定檔設定前，請儲存或捨棄待處理的設定變更。</translation></message>
+    <message><source>Add the providers you use. Optional aliases and filters keep large connection lists easy to scan.</source><translation>新增你使用的提供者。可選別名與篩選器讓較長的連線清單更容易瀏覽。</translation></message>
+    <message><source>Search the provider catalog, then use an optional alias to label the connection.</source><translation>搜尋提供者目錄，接著使用可選別名標記該連線。</translation></message>
+    <message><source>Extract long-term facts automatically</source><translation>自動擷取長期事實</translation></message>
+    <message><source>Find a shortcut…</source><translation>尋找快速鍵…</translation></message>
+    <message><source>Global shortcuts</source><translation>全域快速鍵</translation></message>
+    <message><source>Intent-overlay and screen-capture entry points available from any application.</source><translation>可在任何應用程式使用的意圖浮層與螢幕擷取入口。</translation></message>
+    <message><source>Add intent shortcut</source><translation>新增意圖快速鍵</translation></message>
+    <message><source>Intent overlay timeout (ms)</source><translation>意圖浮層逾時（毫秒）</translation></message>
+    <message><source>Voice shortcuts</source><translation>語音快速鍵</translation></message>
+    <message><source>Speech input, dictation, live conversation, and spoken selection.</source><translation>語音輸入、聽寫、即時對話與朗讀選取內容。</translation></message>
+    <message><source>Hold to ask by voice</source><translation>按住以語音提問</translation></message>
+    <message><source>Hold while speaking, then release to transcribe and ask.</source><translation>說話時按住，放開後轉錄並提問。</translation></message>
+    <message><source>Hold to dictate</source><translation>按住以聽寫</translation></message>
+    <message><source>Type speech into the focused field without asking the assistant.</source><translation>將語音輸入目前聚焦的欄位，不詢問助理。</translation></message>
+    <message><source>Toggle live conversation</source><translation>切換即時對話</translation></message>
+    <message><source>Start or stop a live voice conversation.</source><translation>開始或停止即時語音對話。</translation></message>
+    <message><source>Speak selected text with the configured text-to-speech provider.</source><translation>使用已設定的文字轉語音提供者朗讀選取文字。</translation></message>
+    <message><source>Context shortcuts</source><translation>上下文快速鍵</translation></message>
+    <message><source>Build or clear the context buffer without opening Wisp.</source><translation>不需開啟 Wisp 即可新增或清除上下文緩衝區。</translation></message>
+    <message><source>Append selected text to the context buffer.</source><translation>將選取文字加入上下文緩衝區。</translation></message>
+    <message><source>Remove every item from the context buffer.</source><translation>移除上下文緩衝區中的所有項目。</translation></message>
+    <message><source>Action</source><translation>動作</translation></message>
+    <message><source>Shortcut 1</source><translation>快速鍵 1</translation></message>
+    <message><source>Shortcut 2</source><translation>快速鍵 2</translation></message>
+    <message><source>Details</source><translation>詳細設定</translation></message>
+    <message><source>Customize</source><translation>自訂</translation></message>
+    <message><source>Enable this shortcut</source><translation>啟用此快速鍵</translation></message>
+    <message><source>Assign shortcut</source><translation>設定快速鍵</translation></message>
+    <message><source>Intent shortcut name</source><translation>意圖快速鍵名稱</translation></message>
+    <message><source>Short name shown for this intent shortcut in settings and tool access dialogs.</source><translation>在設定與工具存取對話框中顯示的此意圖快速鍵簡短名稱。</translation></message>
+    <message><source>Paste the final answer into the focused application</source><translation>將最終答案貼到目前使用的應用程式</translation></message>
+    <message><source>Remove intent shortcut</source><translation>移除意圖快速鍵</translation></message>
+    <message><source>Add choice</source><translation>新增選項</translation></message>
+    <message><source>New intent shortcut</source><translation>新增意圖快速鍵</translation></message>
+    <message><source>Rewrite &amp; Paste</source><translation>改寫並貼上</translation></message>
+    <message><source>App context:
+Off — do not include nearby app/window context or open documents.
+On — include nearby app/window context only.
+On + open docs — include nearby app/window context and read supported open documents.
+Let model decide — include nearby app/window context and expose an open-document tool.</source><translation>應用程式上下文：
+關閉 — 不包含附近的應用程式/視窗上下文或已開啟的文件。
+開啟 — 僅包含附近的應用程式/視窗上下文。
+開啟 + 已開啟文件 — 包含附近的應用程式/視窗上下文並讀取支援的已開啟文件。
+讓模型決定 — 包含附近的應用程式/視窗上下文，並提供開啟文件工具。</translation></message>
+    <message><source>Clipboard:
+Off — do not include clipboard text.
+On — include clipboard text with this query.</source><translation>剪貼簿：
+關閉 — 不包含剪貼簿文字。
+開啟 — 在此次查詢中包含剪貼簿文字。</translation></message>
+    <message><source>Local files:
+Off — do not expose file tools.
+Read only — allow listing and reading configured folders.
+Ask before writing — show a diff before edits or creates.
+Write automatically — apply edits without asking.</source><translation>本機檔案：
+關閉 — 不提供檔案工具。
+唯讀 — 允許列出和讀取已設定的資料夾。
+寫入前詢問 — 編輯或建立前顯示差異。
+自動寫入 — 不詢問直接套用編輯。</translation></message>
+    <message><source>Open the intent overlay for selected text or the active project.</source><translation>為選取文字或目前專案開啟意圖浮層。</translation></message>
+    <message><source>Select a screen region, attach it, and open the intent overlay.</source><translation>選取螢幕區域、附加影像並開啟意圖浮層。</translation></message>
   </context>
   <context>
     <name>Wisp</name>
@@ -4819,10 +4927,6 @@ Continue?</source>
       <translation>你的其他設定仍已儲存。詳情請查看日誌，然後重新嘗試儲存受影響的金鑰。</translation>
     </message>
     <message>
-      <source>add an API key below</source>
-      <translation>在下方新增 API 金鑰</translation>
-    </message>
-    <message>
       <source>custom endpoint API key</source>
       <translation>自訂端點 API 金鑰</translation>
     </message>
@@ -4865,6 +4969,46 @@ Continue?</source>
     <message>
       <source>LOCAL FILE TOOLS</source>
       <translation>本機檔案工具</translation>
+    </message>
+    <message>
+      <source>list_files</source>
+      <translation>列出檔案</translation>
+    </message>
+    <message>
+      <source>read_file</source>
+      <translation>讀取檔案</translation>
+    </message>
+    <message>
+      <source>create_file</source>
+      <translation>建立檔案</translation>
+    </message>
+    <message>
+      <source>edit_file</source>
+      <translation>編輯檔案</translation>
+    </message>
+    <message>
+      <source>write_file</source>
+      <translation>寫入檔案</translation>
+    </message>
+    <message>
+      <source>List configured file roots.</source>
+      <translation>列出已設定的檔案根目錄。</translation>
+    </message>
+    <message>
+      <source>Read files from configured file roots.</source>
+      <translation>從已設定的檔案根目錄讀取檔案。</translation>
+    </message>
+    <message>
+      <source>Create new files in configured file roots.</source>
+      <translation>在已設定的檔案根目錄中建立新檔案。</translation>
+    </message>
+    <message>
+      <source>Patch files in configured file roots.</source>
+      <translation>修補已設定檔案根目錄中的檔案。</translation>
+    </message>
+    <message>
+      <source>Create or overwrite files in configured file roots.</source>
+      <translation>在已設定的檔案根目錄中建立或覆寫檔案。</translation>
     </message>
     <message>
       <source>Local files</source>
@@ -5132,59 +5276,59 @@ Continue?</source>
     </message>
     <message>
       <source>STT model configured: {model}. faster-whisper is installed.</source>
-      <translation>STT model configured: {model}. faster-whisper is installed.</translation>
+      <translation>已設定 STT 模型：{model}。faster-whisper 已安裝。</translation>
     </message>
     <message>
       <source>STT model configured: {model}, but faster-whisper is not installed.</source>
-      <translation>STT model configured: {model}, but faster-whisper is not installed.</translation>
+      <translation>已設定 STT 模型：{model}，但尚未安裝 faster-whisper。</translation>
     </message>
     <message>
-      <source>STT model configured: {model}, but faster-whisper failed to import: {error}</source>
-      <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
+      <source>STT model configured: {model}, but STT verification failed: {error}</source>
+      <translation>已設定 STT 模型：{model}，但 STT 驗證失敗：{error}</translation>
     </message>
     <message>
       <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</source>
-      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</translation>
+      <translation>建議：STT 支援無法正常運作。請開啟「設定」&gt;「語音」，然後按一下「安裝 STT」。</translation>
     </message>
     <message>
       <source>Installing STT: {detail}.</source>
-      <translation>Installing STT: {detail}.</translation>
+      <translation>正在安裝 STT：{detail}。</translation>
     </message>
     <message>
       <source>Installing STT...</source>
-      <translation>Installing STT...</translation>
+      <translation>正在安裝 STT…</translation>
     </message>
     <message>
       <source>Reinstall STT</source>
-      <translation>Reinstall STT</translation>
+      <translation>重新安裝 STT</translation>
     </message>
     <message>
       <source>Install STT</source>
-      <translation>Install STT</translation>
+      <translation>安裝 STT</translation>
     </message>
     <message>
       <source>STT install failed: {message}</source>
-      <translation>STT install failed: {message}</translation>
+      <translation>STT 安裝失敗：{message}</translation>
     </message>
     <message>
       <source>STT installed, but model verification failed: {message}</source>
-      <translation>STT installed, but model verification failed: {message}</translation>
+      <translation>STT 已安裝，但模型驗證失敗：{message}</translation>
     </message>
     <message>
       <source>STT installed and model ready: {summary}.</source>
-      <translation>STT installed and model ready: {summary}.</translation>
+      <translation>STT 已安裝且模型已就緒：{summary}。</translation>
     </message>
     <message>
       <source>Installing STT: downloading or loading Whisper model {model}.</source>
-      <translation>Installing STT: downloading or loading Whisper model {model}.</translation>
+      <translation>正在安裝 STT：正在下載或載入 Whisper 模型 {model}。</translation>
     </message>
     <message>
       <source>STT package installed. Configured backend: {summary}; model loads on first use.</source>
-      <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
+      <translation>STT 套件已安裝。已設定的後端：{summary}；模型將在首次使用時載入。</translation>
     </message>
     <message>
       <source>STT package is not installed. Click Install STT to install and verify it.</source>
-      <translation>STT package is not installed. Click Install STT to install and verify it.</translation>
+      <translation>尚未安裝 STT 套件。請按一下「安裝 STT」進行安裝並驗證。</translation>
     </message>
     <message>
       <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>
@@ -5230,7 +5374,7 @@ Windows CUDA 支援還會下載 NVIDIA CUDA Runtime 和 cuBLAS 套件（約 570 
     </message>
     <message>
       <source>downloading or loading Whisper model for {elapsed}</source>
-      <translation>downloading or loading Whisper model for {elapsed}</translation>
+      <translation>正在下載或載入 Whisper 模型（已用時 {elapsed}）</translation>
     </message>
     <message>
       <source>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
@@ -5264,7 +5408,7 @@ Continue?</translation>
     </message>
     <message>
       <source>removing previous install</source>
-      <translation>removing previous install</translation>
+      <translation>正在移除先前的安裝</translation>
     </message>
     <message>
       <source>Wisp {display_name} apply</source>
@@ -5384,6 +5528,7 @@ Continue?</translation>
     <message><source>Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer.</source><translation>從此電腦永久移除 Wisp、其資料以及 Wisp 專用的本機 AI 模型。</translation></message>
     <message><source>Uninstall Wisp</source><translation>解除安裝 Wisp</translation></message>
     <message><source>Could not start uninstaller</source><translation>無法啟動解除安裝程式</translation></message>
+    <message><source>Another Wisp process is still running. Close Wisp, then run Uninstall Wisp.bat again.</source><translation>另一個 Wisp 程序仍在執行。請關閉 Wisp，然後再次執行 Uninstall Wisp.bat。</translation></message>
     <message><source>Could not build a safe uninstall plan: {error}</source><translation>無法建立安全的解除安裝計畫：{error}</translation></message>
     <message><source>source checkout</source><translation>原始碼簽出目錄</translation></message>
     <message><source>release installation</source><translation>發行版安裝目錄</translation></message>
@@ -5406,8 +5551,6 @@ Shared uv/pip caches and unrelated Hugging Face models will not be removed.</sou
     <message><source>The source checkout will be deleted, including its Git history, uncommitted changes, and every file inside it.</source><translation>原始碼簽出目錄將被刪除，包括其 Git 歷史記錄、未提交的變更以及其中的所有檔案。</translation></message>
     <message><source>Uninstall Wisp?</source><translation>解除安裝 Wisp？</translation></message>
     <message><source>This action cannot be undone.</source><translation>此操作無法復原。</translation></message>
-    <message><source>Confirm uninstall</source><translation>確認解除安裝</translation></message>
-    <message><source>Type UNINSTALL to confirm permanent removal:</source><translation>輸入 UNINSTALL 以確認永久移除：</translation></message>
     <message><source>Could not start uninstaller: {error}</source><translation>無法啟動解除安裝程式：{error}</translation></message>
     <message><source>Uninstaller started</source><translation>解除安裝程式已啟動</translation></message>
     <message><source>Wisp will now close. The uninstaller will remove only the listed Wisp-owned files after all Wisp processes exit.</source><translation>Wisp 現在將關閉。所有 Wisp 處理程序結束後，解除安裝程式只會移除列出的 Wisp 專用檔案。</translation></message>

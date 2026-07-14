@@ -450,6 +450,39 @@ def optional_package_spec_status(
     return status
 
 
+def require_optional_package_runtime(key: str, *, device: str | None = None) -> dict[str, object]:
+    """Prepare one valid installer-owned dependency layer for runtime use.
+
+    Runtime consumers must not fall through to a package from the build
+    environment or PyInstaller bundle when the managed install is missing or
+    stale. The same exact contract therefore owns both Settings detection and
+    the actual import path.
+    """
+    status = optional_package_spec_status(key, device=device)
+    if not status.get("valid"):
+        display_name = str(status.get("display_name") or key)
+        detail = str(status.get("message") or "managed package files are missing or invalid")
+        raise RuntimeError(
+            f"{display_name} is not installed for this Wisp release. "
+            f"Open Settings > Voice and install it. {detail}"
+        )
+
+    add_optional_packages_to_path(prepend=True)
+    importlib.invalidate_caches()
+    spec = optional_package_spec(key, device=device)
+    missing_modules = [
+        module_name
+        for module_name in spec.required_modules
+        if importlib.machinery.PathFinder.find_spec(module_name, [str(OPTIONAL_PACKAGES_DIR)]) is None
+    ]
+    if missing_modules:
+        raise RuntimeError(
+            f"{spec.display_name} install is incomplete in Wisp's managed package folder: "
+            f"missing {', '.join(missing_modules)}. Open Settings > Voice and reinstall it."
+        )
+    return status
+
+
 def remove_optional_package_artifacts(patterns: list[str]) -> list[str]:
     """Remove package files/directories from Wisp's optional package layer.
 
@@ -944,12 +977,9 @@ def stt_runtime_import_status_fast() -> dict[str, object]:
             return status
         status["installed"] = True
         status["origin"] = str(getattr(spec, "origin", "") or "")
-        try:
-            from importlib import metadata
-
-            status["version"] = metadata.version("faster-whisper")
-        except Exception:
-            status["version"] = ""
+        dist_infos = _dist_info_groups_for_root(OPTIONAL_PACKAGES_DIR).get("faster-whisper") or []
+        if len(dist_infos) == 1:
+            status["version"] = _dist_info_metadata(dist_infos[0])[1]
         status["valid"] = bool(status["origin"])
     except Exception as exc:
         status["error"] = f"{type(exc).__name__}: {exc}"

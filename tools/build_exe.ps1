@@ -78,6 +78,7 @@ foreach ($RequiredBuildFile in $RequiredBuildFiles) {
 $RequiredPackagingFiles = @(
     @{ Path = $Spec; Name = "packaging\$SpecName" },
     @{ Path = (Join-Path $Root "runtime\supervisor\app.py"); Name = "runtime\supervisor\app.py" },
+    @{ Path = (Join-Path $Root "Uninstall Wisp.bat"); Name = "Uninstall Wisp.bat" },
     @{ Path = (Join-Path $Root ".env.example"); Name = ".env.example" }
 )
 foreach ($RequiredPackagingFile in $RequiredPackagingFiles) {
@@ -329,11 +330,16 @@ function Clear-BuildOutputs {
 }
 
 function New-BuildRequirementsFile {
-    param([string]$SourcePath)
+    param(
+        [string]$SourcePath,
+        [switch]$ExcludeElevenLabs
+    )
 
     $TempPath = Join-Path $env:TEMP "wisp-build-requirements.txt"
+    $InstallerOwnedSttPattern = '^\s*(av|ctranslate2|faster-whisper|flatbuffers|onnxruntime)\s*=='
     Get-Content $SourcePath |
-        Where-Object { $_ -notmatch '^\s*elevenlabs\b' } |
+        Where-Object { $_ -notmatch $InstallerOwnedSttPattern } |
+        Where-Object { (-not $ExcludeElevenLabs) -or ($_ -notmatch '^\s*elevenlabs\b') } |
         Set-Content -Path $TempPath -Encoding ascii
     return $TempPath
 }
@@ -371,15 +377,15 @@ if (-not $SkipInstall) {
     Write-Host "  $Python"
     Write-Host "(already-satisfied packages are skipped automatically)"
 
-    $BuildRequirements = $RequirementsFile
-    $FilteredRequirements = $null
-    if ((-not $UseGlobalPython) -and (Test-LongPathRisk $VenvDir)) {
+    $ExcludeElevenLabs = (-not $UseGlobalPython) -and (Test-LongPathRisk $VenvDir)
+    if ($ExcludeElevenLabs) {
         Write-Warning "IMPORTANT: ElevenLabs will not be bundled in this build."
         Write-Warning "Reason: this project path is long enough to hit Windows path limits while installing the ElevenLabs wheel."
         Write-Warning "Recovery: users can open Settings > Voice > Install ElevenLabs after startup, or rebuild from a shorter path / with Windows long paths enabled."
-        $FilteredRequirements = New-BuildRequirementsFile -SourcePath $RequirementsFile
-        $BuildRequirements = $FilteredRequirements
     }
+    Write-Host "STT native packages are installer-owned and will not be installed into the build environment."
+    $FilteredRequirements = New-BuildRequirementsFile -SourcePath $RequirementsFile -ExcludeElevenLabs:$ExcludeElevenLabs
+    $BuildRequirements = $FilteredRequirements
 
     Ensure-Pip -Python $Python
     Invoke-CheckedPython -Python $Python -CommandArgs @("-m", "pip", "install", "--upgrade", "pip") -StepName "pip upgrade"

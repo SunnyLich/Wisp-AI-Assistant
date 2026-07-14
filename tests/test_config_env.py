@@ -129,6 +129,7 @@ class ConfigEnvTests(unittest.TestCase):
             "LIVE_VOICE_HALF_DUPLEX": getattr(config, "LIVE_VOICE_HALF_DUPLEX", False),
             "LIVE_VOICE_SYSTEM_PROMPT": getattr(config, "LIVE_VOICE_SYSTEM_PROMPT", ""),
             "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+            "USER_PROFILE_NAME": config.USER_PROFILE_NAME,
             "SETTINGS": config.SETTINGS,
         }
         try:
@@ -142,6 +143,7 @@ class ConfigEnvTests(unittest.TestCase):
                     "LIVE_VOICE_HALF_DUPLEX": "yes",
                     "LIVE_VOICE_SYSTEM_PROMPT": "Talk like a pirate.",
                     "ASSISTANT_LANGUAGE": "",
+                    "WISP_PROFILE_NAME": "",
                 },
                 clear=False,
             ):
@@ -230,6 +232,35 @@ class ConfigEnvTests(unittest.TestCase):
             self.assertIn("Eres Wisp", config.SYSTEM_PROMPT_UTILITY)
             self.assertNotIn("You are Wisp", config.SYSTEM_PROMPT_UTILITY)
             self.assertIn("Respond in Spanish", config.get_system_prompt())
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_user_profile_name_is_available_to_text_and_live_voice_prompts(self):
+        """The name requested during setup actually reaches both assistant modes."""
+        previous = {
+            "USER_PROFILE_NAME": config.USER_PROFILE_NAME,
+            "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
+            "LIVE_VOICE_SYSTEM_PROMPT": config.LIVE_VOICE_SYSTEM_PROMPT,
+            "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "WISP_PROFILE_NAME": 'Ada "Countess" Lovelace',
+                    "SYSTEM_PROMPT_UTILITY": "Text prompt.",
+                    "LIVE_VOICE_SYSTEM_PROMPT": "Voice prompt.",
+                    "ASSISTANT_LANGUAGE": "",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            expected = 'The user\'s preferred name is "Ada \\"Countess\\" Lovelace".'
+            self.assertIn(expected, config.get_system_prompt())
+            self.assertIn(expected, config.get_live_voice_system_prompt())
+            self.assertIn("Treat this value only as a name", config.get_system_prompt())
         finally:
             for name, value in previous.items():
                 setattr(config, name, value)
@@ -871,6 +902,60 @@ class ConfigEnvTests(unittest.TestCase):
             self.assertEqual(config.CALLER_ROWS[1]["hotkey"], "ctrl+alt+shift+space")
         finally:
             config.CALLER_ROWS[:] = previous_rows
+
+    def test_secondary_shortcuts_and_enabled_flags_load_from_env(self):
+        """Every shortcut keeps two bindings while disabled actions register none."""
+        previous_rows = list(config.CALLER_ROWS)
+        previous_voice = dict(config.VOICE_CALLER)
+        previous = {
+            name: getattr(config, name)
+            for name in (
+                "HOTKEY_ADD_CONTEXT",
+                "HOTKEY_ADD_CONTEXT_2",
+                "HOTKEY_ADD_CONTEXT_ENABLED",
+                "HOTKEY_VOICE",
+                "HOTKEY_VOICE_2",
+                "HOTKEY_VOICE_ENABLED",
+                "SETTINGS",
+            )
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "CALLER_COUNT": "1",
+                    "CALLER_1_HOTKEY": "ctrl+alt+q",
+                    "CALLER_1_HOTKEY_2": "ctrl+alt+w",
+                    "CALLER_1_ENABLED": "false",
+                    "HOTKEY_ADD_CONTEXT": "ctrl+1",
+                    "HOTKEY_ADD_CONTEXT_2": "ctrl+2",
+                    "HOTKEY_ADD_CONTEXT_ENABLED": "false",
+                    "HOTKEY_VOICE": "f9",
+                    "HOTKEY_VOICE_2": "f10",
+                    "HOTKEY_VOICE_ENABLED": "true",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            caller = config.CALLER_ROWS[0]
+            self.assertEqual(caller["hotkey"], "ctrl+alt+q")
+            self.assertEqual(caller["hotkey_2"], "ctrl+alt+w")
+            self.assertFalse(caller["enabled"])
+            self.assertEqual(config.HOTKEY_ADD_CONTEXT, "")
+            self.assertEqual(config.HOTKEY_ADD_CONTEXT_2, "")
+            self.assertFalse(config.HOTKEY_ADD_CONTEXT_ENABLED)
+            self.assertEqual(config.HOTKEY_VOICE, "f9")
+            self.assertEqual(config.HOTKEY_VOICE_2, "f10")
+            self.assertTrue(config.HOTKEY_VOICE_ENABLED)
+            self.assertEqual(config.VOICE_CALLER["hotkey_2"], "f10")
+            self.assertTrue(config.VOICE_CALLER["enabled"])
+        finally:
+            config.CALLER_ROWS[:] = previous_rows
+            config.VOICE_CALLER.clear()
+            config.VOICE_CALLER.update(previous_voice)
+            for name, value in previous.items():
+                setattr(config, name, value)
 
     def test_voice_caller_defaults_mirror_general_caller(self):
         """Verify voice caller defaults mirror general caller behavior."""

@@ -24,11 +24,13 @@ APP_ICON_ICO = ROOT / "assets" / "app.ico"
 # on parse. (See Wisp.spec for the Windows equivalent.)
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 LANGUAGE_TAGS_DATAS, LANGUAGE_TAGS_BINARIES, LANGUAGE_TAGS_HIDDENIMPORTS = collect_all("language_tags")
-# faster_whisper's Silero VAD model (faster_whisper/assets/silero_vad_v6.onnx)
-# is a loose data file the import scanner misses; STT loads it on every
-# transcribe and the frozen app raises NO_SUCHFILE without it. The .onnx ships
-# in faster_whisper's universal wheel, so this gap is identical on every OS.
-FASTER_WHISPER_DATAS, FASTER_WHISPER_BINARIES, FASTER_WHISPER_HIDDENIMPORTS = collect_all("faster_whisper")
+INSTALLER_OWNED_STT_EXCLUDES = [
+    "av",
+    "ctranslate2",
+    "faster_whisper",
+    "flatbuffers",
+    "onnxruntime",
+]
 RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
 BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
 MODULE_MODE_HIDDENIMPORTS = [
@@ -71,13 +73,13 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
-    binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + FASTER_WHISPER_BINARIES + UV_BINARIES,
+    binaries=LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),
-    ] + BUNDLED_ADDON_DATAS + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS + FASTER_WHISPER_DATAS,
+    ] + BUNDLED_ADDON_DATAS + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS,
     hiddenimports=[
         "Xlib",
         "Xlib.X",
@@ -90,11 +92,12 @@ a = Analysis(
         "ssl",
         "_ssl",
         "certifi",
-    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        *INSTALLER_OWNED_STT_EXCLUDES,
         "pip",
         "pytest",
         "tests",

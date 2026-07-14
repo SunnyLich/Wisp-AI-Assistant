@@ -82,10 +82,154 @@ _PROVIDER_SECRET_NAMES: dict[str, str] = {
     "custom": "CUSTOM_API_KEY",
 }
 
+_BUILTIN_PROFILE_IDS = {"default", "fast", "balanced", "deep", "private", "coding"}
+_PERSONAL_PROFILE_DEFAULTS = {
+    "LLM_PROVIDER": "openai",
+    "LLM_MODEL": "gpt-5.5",
+    "LLM_FALLBACKS": "",
+    "VISION_LLM_PROVIDER": "",
+    "VISION_LLM_MODEL": "",
+    "VISION_LLM_FALLBACKS": "",
+    "CONTEXT_DOCUMENTS_MODE": "off",
+    "CONTEXT_BROWSER_MODE": "off",
+    "CONTEXT_GITHUB_MODE": "off",
+    "CONTEXT_MEMORY_MODE": "off",
+    "CONTEXT_SCREENSHOT": "off",
+    "FILE_ACCESS": "off",
+    "CONTEXT_BROWSER_MAX_CHARS": "12000",
+    "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS": "8000",
+    "CONTEXT_TOOL_DOCUMENT_MAX_CHARS": "50000",
+    "TOOL_TURN_MAX_CALLS": "25",
+    "TOOL_TURN_MAX_RESULT_CHARS": "120000",
+    "TOOL_TURN_MAX_TOTAL_CHARS": "300000",
+}
+_PROFILE_SCOPED_SETUP_KEYS = frozenset(_PERSONAL_PROFILE_DEFAULTS) | {
+    "CHAT_LLM_PROVIDER",
+    "CHAT_LLM_MODEL",
+    "CHAT_LLM_FALLBACKS",
+    "MEMORY_LLM_PROVIDER",
+    "MEMORY_LLM_MODEL",
+    "MEMORY_LLM_FALLBACKS",
+}
+
 
 def clean_profile_name(value: str) -> str:
     """Return a compact, safe profile display name."""
     return " ".join(str(value or "").split())[:80]
+
+
+def _profile_id(value: str, default: str = "personal") -> str:
+    """Return the config-safe id used by a named custom profile."""
+    import re
+
+    text = re.sub(r"[^a-z0-9_-]+", "-", clean_profile_name(value).lower()).strip("-")
+    return text or default
+
+
+def personal_profile_values(
+    *,
+    name: str,
+    setup_values: dict[str, str],
+    existing_env: dict[str, str],
+) -> dict[str, str]:
+    """Create a new wizard-owned custom profile without replacing another setup."""
+    label = clean_profile_name(name)
+    if not label:
+        return {}
+    try:
+        count = max(0, int(str(existing_env.get("PROFILE_COUNT", "0") or "0")))
+    except ValueError:
+        count = 0
+
+    profiles = [
+        (
+            slot,
+            str(existing_env.get(f"PROFILE_{slot}_ID", "") or "").strip(),
+            clean_profile_name(existing_env.get(f"PROFILE_{slot}_LABEL", "")),
+        )
+        for slot in range(1, count + 1)
+        if str(existing_env.get(f"PROFILE_{slot}_ID", "") or "").strip()
+    ]
+    desired_id = _profile_id(label)
+    active_id = str(
+        existing_env.get("SETTINGS_PROFILE")
+        or existing_env.get("ACTIVE_PROFILE")
+        or ""
+    ).strip()
+
+    existing_ids = _BUILTIN_PROFILE_IDS | {
+        profile_id for _slot, profile_id, _label in profiles
+    }
+    profile_id = desired_id
+    suffix = 2
+    while profile_id in existing_ids:
+        profile_id = f"{desired_id}-{suffix}"
+        suffix += 1
+    slot = count + 1
+    count = slot
+
+    # The wizard only exposes a subset of profile settings. Seed everything
+    # else from the currently selected custom profile (or the legacy top-level
+    # setup for built-in profiles), then overlay the choices made in the wizard.
+    active_profile = next(
+        (profile for profile in profiles if profile[1] == active_id),
+        None,
+    )
+    source_prefix = f"PROFILE_{active_profile[0]}_" if active_profile else ""
+
+    def _source_value(key: str) -> str | None:
+        if source_prefix and f"{source_prefix}{key}" in existing_env:
+            return str(existing_env[f"{source_prefix}{key}"])
+        if key in existing_env:
+            return str(existing_env[key])
+        return None
+
+    profile = dict(_PERSONAL_PROFILE_DEFAULTS)
+    for key in profile:
+        if (source_value := _source_value(key)) is not None:
+            profile[key] = source_value
+    for key in profile:
+        if key in setup_values:
+            profile[key] = str(setup_values[key])
+
+    memory_provider = _source_value("MEMORY_LLM_PROVIDER")
+    memory_model = _source_value("MEMORY_LLM_MODEL")
+    memory_fallbacks = _source_value("MEMORY_LLM_FALLBACKS")
+    profile["MEMORY_LLM_PROVIDER"] = str(memory_provider or profile["LLM_PROVIDER"])
+    profile["MEMORY_LLM_MODEL"] = str(memory_model or profile["LLM_MODEL"])
+    profile["MEMORY_LLM_FALLBACKS"] = str(memory_fallbacks or "")
+
+    values = {
+        "PROFILE_COUNT": str(count),
+        f"PROFILE_{slot}_ID": profile_id,
+        f"PROFILE_{slot}_LABEL": label,
+        "ACTIVE_PROFILE": profile_id,
+        "SETTINGS_PROFILE": profile_id,
+    }
+    values.update({f"PROFILE_{slot}_{key}": value for key, value in profile.items()})
+    return values
+
+
+def persisted_profile_setup_values(
+    *,
+    name: str,
+    setup_values: dict[str, str],
+    existing_env: dict[str, str],
+) -> dict[str, str]:
+    """Return non-destructive wizard writes plus one new named profile."""
+    values = {
+        key: value
+        for key, value in setup_values.items()
+        if key not in _PROFILE_SCOPED_SETUP_KEYS
+    }
+    values.update(
+        personal_profile_values(
+            name=name,
+            setup_values=setup_values,
+            existing_env=existing_env,
+        )
+    )
+    return values
 
 
 def should_show_onboarding(env: dict[str, str], *, env_file_exists: bool) -> bool:
@@ -581,6 +725,11 @@ class OnboardingWizard(QDialog):
             app_language=str(self._app_language.currentData() or ""),
             assistant_language=str(self._assistant_language.currentData() or ""),
             theme_mode=str(self._theme_mode.currentData() or "system"),
+        )
+        values = persisted_profile_setup_values(
+            name=self._name.text(),
+            setup_values=values,
+            existing_env=settings_env.read_settings_env(),
         )
         settings_env.write_settings_env(values)
         self.open_chat_requested = self._open_chat.isChecked()

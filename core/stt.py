@@ -53,8 +53,11 @@ def _get_model():
     global _model, _active_device, _active_compute
     with _model_lock:
         if _model is None:
-            from faster_whisper import WhisperModel
+            from core import optional_deps
+
+            optional_deps.require_optional_package_runtime("stt", device=config.STT_DEVICE)
             from core.stt_device import resolve_device, resolve_compute_type, build_model
+            from faster_whisper import WhisperModel
             _log = lambda m: print(f"[stt] {m}")
             device = resolve_device(config.STT_DEVICE, log=_log)
             compute_type = resolve_compute_type(device, config.STT_COMPUTE_TYPE, log=_log)

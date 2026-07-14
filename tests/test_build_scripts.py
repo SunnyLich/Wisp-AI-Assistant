@@ -147,6 +147,7 @@ class BuildScriptTests(unittest.TestCase):
         required_windows_inputs = [
             'Path = $Spec; Name = "packaging\\$SpecName"',
             'Path = (Join-Path $Root "runtime\\supervisor\\app.py"); Name = "runtime\\supervisor\\app.py"',
+            'Path = (Join-Path $Root "Uninstall Wisp.bat"); Name = "Uninstall Wisp.bat"',
             'Path = (Join-Path $Root ".env.example"); Name = ".env.example"',
             'Path = (Join-Path $Root "assets"); Name = "assets"',
             'Path = (Join-Path $Root "ui\\locales"); Name = "ui\\locales"',
@@ -297,6 +298,26 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('APP_ICON_ICNS = ROOT / "assets" / "app.icns"', macos)
         self.assertIn("icon=str(APP_ICON_ICNS) if APP_ICON_ICNS.exists() else None", macos)
 
+    def test_windows_release_places_thin_uninstall_launcher_beside_executable(self) -> None:
+        launcher_path = ROOT / "Uninstall Wisp.bat"
+        launcher = launcher_path.read_text(encoding="utf-8")
+        spec = (ROOT / "packaging" / "Wisp.spec").read_text(encoding="utf-8")
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+
+        self.assertTrue(launcher_path.is_file())
+        self.assertIn('"%~dp0Wisp.exe" -m runtime.workers.uninstall_wisp', launcher)
+        self.assertIn('"%~dp0.venv\\Scripts\\pythonw.exe"', launcher)
+        self.assertNotIn("rmdir", launcher.casefold())
+        self.assertNotIn("remove-item", launcher.casefold())
+        self.assertNotIn("del ", launcher.casefold())
+        self.assertIn("WINDOWS_LAUNCHER_FILES", spec)
+        self.assertIn(
+            '("Uninstall Wisp.bat", str(ROOT / "Uninstall Wisp.bat"), "EXECUTABLE")',
+            spec,
+        )
+        self.assertIn("    WINDOWS_LAUNCHER_FILES,", spec)
+        self.assertIn("place `Uninstall Wisp.bat` beside `Wisp.exe`", docs)
+
     def test_specs_bundle_default_addons(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
             with self.subTest(spec=spec_name):
@@ -357,6 +378,37 @@ class BuildScriptTests(unittest.TestCase):
                 self.assertNotIn("PIP_HIDDENIMPORTS", spec)
                 excludes = spec[spec.index("    excludes=[") : spec.index("    ],", spec.index("    excludes=["))]
                 self.assertIn('"pip"', excludes)
+
+    def test_specs_keep_stt_installer_owned_in_release_bundles(self) -> None:
+        """Lazy STT imports must not create a second PyInstaller-owned stack."""
+        for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
+            with self.subTest(spec=spec_name):
+                spec = (ROOT / "packaging" / spec_name).read_text(encoding="utf-8")
+                self.assertNotIn('collect_all("faster_whisper")', spec)
+                self.assertIn("INSTALLER_OWNED_STT_EXCLUDES", spec)
+                self.assertIn("*INSTALLER_OWNED_STT_EXCLUDES", spec)
+                for module_name in ("av", "ctranslate2", "faster_whisper", "flatbuffers", "onnxruntime"):
+                    self.assertIn(f'"{module_name}"', spec)
+
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+        self.assertIn("one authoritative pinned installation", docs)
+
+    def test_builds_do_not_install_discarded_stt_native_wheels(self) -> None:
+        """Build environments should not download packages excluded from the bundle."""
+        package_pattern = "av|ctranslate2|faster-whisper|flatbuffers|onnxruntime"
+        powershell = (ROOT / "tools" / "build_exe.ps1").read_text(encoding="utf-8")
+        self.assertIn(package_pattern, powershell)
+        self.assertIn("New-BuildRequirementsFile -SourcePath $RequirementsFile", powershell)
+
+        for script_name in ("tools/build_exe.sh", "tools/build_macos_app.sh"):
+            with self.subTest(script=script_name):
+                script = (ROOT / script_name).read_text(encoding="utf-8")
+                self.assertIn(package_pattern, script)
+                self.assertIn("wisp-runtime-build-requirements.txt", script)
+                self.assertIn('pip install -r "$BUILD_RUNTIME_REQUIREMENTS"', script)
+
+        docs = (ROOT / "docs" / "BUILDING_EXE.md").read_text(encoding="utf-8")
+        self.assertIn("avoiding downloads that PyInstaller would discard", docs)
 
     def test_specs_bundle_language_tags_data_for_local_tts(self) -> None:
         for spec_name in ("Wisp.spec", "WispLinux.spec", "WispMac.spec"):
