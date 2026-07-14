@@ -9,7 +9,7 @@ name: macOS compatibility
 
 on:
   push:
-    branches: [main, Dev]
+    branches: [main, Dev, profile-setup]
     paths:
       - "core/**"
       - "ui/**"

@@ -1373,6 +1373,7 @@ def test_brain_rewrite_chat_tts_and_route_setting_workflow(
     assert tts["provider"] == "fake"
 
 
+@pytest.mark.usefixtures("isolated_default_profile")
 def test_settings_env_changes_reach_runtime_surfaces_workflow(
     tmp_path: Path,
     isolated_app_state: IsolatedAppState,

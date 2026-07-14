@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 import config
 
 
@@ -742,6 +744,7 @@ class ConfigEnvTests(unittest.TestCase):
 
         refresh.assert_called_once_with()
 
+    @pytest.mark.usefixtures("isolated_default_profile")
     def test_reload_clears_keys_removed_from_env_file(self):
         """Removed .env keys should not stay live in long-running workers."""
         old_env_file = config._ENV_FILE

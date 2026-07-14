@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -56,6 +57,61 @@ def _set_test_app_language(language: str = "en") -> None:
         i18n.set_language(language, app=_QT_APP)
     except Exception:
         pass
+
+
+def _snapshot_config_globals(config) -> dict[str, object]:
+    """Return a shallow snapshot of globals mutated by config.reload()."""
+    snapshot: dict[str, object] = {}
+    for name, value in vars(config).items():
+        if not name.isupper():
+            continue
+        if isinstance(value, list):
+            snapshot[name] = list(value)
+        elif isinstance(value, dict):
+            snapshot[name] = dict(value)
+        else:
+            snapshot[name] = value
+    return snapshot
+
+
+def _restore_config_globals(config, snapshot: dict[str, object]) -> None:
+    """Restore config globals in place so cached references stay valid."""
+    for name, value in snapshot.items():
+        current = getattr(config, name, None)
+        if isinstance(current, list) and isinstance(value, list):
+            current[:] = value
+        elif isinstance(current, dict) and isinstance(value, dict):
+            current.clear()
+            current.update(value)
+        else:
+            setattr(config, name, value)
+
+
+@pytest.fixture
+def isolated_default_profile(monkeypatch):
+    """Keep reload-based tests independent from the developer's profiles."""
+    import config
+
+    snapshot = _snapshot_config_globals(config)
+    loaded_dotenv_keys = set(config._LOADED_DOTENV_KEYS)
+    profile_keys = {
+        key
+        for key in os.environ
+        if key in {"SETTINGS_PROFILE", "ACTIVE_PROFILE", "PROFILE_COUNT"}
+        or key.startswith("PROFILE_")
+    }
+
+    with monkeypatch.context() as profile_env:
+        for key in profile_keys:
+            profile_env.delenv(key, raising=False)
+        with patch("config.load_dotenv"):
+            config.reload()
+        assert config.ACTIVE_PROFILE == "default"
+        try:
+            yield
+        finally:
+            _restore_config_globals(config, snapshot)
+            config._LOADED_DOTENV_KEYS = loaded_dotenv_keys
 
 
 @pytest.fixture(autouse=True)

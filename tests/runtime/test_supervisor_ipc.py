@@ -422,6 +422,7 @@ def test_real_addon_tools_flow_from_addon_host_through_brain_policy(tmp_path):
 
 
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+@pytest.mark.usefixtures("isolated_default_profile")
 def test_settings_persist_and_reload_across_real_workers(tmp_path, monkeypatch):
     """Settings persistence changes observable config in every long-lived worker."""
     import config

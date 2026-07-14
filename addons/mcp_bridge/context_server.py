@@ -368,7 +368,7 @@ def main() -> int:
             _ok(mid, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "wisp-context-server", "version": "0.9.1"},
+                "serverInfo": {"name": "wisp-context-server", "version": "0.9.2"},
             })
         elif method == "ping":
             _ok(mid, {})

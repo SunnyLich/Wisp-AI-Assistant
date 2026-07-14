@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
+import pytest
+
 import config
 from core.settings_model import AppSettings
 
@@ -37,6 +39,7 @@ def _restore_config_globals(snapshot: dict[str, object]) -> None:
             setattr(config, name, value)
 
 
+@pytest.mark.usefixtures("isolated_default_profile")
 def test_get_settings_returns_typed_snapshot():
     """Verify get settings returns typed snapshot behavior."""
     previous_config = _snapshot_config_globals()
