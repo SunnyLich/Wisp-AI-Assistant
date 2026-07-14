@@ -7,6 +7,29 @@ from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QWidget
 
 
+def is_wayland() -> bool:
+    """Return whether this Qt application is using the Wayland platform plugin."""
+    app = QApplication.instance()
+    return bool(app is not None and app.platformName().lower().startswith("wayland"))
+
+
+def start_wayland_system_move(window: QWidget) -> bool:
+    """Ask the Wayland compositor to move ``window`` from the current press.
+
+    Wayland does not let clients move their own top-level windows.  The request
+    must be made while processing the press that began the drag.
+    """
+    if not is_wayland():
+        return False
+    handle = window.windowHandle()
+    if handle is None:
+        return False
+    try:
+        return bool(handle.startSystemMove())
+    except RuntimeError:
+        return False
+
+
 def enable_standard_window_controls(window: QWidget) -> None:
     """Give a top-level app window minimize/maximize/close controls.
 

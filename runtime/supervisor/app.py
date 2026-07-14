@@ -160,15 +160,27 @@ def _write_abrupt_log(reason: str, supervisor: WispSupervisor | None, exc_info=N
 
 
 def _resume_staged_optional_installs() -> None:
-    """Re-arm optional-package staged installs left from an earlier session."""
+    """Resume staged installs and prune inactive package-swap leftovers."""
     try:
-        from scripts.optional_tts_installer import resume_pending_staged_applies
+        from scripts.optional_tts_installer import (
+            cleanup_stale_optional_package_swaps,
+            resume_pending_staged_applies,
+        )
 
         resumed = resume_pending_staged_applies()
         if resumed:
             logging.info("Re-armed %d staged optional package install(s)", resumed)
+        removed, failed = cleanup_stale_optional_package_swaps()
+        if removed:
+            logging.info(
+                "Removed %d stale optional package swap folder(s): %s",
+                len(removed),
+                ", ".join(path.name for path in removed),
+            )
+        for path, error in failed.items():
+            logging.warning("Could not remove stale optional package swap folder %s: %s", path, error)
     except Exception:
-        logging.warning("Could not resume staged optional package installs", exc_info=True)
+        logging.warning("Could not maintain staged optional package installs", exc_info=True)
 
 
 def main() -> int:
@@ -198,6 +210,7 @@ def main() -> int:
         return 2
     _resume_staged_optional_installs()
     supervisor = WispSupervisor()
+    flows: FlowController | None = None
     stop = threading.Event()
     ui_quit_requested = threading.Event()
     abrupt_reason = ""
@@ -274,6 +287,10 @@ def main() -> int:
                 logging.error("Wrote Wisp crash log: %s", crash_dir)
         raise
     finally:
+        if flows is not None:
+            flow_stop = getattr(flows, "stop", None)
+            if callable(flow_stop):
+                flow_stop()
         supervisor.shutdown()
     if abrupt_reason and log_mode != "debug":
         crash_dir = _write_abrupt_log(abrupt_reason, supervisor)

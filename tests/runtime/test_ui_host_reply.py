@@ -1,6 +1,26 @@
 from __future__ import annotations
 
 
+def test_wayland_desktop_uses_xwayland_for_positioned_overlay() -> None:
+    """The floating overlay needs global coordinates, unlike native capture."""
+    from runtime.workers import ui_host
+
+    environment = {"WAYLAND_DISPLAY": "wayland-0", "DISPLAY": ":0"}
+
+    assert ui_host._configure_linux_ui_platform(environment, platform="linux") == "xcb"
+    assert environment["QT_QPA_PLATFORM"] == "xcb"
+
+
+def test_ui_platform_respects_native_wayland_opt_in() -> None:
+    """Users can retain the Qt Wayland backend explicitly."""
+    from runtime.workers import ui_host
+
+    environment = {"WAYLAND_DISPLAY": "wayland-0", "DISPLAY": ":0", "WISP_UI_PLATFORM": "wayland"}
+
+    assert ui_host._configure_linux_ui_platform(environment, platform="linux") == ""
+    assert "QT_QPA_PLATFORM" not in environment
+
+
 def test_context_source_labels_translate_without_touching_custom_labels(monkeypatch) -> None:
     """Verify built-in context badge labels are localized but user labels remain."""
     from runtime.workers import ui_host
@@ -57,6 +77,43 @@ def test_notice_text_translates_known_bubble_messages(monkeypatch) -> None:
     assert ui_host._translate_notice_text("Preparing local voice... for 5s") == (
         "\u6b63\u5728\u6e96\u5099\u672c\u6a5f\u8a9e\u97f3... for 5s"
     )
+
+
+def test_speech_notice_translates_structure_but_preserves_runtime_detail(monkeypatch) -> None:
+    """Translate speech timers and states without treating errors as catalog keys."""
+    from runtime.workers import ui_host
+
+    translations = {
+        "Preparing speech services - {elapsed} elapsed.": "\u6b63\u5728\u6e96\u5099\u8a9e\u97f3\u670d\u52d9 - \u5df2\u7528\u6642 {elapsed}\u3002",
+        "Speech warm-up failed.": "\u8a9e\u97f3\u670d\u52d9\u9810\u71b1\u5931\u6557\u3002",
+        "STT (speech recognition)": "STT\uff08\u8a9e\u97f3\u8fa8\u8b58\uff09",
+        "TTS (Kokoro local voice)": "TTS\uff08Kokoro \u672c\u6a5f\u8a9e\u97f3\uff09",
+        "warming up ({elapsed})": "\u6b63\u5728\u9810\u71b1\uff08{elapsed}\uff09",
+        "{minutes}m {seconds}s": "{minutes}\u5206 {seconds}\u79d2",
+        "{seconds}s": "{seconds}\u79d2",
+        "failed - {message}": "\u5931\u6557 - {message}",
+        "{label}: {status}": "{label}\uff1a{status}",
+    }
+    requested: list[str] = []
+
+    def translate(text: str) -> str:
+        requested.append(text)
+        return translations.get(text, text)
+
+    monkeypatch.setattr(ui_host, "t", translate)
+
+    assert ui_host._translate_notice_text(
+        "Preparing speech services - 1m 05s elapsed.\n"
+        "STT (speech recognition): warming up (12s)\n"
+        "Speech warm-up failed.\n"
+        "TTS (Kokoro local voice): failed - RuntimeError: cublas64_12.dll missing"
+    ) == (
+        "\u6b63\u5728\u6e96\u5099\u8a9e\u97f3\u670d\u52d9 - \u5df2\u7528\u6642 1\u5206 05\u79d2\u3002\n"
+        "STT\uff08\u8a9e\u97f3\u8fa8\u8b58\uff09\uff1a\u6b63\u5728\u9810\u71b1\uff0812\u79d2\uff09\n"
+        "\u8a9e\u97f3\u670d\u52d9\u9810\u71b1\u5931\u6557\u3002\n"
+        "TTS\uff08Kokoro \u672c\u6a5f\u8a9e\u97f3\uff09\uff1a\u5931\u6557 - RuntimeError: cublas64_12.dll missing"
+    )
+    assert "RuntimeError: cublas64_12.dll missing" not in requested
 
 
 def test_keyed_notice_updates_respect_user_dismissal() -> None:

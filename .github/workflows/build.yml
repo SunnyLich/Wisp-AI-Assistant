@@ -238,12 +238,15 @@ jobs:
 
       - name: Generate update manifest
         run: |
+          mapfile -d '' -t release_files < <(
+            find release-assets -type f ! -name "wisp-release-manifest.json" -print0
+          )
           python scripts/make_release_manifest.py \
             --repo "$GITHUB_REPOSITORY" \
             --tag "$GITHUB_REF_NAME" \
             --out release-assets/wisp-release-manifest.json \
             --checksums-out release-assets/SHA256SUMS.txt \
-            $(find release-assets -type f ! -name "wisp-release-manifest.json" -print)
+            "${release_files[@]}"
 
       - name: Upload release manifest
         env:

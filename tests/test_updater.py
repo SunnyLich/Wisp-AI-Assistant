@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -342,6 +343,121 @@ def test_windows_new_version_helper_asset_is_bundled() -> None:
     assert "Split-Path -LiteralPath" not in text
     assert "Move-Item -LiteralPath $Candidate -Destination $InstallRoot" in text
     assert "Start-Process -FilePath $RestartTarget" in text
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows updater helper requires PowerShell")
+def test_windows_update_helper_restores_backup_after_candidate_replacement_fails(tmp_path: Path) -> None:
+    """The real helper restores the old install after a post-replacement failure."""
+    helper = Path("assets/updater/windows_apply_update.ps1").resolve()
+    install_root = tmp_path / "Wisp"
+    backup_root = tmp_path / "Wisp-backup"
+    candidate = tmp_path / "candidate"
+    work_root = tmp_path / "work"
+    archive = tmp_path / "Wisp-update.zip"
+    install_root.mkdir()
+    candidate.mkdir()
+    work_root.mkdir()
+    archive.write_bytes(b"contract archive placeholder")
+    (install_root / "version.txt").write_text("old-known-good", encoding="utf-8")
+    (candidate / "version.txt").write_text("new-candidate", encoding="utf-8")
+    missing_restart_target = install_root / "missing-Wisp.exe"
+
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(helper),
+            "-Archive",
+            str(archive),
+            "-InstallRoot",
+            str(install_root),
+            "-Candidate",
+            str(candidate),
+            "-RestartTarget",
+            str(missing_restart_target),
+            "-BackupRoot",
+            str(backup_root),
+            "-WorkRoot",
+            str(work_root),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert install_root.is_dir()
+    assert (install_root / "version.txt").read_text(encoding="utf-8") == "old-known-good"
+    assert not backup_root.exists()
+    assert not candidate.exists()
+    error_log = tmp_path / "apply-update-error.log"
+    assert error_log.is_file()
+    assert "Start-Process" in error_log.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows updater helper requires PowerShell")
+def test_windows_update_helper_replaces_install_restarts_and_cleans_backup(tmp_path: Path) -> None:
+    """The shipped helper completes a real successful install-directory swap."""
+    helper = Path("assets/updater/windows_apply_update.ps1").resolve()
+    install_root = tmp_path / "Wisp"
+    backup_root = tmp_path / "Wisp-backup"
+    candidate = tmp_path / "candidate"
+    work_root = tmp_path / "work"
+    archive = tmp_path / "Wisp-update.zip"
+    install_root.mkdir()
+    candidate.mkdir()
+    work_root.mkdir()
+    archive.write_bytes(b"contract archive placeholder")
+    (install_root / "version.txt").write_text("old-version", encoding="utf-8")
+    (install_root / "old-only.txt").write_text("remove me", encoding="utf-8")
+    (candidate / "version.txt").write_text("new-version", encoding="utf-8")
+
+    # Use a genuine short-lived Windows executable as the packaged restart
+    # target. ``where.exe`` exits immediately when started without arguments,
+    # so the test proves Start-Process accepted the replaced executable without
+    # leaving a background test process behind.
+    restart_target = candidate / "Wisp.exe"
+    shutil.copy2(Path(os.environ["WINDIR"]) / "System32" / "where.exe", restart_target)
+
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(helper),
+            "-Archive",
+            str(archive),
+            "-InstallRoot",
+            str(install_root),
+            "-Candidate",
+            str(candidate),
+            "-RestartTarget",
+            str(install_root / "Wisp.exe"),
+            "-BackupRoot",
+            str(backup_root),
+            "-WorkRoot",
+            str(work_root),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert (install_root / "version.txt").read_text(encoding="utf-8") == "new-version"
+    assert (install_root / "Wisp.exe").is_file()
+    assert not (install_root / "old-only.txt").exists()
+    assert not candidate.exists()
+    assert not backup_root.exists()
+    assert not work_root.exists()
+    assert not (tmp_path / "apply-update-error.log").exists()
 
 
 def test_process_exists_reports_live_and_dead_pids() -> None:

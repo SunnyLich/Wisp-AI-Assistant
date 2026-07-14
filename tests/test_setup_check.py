@@ -11,12 +11,19 @@ pytestmark = pytest.mark.workflow
 @pytest.fixture(autouse=True)
 def _installed_stt_package(monkeypatch):
     """Most setup-check tests are about other rows; treat STT as installed by default."""
+    import config
     from core import optional_deps
 
+    monkeypatch.setattr(config, "STT_DEVICE", "auto", raising=False)
     monkeypatch.setattr(
         optional_deps,
         "stt_runtime_import_status_subprocess",
         lambda: {"installed": True, "valid": True},
+    )
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: {"valid": True, "message": ""},
     )
 
 
@@ -127,7 +134,7 @@ def test_setup_check_warns_when_stt_import_fails(monkeypatch):
     by_name = {row["name"]: row for row in rows}
 
     assert by_name["Speech to text"]["status"] == "fail"
-    assert "failed to import" in by_name["Speech to text"]["message"]
+    assert "STT verification failed" in by_name["Speech to text"]["message"]
     assert "ctranslate2" in by_name["Speech to text"]["message"]
     assert "STT support is not working" in by_name["Speech to text"]["recommendation"]
 

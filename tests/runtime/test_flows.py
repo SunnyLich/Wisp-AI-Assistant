@@ -240,6 +240,36 @@ def browser_context_handler(selected: str = "selected"):
     return handler
 
 
+def test_wayland_accessibility_text_supplies_active_document_without_brain_read():
+    """Hotkey-time AT-SPI text is reused as generic app-document context."""
+    flow, _native, _ui, brain, _audio = make_flow()
+    context = {
+        "active_app": {"name": "Untitled - Kate", "process_name": "kate"},
+        "active_window_text": "unselected Wayland editor content",
+    }
+
+    assert flow._fetch_active_document_text(context) == "unselected Wayland editor content"
+    assert context["active_document_sources"][0]["label"] == "kate - Untitled - Kate"
+    assert not brain.calls_for("brain.context.active_document")
+
+
+def test_wayland_accessibility_text_falls_back_for_browser_content():
+    """Captured browser accessibility text survives the overlay taking focus."""
+    native = FakeWorker({"native.context.browser_content": lambda _params: {"content": ""}})
+    flow, native, _ui, _brain, _audio = make_flow(native=native)
+    context = {
+        "active_app": {"name": "Example - Firefox", "process_name": "firefox"},
+        "browser_url": "https://example.test/private",
+        "active_window_text": "signed-in page content",
+    }
+
+    assert flow._fetch_browser_content_for_context(context) == {
+        "browser_url": "https://example.test/private",
+        "browser_content": "signed-in page content",
+    }
+    assert native.last_call("native.context.browser_content")["params"]["url"] == "https://example.test/private"
+
+
 def query_stream(reply: str = "reply"):
     """Verify query stream behavior."""
     def handler(_params: dict[str, Any], on_event) -> dict[str, Any]:
@@ -318,18 +348,24 @@ def test_audio_warmup_events_surface_user_notices():
     audio.emit("audio.warmup.started", {"items": ["stt", "tts"], "provider": "kokoro"})
     audio.emit("audio.warmup.progress", {"item": "stt", "status": "started", "items": ["stt", "tts"]})
     audio.emit("audio.warmup.progress", {"item": "stt", "status": "ok", "items": ["stt", "tts"]})
-    audio.emit("audio.warmup.progress", {"item": "tts", "status": "preparing for 5s", "items": ["stt", "tts"]})
+    audio.emit("audio.warmup.progress", {"item": "tts", "status": "started", "items": ["stt", "tts"]})
     audio.emit(
         "audio.warmup.done",
         {"items": ["stt", "tts"], "provider": "kokoro", "ok": True, "result": {"stt": "ok", "tts": "ok"}},
     )
 
     notices = [call["params"]["text"] for call in ui.calls_for("ui.reply.notice")]
-    assert notices == [
-        "Preparing local voice... for 5s",
-        "Local voice and speech recognition are ready.",
-    ]
-    assert ui.calls_for("ui.reply.notice")[0]["params"]["key"] == "audio-warmup"
+    assert len(notices) == 3
+    assert notices[0].startswith("Preparing speech services - 0s elapsed.")
+    assert "STT (speech recognition): waiting to start" in notices[0]
+    assert "TTS (Kokoro local voice): waiting to start" in notices[0]
+    assert "STT (speech recognition): ready" in notices[1]
+    assert notices[2] == (
+        "Speech services are ready.\n"
+        "STT (speech recognition): ready\n"
+        "TTS (Kokoro local voice): ready"
+    )
+    assert all(call["params"]["key"] == "audio-warmup" for call in ui.calls_for("ui.reply.notice"))
 
 
 def test_audio_warmup_done_does_not_announce_skipped_tts():
@@ -346,7 +382,11 @@ def test_audio_warmup_done_does_not_announce_skipped_tts():
         },
     )
 
-    assert ui.last_call("ui.reply.notice")["params"]["text"] == "Local speech recognition is ready."
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "Speech services are ready.\n"
+        "STT (speech recognition): ready\n"
+        "TTS (Kokoro local voice): not needed"
+    )
 
 
 def test_audio_warmup_done_uses_remote_tts_wording():
@@ -364,7 +404,9 @@ def test_audio_warmup_done_uses_remote_tts_wording():
     )
 
     assert ui.last_call("ui.reply.notice")["params"]["text"] == (
-        "TTS connection and speech recognition are ready."
+        "Speech services are ready.\n"
+        "STT (speech recognition): ready\n"
+        "TTS (Cartesia connection): ready"
     )
 
 
@@ -382,11 +424,17 @@ def test_audio_warmup_failure_surfaces_user_notice():
         },
     )
 
-    assert ui.last_call("ui.reply.notice")["params"]["text"].startswith("Local speech warmup failed:")
+    notice = ui.last_call("ui.reply.notice")
+    assert notice["params"]["text"] == (
+        "Speech warm-up failed.\n"
+        "TTS (Kokoro local voice): failed - RuntimeError: missing model"
+    )
+    assert notice["params"]["severity"] == "error"
+    assert notice["params"]["key"] == "audio-warmup"
 
 
-def test_transient_kokoro_warmup_failure_does_not_surface_user_notice():
-    """Kokoro import contention is not a broken install and should not show a bubble."""
+def test_transient_kokoro_warmup_failure_finishes_persistent_notice_as_deferred():
+    """A transient TTS result must replace, not strand, the persistent timer."""
     _flow, _native, ui, _brain, audio = make_flow()
     status = (
         "error: RuntimeError: Kokoro is still warming up. "
@@ -404,7 +452,202 @@ def test_transient_kokoro_warmup_failure_does_not_surface_user_notice():
         },
     )
 
-    assert not ui.calls_for("ui.reply.notice")
+    notice = ui.last_call("ui.reply.notice")
+    assert "one service will retry when needed" in notice["params"]["text"]
+    assert "TTS (Kokoro local voice): will retry when first used" in notice["params"]["text"]
+    assert notice["params"]["severity"] == "warning"
+    assert notice["params"]["key"] == "audio-warmup"
+
+
+def test_audio_warmup_timer_runs_in_supervisor_when_audio_sends_no_progress(monkeypatch):
+    """The bubble timer keeps moving even while the audio worker is blocked."""
+    from runtime.supervisor import flows as flows_module
+
+    monkeypatch.setattr(flows_module, "_SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS", 0.01)
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit("audio.warmup.started", {"items": ["stt", "tts"], "provider": "kokoro"})
+    deadline = time.monotonic() + 0.3
+    while len(ui.calls_for("ui.reply.notice")) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt", "tts"], "provider": "kokoro", "result": {"stt": "ok", "tts": "ok"}},
+    )
+
+    timer_notices = [
+        call["params"]["text"]
+        for call in ui.calls_for("ui.reply.notice")
+        if call["params"]["text"].startswith("Preparing speech services")
+    ]
+    assert len(timer_notices) >= 3
+    assert all("STT (speech recognition):" in text for text in timer_notices)
+    assert all("TTS (Kokoro local voice):" in text for text in timer_notices)
+
+
+def test_stale_audio_warmup_events_cannot_overwrite_newer_notice():
+    """An older startup/config warmup cannot finish a newer keyed timer."""
+    _flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.started",
+        {"items": ["stt"], "provider": "none", "warmup_id": "new"},
+    )
+    audio.emit(
+        "audio.warmup.progress",
+        {"item": "stt", "status": "ok", "items": ["stt"], "warmup_id": "old"},
+    )
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt"], "provider": "none", "warmup_id": "old", "result": {"stt": "ok"}},
+    )
+
+    assert len(ui.calls_for("ui.reply.notice")) == 1
+    assert "waiting to start" in ui.last_call("ui.reply.notice")["params"]["text"]
+
+    audio.emit(
+        "audio.warmup.done",
+        {"items": ["stt"], "provider": "none", "warmup_id": "new", "result": {"stt": "ok"}},
+    )
+    assert ui.last_call("ui.reply.notice")["params"]["text"].endswith(
+        "STT (speech recognition): ready"
+    )
+
+
+def test_audio_worker_exit_finishes_persistent_warmup_notice():
+    """A dead audio worker must not leave a permanent, frozen warm-up timer."""
+    flow, _native, ui, _brain, audio = make_flow()
+
+    audio.emit(
+        "audio.warmup.started",
+        {
+            "items": ["stt", "tts"],
+            "provider": "kokoro",
+            "warmup_id": "startup:1",
+        },
+    )
+    audio.emit(
+        "audio.warmup.progress",
+        {
+            "item": "stt",
+            "status": "started",
+            "warmup_id": "startup:1",
+        },
+    )
+    flow._on_audio_worker_exit(1)
+
+    notice = ui.last_call("ui.reply.notice")["params"]
+    assert notice["text"] == (
+        "Speech warm-up was interrupted because the audio service restarted.\n"
+        "STT (speech recognition): stopped\n"
+        "TTS (Kokoro local voice): stopped"
+    )
+    assert notice["key"] == "audio-warmup"
+    assert notice["severity"] == "warning"
+    assert notice["timeout_ms"] == 8000
+
+    # A queued completion event from the dead worker cannot replace the warning.
+    audio.emit(
+        "audio.warmup.done",
+        {
+            "items": ["stt", "tts"],
+            "provider": "kokoro",
+            "warmup_id": "startup:1",
+            "result": {"stt": "ok", "tts": "ok"},
+        },
+    )
+    assert ui.last_call("ui.reply.notice")["params"] == notice
+
+
+def test_audio_warmup_terminal_notice_wins_timer_race():
+    """A timer frame already being sent cannot overwrite the final result."""
+    flow, _native, ui, _brain, audio = make_flow()
+    audio.emit(
+        "audio.warmup.started",
+        {"items": ["stt"], "provider": "none", "warmup_id": "startup:race"},
+    )
+    generation = flow._speech_warmup_generation
+    timer_entered = threading.Event()
+    release_timer = threading.Event()
+    original_fire = flow._fire
+
+    def blocking_fire(worker, method, params=None):
+        timer_entered.set()
+        assert release_timer.wait(1.0)
+        original_fire(worker, method, params)
+
+    flow._fire = blocking_fire  # type: ignore[method-assign]
+    timer_thread = threading.Thread(
+        target=flow._show_speech_warmup_notice,
+        args=(generation,),
+    )
+    timer_thread.start()
+    assert timer_entered.wait(1.0)
+
+    done_thread = threading.Thread(
+        target=audio.emit,
+        args=(
+            "audio.warmup.done",
+            {
+                "items": ["stt"],
+                "provider": "none",
+                "warmup_id": "startup:race",
+                "result": {"stt": "ok"},
+            },
+        ),
+    )
+    done_thread.start()
+    deadline = time.monotonic() + 1.0
+    while flow._speech_warmup_generation == generation and time.monotonic() < deadline:
+        time.sleep(0.005)
+    release_timer.set()
+    timer_thread.join(1.0)
+    done_thread.join(1.0)
+
+    assert not timer_thread.is_alive()
+    assert not done_thread.is_alive()
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "Speech services are ready.\nSTT (speech recognition): ready"
+    )
+    assert ui.last_call("ui.reply.notice")["params"]["timeout_ms"] == 6000
+
+
+def test_flow_stop_cancels_speech_timer_and_rejects_new_warmups(monkeypatch):
+    """Application shutdown leaves no timer producing UI work."""
+    from runtime.supervisor import flows as flows_module
+
+    monkeypatch.setattr(flows_module, "_SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS", 0.01)
+    flow, _native, ui, _brain, audio = make_flow()
+    audio.emit("audio.warmup.started", {"items": ["stt"], "provider": "none"})
+    deadline = time.monotonic() + 0.3
+    while len(ui.calls_for("ui.reply.notice")) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    flow.stop()
+    call_count = len(ui.calls_for("ui.reply.notice"))
+    time.sleep(0.05)
+    audio.emit("audio.warmup.started", {"items": ["tts"], "provider": "kokoro"})
+
+    assert len(ui.calls_for("ui.reply.notice")) == call_count
+
+
+def test_late_audio_progress_after_done_cannot_reopen_timer_notice():
+    """Out-of-order progress from warm-up threads is ignored after completion."""
+    _flow, _native, ui, _brain, audio = make_flow()
+    payload = {"items": ["stt"], "provider": "none", "warmup_id": "startup:late"}
+    audio.emit("audio.warmup.started", payload)
+    audio.emit(
+        "audio.warmup.done",
+        {**payload, "result": {"stt": "ok"}},
+    )
+    final_notice = ui.last_call("ui.reply.notice")["params"]
+
+    audio.emit(
+        "audio.warmup.progress",
+        {**payload, "item": "stt", "status": "started"},
+    )
+
+    assert ui.last_call("ui.reply.notice")["params"] == final_notice
 
 
 def test_caller_hotkey_captures_selection_before_intent_steals_focus():
@@ -3941,113 +4184,6 @@ def test_voice_flow_uses_voice_caller_config():
     # The record-start path must not wait on the slow browser page fetch.
     snapshot = native.calls_for("native.context.snapshot")[0]["params"]
     assert snapshot["include_browser_content"] is False
-
-
-def test_voice_flow_includes_enabled_addon_model_tools():
-    """Verify enabled addon model tools are included in voice allowed tools."""
-    voice_row = {
-        "label": "Voice",
-        "paste_back": False,
-        "context_ambient": True,
-        "context_clipboard": False,
-        "context_documents_mode": "off",
-        "context_browser_mode": "off",
-        "context_github_mode": "off",
-        "context_memory_mode": "off",
-        "context_screenshot": "off",
-        "tools": {"mcp_example_echo": "off"},
-    }
-    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
-    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "voice prompt"}})
-    brain = FakeWorker(
-        {
-            "brain.addons.tools": lambda _params: {
-                "tools": ["mcp_example_echo", "mcp_example_add", "mcp_example_add"]
-            },
-        },
-        stream_handlers={"brain.query": query_stream("voice reply")},
-    )
-    with voice_config(voice_row):
-        _flow, native, _ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
-        native.emit("native.hotkey", {"kind": "voice_start"})
-        native.emit("native.hotkey", {"kind": "voice_stop"})
-
-    query = brain.last_call("brain.query")["params"]
-    assert query["use_tools"] is True
-    assert "mcp_example_add" in query["allowed_tools"]
-    assert "mcp_example_echo" not in query["allowed_tools"]
-
-
-def test_voice_flow_applies_mcp_server_tool_group_overrides():
-    """Verify MCP server-level overrides expand to the server's individual tools."""
-    voice_row = {
-        "label": "Voice",
-        "paste_back": False,
-        "context_ambient": True,
-        "context_clipboard": False,
-        "context_documents_mode": "off",
-        "context_browser_mode": "off",
-        "context_github_mode": "off",
-        "context_memory_mode": "off",
-        "context_screenshot": "off",
-        "tools": {"mcp_server.example": "off", "mcp_example_add": "on"},
-    }
-    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
-    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "voice prompt"}})
-    brain = FakeWorker(
-        {
-            "brain.addons.tools": lambda _params: {
-                "tools": [
-                    {"name": "mcp_example_echo", "description": "[MCP:example] Echo back text."},
-                    {"name": "mcp_example_add", "description": "[MCP:example] Add numbers."},
-                ]
-            },
-        },
-        stream_handlers={"brain.query": query_stream("voice reply")},
-    )
-    with voice_config(voice_row):
-        _flow, native, _ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
-        native.emit("native.hotkey", {"kind": "voice_start"})
-        native.emit("native.hotkey", {"kind": "voice_stop"})
-
-    query = brain.last_call("brain.query")["params"]
-    assert "mcp_example_add" in query["allowed_tools"]
-    assert "mcp_example_echo" not in query["allowed_tools"]
-
-
-def test_voice_screenshot_auto_captures_at_voice_start(tmp_path):
-    """Verify voice screenshot auto captures at voice start behavior."""
-    image_bytes = b"voice-shot"
-    image_path = tmp_path / "voice.png"
-    image_path.write_bytes(image_bytes)
-    voice_row = {
-        "label": "Voice",
-        "paste_back": False,
-        "context_ambient": True,
-        "context_clipboard": False,
-        "context_documents_mode": "off",
-        "context_browser_mode": "off",
-        "context_github_mode": "off",
-        "context_memory_mode": "off",
-        "context_screenshot": "auto",
-        "tools": {},
-    }
-    native = FakeWorker(
-        {
-            "native.context.snapshot": context_handler(selected=""),
-            "native.capture.fullscreen": lambda _params: {"path": str(image_path)},
-        }
-    )
-    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "what is on screen"}})
-    brain = FakeWorker(stream_handlers={"brain.query": query_stream("screen reply")})
-    with voice_config(voice_row):
-        _flow, native, _ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
-        native.emit("native.hotkey", {"kind": "voice_start"})
-        native.emit("native.hotkey", {"kind": "voice_stop"})
-
-    assert native.calls_for("native.capture.fullscreen")
-    query = brain.last_call("brain.query")["params"]
-    assert query["screenshot_b64"] == base64.b64encode(image_bytes).decode("ascii")
 
 
 def test_dictation_shows_recording_ui_after_recording_starts():

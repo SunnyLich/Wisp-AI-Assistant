@@ -833,6 +833,10 @@ Laisser le modèle décider — expose la recherche web et les outils de lecture
       <translation>Le programme d'installation a échoué avec le code de sortie {code}.</translation>
     </message>
     <message>
+      <source>Not enough free disk space while extracting the downloaded packages. Free at least 15 GB on the drive containing the uv cache and Wisp optional packages, then retry. For a much smaller download, select CPU for Kokoro instead of Auto or GPU.</source>
+      <translation>Espace disque disponible insuffisant lors de l'extraction des paquets téléchargés. Libérez au moins 15 Go sur le lecteur contenant le cache uv et les paquets facultatifs de Wisp, puis réessayez. Pour un téléchargement beaucoup plus petit, sélectionnez CPU pour Kokoro au lieu de Auto ou GPU.</translation>
+    </message>
+    <message>
       <source>Cancel the installer before closing this window.</source>
       <translation>Annulez l'installation avant de fermer cette fenêtre.</translation>
     </message>
@@ -2459,16 +2463,12 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Fournisseur TTS</translation>
     </message>
     <message>
-      <source>Speak assistant replies automatically</source>
+      <source>Read assistant replies aloud automatically</source>
       <translation>Lire automatiquement les réponses de l’assistant à voix haute</translation>
     </message>
     <message>
       <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
       <translation>Lorsque cette option est désactivée, les voix configurées restent disponibles pour lire la sélection à voix haute et tester le TTS.</translation>
-    </message>
-    <message>
-      <source>Auto-speak replies</source>
-      <translation>Lecture auto des réponses</translation>
     </message>
     <message>
       <source>TTS hold speed</source>
@@ -3463,8 +3463,8 @@ Continuer ?</translation>
       <translation>kokoro&gt;=0.9.4, soundfile, modèle vocal anglais</translation>
     </message>
     <message>
-      <source>The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. </source>
-      <translation>L'installation GPU peut télécharger plusieurs Go et prendre beaucoup de temps. Elle nécessite un GPU NVIDIA et un pilote compatible. </translation>
+      <source>The GPU install downloads several GB and can temporarily require at least 15 GB free for the uv cache, extraction, and Wisp's staging folder. It requires an NVIDIA GPU and compatible driver. </source>
+      <translation>L'installation GPU télécharge plusieurs Go et peut temporairement nécessiter au moins 15 Go d'espace libre pour le cache uv, l'extraction et le dossier de préparation de Wisp. Elle nécessite un GPU NVIDIA et un pilote compatible. </translation>
     </message>
     <message>
       <source>{action_note}Packages: {package_label}
@@ -3668,6 +3668,308 @@ Continuer ?</translation>
       <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
       <translation>Voix en direct installée. Appuyez sur le raccourci de bascule pour démarrer une conversation.</translation>
     </message>
+    <message><source>Welcome to Wisp</source><translation>Bienvenue dans Wisp</translation></message>
+    <message><source>Back</source><translation>Retour</translation></message>
+    <message><source>Finish setup</source><translation>Terminer la configuration</translation></message>
+    <message><source>Step {current} of {total}</source><translation>Étape {current} sur {total}</translation></message>
+    <message><source>Choose a language</source><translation>Choisir une langue</translation></message>
+    <message><source>Choose Wisp’s interface language and the language you want the assistant to use in its replies. You can change both later in Settings.</source><translation>Choisissez la langue de l’interface de Wisp et celle que l’assistant utilisera dans ses réponses. Vous pourrez modifier les deux plus tard dans les Paramètres.</translation></message>
+    <message><source>Wisp interface language</source><translation>Langue de l’interface Wisp</translation></message>
+    <message><source>Assistant response language</source><translation>Langue de réponse de l’assistant</translation></message>
+    <message><source>Let’s set up Wisp</source><translation>Configurons Wisp</translation></message>
+    <message><source>You can change every choice later in Settings. Start simple, or choose advanced if you already know your preferred AI provider.</source><translation>Vous pourrez modifier chaque choix plus tard dans les Paramètres. Commencez simplement, ou choisissez le mode avancé si vous connaissez déjà votre fournisseur d’IA préféré.</translation></message>
+    <message><source>Simple setup — get a working assistant quickly</source><translation>Configuration simple — obtenez rapidement un assistant fonctionnel</translation></message>
+    <message><source>Advanced setup — choose provider and optional API key</source><translation>Configuration avancée — choisissez un fournisseur et une clé API facultative</translation></message>
+    <message><source>What should Wisp call you?</source><translation>Comment Wisp doit-il vous appeler ?</translation></message>
+    <message><source>This creates your local profile. Your name stays on this device and helps Wisp make conversations feel a little more natural.</source><translation>Cela crée votre profil local. Votre nom reste sur cet appareil et aide Wisp à rendre les conversations plus naturelles.</translation></message>
+    <message><source>Your name</source><translation>Votre nom</translation></message>
+    <message><source>Choose your provider</source><translation>Choisissez votre fournisseur</translation></message>
+    <message><source>Optional. Choose any provider Wisp supports, enter a model yourself, and add a key now or later. Keys are saved in your operating system’s secure keychain, never in your profile file.</source><translation>Facultatif. Choisissez un fournisseur pris en charge par Wisp, saisissez un modèle et ajoutez une clé maintenant ou plus tard. Les clés sont enregistrées dans le trousseau sécurisé de votre système, jamais dans votre fichier de profil.</translation></message>
+    <message><source>I’ll choose later</source><translation>Je choisirai plus tard</translation></message>
+    <message><source>Model name</source><translation>Nom du modèle</translation></message>
+    <message><source>Custom OpenAI-compatible endpoint URL, e.g. http://localhost:1234/v1</source><translation>URL d’endpoint personnalisé compatible OpenAI, p. ex. http://localhost:1234/v1</translation></message>
+    <message><source>API key (optional)</source><translation>Clé API (facultative)</translation></message>
+    <message><source>Try a sign-in instead</source><translation>Essayez plutôt une connexion</translation></message>
+    <message><source>A ChatGPT Plus or Pro subscription can be connected without pasting an API key. This is optional — you can also finish setup and configure a provider later.</source><translation>Un abonnement ChatGPT Plus ou Pro peut être connecté sans coller de clé API. C’est facultatif : vous pouvez aussi terminer la configuration et choisir un fournisseur plus tard.</translation></message>
+    <message><source>Not connected</source><translation>Non connecté</translation></message>
+    <message><source>Sign in with ChatGPT</source><translation>Se connecter avec ChatGPT</translation></message>
+    <message><source>Voice preferences</source><translation>Préférences vocales</translation></message>
+    <message><source>Choose what you would like to try first. Local options use on-device speech models; cloud options stay as a preference until you add the matching credentials in Settings.</source><translation>Choisissez ce que vous voulez essayer d’abord. Les options locales utilisent des modèles vocaux sur l’appareil ; les options cloud restent une préférence jusqu’à l’ajout des identifiants correspondants dans les Paramètres.</translation></message>
+    <message><source>Would you like Wisp to speak replies?</source><translation>Voulez-vous que Wisp lise les réponses à voix haute ?</translation></message>
+    <message><source>Would you like to speak to Wisp?</source><translation>Voulez-vous parler à Wisp ?</translation></message>
+    <message><source>Local voice — Kokoro (may download on first use)</source><translation>Voix locale — Kokoro (peut se télécharger lors de la première utilisation)</translation></message>
+    <message><source>Cloud voice — configure in Settings</source><translation>Voix cloud — à configurer dans les Paramètres</translation></message>
+    <message><source>Local speech recognition — Whisper (may download on first use)</source><translation>Reconnaissance vocale locale — Whisper (peut se télécharger lors de la première utilisation)</translation></message>
+    <message><source>Cloud/live voice — configure in Settings</source><translation>Voix cloud/en direct — à configurer dans les Paramètres</translation></message>
+    <message><source>You’re ready to try Wisp</source><translation>Vous êtes prêt à essayer Wisp</translation></message>
+    <message><source>Your profile is ready. Use the floating icon whenever you need help, and open chat only when it suits the task. You can revisit every choice in Settings.</source><translation>Votre profil est prêt. Utilisez l’icône flottante lorsque vous avez besoin d’aide et ouvrez le chat seulement lorsqu’il convient à la tâche. Vous pourrez revoir chaque choix dans les Paramètres.</translation></message>
+    <message><source>Open a new chat after setup</source><translation>Ouvrir une nouvelle discussion après la configuration</translation></message>
+    <message><source>• Click the floating icon, or press {hotkey}, to ask about selected text or your current context.
+• Use the chat window for longer conversations, files, and history when you want it.
+• If you chose local speech, use F9 to talk and F7 to read selected text aloud after its first download.</source><translation>• Cliquez sur l’icône flottante, ou appuyez sur {hotkey}, pour poser une question sur le texte sélectionné ou votre contexte actuel.
+• Utilisez la fenêtre de discussion pour les longues conversations, les fichiers et l’historique lorsque vous le souhaitez.
+• Si vous avez choisi la voix locale, utilisez F9 pour parler et F7 pour lire le texte sélectionné après son premier téléchargement.</translation></message>
+    <message><source>Ollama runs locally and does not use an API key. Enter the local model name you have installed.</source><translation>Ollama s’exécute localement et n’utilise pas de clé API. Saisissez le nom du modèle local que vous avez installé.</translation></message>
+    <message><source>Model names are editable. You can leave the key blank and add it later in Settings.</source><translation>Les noms de modèles sont modifiables. Vous pouvez laisser la clé vide et l’ajouter plus tard dans les Paramètres.</translation></message>
+    <message><source>No provider will be changed yet. The ChatGPT sign-in on the next step is another option.</source><translation>Aucun fournisseur ne sera encore modifié. La connexion à ChatGPT à l’étape suivante est une autre option.</translation></message>
+    <message><source>Profile setup</source><translation>Configuration du profil</translation></message>
+    <message><source>Run the guided profile setup again to update your languages, theme, provider, and voice preferences.</source><translation>Relancez la configuration guidée du profil pour mettre à jour vos langues, votre thème, votre fournisseur et vos préférences vocales.</translation></message>
+    <message><source>Run profile setup</source><translation>Lancer la configuration du profil</translation></message>
+    <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>Ouvrez la configuration guidée sans réinitialiser vos autres paramètres.</translation></message>
+    <message><source>Apply settings first</source><translation>Appliquez d’abord les paramètres</translation></message>
+    <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>Appliquez ou abandonnez vos modifications de paramètres en attente avant de lancer la configuration du profil.</translation></message>
+    <message><source>Opening your browser… finish the sign-in there, then return here.</source><translation>Ouverture de votre navigateur… terminez la connexion là-bas, puis revenez ici.</translation></message>
+    <message><source>Sign-in could not start: {error}</source><translation>La connexion n’a pas pu démarrer : {error}</translation></message>
+    <message><source>Connected. Wisp will use your ChatGPT sign-in unless you selected another provider.</source><translation>Connecté. Wisp utilisera votre connexion ChatGPT, sauf si vous avez sélectionné un autre fournisseur.</translation></message>
+    <message><source>Connected</source><translation>Connecté</translation></message>
+    <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>Toujours pas connecté. Vous pouvez continuer et réessayer plus tard depuis les Paramètres.</translation></message>
+    <message><source>Profile saved, but the key could not be stored: {error}</source><translation>Profil enregistré, mais la clé n’a pas pu être stockée : {error}</translation></message>
+    <message><source>Enter a model name</source><translation>Saisissez un nom de modèle</translation></message>
+    <message><source>  History</source><translation>  Historique</translation></message>
+    <message><source>  No history yet.</source><translation>  Aucun historique pour le moment.</translation></message>
+    <message><source>  Selected conversation</source><translation>  Conversation sélectionnée</translation></message>
+    <message><source>+ Add fallback</source><translation>+ Ajouter une solution de secours</translation></message>
+    <message><source>+ New project...</source><translation>+ Nouveau projet...</translation></message>
+    <message><source>Add files or images</source><translation>Ajouter des fichiers ou des images</translation></message>
+    <message><source>Add files or images as context</source><translation>Ajouter des fichiers ou des images au contexte</translation></message>
+    <message><source>Add to project</source><translation>Ajouter au projet</translation></message>
+    <message><source>Addon</source><translation>Extension</translation></message>
+    <message><source>Addons are Python packages in the add-ons folder. Portable builds create this folder next to Wisp.exe when possible.</source><translation>Les extensions sont des paquets Python placés dans le dossier des extensions. Les versions portables créent ce dossier à côté de Wisp.exe lorsque cela est possible.</translation></message>
+    <message><source>Agent Task Cancelled</source><translation>Tâche d’agent annulée</translation></message>
+    <message><source>Agent Task Failed</source><translation>Échec de la tâche d’agent</translation></message>
+    <message><source>Agent Task Finished</source><translation>Tâche d’agent terminée</translation></message>
+    <message><source>Agent Task Running</source><translation>Tâche d’agent en cours</translation></message>
+    <message><source>Agent permission</source><translation>Autorisation de l’agent</translation></message>
+    <message><source>Agent permission resolved</source><translation>Autorisation de l’agent traitée</translation></message>
+    <message><source>All files</source><translation>Tous les fichiers</translation></message>
+    <message><source>Ask before write</source><translation>Demander avant d’écrire</translation></message>
+    <message><source>Attached</source><translation>Joint</translation></message>
+    <message><source>Attachments</source><translation>Pièces jointes</translation></message>
+    <message><source>Branch from here</source><translation>Créer une branche à partir d’ici</translation></message>
+    <message><source>Choose which installed/addon tools snip queries may use</source><translation>Choisissez les outils installés ou fournis par des extensions que les requêtes de capture peuvent utiliser</translation></message>
+    <message><source>Context included with this message (display only - not part of the reply).</source><translation>Contexte inclus avec ce message (affichage uniquement, ne fait pas partie de la réponse).</translation></message>
+    <message><source>Continuing</source><translation>Suite en cours</translation></message>
+    <message><source>Conversation options</source><translation>Options de la conversation</translation></message>
+    <message><source>Copy full bubble text</source><translation>Copier tout le texte de la bulle</translation></message>
+    <message><source>Copy selected text</source><translation>Copier le texte sélectionné</translation></message>
+    <message><source>Delete</source><translation>Supprimer</translation></message>
+    <message><source>Delete conversation</source><translation>Supprimer la conversation</translation></message>
+    <message><source>Delete this conversation? This cannot be undone.</source><translation>Supprimer cette conversation ? Cette action est irréversible.</translation></message>
+    <message><source>Elapsed {elapsed}</source><translation>Temps écoulé : {elapsed}</translation></message>
+    <message><source>Exact words spoken in the reference audio</source><translation>Mots exacts prononcés dans l’audio de référence</translation></message>
+    <message><source>Experimental. For eligible overlay replies, privately plans the answer and emits a few stable visible parts. Tool, file, image, and history requests keep the normal path.</source><translation>Expérimental. Pour les réponses de superposition compatibles, planifie la réponse en privé et produit quelques parties visibles stables. Les demandes d’outils, de fichiers, d’images et d’historique conservent le parcours normal.</translation></message>
+    <message><source>Final report is ready.</source><translation>Le rapport final est prêt.</translation></message>
+    <message><source>Final report is ready. Log:</source><translation>Le rapport final est prêt. Journal :</translation></message>
+    <message><source>Finished. Log:</source><translation>Terminé. Journal :</translation></message>
+    <message><source>Installed addon:</source><translation>Extension installée :</translation></message>
+    <message><source>Live voice currently supports Gemini Live through the Google provider.</source><translation>Le mode vocal en direct prend actuellement en charge Gemini Live via le fournisseur Google.</translation></message>
+    <message><source>Memory tokens are estimated after the prompt is known.</source><translation>Les jetons de mémoire sont estimés une fois le prompt connu.</translation></message>
+    <message><source>Message options</source><translation>Options du message</translation></message>
+    <message><source>Minimum combined prompt/context length before planned chunking can run.</source><translation>Longueur combinée minimale du prompt et du contexte avant l’activation du découpage planifié.</translation></message>
+    <message><source>New project</source><translation>Nouveau projet</translation></message>
+    <message><source>Nudge queued for</source><translation>Rappel mis en attente pour</translation></message>
+    <message><source>Number of visible parts, clamped to 2-4.</source><translation>Nombre de parties visibles, limité de 2 à 4.</translation></message>
+    <message><source>Only settings on this page will be reset. API keys, OAuth sign-ins, stored memory, conversations, addons, and settings on other pages will be left alone.</source><translation>Seuls les paramètres de cette page seront réinitialisés. Les clés API, les connexions OAuth, la mémoire enregistrée, les conversations, les extensions et les paramètres des autres pages resteront inchangés.</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; unsupported routes automatically retry without it.</source><translation>Effort de raisonnement OpenAI Responses pour le chat. La valeur par défaut du fournisseur n’envoie aucun champ de raisonnement explicite ; les routes non compatibles réessaient automatiquement sans ce champ.</translation></message>
+    <message><source>Permission changes queued</source><translation>Modifications d’autorisations mises en attente</translation></message>
+    <message><source>Permission needed:</source><translation>Autorisation requise :</translation></message>
+    <message><source>Permissions</source><translation>Autorisations</translation></message>
+    <message><source>Pick a provider first</source><translation>Choisissez d’abord un fournisseur</translation></message>
+    <message><source>Pin</source><translation>Épingler</translation></message>
+    <message><source>Please review the attached file.</source><translation>Veuillez examiner le fichier joint.</translation></message>
+    <message><source>Project for new chats (memory is scoped per project)</source><translation>Projet des nouveaux chats (la mémoire est limitée à chaque projet)</translation></message>
+    <message><source>Project name:</source><translation>Nom du projet :</translation></message>
+    <message><source>Region snips already attach the selected image; extra screenshot context is disabled.</source><translation>Les captures de région joignent déjà l’image sélectionnée ; le contexte de capture d’écran supplémentaire est désactivé.</translation></message>
+    <message><source>Remove all messages after this one? This cannot be undone.</source><translation>Supprimer tous les messages après celui-ci ? Cette action est irréversible.</translation></message>
+    <message><source>Rename</source><translation>Renommer</translation></message>
+    <message><source>Rename conversation</source><translation>Renommer la conversation</translation></message>
+    <message><source>Reset Wisp to its defaults? This cannot be undone.</source><translation>Rétablir les valeurs par défaut de Wisp ? Cette action est irréversible.</translation></message>
+    <message><source>Reset all settings?</source><translation>Réinitialiser tous les paramètres ?</translation></message>
+    <message><source>Reset page?</source><translation>Réinitialiser la page ?</translation></message>
+    <message><source>Reset the {page} page to defaults?</source><translation>Rétablir les valeurs par défaut de la page {page} ?</translation></message>
+    <message><source>Restart app now</source><translation>Redémarrer l’application maintenant</translation></message>
+    <message><source>Resume</source><translation>Reprendre</translation></message>
+    <message><source>Rewind conversation</source><translation>Revenir en arrière dans la conversation</translation></message>
+    <message><source>Rewind current chat to here</source><translation>Ramener le chat actuel jusqu’ici</translation></message>
+    <message><source>Show temporary progress lines in Chat that identify the tool loop and tool calls. Useful for testing; leave off for normal use.</source><translation>Affiche dans le chat des lignes de progression temporaires qui identifient la boucle et les appels d’outils. Utile pour les tests ; laissez cette option désactivée en usage normal.</translation></message>
+    <message><source>Starting…</source><translation>Démarrage…</translation></message>
+    <message><source>Supported files</source><translation>Fichiers pris en charge</translation></message>
+    <message><source>The run is still working.</source><translation>L’exécution est toujours en cours.</translation></message>
+    <message><source>This context is fetched when you send the message, so this token cost is not known yet.</source><translation>Ce contexte est récupéré lors de l’envoi du message ; son coût en jetons n’est donc pas encore connu.</translation></message>
+    <message><source>This discards every agent and communication you have configured here and restores the default Coordinator / Builder / Reviewer setup. This cannot be undone.</source><translation>Cela supprime tous les agents et toutes les communications configurés ici, puis restaure la configuration Coordinateur / Constructeur / Réviseur par défaut. Cette action est irréversible.</translation></message>
+    <message><source>This will permanently:&#10;• DELETE every API key from your OS keychain (Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, Cartesia, ElevenLabs, custom)&#10;• ERASE all saved settings (models, hotkeys, prompts, theme, callers, and everything else in your .env)&#10;• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)&#10;&#10;You will need to re-enter your API keys, sign in again, and reconfigure the app afterwards.&#10;&#10;Continue?</source><translation>Cela va définitivement :&#10;• SUPPRIMER toutes les clés API du trousseau du système (Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, Cartesia, ElevenLabs, personnalisé)&#10;• EFFACER tous les paramètres enregistrés (modèles, raccourcis, prompts, thème, appelants et tout le reste dans .env)&#10;• VOUS DÉCONNECTER de toutes les connexions OAuth (ChatGPT, GitHub, GitHub Copilot)&#10;&#10;Vous devrez ensuite saisir à nouveau vos clés API, vous reconnecter et reconfigurer l’application.&#10;&#10;Continuer ?</translation></message>
+    <message><source>Title:</source><translation>Titre :</translation></message>
+    <message><source>Token estimate</source><translation>Estimation des jetons</translation></message>
+    <message><source>Unpin</source><translation>Désépingler</translation></message>
+    <message><source>When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation.</source><translation>Lorsque cette option est activée, ouvrir le chat après une courte réponse de la superposition demande au modèle une explication plus complète.</translation></message>
+    <message><source>Will pause after current turn</source><translation>Sera mis en pause après le tour actuel</translation></message>
+    <message><source>Wisp</source><translation>Wisp</translation></message>
+    <message><source>Wisp Reply</source><translation>Réponse de Wisp</translation></message>
+    <message><source>blank = account default voice</source><translation>vide = voix par défaut du compte</translation></message>
+    <message><source>model</source><translation>modèle</translation></message>
+    <message><source>server-specific model name</source><translation>nom de modèle propre au serveur</translation></message>
+    <message><source>server-specific voice name</source><translation>nom de voix propre au serveur</translation></message>
+    <message><source>source</source><translation>source</translation></message>
+    <message><source>unknown</source><translation>inconnu</translation></message>
+    <message><source>＋ New project…</source><translation>＋ Nouveau projet…</translation></message>
+    <message><source>UI Lab label</source><translation>Étiquette UI Lab</translation></message>
+    <message><source>Tooltip shown on hover</source><translation>Infobulle affichée au survol</translation></message>
+    <message><source>Popup text</source><translation>Texte contextuel</translation></message>
+    <message><source>Bold</source><translation>Gras</translation></message>
+    <message><source>Italic</source><translation>Italique</translation></message>
+    <message><source>Underline</source><translation>Souligné</translation></message>
+    <message><source>Strikethrough</source><translation>Barré</translation></message>
+    <message><source>Pick text color</source><translation>Choisir la couleur du texte</translation></message>
+    <message><source>Pick highlight color</source><translation>Choisir la couleur de surbrillance</translation></message>
+    <message><source>Highlight color</source><translation>Couleur de surbrillance</translation></message>
+    <message><source>voice name</source><translation>nom de voix</translation></message>
+    <message><source>Primary model</source><translation>Modèle principal</translation></message>
+    <message><source>Fallback models</source><translation>Modèles de secours</translation></message>
+    <message><source>↓ Drop here</source><translation>↓ Déposez ici</translation></message>
+    <message><source>API URL</source><translation>URL de l’API</translation></message>
+    <message><source>Applying update. Wisp will close now; installing and reopening can take a few minutes.</source><translation>Application de la mise à jour. Wisp va maintenant se fermer ; l’installation et la réouverture peuvent prendre quelques minutes.</translation></message>
+    <message><source>Checking for updates...</source><translation>Recherche de mises à jour...</translation></message>
+    <message><source>Choose Agent Scope Folder</source><translation>Choisir le dossier de portée des agents</translation></message>
+    <message><source>Conversation provider</source><translation>Fournisseur de conversation</translation></message>
+    <message><source>Downloaded update file is no longer available.</source><translation>Le fichier de mise à jour téléchargé n’est plus disponible.</translation></message>
+    <message><source>Downloading update...</source><translation>Téléchargement de la mise à jour...</translation></message>
+    <message><source>ElevenLabs Model</source><translation>Modèle ElevenLabs</translation></message>
+    <message><source>ElevenLabs Voice ID</source><translation>ID de voix ElevenLabs</translation></message>
+    <message><source>ElevenLabs is installed.</source><translation>ElevenLabs est installé.</translation></message>
+    <message><source>ElevenLabs is not installed. If the exe build skipped it because the build path was too long, install it here.</source><translation>ElevenLabs n’est pas installé. Si la version EXE l’a ignoré parce que le chemin de compilation était trop long, installez-le ici.</translation></message>
+    <message><source>Kokoro is installed. A voice model update is available; click Update voice model to fetch it.</source><translation>Kokoro est installé. Une mise à jour du modèle vocal est disponible ; cliquez sur Mettre à jour le modèle vocal pour la récupérer.</translation></message>
+    <message><source>No model configured.</source><translation>Aucun modèle configuré.</translation></message>
+    <message><source>No update is ready to download.</source><translation>Aucune mise à jour n’est prête à être téléchargée.</translation></message>
+    <message><source>Number of visible parts for eligible planned replies. Runtime clamps this to 2-4.</source><translation>Nombre de parties visibles pour les réponses planifiées compatibles. L’exécution limite cette valeur de 2 à 4.</translation></message>
+    <message><source>OpenAI Model</source><translation>Modèle OpenAI</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Unsupported models are retried without this field.</source><translation>Effort de raisonnement OpenAI Responses pour le chat. Les modèles non compatibles sont réessayés sans ce champ.</translation></message>
+    <message><source>OpenAI Voice</source><translation>Voix OpenAI</translation></message>
+    <message><source>Output sample rate (Hz)</source><translation>Fréquence d’échantillonnage de sortie (Hz)</translation></message>
+    <message><source>Playback sample rate (Hz)</source><translation>Fréquence d’échantillonnage de lecture (Hz)</translation></message>
+    <message><source>Reference audio</source><translation>Audio de référence</translation></message>
+    <message><source>Reference language</source><translation>Langue de référence</translation></message>
+    <message><source>Reference transcript</source><translation>Transcription de référence</translation></message>
+    <message><source>Reply language</source><translation>Langue de réponse</translation></message>
+    <message><source>Wisp is up to date.</source><translation>Wisp est à jour.</translation></message>
+    <message><source>Add a task title.</source><translation>Ajoutez un titre à la tâche.</translation></message>
+    <message><source>Describe the task objective.</source><translation>Décrivez l’objectif de la tâche.</translation></message>
+    <message><source>Choose a model provider.</source><translation>Choisissez un fournisseur de modèles.</translation></message>
+    <message><source>Add a model name.</source><translation>Ajoutez un nom de modèle.</translation></message>
+    <message><source>Add at least one agent.</source><translation>Ajoutez au moins un agent.</translation></message>
+    <message><source>Agent names must be unique.</source><translation>Les noms des agents doivent être uniques.</translation></message>
+    <message><source>Every communication must reference existing agents.</source><translation>Chaque communication doit faire référence à des agents existants.</translation></message>
+    <message><source>+ Add connection</source><translation>+ Ajouter une connexion</translation></message>
+    <message><source>A private desktop assistant overlay with configurable models, voice, context, and tools.</source><translation>Un assistant de bureau privé avec des modèles, une voix, un contexte et des outils configurables.</translation></message>
+    <message><source>Add connection</source><translation>Ajouter une connexion</translation></message>
+    <message><source>Add each provider once, or use aliases for multiple accounts. Search and filtering keep large connection lists manageable.</source><translation>Ajoutez chaque fournisseur une fois ou utilisez des alias pour plusieurs comptes. La recherche et les filtres facilitent la gestion des longues listes.</translation></message>
+    <message><source>Add fallback</source><translation>Ajouter un modèle de secours</translation></message>
+    <message><source>Add fallback model</source><translation>Ajouter un modèle de secours</translation></message>
+    <message><source>Add fallback to {route}</source><translation>Ajouter un secours à {route}</translation></message>
+    <message><source>All connections</source><translation>Toutes les connexions</translation></message>
+    <message><source>Choose a configured connection, then search its models or enter an exact model name.</source><translation>Choisissez une connexion configurée, puis recherchez ses modèles ou saisissez un nom de modèle exact.</translation></message>
+    <message><source>Choose a provider</source><translation>Choisir un fournisseur</translation></message>
+    <message><source>Cloud provider</source><translation>Fournisseur cloud</translation></message>
+    <message><source>Cloud providers</source><translation>Fournisseurs cloud</translation></message>
+    <message><source>Connection</source><translation>Connexion</translation></message>
+    <message><source>Live voice needs a Google API key. Add one in Connections first.</source><translation>La voix en direct nécessite une clé API Google. Ajoutez-en une dans Connexions.</translation></message>
+    <message><source>Local and custom</source><translation>Locaux et personnalisés</translation></message>
+    <message><source>Local or self-hosted provider</source><translation>Fournisseur local ou auto-hébergé</translation></message>
+    <message><source>No catalog match. The text above will be used as a custom model name.</source><translation>Aucune correspondance dans le catalogue. Le texte ci-dessus sera utilisé comme nom de modèle personnalisé.</translation></message>
+    <message><source>No matching connections.</source><translation>Aucune connexion correspondante.</translation></message>
+    <message><source>Reset only the currently selected settings page to defaults</source><translation>Réinitialiser uniquement la page de paramètres sélectionnée</translation></message>
+    <message><source>Save changes</source><translation>Enregistrer les modifications</translation></message>
+    <message><source>Search all settings...</source><translation>Rechercher dans tous les paramètres...</translation></message>
+    <message><source>Search models or enter a model name...</source><translation>Rechercher des modèles ou saisir un nom de modèle...</translation></message>
+    <message><source>Search providers or aliases...</source><translation>Rechercher des fournisseurs ou des alias...</translation></message>
+    <message><source>Search providers...</source><translation>Rechercher des fournisseurs...</translation></message>
+    <message><source>Search the provider catalog. You can add multiple accounts using aliases.</source><translation>Recherchez dans le catalogue des fournisseurs. Vous pouvez ajouter plusieurs comptes avec des alias.</translation></message>
+    <message><source>Show fewer</source><translation>Afficher moins</translation></message>
+    <message><source>Show {count} more</source><translation>Afficher {count} de plus</translation></message>
+    <message><source>The credential or local endpoint used by this fallback.</source><translation>L’identifiant ou le point de terminaison local utilisé par ce modèle de secours.</translation></message>
+    <message><source>Uses the Google API key from Connections.</source><translation>Utilise la clé API Google de Connexions.</translation></message>
+    <message><source>Uses your OpenAI API key from Connections.</source><translation>Utilise votre clé API OpenAI de Connexions.</translation></message>
+    <message><source>{count} catalog models</source><translation>{count} modèles du catalogue</translation></message>
+    <message><source>Appearance, languages, privacy, and everyday behavior.</source><translation>Apparence, langues, confidentialité et comportement quotidien.</translation></message>
+    <message><source>Connections</source><translation>Connexions</translation></message>
+    <message><source>Provider sign-ins, API keys, and custom endpoints.</source><translation>Connexions aux fournisseurs, clés API et points de terminaison personnalisés.</translation></message>
+    <message><source>Choose primary and fallback models for each purpose.</source><translation>Choisissez les modèles principaux et de secours pour chaque usage.</translation></message>
+    <message><source>Voice &amp; audio</source><translation>Voix et audio</translation></message>
+    <message><source>Playback, text to speech, transcription, and live conversation.</source><translation>Lecture, synthèse vocale, transcription et conversation en direct.</translation></message>
+    <message><source>Shortcuts</source><translation>Raccourcis</translation></message>
+    <message><source>Keyboard controls, caller actions, context, and tool access.</source><translation>Commandes clavier, actions d’appel, contexte et accès aux outils.</translation></message>
+    <message><source>Prompts &amp; context</source><translation>Instructions et contexte</translation></message>
+    <message><source>Instructions that shape how Wisp responds.</source><translation>Instructions qui déterminent la manière dont Wisp répond.</translation></message>
+    <message><source>Context limits, local file access, memory, and timing.</source><translation>Limites de contexte, accès aux fichiers locaux, mémoire et temporisation.</translation></message>
+    <message><source>About</source><translation>À propos</translation></message>
+    <message><source>Version, updates, and uninstall options.</source><translation>Version, mises à jour et options de désinstallation.</translation></message>
+    <message><source>Text to speech</source><translation>Synthèse vocale</translation></message>
+    <message><source>Live conversation</source><translation>Conversation en direct</translation></message>
+    <message><source>Load or create a profile for common Wisp setups. Review changes before saving.</source><translation>Chargez ou créez un profil pour les configurations Wisp courantes. Vérifiez les modifications avant d’enregistrer.</translation></message>
+    <message><source>{profile} profile created. Review changes, then Save changes to use it.</source><translation>Le profil {profile} a été créé. Vérifiez les modifications, puis choisissez Enregistrer les modifications pour l’utiliser.</translation></message>
+    <message><source>{profile} profile selected. Review changes, then Save changes.</source><translation>Le profil {profile} est sélectionné. Vérifiez les modifications, puis choisissez Enregistrer les modifications.</translation></message>
+    <message><source>{profile} profile selected. Edits saved with Save changes will update this profile.</source><translation>Le profil {profile} est sélectionné. Les modifications enregistrées avec Enregistrer les modifications mettront ce profil à jour.</translation></message>
+    <message><source>Save settings first</source><translation>Enregistrez d’abord les paramètres</translation></message>
+    <message><source>Save or discard your pending Settings changes before running profile setup.</source><translation>Enregistrez ou abandonnez les modifications en attente avant de lancer la configuration du profil.</translation></message>
+    <message><source>Add the providers you use. Optional aliases and filters keep large connection lists easy to scan.</source><translation>Ajoutez les fournisseurs que vous utilisez. Les alias facultatifs et les filtres facilitent la lecture des longues listes.</translation></message>
+    <message><source>Search the provider catalog, then use an optional alias to label the connection.</source><translation>Recherchez dans le catalogue des fournisseurs, puis utilisez un alias facultatif pour nommer la connexion.</translation></message>
+    <message><source>Extract long-term facts automatically</source><translation>Extraire automatiquement les faits à long terme</translation></message>
+    <message><source>Find a shortcut…</source><translation>Rechercher un raccourci…</translation></message>
+    <message><source>Global shortcuts</source><translation>Raccourcis globaux</translation></message>
+    <message><source>Intent-overlay and screen-capture entry points available from any application.</source><translation>Points d’entrée du sélecteur d’intentions et de la capture d’écran disponibles depuis toute application.</translation></message>
+    <message><source>Add intent shortcut</source><translation>Ajouter un raccourci d’intention</translation></message>
+    <message><source>Intent overlay timeout (ms)</source><translation>Délai du sélecteur d’intentions (ms)</translation></message>
+    <message><source>Voice shortcuts</source><translation>Raccourcis vocaux</translation></message>
+    <message><source>Speech input, dictation, live conversation, and spoken selection.</source><translation>Entrée vocale, dictée, conversation en direct et lecture de la sélection.</translation></message>
+    <message><source>Hold to ask by voice</source><translation>Maintenir pour poser une question à la voix</translation></message>
+    <message><source>Hold while speaking, then release to transcribe and ask.</source><translation>Maintenez pendant que vous parlez, puis relâchez pour transcrire et poser la question.</translation></message>
+    <message><source>Hold to dictate</source><translation>Maintenir pour dicter</translation></message>
+    <message><source>Type speech into the focused field without asking the assistant.</source><translation>Saisit la parole dans le champ actif sans interroger l’assistant.</translation></message>
+    <message><source>Toggle live conversation</source><translation>Activer ou désactiver la conversation en direct</translation></message>
+    <message><source>Start or stop a live voice conversation.</source><translation>Démarre ou arrête une conversation vocale en direct.</translation></message>
+    <message><source>Speak selected text with the configured text-to-speech provider.</source><translation>Lit le texte sélectionné avec le fournisseur de synthèse vocale configuré.</translation></message>
+    <message><source>Context shortcuts</source><translation>Raccourcis de contexte</translation></message>
+    <message><source>Build or clear the context buffer without opening Wisp.</source><translation>Ajoute ou efface le tampon de contexte sans ouvrir Wisp.</translation></message>
+    <message><source>Append selected text to the context buffer.</source><translation>Ajoute le texte sélectionné au tampon de contexte.</translation></message>
+    <message><source>Remove every item from the context buffer.</source><translation>Supprime tous les éléments du tampon de contexte.</translation></message>
+    <message><source>Action</source><translation>Action</translation></message>
+    <message><source>Shortcut 1</source><translation>Raccourci 1</translation></message>
+    <message><source>Shortcut 2</source><translation>Raccourci 2</translation></message>
+    <message><source>Details</source><translation>Détails</translation></message>
+    <message><source>Customize</source><translation>Personnaliser</translation></message>
+    <message><source>Enable this shortcut</source><translation>Activer ce raccourci</translation></message>
+    <message><source>Assign shortcut</source><translation>Attribuer un raccourci</translation></message>
+    <message><source>Intent shortcut name</source><translation>Nom du raccourci d’intention</translation></message>
+    <message><source>Short name shown for this intent shortcut in settings and tool access dialogs.</source><translation>Nom court affiché pour ce raccourci d’intention dans les paramètres et les fenêtres d’accès aux outils.</translation></message>
+    <message><source>Paste the final answer into the focused application</source><translation>Coller la réponse finale dans l’application active</translation></message>
+    <message><source>Remove intent shortcut</source><translation>Supprimer le raccourci d’intention</translation></message>
+    <message><source>Add choice</source><translation>Ajouter un choix</translation></message>
+    <message><source>New intent shortcut</source><translation>Nouveau raccourci d’intention</translation></message>
+    <message><source>Rewrite &amp; Paste</source><translation>Réécrire et coller</translation></message>
+    <message><source>App context:
+Off — do not include nearby app/window context or open documents.
+On — include nearby app/window context only.
+On + open docs — include nearby app/window context and read supported open documents.
+Let model decide — include nearby app/window context and expose an open-document tool.</source><translation>Contexte de l’application :
+Désactivé — ne pas inclure le contexte proche de l’application ou de la fenêtre ni les documents ouverts.
+Activé — inclure uniquement le contexte proche de l’application ou de la fenêtre.
+Activé + documents ouverts — inclure ce contexte et lire les documents ouverts compatibles.
+Laisser le modèle décider — inclure ce contexte et proposer un outil pour les documents ouverts.</translation></message>
+    <message><source>Clipboard:
+Off — do not include clipboard text.
+On — include clipboard text with this query.</source><translation>Presse-papiers :
+Désactivé — ne pas inclure le texte du presse-papiers.
+Activé — inclure le texte du presse-papiers dans cette requête.</translation></message>
+    <message><source>Local files:
+Off — do not expose file tools.
+Read only — allow listing and reading configured folders.
+Ask before writing — show a diff before edits or creates.
+Write automatically — apply edits without asking.</source><translation>Fichiers locaux :
+Désactivé — ne pas proposer les outils de fichiers.
+Lecture seule — autoriser le listage et la lecture des dossiers configurés.
+Demander avant d’écrire — afficher les différences avant toute modification ou création.
+Écrire automatiquement — appliquer les modifications sans demander.</translation></message>
+    <message><source>Open the intent overlay for selected text or the active project.</source><translation>Ouvre le sélecteur d’intentions pour le texte sélectionné ou le projet actif.</translation></message>
+    <message><source>Select a screen region, attach it, and open the intent overlay.</source><translation>Sélectionne une zone de l’écran, la joint et ouvre le sélecteur d’intentions.</translation></message>
   </context>
   <context>
     <name>Wisp</name>
@@ -4622,10 +4924,6 @@ Continuer ?</translation>
       <translation>Vos autres paramètres ont bien été enregistrés. Consultez le journal pour plus de détails, puis réessayez d'enregistrer les clés concernées.</translation>
     </message>
     <message>
-      <source>add an API key below</source>
-      <translation>ajoutez une clé API ci-dessous</translation>
-    </message>
-    <message>
       <source>custom endpoint API key</source>
       <translation>clé API du point de terminaison personnalisé</translation>
     </message>
@@ -4668,6 +4966,46 @@ Continuer ?</translation>
     <message>
       <source>LOCAL FILE TOOLS</source>
       <translation>OUTILS DE FICHIERS LOCAUX</translation>
+    </message>
+    <message>
+      <source>list_files</source>
+      <translation>Lister les fichiers</translation>
+    </message>
+    <message>
+      <source>read_file</source>
+      <translation>Lire les fichiers</translation>
+    </message>
+    <message>
+      <source>create_file</source>
+      <translation>Créer des fichiers</translation>
+    </message>
+    <message>
+      <source>edit_file</source>
+      <translation>Modifier les fichiers</translation>
+    </message>
+    <message>
+      <source>write_file</source>
+      <translation>Écrire des fichiers</translation>
+    </message>
+    <message>
+      <source>List configured file roots.</source>
+      <translation>Lister les racines de fichiers configurées.</translation>
+    </message>
+    <message>
+      <source>Read files from configured file roots.</source>
+      <translation>Lire des fichiers depuis les racines de fichiers configurées.</translation>
+    </message>
+    <message>
+      <source>Create new files in configured file roots.</source>
+      <translation>Créer de nouveaux fichiers dans les racines de fichiers configurées.</translation>
+    </message>
+    <message>
+      <source>Patch files in configured file roots.</source>
+      <translation>Modifier les fichiers dans les racines de fichiers configurées.</translation>
+    </message>
+    <message>
+      <source>Create or overwrite files in configured file roots.</source>
+      <translation>Créer ou écraser des fichiers dans les racines de fichiers configurées.</translation>
     </message>
     <message>
       <source>Local files</source>
@@ -4935,59 +5273,59 @@ Continuer ?</translation>
     </message>
     <message>
       <source>STT model configured: {model}. faster-whisper is installed.</source>
-      <translation>STT model configured: {model}. faster-whisper is installed.</translation>
+      <translation>Modèle STT configuré : {model}. faster-whisper est installé.</translation>
     </message>
     <message>
       <source>STT model configured: {model}, but faster-whisper is not installed.</source>
-      <translation>STT model configured: {model}, but faster-whisper is not installed.</translation>
+      <translation>Modèle STT configuré : {model}, mais faster-whisper n’est pas installé.</translation>
     </message>
     <message>
-      <source>STT model configured: {model}, but faster-whisper failed to import: {error}</source>
-      <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
+      <source>STT model configured: {model}, but STT verification failed: {error}</source>
+      <translation>Modèle STT configuré : {model}, mais la vérification STT a échoué : {error}</translation>
     </message>
     <message>
       <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</source>
-      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</translation>
+      <translation>Recommandation : la prise en charge STT ne fonctionne pas. Ouvrez Paramètres &gt; Voix et cliquez sur Installer STT.</translation>
     </message>
     <message>
       <source>Installing STT: {detail}.</source>
-      <translation>Installing STT: {detail}.</translation>
+      <translation>Installation de STT : {detail}.</translation>
     </message>
     <message>
       <source>Installing STT...</source>
-      <translation>Installing STT...</translation>
+      <translation>Installation de STT…</translation>
     </message>
     <message>
       <source>Reinstall STT</source>
-      <translation>Reinstall STT</translation>
+      <translation>Réinstaller STT</translation>
     </message>
     <message>
       <source>Install STT</source>
-      <translation>Install STT</translation>
+      <translation>Installer STT</translation>
     </message>
     <message>
       <source>STT install failed: {message}</source>
-      <translation>STT install failed: {message}</translation>
+      <translation>Échec de l’installation de STT : {message}</translation>
     </message>
     <message>
       <source>STT installed, but model verification failed: {message}</source>
-      <translation>STT installed, but model verification failed: {message}</translation>
+      <translation>STT est installé, mais la vérification du modèle a échoué : {message}</translation>
     </message>
     <message>
       <source>STT installed and model ready: {summary}.</source>
-      <translation>STT installed and model ready: {summary}.</translation>
+      <translation>STT installé et modèle prêt : {summary}.</translation>
     </message>
     <message>
       <source>Installing STT: downloading or loading Whisper model {model}.</source>
-      <translation>Installing STT: downloading or loading Whisper model {model}.</translation>
+      <translation>Installation de STT : téléchargement ou chargement du modèle Whisper {model}.</translation>
     </message>
     <message>
       <source>STT package installed. Configured backend: {summary}; model loads on first use.</source>
-      <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
+      <translation>Paquet STT installé. Backend configuré : {summary} ; le modèle sera chargé à la première utilisation.</translation>
     </message>
     <message>
       <source>STT package is not installed. Click Install STT to install and verify it.</source>
-      <translation>STT package is not installed. Click Install STT to install and verify it.</translation>
+      <translation>Le paquet STT n’est pas installé. Cliquez sur Installer STT pour l’installer et le vérifier.</translation>
     </message>
     <message>
       <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>
@@ -5020,12 +5358,20 @@ The installer will then load the selected Whisper model in a separate process. T
 Continue?</translation>
     </message>
     <message>
+      <source>
+
+Windows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
+      <translation>
+
+La prise en charge de CUDA sous Windows télécharge également les paquets NVIDIA CUDA Runtime et cuBLAS (environ 570 Mo), afin que l’application distribuée ne dépende pas d’une installation distincte de CUDA Toolkit.</translation>
+    </message>
+    <message>
       <source>preparing local assets for {elapsed}</source>
       <translation>preparing local assets for {elapsed}</translation>
     </message>
     <message>
       <source>downloading or loading Whisper model for {elapsed}</source>
-      <translation>downloading or loading Whisper model for {elapsed}</translation>
+      <translation>téléchargement ou chargement du modèle Whisper depuis {elapsed}</translation>
     </message>
     <message>
       <source>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
@@ -5059,7 +5405,7 @@ Continue?</translation>
     </message>
     <message>
       <source>removing previous install</source>
-      <translation>removing previous install</translation>
+      <translation>suppression de l’installation précédente</translation>
     </message>
     <message>
       <source>Wisp {display_name} apply</source>
@@ -5153,5 +5499,57 @@ Continue?</translation>
       <source>verifying Torch</source>
       <translation>verification de Torch</translation>
     </message>
+    <message><source>Speech warm-up failed.</source><translation>Échec de la préparation des services vocaux.</translation></message>
+    <message><source>Speech warm-up finished; one service will retry when needed.</source><translation>La préparation des services vocaux est terminée ; un service réessaiera si nécessaire.</translation></message>
+    <message><source>Speech services are ready.</source><translation>Les services vocaux sont prêts.</translation></message>
+    <message><source>Preparing speech services - {elapsed} elapsed.</source><translation>Préparation des services vocaux — temps écoulé : {elapsed}.</translation></message>
+    <message><source>Speech warm-up was interrupted because the audio service restarted.</source><translation>La préparation des services vocaux a été interrompue, car le service audio a redémarré.</translation></message>
+    <message><source>STT (speech recognition)</source><translation>STT (reconnaissance vocale)</translation></message>
+    <message><source>TTS (Kokoro local voice)</source><translation>TTS (voix locale Kokoro)</translation></message>
+    <message><source>TTS (Cartesia connection)</source><translation>TTS (connexion Cartesia)</translation></message>
+    <message><source>TTS ({provider})</source><translation>TTS ({provider})</translation></message>
+    <message><source>warming up ({elapsed})</source><translation>en cours de préparation ({elapsed})</translation></message>
+    <message><source>{minutes}m {seconds}s</source><translation>{minutes} min {seconds} s</translation></message>
+    <message><source>{seconds}s</source><translation>{seconds} s</translation></message>
+    <message><source>ready</source><translation>disponible</translation></message>
+    <message><source>not needed</source><translation>non requis</translation></message>
+    <message><source>will retry when first used</source><translation>réessaiera lors de la première utilisation</translation></message>
+    <message><source>failed - {message}</source><translation>échec — {message}</translation></message>
+    <message><source>stopped</source><translation>arrêté</translation></message>
+    <message><source>waiting to start</source><translation>en attente de démarrage</translation></message>
+    <message><source>not completed</source><translation>non terminé</translation></message>
+    <message><source>unknown error</source><translation>erreur inconnue</translation></message>
+    <message><source>{label}: {status}</source><translation>{label} : {status}</translation></message>
+    <message><source>TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.</source><translation>La synthèse vocale (voix locale) est encore en cours de préparation. Attendez que l’avis d’état vocal indique que la TTS est prête.</translation></message>
+    <message><source>Uninstall</source><translation>Désinstallation</translation></message>
+    <message><source>Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer.</source><translation>Supprime définitivement Wisp, ses données et les modèles d’IA locaux appartenant à Wisp de cet ordinateur.</translation></message>
+    <message><source>Uninstall Wisp</source><translation>Désinstaller Wisp</translation></message>
+    <message><source>Could not start uninstaller</source><translation>Impossible de démarrer le programme de désinstallation</translation></message>
+    <message><source>Another Wisp process is still running. Close Wisp, then run Uninstall Wisp.bat again.</source><translation>Un autre processus Wisp est toujours en cours d’exécution. Fermez Wisp, puis relancez Uninstall Wisp.bat.</translation></message>
+    <message><source>Could not build a safe uninstall plan: {error}</source><translation>Impossible de créer un plan de désinstallation sûr : {error}</translation></message>
+    <message><source>source checkout</source><translation>copie du code source</translation></message>
+    <message><source>release installation</source><translation>installation de la version publiée</translation></message>
+    <message><source>This will permanently remove:
+• Wisp's current {kind}: {app_root}
+• All Wisp settings, chats, memory, add-ons, tools, logs, updates, and optional packages: {data_root}
+• Wisp API keys and sign-in tokens from the OS keychain
+• Wisp's STT/TTS model repositories from the Hugging Face cache
+• Wisp login and desktop entries
+
+Shared uv/pip caches and unrelated Hugging Face models will not be removed.</source><translation>Ceci supprimera définitivement :
+• La {kind} actuelle de Wisp : {app_root}
+• Tous les réglages, discussions, éléments de mémoire, extensions, outils, journaux, mises à jour et paquets facultatifs de Wisp : {data_root}
+• Les clés API et jetons de connexion de Wisp du trousseau du système
+• Les dépôts de modèles STT/TTS de Wisp du cache Hugging Face
+• Les entrées de connexion et de bureau de Wisp
+
+Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront pas supprimés.</translation></message>
+    <message><source>Exact paths scheduled for deletion:</source><translation>Chemins exacts dont la suppression est prévue :</translation></message>
+    <message><source>The source checkout will be deleted, including its Git history, uncommitted changes, and every file inside it.</source><translation>La copie du code source sera supprimée, y compris son historique Git, les modifications non validées et tous les fichiers qu’elle contient.</translation></message>
+    <message><source>Uninstall Wisp?</source><translation>Désinstaller Wisp ?</translation></message>
+    <message><source>This action cannot be undone.</source><translation>Cette action est irréversible.</translation></message>
+    <message><source>Could not start uninstaller: {error}</source><translation>Impossible de démarrer le programme de désinstallation : {error}</translation></message>
+    <message><source>Uninstaller started</source><translation>Programme de désinstallation démarré</translation></message>
+    <message><source>Wisp will now close. The uninstaller will remove only the listed Wisp-owned files after all Wisp processes exit.</source><translation>Wisp va maintenant se fermer. Le programme de désinstallation supprimera uniquement les fichiers répertoriés appartenant à Wisp après l’arrêt de tous les processus Wisp.</translation></message>
   </context>
 </TS>

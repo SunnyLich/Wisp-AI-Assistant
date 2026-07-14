@@ -108,4 +108,7 @@ def expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
         raise RuntimeError("PySide6 is required for settings UI widgets.")
     form = QFormLayout(parent)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    # Long translated labels and narrow settings windows should wrap above the
+    # field instead of forcing a horizontal scrollbar across the whole page.
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
     return form

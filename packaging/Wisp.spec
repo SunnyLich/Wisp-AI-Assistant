@@ -11,11 +11,17 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 # the package's data/binaries explicitly or the frozen app panics on parse.
 LITEPARSE_DATAS, LITEPARSE_BINARIES, LITEPARSE_HIDDENIMPORTS = collect_all("liteparse")
 LANGUAGE_TAGS_DATAS, LANGUAGE_TAGS_BINARIES, LANGUAGE_TAGS_HIDDENIMPORTS = collect_all("language_tags")
-# faster_whisper's Python modules are pulled into the archive by the import
-# scanner, but its Silero VAD model (faster_whisper/assets/silero_vad_v6.onnx)
-# is a loose data file the scanner misses; STT loads it on every transcribe and
-# the frozen app raises NO_SUCHFILE without it.
-FASTER_WHISPER_DATAS, FASTER_WHISPER_BINARIES, FASTER_WHISPER_HIDDENIMPORTS = collect_all("faster_whisper")
+
+# STT is installed as one pinned, user-writable package layer from Settings.
+# These imports exist lazily in runtime workers, so exclude the provider-native
+# stack explicitly or PyInstaller will silently create a second bundled copy.
+INSTALLER_OWNED_STT_EXCLUDES = [
+    "av",
+    "ctranslate2",
+    "faster_whisper",
+    "flatbuffers",
+    "onnxruntime",
+]
 
 def _repo_root() -> Path:
     start = Path(SPECPATH).resolve()
@@ -29,22 +35,29 @@ def _repo_root() -> Path:
 ROOT = _repo_root()
 sys.path.insert(0, str(ROOT / "runtime" / "brain"))
 APP_ICON_ICO = ROOT / "assets" / "app.ico"
+WINDOWS_LAUNCHER_FILES = [
+    ("Uninstall Wisp.bat", str(ROOT / "Uninstall Wisp.bat"), "EXECUTABLE"),
+]
 PYSIDE6_ROOT = Path(PySide6.__file__).resolve().parent
 RUNTIME_WORKER_HIDDENIMPORTS = collect_submodules("runtime.workers")
 BRAIN_HIDDENIMPORTS = collect_submodules("wisp_brain")
-PIP_HIDDENIMPORTS = collect_submodules("pip")
 MODULE_MODE_HIDDENIMPORTS = [
     "core.addon_host",
     "scripts.optional_tts_installer",
 ]
 # Optional packages are installed after PyInstaller analysis and can therefore
-# import stdlib modules that the frozen app did not otherwise need. Torch (used
-# by Kokoro) imports timeit during startup, so keep it in the base bundle.
+# import modules that the frozen app did not otherwise need. Keep this explicit
+# list in the base bundle without pulling pip and all of its vendored packages
+# into the release.
 OPTIONAL_RUNTIME_HIDDENIMPORTS = [
     "cProfile",
+    "cmath",
+    "filecmp",
+    "huggingface_hub.dataclasses",
     "pickletools",
     "pstats",
     "timeit",
+    "tqdm.contrib.logging",
 ]
 QT_RUNTIME_DLLS = [
     (str(path), "PySide6")
@@ -79,13 +92,13 @@ block_cipher = None
 a = Analysis(
     [str(ROOT / "runtime" / "supervisor" / "app.py")],
     pathex=[str(ROOT)],
-    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + FASTER_WHISPER_BINARIES + UV_BINARIES,
+    binaries=QT_RUNTIME_DLLS + LITEPARSE_BINARIES + LANGUAGE_TAGS_BINARIES + UV_BINARIES,
     datas=[
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "ui" / "locales"), "ui/locales"),
         (str(ROOT / ".env.example"), "."),
         (str(ROOT / "pyproject.toml"), "."),
-    ] + BUNDLED_ADDON_DATAS + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS + FASTER_WHISPER_DATAS,
+    ] + BUNDLED_ADDON_DATAS + LITEPARSE_DATAS + LANGUAGE_TAGS_DATAS,
     hiddenimports=[
         "pynput.keyboard._win32",
         "pynput.mouse._win32",
@@ -95,11 +108,13 @@ a = Analysis(
         "win32process",
         "comtypes",
         "comtypes.client",
-    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + PIP_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS + FASTER_WHISPER_HIDDENIMPORTS,
+    ] + MODULE_MODE_HIDDENIMPORTS + OPTIONAL_RUNTIME_HIDDENIMPORTS + RUNTIME_WORKER_HIDDENIMPORTS + BRAIN_HIDDENIMPORTS + LITEPARSE_HIDDENIMPORTS + LANGUAGE_TAGS_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        *INSTALLER_OWNED_STT_EXCLUDES,
+        "pip",
         "pytest",
         "tests",
         "tmp_debug_agent",
@@ -136,6 +151,7 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
+    WINDOWS_LAUNCHER_FILES,
     strip=False,
     upx=True,
     upx_exclude=[],

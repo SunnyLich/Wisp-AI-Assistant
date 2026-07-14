@@ -368,6 +368,37 @@ def test_intent_overlay_translates_default_custom_prompt_label(monkeypatch):
         i18n.set_language(app=app)
 
 
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_overlay_translates_builtin_labels_but_preserves_runtime_prompt():
+    """Built-in overlay copy follows the app language without changing model input."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from core.prompt_i18n import caller_intent_template
+    import ui.intent_overlay as intent_overlay
+    from ui import i18n
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_rows = list(config.CALLER_ROWS)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    english = caller_intent_template(0, 0, "English")
+    traditional = caller_intent_template(0, 0, "zh-Hant")
+    config.APP_LANGUAGE = "zh-Hant"
+    i18n.set_language(app=app)
+    config.CALLER_ROWS[:] = [{"intents": [english], "custom_key": "s", "custom_label": ""}]
+    try:
+        row = intent_overlay._build_rows(0)[0]
+
+        assert row["label"] == traditional["label"]
+        assert row["hint"] == traditional["hint"]
+        assert row["prompt"] == english["prompt"]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        config.APP_LANGUAGE = old_language
+        i18n.set_language(app=app)
+
+
 def test_intent_overlay_preserves_custom_prompt_label():
     """Verify intent overlay preserves custom prompt label behavior."""
     import config

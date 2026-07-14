@@ -16,6 +16,7 @@ from runtime import protocol
 
 Handler = Callable[..., Any]
 EventSinkSetter = Callable[[Callable[[str, Any, Any], None]], None]
+ShutdownHandler = Callable[[], Any]
 
 
 def _protect_stdout():
@@ -45,6 +46,7 @@ def run_host(
     handlers: dict[str, Handler],
     threaded: bool = False,
     event_sink_setter: EventSinkSetter | None = None,
+    shutdown_handler: ShutdownHandler | None = None,
     include_brain_path: bool = False,
 ) -> int:
     """Run a worker host until stdin closes or ``__shutdown__`` is requested."""
@@ -123,4 +125,11 @@ def run_host(
             threading.Thread(target=dispatch, args=(req,), daemon=True).start()
         else:
             dispatch(req)
+    if shutdown_handler is not None:
+        try:
+            shutdown_handler()
+        except Exception:  # noqa: BLE001 - shutdown must not trap the worker
+            import traceback
+
+            traceback.print_exc()
     return 0

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 import pytest
-
 
 pytest.importorskip("PySide6", reason="PySide6 not installed")
 
@@ -49,6 +49,8 @@ def test_optional_install_dialog_streams_success_output(tmp_path: Path):
         assert "installing package chunk 2/2" in dialog.log_text()
         assert "Installer completed successfully." in dialog.log_text()
         assert "Installer completed successfully." in dialog._status.text()
+        assert dialog._progress_percent.text() == "100%"
+        assert not dialog._spinner.is_active()
         assert log_path.exists()
         assert "verification complete" in log_path.read_text(encoding="utf-8")
     finally:
@@ -79,6 +81,8 @@ def test_optional_install_dialog_reports_failure_exit_code(tmp_path: Path):
         assert "Installer failed with exit code 7." in dialog._status.text()
         assert dialog._close_btn.isEnabled()
         assert not dialog._cancel_btn.isEnabled()
+        assert dialog._spinner.text() == "×"
+        assert not dialog._spinner.is_active()
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -93,3 +97,136 @@ def test_optional_install_mock_command_uses_module_worker():
     assert command[:3] == [sys.executable, "-m", "runtime.workers.mock_optional_install"]
     assert "--mode" in command
     assert "unicode" in command
+
+
+def test_optional_install_dialog_preserves_persisted_failure_detail(tmp_path: Path):
+    from PySide6.QtCore import QProcess
+    from PySide6.QtWidgets import QApplication
+
+    from ui.optional_install_dialog import OptionalInstallDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    status_path = tmp_path / "kokoro-install.status.json"
+    detail = "Not enough free disk space while extracting the downloaded packages."
+    status_path.write_text(json.dumps({"ok": False, "message": detail}), encoding="utf-8")
+    dialog = OptionalInstallDialog(
+        title="Kokoro installer",
+        command=[sys.executable, "--version"],
+        status_path=status_path,
+        auto_start=False,
+    )
+    try:
+        dialog._handle_finished(1, QProcess.ExitStatus.NormalExit)
+        assert dialog._status.text() == detail
+        assert detail in dialog.log_text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_optional_install_dialog_shows_percentage_and_spinner(tmp_path: Path):
+    from PySide6.QtWidgets import QApplication
+
+    from ui.optional_install_dialog import OptionalInstallDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = OptionalInstallDialog(
+        title="Percentage installer",
+        command=[sys.executable, "--version"],
+        cwd=Path.cwd(),
+        log_path=tmp_path / "percentage.log",
+        auto_start=False,
+    )
+    try:
+        dialog._set_running(True)
+        dialog._append_text("Downloading package wheel 37%\r")
+        app.processEvents()
+
+        assert dialog._progress_percent.text() == "37%"
+        assert not dialog._progress_percent.isHidden()
+        assert "Elapsed " in dialog._elapsed.text()
+        assert dialog._spinner.is_active()
+        assert not hasattr(dialog, "_progress")
+    finally:
+        dialog._spinner.stop()
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_optional_install_dialog_polls_phase_progress_instead_of_showing_dash_percent(tmp_path: Path):
+    from PySide6.QtWidgets import QApplication
+
+    from ui.optional_install_dialog import OptionalInstallDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    status_path = tmp_path / "stt-install.status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "ok": None,
+                "message": "STT install is resolving and downloading locked packages.",
+                "progress_percent": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    dialog = OptionalInstallDialog(
+        title="STT installer",
+        command=[sys.executable, "--version"],
+        status_path=status_path,
+        auto_start=False,
+    )
+    try:
+        assert dialog._progress_percent.text() == ""
+        assert dialog._progress_percent.isHidden()
+
+        dialog._set_running(True)
+        dialog._refresh_progress_status()
+        app.processEvents()
+
+        assert dialog._progress_percent.text() == "10%"
+        assert not dialog._progress_percent.isHidden()
+        assert dialog._status.text() == "STT install is resolving and downloading locked packages."
+        assert "Elapsed " in dialog._elapsed.text()
+        assert "—%" not in dialog._progress_percent.text()
+    finally:
+        dialog._set_running(False)
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_restart_apply_status_uses_percentage_and_spinner(tmp_path: Path):
+    from PySide6.QtWidgets import QApplication
+
+    from runtime.workers.optional_apply_status_window import ApplyStatusWindow
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    status_path = tmp_path / "status.json"
+    status_path.write_text(
+        json.dumps({"ok": None, "message": "STT staged install is applying package files.", "progress_percent": 45}),
+        encoding="utf-8",
+    )
+    dialog = ApplyStatusWindow(display_name="STT", status_path=status_path)
+    try:
+        dialog._refresh()
+        assert dialog._progress_percent.text() == "45%"
+        assert not dialog._progress_percent.isHidden()
+        assert "Elapsed " in dialog._elapsed.text()
+        assert dialog._spinner.is_active()
+        assert not hasattr(dialog, "_progress")
+
+        status_path.write_text(
+            json.dumps({"ok": True, "message": "STT installed successfully.", "progress_percent": 100}),
+            encoding="utf-8",
+        )
+        dialog._refresh()
+        assert dialog._progress_percent.text() == "100%"
+        assert dialog._spinner.text() == "✓"
+        assert not dialog._spinner.is_active()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()

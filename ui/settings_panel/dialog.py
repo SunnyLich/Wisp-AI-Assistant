@@ -3,7 +3,7 @@ ui/settings.py - Settings dialog.
 
 A plain GUI for editing all user-configurable values.
 Reads from and writes to the .env file.
-Launch via tray icon â†’ Settings, or call open_settings().
+Launch via tray icon → Settings, or call open_settings().
 """
 from __future__ import annotations
 import os
@@ -26,9 +26,10 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
     QPushButton, QTabWidget, QWidget, QFrame, QGroupBox, QMessageBox,
     QScrollArea, QSizePolicy, QCompleter, QInputDialog, QMenu, QSlider,
-    QApplication,
+    QApplication, QListWidget, QListWidgetItem, QDialogButtonBox, QButtonGroup,
+    QGridLayout,
 )
-from PySide6.QtCore import Qt, QTimer, QObject, Signal
+from PySide6.QtCore import Qt, QTimer, QObject, Signal, QSize
 from PySide6.QtGui import QFont, QPainter, QPalette
 from core import secret_store
 from core.system.env_utils import (
@@ -44,7 +45,13 @@ from ui.settings_panel.helpers import (
     expanding_form_layout as _expanding_form_layout,
     parse_fallback_rows,
 )
-from ui.i18n import COMBO_I18N_SOURCE_ROLE, LANGUAGE_OPTIONS, localize_widget_tree, t
+from ui.i18n import (
+    COMBO_I18N_SOURCE_ROLE,
+    LANGUAGE_OPTIONS,
+    current_language as current_app_language,
+    localize_widget_tree,
+    t,
+)
 from ui.optional_install_dialog import OptionalInstallDialog
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
@@ -70,6 +77,18 @@ _TTS_TIMING_NOTICE = (
     "instead of audio-synced word highlighting."
 )
 _AUTH_STATUS_TIMEOUT_MS = 7000
+_SETTINGS_NAV_ITEM_HEIGHT = 40
+
+_SETTINGS_PAGE_META: tuple[tuple[str, str, str], ...] = (
+    ("App", "General", "Appearance, languages, privacy, and everyday behavior."),
+    ("Connections", "Connections", "Provider sign-ins, API keys, and custom endpoints."),
+    ("LLM", "Model routing", "Choose primary and fallback models for each purpose."),
+    ("TTS / Voice", "Voice & audio", "Playback, text to speech, transcription, and live conversation."),
+    ("Keybinds", "Shortcuts", "Keyboard controls, caller actions, context, and tool access."),
+    ("Prompts", "Prompts & context", "Instructions that shape how Wisp responds."),
+    ("Advanced", "Advanced", "Context limits, local file access, memory, and timing."),
+    ("About", "About", "Version, updates, and uninstall options."),
+)
 
 
 def _disconnect_clicked_handlers(button: QPushButton) -> None:
@@ -89,6 +108,12 @@ def _disconnect_clicked_handlers(button: QPushButton) -> None:
 # Sentinel data value for the "Custom / enter manually…" model combo entry.
 _CUSTOM_MODEL_SENTINEL = "__custom__"
 _CUSTOM_MODEL_LABEL = "Custom / enter manually…"
+_CONNECTION_PROVIDER_IDS: tuple[str, ...] = (
+    "groq", "openai", "anthropic", "google", "deepseek", "openrouter",
+    "mistral", "xai", "together", "cerebras", "zai", "nvidia",
+    "sambanova", "github_models", "huggingface", "chutes", "vercel",
+    "fireworks", "cohere", "ai21", "nebius", "ollama", "custom", "copilot",
+)
 # Fixed width of the leading "Priority" column shown beside each model row.
 _MODEL_PRIORITY_COL_W = 46
 _SECRET_MASK_PLACEHOLDER = "●" * 16
@@ -220,6 +245,8 @@ _DICTATE_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Paste raw transcript", "raw"),
     ("Light LLM cleanup", "llm"),
 )
+
+_BUILTIN_CALLER_LABELS = frozenset({"General", "Rewrite & Paste"})
 
 _LIVE_VOICE_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
     ("gemini-3.1-flash-live-preview", "gemini-3.1-flash-live-preview"),
@@ -371,7 +398,7 @@ class SettingsDialog(QDialog):
         self._extra_tools = _normalize_extra_tool_payloads(extra_tools)
         self._disposing = False
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(760)
         self.setModal(False)
         enable_standard_window_controls(self)
         self._env = _read_env()
@@ -426,6 +453,9 @@ class SettingsDialog(QDialog):
         self._tts_install_status_result: dict[str, object] | None = None
         self._tts_install_status_signal_carriers: list[_TtsInstallStatusSignals] = []
         self._tabs = None
+        self._settings_nav: QListWidget | None = None
+        self._page_title_lbl: QLabel | None = None
+        self._page_subtitle_lbl: QLabel | None = None
         self._test_result_timer = QTimer(self)
         self._test_result_timer.setInterval(100)
         self._test_result_timer.timeout.connect(self._drain_test_results)
@@ -440,10 +470,28 @@ class SettingsDialog(QDialog):
         self._refresh_tab_labels()
         self._refresh_search_index()
         self._schedule_open_status_refresh()
-        fit_window_to_screen(self, preferred_width=760, preferred_height=720)
+        fit_window_to_screen(self, preferred_width=980, preferred_height=760)
+
+    def keyPressEvent(self, event):  # noqa: N802 - Qt override
+        """Keep Escape from dismissing the entire non-modal Settings window."""
+        if event.key() == Qt.Key.Key_Escape:
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _on_settings_tab_changed(self, index: int) -> None:
         """Run page-specific deferred checks after the user opens that page."""
+        nav = getattr(self, "_settings_nav", None)
+        if isinstance(nav, QListWidget) and nav.currentRow() != index:
+            nav.blockSignals(True)
+            nav.setCurrentRow(index)
+            nav.blockSignals(False)
+        if 0 <= index < len(_SETTINGS_PAGE_META):
+            _internal, title, subtitle = _SETTINGS_PAGE_META[index]
+            if isinstance(self._page_title_lbl, QLabel):
+                self._page_title_lbl.setText(t(title))
+            if isinstance(self._page_subtitle_lbl, QLabel):
+                self._page_subtitle_lbl.setText(t(subtitle))
         if index == getattr(self, "_tts_tab_index", -1):
             self._refresh_tts_optional_install_status()
 
@@ -550,7 +598,7 @@ class SettingsDialog(QDialog):
     def showEvent(self, event):                 # noqa: N802
         """Show event."""
         super().showEvent(event)
-        fit_window_to_screen(self, preferred_width=760, preferred_height=720)
+        fit_window_to_screen(self, preferred_width=980, preferred_height=760)
         self._refresh_stt_active_backend()
 
     def hideEvent(self, event):                 # noqa: N802
@@ -617,6 +665,45 @@ class SettingsDialog(QDialog):
             background: {c["bg"]};
             border: none;
         }}
+        QFrame#settingsSidebar {{
+            background: {c["card"]}; border: 1px solid {c["border"]};
+            border-radius: 12px;
+        }}
+        QListWidget#settingsNavigation {{
+            background: transparent; border: none; outline: none; padding: 4px;
+        }}
+        QListWidget#settingsNavigation::item {{
+            color: {c["text_dim"]}; border-radius: 8px; padding: 9px 10px;
+            margin: 1px 0px;
+        }}
+        QListWidget#settingsNavigation::item:selected {{
+            background: {c["accent_soft"]}; color: {c["accent"]}; font-weight: 600;
+        }}
+        QListWidget#settingsNavigation::item:hover:!selected {{
+            background: {c["accent_hint"]}; color: {c["text"]};
+        }}
+        QLabel#settingsWindowTitle {{
+            color: {c["text"]}; font-size: 15pt; font-weight: 700;
+        }}
+        QLabel#settingsPageTitle {{
+            color: {c["text"]}; font-size: 14pt; font-weight: 700;
+        }}
+        QLabel#settingsPageSubtitle {{
+            color: {c["text_dim"]}; font-size: 9pt;
+        }}
+        QPushButton#settingsSegmentButton {{
+            border: 1px solid {c["border"]}; color: {c["text_dim"]};
+            background: {c["surface"]}; padding: 7px 14px;
+        }}
+        QPushButton#settingsSegmentButton:checked {{
+            border-color: {c["accent"]}; color: {c["accent"]};
+            background: {c["accent_soft"]}; font-weight: 600;
+        }}
+        QPushButton[primary="true"] {{
+            color: {c["on_accent"]}; background: {c["accent"]};
+            border-color: {c["accent"]}; font-weight: 600;
+        }}
+        QPushButton[primary="true"]:hover {{ background: {c["accent_hover"]}; }}
         QFrame#card {{
             background: {c["card"]}; border: 1px solid {c["border"]}; border-radius: 12px;
         }}
@@ -696,34 +783,71 @@ class SettingsDialog(QDialog):
         """Build ui."""
         self._apply_dialog_theme()
         root = QVBoxLayout(self)
-        root.setSpacing(12)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(14)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+        window_title = QLabel(t("Settings"))
+        window_title.setObjectName("settingsWindowTitle")
+        header_row.addWidget(window_title)
+        header_row.addStretch()
         self._settings_search = QLineEdit()
         self._settings_search.setObjectName("settingsSearch")
-        self._settings_search.setPlaceholderText(t("Search settings..."))
+        self._settings_search.setPlaceholderText(t("Search all settings..."))
         self._settings_search.setClearButtonEnabled(True)
+        self._settings_search.setMinimumWidth(250)
+        self._settings_search.setMaximumWidth(380)
         self._settings_search.textChanged.connect(self._apply_settings_search)
-        top_row.addWidget(self._settings_search, 1)
-
-        profile_btn = QPushButton(t("Profiles..."))
-        self._profiles_btn = profile_btn
-        profile_btn.setObjectName("settingsProfilesButton")
-        profile_btn.setToolTip(t("Apply or create a profile for common Wisp setups. Review changes before Apply."))
-        profile_btn.setMenu(self._build_profiles_menu(profile_btn))
-        top_row.addWidget(profile_btn)
-        setup_btn = QPushButton(t("Run setup check"))
-        setup_btn.setObjectName("settingsSetupCheckButton")
-        setup_btn.setToolTip(t("Check provider, speech, hotkey, and privacy readiness."))
-        setup_btn.clicked.connect(self._run_setup_check)
-        top_row.addWidget(setup_btn)
-        root.addLayout(top_row)
+        header_row.addWidget(self._settings_search)
+        root.addLayout(header_row)
 
         self._search_status_lbl = QLabel()
         self._search_status_lbl.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
         self._search_status_lbl.hide()
         root.addWidget(self._search_status_lbl)
+
+        body = QHBoxLayout()
+        body.setSpacing(14)
+
+        sidebar = QFrame()
+        sidebar.setObjectName("settingsSidebar")
+        sidebar.setFixedWidth(166)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(8, 10, 8, 10)
+        sidebar_layout.setSpacing(8)
+        nav = QListWidget()
+        nav.setObjectName("settingsNavigation")
+        nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav.setSpacing(3)
+        nav.setUniformItemSizes(True)
+        self._settings_nav = nav
+        sidebar_layout.addWidget(nav, 1)
+
+        profile_btn = QPushButton(t("Profiles..."))
+        self._profiles_btn = profile_btn
+        profile_btn.setObjectName("settingsProfilesButton")
+        profile_btn.setToolTip(t("Load or create a profile for common Wisp setups. Review changes before saving."))
+        profile_btn.setMenu(self._build_profiles_menu(profile_btn))
+        sidebar_layout.addWidget(profile_btn)
+        setup_btn = QPushButton(t("Run setup check"))
+        setup_btn.setObjectName("settingsSetupCheckButton")
+        setup_btn.setToolTip(t("Check provider, speech, hotkey, and privacy readiness."))
+        setup_btn.clicked.connect(self._run_setup_check)
+        sidebar_layout.addWidget(setup_btn)
+        body.addWidget(sidebar)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(4)
+        self._page_title_lbl = QLabel()
+        self._page_title_lbl.setObjectName("settingsPageTitle")
+        self._page_subtitle_lbl = QLabel()
+        self._page_subtitle_lbl.setObjectName("settingsPageSubtitle")
+        self._page_subtitle_lbl.setWordWrap(True)
+        content_layout.addWidget(self._page_title_lbl)
+        content_layout.addWidget(self._page_subtitle_lbl)
 
         tabs = QTabWidget()
         tabs.setObjectName("settingsTabs")
@@ -732,32 +856,50 @@ class SettingsDialog(QDialog):
         tabs.tabBar().setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         tabs.tabBar().setDrawBase(False)
         tabs.tabBar().setExpanding(True)
-        # Never elide tab labels to "…"; macOS sizes the bold selected tab
-        # tighter than Windows, so let each tab grow to fit its full text.
         tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        tabs.addTab(self._tab_app(),       "App")
-        tabs.addTab(self._tab_llm(),       "LLM")
-        self._tts_tab_index = tabs.addTab(self._tab_tts(), "TTS / Voice")
-        tabs.addTab(self._tab_keybinds(),  "Keybinds")
-        tabs.addTab(self._tab_prompt(),    "Prompts")
-        tabs.addTab(self._tab_advanced(),  "Advanced")
+
+        app_page = self._tab_app()
+        llm_page = self._tab_llm()
+        pages = (
+            (app_page, "App"),
+            (self._connections_page, "Connections"),
+            (llm_page, "LLM"),
+            (self._tab_tts(), "TTS / Voice"),
+            (self._tab_keybinds(), "Keybinds"),
+            (self._tab_prompt(), "Prompts"),
+            (self._tab_advanced(), "Advanced"),
+            (self._tab_about(), "About"),
+        )
+        for page, internal_name in pages:
+            index = tabs.addTab(page, internal_name)
+            if internal_name == "TTS / Voice":
+                self._tts_tab_index = index
         tabs.currentChanged.connect(self._on_settings_tab_changed)
         self._tabs = tabs
         self._tab_base_names = [tabs.tabText(i) for i in range(tabs.count())]
-        root.addWidget(tabs)
+        tabs.tabBar().hide()
+        content_layout.addWidget(tabs, 1)
+        body.addWidget(content, 1)
+        root.addLayout(body, 1)
 
-        # Buttons
+        for _internal, title, subtitle in _SETTINGS_PAGE_META:
+            item = QListWidgetItem(t(title))
+            item.setToolTip(t(subtitle))
+            item.setSizeHint(QSize(0, _SETTINGS_NAV_ITEM_HEIGHT))
+            nav.addItem(item)
+        nav.currentRowChanged.connect(tabs.setCurrentIndex)
+        nav.setCurrentRow(0)
+        self._on_settings_tab_changed(0)
+
         self._status_lbl = QLabel()
         self._status_lbl.setStyleSheet("color: #80c080; font-size: 9pt;")
         btn_row = QHBoxLayout()
-        reset_page_btn = QPushButton("Reset Page…")
-        reset_page_btn.setToolTip("Reset only the currently selected settings tab to defaults")
+        reset_page_btn = QPushButton(t("Reset Page…"))
+        reset_page_btn.setToolTip(t("Reset only the currently selected settings page to defaults"))
         reset_page_btn.clicked.connect(self._reset_current_page)
         btn_row.addWidget(reset_page_btn)
-        reset_btn = QPushButton("Reset All…")
-        reset_btn.setToolTip(
-            "Delete all API keys from the OS keychain and reset every setting to defaults"
-        )
+        reset_btn = QPushButton(t("Reset All…"))
+        reset_btn.setToolTip(t("Delete all API keys from the OS keychain and reset every setting to defaults"))
         reset_btn.setStyleSheet(
             "QPushButton { border: 1.5px solid #c0392b; color: #c0392b; }"
             "QPushButton:hover { background: #3a2020; }"
@@ -767,18 +909,25 @@ class SettingsDialog(QDialog):
         btn_row.addWidget(reset_btn)
         btn_row.addWidget(self._status_lbl)
         btn_row.addStretch()
-        apply_btn = QPushButton("Apply")
-        confirm_btn = QPushButton("Confirm")
-        self._apply_btn = apply_btn
-        apply_btn.setObjectName("settingsApplyButton")
-        confirm_btn.setObjectName("settingsConfirmButton")
-        confirm_btn.setDefault(True)
-        apply_btn.setEnabled(False)
-        apply_btn.clicked.connect(self._apply)
-        confirm_btn.clicked.connect(self._confirm)
-        btn_row.addWidget(apply_btn)
-        btn_row.addWidget(confirm_btn)
+        cancel_btn = QPushButton(t("Cancel"))
+        cancel_btn.setObjectName("settingsCancelButton")
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton(t("Save changes"))
+        save_btn.setObjectName("settingsApplyButton")
+        save_btn.setProperty("primary", True)
+        save_btn.setDefault(True)
+        save_btn.setEnabled(False)
+        save_btn.clicked.connect(self._confirm)
+        self._apply_btn = save_btn
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
         root.addLayout(btn_row)
+
+        # Reapply after every navigation item exists. On Windows, applying the
+        # parent stylesheet only before constructing the QListWidget can leave
+        # unselected items without their stylesheet padding until the next theme
+        # change, making the sidebar rows appear compressed on first open.
+        self._apply_dialog_theme()
 
     def _build_profiles_menu(self, parent: QWidget) -> QMenu:
         """Build profiles menu."""
@@ -991,7 +1140,7 @@ class SettingsDialog(QDialog):
         self._refresh_profiles_menu()
         self._schedule_dirty_refresh()
         self._status_lbl.setText(
-            t("{profile} profile created. Review changes, then Apply to use it.").format(profile=label)
+            t("{profile} profile created. Review changes, then Save changes to use it.").format(profile=label)
         )
 
     def _rename_custom_profile(self) -> None:
@@ -1103,7 +1252,7 @@ class SettingsDialog(QDialog):
         self._schedule_warning_marker_refresh()
         self._schedule_dirty_refresh()
         self._status_lbl.setText(
-            t("{profile} profile selected. Review changes, then Apply.").format(profile=label)
+            t("{profile} profile selected. Review changes, then Save changes.").format(profile=label)
         )
 
     def _run_setup_check(self) -> None:
@@ -1223,7 +1372,7 @@ class SettingsDialog(QDialog):
         }:
             return "Keybinds"
         if key.startswith("API_KEY_ROW"):
-            return "LLM"
+            return "Connections"
         if key.startswith("LLM_") or key.startswith("VISION_LLM_") or key.startswith("MEMORY_LLM_"):
             return "LLM"
         if key in {"ACTIVE_PROFILE", "SETTINGS_PROFILE"}:
@@ -1231,6 +1380,16 @@ class SettingsDialog(QDialog):
         if key.startswith("THEME_") or key.startswith("BUBBLE_") or key.startswith("TTS_PLAYBACK"):
             return self._field_page_map().get(key, "App")
         return self._field_page_map().get(key, "")
+
+    @staticmethod
+    def _caller_label_value(blk: dict) -> str:
+        """Return a built-in caller's stable source label or a custom label."""
+        editor = blk["label"]
+        value = _get(editor)
+        source = str(editor.property("builtinCallerLabel") or "")
+        if source and value.strip() == t(source):
+            return source
+        return value
 
     def _snapshot_settings(self) -> dict[str, str]:
         """Handle snapshot settings for settings dialog."""
@@ -1268,7 +1427,9 @@ class SettingsDialog(QDialog):
         for idx, blk in enumerate(getattr(self, "_caller_blocks", []), 1):
             prefix = f"CALLER_{idx}"
             snapshot[f"{prefix}_HOTKEY"] = _get(blk["hotkey"])
-            snapshot[f"{prefix}_LABEL"] = _get(blk["label"])
+            snapshot[f"{prefix}_HOTKEY_2"] = _get(blk["hotkey_2"])
+            snapshot[f"{prefix}_ENABLED"] = str(blk["enabled"].isChecked())
+            snapshot[f"{prefix}_LABEL"] = self._caller_label_value(blk)
             snapshot[f"{prefix}_PASTE_BACK"] = str(blk["paste_back"].isChecked())
             snapshot[f"{prefix}_CUSTOM_KEY"] = _get(blk["custom_key"])
             snapshot[f"{prefix}_CUSTOM_LABEL"] = _get(blk["custom_label"])
@@ -1395,7 +1556,14 @@ class SettingsDialog(QDialog):
             apply_btn.setEnabled(bool(keys))
 
         if keys:
-            visible_pages = [page for page in self._tab_base_names if page in dirty_pages]
+            display_by_internal = {
+                internal: t(title) for internal, title, _subtitle in _SETTINGS_PAGE_META
+            }
+            visible_pages = [
+                display_by_internal.get(page, t(page))
+                for page in self._tab_base_names
+                if page in dirty_pages
+            ]
             self._status_lbl.setText(t("Unsaved changes") + ": " + ", ".join(visible_pages))
         elif self._status_lbl.text().startswith(t("Unsaved changes")):
             self._status_lbl.setText("")
@@ -1408,6 +1576,12 @@ class SettingsDialog(QDialog):
         for idx, base in enumerate(self._tab_base_names):
             suffix = " *" if base in getattr(self, "_tab_dirty_names", set()) else ""
             tabs.setTabText(idx, t(base) + suffix)
+            nav = getattr(self, "_settings_nav", None)
+            if isinstance(nav, QListWidget) and idx < nav.count():
+                title = _SETTINGS_PAGE_META[idx][1] if idx < len(_SETTINGS_PAGE_META) else base
+                nav.item(idx).setText(t(title) + suffix)
+                if idx < len(_SETTINGS_PAGE_META):
+                    nav.item(idx).setToolTip(t(_SETTINGS_PAGE_META[idx][2]))
 
     def _refresh_search_index(self) -> None:
         """Refresh search index."""
@@ -1472,6 +1646,9 @@ class SettingsDialog(QDialog):
         for idx, page in enumerate(self._tab_base_names):
             match = not query or query in self._tab_search_text.get(page, page.lower())
             tabs.setTabVisible(idx, match)
+            nav = getattr(self, "_settings_nav", None)
+            if isinstance(nav, QListWidget) and idx < nav.count():
+                nav.item(idx).setHidden(not match)
             if match:
                 visible.append(idx)
         if query and visible and not tabs.isTabVisible(tabs.currentIndex()):
@@ -1663,13 +1840,21 @@ class SettingsDialog(QDialog):
         self._schedule_warning_marker_refresh()
         self._schedule_dirty_refresh()
         self._status_lbl.setText(
-            t("{profile} profile selected. Edits saved with Apply will update this profile.").format(
+            t("{profile} profile selected. Edits saved with Save changes will update this profile.").format(
                 profile=t(_PRESET_LABELS[preset_key])
             )
         )
 
     def _tab_llm(self) -> QWidget:
-        """Handle tab LLM for settings dialog."""
+        """Build separate connection and model-routing pages over one config model."""
+        connections_scroll = QScrollArea()
+        connections_scroll.setWidgetResizable(True)
+        connections_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        connections_w = QWidget()
+        connections_outer = QVBoxLayout(connections_w)
+        connections_outer.setContentsMargins(12, 12, 12, 12)
+        connections_outer.setSpacing(12)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -1677,7 +1862,6 @@ class SettingsDialog(QDialog):
         outer = QVBoxLayout(w)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
-
         credentials_group, credentials_layout = self._area_group(
             "Provider credentials",
             "Sign in or save provider API keys and custom endpoint details before assigning models.",
@@ -1723,13 +1907,29 @@ class SettingsDialog(QDialog):
         auth_cv.addWidget(github_row)
         credentials_layout.addWidget(auth_card)
 
-        # ── API KEYS card ─────────────────────────────────────────────────
-        api_keys_card, api_keys_cv = self._card("API Keys")
+        # ── PROVIDER CONNECTIONS card ─────────────────────────────────────
+        api_keys_card, api_keys_cv = self._card("Provider connections")
         note = QLabel(
-            f"<small>{t('Add a row for each provider you want to use. Alias is optional - useful when you have multiple keys for the same provider. Custom endpoints are configured below.')}</small>"
+            f"<small>{t('Add the providers you use. Optional aliases and filters keep large connection lists easy to scan.')}</small>"
         )
         note.setWordWrap(True)
         api_keys_cv.addWidget(note)
+
+        connection_tools = QWidget()
+        connection_tools_h = QHBoxLayout(connection_tools)
+        connection_tools_h.setContentsMargins(0, 0, 0, 0)
+        connection_tools_h.setSpacing(8)
+        self._connections_search = QLineEdit()
+        self._connections_search.setObjectName("settingsConnectionsSearch")
+        self._connections_search.setPlaceholderText(t("Search providers or aliases..."))
+        self._connections_search.setClearButtonEnabled(True)
+        self._connections_filter = _NoScrollCombo()
+        self._connections_filter.addItem(t("All connections"), "all")
+        self._connections_filter.addItem(t("Cloud providers"), "cloud")
+        self._connections_filter.addItem(t("Local and custom"), "local")
+        connection_tools_h.addWidget(self._connections_search, 1)
+        connection_tools_h.addWidget(self._connections_filter, 0)
+        api_keys_cv.addWidget(connection_tools)
 
         col_hdr_w = QWidget()
         col_hdr_h = QHBoxLayout(col_hdr_w)
@@ -1747,13 +1947,27 @@ class SettingsDialog(QDialog):
         self._api_key_rows_layout.setContentsMargins(0, 0, 0, 0)
         api_keys_cv.addWidget(self._api_key_rows_container)
 
-        add_key_btn = QPushButton(t("+ Add API Key"))
+        self._connections_empty_lbl = QLabel(t("No matching connections."))
+        self._connections_empty_lbl.setStyleSheet("color: palette(placeholder-text);")
+        self._connections_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._connections_empty_lbl.hide()
+        api_keys_cv.addWidget(self._connections_empty_lbl)
+
+        add_key_btn = QPushButton(t("+ Add connection"))
+        self._connections_show_more_btn = QPushButton()
+        self._connections_show_more_btn.setFlat(True)
+        self._connections_show_more_btn.hide()
+        self._connections_expanded = False
         akw = QHBoxLayout()
         akw.setContentsMargins(0, 0, 0, 0)
         akw.addWidget(add_key_btn)
+        akw.addWidget(self._connections_show_more_btn)
         akw.addStretch()
         api_keys_cv.addLayout(akw)
-        add_key_btn.clicked.connect(lambda: self._add_api_key_row())
+        add_key_btn.clicked.connect(self._show_add_connection_dialog)
+        self._connections_show_more_btn.clicked.connect(self._toggle_connections_expanded)
+        self._connections_search.textChanged.connect(self._refresh_connection_rows_filter)
+        self._connections_filter.currentIndexChanged.connect(self._refresh_connection_rows_filter)
 
         self._copilot_status_lbl = QLabel()
         self._copilot_status_lbl.setWordWrap(True)
@@ -1796,7 +2010,10 @@ class SettingsDialog(QDialog):
         custom_cv.addWidget(custom_f_w)
 
         credentials_layout.addWidget(custom_card)
-        outer.addWidget(credentials_group)
+        connections_outer.addWidget(credentials_group)
+        connections_outer.addStretch()
+        connections_scroll.setWidget(connections_w)
+        self._connections_page = connections_scroll
 
         model_group, model_layout = self._area_group(
             "Model routing",
@@ -1810,8 +2027,30 @@ class SettingsDialog(QDialog):
             ("MEMORY_LLM", "Memory model","memory_test",   self._test_memory_connection),
         ]
 
+        route_switcher = QWidget()
+        route_switcher_h = QHBoxLayout(route_switcher)
+        route_switcher_h.setContentsMargins(0, 0, 0, 2)
+        route_switcher_h.setSpacing(6)
+        self._model_route_button_group = QButtonGroup(route_switcher)
+        self._model_route_button_group.setExclusive(True)
+        self._model_route_buttons: dict[str, QPushButton] = {}
+        self._model_route_cards: dict[str, QWidget] = {}
+        for section_key, section_title, _test_attr, _test_fn in section_configs:
+            button = QPushButton(t(section_title))
+            button.setObjectName("settingsSegmentButton")
+            button.setCheckable(True)
+            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            button.clicked.connect(
+                lambda _checked=False, sk=section_key: self._show_model_route(sk)
+            )
+            self._model_route_button_group.addButton(button)
+            self._model_route_buttons[section_key] = button
+            route_switcher_h.addWidget(button, 1)
+        model_layout.addWidget(route_switcher)
+
         for section_key, section_title, test_attr, test_fn in section_configs:
             card, cv = self._card("")
+            self._model_route_cards[section_key] = card
 
             # header: title (left) + "Apply to all" button (right)
             hdr_w = QWidget()
@@ -1871,48 +2110,58 @@ class SettingsDialog(QDialog):
             tr_h.addWidget(test_lbl, 1)
             cv.addWidget(test_row_w)
 
-            # add row button
-            add_row_btn = QPushButton(t("+ Add row"))
+            # Search the catalog before adding another fallback route.
+            add_row_btn = QPushButton(t("+ Add fallback"))
             arw = QHBoxLayout()
             arw.setContentsMargins(0, 0, 0, 0)
             arw.addWidget(add_row_btn)
             arw.addStretch()
             cv.addLayout(arw)
             add_row_btn.clicked.connect(
-                lambda checked, sk=section_key: self._add_model_section_row(sk)
+                lambda _checked=False, sk=section_key: self._show_add_model_route_dialog(sk)
             )
             model_layout.addWidget(card)
+
+        self._show_model_route("LLM")
 
         advanced_group, advanced_layout = self._collapsible_group("Advanced settings")
         self._fields["CHAT_TOOL_TRACE_UI"] = QCheckBox(t("Show chat tool-loop trace"))
         self._fields["CHAT_TOOL_TRACE_UI"].setToolTip(
-            "Show temporary progress lines in Chat that identify the tool loop and tool calls. "
-            "Useful for testing; leave off for normal use."
+            t(
+                "Show temporary progress lines in Chat that identify the tool loop and tool calls. "
+                "Useful for testing; leave off for normal use."
+            )
         )
         self._fields["WISP_PLANNED_CHUNKING"] = QCheckBox(t("Use planned chunked replies"))
         self._fields["WISP_PLANNED_CHUNKING"].setToolTip(
-            "Experimental. For eligible overlay replies, privately plans the answer and emits "
-            "a few stable visible parts. Tool, file, image, and history requests keep the normal path."
+            t(
+                "Experimental. For eligible overlay replies, privately plans the answer and emits "
+                "a few stable visible parts. Tool, file, image, and history requests keep the normal path."
+            )
         )
         self._fields["WISP_PLANNED_CHUNKING_CHUNKS"] = QLineEdit()
         self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setPlaceholderText("e.g. 3")
-        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setToolTip("Number of visible parts, clamped to 2-4.")
+        self._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setToolTip(
+            t("Number of visible parts, clamped to 2-4.")
+        )
         self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] = QLineEdit()
         self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setPlaceholderText("e.g. 80")
         self._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setToolTip(
-            "Minimum combined prompt/context length before planned chunking can run."
+            t("Minimum combined prompt/context length before planned chunking can run.")
         )
         reasoning_combo = _NoScrollCombo()
         reasoning_combo.setToolTip(
-            "OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; "
-            "unsupported routes automatically retry without it."
+            t(
+                "OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; "
+                "unsupported routes automatically retry without it."
+            )
         )
         for label, value in _CHAT_REASONING_EFFORT_OPTIONS:
             reasoning_combo.addItem(t(label), value)
         self._fields["CHAT_REASONING_EFFORT"] = reasoning_combo
         self._fields["CHAT_AUTO_ELABORATE"] = QCheckBox(t("Auto-elaborate when opening chat"))
         self._fields["CHAT_AUTO_ELABORATE"].setToolTip(
-            "When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation."
+            t("When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation.")
         )
         self._fields["CHAT_ELABORATE_PROMPT"] = QLineEdit()
         self._fields["CHAT_ELABORATE_PROMPT"].setPlaceholderText(t("e.g. Please elaborate on that."))
@@ -1955,7 +2204,129 @@ class SettingsDialog(QDialog):
         scroll.setWidget(w)
         return scroll
 
-    # ---- API key row helpers ----
+    # ---- Connection and API key row helpers ----
+
+    def _show_add_connection_dialog(self) -> None:
+        """Open a searchable provider catalog and add the selected connection."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t("Add connection"))
+        dialog.setModal(True)
+        dialog.resize(460, 520)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel(t("Choose a provider"))
+        title.setObjectName("settingsPageTitle")
+        layout.addWidget(title)
+        hint = QLabel(t("Search the provider catalog, then use an optional alias to label the connection."))
+        hint.setWordWrap(True)
+        hint.setObjectName("settingsPageSubtitle")
+        layout.addWidget(hint)
+        search = QLineEdit()
+        search.setPlaceholderText(t("Search providers..."))
+        search.setClearButtonEnabled(True)
+        layout.addWidget(search)
+        provider_list = QListWidget()
+        provider_list.setObjectName("settingsProviderCatalog")
+        for provider in _CONNECTION_PROVIDER_IDS:
+            label = t(_PROVIDER_LABELS.get(provider, provider))
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, provider)
+            item.setToolTip(
+                t("Local or self-hosted provider")
+                if provider in {"ollama", "custom"}
+                else t("Cloud provider")
+            )
+            provider_list.addItem(item)
+        layout.addWidget(provider_list, 1)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(t("Add connection"))
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        def _filter_catalog(query: str = "") -> None:
+            needle = query.strip().lower()
+            first_visible = None
+            for index in range(provider_list.count()):
+                item = provider_list.item(index)
+                provider = str(item.data(Qt.ItemDataRole.UserRole) or "")
+                match = not needle or needle in f"{item.text()} {provider}".lower()
+                item.setHidden(not match)
+                if match and first_visible is None:
+                    first_visible = item
+            if first_visible is not None and provider_list.currentItem() is None:
+                provider_list.setCurrentItem(first_visible)
+
+        def _selection_changed() -> None:
+            current = provider_list.currentItem()
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
+                current is not None and not current.isHidden()
+            )
+
+        search.textChanged.connect(_filter_catalog)
+        provider_list.currentItemChanged.connect(lambda *_: _selection_changed())
+        provider_list.itemDoubleClicked.connect(lambda *_: dialog.accept())
+        _filter_catalog()
+        _selection_changed()
+        search.setFocus()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        current = provider_list.currentItem()
+        if current is None or current.isHidden():
+            return
+        provider = str(current.data(Qt.ItemDataRole.UserRole) or "")
+        self._connections_expanded = True
+        self._add_api_key_row(provider=provider)
+
+    def _toggle_connections_expanded(self) -> None:
+        self._connections_expanded = not bool(getattr(self, "_connections_expanded", False))
+        self._refresh_connection_rows_filter()
+
+    def _refresh_connection_rows_filter(self, *_args) -> None:
+        """Filter and paginate provider rows without changing the saved list."""
+        search = getattr(self, "_connections_search", None)
+        filter_combo = getattr(self, "_connections_filter", None)
+        query = search.text().strip().lower() if isinstance(search, QLineEdit) else ""
+        mode = str(filter_combo.currentData() or "all") if isinstance(filter_combo, QComboBox) else "all"
+        expanded = bool(getattr(self, "_connections_expanded", False))
+        matched = 0
+        visible = 0
+        local_providers = {"ollama", "custom"}
+        for row in getattr(self, "_api_key_rows", []):
+            provider = _get(row["provider"]).strip()
+            alias = row["alias"].text().strip()
+            label = t(_PROVIDER_LABELS.get(provider, provider))
+            matches_text = not query or query in f"{provider} {label} {alias}".lower()
+            matches_mode = (
+                mode == "all"
+                or (mode == "local" and provider in local_providers)
+                or (mode == "cloud" and provider not in local_providers)
+            )
+            matches = matches_text and matches_mode
+            show = matches and (expanded or bool(query) or matched < 6)
+            row["widget"].setVisible(show)
+            if matches:
+                matched += 1
+            if show:
+                visible += 1
+
+        empty = getattr(self, "_connections_empty_lbl", None)
+        if isinstance(empty, QLabel):
+            empty.setVisible(matched == 0)
+        more = getattr(self, "_connections_show_more_btn", None)
+        if isinstance(more, QPushButton):
+            can_paginate = not query and matched > 6
+            more.setVisible(can_paginate)
+            more.setText(
+                t("Show fewer")
+                if expanded
+                else t("Show {count} more").format(count=max(0, matched - visible))
+            )
 
     def _add_api_key_row(
         self,
@@ -1969,14 +2340,7 @@ class SettingsDialog(QDialog):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(8)
 
-        provider_combo = self._combo(
-            ["groq", "openai", "anthropic", "google", "deepseek",
-             "openrouter", "mistral", "xai", "together", "cerebras",
-             "zai", "nvidia", "sambanova", "github_models", "huggingface",
-             "chutes", "vercel", "fireworks", "cohere", "ai21", "nebius",
-             "ollama", "custom", "copilot"],
-            provider,
-        )
+        provider_combo = self._combo(list(_CONNECTION_PROVIDER_IDS), provider)
         provider_combo.setMinimumWidth(120)
 
         alias_edit = QLineEdit(alias)
@@ -2005,13 +2369,16 @@ class SettingsDialog(QDialog):
         remove_btn.clicked.connect(lambda: self._remove_api_key_row(row_info))
         provider_combo.currentIndexChanged.connect(lambda _: self._sync_api_key_row_placeholder(row_info))
         provider_combo.currentIndexChanged.connect(lambda _: self._refresh_model_api_key_combos())
+        provider_combo.currentIndexChanged.connect(self._refresh_connection_rows_filter)
         alias_edit.textChanged.connect(lambda _: self._refresh_model_api_key_combos())
+        alias_edit.textChanged.connect(self._refresh_connection_rows_filter)
 
         self._api_key_rows_layout.addWidget(row_w)
         self._api_key_rows.append(row_info)
         self._refresh_model_api_key_combos()
         self._wire_change_tracking(row_w)
         self._refresh_search_index()
+        self._refresh_connection_rows_filter()
         self._schedule_dirty_refresh()
         return row_info
 
@@ -2036,6 +2403,7 @@ class SettingsDialog(QDialog):
             self._api_key_rows.remove(row_info)
         row_info["widget"].deleteLater()
         self._refresh_model_api_key_combos()
+        self._refresh_connection_rows_filter()
         self._refresh_search_index()
         self._schedule_dirty_refresh()
 
@@ -2106,13 +2474,11 @@ class SettingsDialog(QDialog):
         idx = combo.findData(target) if target else -1
         if target and idx < 0:
             # The configured route points at a provider with no saved credential
-            # yet — common on a fresh install where the default Chat route is
-            # openai but no key has been entered. Show that provider with an
-            # actionable hint instead of silently landing on a disabled OAuth
-            # entry (e.g. Copilot "sign in first"), which looks like a warning the
-            # user never triggered and also misfires the subscription markers.
+            # yet. Keep showing the configured provider without the obsolete
+            # "add an API key below" hint: credentials now live on the separate
+            # Connections page, and local providers may not need a key at all.
             label = t(_PROVIDER_LABELS.get(target, target))
-            combo.addItem(f"{label} — {t('add an API key below')}", target)
+            combo.addItem(label, target)
             idx = combo.count() - 1
         elif not target:
             # No provider chosen (e.g. an Image/Memory model inheriting the Chat
@@ -2137,7 +2503,109 @@ class SettingsDialog(QDialog):
             if isinstance(combo, QComboBox):
                 self._fill_credential_combo(combo, combo.currentData())
 
-    # ---- Model section row helpers ----
+    # ---- Model route catalog and row helpers ----
+
+    def _show_model_route(self, section_key: str) -> None:
+        """Show one purpose at a time so every route can grow independently."""
+        cards = getattr(self, "_model_route_cards", {})
+        for key, card in cards.items():
+            card.setVisible(key == section_key)
+        buttons = getattr(self, "_model_route_buttons", {})
+        for key, button in buttons.items():
+            button.setChecked(key == section_key)
+        self._active_model_route = section_key
+
+    def _show_add_model_route_dialog(self, section_key: str) -> None:
+        """Choose a connection and search its model catalog before adding a route."""
+        titles = {
+            "LLM": "Chat model",
+            "VISION_LLM": "Image model",
+            "MEMORY_LLM": "Memory model",
+        }
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t("Add fallback model"))
+        dialog.setModal(True)
+        dialog.resize(540, 560)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel(t("Add fallback to {route}").format(route=t(titles.get(section_key, section_key))))
+        title.setObjectName("settingsPageTitle")
+        layout.addWidget(title)
+        hint = QLabel(t("Choose a configured connection, then search its models or enter an exact model name."))
+        hint.setWordWrap(True)
+        hint.setObjectName("settingsPageSubtitle")
+        layout.addWidget(hint)
+
+        connection = _NoScrollCombo()
+        self._fill_credential_combo(connection)
+        layout.addWidget(_tooltip_label("Connection", "The credential or local endpoint used by this fallback."))
+        layout.addWidget(connection)
+        search = QLineEdit()
+        search.setPlaceholderText(t("Search models or enter a model name..."))
+        search.setClearButtonEnabled(True)
+        layout.addWidget(search)
+        model_list = QListWidget()
+        model_list.setObjectName("settingsModelCatalog")
+        layout.addWidget(model_list, 1)
+        catalog_status = QLabel()
+        catalog_status.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
+        layout.addWidget(catalog_status)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(t("Add fallback"))
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        def _update_add_enabled(*_args) -> None:
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
+                bool(
+                    connection.currentData()
+                    and (model_list.currentItem() is not None or search.text().strip())
+                )
+            )
+
+        def _rebuild_models(*_args) -> None:
+            provider = str(connection.currentData() or "")
+            query = search.text().strip().lower()
+            model_list.clear()
+            matches = [
+                model for model in _PROVIDER_MODELS.get(provider, [])
+                if not query or query in model.lower()
+            ]
+            for model in matches:
+                item = QListWidgetItem(model)
+                item.setData(Qt.ItemDataRole.UserRole, model)
+                model_list.addItem(item)
+            if model_list.count():
+                model_list.setCurrentRow(0)
+            catalog_status.setText(
+                t("{count} catalog models").format(count=len(matches))
+                if matches
+                else t("No catalog match. The text above will be used as a custom model name.")
+            )
+            _update_add_enabled()
+
+        connection.currentIndexChanged.connect(_rebuild_models)
+        search.textChanged.connect(_rebuild_models)
+        model_list.currentItemChanged.connect(_update_add_enabled)
+        model_list.itemDoubleClicked.connect(lambda *_: dialog.accept())
+        _rebuild_models()
+        search.setFocus()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        provider = str(connection.currentData() or "")
+        selected = model_list.currentItem()
+        model = (
+            str(selected.data(Qt.ItemDataRole.UserRole) or "")
+            if selected is not None
+            else search.text().strip()
+        )
+        if provider and model:
+            self._add_model_section_row(section_key, provider, model)
 
     def _add_model_section_row(
         self,
@@ -2302,7 +2770,7 @@ class SettingsDialog(QDialog):
         provider = (row_info["api_key_combo"].currentData() or "").strip()
         refresh_btn = row_info["refresh_btn"]
         if not provider:
-            refresh_btn.setToolTip("Pick a provider first")
+            refresh_btn.setToolTip(t("Pick a provider first"))
             return
         api_key = self._effective_secret_value_from_provider(provider)
         base_url = _get(self._fields["CUSTOM_BASE_URL"]).strip() if provider == "custom" else ""
@@ -2710,9 +3178,12 @@ class SettingsDialog(QDialog):
         outer = QVBoxLayout(w)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
+        self._voice_feature_cards: dict[str, QWidget] = {}
 
         # ── PROVIDER card ─────────────────────────────────────────────────
-        provider_card, provider_cv = self._card("Provider")
+        # Provider selection and the selected provider's voice/authentication
+        # fields belong to one feature, so keep them in a single card.
+        provider_card, provider_cv = self._card("TTS")
         self._fields["TTS_PROVIDER"] = self._combo(
             ["cartesia", "elevenlabs", "openai", "openai_compatible", "gpt_sovits", "kokoro", "none"]
         )
@@ -2720,19 +3191,19 @@ class SettingsDialog(QDialog):
         self._fields["TTS_PROVIDER"].currentIndexChanged.connect(
             lambda *_: self._update_tts_provider_fields()
         )
-        self._fields["TTS_SPEAK_REPLIES"] = QCheckBox(t("Speak assistant replies automatically"))
+        self._fields["TTS_SPEAK_REPLIES"] = QCheckBox(
+            t("Read assistant replies aloud automatically")
+        )
         tts_speak_replies_tip = (
             "When off, configured voices are still available for read-selection-aloud and Test TTS."
         )
+        self._fields["TTS_SPEAK_REPLIES"].setToolTip(t(tts_speak_replies_tip))
         pf_w = QWidget()
         pf = _expanding_form_layout(pf_w)
         pf.setContentsMargins(0, 0, 0, 0)
         pf.setSpacing(8)
-        pf.addRow(_tooltip_label("TTS Provider", tts_provider_tip), self._fields["TTS_PROVIDER"])
-        pf.addRow(
-            _tooltip_label("Auto-speak replies", tts_speak_replies_tip),
-            self._fields["TTS_SPEAK_REPLIES"],
-        )
+        pf.addRow(_tooltip_label("Provider", tts_provider_tip), self._fields["TTS_PROVIDER"])
+        pf.addRow(self._fields["TTS_SPEAK_REPLIES"])
         self._tts_timing_notice_lbl = QLabel(t(_TTS_TIMING_NOTICE))
         self._tts_timing_notice_lbl.setObjectName("ttsTimingNotice")
         self._tts_timing_notice_lbl.setWordWrap(True)
@@ -2740,6 +3211,7 @@ class SettingsDialog(QDialog):
         pf.addRow("", self._tts_timing_notice_lbl)
         provider_cv.addWidget(pf_w)
         outer.addWidget(provider_card)
+        self._voice_feature_cards["tts"] = provider_card
 
         # ── SPEECH-TO-TEXT card ──────────────────────────────────────────
         stt_card, stt_cv = self._card("Speech to Text")
@@ -2846,6 +3318,9 @@ class SettingsDialog(QDialog):
         self._stt_active_lbl.setWordWrap(True)
         self._stt_install_status_lbl = self._stt_active_lbl
         self._stt_download_btn = QPushButton(t("Install STT"))
+        self._stt_download_btn.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self._stt_download_btn.setToolTip(
             t(
                 "Install or repair faster-whisper, then download and load the speech "
@@ -2854,22 +3329,23 @@ class SettingsDialog(QDialog):
             )
         )
         self._stt_download_btn.clicked.connect(self._preload_stt_model)
-        stt_status_row = QWidget()
-        ssr = QHBoxLayout(stt_status_row)
-        ssr.setContentsMargins(0, 0, 0, 0)
-        ssr.setSpacing(8)
-        ssr.addWidget(self._stt_active_lbl, 1)
-        ssr.addWidget(self._stt_download_btn, 0)
-        stt_cv.addWidget(stt_status_row)
+        stt_cv.addWidget(self._status_action_row(
+            self._stt_active_lbl,
+            self._stt_download_btn,
+        ))
         self._refresh_stt_active_backend()
 
         outer.addWidget(stt_card)
+        self._voice_feature_cards["stt"] = stt_card
 
         # ── PROVIDER SETTINGS card ────────────────────────────────────────
         # Only the rows for the selected provider are shown (toggled by
         # _update_tts_provider_fields), so each provider gets the space it needs
         # for its key / voice / model without cluttering the others.
-        keys_card, keys_cv = self._card("Voice & API key")
+        provider_details = QWidget()
+        keys_cv = QVBoxLayout(provider_details)
+        keys_cv.setContentsMargins(0, 0, 0, 0)
+        keys_cv.setSpacing(10)
         tts_key_note = QLabel(
             f"<small>{t('API keys are saved to the OS keychain. Leave blank to keep the stored key.')}</small>"
         )
@@ -2893,7 +3369,7 @@ class SettingsDialog(QDialog):
             stored=False,
         )
         self._fields["ELEVENLABS_VOICE_ID"] = QLineEdit()
-        self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText("blank = account default voice")
+        self._fields["ELEVENLABS_VOICE_ID"].setPlaceholderText(t("blank = account default voice"))
         eleven_voice_tip = "Leave blank for the account default voice, or paste a specific ElevenLabs voice ID."
         self._fields["ELEVENLABS_MODEL"] = QLineEdit()
         self._fields["ELEVENLABS_MODEL"].setPlaceholderText("e.g. eleven_turbo_v2_5")
@@ -2914,10 +3390,10 @@ class SettingsDialog(QDialog):
             stored=False,
         )
         self._fields["TTS_CUSTOM_VOICE"] = QLineEdit()
-        self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText("server-specific voice name")
+        self._fields["TTS_CUSTOM_VOICE"].setPlaceholderText(t("server-specific voice name"))
         custom_tts_voice_tip = "Voice name or ID expected by your custom speech server."
         self._fields["TTS_CUSTOM_MODEL"] = QLineEdit()
-        self._fields["TTS_CUSTOM_MODEL"].setPlaceholderText("server-specific model name")
+        self._fields["TTS_CUSTOM_MODEL"].setPlaceholderText(t("server-specific model name"))
         custom_tts_model_tip = "Model name expected by your custom speech server."
         self._fields["TTS_CUSTOM_SAMPLE_RATE"] = QLineEdit()
         self._fields["TTS_CUSTOM_SAMPLE_RATE"].setPlaceholderText("e.g. 24000")
@@ -2929,7 +3405,9 @@ class SettingsDialog(QDialog):
         self._fields["GPT_SOVITS_REF_AUDIO_PATH"].setPlaceholderText(r"C:\voices\ref.wav")
         gsv_ref_tip = "Path to a clean reference WAV on the machine running GPT-SoVITS."
         self._fields["GPT_SOVITS_PROMPT_TEXT"] = QLineEdit()
-        self._fields["GPT_SOVITS_PROMPT_TEXT"].setPlaceholderText("Exact words spoken in the reference audio")
+        self._fields["GPT_SOVITS_PROMPT_TEXT"].setPlaceholderText(
+            t("Exact words spoken in the reference audio")
+        )
         gsv_prompt_tip = "Exact transcript of the reference audio. Leave blank only if the GPT-SoVITS model can infer without it."
         self._fields["GPT_SOVITS_PROMPT_LANG"] = QLineEdit()
         self._fields["GPT_SOVITS_PROMPT_LANG"].setPlaceholderText("en")
@@ -3014,22 +3492,28 @@ class SettingsDialog(QDialog):
         )
         eleven_note.setWordWrap(True)
         self._elevenlabs_install_btn = QPushButton(t("Install ElevenLabs"))
+        self._elevenlabs_install_btn.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self._elevenlabs_install_btn.clicked.connect(self._install_elevenlabs)
         self._elevenlabs_install_status_lbl = QLabel()
         self._elevenlabs_install_status_lbl.setWordWrap(True)
         ef.addRow(eleven_note)
-        ef.addRow(self._elevenlabs_install_status_lbl, self._elevenlabs_install_btn)
+        ef.addRow(self._status_action_row(
+            self._elevenlabs_install_status_lbl,
+            self._elevenlabs_install_btn,
+        ))
         ef.addRow(_link_label("ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys"), self._fields["ELEVENLABS_API_KEY"])
         ef.addRow(_tooltip_label("ElevenLabs Voice ID", eleven_voice_tip), self._fields["ELEVENLABS_VOICE_ID"])
         ef.addRow(_tooltip_label("ElevenLabs Model", eleven_model_tip), self._fields["ELEVENLABS_MODEL"])
 
-        # OpenAI group (reuses the OpenAI key from the Models tab)
+        # OpenAI group (reuses the OpenAI key from Connections)
         openai_w = QWidget()
         of = _expanding_form_layout(openai_w)
         of.setContentsMargins(0, 0, 0, 0)
         of.setSpacing(8)
         openai_note = QLabel(
-            f"<small>{t('Uses your OpenAI API key from the Models tab.')}</small>"
+            f"<small>{t('Uses your OpenAI API key from Connections.')}</small>"
         )
         openai_note.setWordWrap(True)
         of.addRow(openai_note)
@@ -3082,6 +3566,9 @@ class SettingsDialog(QDialog):
         )
         kokoro_note.setWordWrap(True)
         self._kokoro_install_btn = QPushButton(t("Install Kokoro"))
+        self._kokoro_install_btn.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self._kokoro_install_btn.clicked.connect(self._install_kokoro)
         self._kokoro_install_status_lbl = QLabel()
         self._kokoro_install_status_lbl.setWordWrap(True)
@@ -3091,7 +3578,10 @@ class SettingsDialog(QDialog):
         self._kokoro_assets_mode = ""
         self._kokoro_assets_update_revision = ""
         kf.addRow(kokoro_note)
-        kf.addRow(self._kokoro_install_status_lbl, self._kokoro_install_btn)
+        kf.addRow(self._status_action_row(
+            self._kokoro_install_status_lbl,
+            self._kokoro_install_btn,
+        ))
         kf.addRow(QLabel(), self._kokoro_assets_btn)
         kf.addRow(_tooltip_label("Voice", kokoro_voice_tip), self._fields["KOKORO_VOICE"])
         kf.addRow(_tooltip_label("Language code", kokoro_lang_tip), self._fields["KOKORO_LANG_CODE"])
@@ -3109,10 +3599,8 @@ class SettingsDialog(QDialog):
             "gpt_sovits": gsv_w,
             "kokoro": kokoro_w,
         }
-        # Sit directly under the Provider card (index 0) — the voice/key fields
-        # belong with the provider that selects them, above the STT section.
-        outer.insertWidget(1, keys_card)
-        self._tts_provider_card = keys_card
+        provider_cv.addWidget(provider_details)
+        self._tts_provider_details = provider_details
 
         # ── PLAYBACK card ────────────────────────────────────────────────
         playback_card, playback_cv = self._card("Playback")
@@ -3128,7 +3616,30 @@ class SettingsDialog(QDialog):
         volume_h.addWidget(self._tts_volume_value_lbl, 0)
         playback_f.addRow(_tooltip_label("Volume", tts_volume_tip), volume_row)
         playback_cv.addWidget(playback_w)
-        outer.addWidget(playback_card)
+        # Volume affects every speech mode, so keep it first on the page.
+        self._voice_playback_card = playback_card
+        outer.insertWidget(0, playback_card)
+        feature_switcher = QWidget()
+        feature_switcher_h = QHBoxLayout(feature_switcher)
+        feature_switcher_h.setContentsMargins(0, 0, 0, 0)
+        feature_switcher_h.setSpacing(6)
+        self._voice_feature_button_group = QButtonGroup(feature_switcher)
+        self._voice_feature_button_group.setExclusive(True)
+        self._voice_feature_buttons: dict[str, QPushButton] = {}
+        for key, label in (
+            ("tts", "Text to speech"),
+            ("stt", "Speech to text"),
+            ("live", "Live conversation"),
+        ):
+            button = QPushButton(t(label))
+            button.setObjectName("settingsSegmentButton")
+            button.setCheckable(True)
+            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            button.clicked.connect(lambda _checked=False, mode=key: self._show_voice_feature(mode))
+            self._voice_feature_button_group.addButton(button)
+            self._voice_feature_buttons[key] = button
+            feature_switcher_h.addWidget(button, 1)
+        outer.insertWidget(1, feature_switcher)
 
         # ── LIVE VOICE CONVERSATION card ─────────────────────────────────
         live_card, live_cv = self._card("Live voice conversation")
@@ -3147,6 +3658,9 @@ class SettingsDialog(QDialog):
         self._live_voice_key_note_lbl.setWordWrap(True)
         live_cv.addWidget(self._live_voice_key_note_lbl)
         self._live_voice_install_btn = QPushButton(t("Install live voice"))
+        self._live_voice_install_btn.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self._live_voice_install_btn.clicked.connect(self._install_live_voice)
         self._live_voice_install_status_lbl = QLabel()
         self._live_voice_install_status_lbl.setWordWrap(True)
@@ -3156,7 +3670,7 @@ class SettingsDialog(QDialog):
         live_provider.setMinimumWidth(140)
         live_provider_tip = (
             "Provider/API key used for the live conversation. Gemini Live "
-            "currently uses the Google API key from the LLM tab."
+            "currently uses the Google API key from Connections."
         )
         self._fields["LIVE_VOICE_PROVIDER"] = live_provider
 
@@ -3241,7 +3755,10 @@ class SettingsDialog(QDialog):
         lvf = _expanding_form_layout(live_fw)
         lvf.setContentsMargins(0, 0, 0, 0)
         lvf.setSpacing(8)
-        lvf.addRow(self._live_voice_install_status_lbl, self._live_voice_install_btn)
+        lvf.addRow(self._status_action_row(
+            self._live_voice_install_status_lbl,
+            self._live_voice_install_btn,
+        ))
         lvf.addRow(_tooltip_label("Conversation provider", live_provider_tip), live_provider)
         lvf.addRow(_tooltip_label("Conversation model", live_model_tip), live_model_container)
         lvf.addRow(_tooltip_label("Conversation voice", live_voice_name_tip), live_voice_container)
@@ -3251,6 +3768,7 @@ class SettingsDialog(QDialog):
         )
         live_cv.addWidget(live_fw)
         outer.addWidget(live_card)
+        self._voice_feature_cards["live"] = live_card
         self._refresh_live_voice_install_status()
         self._refresh_live_voice_key_note()
 
@@ -3291,13 +3809,12 @@ class SettingsDialog(QDialog):
         advanced_layout.addWidget(advanced_form_w)
         outer.addWidget(advanced_group)
 
-        # ── TEST card ─────────────────────────────────────────────────────
-        test_card, test_cv = self._card("Test")
+        # Keep the TTS test with the feature it validates.
         self._tts_test_status_lbl = QLabel()
         self._tts_test_status_lbl.setWordWrap(True)
-        test_cv.addWidget(self._button_row(("Test TTS", self._test_tts_connection)))
-        test_cv.addWidget(self._tts_test_status_lbl)
-        outer.addWidget(test_card)
+        self._tts_test_row = self._button_row(("Test TTS", self._test_tts_connection))
+        provider_cv.addWidget(self._tts_test_row)
+        provider_cv.addWidget(self._tts_test_status_lbl)
 
         self._update_tts_provider_fields()
         self._set_status_label(
@@ -3310,9 +3827,20 @@ class SettingsDialog(QDialog):
             None,
             "",
         )
+        self._show_voice_feature("tts")
         outer.addStretch()
         scroll.setWidget(w)
         return scroll
+
+    def _show_voice_feature(self, mode: str) -> None:
+        """Show one speech feature editor while keeping shared playback visible."""
+        cards = getattr(self, "_voice_feature_cards", {})
+        for key, card in cards.items():
+            card.setVisible(key == mode)
+        buttons = getattr(self, "_voice_feature_buttons", {})
+        for key, button in buttons.items():
+            button.setChecked(key == mode)
+        self._active_voice_feature = mode
 
     def _update_tts_provider_fields(self) -> None:
         """Show only the selected TTS provider's settings rows."""
@@ -3322,10 +3850,19 @@ class SettingsDialog(QDialog):
         provider = _get(self._fields["TTS_PROVIDER"]).strip().lower()
         for name, widget in groups.items():
             widget.setVisible(name == provider)
-        # The whole card is pointless when TTS is off.
-        card = getattr(self, "_tts_provider_card", None)
-        if card is not None:
-            card.setVisible(provider != "none")
+        details = getattr(self, "_tts_provider_details", None)
+        if details is not None:
+            details.setVisible(provider != "none")
+        enabled = provider != "none"
+        speak_replies = self._fields.get("TTS_SPEAK_REPLIES")
+        if speak_replies is not None:
+            speak_replies.setVisible(enabled)
+        test_row = getattr(self, "_tts_test_row", None)
+        if test_row is not None:
+            test_row.setVisible(enabled)
+        test_status = getattr(self, "_tts_test_status_lbl", None)
+        if test_status is not None:
+            test_status.setVisible(enabled)
         notice = getattr(self, "_tts_timing_notice_lbl", None)
         if isinstance(notice, QLabel):
             notice.setVisible(provider in _TTS_TIMESTAMPLESS_PROVIDERS)
@@ -3816,12 +4353,12 @@ class SettingsDialog(QDialog):
             )
             label.setStyleSheet("color: #d8932a;")
         elif str(getattr(cfg, "GOOGLE_API_KEY", "") or "").strip():
-            label.setText(f"<small>{t('Uses the Google API key from the LLM tab.')}</small>")
+            label.setText(f"<small>{t('Uses the Google API key from Connections.')}</small>")
             label.setStyleSheet("")
         else:
             label.setText(
                 "<small>"
-                + t("Live voice needs a Google API key. Add one on the LLM tab first.")
+                + t("Live voice needs a Google API key. Add one in Connections first.")
                 + "</small>"
             )
             label.setStyleSheet("color: #d8932a;")
@@ -3874,7 +4411,7 @@ class SettingsDialog(QDialog):
             edit.clear()
             edit.hide()
 
-        edit.setPlaceholderText("voice name")
+        edit.setPlaceholderText(t("voice name"))
         completer = QCompleter([value for value in values if value], edit)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -4103,7 +4640,8 @@ class SettingsDialog(QDialog):
             else f"{base_package_label}, {t('English speech model')}"
         )
         storage_note = t(
-            "The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. "
+            "The GPU install downloads several GB and can temporarily require at least 15 GB free for the uv cache, extraction, "
+            "and Wisp's staging folder. It requires an NVIDIA GPU and compatible driver. "
         ) if mode == "gpu" else ""
         action_note = t(
             "Wisp will upgrade Kokoro's optional package layer with GPU support.\n\n"
@@ -4365,6 +4903,7 @@ class SettingsDialog(QDialog):
                 command=command,
                 cwd=root,
                 log_path=log_path,
+                status_path=status_path,
                 env=_optional_install_env(),
                 mirror_output_to_log=False,
                 parent=self,
@@ -4727,37 +5266,69 @@ class SettingsDialog(QDialog):
         return scroll
 
     def _tab_keybinds(self) -> QWidget:
-        """Handle tab keybinds for settings dialog."""
-        from PySide6.QtWidgets import QScrollArea, QSizePolicy
+        """Build categorized shortcut rows with inline per-action editors."""
+        from PySide6.QtWidgets import QScrollArea
+
         container = QWidget()
         outer_layout = QVBoxLayout(container)
         outer_layout.setSpacing(12)
         outer_layout.setContentsMargins(12, 12, 12, 12)
 
-        # ── CALLER HOTKEYS card ───────────────────────────────────────────
-        caller_card, caller_cv = self._card("Caller Hotkeys")
+        self._shortcut_rows: list[dict] = []
+        self._shortcut_sections: list[dict] = []
+        self._expanded_shortcut_detail: QWidget | None = None
+
+        search = QLineEdit()
+        search.setObjectName("shortcutSearch")
+        search.setPlaceholderText(t("Find a shortcut…"))
+        search.setClearButtonEnabled(True)
+        search.textChanged.connect(self._filter_shortcut_rows)
+        self._shortcut_search = search
+        outer_layout.addWidget(search)
+
+        # Global shortcuts: intent-overlay callers and region snipping.
+        global_card, global_rows = self._create_shortcut_section(
+            "Global shortcuts",
+            "Intent-overlay and screen-capture entry points available from any application.",
+            add_label="Add intent shortcut",
+            add_callback=lambda: self._add_caller_block(),
+        )
+        self._global_shortcut_rows = global_rows
 
         self._callers_container = QWidget()
         self._callers_vlayout = QVBoxLayout(self._callers_container)
-        self._callers_vlayout.setSpacing(8)
+        self._callers_vlayout.setSpacing(0)
         self._callers_vlayout.setContentsMargins(0, 0, 0, 0)
-        caller_cv.addWidget(self._callers_container)
+        global_rows.addWidget(self._callers_container)
         self._caller_blocks: list[dict] = []
+        self._build_snip_block(global_rows)
 
-        add_caller_btn = QPushButton(t("+ Add Caller Hotkey"))
-        add_caller_btn.clicked.connect(lambda: self._add_caller_block())
-        btn_wrap = QHBoxLayout()
-        btn_wrap.setContentsMargins(0, 4, 0, 4)
-        btn_wrap.addWidget(add_caller_btn)
-        btn_wrap.addStretch()
-        caller_cv.addLayout(btn_wrap)
+        timeout_row = QWidget()
+        timeout_form = _expanding_form_layout(timeout_row)
+        timeout_form.setContentsMargins(8, 8, 8, 0)
+        self._fields["INTENT_OVERLAY_TIMEOUT_MS"] = QLineEdit()
+        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setPlaceholderText("60000")
+        intent_timeout_tip = (
+            "How long the intent overlay stays open before closing itself. "
+            "Use 0 to keep it open until you choose or cancel."
+        )
+        timeout_form.addRow(
+            _tooltip_label("Intent overlay timeout (ms)", intent_timeout_tip),
+            self._fields["INTENT_OVERLAY_TIMEOUT_MS"],
+        )
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("12345678")
+        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].hide()
+        global_rows.addWidget(timeout_row)
+        outer_layout.addWidget(global_card)
 
-        caller_cv.addWidget(self._build_snip_block())
+        # Voice shortcuts.
+        voice_card, voice_rows = self._create_shortcut_section(
+            "Voice shortcuts",
+            "Speech input, dictation, live conversation, and spoken selection.",
+        )
 
-        outer_layout.addWidget(caller_card)
-
-        # ── VOICE (PUSH-TO-TALK) card ─────────────────────────────────────
-        voice_card, voice_cv = self._card("Voice (hold to talk)")
+        voice_detail, voice_cv = self._shortcut_detail()
         voice_note_text = (
             "Hold the key, speak, release to transcribe and ask. "
             "Context and tools below apply to voice queries, just like a caller hotkey."
@@ -4774,24 +5345,10 @@ class SettingsDialog(QDialog):
             t("After F9 transcription, open the intent overlay with the transcript in the custom prompt field.")
         )
         voice_cv.addWidget(self._fields["VOICE_REVIEW_TRANSCRIPT"])
-
-        voice_hdr = QWidget()
-        voice_hdr_h = QHBoxLayout(voice_hdr)
-        voice_hdr_h.setContentsMargins(0, 2, 0, 2)
-        voice_hdr_h.setSpacing(8)
-        voice_hotkey_edit = HotkeyCaptureEdit()
-        voice_hotkey_edit.setFixedWidth(120)
-        voice_hotkey_edit.setPlaceholderText("Hotkey...")
-        self._fields["HOTKEY_VOICE"] = voice_hotkey_edit
-        voice_hdr_h.addWidget(voice_hotkey_edit)
-        voice_lbl = QLabel(t("Hold to record voice"))
-        voice_lbl.setStyleSheet("font-style: italic; color: palette(placeholder-text);")
-        voice_hdr_h.addWidget(voice_lbl)
-        voice_hdr_h.addStretch()
         voice_tools_btn = QPushButton(t("Allowed tools…"))
-        voice_tools_btn.setToolTip("Choose which installed/addon tools voice queries may use")
-        voice_hdr_h.addWidget(voice_tools_btn)
-        voice_cv.addWidget(voice_hdr)
+        voice_tools_btn.setToolTip(t("Choose which installed/addon tools voice queries may use"))
+        voice_tools_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        voice_cv.addWidget(voice_tools_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         voice_context_row, voice_controls = self._build_context_controls()
         voice_cv.addWidget(voice_context_row)
@@ -4799,10 +5356,23 @@ class SettingsDialog(QDialog):
         voice_tools_btn.clicked.connect(
             lambda: self._open_tool_access_dialog(self._voice_block, "Voice")
         )
-        outer_layout.addWidget(voice_card)
+        voice_hotkey = HotkeyCaptureEdit()
+        voice_hotkey_2 = HotkeyCaptureEdit()
+        voice_enabled = QCheckBox()
+        self._fields["HOTKEY_VOICE"] = voice_hotkey
+        self._fields["HOTKEY_VOICE_2"] = voice_hotkey_2
+        self._fields["HOTKEY_VOICE_ENABLED"] = voice_enabled
+        self._add_shortcut_row(
+            voice_rows,
+            "Hold to ask by voice",
+            "Hold while speaking, then release to transcribe and ask.",
+            voice_hotkey,
+            voice_hotkey_2,
+            voice_enabled,
+            voice_detail,
+        )
 
-        # ── DICTATION (PUSH-TO-TALK) card ─────────────────────────────────
-        dictate_card, dictate_cv = self._card("Dictation (hold to type)")
+        dictate_detail, dictate_cv = self._shortcut_detail()
         dictate_note_text = (
             "Hold the key, speak, release — the transcript is typed straight into "
             "whatever text field has focus (no assistant). Leave the hotkey empty to disable."
@@ -4813,25 +5383,10 @@ class SettingsDialog(QDialog):
         dictate_note.setWordWrap(True)
         dictate_cv.addWidget(dictate_note)
 
-        dictate_hdr = QWidget()
-        dictate_hdr_h = QHBoxLayout(dictate_hdr)
-        dictate_hdr_h.setContentsMargins(0, 2, 0, 2)
-        dictate_hdr_h.setSpacing(8)
-        dictate_hotkey_edit = HotkeyCaptureEdit()
-        dictate_hotkey_edit.setFixedWidth(120)
-        dictate_hotkey_edit.setPlaceholderText("Hotkey...")
-        self._fields["HOTKEY_DICTATE"] = dictate_hotkey_edit
-        dictate_hdr_h.addWidget(dictate_hotkey_edit)
-        dictate_lbl = QLabel(t("Hold to dictate into focused field"))
-        dictate_lbl.setStyleSheet("font-style: italic; color: palette(placeholder-text);")
-        dictate_hdr_h.addWidget(dictate_lbl)
-        dictate_hdr_h.addStretch()
-        dictate_cv.addWidget(dictate_hdr)
-
         dictate_mode = _NoScrollCombo()
         for label, value in _DICTATE_MODE_OPTIONS:
-            dictate_mode.addItem(label, value)
-        dictate_mode_tip = (
+            dictate_mode.addItem(t(label), value)
+        dictate_mode_tip = t(
             "Raw pastes exactly what Whisper heard (fast, fully local). LLM cleanup runs the "
             "transcript through your configured model for punctuation/filler cleanup before pasting."
         )
@@ -4842,34 +5397,45 @@ class SettingsDialog(QDialog):
         dictate_f.setSpacing(8)
         dictate_f.addRow(_tooltip_label("Dictated text", dictate_mode_tip), self._fields["DICTATE_MODE"])
         dictate_cv.addWidget(dictate_form)
-        outer_layout.addWidget(dictate_card)
+        dictate_hotkey = HotkeyCaptureEdit()
+        dictate_hotkey_2 = HotkeyCaptureEdit()
+        dictate_enabled = QCheckBox()
+        self._fields["HOTKEY_DICTATE"] = dictate_hotkey
+        self._fields["HOTKEY_DICTATE_2"] = dictate_hotkey_2
+        self._fields["HOTKEY_DICTATE_ENABLED"] = dictate_enabled
+        self._add_shortcut_row(
+            voice_rows,
+            "Hold to dictate",
+            "Type speech into the focused field without asking the assistant.",
+            dictate_hotkey,
+            dictate_hotkey_2,
+            dictate_enabled,
+            dictate_detail,
+        )
+        self._kb_special_row(
+            voice_rows, "HOTKEY_VOICE_LIVE", "Toggle live conversation",
+            "Start or stop a live voice conversation.",
+        )
+        self._kb_special_row(
+            voice_rows, "HOTKEY_READ_SELECTION_ALOUD", "Read selection aloud",
+            "Speak selected text with the configured text-to-speech provider.",
+        )
+        outer_layout.addWidget(voice_card)
 
-        # ── OTHER HOTKEYS card ────────────────────────────────────────────
-        other_card, other_cv = self._card("Other Hotkeys")
-        self._keybinds_layout = other_cv
-
-        self._fields["HOTKEY_ADD_CONTEXT"]   = self._kb_special_row("Add selection as context")
-        self._fields["HOTKEY_CLEAR_CONTEXT"] = self._kb_special_row("Clear context")
-        self._fields["HOTKEY_READ_SELECTION_ALOUD"] = self._kb_special_row("Read selection aloud")
-        self._fields["HOTKEY_VOICE_LIVE"] = self._kb_special_row("Toggle live voice conversation")
-        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"] = QLineEdit()
-        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].setPlaceholderText("12345678")
-        self._fields["INTENT_CONTEXT_TOGGLE_KEYS"].hide()
-        self._fields["INTENT_OVERLAY_TIMEOUT_MS"] = QLineEdit()
-        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setFixedWidth(90)
-        self._fields["INTENT_OVERLAY_TIMEOUT_MS"].setPlaceholderText("60000")
-        intent_timeout_tip = "How long the intent overlay stays open before closing itself. Use 0 to keep it open until you choose or cancel."
-        context_key_row = QWidget()
-        context_key_h = QHBoxLayout(context_key_row)
-        context_key_h.setContentsMargins(0, 2, 0, 2)
-        context_key_h.setSpacing(10)
-        context_key_h.addSpacing(128)
-        context_key_h.addWidget(_tooltip_label("Timeout ms:", intent_timeout_tip))
-        context_key_h.addWidget(self._fields["INTENT_OVERLAY_TIMEOUT_MS"])
-        context_key_h.addStretch()
-        self._keybinds_layout.addWidget(context_key_row)
-
-        outer_layout.addWidget(other_card)
+        # Context shortcuts.
+        context_card, context_rows = self._create_shortcut_section(
+            "Context shortcuts",
+            "Build or clear the context buffer without opening Wisp.",
+        )
+        self._kb_special_row(
+            context_rows, "HOTKEY_ADD_CONTEXT", "Add selection as context",
+            "Append selected text to the context buffer.",
+        )
+        self._kb_special_row(
+            context_rows, "HOTKEY_CLEAR_CONTEXT", "Clear context",
+            "Remove every item from the context buffer.",
+        )
+        outer_layout.addWidget(context_card)
         outer_layout.addStretch()
 
         scroll = QScrollArea()
@@ -4878,57 +5444,231 @@ class SettingsDialog(QDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         return scroll
 
-    def _kb_special_row(self, label_text: str) -> "HotkeyCaptureEdit":
-        """Add a simple labeled hotkey row; return its HotkeyCaptureEdit."""
-        row_w = QWidget()
-        h = QHBoxLayout(row_w)
-        h.setContentsMargins(0, 2, 0, 2)
-        h.setSpacing(8)
+    @staticmethod
+    def _configure_shortcut_grid(grid: QGridLayout) -> None:
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
+        grid.setColumnMinimumWidth(0, 28)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnMinimumWidth(2, 104)
+        grid.setColumnMinimumWidth(3, 104)
+        grid.setColumnMinimumWidth(4, 76)
 
-        key_edit = HotkeyCaptureEdit()
-        key_edit.setFixedWidth(120)
-        h.addWidget(key_edit)
-
-        lbl = QLabel(t(label_text))
-        lbl.setStyleSheet("font-style: italic; color: palette(placeholder-text);")
-        h.addWidget(lbl)
-        h.addStretch()
-
-        self._keybinds_layout.addWidget(row_w)
-        return key_edit
-
-    def _build_snip_block(self) -> QFrame:
-        """Build the snip hotkey row with caller-style context controls."""
-        frame = QFrame()
-        frame.setObjectName("snipHotkeyBlock")
-        frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet(
-            "QFrame#snipHotkeyBlock { border: 1px solid palette(mid); border-radius: 4px; }"
+    def _create_shortcut_section(
+        self,
+        title: str,
+        description: str,
+        *,
+        add_label: str = "",
+        add_callback: Callable[[], None] | None = None,
+    ) -> tuple[QFrame, QVBoxLayout]:
+        card, layout = self._card("")
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        heading = QWidget()
+        heading.setMinimumWidth(0)
+        heading.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
-        outer = QVBoxLayout(frame)
-        outer.setSpacing(4)
-        outer.setContentsMargins(8, 6, 8, 6)
+        heading_layout = QVBoxLayout(heading)
+        heading_layout.setContentsMargins(0, 0, 0, 0)
+        heading_layout.setSpacing(2)
+        title_label = _WarningHeaderLabel(t(title))
+        title_label.setObjectName("shortcutSectionTitle")
+        self._register_warning_header(title, title_label, uppercase=False)
+        description_label = QLabel(t(description))
+        description_label.setWordWrap(True)
+        description_label.setMinimumWidth(0)
+        description_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        description_label.setStyleSheet("color: palette(placeholder-text);")
+        heading_layout.addWidget(title_label)
+        heading_layout.addWidget(description_label)
+        header_layout.addWidget(heading, 1)
+        if add_label and add_callback:
+            add_button = QPushButton(t(add_label))
+            add_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            add_button.clicked.connect(add_callback)
+            header_layout.addWidget(add_button, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(header)
 
-        hdr = QWidget()
-        hdr_h = QHBoxLayout(hdr)
-        hdr_h.setContentsMargins(0, 0, 0, 0)
-        hdr_h.setSpacing(6)
+        columns = QWidget()
+        columns_grid = QGridLayout(columns)
+        columns_grid.setContentsMargins(8, 2, 8, 2)
+        self._configure_shortcut_grid(columns_grid)
+        for column, label in enumerate(("On", "Action", "Shortcut 1", "Shortcut 2", "Details")):
+            cell = QLabel(t(label))
+            cell.setStyleSheet("color: palette(placeholder-text);")
+            columns_grid.addWidget(cell, 0, column)
+        layout.addWidget(columns)
 
-        hotkey_edit = HotkeyCaptureEdit()
-        hotkey_edit.setFixedWidth(120)
-        hotkey_edit.setPlaceholderText("Hotkey...")
-        self._fields["HOTKEY_SNIP"] = hotkey_edit
-        hdr_h.addWidget(hotkey_edit)
+        rows = QWidget()
+        rows_layout = QVBoxLayout(rows)
+        rows_layout.setContentsMargins(0, 0, 0, 0)
+        rows_layout.setSpacing(0)
+        layout.addWidget(rows)
+        section = {"widget": card, "rows": rows_layout, "entries": []}
+        self._shortcut_sections.append(section)
+        return card, rows_layout
 
-        lbl = QLabel(t("Snip screen region"))
-        lbl.setStyleSheet("font-style: italic; color: palette(placeholder-text);")
-        hdr_h.addWidget(lbl)
-        hdr_h.addStretch()
+    def _shortcut_detail(self) -> tuple[QFrame, QVBoxLayout]:
+        detail = QFrame()
+        detail.setObjectName("shortcutInlineEditor")
+        detail.setFrameShape(QFrame.Shape.StyledPanel)
+        detail.setStyleSheet(
+            "QFrame#shortcutInlineEditor { border: 1px solid palette(mid); "
+            "border-radius: 6px; background: palette(base); }"
+        )
+        layout = QVBoxLayout(detail)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(10)
+        return detail, layout
 
+    def _add_shortcut_row(
+        self,
+        rows_layout: QVBoxLayout,
+        title: str,
+        description: str,
+        primary: HotkeyCaptureEdit,
+        secondary: HotkeyCaptureEdit,
+        enabled: QCheckBox,
+        detail: QWidget | None = None,
+        *,
+        section_rows_layout: QVBoxLayout | None = None,
+    ) -> QFrame:
+        wrapper = QFrame()
+        wrapper.setObjectName("shortcutRowWrapper")
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(4)
+
+        row = QFrame()
+        row.setObjectName("shortcutRow")
+        row.setStyleSheet("QFrame#shortcutRow { border-top: 1px solid palette(mid); }")
+        grid = QGridLayout(row)
+        grid.setContentsMargins(8, 8, 8, 8)
+        self._configure_shortcut_grid(grid)
+        enabled.setToolTip(t("Enable this shortcut"))
+        grid.addWidget(enabled, 0, 0, Qt.AlignmentFlag.AlignTop)
+
+        action = QWidget()
+        action.setMinimumWidth(0)
+        action.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        action_layout = QVBoxLayout(action)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(2)
+        action_title = QLabel(t(title))
+        action_description = QLabel(t(description))
+        action_description.setWordWrap(True)
+        for label in (action_title, action_description):
+            label.setMinimumWidth(0)
+            label.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+            )
+        action_description.setStyleSheet("color: palette(placeholder-text);")
+        action_layout.addWidget(action_title)
+        action_layout.addWidget(action_description)
+        grid.addWidget(action, 0, 1)
+
+        for column, edit in ((2, primary), (3, secondary)):
+            edit.setPlaceholderText(t("Assign shortcut"))
+            edit.setFixedWidth(104)
+            edit.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            grid.addWidget(edit, 0, column, Qt.AlignmentFlag.AlignTop)
+
+        if detail is not None:
+            detail.setVisible(False)
+            customize = QPushButton(t("Customize"))
+            customize.setStyleSheet(
+                "QPushButton { padding-left: 8px; padding-right: 8px; }"
+            )
+            customize.setFixedWidth(104)
+            customize.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            customize.clicked.connect(
+                lambda _checked=False, panel=detail, button=customize: self._toggle_shortcut_detail(panel, button)
+            )
+            grid.addWidget(customize, 0, 4, Qt.AlignmentFlag.AlignTop)
+            wrapper_layout.addWidget(row)
+            wrapper_layout.addWidget(detail)
+        else:
+            wrapper_layout.addWidget(row)
+
+        def _set_enabled(checked: bool) -> None:
+            primary.setEnabled(checked)
+            secondary.setEnabled(checked)
+
+        enabled.toggled.connect(_set_enabled)
+        _set_enabled(enabled.isChecked())
+        rows_layout.addWidget(wrapper)
+        entry = {
+            "widget": wrapper,
+            "title": title,
+            "description": description,
+            "detail": detail,
+            "title_label": action_title,
+        }
+        if not hasattr(self, "_shortcut_rows"):
+            self._shortcut_rows = []
+        self._shortcut_rows.append(entry)
+        owner_layout = section_rows_layout or rows_layout
+        for section in getattr(self, "_shortcut_sections", []):
+            if section["rows"] is owner_layout:
+                section["entries"].append(entry)
+                break
+        return wrapper
+
+    def _toggle_shortcut_detail(self, detail: QWidget, button: QPushButton) -> None:
+        opening = not detail.isVisible()
+        previous = getattr(self, "_expanded_shortcut_detail", None)
+        if previous is not None and previous is not detail:
+            previous.setVisible(False)
+            previous_button = previous.property("shortcutToggleButton")
+            if isinstance(previous_button, QPushButton):
+                previous_button.setText(t("Customize"))
+        detail.setProperty("shortcutToggleButton", button)
+        detail.setVisible(opening)
+        button.setText(t("Close") if opening else t("Customize"))
+        self._expanded_shortcut_detail = detail if opening else None
+
+    def _filter_shortcut_rows(self, text: str) -> None:
+        query = text.strip().lower()
+        for entry in getattr(self, "_shortcut_rows", []):
+            haystack = f"{t(entry['title'])} {t(entry['description'])}".lower()
+            entry["widget"].setVisible(not query or query in haystack)
+        for section in getattr(self, "_shortcut_sections", []):
+            section["widget"].setVisible(
+                any(not entry["widget"].isHidden() for entry in section["entries"])
+            )
+
+    def _kb_special_row(
+        self,
+        rows_layout: QVBoxLayout,
+        key: str,
+        label_text: str,
+        description: str,
+    ) -> tuple[HotkeyCaptureEdit, HotkeyCaptureEdit, QCheckBox]:
+        primary = HotkeyCaptureEdit()
+        secondary = HotkeyCaptureEdit()
+        enabled = QCheckBox()
+        self._fields[key] = primary
+        self._fields[f"{key}_2"] = secondary
+        self._fields[f"{key}_ENABLED"] = enabled
+        self._add_shortcut_row(
+            rows_layout, label_text, description, primary, secondary, enabled
+        )
+        return primary, secondary, enabled
+
+    def _build_snip_block(self, rows_layout: QVBoxLayout) -> QFrame:
+        """Build the snip row and its inline context/tool editor."""
+        detail, outer = self._shortcut_detail()
         tools_btn = QPushButton(t("Allowed tools…"))
-        tools_btn.setToolTip("Choose which installed/addon tools snip queries may use")
-        hdr_h.addWidget(tools_btn)
-        outer.addWidget(hdr)
+        tools_btn.setToolTip(t("Choose which installed/addon tools snip queries may use"))
+        tools_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        outer.addWidget(tools_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         context_row, context_controls = self._build_context_controls(
             context_screenshot="off",
@@ -4947,7 +5687,29 @@ class SettingsDialog(QDialog):
         tools_btn.clicked.connect(
             lambda: self._open_tool_access_dialog(self._snip_block, "Snip screen region")
         )
-        return frame
+        primary = HotkeyCaptureEdit()
+        secondary = HotkeyCaptureEdit()
+        enabled = QCheckBox()
+        self._fields["HOTKEY_SNIP"] = primary
+        self._fields["HOTKEY_SNIP_2"] = secondary
+        self._fields["HOTKEY_SNIP_ENABLED"] = enabled
+        self._snip_block.update(
+            {
+                "hotkey": primary,
+                "hotkey_2": secondary,
+                "enabled": enabled,
+                "detail": detail,
+            }
+        )
+        return self._add_shortcut_row(
+            rows_layout,
+            "Snip screen region",
+            "Select a screen region, attach it, and open the intent overlay.",
+            primary,
+            secondary,
+            enabled,
+            detail,
+        )
 
     def _intent_context_keys(self) -> str:
         """Return the configured context toggle keys, padded for all sources."""
@@ -5028,6 +5790,8 @@ class SettingsDialog(QDialog):
     def _add_caller_block(
         self,
         hotkey: str = "",
+        hotkey_2: str = "",
+        enabled: bool = True,
         label: str = "",
         paste_back: bool = False,
         custom_key: str = "s",
@@ -5044,57 +5808,58 @@ class SettingsDialog(QDialog):
         file_access: str = "off",
         tools: "dict[str, str] | None" = None,
         intents: "list[dict] | None" = None,
+        display_language: str | None = None,
     ) -> None:
-        """Add a caller block (framed panel with header + intent rows) to the UI."""
+        """Add an intent shortcut row with its editor directly underneath."""
         from PySide6.QtWidgets import QSizePolicy
-        frame = QFrame()
-        frame.setObjectName("callerHotkeyBlock")
-        frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet(
-            "QFrame#callerHotkeyBlock { border: 1px solid palette(mid); border-radius: 4px; }"
-        )
-        outer = QVBoxLayout(frame)
-        outer.setSpacing(4)
-        outer.setContentsMargins(8, 6, 8, 6)
-
-        # Header row
-        hdr = QWidget()
-        hdr_h = QHBoxLayout(hdr)
-        hdr_h.setContentsMargins(0, 0, 0, 0)
-        hdr_h.setSpacing(6)
+        detail, outer = self._shortcut_detail()
 
         hotkey_edit = HotkeyCaptureEdit()
-        hotkey_edit.setFixedWidth(120)
         if hotkey:
             hotkey_edit.setText(hotkey)
-        hotkey_edit.setPlaceholderText("Hotkey...")
-        hdr_h.addWidget(hotkey_edit)
+        hotkey_edit_2 = HotkeyCaptureEdit()
+        if hotkey_2:
+            hotkey_edit_2.setText(hotkey_2)
+        enabled_check = QCheckBox()
+        enabled_check.setChecked(enabled)
 
-        hdr_h.addWidget(
-            _tooltip_label(
-                "Name:",
-                "Short name shown for this caller hotkey in settings and tool access dialogs.",
-            )
+        identity = QWidget()
+        identity_form = _expanding_form_layout(identity)
+        identity_form.setContentsMargins(0, 0, 0, 0)
+        source_label = label.strip()
+        display_label = (
+            t(source_label) if source_label in _BUILTIN_CALLER_LABELS else label
         )
-        label_edit = QLineEdit(label)
-        label_edit.setFixedWidth(110)
-        label_edit.setPlaceholderText("Label")
-        hdr_h.addWidget(label_edit)
+        label_edit = QLineEdit(display_label)
+        if source_label in _BUILTIN_CALLER_LABELS:
+            label_edit.setProperty("builtinCallerLabel", source_label)
+        label_edit.setPlaceholderText(t("Intent shortcut name"))
+        identity_form.addRow(
+            _tooltip_label(
+                "Name",
+                "Short name shown for this intent shortcut in settings and tool access dialogs.",
+            ),
+            label_edit,
+        )
+        outer.addWidget(identity)
 
-        paste_cb = QCheckBox("Paste result back")
+        paste_cb = QCheckBox(t("Paste the final answer into the focused application"))
         paste_cb.setChecked(paste_back)
         paste_cb.setToolTip(
-            "When enabled, Wisp pastes the final answer into the focused app instead of only showing it."
+            t("When enabled, Wisp pastes the final answer into the focused app instead of only showing it.")
         )
-        hdr_h.addWidget(paste_cb)
+        outer.addWidget(paste_cb)
 
-        hdr_h.addStretch()
-        tools_btn = QPushButton("Allowed tools…")
-        tools_btn.setToolTip("Choose which installed/addon tools this hotkey may use")
-        hdr_h.addWidget(tools_btn)
-        del_caller_btn = QPushButton("X Remove")
-        hdr_h.addWidget(del_caller_btn)
-        outer.addWidget(hdr)
+        actions = QWidget()
+        actions_layout = QHBoxLayout(actions)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        tools_btn = QPushButton(t("Allowed tools…"))
+        tools_btn.setToolTip(t("Choose which installed/addon tools this hotkey may use"))
+        del_caller_btn = QPushButton(t("Remove intent shortcut"))
+        actions_layout.addWidget(tools_btn)
+        actions_layout.addStretch()
+        actions_layout.addWidget(del_caller_btn)
+        outer.addWidget(actions)
 
         docs_mode = context_documents_mode or ("auto" if context_documents else ("model" if context_tools else "off"))
         context_row, context_controls = self._build_context_controls(
@@ -5119,7 +5884,7 @@ class SettingsDialog(QDialog):
             lbl = QLabel(f"<small><b>{t(txt)}</b></small>")
             if txt == "Prompt":
                 lbl.setToolTip(
-                    "Instruction sent with this intent. The user's selected text or context is added separately."
+                    t("Instruction sent with this intent. The user's selected text or context is added separately.")
                 )
             if w:
                 lbl.setFixedWidth(w)
@@ -5137,8 +5902,10 @@ class SettingsDialog(QDialog):
         outer.addWidget(intents_container)
 
         blk: dict = {
-            "widget":         frame,
             "hotkey":         hotkey_edit,
+            "hotkey_2":       hotkey_edit_2,
+            "enabled":        enabled_check,
+            "detail":         detail,
             "label":          label_edit,
             "paste_back":     paste_cb,
             "context_ambient": context_controls["context_ambient"],
@@ -5160,12 +5927,27 @@ class SettingsDialog(QDialog):
             )
         )
 
-        for r in (intents or []):
-            self._add_caller_intent_row(blk, r.get("key", ""), r.get("label", ""), r.get("prompt", ""))
+        from core.prompt_i18n import localize_intent_if_default
+
+        caller_idx = len(self._caller_blocks)
+        ui_language = display_language or current_app_language()
+        for intent_idx, r in enumerate(intents or []):
+            display_intent = localize_intent_if_default(
+                caller_idx,
+                intent_idx,
+                r,
+                ui_language,
+            )
+            self._add_caller_intent_row(
+                blk,
+                display_intent.get("key", ""),
+                display_intent.get("label", ""),
+                display_intent.get("prompt", ""),
+            )
         self._add_caller_custom_prompt_row(blk, custom_key=custom_key, custom_label=custom_label)
 
         # Add-row button
-        add_row_btn = QPushButton("+ Add row")
+        add_row_btn = QPushButton(t("Add choice"))
         add_row_btn.clicked.connect(lambda: self._add_caller_intent_row(blk))
         add_wrap = QHBoxLayout()
         add_wrap.setContentsMargins(0, 2, 0, 0)
@@ -5175,10 +5957,33 @@ class SettingsDialog(QDialog):
 
         del_caller_btn.clicked.connect(lambda: self._delete_caller_block(blk))
 
-        self._callers_vlayout.addWidget(frame)
+        display_label = label_edit.text().strip() or t("New intent shortcut")
+        wrapper = self._add_shortcut_row(
+            self._callers_vlayout,
+            display_label,
+            "Open the intent overlay for selected text or the active project.",
+            hotkey_edit,
+            hotkey_edit_2,
+            enabled_check,
+            detail,
+            section_rows_layout=getattr(
+                self, "_global_shortcut_rows", self._callers_vlayout
+            ),
+        )
+        blk["widget"] = wrapper
+        title_label = self._shortcut_rows[-1]["title_label"]
+        blk["title_label"] = title_label
+        label_edit.textChanged.connect(
+            lambda text, target=title_label: target.setText(
+                text.strip() or t("New intent shortcut")
+            )
+        )
         self._caller_blocks.append(blk)
-        self._wire_change_tracking(frame)
+        self._wire_change_tracking(wrapper)
         self._refresh_search_index()
+        search = getattr(self, "_shortcut_search", None)
+        if isinstance(search, QLineEdit):
+            self._filter_shortcut_rows(search.text())
         self._schedule_warning_marker_refresh()
         self._schedule_dirty_refresh()
 
@@ -5203,14 +6008,14 @@ class SettingsDialog(QDialog):
 
         label_edit = QLineEdit(label)
         label_edit.setFixedWidth(130)
-        label_edit.setPlaceholderText("Label")
+        label_edit.setPlaceholderText(t("Label"))
         h.addWidget(label_edit, 0, Qt.AlignmentFlag.AlignTop)
 
         prompt_edit = QTextEdit()
         prompt_edit.setAcceptRichText(False)
         prompt_edit.setTabChangesFocus(True)
         prompt_edit.setPlainText(prompt)
-        prompt_edit.setPlaceholderText("Prompt sent to LLM...")
+        prompt_edit.setPlaceholderText(t("Prompt sent to LLM..."))
         prompt_edit.setMinimumHeight(56)
         prompt_edit.setMaximumHeight(88)
         prompt_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -5276,7 +6081,20 @@ class SettingsDialog(QDialog):
         """Delete caller block."""
         if blk in self._caller_blocks:
             self._caller_blocks.remove(blk)
+        widget = blk.get("widget")
+        self._shortcut_rows = [
+            entry for entry in getattr(self, "_shortcut_rows", [])
+            if entry.get("widget") is not widget
+        ]
+        for section in getattr(self, "_shortcut_sections", []):
+            section["entries"] = [
+                entry for entry in section["entries"]
+                if entry.get("widget") is not widget
+            ]
         blk["widget"].deleteLater()
+        search = getattr(self, "_shortcut_search", None)
+        if isinstance(search, QLineEdit):
+            self._filter_shortcut_rows(search.text())
         self._refresh_search_index()
         self._schedule_dirty_refresh()
 
@@ -5306,7 +6124,7 @@ class SettingsDialog(QDialog):
         f.setSpacing(8)
         f.setContentsMargins(0, 0, 0, 0)
 
-        mem_auto = QCheckBox("Automatically extract long-term facts from conversation")
+        mem_auto = QCheckBox("Extract long-term facts automatically")
         mem_auto.setToolTip("Off by default to avoid clutter. Explicit remember/note commands still save facts.")
         self._fields["MEMORY_AUTO_CONSOLIDATE"] = mem_auto
         f.addRow("", mem_auto)
@@ -5330,6 +6148,17 @@ class SettingsDialog(QDialog):
         outer = QVBoxLayout(outer_w)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
+
+        profile_card, profile_cv = self._card("Profile setup")
+        profile_cv.addWidget(_desc_label(
+            "",
+            "Run the guided profile setup again to update your languages, theme, provider, and voice preferences.",
+        ))
+        profile_setup_btn = QPushButton(t("Run profile setup"))
+        profile_setup_btn.setToolTip(t("Open the guided first-time setup without resetting your other settings."))
+        profile_setup_btn.clicked.connect(self._open_profile_setup)
+        profile_cv.addWidget(profile_setup_btn)
+        outer.addWidget(profile_card)
 
         card, cv = self._card("App Settings")
         fw = QWidget()
@@ -5458,10 +6287,101 @@ class SettingsDialog(QDialog):
         updates_row.addWidget(self._update_btn)
         updates_cv.addLayout(updates_row)
         updates_cv.addWidget(self._update_status_lbl)
-        outer.addWidget(updates_card)
+        self._about_updates_card = updates_card
+
+        uninstall_card, uninstall_cv = self._card("Uninstall")
+        uninstall_cv.addWidget(_desc_label(
+            "",
+            t("Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer."),
+        ))
+        self._uninstall_btn = QPushButton(t("Uninstall Wisp"))
+        self._uninstall_btn.setObjectName("settingsUninstallButton")
+        self._uninstall_btn.clicked.connect(self._uninstall_wisp)
+        uninstall_cv.addWidget(self._uninstall_btn)
+        self._about_uninstall_card = uninstall_card
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _tab_about(self) -> QWidget:
+        """Build the version, update, and removal page."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer_w = QWidget()
+        outer = QVBoxLayout(outer_w)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(12)
+
+        about_card, about_cv = self._card("Wisp")
+        about_cv.addWidget(_desc_label(
+            "",
+            "A private desktop assistant overlay with configurable models, voice, context, and tools.",
+        ))
+        outer.addWidget(about_card)
+        outer.addWidget(self._about_updates_card)
+        outer.addWidget(self._about_uninstall_card)
+        outer.addStretch()
+        scroll.setWidget(outer_w)
+        return scroll
+
+    def _uninstall_wisp(self) -> None:
+        """Confirm and launch the detached, self-removing Wisp uninstaller."""
+        from ui.uninstall_dialog import run_uninstall_dialog
+
+        run_uninstall_dialog(self)
+
+    def _open_profile_setup(self) -> None:
+        """Open the guided profile wizard from Settings → App."""
+        if self._dirty_keys:
+            QMessageBox.information(
+                self,
+                t("Save settings first"),
+                t("Save or discard your pending Settings changes before running profile setup."),
+            )
+            return
+        wizard = getattr(self, "_profile_setup_wizard", None)
+        if wizard is not None and wizard.isVisible():
+            wizard.raise_()
+            wizard.activateWindow()
+            return
+
+        from ui.onboarding import OnboardingWizard
+
+        wizard = OnboardingWizard(parent=None, on_complete=self._profile_setup_completed)
+        self._profile_setup_wizard = wizard
+        wizard.finished.connect(
+            lambda _result, w=wizard: setattr(self, "_profile_setup_wizard", None)
+            if getattr(self, "_profile_setup_wizard", None) is w else None
+        )
+        wizard.show()
+        wizard.raise_()
+        wizard.activateWindow()
+
+    def _profile_setup_completed(self, _open_chat: bool) -> None:
+        """Reload settings written by the standalone profile wizard."""
+        old_env = dict(self._env)
+        new_env = _read_env()
+        changed_keys = sorted(
+            key for key in set(old_env) | set(new_env)
+            if old_env.get(key) != new_env.get(key)
+        )
+        try:
+            if self._on_apply:
+                self._on_apply({"changed_keys": changed_keys, "source": "profile_setup"})
+            else:
+                import config
+                from ui.shared.theme import apply_app_theme
+
+                config.reload()
+                apply_app_theme()
+            self._env = new_env
+            self._load_values()
+            self._reset_dirty_baseline()
+            self._refresh_search_index()
+        except Exception as exc:  # noqa: BLE001 - show a recoverable failure to the user
+            _settings_log.exception("Profile setup reload failed")
+            QMessageBox.warning(self, t("Profile setup"), str(exc))
 
     def _set_update_status(self, message: str, state: str | None = None, **format_args: object) -> None:
         """Update the Settings updater status label."""
@@ -5733,6 +6653,7 @@ class SettingsDialog(QDialog):
                 ),
             )
 
+        ui_language = _get(self._fields["APP_LANGUAGE"]) or current_app_language()
         for i, blk in enumerate(getattr(self, "_caller_blocks", [])):
             for j, row in enumerate(blk.get("intent_rows", [])):
                 intent = cfg.localize_intent_if_default(
@@ -5743,7 +6664,7 @@ class SettingsDialog(QDialog):
                         "label": _get(row["label"]),
                         "prompt": _get(row["prompt"]),
                     },
-                    assistant_language,
+                    ui_language,
                 )
                 row["key"].setText(str(intent.get("key", "")))
                 row["label"].setText(str(intent.get("label", "")))
@@ -6045,6 +6966,19 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return row
 
+    @staticmethod
+    def _status_action_row(status: QLabel, button: QPushButton) -> QWidget:
+        """Return the shared compact status/action layout used by speech cards."""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        status.setWordWrap(True)
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        layout.addWidget(status, 1)
+        layout.addWidget(button, 0, Qt.AlignmentFlag.AlignTop)
+        return row
+
     def _card(self, title: str) -> tuple[QFrame, QVBoxLayout]:
         """Return a styled card frame and its inner VBoxLayout, with a header label."""
         card = QFrame()
@@ -6288,7 +7222,7 @@ class SettingsDialog(QDialog):
         providers: list[str] | None = None,
     ) -> None:
         """Add fallback section."""
-        add_btn = QPushButton("+ Add fallback")
+        add_btn = QPushButton(t("+ Add fallback"))
         add_wrap = QHBoxLayout()
         add_wrap.setContentsMargins(0, 0, 0, 0)
         add_wrap.addWidget(add_btn)
@@ -6319,7 +7253,7 @@ class SettingsDialog(QDialog):
         if model:
             model_combo.setCurrentText(model)
         else:
-            model_combo.lineEdit().setPlaceholderText("model")
+            model_combo.lineEdit().setPlaceholderText(t("model"))
         provider_combo.currentIndexChanged.connect(
             lambda _: _refresh_model_combo(model_combo, _get(provider_combo))
         )
@@ -6431,12 +7365,21 @@ class SettingsDialog(QDialog):
         ]
         for provider, key_name in _LLM_KEY_MAP:
             if self._secret_configured_fast(key_name):
-                self._add_api_key_row(provider=provider, stored=True)
+                alias_key = f"WISP_CONNECTION_ALIAS_{provider.upper()}"
+                self._add_api_key_row(
+                    provider=provider,
+                    alias=self._env.get(alias_key, ""),
+                    stored=True,
+                )
         try:
             from core.auth import copilot_auth
             stored, _message = copilot_auth.token_status()
             if stored:
-                self._add_api_key_row(provider="copilot", stored=True)
+                self._add_api_key_row(
+                    provider="copilot",
+                    alias=self._env.get("WISP_CONNECTION_ALIAS_COPILOT", ""),
+                    stored=True,
+                )
         except Exception:
             pass
         # No default placeholder row — the list stays empty until the user adds
@@ -6600,20 +7543,28 @@ class SettingsDialog(QDialog):
                 str(getattr(cfg, "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS", 1.0)),
             ),
         )
-        _set(self._fields["HOTKEY_ADD_CONTEXT"],   self._env.get("HOTKEY_ADD_CONTEXT",   cfg.HOTKEY_ADD_CONTEXT))
-        _set(self._fields["HOTKEY_CLEAR_CONTEXT"], self._env.get("HOTKEY_CLEAR_CONTEXT", cfg.HOTKEY_CLEAR_CONTEXT))
-        _set(self._fields["HOTKEY_SNIP"],          self._env.get("HOTKEY_SNIP",          cfg.HOTKEY_SNIP))
-        _set(
-            self._fields["HOTKEY_READ_SELECTION_ALOUD"],
-            self._env.get(
-                "HOTKEY_READ_SELECTION_ALOUD",
-                getattr(cfg, "HOTKEY_READ_SELECTION_ALOUD", ""),
-            ),
-        )
-        _set(
-            self._fields["HOTKEY_VOICE_LIVE"],
-            self._env.get("HOTKEY_VOICE_LIVE", getattr(cfg, "HOTKEY_VOICE_LIVE", "shift+f9")),
-        )
+        for hotkey_name in (
+            "HOTKEY_ADD_CONTEXT",
+            "HOTKEY_CLEAR_CONTEXT",
+            "HOTKEY_SNIP",
+            "HOTKEY_READ_SELECTION_ALOUD",
+            "HOTKEY_VOICE_LIVE",
+        ):
+            _set(
+                self._fields[hotkey_name],
+                self._env.get(hotkey_name, getattr(cfg, hotkey_name, "")),
+            )
+            _set(
+                self._fields[f"{hotkey_name}_2"],
+                self._env.get(f"{hotkey_name}_2", getattr(cfg, f"{hotkey_name}_2", "")),
+            )
+            _set(
+                self._fields[f"{hotkey_name}_ENABLED"],
+                self._env.get(
+                    f"{hotkey_name}_ENABLED",
+                    str(getattr(cfg, f"{hotkey_name}_ENABLED", True)),
+                ),
+            )
         _set(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"], self._env.get(
             "INTENT_CONTEXT_TOGGLE_KEYS",
             getattr(cfg, "INTENT_CONTEXT_TOGGLE_KEYS", "12345678"),
@@ -6757,6 +7708,10 @@ class SettingsDialog(QDialog):
             )
             self._add_caller_block(
                 hotkey     = self._env.get(f"CALLER_{n}_HOTKEY",     cr.get("hotkey", "")),
+                hotkey_2   = self._env.get(f"CALLER_{n}_HOTKEY_2",   cr.get("hotkey_2", "")),
+                enabled    = self._env.get(
+                    f"CALLER_{n}_ENABLED", str(cr.get("enabled", True))
+                ).lower() == "true",
                 label      = self._env.get(f"CALLER_{n}_LABEL",      cr.get("label", "")),
                 paste_back = self._env.get(f"CALLER_{n}_PASTE_BACK", str(cr.get("paste_back", False))).lower() == "true",
                 custom_key = self._env.get(f"CALLER_{n}_CUSTOM_KEY", cr.get("custom_key", "s")),
@@ -6772,12 +7727,27 @@ class SettingsDialog(QDialog):
                 context_screenshot = normalize_screenshot_mode(self._env.get(f"CALLER_{n}_CONTEXT_SCREENSHOT", cr.get("context_screenshot", "off"))),
                 file_access = normalize_file_access_mode(file_access),
                 tools      = caller_tools,
+                display_language = self._env.get(
+                    "APP_LANGUAGE",
+                    getattr(cfg, "APP_LANGUAGE", ""),
+                ) or current_app_language(),
                 intents    = intents,
             )
 
         # Voice (push-to-talk) block
         vc = dict(getattr(cfg, "VOICE_CALLER", {}) or {})
         _set(self._fields["HOTKEY_VOICE"], self._env.get("HOTKEY_VOICE", vc.get("hotkey", cfg.HOTKEY_VOICE)))
+        _set(
+            self._fields["HOTKEY_VOICE_2"],
+            self._env.get("HOTKEY_VOICE_2", vc.get("hotkey_2", getattr(cfg, "HOTKEY_VOICE_2", ""))),
+        )
+        _set(
+            self._fields["HOTKEY_VOICE_ENABLED"],
+            self._env.get(
+                "HOTKEY_VOICE_ENABLED",
+                str(vc.get("enabled", getattr(cfg, "HOTKEY_VOICE_ENABLED", True))),
+            ),
+        )
         _set(
             self._fields["VOICE_REVIEW_TRANSCRIPT"],
             self._env.get(
@@ -6786,6 +7756,17 @@ class SettingsDialog(QDialog):
             ),
         )
         _set(self._fields["HOTKEY_DICTATE"], self._env.get("HOTKEY_DICTATE", cfg.HOTKEY_DICTATE))
+        _set(
+            self._fields["HOTKEY_DICTATE_2"],
+            self._env.get("HOTKEY_DICTATE_2", getattr(cfg, "HOTKEY_DICTATE_2", "")),
+        )
+        _set(
+            self._fields["HOTKEY_DICTATE_ENABLED"],
+            self._env.get(
+                "HOTKEY_DICTATE_ENABLED",
+                str(getattr(cfg, "HOTKEY_DICTATE_ENABLED", True)),
+            ),
+        )
         _set(self._fields["DICTATE_MODE"], self._env.get("DICTATE_MODE", cfg.DICTATE_MODE))
         vb = self._voice_block
         vb["context_ambient"].setChecked(
@@ -7429,12 +8410,32 @@ class SettingsDialog(QDialog):
         if info is None:
             installed = False
             install_status: dict[str, object] = {}
+            cuda_runtime_error = ""
             try:
-                from core import optional_deps
+                from core import optional_deps, updater
 
-                spec_status = optional_deps.optional_package_spec_status("stt")
+                spec_status = optional_deps.optional_package_spec_status("stt", device=device)
                 installed = bool(spec_status.get("valid"))
                 install_status = _read_optional_install_status("STT", optional_deps.OPTIONAL_PACKAGES_DIR)
+                if install_status and (
+                    str(install_status.get("install_contract") or "")
+                    != optional_deps.optional_package_contract("stt", device=device)
+                    or str(install_status.get("app_version") or "") != updater.current_version()
+                ):
+                    # A status produced by an older app/checker must not keep a
+                    # green result after an update. The live package contract
+                    # below remains authoritative.
+                    install_status = {}
+                if sys.platform == "win32" and device.strip().lower() == "cuda":
+                    from core.stt_device import windows_cuda_runtime_status
+
+                    cuda_status = windows_cuda_runtime_status()
+                    if cuda_status.get("checked") and not cuda_status.get("valid"):
+                        names = ", ".join(sorted(str(name) for name in dict(cuda_status.get("errors") or {})))
+                        cuda_runtime_error = (
+                            "STT packages are present, but the Windows CUDA runtime is incomplete or unloadable"
+                            + (f": {names}." if names else ".")
+                        )
             except Exception:
                 installed = False
                 install_status = {}
@@ -7447,7 +8448,11 @@ class SettingsDialog(QDialog):
             ):
                 return
             failed_install_message = _failed_optional_install_message(install_status)
-            if failed_install_message:
+            if cuda_runtime_error:
+                _set_stt_action(False)
+                lbl.setText(_translate_status_message(cuda_runtime_error))
+                lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
+            elif failed_install_message:
                 _set_stt_action(False)
                 lbl.setText(_translate_status_message(failed_install_message))
                 lbl.setStyleSheet("color: #d8932a; font-size: 9pt;")
@@ -7514,6 +8519,11 @@ class SettingsDialog(QDialog):
             language=language,
             beam_size=beam_size,
         )
+        if sys.platform == "win32" and device.lower() == "cuda":
+            message += t(
+                "\n\nWindows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages "
+                "(approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install."
+            )
         answer = QMessageBox.question(
             self,
             t("Install STT"),
@@ -7527,7 +8537,7 @@ class SettingsDialog(QDialog):
         self._install_optional_tts_package(
             test_key="stt_install",
             display_name="STT",
-            packages=optional_deps.stt_install_packages(),
+            packages=optional_deps.stt_install_packages(device),
             remove_artifacts=optional_deps.stt_remove_artifacts(),
             button_attr="_stt_download_btn",
             status_attr="_stt_active_lbl",
@@ -7585,11 +8595,35 @@ class SettingsDialog(QDialog):
 
             progress(f"Installing STT: downloading or loading Whisper model {model}.")
             write_log(f"[stt install] Downloading or loading Whisper model {model} on {device} ({compute_type}).")
-            status = optional_deps.stt_model_status_subprocess(model, device, compute_type)
+
+            def _stt_model_progress(elapsed_seconds: int) -> None:
+                elapsed = _format_duration(elapsed_seconds)
+                message = (
+                    f"Installing STT: Whisper model {model} is still downloading or loading after {elapsed}. "
+                    "The first download can be large."
+                )
+                progress(message)
+                write_log(f"[stt install] {message}")
+
+            status = optional_deps.stt_model_status_subprocess(
+                model,
+                device,
+                compute_type,
+                progress=_stt_model_progress,
+            )
+            for diagnostic in status.get("diagnostics") or []:
+                write_log(f"[stt install] STT diagnostic: {diagnostic}")
             if status.get("error") or status.get("valid") is False:
                 detail = str(status.get("error") or "STT model verification failed.")
                 return False, f"STT package installed, but model download/load failed: {detail}"
             resolved = f"{status.get('model') or model} on {status.get('device') or device} ({status.get('compute') or compute_type})"
+            effective_device = str(status.get("device") or device)
+            effective_compute = str(status.get("compute") or compute_type)
+            if effective_device != device or effective_compute != compute_type:
+                return True, (
+                    f"STT installed and model ready: {resolved}. Requested {device} ({compute_type}); "
+                    f"runtime verification selected {effective_device} ({effective_compute})."
+                )
             return True, f"STT installed and model ready: {resolved}."
         except Exception as exc:  # noqa: BLE001
             write_log(f"[stt install] Model verification failed: {type(exc).__name__}: {exc}")
@@ -7670,9 +8704,9 @@ class SettingsDialog(QDialog):
             if any(self._block_uses_screenshot(blk, "model") for blk in all_blocks):
                 screenshot_targets.add("LLM")
             if any(self._block_uses_screenshot(blk, mode) for blk in self._caller_blocks for mode in ("auto", "model")):
-                screenshot_targets.add("Caller Hotkeys")
+                screenshot_targets.add("Global shortcuts")
             if any(self._block_uses_screenshot(vb, mode) for mode in ("auto", "model")):
-                screenshot_targets.add("Voice (hold to talk)")
+                screenshot_targets.add("Voice shortcuts")
             for warning in screenshot_warnings:
                 add_warning(sorted(screenshot_targets) or ["LLM"], warning)
 
@@ -7702,11 +8736,11 @@ class SettingsDialog(QDialog):
             )
             tool_targets = ["LLM"]
             if caller_tools:
-                tool_targets.append("Caller Hotkeys")
+                tool_targets.append("Global shortcuts")
             if voice_tools:
-                tool_targets.append("Voice (hold to talk)")
+                tool_targets.append("Voice shortcuts")
             if snip_tools:
-                tool_targets.append("Snip screen region")
+                tool_targets.append("Global shortcuts")
             for warning in tool_warnings:
                 add_warning(tool_targets, warning)
         except Exception:
@@ -7736,6 +8770,8 @@ class SettingsDialog(QDialog):
                 apply_app_theme()
                 self._apply_dialog_theme()
                 localize_widget_tree(self)
+                self._refresh_tab_labels()
+                self._on_settings_tab_changed(self._tabs.currentIndex())
                 if self._on_apply:
                     new_env = _read_env()
                     changed_keys = sorted(
@@ -7793,16 +8829,13 @@ class SettingsDialog(QDialog):
         self._apply_settings()
 
     def _confirm(self):
-        """Save settings, apply changes live, then close the dialog."""
+        """Save and apply changed settings while keeping the window open."""
         self._refresh_dirty_state()
         if not self._dirty_keys:
-            # Nothing changed since the dialog opened or the last Apply, so skip
-            # the heavy reload (config.reload, model/TTS/STT reconnect, worker
-            # restart) that would otherwise show a needless loading pass.
-            self.accept()
+            # Nothing changed since the dialog opened or the last save, so skip
+            # the heavy live reload without dismissing Settings.
             return
-        if self._apply_settings():
-            self.accept()
+        self._apply_settings()
 
     @staticmethod
     def _reset_env_keys_for_page(page_name: str, env: dict[str, str]) -> set[str]:
@@ -7815,7 +8848,10 @@ class SettingsDialog(QDialog):
                 "MEMORY_LLM_PROVIDER", "MEMORY_LLM_MODEL", "MEMORY_LLM_FALLBACKS",
                 "TOOL_LLM_MODEL", "CHAT_TOOL_TRACE_UI", "CHAT_REASONING_EFFORT",
                 "WISP_PLANNED_CHUNKING", "WISP_PLANNED_CHUNKING_CHUNKS", "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
-                "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT", "CUSTOM_BASE_URL",
+                "CHAT_AUTO_ELABORATE", "CHAT_ELABORATE_PROMPT",
+            },
+            "Connections": {
+                "CUSTOM_BASE_URL",
                 "GITHUB_CLIENT_ID", "GITHUB_OAUTH_SCOPES",
                 "COPILOT_CLI_URL", "COPILOT_CLI_PATH",
             },
@@ -7837,8 +8873,14 @@ class SettingsDialog(QDialog):
                 "SYSTEM_PROMPT_UTILITY",
             },
             "Keybinds": {
-                "HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE",
-                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_DICTATE", "DICTATE_MODE", "HOTKEY_VOICE_LIVE",
+                "HOTKEY_ADD_CONTEXT", "HOTKEY_ADD_CONTEXT_2", "HOTKEY_ADD_CONTEXT_ENABLED",
+                "HOTKEY_CLEAR_CONTEXT", "HOTKEY_CLEAR_CONTEXT_2", "HOTKEY_CLEAR_CONTEXT_ENABLED",
+                "HOTKEY_SNIP", "HOTKEY_SNIP_2", "HOTKEY_SNIP_ENABLED",
+                "HOTKEY_VOICE", "HOTKEY_VOICE_2", "HOTKEY_VOICE_ENABLED",
+                "HOTKEY_READ_SELECTION_ALOUD", "HOTKEY_READ_SELECTION_ALOUD_2",
+                "HOTKEY_READ_SELECTION_ALOUD_ENABLED",
+                "HOTKEY_DICTATE", "HOTKEY_DICTATE_2", "HOTKEY_DICTATE_ENABLED", "DICTATE_MODE",
+                "HOTKEY_VOICE_LIVE", "HOTKEY_VOICE_LIVE_2", "HOTKEY_VOICE_LIVE_ENABLED",
                 "INTENT_CONTEXT_TOGGLE_KEYS",
                 "INTENT_OVERLAY_TIMEOUT_MS",
                 "SNIP_CONTEXT_AMBIENT", "SNIP_CONTEXT_CLIPBOARD", "SNIP_CONTEXT_DOCUMENTS",
@@ -7869,10 +8911,12 @@ class SettingsDialog(QDialog):
             },
         }
         keys = set(exact.get(page, set()))
+        if page == "Connections":
+            keys.update(key for key in env if key.startswith("WISP_CONNECTION_ALIAS_"))
         if page == "Keybinds":
             keys.update(
                 key for key in env
-                if key.startswith("CALLER_") or key.startswith("VOICE_") or key.startswith("SNIP_")
+                if key.startswith(("CALLER_", "VOICE_", "SNIP_", "HOTKEY_"))
             )
         return keys
 
@@ -7908,14 +8952,20 @@ class SettingsDialog(QDialog):
         if tabs is None:
             return
         page = self._current_tab_name()
+        display_page = next(
+            (title for internal, title, _subtitle in _SETTINGS_PAGE_META if internal == page),
+            page,
+        )
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Icon.Warning)
-        confirm.setWindowTitle("Reset page?")
-        confirm.setText(f"Reset the {page} page to defaults?")
+        confirm.setWindowTitle(t("Reset page?"))
+        confirm.setText(t("Reset the {page} page to defaults?").format(page=t(display_page)))
         confirm.setInformativeText(
-            "Only settings on this page will be reset. API keys, OAuth sign-ins, "
-            "stored memory, conversations, addons, and settings on other pages "
-            "will be left alone."
+            t(
+                "Only settings on this page will be reset. API keys, OAuth sign-ins, "
+                "stored memory, conversations, addons, and settings on other pages "
+                "will be left alone."
+            )
         )
         confirm.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -7993,21 +9043,23 @@ class SettingsDialog(QDialog):
         """
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Icon.Warning)
-        confirm.setWindowTitle("Reset all settings?")
-        confirm.setText("Reset Wisp to its defaults? This cannot be undone.")
+        confirm.setWindowTitle(t("Reset all settings?"))
+        confirm.setText(t("Reset Wisp to its defaults? This cannot be undone."))
         confirm.setInformativeText(
-            "This will permanently:\n"
-            "• DELETE every API key from your OS keychain "
-            "(Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, "
-            "xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, "
-            "Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, "
-            "Cartesia, ElevenLabs, custom)\n"
-            "• ERASE all saved settings (models, hotkeys, prompts, theme, "
-            "callers, and everything else in your .env)\n"
-            "• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)\n\n"
-            "You will need to re-enter your API keys, sign in again, and "
-            "reconfigure the app afterwards.\n\n"
-            "Continue?"
+            t(
+                "This will permanently:\n"
+                "• DELETE every API key from your OS keychain "
+                "(Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, "
+                "xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, "
+                "Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, "
+                "Cartesia, ElevenLabs, custom)\n"
+                "• ERASE all saved settings (models, hotkeys, prompts, theme, "
+                "callers, and everything else in your .env)\n"
+                "• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)\n\n"
+                "You will need to re-enter your API keys, sign in again, and "
+                "reconfigure the app afterwards.\n\n"
+                "Continue?"
+            )
         )
         confirm.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -8224,10 +9276,20 @@ class SettingsDialog(QDialog):
                 self._fields["STT_BACKGROUND_CHUNK_OVERLAP_SECONDS"]
             ),
             "HOTKEY_ADD_CONTEXT":  _get(self._fields["HOTKEY_ADD_CONTEXT"]),
+            "HOTKEY_ADD_CONTEXT_2": _get(self._fields["HOTKEY_ADD_CONTEXT_2"]),
+            "HOTKEY_ADD_CONTEXT_ENABLED": _get(self._fields["HOTKEY_ADD_CONTEXT_ENABLED"]),
             "HOTKEY_CLEAR_CONTEXT": _get(self._fields["HOTKEY_CLEAR_CONTEXT"]),
+            "HOTKEY_CLEAR_CONTEXT_2": _get(self._fields["HOTKEY_CLEAR_CONTEXT_2"]),
+            "HOTKEY_CLEAR_CONTEXT_ENABLED": _get(self._fields["HOTKEY_CLEAR_CONTEXT_ENABLED"]),
             "HOTKEY_SNIP":         _get(self._fields["HOTKEY_SNIP"]),
+            "HOTKEY_SNIP_2":       _get(self._fields["HOTKEY_SNIP_2"]),
+            "HOTKEY_SNIP_ENABLED": _get(self._fields["HOTKEY_SNIP_ENABLED"]),
             "HOTKEY_READ_SELECTION_ALOUD": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD"]),
+            "HOTKEY_READ_SELECTION_ALOUD_2": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD_2"]),
+            "HOTKEY_READ_SELECTION_ALOUD_ENABLED": _get(self._fields["HOTKEY_READ_SELECTION_ALOUD_ENABLED"]),
             "HOTKEY_VOICE_LIVE":   _get(self._fields["HOTKEY_VOICE_LIVE"]),
+            "HOTKEY_VOICE_LIVE_2": _get(self._fields["HOTKEY_VOICE_LIVE_2"]),
+            "HOTKEY_VOICE_LIVE_ENABLED": _get(self._fields["HOTKEY_VOICE_LIVE_ENABLED"]),
             "INTENT_CONTEXT_TOGGLE_KEYS": _get(self._fields["INTENT_CONTEXT_TOGGLE_KEYS"]),
             "INTENT_OVERLAY_TIMEOUT_MS": _get(self._fields["INTENT_OVERLAY_TIMEOUT_MS"]),
             "CONTEXT_BROWSER_MAX_CHARS": _get(self._fields["CONTEXT_BROWSER_MAX_CHARS"]),
@@ -8274,6 +9336,14 @@ class SettingsDialog(QDialog):
         }
         vals.update(self._snip_context_values())
         vals.update(theme_vals)
+        connection_alias_keys = {
+            key for key in self._env if key.startswith("WISP_CONNECTION_ALIAS_")
+        }
+        vals.update({
+            f"WISP_CONNECTION_ALIAS_{_get(row['provider']).strip().upper()}": row["alias"].text().strip()
+            for row in self._api_key_rows
+            if _get(row["provider"]).strip() and row["alias"].text().strip()
+        })
         tts_provider = str(vals.get("TTS_PROVIDER", "")).strip().lower()
         if tts_provider == "kokoro" and not self._kokoro_installed():
             self._refresh_kokoro_install_status()
@@ -8298,8 +9368,12 @@ class SettingsDialog(QDialog):
         vb = self._voice_block
         vals.update({
             "HOTKEY_VOICE": _get(self._fields["HOTKEY_VOICE"]),
+            "HOTKEY_VOICE_2": _get(self._fields["HOTKEY_VOICE_2"]),
+            "HOTKEY_VOICE_ENABLED": _get(self._fields["HOTKEY_VOICE_ENABLED"]),
             "VOICE_REVIEW_TRANSCRIPT": _get(self._fields["VOICE_REVIEW_TRANSCRIPT"]),
             "HOTKEY_DICTATE": _get(self._fields["HOTKEY_DICTATE"]),
+            "HOTKEY_DICTATE_2": _get(self._fields["HOTKEY_DICTATE_2"]),
+            "HOTKEY_DICTATE_ENABLED": _get(self._fields["HOTKEY_DICTATE_ENABLED"]),
             "DICTATE_MODE": _get(self._fields["DICTATE_MODE"]),
             "VOICE_CONTEXT_AMBIENT": str(vb["context_ambient"].isChecked()),
             "VOICE_CONTEXT_CLIPBOARD": str(vb["context_clipboard"].isChecked()),
@@ -8312,21 +9386,29 @@ class SettingsDialog(QDialog):
             "VOICE_TOOLS": format_tool_modes(vb.get("tool_overrides") or {}),
         })
         # Key conflict check (caller hotkeys + special hotkeys)
-        all_keys = (
-            [_get(blk["hotkey"]).strip().lower() for blk in self._caller_blocks]
-            + [
-                _get(self._fields[k]).strip().lower()
-                for k in (
-                    "HOTKEY_ADD_CONTEXT",
-                    "HOTKEY_CLEAR_CONTEXT",
-                    "HOTKEY_SNIP",
-                    "HOTKEY_READ_SELECTION_ALOUD",
-                    "HOTKEY_VOICE",
-                    "HOTKEY_DICTATE",
-                    "HOTKEY_VOICE_LIVE",
+        all_keys: list[str] = []
+        for blk in self._caller_blocks:
+            if blk["enabled"].isChecked():
+                all_keys.extend(
+                    _get(blk[name]).strip().lower()
+                    for name in ("hotkey", "hotkey_2")
                 )
-            ]
-        )
+        for key in (
+            "HOTKEY_ADD_CONTEXT",
+            "HOTKEY_CLEAR_CONTEXT",
+            "HOTKEY_SNIP",
+            "HOTKEY_READ_SELECTION_ALOUD",
+            "HOTKEY_VOICE",
+            "HOTKEY_DICTATE",
+            "HOTKEY_VOICE_LIVE",
+        ):
+            enabled_widget = self._fields.get(f"{key}_ENABLED")
+            if isinstance(enabled_widget, QCheckBox) and not enabled_widget.isChecked():
+                continue
+            all_keys.extend(
+                _get(self._fields[name]).strip().lower()
+                for name in (key, f"{key}_2")
+            )
         non_empty = [k for k in all_keys if k]
         if len(non_empty) != len(set(non_empty)):
             QMessageBox.warning(self, t("Duplicate keys"),
@@ -8335,7 +9417,9 @@ class SettingsDialog(QDialog):
         for i, blk in enumerate(self._caller_blocks):
             n = i + 1
             vals[f"CALLER_{n}_HOTKEY"]        = _get(blk["hotkey"])
-            vals[f"CALLER_{n}_LABEL"]         = _get(blk["label"])
+            vals[f"CALLER_{n}_HOTKEY_2"]      = _get(blk["hotkey_2"])
+            vals[f"CALLER_{n}_ENABLED"]       = str(blk["enabled"].isChecked())
+            vals[f"CALLER_{n}_LABEL"]         = self._caller_label_value(blk)
             vals[f"CALLER_{n}_PASTE_BACK"]    = str(blk["paste_back"].isChecked())  # type: ignore
             vals[f"CALLER_{n}_CUSTOM_KEY"]    = _get(blk["custom_key"])
             vals[f"CALLER_{n}_CUSTOM_LABEL"]  = _get(blk["custom_label"])
@@ -8360,19 +9444,26 @@ class SettingsDialog(QDialog):
             vals[f"CALLER_{n}_INTENT_COUNT"]  = str(len(blk["intent_rows"]))
             for j, row in enumerate(blk["intent_rows"]):
                 m = j + 1
+                raw_intent = {
+                    "key": _get(row["key"]),
+                    "label": _get(row["label"]),
+                    "prompt": _get(row["prompt"]),
+                }
                 intent = cfg.localize_intent_if_default(
                     i,
                     j,
-                    {
-                        "key": _get(row["key"]),
-                        "label": _get(row["label"]),
-                        "prompt": _get(row["prompt"]),
-                    },
+                    raw_intent,
                     vals.get("ASSISTANT_LANGUAGE", ""),
                 )
-                row["key"].setText(str(intent.get("key", "")))
-                row["label"].setText(str(intent.get("label", "")))
-                _set(row["prompt"], str(intent.get("prompt", "")))
+                display_intent = cfg.localize_intent_if_default(
+                    i,
+                    j,
+                    raw_intent,
+                    vals.get("APP_LANGUAGE", "") or current_app_language(),
+                )
+                row["key"].setText(str(display_intent.get("key", "")))
+                row["label"].setText(str(display_intent.get("label", "")))
+                _set(row["prompt"], str(display_intent.get("prompt", "")))
                 vals[f"CALLER_{n}_INTENT_{m}_KEY"]    = str(intent.get("key", ""))
                 vals[f"CALLER_{n}_INTENT_{m}_LABEL"]  = str(intent.get("label", ""))
                 vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = str(intent.get("prompt", ""))
@@ -8389,6 +9480,7 @@ class SettingsDialog(QDialog):
         _write_env(
             vals,
             remove_keys=set(secret_store.API_KEY_NAMES)
+            | connection_alias_keys
             | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS", "TOOL_FILE_MODE"},
         )
         if startup_error:
@@ -8417,6 +9509,7 @@ class SettingsDialog(QDialog):
 _PROVIDER_KEY_NAMES: dict[str, str] = {
     "groq":       "GROQ_API_KEY",
     "openai":     "OPENAI_API_KEY",
+    "anthropic":  "ANTHROPIC_API_KEY",
     "google":     "GOOGLE_API_KEY",
     "deepseek":   "DEEPSEEK_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
@@ -8822,7 +9915,7 @@ def _desc_label(title: str, description: str) -> QLabel:
 def _tooltip_label(text: str, tooltip: str) -> QLabel:
     """Build a translated form/grid label that owns a settings tooltip."""
     lbl = QLabel(t(text))
-    lbl.setToolTip(tooltip)
+    lbl.setToolTip(t(tooltip))
     return lbl
 
 
@@ -9005,6 +10098,26 @@ def _optional_install_plan_command(
         "app_language": app_language,
         **(external_plan_extra or {}),
     }
+    spec_key = str(plan.get("spec_key") or {
+        "stt": "stt",
+        "kokoro": "kokoro",
+        "elevenlabs": "elevenlabs",
+        "live voice": "live_voice",
+    }.get(display_name.strip().lower(), ""))
+    if spec_key:
+        plan["spec_key"] = spec_key
+        spec_device = (
+            plan.get("kokoro_install_device")
+            if spec_key == "kokoro"
+            else plan.get("stt_device")
+            if spec_key == "stt"
+            else None
+        )
+        plan["install_contract"] = optional_deps.optional_package_contract(
+            spec_key,
+            device=str(spec_device) if spec_device is not None else None,
+        )
+    plan["app_version"] = updater.current_version()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
     return [*command, "--plan", str(plan_path)], root, log_path, status_path
@@ -9275,7 +10388,7 @@ def _translate_status_message(message: str) -> str:
         (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),
         (r"^STT model configured: (?P<model>.+)\. faster-whisper is installed\.$", "STT model configured: {model}. faster-whisper is installed."),
         (r"^STT model configured: (?P<model>.+), but faster-whisper is not installed\.$", "STT model configured: {model}, but faster-whisper is not installed."),
-        (r"^STT model configured: (?P<model>.+), but faster-whisper failed to import: (?P<error>.+)$", "STT model configured: {model}, but faster-whisper failed to import: {error}"),
+        (r"^STT model configured: (?P<model>.+), but STT verification failed: (?P<error>.+)$", "STT model configured: {model}, but STT verification failed: {error}"),
         (r"^STT model configured: (?P<model>.+)\.$", "STT model configured: {model}."),
         (r"^(?P<count>\d+) hotkeys configured\.$", "{count} hotkeys configured."),
         (r"^Accessibility permission: (?P<value>.+)\.$", "Accessibility permission: {value}."),

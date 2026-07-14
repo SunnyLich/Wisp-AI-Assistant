@@ -833,6 +833,10 @@ Let model decide — expose web search and browser page fetch tools.</source>
       <translation>安裝程式失敗，結束代碼 {code}。</translation>
     </message>
     <message>
+      <source>Not enough free disk space while extracting the downloaded packages. Free at least 15 GB on the drive containing the uv cache and Wisp optional packages, then retry. For a much smaller download, select CPU for Kokoro instead of Auto or GPU.</source>
+      <translation>解壓縮下載的套件時，可用磁碟空間不足。請在包含 uv 快取和 Wisp 選用套件的磁碟機上釋放至少 15 GB 空間，然後重試。若要大幅減少下載量，請為 Kokoro 選擇 CPU，而不是「自動」或 GPU。</translation>
+    </message>
+    <message>
       <source>Cancel the installer before closing this window.</source>
       <translation>關閉此視窗前請先取消安裝程式。</translation>
     </message>
@@ -2459,16 +2463,12 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>TTS 提供者</translation>
     </message>
     <message>
-      <source>Speak assistant replies automatically</source>
+      <source>Read assistant replies aloud automatically</source>
       <translation>自動朗讀助理回覆</translation>
     </message>
     <message>
       <source>When off, configured voices are still available for read-selection-aloud and Test TTS.</source>
       <translation>關閉時，已設定的語音仍可用於朗讀選取文字和測試 TTS。</translation>
-    </message>
-    <message>
-      <source>Auto-speak replies</source>
-      <translation>自動朗讀回覆</translation>
     </message>
     <message>
       <source>TTS hold speed</source>
@@ -3427,8 +3427,8 @@ Continue?</source>
       <translation>kokoro&gt;=0.9.4、soundfile、英語語音模型</translation>
     </message>
     <message>
-      <source>The GPU install may download several GB and can take a long time. It requires an NVIDIA GPU and compatible driver. </source>
-      <translation>GPU 安裝可能會下載數 GB 資料，並且可能需要很長時間。它需要 NVIDIA GPU 和相容的驅動程式。 </translation>
+      <source>The GPU install downloads several GB and can temporarily require at least 15 GB free for the uv cache, extraction, and Wisp's staging folder. It requires an NVIDIA GPU and compatible driver. </source>
+      <translation>GPU 安裝會下載數 GB 資料，且 uv 快取、解壓縮和 Wisp 暫存資料夾可能暫時需要至少 15 GB 可用空間。它需要 NVIDIA GPU 和相容的驅動程式。 </translation>
     </message>
     <message>
       <source>{action_note}Packages: {package_label}
@@ -3632,6 +3632,308 @@ Continue?</source>
       <source>Live voice installed. Press the toggle hotkey to start a conversation.</source>
       <translation>即時語音已安裝。按下切換快速鍵即可開始對話。</translation>
     </message>
+    <message><source>Welcome to Wisp</source><translation>歡迎使用 Wisp</translation></message>
+    <message><source>Back</source><translation>返回</translation></message>
+    <message><source>Finish setup</source><translation>完成設定</translation></message>
+    <message><source>Step {current} of {total}</source><translation>第 {current} 步，共 {total} 步</translation></message>
+    <message><source>Choose a language</source><translation>選擇語言</translation></message>
+    <message><source>Choose Wisp’s interface language and the language you want the assistant to use in its replies. You can change both later in Settings.</source><translation>選擇 Wisp 的介面語言，以及希望助手在回覆時使用的語言。稍後可在「設定」中變更兩者。</translation></message>
+    <message><source>Wisp interface language</source><translation>Wisp 介面語言</translation></message>
+    <message><source>Assistant response language</source><translation>助手回覆語言</translation></message>
+    <message><source>Let’s set up Wisp</source><translation>開始設定 Wisp</translation></message>
+    <message><source>You can change every choice later in Settings. Start simple, or choose advanced if you already know your preferred AI provider.</source><translation>稍後可在「設定」中變更所有選項。可先使用簡易設定；若已有偏好的 AI 供應商，也可選擇進階設定。</translation></message>
+    <message><source>Simple setup — get a working assistant quickly</source><translation>簡易設定 — 快速開始使用助手</translation></message>
+    <message><source>Advanced setup — choose provider and optional API key</source><translation>進階設定 — 選擇供應商和可選的 API 金鑰</translation></message>
+    <message><source>What should Wisp call you?</source><translation>Wisp 應該如何稱呼你？</translation></message>
+    <message><source>This creates your local profile. Your name stays on this device and helps Wisp make conversations feel a little more natural.</source><translation>這會建立你的本機個人資料。姓名只會保留在此裝置上，讓 Wisp 的對話更自然。</translation></message>
+    <message><source>Your name</source><translation>你的姓名</translation></message>
+    <message><source>Choose your provider</source><translation>選擇你的供應商</translation></message>
+    <message><source>Optional. Choose any provider Wisp supports, enter a model yourself, and add a key now or later. Keys are saved in your operating system’s secure keychain, never in your profile file.</source><translation>可選。選擇 Wisp 支援的任一供應商，自行輸入模型，並可現在或稍後加入金鑰。金鑰會保存在作業系統的安全鑰匙圈中，絕不寫入個人資料檔案。</translation></message>
+    <message><source>I’ll choose later</source><translation>稍後選擇</translation></message>
+    <message><source>Model name</source><translation>模型名稱</translation></message>
+    <message><source>Custom OpenAI-compatible endpoint URL, e.g. http://localhost:1234/v1</source><translation>自訂的 OpenAI 相容端點 URL，例如 http://localhost:1234/v1</translation></message>
+    <message><source>API key (optional)</source><translation>API 金鑰（可選）</translation></message>
+    <message><source>Try a sign-in instead</source><translation>改用登入</translation></message>
+    <message><source>A ChatGPT Plus or Pro subscription can be connected without pasting an API key. This is optional — you can also finish setup and configure a provider later.</source><translation>可連結 ChatGPT Plus 或 Pro 訂閱，無須貼上 API 金鑰。這是可選操作；也可完成設定後再設定供應商。</translation></message>
+    <message><source>Not connected</source><translation>未連結</translation></message>
+    <message><source>Sign in with ChatGPT</source><translation>使用 ChatGPT 登入</translation></message>
+    <message><source>Voice preferences</source><translation>語音偏好</translation></message>
+    <message><source>Choose what you would like to try first. Local options use on-device speech models; cloud options stay as a preference until you add the matching credentials in Settings.</source><translation>選擇想先嘗試的功能。本機選項使用裝置上的語音模型；雲端選項會保留為偏好，直到你在「設定」中加入相應憑證。</translation></message>
+    <message><source>Would you like Wisp to speak replies?</source><translation>想讓 Wisp 朗讀回覆嗎？</translation></message>
+    <message><source>Would you like to speak to Wisp?</source><translation>想對 Wisp 說話嗎？</translation></message>
+    <message><source>Local voice — Kokoro (may download on first use)</source><translation>本機語音 — Kokoro（首次使用時可能下載）</translation></message>
+    <message><source>Cloud voice — configure in Settings</source><translation>雲端語音 — 在「設定」中設定</translation></message>
+    <message><source>Local speech recognition — Whisper (may download on first use)</source><translation>本機語音辨識 — Whisper（首次使用時可能下載）</translation></message>
+    <message><source>Cloud/live voice — configure in Settings</source><translation>雲端／即時語音 — 在「設定」中設定</translation></message>
+    <message><source>You’re ready to try Wisp</source><translation>現在可以試用 Wisp 了</translation></message>
+    <message><source>Your profile is ready. Use the floating icon whenever you need help, and open chat only when it suits the task. You can revisit every choice in Settings.</source><translation>個人資料已準備就緒。需要協助時可使用浮動圖示；僅在適合任務時開啟聊天。所有選項都可在「設定」中重新調整。</translation></message>
+    <message><source>Open a new chat after setup</source><translation>設定後開啟新聊天</translation></message>
+    <message><source>• Click the floating icon, or press {hotkey}, to ask about selected text or your current context.
+• Use the chat window for longer conversations, files, and history when you want it.
+• If you chose local speech, use F9 to talk and F7 to read selected text aloud after its first download.</source><translation>• 點擊浮動圖示，或按 {hotkey} 詢問所選文字或目前上下文。
+• 需要時可使用聊天視窗進行較長對話、處理檔案和查看歷史記錄。
+• 若選擇本機語音，首次下載後可按 F9 說話，按 F7 朗讀選定文字。</translation></message>
+    <message><source>Ollama runs locally and does not use an API key. Enter the local model name you have installed.</source><translation>Ollama 在本機執行且不使用 API 金鑰。請輸入已安裝的本機模型名稱。</translation></message>
+    <message><source>Model names are editable. You can leave the key blank and add it later in Settings.</source><translation>模型名稱可編輯。可將金鑰留空，之後在「設定」中加入。</translation></message>
+    <message><source>No provider will be changed yet. The ChatGPT sign-in on the next step is another option.</source><translation>暫不變更供應商。下一步也可選擇登入 ChatGPT。</translation></message>
+    <message><source>Profile setup</source><translation>個人資料設定</translation></message>
+    <message><source>Run the guided profile setup again to update your languages, theme, provider, and voice preferences.</source><translation>再次執行引導式個人資料設定，以更新語言、主題、供應商和語音偏好。</translation></message>
+    <message><source>Run profile setup</source><translation>執行個人資料設定</translation></message>
+    <message><source>Open the guided first-time setup without resetting your other settings.</source><translation>開啟引導式首次設定，而不重設其他設定。</translation></message>
+    <message><source>Apply settings first</source><translation>請先套用設定</translation></message>
+    <message><source>Apply or discard your pending Settings changes before running profile setup.</source><translation>執行個人資料設定前，請套用或捨棄待處理的設定變更。</translation></message>
+    <message><source>Opening your browser… finish the sign-in there, then return here.</source><translation>正在開啟瀏覽器…請在瀏覽器中完成登入，然後返回此處。</translation></message>
+    <message><source>Sign-in could not start: {error}</source><translation>登入無法啟動：{error}</translation></message>
+    <message><source>Connected. Wisp will use your ChatGPT sign-in unless you selected another provider.</source><translation>已連結。除非你選擇了其他供應商，Wisp 將使用你的 ChatGPT 登入。</translation></message>
+    <message><source>Connected</source><translation>已連結</translation></message>
+    <message><source>Still not connected. You can continue and try again from Settings later.</source><translation>仍未連結。你可以繼續，稍後在「設定」中重試。</translation></message>
+    <message><source>Profile saved, but the key could not be stored: {error}</source><translation>個人資料已儲存，但無法儲存金鑰：{error}</translation></message>
+    <message><source>Enter a model name</source><translation>請輸入模型名稱</translation></message>
+    <message><source>  History</source><translation>  歷史記錄</translation></message>
+    <message><source>  No history yet.</source><translation>  尚無歷史記錄。</translation></message>
+    <message><source>  Selected conversation</source><translation>  已選對話</translation></message>
+    <message><source>+ Add fallback</source><translation>+ 新增備援項目</translation></message>
+    <message><source>+ New project...</source><translation>+ 新增專案...</translation></message>
+    <message><source>Add files or images</source><translation>新增檔案或圖片</translation></message>
+    <message><source>Add files or images as context</source><translation>新增檔案或圖片作為上下文</translation></message>
+    <message><source>Add to project</source><translation>新增至專案</translation></message>
+    <message><source>Addon</source><translation>附加元件</translation></message>
+    <message><source>Addons are Python packages in the add-ons folder. Portable builds create this folder next to Wisp.exe when possible.</source><translation>附加元件是附加元件資料夾中的 Python 套件。可攜式版本會盡可能在 Wisp.exe 旁建立此資料夾。</translation></message>
+    <message><source>Agent Task Cancelled</source><translation>代理任務已取消</translation></message>
+    <message><source>Agent Task Failed</source><translation>代理任務失敗</translation></message>
+    <message><source>Agent Task Finished</source><translation>代理任務已完成</translation></message>
+    <message><source>Agent Task Running</source><translation>代理任務正在執行</translation></message>
+    <message><source>Agent permission</source><translation>代理權限</translation></message>
+    <message><source>Agent permission resolved</source><translation>代理權限已處理</translation></message>
+    <message><source>All files</source><translation>所有檔案</translation></message>
+    <message><source>Ask before write</source><translation>寫入前詢問</translation></message>
+    <message><source>Attached</source><translation>已附加</translation></message>
+    <message><source>Attachments</source><translation>附件</translation></message>
+    <message><source>Branch from here</source><translation>從此處建立分支</translation></message>
+    <message><source>Choose which installed/addon tools snip queries may use</source><translation>選擇截圖查詢可使用的已安裝工具或附加元件工具</translation></message>
+    <message><source>Context included with this message (display only - not part of the reply).</source><translation>此訊息附帶的上下文（僅供顯示，不屬於回覆內容）。</translation></message>
+    <message><source>Continuing</source><translation>正在繼續</translation></message>
+    <message><source>Conversation options</source><translation>對話選項</translation></message>
+    <message><source>Copy full bubble text</source><translation>複製氣泡的完整文字</translation></message>
+    <message><source>Copy selected text</source><translation>複製所選文字</translation></message>
+    <message><source>Delete</source><translation>刪除</translation></message>
+    <message><source>Delete conversation</source><translation>刪除對話</translation></message>
+    <message><source>Delete this conversation? This cannot be undone.</source><translation>要刪除此對話嗎？此操作無法復原。</translation></message>
+    <message><source>Elapsed {elapsed}</source><translation>經過時間 {elapsed}</translation></message>
+    <message><source>Exact words spoken in the reference audio</source><translation>參考音訊中說出的確切文字</translation></message>
+    <message><source>Experimental. For eligible overlay replies, privately plans the answer and emits a few stable visible parts. Tool, file, image, and history requests keep the normal path.</source><translation>實驗性功能。對於符合條件的浮動視窗回覆，會私下規劃答案並輸出幾個穩定的可見部分。工具、檔案、圖片和歷史記錄請求仍使用一般流程。</translation></message>
+    <message><source>Final report is ready.</source><translation>最終報告已就緒。</translation></message>
+    <message><source>Final report is ready. Log:</source><translation>最終報告已就緒。記錄：</translation></message>
+    <message><source>Finished. Log:</source><translation>已完成。記錄：</translation></message>
+    <message><source>Installed addon:</source><translation>已安裝附加元件：</translation></message>
+    <message><source>Live voice currently supports Gemini Live through the Google provider.</source><translation>即時語音目前透過 Google 提供者支援 Gemini Live。</translation></message>
+    <message><source>Memory tokens are estimated after the prompt is known.</source><translation>將在提示詞確定後估算記憶使用的權杖數。</translation></message>
+    <message><source>Message options</source><translation>訊息選項</translation></message>
+    <message><source>Minimum combined prompt/context length before planned chunking can run.</source><translation>啟用計畫分段前，提示詞和上下文合計所需的最小長度。</translation></message>
+    <message><source>New project</source><translation>新增專案</translation></message>
+    <message><source>Nudge queued for</source><translation>提醒已排入佇列，目標：</translation></message>
+    <message><source>Number of visible parts, clamped to 2-4.</source><translation>可見部分的數量，限制為 2 到 4。</translation></message>
+    <message><source>Only settings on this page will be reset. API keys, OAuth sign-ins, stored memory, conversations, addons, and settings on other pages will be left alone.</source><translation>只會重設此頁面上的設定。API 金鑰、OAuth 登入、已儲存的記憶、對話、附加元件和其他頁面上的設定均不受影響。</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Provider default sends no explicit reasoning field; unsupported routes automatically retry without it.</source><translation>聊天使用的 OpenAI Responses 推理強度。使用提供者預設值時不會明確傳送推理欄位；不支援的路由會自動在不含該欄位的情況下重試。</translation></message>
+    <message><source>Permission changes queued</source><translation>權限變更已排入佇列</translation></message>
+    <message><source>Permission needed:</source><translation>需要權限：</translation></message>
+    <message><source>Permissions</source><translation>權限</translation></message>
+    <message><source>Pick a provider first</source><translation>請先選擇提供者</translation></message>
+    <message><source>Pin</source><translation>釘選</translation></message>
+    <message><source>Please review the attached file.</source><translation>請檢視附件。</translation></message>
+    <message><source>Project for new chats (memory is scoped per project)</source><translation>新聊天使用的專案（記憶依專案區隔）</translation></message>
+    <message><source>Project name:</source><translation>專案名稱：</translation></message>
+    <message><source>Region snips already attach the selected image; extra screenshot context is disabled.</source><translation>區域截圖已附加所選圖片，因此額外的螢幕截圖上下文已停用。</translation></message>
+    <message><source>Remove all messages after this one? This cannot be undone.</source><translation>要刪除此訊息之後的所有訊息嗎？此操作無法復原。</translation></message>
+    <message><source>Rename</source><translation>重新命名</translation></message>
+    <message><source>Rename conversation</source><translation>重新命名對話</translation></message>
+    <message><source>Reset Wisp to its defaults? This cannot be undone.</source><translation>要將 Wisp 恢復為預設設定嗎？此操作無法復原。</translation></message>
+    <message><source>Reset all settings?</source><translation>要重設所有設定嗎？</translation></message>
+    <message><source>Reset page?</source><translation>要重設此頁面嗎？</translation></message>
+    <message><source>Reset the {page} page to defaults?</source><translation>要將「{page}」頁面恢復為預設設定嗎？</translation></message>
+    <message><source>Restart app now</source><translation>立即重新啟動應用程式</translation></message>
+    <message><source>Resume</source><translation>繼續</translation></message>
+    <message><source>Rewind conversation</source><translation>回溯對話</translation></message>
+    <message><source>Rewind current chat to here</source><translation>將目前聊天回溯到此處</translation></message>
+    <message><source>Show temporary progress lines in Chat that identify the tool loop and tool calls. Useful for testing; leave off for normal use.</source><translation>在聊天中顯示用來識別工具迴圈和工具呼叫的暫時進度列。此功能適合測試；一般使用時請保持關閉。</translation></message>
+    <message><source>Starting…</source><translation>正在啟動…</translation></message>
+    <message><source>Supported files</source><translation>支援的檔案</translation></message>
+    <message><source>The run is still working.</source><translation>任務仍在執行。</translation></message>
+    <message><source>This context is fetched when you send the message, so this token cost is not known yet.</source><translation>此上下文會在你傳送訊息時擷取，因此目前還不知道其權杖成本。</translation></message>
+    <message><source>This discards every agent and communication you have configured here and restores the default Coordinator / Builder / Reviewer setup. This cannot be undone.</source><translation>這會捨棄你在此處設定的所有代理和通訊，並恢復預設的協調者 / 建構者 / 審閱者設定。此操作無法復原。</translation></message>
+    <message><source>This will permanently:&#10;• DELETE every API key from your OS keychain (Groq, OpenAI, Anthropic, Google, DeepSeek, OpenRouter, Mistral, xAI, Together, Cerebras, Z.AI, NVIDIA, SambaNova, GitHub Models, Hugging Face, Chutes, Vercel, Fireworks, Cohere, AI21, Nebius, Cartesia, ElevenLabs, custom)&#10;• ERASE all saved settings (models, hotkeys, prompts, theme, callers, and everything else in your .env)&#10;• SIGN YOU OUT of all OAuth logins (ChatGPT, GitHub, GitHub Copilot)&#10;&#10;You will need to re-enter your API keys, sign in again, and reconfigure the app afterwards.&#10;&#10;Continue?</source><translation>這將永久執行以下操作：&#10;• 從作業系統鑰匙串刪除所有 API 金鑰（Groq、OpenAI、Anthropic、Google、DeepSeek、OpenRouter、Mistral、xAI、Together、Cerebras、Z.AI、NVIDIA、SambaNova、GitHub Models、Hugging Face、Chutes、Vercel、Fireworks、Cohere、AI21、Nebius、Cartesia、ElevenLabs、自訂）&#10;• 清除所有已儲存的設定（模型、快速鍵、提示詞、主題、呼叫項目以及 .env 中的所有其他內容）&#10;• 登出所有 OAuth 登入（ChatGPT、GitHub、GitHub Copilot）&#10;&#10;之後，你需要重新輸入 API 金鑰、再次登入並重新設定應用程式。&#10;&#10;要繼續嗎？</translation></message>
+    <message><source>Title:</source><translation>標題：</translation></message>
+    <message><source>Token estimate</source><translation>權杖估算</translation></message>
+    <message><source>Unpin</source><translation>取消釘選</translation></message>
+    <message><source>When enabled, opening Chat after a short overlay reply asks the model for a fuller explanation.</source><translation>啟用後，在浮動視窗提供簡短回覆後開啟聊天，會要求模型提供更完整的說明。</translation></message>
+    <message><source>Will pause after current turn</source><translation>將在目前輪次結束後暫停</translation></message>
+    <message><source>Wisp</source><translation>Wisp</translation></message>
+    <message><source>Wisp Reply</source><translation>Wisp 回覆</translation></message>
+    <message><source>blank = account default voice</source><translation>留白 = 帳戶預設語音</translation></message>
+    <message><source>model</source><translation>模型</translation></message>
+    <message><source>server-specific model name</source><translation>伺服器專用模型名稱</translation></message>
+    <message><source>server-specific voice name</source><translation>伺服器專用語音名稱</translation></message>
+    <message><source>source</source><translation>來源</translation></message>
+    <message><source>unknown</source><translation>未知</translation></message>
+    <message><source>＋ New project…</source><translation>＋ 新增專案…</translation></message>
+    <message><source>UI Lab label</source><translation>UI Lab 標籤</translation></message>
+    <message><source>Tooltip shown on hover</source><translation>游標停留時顯示的提示</translation></message>
+    <message><source>Popup text</source><translation>彈出文字</translation></message>
+    <message><source>Bold</source><translation>粗體</translation></message>
+    <message><source>Italic</source><translation>斜體</translation></message>
+    <message><source>Underline</source><translation>底線</translation></message>
+    <message><source>Strikethrough</source><translation>刪除線</translation></message>
+    <message><source>Pick text color</source><translation>選擇文字顏色</translation></message>
+    <message><source>Pick highlight color</source><translation>選擇醒目提示顏色</translation></message>
+    <message><source>Highlight color</source><translation>醒目提示顏色</translation></message>
+    <message><source>voice name</source><translation>語音名稱</translation></message>
+    <message><source>Primary model</source><translation>主要模型</translation></message>
+    <message><source>Fallback models</source><translation>備援模型</translation></message>
+    <message><source>↓ Drop here</source><translation>↓ 拖放到此處</translation></message>
+    <message><source>API URL</source><translation>API URL</translation></message>
+    <message><source>Applying update. Wisp will close now; installing and reopening can take a few minutes.</source><translation>正在套用更新。Wisp 現在將關閉；安裝並重新開啟可能需要幾分鐘。</translation></message>
+    <message><source>Checking for updates...</source><translation>正在檢查更新...</translation></message>
+    <message><source>Choose Agent Scope Folder</source><translation>選擇代理範圍資料夾</translation></message>
+    <message><source>Conversation provider</source><translation>對話提供者</translation></message>
+    <message><source>Downloaded update file is no longer available.</source><translation>下載的更新檔案已無法使用。</translation></message>
+    <message><source>Downloading update...</source><translation>正在下載更新...</translation></message>
+    <message><source>ElevenLabs Model</source><translation>ElevenLabs 模型</translation></message>
+    <message><source>ElevenLabs Voice ID</source><translation>ElevenLabs 語音 ID</translation></message>
+    <message><source>ElevenLabs is installed.</source><translation>ElevenLabs 已安裝。</translation></message>
+    <message><source>ElevenLabs is not installed. If the exe build skipped it because the build path was too long, install it here.</source><translation>ElevenLabs 尚未安裝。如果 EXE 建置因建置路徑過長而略過了它，請在此處安裝。</translation></message>
+    <message><source>Kokoro is installed. A voice model update is available; click Update voice model to fetch it.</source><translation>Kokoro 已安裝。有可用的語音模型更新；按一下「更新語音模型」即可取得。</translation></message>
+    <message><source>No model configured.</source><translation>尚未設定模型。</translation></message>
+    <message><source>No update is ready to download.</source><translation>沒有可供下載的更新。</translation></message>
+    <message><source>Number of visible parts for eligible planned replies. Runtime clamps this to 2-4.</source><translation>符合條件的計畫回覆所包含的可見部分數量。執行階段會將其限制為 2 到 4。</translation></message>
+    <message><source>OpenAI Model</source><translation>OpenAI 模型</translation></message>
+    <message><source>OpenAI Responses reasoning effort for chat. Unsupported models are retried without this field.</source><translation>聊天使用的 OpenAI Responses 推理強度。不支援的模型會在不含此欄位的情況下重試。</translation></message>
+    <message><source>OpenAI Voice</source><translation>OpenAI 語音</translation></message>
+    <message><source>Output sample rate (Hz)</source><translation>輸出取樣率 (Hz)</translation></message>
+    <message><source>Playback sample rate (Hz)</source><translation>播放取樣率 (Hz)</translation></message>
+    <message><source>Reference audio</source><translation>參考音訊</translation></message>
+    <message><source>Reference language</source><translation>參考語言</translation></message>
+    <message><source>Reference transcript</source><translation>參考文字稿</translation></message>
+    <message><source>Reply language</source><translation>回覆語言</translation></message>
+    <message><source>Wisp is up to date.</source><translation>Wisp 已是最新版本。</translation></message>
+    <message><source>Add a task title.</source><translation>請新增任務標題。</translation></message>
+    <message><source>Describe the task objective.</source><translation>請描述任務目標。</translation></message>
+    <message><source>Choose a model provider.</source><translation>請選擇模型提供者。</translation></message>
+    <message><source>Add a model name.</source><translation>請新增模型名稱。</translation></message>
+    <message><source>Add at least one agent.</source><translation>請至少新增一個代理。</translation></message>
+    <message><source>Agent names must be unique.</source><translation>代理名稱不得重複。</translation></message>
+    <message><source>Every communication must reference existing agents.</source><translation>每項通訊都必須參照現有代理。</translation></message>
+    <message><source>+ Add connection</source><translation>+ 新增連線</translation></message>
+    <message><source>A private desktop assistant overlay with configurable models, voice, context, and tools.</source><translation>一款可設定模型、語音、上下文與工具的私密桌面助理浮層。</translation></message>
+    <message><source>Add connection</source><translation>新增連線</translation></message>
+    <message><source>Add each provider once, or use aliases for multiple accounts. Search and filtering keep large connection lists manageable.</source><translation>每個提供者新增一次；若有多個帳戶，可使用別名。搜尋與篩選可輕鬆管理較長的連線清單。</translation></message>
+    <message><source>Add fallback</source><translation>新增備援模型</translation></message>
+    <message><source>Add fallback model</source><translation>新增備援模型</translation></message>
+    <message><source>Add fallback to {route}</source><translation>為 {route} 新增備援模型</translation></message>
+    <message><source>All connections</source><translation>所有連線</translation></message>
+    <message><source>Choose a configured connection, then search its models or enter an exact model name.</source><translation>選擇已設定的連線，接著搜尋其模型或輸入確切的模型名稱。</translation></message>
+    <message><source>Choose a provider</source><translation>選擇提供者</translation></message>
+    <message><source>Cloud provider</source><translation>雲端提供者</translation></message>
+    <message><source>Cloud providers</source><translation>雲端提供者</translation></message>
+    <message><source>Connection</source><translation>連線</translation></message>
+    <message><source>Live voice needs a Google API key. Add one in Connections first.</source><translation>即時語音需要 Google API 金鑰。請先在「連線」中新增。</translation></message>
+    <message><source>Local and custom</source><translation>本機與自訂</translation></message>
+    <message><source>Local or self-hosted provider</source><translation>本機或自行託管的提供者</translation></message>
+    <message><source>No catalog match. The text above will be used as a custom model name.</source><translation>目錄中沒有相符項目。上方文字將作為自訂模型名稱。</translation></message>
+    <message><source>No matching connections.</source><translation>沒有相符的連線。</translation></message>
+    <message><source>Reset only the currently selected settings page to defaults</source><translation>僅將目前選取的設定頁面重設為預設值</translation></message>
+    <message><source>Save changes</source><translation>儲存變更</translation></message>
+    <message><source>Search all settings...</source><translation>搜尋所有設定...</translation></message>
+    <message><source>Search models or enter a model name...</source><translation>搜尋模型或輸入模型名稱...</translation></message>
+    <message><source>Search providers or aliases...</source><translation>搜尋提供者或別名...</translation></message>
+    <message><source>Search providers...</source><translation>搜尋提供者...</translation></message>
+    <message><source>Search the provider catalog. You can add multiple accounts using aliases.</source><translation>搜尋提供者目錄。你可以使用別名新增多個帳戶。</translation></message>
+    <message><source>Show fewer</source><translation>收合</translation></message>
+    <message><source>Show {count} more</source><translation>再顯示 {count} 個</translation></message>
+    <message><source>The credential or local endpoint used by this fallback.</source><translation>此備援模型使用的憑證或本機端點。</translation></message>
+    <message><source>Uses the Google API key from Connections.</source><translation>使用「連線」中的 Google API 金鑰。</translation></message>
+    <message><source>Uses your OpenAI API key from Connections.</source><translation>使用「連線」中的 OpenAI API 金鑰。</translation></message>
+    <message><source>{count} catalog models</source><translation>{count} 個目錄模型</translation></message>
+    <message><source>Appearance, languages, privacy, and everyday behavior.</source><translation>外觀、語言、隱私與日常行為。</translation></message>
+    <message><source>Connections</source><translation>連線</translation></message>
+    <message><source>Provider sign-ins, API keys, and custom endpoints.</source><translation>提供者登入、API 金鑰與自訂端點。</translation></message>
+    <message><source>Choose primary and fallback models for each purpose.</source><translation>為每種用途選擇主要與備援模型。</translation></message>
+    <message><source>Voice &amp; audio</source><translation>語音與音訊</translation></message>
+    <message><source>Playback, text to speech, transcription, and live conversation.</source><translation>播放、文字轉語音、語音轉寫與即時對話。</translation></message>
+    <message><source>Shortcuts</source><translation>快捷鍵</translation></message>
+    <message><source>Keyboard controls, caller actions, context, and tool access.</source><translation>鍵盤控制、呼叫操作、上下文與工具存取。</translation></message>
+    <message><source>Prompts &amp; context</source><translation>提示詞與上下文</translation></message>
+    <message><source>Instructions that shape how Wisp responds.</source><translation>決定 Wisp 如何回覆的指令。</translation></message>
+    <message><source>Context limits, local file access, memory, and timing.</source><translation>上下文限制、本機檔案存取、記憶與計時。</translation></message>
+    <message><source>About</source><translation>關於</translation></message>
+    <message><source>Version, updates, and uninstall options.</source><translation>版本、更新與解除安裝選項。</translation></message>
+    <message><source>Text to speech</source><translation>文字轉語音</translation></message>
+    <message><source>Live conversation</source><translation>即時對話</translation></message>
+    <message><source>Load or create a profile for common Wisp setups. Review changes before saving.</source><translation>為常用的 Wisp 設定載入或建立設定檔。儲存前請檢查變更。</translation></message>
+    <message><source>{profile} profile created. Review changes, then Save changes to use it.</source><translation>已建立 {profile} 設定檔。檢查變更後，選擇「儲存變更」以使用它。</translation></message>
+    <message><source>{profile} profile selected. Review changes, then Save changes.</source><translation>已選取 {profile} 設定檔。檢查變更後，請選擇「儲存變更」。</translation></message>
+    <message><source>{profile} profile selected. Edits saved with Save changes will update this profile.</source><translation>已選取 {profile} 設定檔。透過「儲存變更」儲存的編輯將更新此設定檔。</translation></message>
+    <message><source>Save settings first</source><translation>請先儲存設定</translation></message>
+    <message><source>Save or discard your pending Settings changes before running profile setup.</source><translation>執行設定檔設定前，請儲存或捨棄待處理的設定變更。</translation></message>
+    <message><source>Add the providers you use. Optional aliases and filters keep large connection lists easy to scan.</source><translation>新增你使用的提供者。可選別名與篩選器讓較長的連線清單更容易瀏覽。</translation></message>
+    <message><source>Search the provider catalog, then use an optional alias to label the connection.</source><translation>搜尋提供者目錄，接著使用可選別名標記該連線。</translation></message>
+    <message><source>Extract long-term facts automatically</source><translation>自動擷取長期事實</translation></message>
+    <message><source>Find a shortcut…</source><translation>尋找快速鍵…</translation></message>
+    <message><source>Global shortcuts</source><translation>全域快速鍵</translation></message>
+    <message><source>Intent-overlay and screen-capture entry points available from any application.</source><translation>可在任何應用程式使用的意圖浮層與螢幕擷取入口。</translation></message>
+    <message><source>Add intent shortcut</source><translation>新增意圖快速鍵</translation></message>
+    <message><source>Intent overlay timeout (ms)</source><translation>意圖浮層逾時（毫秒）</translation></message>
+    <message><source>Voice shortcuts</source><translation>語音快速鍵</translation></message>
+    <message><source>Speech input, dictation, live conversation, and spoken selection.</source><translation>語音輸入、聽寫、即時對話與朗讀選取內容。</translation></message>
+    <message><source>Hold to ask by voice</source><translation>按住以語音提問</translation></message>
+    <message><source>Hold while speaking, then release to transcribe and ask.</source><translation>說話時按住，放開後轉錄並提問。</translation></message>
+    <message><source>Hold to dictate</source><translation>按住以聽寫</translation></message>
+    <message><source>Type speech into the focused field without asking the assistant.</source><translation>將語音輸入目前聚焦的欄位，不詢問助理。</translation></message>
+    <message><source>Toggle live conversation</source><translation>切換即時對話</translation></message>
+    <message><source>Start or stop a live voice conversation.</source><translation>開始或停止即時語音對話。</translation></message>
+    <message><source>Speak selected text with the configured text-to-speech provider.</source><translation>使用已設定的文字轉語音提供者朗讀選取文字。</translation></message>
+    <message><source>Context shortcuts</source><translation>上下文快速鍵</translation></message>
+    <message><source>Build or clear the context buffer without opening Wisp.</source><translation>不需開啟 Wisp 即可新增或清除上下文緩衝區。</translation></message>
+    <message><source>Append selected text to the context buffer.</source><translation>將選取文字加入上下文緩衝區。</translation></message>
+    <message><source>Remove every item from the context buffer.</source><translation>移除上下文緩衝區中的所有項目。</translation></message>
+    <message><source>Action</source><translation>動作</translation></message>
+    <message><source>Shortcut 1</source><translation>快速鍵 1</translation></message>
+    <message><source>Shortcut 2</source><translation>快速鍵 2</translation></message>
+    <message><source>Details</source><translation>詳細設定</translation></message>
+    <message><source>Customize</source><translation>自訂</translation></message>
+    <message><source>Enable this shortcut</source><translation>啟用此快速鍵</translation></message>
+    <message><source>Assign shortcut</source><translation>設定快速鍵</translation></message>
+    <message><source>Intent shortcut name</source><translation>意圖快速鍵名稱</translation></message>
+    <message><source>Short name shown for this intent shortcut in settings and tool access dialogs.</source><translation>在設定與工具存取對話框中顯示的此意圖快速鍵簡短名稱。</translation></message>
+    <message><source>Paste the final answer into the focused application</source><translation>將最終答案貼到目前使用的應用程式</translation></message>
+    <message><source>Remove intent shortcut</source><translation>移除意圖快速鍵</translation></message>
+    <message><source>Add choice</source><translation>新增選項</translation></message>
+    <message><source>New intent shortcut</source><translation>新增意圖快速鍵</translation></message>
+    <message><source>Rewrite &amp; Paste</source><translation>改寫並貼上</translation></message>
+    <message><source>App context:
+Off — do not include nearby app/window context or open documents.
+On — include nearby app/window context only.
+On + open docs — include nearby app/window context and read supported open documents.
+Let model decide — include nearby app/window context and expose an open-document tool.</source><translation>應用程式上下文：
+關閉 — 不包含附近的應用程式/視窗上下文或已開啟的文件。
+開啟 — 僅包含附近的應用程式/視窗上下文。
+開啟 + 已開啟文件 — 包含附近的應用程式/視窗上下文並讀取支援的已開啟文件。
+讓模型決定 — 包含附近的應用程式/視窗上下文，並提供開啟文件工具。</translation></message>
+    <message><source>Clipboard:
+Off — do not include clipboard text.
+On — include clipboard text with this query.</source><translation>剪貼簿：
+關閉 — 不包含剪貼簿文字。
+開啟 — 在此次查詢中包含剪貼簿文字。</translation></message>
+    <message><source>Local files:
+Off — do not expose file tools.
+Read only — allow listing and reading configured folders.
+Ask before writing — show a diff before edits or creates.
+Write automatically — apply edits without asking.</source><translation>本機檔案：
+關閉 — 不提供檔案工具。
+唯讀 — 允許列出和讀取已設定的資料夾。
+寫入前詢問 — 編輯或建立前顯示差異。
+自動寫入 — 不詢問直接套用編輯。</translation></message>
+    <message><source>Open the intent overlay for selected text or the active project.</source><translation>為選取文字或目前專案開啟意圖浮層。</translation></message>
+    <message><source>Select a screen region, attach it, and open the intent overlay.</source><translation>選取螢幕區域、附加影像並開啟意圖浮層。</translation></message>
   </context>
   <context>
     <name>Wisp</name>
@@ -4625,10 +4927,6 @@ Continue?</source>
       <translation>你的其他設定仍已儲存。詳情請查看日誌，然後重新嘗試儲存受影響的金鑰。</translation>
     </message>
     <message>
-      <source>add an API key below</source>
-      <translation>在下方新增 API 金鑰</translation>
-    </message>
-    <message>
       <source>custom endpoint API key</source>
       <translation>自訂端點 API 金鑰</translation>
     </message>
@@ -4671,6 +4969,46 @@ Continue?</source>
     <message>
       <source>LOCAL FILE TOOLS</source>
       <translation>本機檔案工具</translation>
+    </message>
+    <message>
+      <source>list_files</source>
+      <translation>列出檔案</translation>
+    </message>
+    <message>
+      <source>read_file</source>
+      <translation>讀取檔案</translation>
+    </message>
+    <message>
+      <source>create_file</source>
+      <translation>建立檔案</translation>
+    </message>
+    <message>
+      <source>edit_file</source>
+      <translation>編輯檔案</translation>
+    </message>
+    <message>
+      <source>write_file</source>
+      <translation>寫入檔案</translation>
+    </message>
+    <message>
+      <source>List configured file roots.</source>
+      <translation>列出已設定的檔案根目錄。</translation>
+    </message>
+    <message>
+      <source>Read files from configured file roots.</source>
+      <translation>從已設定的檔案根目錄讀取檔案。</translation>
+    </message>
+    <message>
+      <source>Create new files in configured file roots.</source>
+      <translation>在已設定的檔案根目錄中建立新檔案。</translation>
+    </message>
+    <message>
+      <source>Patch files in configured file roots.</source>
+      <translation>修補已設定檔案根目錄中的檔案。</translation>
+    </message>
+    <message>
+      <source>Create or overwrite files in configured file roots.</source>
+      <translation>在已設定的檔案根目錄中建立或覆寫檔案。</translation>
     </message>
     <message>
       <source>Local files</source>
@@ -4938,59 +5276,59 @@ Continue?</source>
     </message>
     <message>
       <source>STT model configured: {model}. faster-whisper is installed.</source>
-      <translation>STT model configured: {model}. faster-whisper is installed.</translation>
+      <translation>已設定 STT 模型：{model}。faster-whisper 已安裝。</translation>
     </message>
     <message>
       <source>STT model configured: {model}, but faster-whisper is not installed.</source>
-      <translation>STT model configured: {model}, but faster-whisper is not installed.</translation>
+      <translation>已設定 STT 模型：{model}，但尚未安裝 faster-whisper。</translation>
     </message>
     <message>
-      <source>STT model configured: {model}, but faster-whisper failed to import: {error}</source>
-      <translation>STT model configured: {model}, but faster-whisper failed to import: {error}</translation>
+      <source>STT model configured: {model}, but STT verification failed: {error}</source>
+      <translation>已設定 STT 模型：{model}，但 STT 驗證失敗：{error}</translation>
     </message>
     <message>
       <source>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</source>
-      <translation>Recommendation: STT support is not working. Open Settings &gt; Voice and click Install STT.</translation>
+      <translation>建議：STT 支援無法正常運作。請開啟「設定」&gt;「語音」，然後按一下「安裝 STT」。</translation>
     </message>
     <message>
       <source>Installing STT: {detail}.</source>
-      <translation>Installing STT: {detail}.</translation>
+      <translation>正在安裝 STT：{detail}。</translation>
     </message>
     <message>
       <source>Installing STT...</source>
-      <translation>Installing STT...</translation>
+      <translation>正在安裝 STT…</translation>
     </message>
     <message>
       <source>Reinstall STT</source>
-      <translation>Reinstall STT</translation>
+      <translation>重新安裝 STT</translation>
     </message>
     <message>
       <source>Install STT</source>
-      <translation>Install STT</translation>
+      <translation>安裝 STT</translation>
     </message>
     <message>
       <source>STT install failed: {message}</source>
-      <translation>STT install failed: {message}</translation>
+      <translation>STT 安裝失敗：{message}</translation>
     </message>
     <message>
       <source>STT installed, but model verification failed: {message}</source>
-      <translation>STT installed, but model verification failed: {message}</translation>
+      <translation>STT 已安裝，但模型驗證失敗：{message}</translation>
     </message>
     <message>
       <source>STT installed and model ready: {summary}.</source>
-      <translation>STT installed and model ready: {summary}.</translation>
+      <translation>STT 已安裝且模型已就緒：{summary}。</translation>
     </message>
     <message>
       <source>Installing STT: downloading or loading Whisper model {model}.</source>
-      <translation>Installing STT: downloading or loading Whisper model {model}.</translation>
+      <translation>正在安裝 STT：正在下載或載入 Whisper 模型 {model}。</translation>
     </message>
     <message>
       <source>STT package installed. Configured backend: {summary}; model loads on first use.</source>
-      <translation>STT package installed. Configured backend: {summary}; model loads on first use.</translation>
+      <translation>STT 套件已安裝。已設定的後端：{summary}；模型將在首次使用時載入。</translation>
     </message>
     <message>
       <source>STT package is not installed. Click Install STT to install and verify it.</source>
-      <translation>STT package is not installed. Click Install STT to install and verify it.</translation>
+      <translation>尚未安裝 STT 套件。請按一下「安裝 STT」進行安裝並驗證。</translation>
     </message>
     <message>
       <source>Install or repair faster-whisper, then download and load the speech model so the first hold-to-talk does not stall. The first download needs an internet connection.</source>
@@ -5023,12 +5361,20 @@ The installer will then load the selected Whisper model in a separate process. T
 Continue?</translation>
     </message>
     <message>
+      <source>
+
+Windows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
+      <translation>
+
+Windows CUDA 支援還會下載 NVIDIA CUDA Runtime 和 cuBLAS 套件（約 570 MB），因此發行版應用程式不需依賴另外安裝的 CUDA Toolkit。</translation>
+    </message>
+    <message>
       <source>preparing local assets for {elapsed}</source>
       <translation>preparing local assets for {elapsed}</translation>
     </message>
     <message>
       <source>downloading or loading Whisper model for {elapsed}</source>
-      <translation>downloading or loading Whisper model for {elapsed}</translation>
+      <translation>正在下載或載入 Whisper 模型（已用時 {elapsed}）</translation>
     </message>
     <message>
       <source>Wisp will install or repair local speech-to-text support in its user-writable optional packages folder.
@@ -5062,7 +5408,7 @@ Continue?</translation>
     </message>
     <message>
       <source>removing previous install</source>
-      <translation>removing previous install</translation>
+      <translation>正在移除先前的安裝</translation>
     </message>
     <message>
       <source>Wisp {display_name} apply</source>
@@ -5156,5 +5502,57 @@ Continue?</translation>
       <source>verifying Torch</source>
       <translation>正在驗證 Torch</translation>
     </message>
+    <message><source>Speech warm-up failed.</source><translation>語音服務預熱失敗。</translation></message>
+    <message><source>Speech warm-up finished; one service will retry when needed.</source><translation>語音服務預熱已完成；其中一項服務將在需要時重試。</translation></message>
+    <message><source>Speech services are ready.</source><translation>語音服務已就緒。</translation></message>
+    <message><source>Preparing speech services - {elapsed} elapsed.</source><translation>正在準備語音服務 — 已用時間 {elapsed}。</translation></message>
+    <message><source>Speech warm-up was interrupted because the audio service restarted.</source><translation>音訊服務重新啟動，語音預熱已中斷。</translation></message>
+    <message><source>STT (speech recognition)</source><translation>STT（語音辨識）</translation></message>
+    <message><source>TTS (Kokoro local voice)</source><translation>TTS（Kokoro 本機語音）</translation></message>
+    <message><source>TTS (Cartesia connection)</source><translation>TTS（Cartesia 連線）</translation></message>
+    <message><source>TTS ({provider})</source><translation>TTS（{provider}）</translation></message>
+    <message><source>warming up ({elapsed})</source><translation>正在預熱（{elapsed}）</translation></message>
+    <message><source>{minutes}m {seconds}s</source><translation>{minutes}分 {seconds}秒</translation></message>
+    <message><source>{seconds}s</source><translation>{seconds}秒</translation></message>
+    <message><source>ready</source><translation>已就緒</translation></message>
+    <message><source>not needed</source><translation>無需準備</translation></message>
+    <message><source>will retry when first used</source><translation>首次使用時將重試</translation></message>
+    <message><source>failed - {message}</source><translation>失敗 — {message}</translation></message>
+    <message><source>stopped</source><translation>已停止</translation></message>
+    <message><source>waiting to start</source><translation>等待開始</translation></message>
+    <message><source>not completed</source><translation>未完成</translation></message>
+    <message><source>unknown error</source><translation>未知錯誤</translation></message>
+    <message><source>{label}: {status}</source><translation>{label}：{status}</translation></message>
+    <message><source>TTS (local voice) is still warming up. Wait for the speech status notice to show TTS ready.</source><translation>TTS（本機語音）仍在預熱。請等待語音狀態通知顯示 TTS 已就緒。</translation></message>
+    <message><source>Uninstall</source><translation>解除安裝</translation></message>
+    <message><source>Permanently remove Wisp, its data, and Wisp-owned local AI models from this computer.</source><translation>從此電腦永久移除 Wisp、其資料以及 Wisp 專用的本機 AI 模型。</translation></message>
+    <message><source>Uninstall Wisp</source><translation>解除安裝 Wisp</translation></message>
+    <message><source>Could not start uninstaller</source><translation>無法啟動解除安裝程式</translation></message>
+    <message><source>Another Wisp process is still running. Close Wisp, then run Uninstall Wisp.bat again.</source><translation>另一個 Wisp 程序仍在執行。請關閉 Wisp，然後再次執行 Uninstall Wisp.bat。</translation></message>
+    <message><source>Could not build a safe uninstall plan: {error}</source><translation>無法建立安全的解除安裝計畫：{error}</translation></message>
+    <message><source>source checkout</source><translation>原始碼簽出目錄</translation></message>
+    <message><source>release installation</source><translation>發行版安裝目錄</translation></message>
+    <message><source>This will permanently remove:
+• Wisp's current {kind}: {app_root}
+• All Wisp settings, chats, memory, add-ons, tools, logs, updates, and optional packages: {data_root}
+• Wisp API keys and sign-in tokens from the OS keychain
+• Wisp's STT/TTS model repositories from the Hugging Face cache
+• Wisp login and desktop entries
+
+Shared uv/pip caches and unrelated Hugging Face models will not be removed.</source><translation>這將永久移除：
+• Wisp 目前的{kind}：{app_root}
+• Wisp 的所有設定、聊天記錄、記憶、附加元件、工具、記錄、更新和選用套件：{data_root}
+• 作業系統鑰匙圈中的 Wisp API 金鑰和登入權杖
+• Hugging Face 快取中的 Wisp STT/TTS 模型儲存庫
+• Wisp 登入啟動項目和桌面項目
+
+不會移除共用的 uv/pip 快取或無關的 Hugging Face 模型。</translation></message>
+    <message><source>Exact paths scheduled for deletion:</source><translation>排定刪除的確切路徑：</translation></message>
+    <message><source>The source checkout will be deleted, including its Git history, uncommitted changes, and every file inside it.</source><translation>原始碼簽出目錄將被刪除，包括其 Git 歷史記錄、未提交的變更以及其中的所有檔案。</translation></message>
+    <message><source>Uninstall Wisp?</source><translation>解除安裝 Wisp？</translation></message>
+    <message><source>This action cannot be undone.</source><translation>此操作無法復原。</translation></message>
+    <message><source>Could not start uninstaller: {error}</source><translation>無法啟動解除安裝程式：{error}</translation></message>
+    <message><source>Uninstaller started</source><translation>解除安裝程式已啟動</translation></message>
+    <message><source>Wisp will now close. The uninstaller will remove only the listed Wisp-owned files after all Wisp processes exit.</source><translation>Wisp 現在將關閉。所有 Wisp 處理程序結束後，解除安裝程式只會移除列出的 Wisp 專用檔案。</translation></message>
   </context>
 </TS>

@@ -713,7 +713,7 @@ class ContextPanel(QWidget):
         p.drawText(
             self.rect(),
             Qt.AlignmentFlag.AlignCenter,
-            "↓ Drop here",
+            t("↓ Drop here"),
         )
 
         p.end()

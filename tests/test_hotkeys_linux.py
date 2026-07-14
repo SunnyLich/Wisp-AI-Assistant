@@ -59,3 +59,71 @@ def test_pynput_hotkey_conversion_keeps_linux_global_chords_safe(monkeypatch):
     assert hotkeys._to_pynput_hotkey("ctrl+alt+q") == "<ctrl>+<alt>+q"
     assert hotkeys._to_pynput_hotkey("f9") == "<f9>"
     assert hotkeys._to_pynput_hotkey("q") is None
+
+
+def test_listener_registers_both_bindings_and_skips_disabled_callers(monkeypatch):
+    """Both configured bindings invoke the same action callback at runtime."""
+    import config
+    import core.hotkeys as hotkeys
+
+    monkeypatch.setattr(hotkeys, "_IS_WIN", False)
+    monkeypatch.setattr(hotkeys, "_IS_MAC", False)
+    monkeypatch.setattr(
+        config,
+        "CALLER_ROWS",
+        [
+            {
+                "hotkey": "ctrl+alt+q",
+                "hotkey_2": "ctrl+alt+w",
+                "enabled": True,
+            },
+            {
+                "hotkey": "ctrl+alt+x",
+                "hotkey_2": "ctrl+alt+y",
+                "enabled": False,
+            },
+        ],
+        raising=False,
+    )
+    values = {
+        "HOTKEY_ADD_CONTEXT": "ctrl+1",
+        "HOTKEY_ADD_CONTEXT_2": "ctrl+2",
+        "HOTKEY_CLEAR_CONTEXT": "ctrl+3",
+        "HOTKEY_CLEAR_CONTEXT_2": "ctrl+4",
+        "HOTKEY_SNIP": "ctrl+5",
+        "HOTKEY_SNIP_2": "ctrl+6",
+        "HOTKEY_READ_SELECTION_ALOUD": "ctrl+7",
+        "HOTKEY_READ_SELECTION_ALOUD_2": "ctrl+8",
+        "HOTKEY_VOICE_LIVE": "shift+f9",
+        "HOTKEY_VOICE_LIVE_2": "shift+f10",
+        "HOTKEY_VOICE": "f9",
+        "HOTKEY_VOICE_2": "f10",
+        "HOTKEY_DICTATE": "f7",
+        "HOTKEY_DICTATE_2": "f8",
+    }
+    for name, value in values.items():
+        monkeypatch.setattr(config, name, value, raising=False)
+
+    caller = lambda: None  # noqa: E731
+    disabled_caller = lambda: None  # noqa: E731
+    add_context = lambda: None  # noqa: E731
+    snip = lambda: None  # noqa: E731
+    voice_live = lambda: None  # noqa: E731
+    listener = hotkeys.HotkeyListener(
+        on_callers=[caller, disabled_caller],
+        on_add_context=add_context,
+        on_snip=snip,
+        on_voice_live=voice_live,
+    )
+
+    assert ("ctrl+alt+q", caller) in listener._hotkey_defs
+    assert ("ctrl+alt+w", caller) in listener._hotkey_defs
+    assert all(callback is not disabled_caller for _, callback in listener._hotkey_defs)
+    assert ("ctrl+1", add_context) in listener._hotkey_defs
+    assert ("ctrl+2", add_context) in listener._hotkey_defs
+    assert ("ctrl+5", snip) in listener._hotkey_defs
+    assert ("ctrl+6", snip) in listener._hotkey_defs
+    assert ("shift+f9", voice_live) in listener._hotkey_defs
+    assert ("shift+f10", voice_live) in listener._hotkey_defs
+    assert listener._voice_hotkeys == ("f9", "f10")
+    assert listener._dictate_hotkeys == ("f7", "f8")

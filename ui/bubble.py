@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEd
 
 import config
 from ui.i18n import t
+from ui.shared.window_utils import start_wayland_system_move
 from ui.shared.theme import show_tooltip_text
 from ui.text_annotations import (
     TextAnnotation,
@@ -331,6 +332,7 @@ class SpeechBubble(QWidget):
         self._press_pos = None            # global press position (click vs drag)
         self._press_timer = QElapsedTimer()  # measures press duration (click vs hold)
         self._dragged = False             # True once the press moved past the click threshold
+        self._system_move_active = False  # True while a Wayland compositor drag owns the pointer
         self._close_hover = False
         self._close_pressed = False
         self._fast_forward_hover = False
@@ -469,6 +471,7 @@ class SpeechBubble(QWidget):
             self._press_timer.restart()
             self._dragged = False
             self._drag_offset = self.pos() - self._press_pos
+            self._system_move_active = start_wayland_system_move(self)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -496,10 +499,11 @@ class SpeechBubble(QWidget):
             if (self._press_pos is not None
                     and (point - self._press_pos).manhattanLength() > 6):
                 self._dragged = True
-            new_pos = point + self._drag_offset
-            self.move(new_pos)
-            if self._companion_callback:
-                self._companion_callback(new_pos)
+            if not self._system_move_active:
+                new_pos = point + self._drag_offset
+                self.move(new_pos)
+                if self._companion_callback:
+                    self._companion_callback(new_pos)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -534,6 +538,12 @@ class SpeechBubble(QWidget):
                 return
             # A click = pressed, didn't drag, and released quickly. A longer press
             # is an intentional hold and must not open the chat window.
+            if (
+                self._system_move_active
+                and self._press_pos is not None
+                and (event.globalPosition().toPoint() - self._press_pos).manhattanLength() > 6
+            ):
+                self._dragged = True
             was_click = (
                 self._drag_offset is not None
                 and not self._dragged
@@ -541,9 +551,16 @@ class SpeechBubble(QWidget):
             )
             self._drag_offset = None
             self._press_pos = None
+            self._system_move_active = False
             if was_click and self._click_callback and self._can_open_chat_from_click():
                 self._click_callback()
         super().mouseReleaseEvent(event)
+
+    def moveEvent(self, event):  # noqa: N802
+        """Keep the icon alongside a compositor-driven Wayland bubble drag."""
+        super().moveEvent(event)
+        if self._system_move_active and self._companion_callback:
+            self._companion_callback(self.pos())
 
     def _can_open_chat_from_click(self) -> bool:
         """Only actual reply text should be a chat-open target."""

@@ -1,6 +1,7 @@
 """Lightweight setup checks safe to run from the Settings UI."""
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from core.error_recommendations import recommendation_for
@@ -112,9 +113,26 @@ def run_setup_check() -> list[dict[str, str]]:
         try:
             from core import optional_deps
 
+            requested_device = str(getattr(config, "STT_DEVICE", "auto") or "auto").strip().lower()
+            spec_status = optional_deps.optional_package_spec_status("stt", device=requested_device)
             stt_status = optional_deps.stt_runtime_import_status_subprocess()
-            stt_package_ok = bool(stt_status.get("installed") and stt_status.get("valid"))
-            stt_import_error = str(stt_status.get("error") or "").strip()
+            stt_package_ok = bool(
+                spec_status.get("valid")
+                and stt_status.get("installed")
+                and stt_status.get("valid")
+            )
+            stt_import_error = str(stt_status.get("error") or spec_status.get("message") or "").strip()
+            if stt_package_ok and sys.platform == "win32" and requested_device == "cuda":
+                from core.stt_device import windows_cuda_runtime_status
+
+                cuda_status = windows_cuda_runtime_status()
+                if cuda_status.get("checked") and not cuda_status.get("valid"):
+                    stt_package_ok = False
+                    names = ", ".join(sorted(str(name) for name in dict(cuda_status.get("errors") or {})))
+                    stt_import_error = (
+                        "Windows CUDA runtime is incomplete or unloadable"
+                        + (f": {names}" if names else "")
+                    )
         except Exception:
             stt_package_ok = False
             stt_import_error = ""
@@ -130,7 +148,7 @@ def run_setup_check() -> list[dict[str, str]]:
             "message": (
                 f"STT model configured: {stt_model}. faster-whisper is installed."
                 if stt_model and stt_package_ok
-                else f"STT model configured: {stt_model}, but faster-whisper failed to import: {stt_import_error}"
+                else f"STT model configured: {stt_model}, but STT verification failed: {stt_import_error}"
                 if stt_model and stt_import_error
                 else f"STT model configured: {stt_model}, but faster-whisper is not installed."
                 if stt_model
@@ -146,11 +164,17 @@ def run_setup_check() -> list[dict[str, str]]:
 
     hotkeys = [
         str(getattr(config, "HOTKEY_SNIP", "") or ""),
+        str(getattr(config, "HOTKEY_SNIP_2", "") or ""),
         str(getattr(config, "HOTKEY_VOICE", "") or ""),
+        str(getattr(config, "HOTKEY_VOICE_2", "") or ""),
         str(getattr(config, "HOTKEY_ADD_CONTEXT", "") or ""),
+        str(getattr(config, "HOTKEY_ADD_CONTEXT_2", "") or ""),
     ]
     caller_rows = getattr(config, "CALLER_ROWS", []) or []
-    hotkeys.extend(str(row.get("hotkey") or "") for row in caller_rows if isinstance(row, dict))
+    for row in caller_rows:
+        if not isinstance(row, dict) or not bool(row.get("enabled", True)):
+            continue
+        hotkeys.extend((str(row.get("hotkey") or ""), str(row.get("hotkey_2") or "")))
     enabled_hotkeys = [key for key in hotkeys if key.strip()]
     rows.append(
         {

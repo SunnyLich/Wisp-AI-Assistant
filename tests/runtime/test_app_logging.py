@@ -8,6 +8,32 @@ import pytest
 from runtime.supervisor import app as supervisor_app
 
 
+@pytest.fixture(autouse=True)
+def _isolate_optional_install_maintenance(monkeypatch):
+    """App-main tests must not maintain the developer's real package layer."""
+    from scripts import optional_tts_installer
+
+    monkeypatch.setattr(optional_tts_installer, "resume_pending_staged_applies", lambda: 0)
+    monkeypatch.setattr(optional_tts_installer, "cleanup_stale_optional_package_swaps", lambda: ([], {}))
+
+
+def test_optional_install_startup_maintenance_resumes_before_cleanup(monkeypatch):
+    """Supervisor startup resumes owned apply plans before pruning stale swaps."""
+    from scripts import optional_tts_installer
+
+    events = []
+    monkeypatch.setattr(optional_tts_installer, "resume_pending_staged_applies", lambda: events.append("resume") or 0)
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "cleanup_stale_optional_package_swaps",
+        lambda: events.append("cleanup") or ([], {}),
+    )
+
+    supervisor_app._resume_staged_optional_installs()
+
+    assert events == ["resume", "cleanup"]
+
+
 def test_dispatch_module_mode_runs_requested_worker_module(monkeypatch):
     """Verify dispatch module mode runs requested worker module behavior."""
     calls = []

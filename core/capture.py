@@ -9,18 +9,26 @@ Two modes:
 """
 from __future__ import annotations
 
+import io
+import logging
+import os
 import sys
 import time
-import logging
+
 import pyperclip
 from PIL import Image
-import io
 
 from core.system.main_thread import run_on_main
 
 _IS_LINUX = sys.platform.startswith("linux")
 _IS_MAC = sys.platform == "darwin"
 _log = logging.getLogger("wisp.capture")
+
+_PORTAL_BUS_NAME = "org.freedesktop.portal.Desktop"
+_PORTAL_PATH = "/org/freedesktop/portal/desktop"
+_PORTAL_SCREENSHOT_IFACE = "org.freedesktop.portal.Screenshot"
+_PORTAL_REQUEST_IFACE = "org.freedesktop.portal.Request"
+_PORTAL_TIMEOUT_SECONDS = 25.0
 
 
 # ------------------------------------------------------------------
@@ -361,13 +369,21 @@ def get_selected_text(*, allow_synthetic_copy: bool = True) -> str | None:
     except Exception:
         _log.exception("Selected-text UIA capture failed.")
         text = None
+    if not text and _IS_LINUX and os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            from core.platform import linux_atspi
+
+            text = linux_atspi.get_selected_text()
+        except Exception:
+            _log.exception("Selected-text AT-SPI capture failed.")
+            text = None
     if not text and _IS_LINUX:
         try:
             text = _get_primary_selection_linux()
         except Exception:
             _log.exception("Selected-text PRIMARY capture failed.")
             text = None
-    if not text and allow_synthetic_copy:
+    if not text and allow_synthetic_copy and not (_IS_LINUX and os.environ.get("WAYLAND_DISPLAY")):
         try:
             text = _get_selected_text_clipboard()
         except Exception:
@@ -398,7 +414,10 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
                 return img.convert("RGB")
         raise RuntimeError("macOS screen capture failed")
 
-    # Windows/Linux path. mss is imported lazily so macOS does not load or drive
+    if _IS_LINUX and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"):
+        return _get_screen_snippet_wayland(region)
+
+    # Windows/X11 path. mss is imported lazily so macOS does not load or drive
     # the Python CoreGraphics capture backend inside the Qt process.
     def _grab() -> Image.Image:
         """Handle grab for capture."""
@@ -411,6 +430,152 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
             return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
     return run_on_main(_grab)
+
+
+def _portal_variant_value(value):
+    """Unwrap the ``(signature, value)`` representation Jeepney uses for variants."""
+    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str):
+        return value[1]
+    return value
+
+
+def _get_screen_snippet_wayland(region: dict | None = None) -> Image.Image:
+    """Capture pixels through the Wayland desktop Screenshot portal.
+
+    Native Wayland compositors intentionally reject X11 root-window capture.
+    The portal is the compositor-approved path and may show a permission dialog.
+    """
+    import secrets
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    from urllib.parse import unquote, urlparse
+
+    spectacle = shutil.which("spectacle")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    kde_session = "kde" in desktop or "plasma" in desktop or os.environ.get("KDE_FULL_SESSION") == "true"
+    if spectacle and kde_session:
+        output = Path(tempfile.gettempdir()) / f"wisp-wayland-{secrets.token_hex(8)}.png"
+        try:
+            result = subprocess.run(
+                [spectacle, "--background", "--nonotify", "--fullscreen", "--output", str(output)],
+                capture_output=True,
+                text=True,
+                timeout=8.0,
+                check=False,
+            )
+            if result.returncode != 0 or not output.is_file() or output.stat().st_size <= 0:
+                detail = (result.stderr or result.stdout or "capture produced no image").strip()
+                raise RuntimeError(f"KDE Spectacle capture failed: {detail}")
+            with Image.open(output) as source:
+                image = source.convert("RGB")
+                image.load()
+            return _crop_capture_region(image, region)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("KDE Spectacle capture timed out") from exc
+        finally:
+            try:
+                output.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    try:
+        from jeepney import DBusAddress, MatchRule, new_method_call
+        from jeepney.bus_messages import message_bus
+        from jeepney.io.blocking import open_dbus_connection
+        from jeepney.low_level import HeaderFields
+    except Exception as exc:
+        raise RuntimeError("Wayland screenshot support requires Jeepney") from exc
+
+    token = f"wisp_{secrets.token_hex(12)}"
+    address = DBusAddress(
+        _PORTAL_PATH,
+        bus_name=_PORTAL_BUS_NAME,
+        interface=_PORTAL_SCREENSHOT_IFACE,
+    )
+    rule = MatchRule(
+        type="signal",
+        sender=_PORTAL_BUS_NAME,
+        interface=_PORTAL_REQUEST_IFACE,
+        member="Response",
+        path_namespace=f"{_PORTAL_PATH}/request",
+    )
+
+    conn = None
+    rule_installed = False
+    try:
+        conn = open_dbus_connection(bus="SESSION")
+        conn.send_and_get_reply(message_bus.AddMatch(rule))
+        rule_installed = True
+        with conn.filter(rule, bufsize=16) as responses:
+            reply = conn.send_and_get_reply(
+                new_method_call(
+                    address,
+                    "Screenshot",
+                    "sa{sv}",
+                    (
+                        "",
+                        {
+                            "handle_token": ("s", token),
+                            "interactive": ("b", False),
+                            "modal": ("b", False),
+                        },
+                    ),
+                ),
+                timeout=10.0,
+            )
+            request_path = str(reply.body[0])
+            deadline = time.monotonic() + min(_PORTAL_TIMEOUT_SECONDS, 8.0)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Wayland screenshot request timed out")
+                response = conn.recv_until_filtered(responses, timeout=remaining)
+                if response.header.fields.get(HeaderFields.path) == request_path:
+                    break
+
+        response_code = int(response.body[0])
+        if response_code == 1:
+            raise RuntimeError("Wayland screenshot request was cancelled")
+        if response_code != 0:
+            raise RuntimeError(f"Wayland screenshot request failed (portal response {response_code})")
+        results = response.body[1] or {}
+        uri = str(_portal_variant_value(results.get("uri", "")) or "")
+        parsed = urlparse(uri)
+        if parsed.scheme != "file" or not parsed.path:
+            raise RuntimeError("Wayland screenshot portal returned no local image")
+        path = unquote(parsed.path)
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+            image.load()
+        return _crop_capture_region(image, region)
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Wayland screenshot portal failed: {exc}") from exc
+    finally:
+        if conn is not None:
+            if rule_installed:
+                try:
+                    conn.send_and_get_reply(message_bus.RemoveMatch(rule), timeout=2.0)
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _crop_capture_region(image: Image.Image, region: dict | None) -> Image.Image:
+    """Crop a compositor capture using the existing mss-style region contract."""
+    if not region:
+        return image
+    left = max(0, int(region.get("left", 0)))
+    top = max(0, int(region.get("top", 0)))
+    width = max(1, int(region.get("width", image.width - left)))
+    height = max(1, int(region.get("height", image.height - top)))
+    return image.crop((left, top, left + width, top + height))
 
 
 def image_to_base64(img: Image.Image) -> str:

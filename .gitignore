@@ -24,6 +24,7 @@ secrets.*
 /python_packages/
 /.understand-anything/
 /.agents/
+/.claude/
 /.codex/
 
 # Local prototypes (standalone experiments, not part of the app)

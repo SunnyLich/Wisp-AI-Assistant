@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import traceback
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,40 @@ from ui.agent.activity_i18n import (
 from ui.i18n import localize_widget_tree, t
 
 log = logging.getLogger("wisp.ui_host")
+
+
+def _configure_linux_ui_platform(
+    environment: MutableMapping[str, str] | None = None,
+    *,
+    platform: str | None = None,
+) -> str:
+    """Choose a placement-capable Qt backend for the floating Linux overlay.
+
+    A Wayland client cannot position its own top-level windows, while Wisp's
+    icon, speech bubble, and context panel are deliberately positioned overlay
+    windows. When XWayland is present, Qt's XCB backend provides the required
+    placement contract. The native capture worker remains a separate process
+    and continues to use Wayland/portal APIs.
+    """
+    env = environment if environment is not None else os.environ
+    selected = str(env.get("QT_QPA_PLATFORM") or "").strip()
+    if selected:
+        return selected
+    if not (platform or sys.platform).startswith("linux"):
+        return ""
+
+    preference = str(env.get("WISP_UI_PLATFORM") or "auto").strip().lower()
+    if preference in {"wayland", "native-wayland"}:
+        return ""
+    if preference in {"xcb", "x11", "xwayland"}:
+        env["QT_QPA_PLATFORM"] = "xcb"
+        return "xcb"
+    if preference != "auto":
+        return ""
+    if env.get("WAYLAND_DISPLAY") and env.get("DISPLAY"):
+        env["QT_QPA_PLATFORM"] = "xcb"
+        return "xcb"
+    return ""
 
 _CONTEXT_SOURCE_LABELS = {
     "App",
@@ -180,9 +215,79 @@ _NOTICE_DYNAMIC_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
+_SPEECH_NOTICE_LINE_RE = re.compile(
+    r"^(?P<label>STT \(speech recognition\)|TTS(?: \((?P<tts_label>[^)]+)\))?): "
+    r"(?P<status>.+)$"
+)
+
+
+def _translate_speech_elapsed(value: str) -> str:
+    """Translate the compact supervisor duration while preserving its numbers."""
+    match = re.fullmatch(r"(?:(?P<minutes>\d+)m )?(?P<seconds>\d+)s", value)
+    if not match:
+        return value
+    minutes = match.group("minutes")
+    seconds = match.group("seconds")
+    if minutes is not None:
+        return t("{minutes}m {seconds}s").format(minutes=minutes, seconds=seconds)
+    return t("{seconds}s").format(seconds=seconds)
+
+
+def _translate_speech_notice_line(line: str) -> str | None:
+    """Translate a structured STT/TTS status line without translating diagnostics."""
+    elapsed_match = re.match(
+        r"^Preparing speech services - (?P<elapsed>.+) elapsed\.$",
+        line,
+    )
+    if elapsed_match:
+        return t("Preparing speech services - {elapsed} elapsed.").format(
+            elapsed=_translate_speech_elapsed(elapsed_match.group("elapsed"))
+        )
+
+    match = _SPEECH_NOTICE_LINE_RE.match(line)
+    if not match:
+        return None
+    label = match.group("label")
+    tts_label = match.group("tts_label")
+    if label == "STT (speech recognition)":
+        translated_label = t("STT (speech recognition)")
+    elif label == "TTS":
+        translated_label = t("TTS")
+    elif tts_label == "Kokoro local voice":
+        translated_label = t("TTS (Kokoro local voice)")
+    elif tts_label == "Cartesia connection":
+        translated_label = t("TTS (Cartesia connection)")
+    else:
+        translated_label = t("TTS ({provider})").format(provider=tts_label or "")
+
+    status = match.group("status")
+    warming_match = re.match(r"^warming up \((?P<elapsed>.+)\)$", status)
+    failure_match = re.match(r"^failed - (?P<message>.+)$", status)
+    if warming_match:
+        translated_status = t("warming up ({elapsed})").format(
+            elapsed=_translate_speech_elapsed(warming_match.group("elapsed"))
+        )
+    elif failure_match:
+        message = failure_match.group("message")
+        if message == "unknown error":
+            message = t("unknown error")
+        translated_status = t("failed - {message}").format(
+            message=message
+        )
+    else:
+        translated_status = t(status)
+    return t("{label}: {status}").format(
+        label=translated_label,
+        status=translated_status,
+    )
+
+
 def _translate_notice_line(line: str) -> str:
     """Translate one bubble/notice line: fixed prefix, dynamic error template, or
     a plain catalog lookup."""
+    speech_line = _translate_speech_notice_line(line)
+    if speech_line is not None:
+        return speech_line
     for prefix in ("Installed addon: ", "Technical detail: "):
         if line.startswith(prefix):
             return t(prefix) + line[len(prefix):]
@@ -206,7 +311,19 @@ def _is_speech_status_notice(text: str) -> bool:
     lowered = " ".join(str(text or "").lower().split())
     if not lowered or "failed" in lowered or "error:" in lowered:
         return False
-    status_terms = ("ready", "warming up", "warmup", "still warming", "preparing")
+    status_terms = (
+        "ready",
+        "warming up",
+        "warmup",
+        "warm-up",
+        "still warming",
+        "preparing",
+        "waiting to start",
+        "will retry",
+        "not needed",
+        "stopped",
+        "interrupted",
+    )
     speech_terms = (
         "tts",
         "stt",
@@ -1890,6 +2007,7 @@ class QtProtocolHost:
 
         self._overlay_signals = None
         self._overlay = None
+        self._onboarding = None
         self._intent = None
         self._snip = None
         self._bubble = None
@@ -2137,6 +2255,24 @@ class QtProtocolHost:
             seconds = max(0.0, min(10.0, float(params.get("seconds") or 0.0)))
             time.sleep(seconds)
             return {"blocked_seconds": seconds}
+        if method == "ui.debug.memory.add" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            self._memory_manager().add_fact_manual(
+                str(params.get("text") or ""),
+                str(params.get("category") or "general"),
+                str(params.get("project") or ""),
+            )
+            return {"emitted": True}
+        if method == "ui.debug.memory.update" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            self._memory_manager().update_fact(
+                str(params.get("id") or params.get("fact_id") or ""),
+                str(params.get("text") or ""),
+                params.get("category"),
+                params.get("project"),
+            )
+            return {"emitted": True}
+        if method == "ui.debug.memory.delete" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            self._memory_manager().delete_fact(str(params.get("id") or params.get("fact_id") or ""))
+            return {"emitted": True}
         if method == "ui.reload_config":
             return self._reload_config()
         if method == "ui.show_overlay":
@@ -2343,7 +2479,48 @@ class QtProtocolHost:
         overlay = self._ensure_overlay()
         overlay.show()
         overlay.raise_()
+        self._show_onboarding_if_needed()
         return {"shown": True}
+
+    def _show_onboarding_if_needed(self) -> None:
+        """Queue the profile wizard after the overlay has received its first frame."""
+        try:
+            from PySide6.QtCore import QTimer
+            from ui.onboarding import OnboardingWizard, should_show_onboarding
+            from ui.settings_panel import env as settings_env
+
+            if self._onboarding is not None:
+                return
+            if not should_show_onboarding(
+                settings_env.read_settings_env(),
+                env_file_exists=settings_env.ENV_PATH.exists(),
+            ):
+                return
+
+            def show() -> None:
+                if self._onboarding is not None:
+                    return
+                wizard = OnboardingWizard(on_complete=self._onboarding_complete)
+                self._onboarding = wizard
+                wizard.finished.connect(
+                    lambda _result, w=wizard: setattr(self, "_onboarding", None)
+                    if self._onboarding is w else None
+                )
+                wizard.show()
+                wizard.raise_()
+                wizard.activateWindow()
+
+            QTimer.singleShot(250, show)
+        except Exception:
+            log.exception("could not open first-run profile wizard")
+
+    def _onboarding_complete(self, open_chat: bool) -> None:
+        """Apply saved wizard settings, then optionally open the first chat."""
+        self._settings_applied({"source": "onboarding"})
+        if open_chat:
+            from PySide6.QtCore import QTimer
+
+            QTimer.singleShot(0, lambda: self._show_chat(force_new=True))
 
     def _prewarm_intent(self) -> dict[str, Any]:
         """Warm intent overlay imports and first widget construction."""
@@ -4595,6 +4772,7 @@ def main() -> int:
     """Handle main for runtime workers UI host."""
     root = configure_paths()
     os.chdir(root)
+    selected_platform = _configure_linux_ui_platform()
     os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen=false")
     os.environ.setdefault("WISP_MACOS_PY_UI_HOST", "1")
     real_out = _protect_stdout()
@@ -4605,6 +4783,8 @@ def main() -> int:
     set_windows_app_user_model_id()
     ensure_linux_desktop_entry()
     app = QApplication(sys.argv)
+    if selected_platform:
+        log.info("Qt UI platform selected: %s", selected_platform)
     install_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
     try:

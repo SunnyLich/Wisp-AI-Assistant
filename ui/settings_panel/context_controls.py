@@ -4,7 +4,15 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.system.env_utils import normalize_file_access_mode
 from ui.i18n import t
@@ -127,19 +135,26 @@ def context_source_block(label: str, key_index: int, keys: str, *controls: QWidg
         }
         """
     )
-    frame.setMinimumSize(160, 112)
+    frame.setMinimumSize(160, 88)
     frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     box = QVBoxLayout(frame)
     box.setContentsMargins(8, 6, 8, 6)
     box.setSpacing(3)
+
+    header = QWidget()
+    header_box = QHBoxLayout(header)
+    header_box.setContentsMargins(0, 0, 0, 0)
+    header_box.setSpacing(6)
     title = QLabel(t(label))
     title.setStyleSheet("font-weight: 600;")
-    box.addWidget(title)
+    header_box.addWidget(title)
     if key_index >= 0:
         key_text = keys[key_index] if key_index < len(keys) else ""
         key_label = QLabel(f"{t('Keys:')} {key_text}")
         key_label.setStyleSheet("color: palette(placeholder-text);")
-        box.addWidget(key_label)
+        header_box.addStretch()
+        header_box.addWidget(key_label)
+    box.addWidget(header)
     for control in controls:
         control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         box.addWidget(control)
@@ -167,48 +182,48 @@ def build_context_controls(
     context_h.setContentsMargins(0, 0, 0, 0)
     context_h.setHorizontalSpacing(8)
     context_h.setVerticalSpacing(6)
-    app_tip = (
+    app_tip = t(
         "App context:\n"
-        "Off - do not include nearby app/window context or open documents.\n"
-        "On - include nearby app/window context only.\n"
-        "On + open docs - include nearby app/window context and read supported open documents.\n"
-        "Let model decide - include nearby app/window context and expose an open-document tool."
+        "Off — do not include nearby app/window context or open documents.\n"
+        "On — include nearby app/window context only.\n"
+        "On + open docs — include nearby app/window context and read supported open documents.\n"
+        "Let model decide — include nearby app/window context and expose an open-document tool."
     )
-    clipboard_tip = (
+    clipboard_tip = t(
         "Clipboard:\n"
-        "Off - do not include clipboard text.\n"
-        "On - include clipboard text with this query."
+        "Off — do not include clipboard text.\n"
+        "On — include clipboard text with this query."
     )
-    browser_tip = (
+    browser_tip = t(
         "Browser/Web:\n"
-        "Off - no web/browser tools.\n"
-        "On - read the current browser page before sending the prompt.\n"
-        "Let model decide - expose web search and browser page fetch tools."
+        "Off — no web/browser tools.\n"
+        "On — read the current browser page before sending the prompt.\n"
+        "Let model decide — expose web search and browser page fetch tools."
     )
-    github_tip = (
+    github_tip = t(
         "Git/GitHub:\n"
-        "Off - no git or GitHub tools.\n"
-        "On - read local git status and diff before sending the prompt.\n"
-        "Let model decide - expose git status/diff and GitHub repo/issue tools."
+        "Off — no git or GitHub tools.\n"
+        "On — read local git status and diff before sending the prompt.\n"
+        "Let model decide — expose git status/diff and GitHub repo/issue tools."
     )
-    memory_tip = (
+    memory_tip = t(
         "Memory:\n"
-        "Off - do not use stored facts for this caller.\n"
-        "On - fetch relevant stored facts before sending the prompt.\n"
-        "Let model decide - expose a memory search tool during the answer."
+        "Off — do not use stored facts for this caller.\n"
+        "On — fetch relevant stored facts before sending the prompt.\n"
+        "Let model decide — expose a memory search tool during the answer."
     )
-    screenshot_tip = (
+    screenshot_tip = t(
         "Screenshot of your screen:\n"
-        "Off - never capture.\n"
-        "On - capture at hotkey time and send it with the query.\n"
-        "Let model decide - expose a screenshot tool during the answer."
+        "• Off — never capture.\n"
+        "• On — capture at hotkey time and send it with the query.\n"
+        "• Let model decide — expose a screenshot tool during the answer."
     )
-    file_tip = (
+    file_tip = t(
         "Local files:\n"
-        "Off - do not expose file tools.\n"
-        "Read only - allow listing and reading configured folders.\n"
-        "Ask before writing - show a diff before edits or creates.\n"
-        "Write automatically - apply edits without asking."
+        "Off — do not expose file tools.\n"
+        "Read only — allow listing and reading configured folders.\n"
+        "Ask before writing — show a diff before edits or creates.\n"
+        "Write automatically — apply edits without asking."
     )
     app_combo = AppContextCombo(context_ambient, context_documents_mode)
     app_combo.setToolTip(app_tip)
@@ -228,15 +243,17 @@ def build_context_controls(
     _set_combo_value(file_combo, normalize_file_access_mode(file_access))
     title = QLabel(t("Context"))
     title.setStyleSheet("font-weight: 600; color: palette(placeholder-text);")
-    context_h.addWidget(title, 0, 0, 1, 4)
+    # Two columns remain readable in the sidebar-based Settings window and
+    # scale vertically when more context providers are added later.
+    context_h.addWidget(title, 0, 0, 1, 2)
     context_h.addWidget(context_source_block("App", 0, intent_context_keys, app_combo), 1, 0)
     context_h.addWidget(context_source_block("Browser/Web", 1, intent_context_keys, browser_combo), 1, 1)
-    context_h.addWidget(context_source_block("Clipboard", 3, intent_context_keys, clipboard_combo), 1, 2)
-    context_h.addWidget(context_source_block("Screenshot", 4, intent_context_keys, screenshot_combo), 1, 3)
-    context_h.addWidget(context_source_block("Git/GitHub", 5, intent_context_keys, github_combo), 2, 0)
-    context_h.addWidget(context_source_block("Memory", 6, intent_context_keys, memory_combo), 2, 1)
-    context_h.addWidget(context_source_block("Local files", 7, intent_context_keys, file_combo), 2, 2)
-    for column in range(4):
+    context_h.addWidget(context_source_block("Clipboard", 3, intent_context_keys, clipboard_combo), 2, 0)
+    context_h.addWidget(context_source_block("Screenshot", 4, intent_context_keys, screenshot_combo), 2, 1)
+    context_h.addWidget(context_source_block("Git/GitHub", 5, intent_context_keys, github_combo), 3, 0)
+    context_h.addWidget(context_source_block("Memory", 6, intent_context_keys, memory_combo), 3, 1)
+    context_h.addWidget(context_source_block("Local files", 7, intent_context_keys, file_combo), 4, 0, 1, 2)
+    for column in range(2):
         context_h.setColumnStretch(column, 1)
     browser_combo.setToolTip(browser_tip)
     github_combo.setToolTip(github_tip)
@@ -244,7 +261,7 @@ def build_context_controls(
     screenshot_combo.setToolTip(screenshot_tip)
     if not screenshot_enabled:
         screenshot_combo.setToolTip(
-            "Region snips already attach the selected image; extra screenshot context is disabled."
+            t("Region snips already attach the selected image; extra screenshot context is disabled.")
         )
     file_combo.setToolTip(file_tip)
     controls = {

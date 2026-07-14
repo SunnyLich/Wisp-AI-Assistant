@@ -71,10 +71,30 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
     assert optional_deps.STT_PACKAGE == "faster-whisper==1.2.1"
     assert optional_deps.KOKORO_PACKAGE == "kokoro==0.9.4"
     assert optional_deps.SOUNDFILE_PACKAGE == "soundfile==0.14.0"
-    assert optional_deps.stt_install_packages() == [
-        optional_deps.STT_PACKAGE,
-        *optional_deps.OPTIONAL_AI_COMPAT_PACKAGES,
+    assert optional_deps.KOKORO_TRANSFORMERS_PACKAGE == "transformers==5.13.1"
+    assert optional_deps.KOKORO_MISAKI_PACKAGE == "misaki[en]==0.9.4"
+    assert optional_deps.KOKORO_LOGURU_PACKAGE == "loguru==0.7.3"
+    assert optional_deps.stt_install_packages() == optional_deps.STT_LOCKED_PACKAGES
+    assert optional_deps.stt_install_packages("cuda", platform_name="win32") == [
+        *optional_deps.stt_locked_packages("win32"),
+        "nvidia-cuda-runtime-cu12==12.8.90",
+        "nvidia-cublas-cu12==12.8.4.1",
     ]
+    assert optional_deps.stt_install_packages("cuda", platform_name="linux") == optional_deps.stt_locked_packages(
+        "linux"
+    )
+    assert optional_deps.stt_install_packages("cuda", platform_name="darwin") == optional_deps.stt_locked_packages(
+        "darwin"
+    )
+    platform_locks = {
+        "win32": "requirements/requirements-windows.lock",
+        "linux": "requirements/requirements-linux.lock",
+        "darwin": "requirements/requirements-macos.lock",
+    }
+    for platform_name, lock_name in platform_locks.items():
+        for requirement in optional_deps.stt_locked_packages(platform_name):
+            package, expected = requirement.split("==", 1)
+            assert _locked_version(lock_name, package) == expected
     assert optional_deps.stt_remove_artifacts() == [
         "faster_whisper",
         "faster_whisper-*.dist-info",
@@ -118,9 +138,7 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "--extra-index-url",
         optional_deps.PYPI_WHEEL_INDEX,
         "torch==2.11.0+cu128",
-        "protobuf==6.33.2",
-        "tokenizers==0.22.2",
-        "setuptools==81.0.0",
+        *optional_deps.SPEECH_SHARED_LOCKED_PACKAGES,
     ]
     assert optional_deps.kokoro_install_packages("cuda") == [
         "--extra-index-url",
@@ -128,3 +146,32 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "torch==2.11.0+cu128",
         *optional_deps.KOKORO_BASE_INSTALL_PACKAGES,
     ]
+
+
+def test_stt_and_kokoro_use_one_order_independent_shared_dependency_lock() -> None:
+    """Installing either speech stack cannot replace the other's shared versions."""
+    from core import optional_deps
+
+    def pinned(requirements: list[str]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for requirement in requirements:
+            if requirement.startswith("-") or "==" not in requirement:
+                continue
+            name, version = requirement.split("==", 1)
+            result[name.split("[", 1)[0].lower()] = version
+        return result
+
+    shared = pinned(optional_deps.SPEECH_SHARED_LOCKED_PACKAGES)
+    stt = pinned(optional_deps.stt_install_packages("cuda", platform_name=optional_deps.sys.platform))
+    kokoro = pinned(optional_deps.kokoro_install_packages("cuda"))
+    kokoro_torch = pinned(optional_deps.kokoro_torch_install_packages("cuda"))
+
+    assert shared
+    assert {name: stt[name] for name in shared} == shared
+    assert {name: kokoro[name] for name in shared} == shared
+    assert {name: kokoro_torch[name] for name in shared} == shared
+
+    stt_then_kokoro = {**stt, **kokoro}
+    kokoro_then_stt = {**kokoro, **stt}
+    assert {name: stt_then_kokoro[name] for name in shared} == shared
+    assert {name: kokoro_then_stt[name] for name in shared} == shared

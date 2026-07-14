@@ -281,23 +281,43 @@ class HotkeyListener:
     ):
         """Initialize the hotkey listener instance."""
         self._hotkey_defs: list[tuple[str, Callable]] = []
+
+        def _add_bindings(bindings, callback: Callable | None) -> None:
+            if callback is None:
+                return
+            for binding in bindings:
+                binding = str(binding or "").strip()
+                if binding:
+                    self._hotkey_defs.append((binding, callback))
+
         for i, cb in enumerate(on_callers):
             if i < len(config.CALLER_ROWS):
-                hotkey = config.CALLER_ROWS[i]["hotkey"]
-                if hotkey:
-                    self._hotkey_defs.append((hotkey, cb))
-        if on_add_context:
-            self._hotkey_defs.append((config.HOTKEY_ADD_CONTEXT, on_add_context))
-        if on_clear_context:
-            self._hotkey_defs.append((config.HOTKEY_CLEAR_CONTEXT, on_clear_context))
-        if on_snip:
-            self._hotkey_defs.append((config.HOTKEY_SNIP, on_snip))
-        read_selection_hotkey = getattr(config, "HOTKEY_READ_SELECTION_ALOUD", "")
-        if on_read_selection_aloud and read_selection_hotkey:
-            self._hotkey_defs.append((read_selection_hotkey, on_read_selection_aloud))
-        voice_live_hotkey = getattr(config, "HOTKEY_VOICE_LIVE", "")
-        if on_voice_live and voice_live_hotkey:
-            self._hotkey_defs.append((voice_live_hotkey, on_voice_live))
+                row = config.CALLER_ROWS[i]
+                if bool(row.get("enabled", True)):
+                    _add_bindings((row.get("hotkey"), row.get("hotkey_2")), cb)
+        _add_bindings(
+            (getattr(config, "HOTKEY_ADD_CONTEXT", ""), getattr(config, "HOTKEY_ADD_CONTEXT_2", "")),
+            on_add_context,
+        )
+        _add_bindings(
+            (getattr(config, "HOTKEY_CLEAR_CONTEXT", ""), getattr(config, "HOTKEY_CLEAR_CONTEXT_2", "")),
+            on_clear_context,
+        )
+        _add_bindings(
+            (getattr(config, "HOTKEY_SNIP", ""), getattr(config, "HOTKEY_SNIP_2", "")),
+            on_snip,
+        )
+        _add_bindings(
+            (
+                getattr(config, "HOTKEY_READ_SELECTION_ALOUD", ""),
+                getattr(config, "HOTKEY_READ_SELECTION_ALOUD_2", ""),
+            ),
+            on_read_selection_aloud,
+        )
+        _add_bindings(
+            (getattr(config, "HOTKEY_VOICE_LIVE", ""), getattr(config, "HOTKEY_VOICE_LIVE_2", "")),
+            on_voice_live,
+        )
         for hotkey, cb in extra_hotkeys or []:
             if hotkey and cb:
                 self._hotkey_defs.append((hotkey, cb))
@@ -305,14 +325,29 @@ class HotkeyListener:
         self._on_voice_stop  = on_voice_stop
         self._on_dictate_start = on_dictate_start
         self._on_dictate_stop  = on_dictate_stop
-        self._dictate_hotkey = getattr(config, "HOTKEY_DICTATE", "") or ""
+        self._voice_hotkeys = tuple(
+            binding
+            for binding in (
+                getattr(config, "HOTKEY_VOICE", ""),
+                getattr(config, "HOTKEY_VOICE_2", ""),
+            )
+            if binding
+        )
+        self._dictate_hotkeys = tuple(
+            binding
+            for binding in (
+                getattr(config, "HOTKEY_DICTATE", ""),
+                getattr(config, "HOTKEY_DICTATE_2", ""),
+            )
+            if binding
+        )
 
         if _IS_WIN:
             self._impl = _Win32Impl(self._hotkey_defs)
         elif _IS_MAC:
             self._impl = _CarbonImpl(
                 self._hotkey_defs,
-                voice_hotkey=config.HOTKEY_VOICE,
+                voice_hotkeys=list(self._voice_hotkeys),
                 on_voice_start=on_voice_start,
                 on_voice_stop=on_voice_stop,
             )
@@ -339,8 +374,8 @@ class HotkeyListener:
         # The push-to-talk listener is a pynput keyboard tap. On macOS that tap
         # decodes every keystroke off the main thread (HIToolbox keycode_context),
         # which trace-traps (SIGTRAP) — same flaw as GlobalHotKeys. Skip it there.
-        has_voice = bool(config.HOTKEY_VOICE and (self._on_voice_start or self._on_voice_stop))
-        has_dictate = bool(self._dictate_hotkey and (self._on_dictate_start or self._on_dictate_stop))
+        has_voice = bool(self._voice_hotkeys and (self._on_voice_start or self._on_voice_stop))
+        has_dictate = bool(self._dictate_hotkeys and (self._on_dictate_start or self._on_dictate_stop))
         if not _IS_MAC and (has_voice or has_dictate):
             self._start_voice_listener()
         return True
@@ -386,8 +421,14 @@ class HotkeyListener:
                 return _kb.KeyCode.from_char(s) if len(s) == 1 else None
 
         bindings = [
-            (config.HOTKEY_VOICE, self._on_voice_start, self._on_voice_stop, "voice"),
-            (self._dictate_hotkey, self._on_dictate_start, self._on_dictate_stop, "dictation"),
+            *(
+                (binding, self._on_voice_start, self._on_voice_stop, "voice")
+                for binding in self._voice_hotkeys
+            ),
+            *(
+                (binding, self._on_dictate_start, self._on_dictate_stop, "dictation")
+                for binding in self._dictate_hotkeys
+            ),
         ]
         self._ptt_map = {}
         for hotkey_str, on_start, on_stop, label in bindings:
@@ -645,7 +686,7 @@ class _CarbonImpl:
         self,
         hotkey_defs: list[tuple[str, Callable]],
         *,
-        voice_hotkey: str = "",
+        voice_hotkeys: list[str] | None = None,
         on_voice_start: Callable[[], None] | None = None,
         on_voice_stop: Callable[[], None] | None = None,
     ):
@@ -654,10 +695,10 @@ class _CarbonImpl:
         self._handler_ref = ctypes.c_void_p()
         self._hotkey_refs: list = []
         self._callbacks: dict[int, Callable] = {}
-        self._voice_hotkey = voice_hotkey
+        self._voice_hotkeys = [str(binding or "").strip() for binding in (voice_hotkeys or []) if binding]
         self._on_voice_start = on_voice_start
         self._on_voice_stop = on_voice_stop
-        self._voice_id = 0
+        self._voice_ids: set[int] = set()
         self._handler_upp = None  # keep the CFUNCTYPE alive while installed
         self._signature = _four_char_code("Wisp")
 
@@ -714,13 +755,15 @@ class _CarbonImpl:
             registered += 1
             print(f"[hotkeys] Carbon registered {hotkey_str!r} (keycode={keycode}, mods={mods}).")
 
-        if self._voice_hotkey and (self._on_voice_start or self._on_voice_stop):
-            parsed = _parse_hotkey_carbon(self._voice_hotkey)
+        for voice_index, voice_hotkey in enumerate(self._voice_hotkeys):
+            if not (self._on_voice_start or self._on_voice_stop):
+                break
+            parsed = _parse_hotkey_carbon(voice_hotkey)
             if parsed is None:
-                print(f"[hotkeys] Carbon: cannot parse voice hotkey {self._voice_hotkey!r}.")
+                print(f"[hotkeys] Carbon: cannot parse voice hotkey {voice_hotkey!r}.")
             else:
                 mods, keycode = parsed
-                hk_id = len(self._hotkey_defs) + 1
+                hk_id = len(self._hotkey_defs) + voice_index + 1
                 ref = ctypes.c_void_p()
                 status = _carbon.RegisterEventHotKey(
                     keycode, mods, _EventHotKeyID(self._signature, hk_id),
@@ -728,15 +771,15 @@ class _CarbonImpl:
                 )
                 if status != 0:
                     print(
-                        f"[hotkeys] Carbon RegisterEventHotKey({self._voice_hotkey!r}) "
+                        f"[hotkeys] Carbon RegisterEventHotKey({voice_hotkey!r}) "
                         f"failed (status {status})."
                     )
                 else:
-                    self._voice_id = hk_id
+                    self._voice_ids.add(hk_id)
                     self._hotkey_refs.append(ref)
                     registered += 1
                     print(
-                        f"[hotkeys] Carbon registered voice {self._voice_hotkey!r} "
+                        f"[hotkeys] Carbon registered voice {voice_hotkey!r} "
                         f"(keycode={keycode}, mods={mods})."
                     )
 
@@ -771,7 +814,7 @@ class _CarbonImpl:
                     else _kEventHotKeyPressed
                 )
                 print(f"[hotkeys] Carbon hotkey fired (id={hk_id.id}, kind={kind}).")
-                if hk_id.id == self._voice_id:
+                if hk_id.id in self._voice_ids:
                     cb = (
                         self._on_voice_start
                         if kind == _kEventHotKeyPressed
@@ -796,7 +839,7 @@ class _CarbonImpl:
                 pass
         self._hotkey_refs = []
         self._callbacks = {}
-        self._voice_id = 0
+        self._voice_ids = set()
         if self._handler_ref and hasattr(_carbon, "RemoveEventHandler"):
             try:
                 _carbon.RemoveEventHandler(self._handler_ref)

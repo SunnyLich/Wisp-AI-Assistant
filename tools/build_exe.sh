@@ -340,9 +340,15 @@ fi
 
 if ! $SKIP_INSTALL; then
     if confirm "Install/update Python packages in $PYTHON before building?"; then
+        mkdir -p "$ROOT/build"
+        BUILD_RUNTIME_REQUIREMENTS="$ROOT/build/wisp-runtime-build-requirements.txt"
+        grep -Ev '^[[:space:]]*(av|ctranslate2|faster-whisper|flatbuffers|onnxruntime)[[:space:]]*==' \
+            "$REQUIREMENTS_FILE" > "$BUILD_RUNTIME_REQUIREMENTS"
+        echo "STT native packages are installer-owned and will not be installed into the build environment."
         ensure_pip "$PYTHON"
         "$PYTHON" -m pip install --upgrade pip
-        "$PYTHON" -m pip install -r "$REQUIREMENTS_FILE" -r "$BUILD_REQUIREMENTS_FILE"
+        "$PYTHON" -m pip install -r "$BUILD_RUNTIME_REQUIREMENTS" -r "$BUILD_REQUIREMENTS_FILE"
+        rm -f "$BUILD_RUNTIME_REQUIREMENTS"
     else
         echo "Skipping dependency install. Use --yes to install automatically or --skip-install to suppress this prompt."
     fi

@@ -1846,28 +1846,11 @@ def _capture_screen_to_file() -> str:
     snapshot.  Returns the path, or "" on failure.
     """
     out_path = os.path.join(tempfile.gettempdir(), "ai_assistant_screen.png")
-    if sys.platform == "darwin":
-        try:
-            from core.platform import macos_native
-
-            return out_path if macos_native.capture_screen_to_file(out_path) else ""
-        except Exception:
-            return ""
-
     try:
-        import mss
-        import mss.tools
-        from core.system.main_thread import run_on_main
+        from core.capture import get_screen_snippet
 
-        def _grab() -> None:
-            """Handle grab for local."""
-            mss_factory = getattr(mss, "MSS", mss.mss)
-            with mss_factory() as sct:
-                monitor = sct.monitors[1]  # primary monitor
-                raw = sct.grab(monitor)
-                mss.tools.to_png(raw.rgb, raw.size, output=out_path)
-
-        run_on_main(_grab)
+        image = get_screen_snippet()
+        image.save(out_path, format="PNG")
         return out_path
     except Exception:
         return ""
@@ -3131,4 +3114,3 @@ if __name__ == "__main__":
     print()
     snap = fetch_and_save(capture_screen=False, online_query=query)
     pprint.pprint(_snapshot_to_dict(snap))
-

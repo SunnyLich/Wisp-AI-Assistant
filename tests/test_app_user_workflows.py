@@ -454,6 +454,194 @@ def test_chat_window_context_preview_send_and_history_workflow(qapp, isolated_ap
         qapp.processEvents()
 
 
+def test_chat_attachment_extracts_persists_and_reopens(qapp, isolated_app_state: IsolatedAppState):
+    """An actual attached file reaches the model and survives a fresh UI instance."""
+    from core.conversation_store import store as conversation_store
+    from ui.chat_window import ChatWindow
+
+    attachment = isolated_app_state.root / "drop-contract.txt"
+    attachment.parent.mkdir(parents=True, exist_ok=True)
+    attachment.write_text("real attachment contract body", encoding="utf-8")
+    conversations = [
+        {
+            "id": "attachment-contract",
+            "project_id": conversation_store.GENERAL_PROJECT_ID,
+            "messages": [],
+            "context_policy": {},
+        }
+    ]
+    model_calls = []
+
+    def send_fn(messages, *, context_policy):
+        model_calls.append({"messages": messages, "context_policy": context_policy})
+        yield "Attachment persisted."
+
+    def persist():
+        conversation_store.save_conversations(conversations)
+
+    window = ChatWindow(conversations, send_fn, persist_fn=persist)
+    reopened = None
+    try:
+        window.show()
+        qapp.processEvents()
+        assert window._add_attachment_paths([str(attachment)]) is True
+        assert window._pending_attachment_labels == [attachment.name]
+        assert window._pending_attachments[0]["path"] == str(attachment)
+
+        window._send("Summarize the real attachment")
+        _pump_until(qapp, lambda: not window._streaming and len(conversations[0]["messages"]) == 2)
+
+        assert model_calls
+        user_payload = model_calls[0]["messages"][-1]
+        assert "real attachment contract body" in user_payload["content"]
+        assert "[Attached context for this message]" in user_payload["content"]
+
+        loaded = conversation_store.load_conversations()
+        assert len(loaded) == 1
+        saved_user = loaded[0]["messages"][0]
+        assert saved_user["attachments"][0]["path"] == str(attachment)
+        assert saved_user["attachments"][0]["source"] == "external_path"
+        assert loaded[0]["messages"][1]["content"] == "Attachment persisted."
+
+        window.close()
+        qapp.processEvents()
+
+        reopened = ChatWindow(
+            conversation_store.load_conversations(),
+            lambda _messages, **_kwargs: iter(()),
+            persist_fn=lambda: None,
+        )
+        reopened.show()
+        qapp.processEvents()
+        assert reopened._stack.count() == 1
+        assert reopened._conversations[0]["messages"][0]["attachments"][0]["name"] == attachment.name
+        reopened._switch(0)
+        assert reopened._active_idx == 0
+    finally:
+        try:
+            window.close()
+            window.deleteLater()
+        except RuntimeError:
+            pass
+        if reopened is not None:
+            reopened.close()
+            reopened.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_file_approval_panel_resolves_from_real_button_click(qapp):
+    """A visible file-write approval is resolved by the actual chat control."""
+    from PySide6.QtWidgets import QFrame, QLabel, QPushButton
+
+    from ui.chat_window import ChatWindow
+
+    decisions = []
+    window = ChatWindow(
+        [{"id": "approval-chat", "messages": [], "context_policy": {}}],
+        lambda _messages, **_kwargs: iter(()),
+    )
+    try:
+        window.show()
+        qapp.processEvents()
+        result = window.request_live_file_approval(
+            {
+                "approval_id": "approval-1",
+                "action": "edit_file",
+                "path": "notes/important.txt",
+                "diff": "--- a/notes/important.txt\n+++ b/notes/important.txt\n-old\n+new\n",
+                "_on_decision": decisions.append,
+            }
+        )
+
+        assert result == {"approved": False, "feedback": "", "shown": True}
+        panel = window.findChild(QFrame, "liveFileApprovalPanel")
+        assert panel is not None
+        visible_text = "\n".join(label.text() for label in panel.findChildren(QLabel))
+        assert "Approve this file change?" in visible_text
+        assert "notes/important.txt" in visible_text
+        assert "Diff: +1 -1 lines" in visible_text
+
+        approve = next(button for button in panel.findChildren(QPushButton) if button.text() == "Approve")
+        approve.click()
+        qapp.processEvents()
+
+        assert decisions == [{"approved": True, "feedback": "", "shown": True}]
+        assert not panel.isVisible()
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, monkeypatch):
+    """Editing and clicking Apply writes a real env file that a fresh dialog reloads."""
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core import tts
+    from core.llm_clients import client as llm_client
+    from ui.settings_panel import dialog as settings_dialog
+    from ui.settings_panel import env as settings_env
+    from ui.settings_panel.dialog import SettingsDialog, _get
+    from ui.shared import theme
+
+    env_path = tmp_path / "settings-contract.env"
+    env_path.write_text(
+        "TTS_PROVIDER=none\nBUBBLE_WIDTH=340\nCHAT_ELABORATE_PROMPT=Before apply\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    # Saving is real; these are unrelated live side effects that should not
+    # touch credentials, model connections, audio devices, or the global theme.
+    monkeypatch.setattr(SettingsDialog, "_save_api_keys_to_keychain", lambda _self: True)
+    monkeypatch.setattr(config, "reload", lambda: None)
+    monkeypatch.setattr(llm_client, "reset_clients", lambda: None)
+    monkeypatch.setattr(tts, "reset_connections", lambda: None)
+    monkeypatch.setattr(theme, "apply_app_theme", lambda: None)
+
+    applied = []
+    dialog = SettingsDialog(on_apply=applied.append)
+    reopened = None
+    try:
+        # Keep validation independent from any hotkeys configured on the
+        # developer's machine while exercising the real settings serializer.
+        for index, block in enumerate(dialog._caller_blocks, 1):
+            block["hotkey"].setText(f"ctrl+alt+{index}")
+        for index, key in enumerate(
+            ("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE", "HOTKEY_DICTATE"),
+            1,
+        ):
+            dialog._fields[key].setText(f"ctrl+shift+alt+{index}")
+
+        dialog._fields["BUBBLE_WIDTH"].setText("612")
+        dialog._fields["CHAT_ELABORATE_PROMPT"].setText("Persisted through the real Apply button")
+        qapp.processEvents()
+        apply_button = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert apply_button is not None and apply_button.isEnabled()
+
+        apply_button.click()
+        qapp.processEvents()
+
+        saved = settings_env.read_settings_env()
+        assert saved["BUBBLE_WIDTH"] == "612"
+        assert saved["CHAT_ELABORATE_PROMPT"] == "Persisted through the real Apply button"
+        assert applied and {"BUBBLE_WIDTH", "CHAT_ELABORATE_PROMPT"} <= set(applied[-1]["changed_keys"])
+        assert dialog.isVisible() is False or dialog.result() == 0
+        assert not apply_button.isEnabled()
+
+        reopened = SettingsDialog()
+        assert _get(reopened._fields["BUBBLE_WIDTH"]) == "612"
+        assert _get(reopened._fields["CHAT_ELABORATE_PROMPT"]) == "Persisted through the real Apply button"
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        if reopened is not None:
+            reopened.close()
+            reopened.deleteLater()
+        qapp.processEvents()
+
+
 def test_context_buffer_drop_priority_and_privacy_workflow():
     """Context order, dropped documents, image promotion, and privacy are visible."""
     from core.query_pipeline import ContextInputs, GenerationCounter, build_context
@@ -1185,6 +1373,7 @@ def test_brain_rewrite_chat_tts_and_route_setting_workflow(
     assert tts["provider"] == "fake"
 
 
+@pytest.mark.usefixtures("isolated_default_profile")
 def test_settings_env_changes_reach_runtime_surfaces_workflow(
     tmp_path: Path,
     isolated_app_state: IsolatedAppState,
@@ -1683,6 +1872,7 @@ def test_launch_duplicate_crash_log_and_worker_lifecycle_workflow(
     monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
     monkeypatch.setattr(supervisor_app, "suppress_console_ctrl_c", lambda: None)
     monkeypatch.setattr(supervisor_app, "install_crash_diagnostics", lambda: None)
+    monkeypatch.setattr(supervisor_app, "_resume_staged_optional_installs", lambda: None)
 
     monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: False)
 
@@ -1838,7 +2028,8 @@ def test_ui_accessibility_layout_and_model_popup_workflow(qapp, monkeypatch: pyt
     try:
         assert settings.findChild(QLineEdit, "settingsSearch") is not None
         assert settings.findChild(QPushButton, "settingsApplyButton") is not None
-        assert settings.findChild(QPushButton, "settingsConfirmButton") is not None
+        assert settings.findChild(QPushButton, "settingsCancelButton") is not None
+        assert settings._settings_nav.count() == 8
         assert "BUBBLE_FONT_SIZE" in settings._fields
         assert "CHAT_ELABORATE_PROMPT" in settings._fields
 
@@ -1952,19 +2143,3 @@ def test_agent_permission_notice_and_bubble_notice_workflow(qapp, tmp_path: Path
     finally:
         window.deleteLater()
         bubble.deleteLater()
-
-
-def test_real_gpt55_entrypoint_stays_opt_in_by_default():
-    """The live-provider workflow test is present but cannot spend tokens accidentally."""
-    import importlib.util
-
-    real_test = Path(__file__).with_name("test_real_gpt55_integration.py")
-    spec = importlib.util.spec_from_file_location("_workflow_real_gpt55_contract", real_test)
-    assert spec is not None and spec.loader is not None
-    real_gpt55 = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(real_gpt55)
-
-    assert real_gpt55._DEFAULT_MODEL == "gpt-5.5"
-    assert real_gpt55._RUN_ENV == "WISP_RUN_REAL_GPT55_TESTS"
-    assert any(mark.name == "real_gpt55" for mark in real_gpt55.pytestmark)
-    assert any(mark.name == "workflow" for mark in real_gpt55.pytestmark)

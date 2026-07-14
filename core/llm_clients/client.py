@@ -29,6 +29,7 @@ from core.tools.local_files import (
 from core.system import macos_safety
 from core.system.native_locks import native_init_lock, ssl_init_lock
 from core.system import sdk_clients
+from core.ollama_manager import ensure_ollama_running as _ensure_ollama_running
 from core.llm_clients.routes import (
     GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
     DEEPSEEK_BASE_URL as _DEEPSEEK_BASE_URL,
@@ -2545,6 +2546,9 @@ def _response_stream_text(
 
 def _openai_compat_stdlib_completion_text(provider: str, kwargs: dict) -> str:
     """Blocking OpenAI-compatible completion without importing provider SDKs."""
+    if provider == "ollama":
+        _ensure_ollama_running()
+
     def _request_completion() -> str:
         """Handle request completion for LLM clients client."""
         base_url = _openai_compat_base_url(provider).rstrip("/")
@@ -2623,6 +2627,8 @@ def _build_dynamic_openai_client(provider: str):
 
 def _dynamic_openai_client(provider: str):
     """Handle dynamic openai client for LLM clients client."""
+    if provider == "ollama":
+        _ensure_ollama_running()
     with _dynamic_client_lock:
         client = _dynamic_openai_clients.get(provider)
         if client is None:
@@ -2671,6 +2677,8 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
     let the settings dialog fetch with not-yet-saved field values.
     """
     provider = (provider or "").lower()
+    if provider == "ollama":
+        _ensure_ollama_running(base_url=base_url or None)
     if provider in ("chatgpt", "copilot"):
         raise NotImplementedError(f"{provider} does not support model listing")
 
@@ -3005,6 +3013,8 @@ def _get_vision_anthropic_client():
 
 def _run_openai_compat_probe(client, *, provider: str, model: str, messages: list) -> None:
     """Run openai compat probe."""
+    if provider == "ollama":
+        _ensure_ollama_running()
     cap = _get_route_capabilities(provider, model)
     kwargs = {
         "model": model,

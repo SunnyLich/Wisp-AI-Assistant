@@ -83,14 +83,16 @@ def _event(keycode, flags=0, autorepeat=0):
     return SimpleNamespace(keycode=keycode, flags=flags, autorepeat=autorepeat)
 
 
-def _install(monkeypatch, fake):
+def _install(monkeypatch, fake, release_kinds=None):
     """Verify install behavior."""
     monkeypatch.setitem(sys.modules, "Quartz", fake)
     hotkey_helper._HOTKEY_TAP = None
     table = hotkey_helper._build_tap_table([("ctrl+q", "caller", {"index": 0})], VK)
     emitted: list = []
     ok = hotkey_helper._install_hotkey_tap(
-        table, lambda kind, **e: emitted.append((kind, e)), voice_keycode=101
+        table,
+        lambda kind, **e: emitted.append((kind, e)),
+        release_kinds=release_kinds or {101: "voice_stop"},
     )
     assert ok
     return fake.captured["cb"], emitted, fake
@@ -135,6 +137,19 @@ def test_keyup_of_owned_key_is_swallowed(monkeypatch):
     # key-up of an unrelated key -> passed through.
     ev = _event(2)
     assert cb(None, fake.kCGEventKeyUp, ev, None) is ev
+
+
+def test_primary_and_secondary_voice_keyups_emit_stop(monkeypatch):
+    """Both configured push-to-talk keys stop voice capture on release."""
+    cb, emitted, fake = _install(
+        monkeypatch,
+        _FakeQuartz(),
+        release_kinds={101: "voice_stop", 102: "voice_stop"},
+    )
+
+    assert cb(None, fake.kCGEventKeyUp, _event(101), None) is None
+    assert cb(None, fake.kCGEventKeyUp, _event(102), None) is None
+    assert emitted == [("voice_stop", {}), ("voice_stop", {})]
 
 
 def test_falls_back_to_listen_only_when_active_tap_unavailable(monkeypatch):

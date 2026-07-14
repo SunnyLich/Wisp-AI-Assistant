@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import config
 from core import secret_store
+from core.ollama_manager import OLLAMA_BASE_URL as _OLLAMA_MANAGED_BASE_URL
 
 
 GOOGLE_OPENAI_BASE_URL  = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -12,7 +13,9 @@ MISTRAL_BASE_URL        = "https://api.mistral.ai/v1"
 XAI_BASE_URL            = "https://api.x.ai/v1"
 TOGETHER_BASE_URL       = "https://api.together.ai/v1"
 CEREBRAS_BASE_URL       = "https://api.cerebras.ai/v1"
-OLLAMA_BASE_URL         = "http://localhost:11434/v1"
+# Shared with core.ollama_manager (honors OLLAMA_HOST) so requests, the
+# readiness probe, and the auto-started server always target one endpoint.
+OLLAMA_BASE_URL         = _OLLAMA_MANAGED_BASE_URL
 ZAI_BASE_URL            = "https://api.z.ai/api/paas/v4"
 NVIDIA_BASE_URL         = "https://integrate.api.nvidia.com/v1"
 SAMBANOVA_BASE_URL      = "https://api.sambanova.ai/v1"

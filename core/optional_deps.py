@@ -1,6 +1,7 @@
 """Runtime-installable optional Python dependencies."""
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -10,6 +11,8 @@ import shutil
 import site
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,13 +35,11 @@ KOKORO_EN_MODEL_URL = (
 PYTORCH_CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128"
 PYPI_WHEEL_INDEX = "https://pypi.org/simple"
 KOKORO_CUDA_TORCH_PACKAGE = "torch==2.11.0+cu128"
-OPTIONAL_AI_COMPAT_PACKAGES = [
-    "protobuf==6.33.2",
-    "tokenizers==0.22.2",
-    "setuptools==81.0.0",
-]
 KOKORO_PACKAGE = "kokoro==0.9.4"
 SOUNDFILE_PACKAGE = "soundfile==0.14.0"
+KOKORO_TRANSFORMERS_PACKAGE = "transformers==5.13.1"
+KOKORO_MISAKI_PACKAGE = "misaki[en]==0.9.4"
+KOKORO_LOGURU_PACKAGE = "loguru==0.7.3"
 ELEVENLABS_PACKAGE = "elevenlabs==2.55.0"
 # Live voice conversation (Gemini Live). Pin verified against the bundled
 # locks: its httpx/pydantic/websockets/anyio/requests ranges all accept the
@@ -48,10 +49,112 @@ ELEVENLABS_PACKAGE = "elevenlabs==2.55.0"
 # shared with google-auth, so blind removal would break other packages.
 GOOGLE_GENAI_PACKAGE = "google-genai==2.10.0"
 STT_PACKAGE = "faster-whisper==1.2.1"
+# Runtime optional installs cannot consume the build environment's monolithic
+# requirements lock: installing that entire file into the shared optional
+# directory would duplicate Wisp itself and every provider.  Keep the exact
+# faster-whisper dependency closure here instead.  These versions are copied
+# from the platform release locks and are checked against them in CI.
+_STT_LOCKED_VERSIONS = {
+    "faster-whisper": "1.2.1",
+    "av": "17.1.0",
+    "ctranslate2": "4.8.0",
+    "huggingface-hub": "1.21.0",
+    "tokenizers": "0.22.2",
+    "tqdm": "4.68.3",
+    "numpy": "2.5.0",
+    "pyyaml": "6.0.3",
+    "setuptools": "81.0.0",
+    "flatbuffers": "25.12.19",
+    "packaging": "26.2",
+    "protobuf": "6.33.2",
+    "filelock": "3.29.4",
+    "fsspec": "2026.6.0",
+    "hf-xet": "1.5.1",
+    "httpx": "0.28.1",
+    "requests": "2.34.2",
+    "typer": "0.25.1",
+    "typing-extensions": "4.15.0",
+    "anyio": "4.14.1",
+    "certifi": "2026.6.17",
+    "httpcore": "1.0.9",
+    "idna": "3.18",
+    "charset-normalizer": "3.4.7",
+    "urllib3": "2.7.0",
+    "annotated-doc": "0.0.4",
+    "click": "8.4.2",
+    "rich": "15.0.0",
+    "shellingham": "1.5.4",
+    "h11": "0.16.0",
+    "sniffio": "1.3.1",
+    "markdown-it-py": "4.2.0",
+    "pygments": "2.20.0",
+    "mdurl": "0.1.2",
+}
+
+# STT and Kokoro are installed into one optional-package directory. Any
+# dependency that both stacks can resolve must therefore have one release-owned
+# version, or installing one feature can silently change the other. Provider-
+# specific native/model packages stay out of this shared set.
+_STT_PROVIDER_ONLY_PACKAGES = {
+    "faster-whisper",
+    "av",
+    "ctranslate2",
+    "flatbuffers",
+    "onnxruntime",
+}
+_OPTIONAL_AI_COMPAT_PACKAGE_NAMES = (
+    "protobuf",
+    "tokenizers",
+    "setuptools",
+)
+
+
+def _stt_locked_versions(platform_name: str | None = None) -> dict[str, str]:
+    """Return the platform release versions that own the speech shared layer."""
+    platform_name = platform_name or sys.platform
+    versions = dict(_STT_LOCKED_VERSIONS)
+    versions["onnxruntime"] = "1.23.2" if platform_name == "darwin" else "1.27.0"
+    if platform_name == "win32":
+        versions["colorama"] = "0.4.6"
+    return versions
+
+
+def stt_locked_packages(platform_name: str | None = None) -> list[str]:
+    """Return the exact faster-whisper closure from one platform release lock."""
+    versions = _stt_locked_versions(platform_name)
+    return [f"{name}=={version}" for name, version in versions.items()]
+
+
+def speech_shared_locked_packages(platform_name: str | None = None) -> list[str]:
+    """Return identical pins for every dependency shared by STT and Kokoro."""
+    versions = _stt_locked_versions(platform_name)
+    ordered_names = [
+        *_OPTIONAL_AI_COMPAT_PACKAGE_NAMES,
+        *(
+            name
+            for name in versions
+            if name not in _STT_PROVIDER_ONLY_PACKAGES
+            and name not in _OPTIONAL_AI_COMPAT_PACKAGE_NAMES
+        ),
+    ]
+    return [f"{name}=={versions[name]}" for name in ordered_names]
+
+
+STT_LOCKED_PACKAGES = stt_locked_packages()
+SPEECH_SHARED_LOCKED_PACKAGES = speech_shared_locked_packages()
+OPTIONAL_AI_COMPAT_PACKAGES = SPEECH_SHARED_LOCKED_PACKAGES[:len(_OPTIONAL_AI_COMPAT_PACKAGE_NAMES)]
+STT_WINDOWS_CUDA_PACKAGES = [
+    "nvidia-cuda-runtime-cu12==12.8.90",
+    "nvidia-cublas-cu12==12.8.4.1",
+]
+OPTIONAL_INSTALL_CONTRACT_SCHEMA = 3
 KOKORO_BASE_INSTALL_PACKAGES = [
     KOKORO_PACKAGE,
     SOUNDFILE_PACKAGE,
-    *OPTIONAL_AI_COMPAT_PACKAGES,
+    *SPEECH_SHARED_LOCKED_PACKAGES,
+    KOKORO_TRANSFORMERS_PACKAGE,
+    KOKORO_MISAKI_PACKAGE,
+    KOKORO_LOGURU_PACKAGE,
     KOKORO_EN_MODEL_URL,
 ]
 KOKORO_INSTALL_PACKAGES = list(KOKORO_BASE_INSTALL_PACKAGES)
@@ -63,7 +166,7 @@ KOKORO_GPU_TORCH_INSTALL_PACKAGES = [
     "--extra-index-url",
     PYPI_WHEEL_INDEX,
     KOKORO_CUDA_TORCH_PACKAGE,
-    *OPTIONAL_AI_COMPAT_PACKAGES,
+    *SPEECH_SHARED_LOCKED_PACKAGES,
 ]
 # pip --target cannot see packages already staged in the target dir, so the
 # Kokoro phase re-resolves kokoro's torch dependency and would overwrite the
@@ -93,10 +196,7 @@ KOKORO_REMOVE_ARTIFACTS = [
     "en_core_web_sm",
     "en_core_web_sm-*.dist-info",
 ]
-STT_INSTALL_PACKAGES = [
-    STT_PACKAGE,
-    *OPTIONAL_AI_COMPAT_PACKAGES,
-]
+STT_INSTALL_PACKAGES = list(STT_LOCKED_PACKAGES)
 STT_REMOVE_ARTIFACTS = [
     "faster_whisper",
     "faster_whisper-*.dist-info",
@@ -185,9 +285,13 @@ def is_importable(module_name: str) -> bool:
         return False
 
 
-def stt_install_packages() -> list[str]:
-    """Return packages needed to repair or install local speech-to-text."""
-    return list(STT_INSTALL_PACKAGES)
+def stt_install_packages(device: str | None = None, *, platform_name: str | None = None) -> list[str]:
+    """Return the exact packages for the selected STT platform/device."""
+    platform_name = platform_name or sys.platform
+    packages = stt_locked_packages(platform_name)
+    if platform_name == "win32" and str(device or "").strip().lower() == "cuda":
+        packages.extend(STT_WINDOWS_CUDA_PACKAGES)
+    return packages
 
 
 def stt_remove_artifacts() -> list[str]:
@@ -207,7 +311,7 @@ def optional_package_spec(key: str, *, device: str | None = None) -> OptionalPac
         return OptionalPackageSpec(
             key="stt",
             display_name="STT",
-            packages=tuple(stt_install_packages()),
+            packages=tuple(stt_install_packages(device)),
             required_modules=("faster_whisper",),
             remove_artifacts=tuple(stt_remove_artifacts()),
         )
@@ -235,6 +339,25 @@ def optional_package_spec(key: str, *, device: str | None = None) -> OptionalPac
             required_modules=("google.genai",),
         )
     raise KeyError(f"Unknown optional package spec: {key}")
+
+
+def optional_package_contract(key: str, *, device: str | None = None) -> str:
+    """Return a stable fingerprint for an optional install and its checker.
+
+    Persisted success statuses and staged downloads are only reusable while
+    this fingerprint matches.  Changing package pins or checker semantics then
+    makes an application update revalidate instead of trusting stale state.
+    """
+    spec = optional_package_spec(key, device=device)
+    payload = {
+        "schema": OPTIONAL_INSTALL_CONTRACT_SCHEMA,
+        "platform": sys.platform,
+        "key": spec.key,
+        "packages": list(spec.packages),
+        "required_modules": list(spec.required_modules),
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return f"{OPTIONAL_INSTALL_CONTRACT_SCHEMA}:{digest[:24]}"
 
 
 def _expected_package_versions(packages: list[str] | tuple[str, ...]) -> dict[str, str]:
@@ -324,6 +447,39 @@ def optional_package_spec_status(
         if duplicates:
             parts.append(f"duplicate metadata for {', '.join(sorted(duplicates))}")
         status["message"] = f"{spec.display_name} package files do not match this Wisp release: {'; '.join(parts)}."
+    return status
+
+
+def require_optional_package_runtime(key: str, *, device: str | None = None) -> dict[str, object]:
+    """Prepare one valid installer-owned dependency layer for runtime use.
+
+    Runtime consumers must not fall through to a package from the build
+    environment or PyInstaller bundle when the managed install is missing or
+    stale. The same exact contract therefore owns both Settings detection and
+    the actual import path.
+    """
+    status = optional_package_spec_status(key, device=device)
+    if not status.get("valid"):
+        display_name = str(status.get("display_name") or key)
+        detail = str(status.get("message") or "managed package files are missing or invalid")
+        raise RuntimeError(
+            f"{display_name} is not installed for this Wisp release. "
+            f"Open Settings > Voice and install it. {detail}"
+        )
+
+    add_optional_packages_to_path(prepend=True)
+    importlib.invalidate_caches()
+    spec = optional_package_spec(key, device=device)
+    missing_modules = [
+        module_name
+        for module_name in spec.required_modules
+        if importlib.machinery.PathFinder.find_spec(module_name, [str(OPTIONAL_PACKAGES_DIR)]) is None
+    ]
+    if missing_modules:
+        raise RuntimeError(
+            f"{spec.display_name} install is incomplete in Wisp's managed package folder: "
+            f"missing {', '.join(missing_modules)}. Open Settings > Voice and reinstall it."
+        )
     return status
 
 
@@ -654,7 +810,8 @@ def kokoro_torch_status() -> dict[str, object]:
         "valid": False,
     }
     try:
-        if importlib.machinery.PathFinder.find_spec("torch", [str(OPTIONAL_PACKAGES_DIR)]) is None: return status
+        if importlib.machinery.PathFinder.find_spec("torch", [str(OPTIONAL_PACKAGES_DIR)]) is None:
+            return status
         import torch  # type: ignore
 
         status["installed"] = True
@@ -726,6 +883,7 @@ def _optional_probe_status(
     *,
     extra_args: list[str] | None = None,
     timeout: float | None = 30,
+    progress: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     """Run an optional dependency probe in a short-lived process."""
     try:
@@ -738,18 +896,46 @@ def _optional_probe_status(
         ]
         if extra_args:
             command.extend(extra_args)
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
-            cwd=str(REPO_ROOT),
-            env=pip_install_env(),
+        common_kwargs = {
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "cwd": str(REPO_ROOT),
+            "env": pip_install_env(),
             **subprocess_no_window_kwargs(),
-        )
+        }
+        if progress is None:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+                **common_kwargs,
+            )
+        else:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                **common_kwargs,
+            )
+            started_at = time.monotonic()
+            while True:
+                elapsed = time.monotonic() - started_at
+                if timeout is not None and elapsed >= timeout:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr)
+                wait_for = 10.0 if timeout is None else max(0.1, min(10.0, timeout - elapsed))
+                try:
+                    stdout, stderr = process.communicate(timeout=wait_for)
+                    result = subprocess.CompletedProcess(command, int(process.returncode or 0), stdout, stderr)
+                    break
+                except subprocess.TimeoutExpired:
+                    try:
+                        progress(max(1, int(time.monotonic() - started_at)))
+                    except Exception:
+                        pass
         text = (result.stdout or "").strip().splitlines()
         if result.returncode != 0 or not text:
             detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
@@ -791,12 +977,9 @@ def stt_runtime_import_status_fast() -> dict[str, object]:
             return status
         status["installed"] = True
         status["origin"] = str(getattr(spec, "origin", "") or "")
-        try:
-            from importlib import metadata
-
-            status["version"] = metadata.version("faster-whisper")
-        except Exception:
-            status["version"] = ""
+        dist_infos = _dist_info_groups_for_root(OPTIONAL_PACKAGES_DIR).get("faster-whisper") or []
+        if len(dist_infos) == 1:
+            status["version"] = _dist_info_metadata(dist_infos[0])[1]
         status["valid"] = bool(status["origin"])
     except Exception as exc:
         status["error"] = f"{type(exc).__name__}: {exc}"
@@ -818,15 +1001,21 @@ def stt_runtime_import_status_subprocess() -> dict[str, object]:
     )
 
 
-def stt_model_status_subprocess(model: str, device: str, compute_type: str) -> dict[str, object]:
+def stt_model_status_subprocess(
+    model: str,
+    device: str,
+    compute_type: str,
+    *,
+    progress: Callable[[int], None] | None = None,
+) -> dict[str, object]:
     """Load a Whisper model in a subprocess to verify STT without freezing Settings."""
     timeout_text = os.environ.get("WISP_STT_MODEL_VERIFY_TIMEOUT_SECONDS", "").strip()
-    timeout: float | None = None
+    timeout: float | None = 60 * 60
     if timeout_text:
         try:
             timeout = max(1.0, float(timeout_text))
         except ValueError:
-            timeout = None
+            timeout = 60 * 60
     return _optional_probe_status(
         "stt-model-status",
         {
@@ -835,11 +1024,15 @@ def stt_model_status_subprocess(model: str, device: str, compute_type: str) -> d
             "model": model,
             "device": "",
             "compute": "",
+            "requested_device": device,
+            "requested_compute": compute_type,
+            "diagnostics": [],
             "error": "",
             "subprocess": True,
         },
         extra_args=[model, device, compute_type],
         timeout=timeout,
+        progress=progress,
     )
 
 
