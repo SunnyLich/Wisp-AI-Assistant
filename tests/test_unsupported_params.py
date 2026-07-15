@@ -11,7 +11,6 @@ from core.llm_clients.client import (
     _model_rejects_custom_sampling,
     _model_uses_max_completion_tokens,
     _recover_openai_compat_kwargs,
-    _stream_openai_compat_plain,
     _unsupported_parameter_name,
     _without_unsupported_parameter,
 )

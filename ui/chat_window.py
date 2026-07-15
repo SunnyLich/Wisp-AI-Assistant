@@ -14,7 +14,7 @@ import re
 import threading
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from PySide6.QtCore import QEventLoop, QMimeData, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
@@ -54,6 +54,7 @@ import config
 from core.assistant_text import ThoughtStreamParser, merge_segment_iterables
 from core.conversation_store import store as _conversation_store
 from core.conversation_store.store import GENERAL_PROJECT_ID as _GENERAL_PROJECT_ID
+from core.system import file_browser as _file_browser
 from runtime.supervisor import tool_modes
 from ui.chat_rendering import _assistant_segments_to_html, _assistant_text_to_html, _user_text_to_html
 from ui.i18n import t
@@ -213,7 +214,7 @@ def _is_concrete_token_label(value: str) -> bool:
 
 def _now_iso() -> str:
     """Return current UTC time for conversation metadata."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_iso_datetime(value: str | None) -> datetime | None:
@@ -1366,6 +1367,10 @@ class ChatWindow(QWidget):
             act.setCheckable(True)
             act.setChecked(conv.get("project_id", _GENERAL_PROJECT_ID) == pid)
 
+        menu.addAction(
+            t("Browse conversation files"),
+            lambda: self._browse_conversation_files(idx),
+        )
         menu.addSeparator()
         menu.addAction(t("Delete"), lambda: self._delete_conversation(idx))
         # Drop the menu just below the ⋮ button that opened it.
@@ -1377,6 +1382,24 @@ class ChatWindow(QWidget):
         self._conversation_menu = menu
         menu.aboutToHide.connect(lambda: setattr(self, "_conversation_menu", None))
         menu.popup(pos)
+
+    def _browse_conversation_files(self, idx: int) -> None:
+        """Reveal the persisted conversation record and its adjacent attachments."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        self._persist()
+        record_path = _conversation_store.CONVERSATIONS_FILE
+        try:
+            if not record_path.exists():
+                record_path.parent.mkdir(parents=True, exist_ok=True)
+                record_path = record_path.parent
+            _file_browser.reveal_path(record_path)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                t("Could not open conversation files"),
+                t("Wisp could not open the conversation files: {error}").format(error=exc),
+            )
 
     def _toggle_pin(self, idx: int) -> None:
         """Handle toggle pin for chat window."""

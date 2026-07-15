@@ -25,11 +25,11 @@ from pathlib import Path
 from unittest import mock
 
 import config
-from core import optional_deps
-import core.system.native_locks as native_locks
-from core.system.native_locks import keychain_lock, native_init_lock, ssl_init_lock
-import core.tts as tts_module
 import core.llm_clients.client as llm
+import core.system.native_locks as native_locks
+import core.tts as tts_module
+from core import optional_deps
+from core.system.native_locks import keychain_lock, native_init_lock, ssl_init_lock
 
 
 class _ConcurrencyProbe:

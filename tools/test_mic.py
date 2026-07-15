@@ -4,8 +4,9 @@ tools/test_mic.py — Verify microphone + faster-whisper work before running the
 Usage:
     python tools/test_mic.py
 """
-import sys
 import os
+import sys
+
 import numpy as np
 
 SAMPLE_RATE = 16_000

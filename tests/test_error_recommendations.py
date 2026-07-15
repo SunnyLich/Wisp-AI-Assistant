@@ -4,7 +4,6 @@ import pytest
 
 from core.error_recommendations import format_error, recommendation_for
 
-
 pytestmark = pytest.mark.workflow
 
 

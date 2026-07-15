@@ -195,6 +195,42 @@ def test_safe_call_still_logs_real_ui_failures(caplog):
     assert "worker call failed: ui.reply.notice" in caplog.text
 
 
+def test_privacy_review_is_resolved_through_the_local_ui():
+    """A blocked brain request receives the user's review decision."""
+    ui = FakeWorker({"ui.privacy.review.request": lambda _params: {"approved": True}})
+    flow, _native, ui, brain, _audio = make_flow(ui=ui)
+
+    payload = {"approval_id": "privacy-1", "count": 1, "scrubbed_preview": "[EMAIL_1]"}
+    flow._handle_privacy_review_request(payload)
+
+    assert ui.last_call("ui.privacy.review.request")["params"] == payload
+    response = brain.last_call("brain.privacy.review.respond")
+    assert response["params"] == {
+        "approval_id": "privacy-1",
+        "approved": True,
+        "decision": "redacted",
+    }
+    assert response["wait"] is False
+
+
+def test_privacy_review_can_authorize_the_full_unredacted_message():
+    """The explicit full-send decision must reach the blocked brain request."""
+    ui = FakeWorker(
+        {"ui.privacy.review.request": lambda _params: {"approved": True, "decision": "full"}}
+    )
+    flow, _native, ui, brain, _audio = make_flow(ui=ui)
+
+    flow._handle_privacy_review_request(
+        {"approval_id": "privacy-full", "count": 1, "scrubbed_preview": "[PERSON_1]"}
+    )
+
+    assert brain.last_call("brain.privacy.review.respond")["params"] == {
+        "approval_id": "privacy-full",
+        "approved": True,
+        "decision": "full",
+    }
+
+
 def context_handler(
     selected: str = "selected",
     clipboard: str = "",
@@ -1795,7 +1831,7 @@ def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
         )
         assert updated_browser_chip["state"] == "on"
         assert updated_browser_chip["tokens"].startswith("~")
-        assert updated_browser_chip["warning"] == ""
+        assert updated_browser_chip["warning"] == "Privacy: 1 item(s) detected and censored."
         ui.emit("ui.intent.chosen", {"custom": "What is this page?"})
 
     fetch = native.last_call("native.context.browser_content")["params"]
@@ -4391,6 +4427,27 @@ def test_query_privacy_report_surfaces_redacted_summary_badge_and_report():
     assert privacy["report"]["count"] == 2
     assert privacy["report"]["items"][0]["preview"] == "[email redacted]"
 
+    reviewed_report = dict(report, reviewed=True, decision="redacted")
+
+    def query_after_review(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event("reply.done", {"text": "ok", "privacy_report": reviewed_report}, 1)
+        return {"text": "ok", "privacy_report": reviewed_report}
+
+    reviewed_ui = FakeWorker()
+    reviewed_native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    reviewed_brain = FakeWorker(stream_handlers={"brain.query": query_after_review})
+    with caller_config(rows):
+        _flow, reviewed_native, reviewed_ui, _brain, _audio = make_flow(
+            native=reviewed_native,
+            ui=reviewed_ui,
+            brain=reviewed_brain,
+        )
+        reviewed_native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        reviewed_ui.emit("ui.intent.chosen", {"custom": "go"})
+
+    assert reviewed_ui.calls_for("ui.privacy.report") == []
+    assert reviewed_ui.calls_for("ui.context.summary") == []
+
 
 @pytest.mark.workflow
 def test_health_request_uses_fast_static_rows_and_warns(monkeypatch):
@@ -4568,7 +4625,7 @@ def test_chat_context_preview_updates_token_estimates_before_send():
     assert first_browser["tokens"].startswith("~")
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["tokens"].startswith("~")
-    assert updated_browser["warning"] == ""
+    assert updated_browser["warning"] == "Privacy: 1 item(s) detected and censored."
     assert native.last_call("native.context.browser_content")["params"] == {
         "url": "https://example.test/page",
         "hwnd": 777,
@@ -4621,7 +4678,7 @@ def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["state"] == "on"
     assert updated_browser["tokens"].startswith("~")
-    assert updated_browser["warning"] == ""
+    assert updated_browser["warning"] == "Privacy: 1 item(s) detected and censored."
     assert native.last_call("native.context.browser_content")["params"] == {
         "url": "https://example.test/page",
         "hwnd": 777,

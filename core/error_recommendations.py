@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from core.privacy_redaction import redact_text
 
-
 _RULES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
         ("api key", "missing key", "no api key", "unauthorized", "401"),

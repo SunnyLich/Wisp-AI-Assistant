@@ -9,13 +9,25 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QWidget, QFrame, QCheckBox, QLineEdit, QComboBox, QFormLayout,
-    QTextEdit, QMessageBox, QFileDialog,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
+
 from ui.i18n import t
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
-
 
 _TRUE = {"1", "true", "yes", "on"}
 

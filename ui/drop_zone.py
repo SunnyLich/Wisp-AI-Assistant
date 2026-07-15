@@ -9,17 +9,26 @@ Components:
   process_drop_mime  -- converts dropped MIME data to (name, content, type) items
 """
 from __future__ import annotations
+
+import base64
 import math
 import os
-import base64
-from typing import Callable, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QWidget, QGraphicsOpacityEffect
 from PySide6.QtCore import (
-    Qt, QTimer, QPoint, QRect, QRectF,
-    QPropertyAnimation, QEasingCurve, QMimeData,
+    QEasingCurve,
+    QMimeData,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    Qt,
+    QTimer,
 )
-from PySide6.QtGui import QPainter, QColor, QFont, QBrush, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QWidget
+
 from ui.i18n import t
 
 if TYPE_CHECKING:
@@ -102,7 +111,7 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
 
             elif ext in _TEXT_EXTS or ext == "":
                 try:
-                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    with open(path, encoding="utf-8", errors="replace") as fh:
                         content = fh.read(_MAX_TEXT_BYTES)
                     items.append((name, content, "text"))
                 except OSError:
@@ -126,7 +135,7 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
     elif mime.hasImage():
         image = mime.imageData()
         if image is not None and not image.isNull():
-            from PySide6.QtCore import QByteArray, QBuffer
+            from PySide6.QtCore import QBuffer, QByteArray
             ba  = QByteArray()
             buf = QBuffer(ba)
             buf.open(QBuffer.OpenModeFlag.WriteOnly)

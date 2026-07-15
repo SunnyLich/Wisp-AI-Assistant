@@ -4,13 +4,14 @@ ui/popup.py — Transient text popup for the full LLM reply.
 Appears near the icon, auto-dismisses after a timeout, or on click.
 """
 from __future__ import annotations
-import config
-from PySide6.QtWidgets import QLabel, QWidget, QApplication, QVBoxLayout
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+import config
 from ui.i18n import t
 from ui.shared.window_utils import enable_standard_window_controls
-
 
 POPUP_WIDTH = 320
 POPUP_MAX_HEIGHT = 240

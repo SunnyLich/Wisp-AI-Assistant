@@ -13,7 +13,6 @@ from typing import Any
 
 from core.system.paths import REPO_ROOT
 
-
 ADDON_ENVS_DIR = REPO_ROOT / "addon_envs"
 
 

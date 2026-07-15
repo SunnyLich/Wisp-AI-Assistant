@@ -12,9 +12,9 @@ import sys
 import types
 
 import pytest
-import config
-
 from wisp_brain import handlers
+
+import config
 
 
 @pytest.fixture(autouse=True)

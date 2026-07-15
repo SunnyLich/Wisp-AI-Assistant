@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Any
-
 
 MAX_ANNOTATIONS = 256
 MAX_KEYWORD_RULES = 64

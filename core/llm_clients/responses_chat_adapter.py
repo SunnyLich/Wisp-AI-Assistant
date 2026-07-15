@@ -153,7 +153,6 @@ class ResponsesChatLoopModel(ChatLoopModel):
 
     def _input_after_observation(self, observation: WispObservation) -> list[dict[str, Any]]:
         """Append one observation to the stateless transcript and return it."""
-        from core.llm_clients import client as llm
 
         if observation.tool_results:
             if not self._last_response_output_replayed:

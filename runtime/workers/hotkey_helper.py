@@ -7,17 +7,16 @@ streams hotkey events back to the native worker as newline-delimited JSON.
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import signal
 import sys
 import threading
 import time
 from typing import Any
 
-from runtime.bootstrap import configure_paths
 from runtime import protocol
-
+from runtime.bootstrap import configure_paths
 
 # A dedicated, easy-to-read log so hotkey behaviour can be inspected on a remote
 # Mac without digging through worker stderr. Tail it with:

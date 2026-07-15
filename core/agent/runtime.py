@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
-
+from typing import Any, Protocol
 
 LogCallback = Callable[[str], None]
 ModelCallback = Callable[[str], str]
@@ -238,7 +238,7 @@ class AgentPermissions:
     allow_file_delete: bool = False
 
     @classmethod
-    def from_spec(cls, spec: AgentTaskLike) -> "AgentPermissions":
+    def from_spec(cls, spec: AgentTaskLike) -> AgentPermissions:
         """Handle from spec for agent permissions."""
         def enabled(flag_name: str, mode_name: str) -> bool:
             """Handle enabled for agent permissions."""

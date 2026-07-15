@@ -9,10 +9,9 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from runtime import VERSION
-from runtime.boundaries import boundary_status
+from runtime import VERSION, protocol
 from runtime.bootstrap import configure_paths
-from runtime import protocol
+from runtime.boundaries import boundary_status
 
 Handler = Callable[..., Any]
 EventSinkSetter = Callable[[Callable[[str, Any, Any], None]], None]

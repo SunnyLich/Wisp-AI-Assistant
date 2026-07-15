@@ -27,7 +27,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-
 _EXPECTED_USER_ERROR_MARKERS = (
     "all query model routes failed",
     "all chat model routes failed",

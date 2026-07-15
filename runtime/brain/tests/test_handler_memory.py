@@ -10,7 +10,6 @@ import sys
 import types
 
 import pytest
-
 from wisp_brain import handlers
 
 

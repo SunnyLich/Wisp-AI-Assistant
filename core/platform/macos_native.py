@@ -111,8 +111,7 @@ def get_clipboard_text() -> str | None:
     try:
         result = subprocess.run(
             ["/usr/bin/pbpaste"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=2.0,
             check=False,
@@ -232,8 +231,7 @@ JSON.stringify(rows);
         try:
                 result = subprocess.run(
                         ["/usr/bin/osascript", "-l", "JavaScript", "-e", script],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
+                        capture_output=True,
                         text=True,
                         timeout=3.0,
                         check=False,

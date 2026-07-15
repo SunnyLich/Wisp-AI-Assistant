@@ -5,7 +5,6 @@ from pathlib import Path
 
 from runtime import VERSION
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

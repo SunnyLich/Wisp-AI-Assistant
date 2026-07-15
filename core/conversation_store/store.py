@@ -15,18 +15,18 @@ the store. All public functions are guarded by a module lock.
 """
 from __future__ import annotations
 
-import json
-import os
 import base64
 import hashlib
+import json
 import mimetypes
+import os
 import re
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from core.system.paths import CHATS_DIR, CHAT_ATTACHMENTS_DIR, CONVERSATIONS_FILE, PROJECTS_FILE
+from core.system.paths import CHAT_ATTACHMENTS_DIR, CHATS_DIR, CONVERSATIONS_FILE, PROJECTS_FILE
 
 GENERAL_PROJECT_ID = "general"
 _GENERAL_PROJECT_NAME = "General"
@@ -44,7 +44,7 @@ _IMAGE_EXT_BY_MAGIC: tuple[tuple[bytes, str, str], ...] = (
 
 def _now_iso() -> str:
     """Handle now iso for conversation store store."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _read_json(path, default):
@@ -180,7 +180,7 @@ def external_file_attachment(path: str, *, kind: str | None = None, source: str 
     }
     if stat is not None:
         ref["size"] = int(stat.st_size)
-        ref["mtime"] = datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()
+        ref["mtime"] = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat()
     return ref
 
 

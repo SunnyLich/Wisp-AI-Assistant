@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import difflib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import config
 from core.agent.runtime import AgentPermissions, PermissionDenied, ToolResult
 from core.agent.toolbox import AgentToolbox
 from core.agent.workspace import ScopedWorkspace
-
 
 LOCAL_FILE_TOOLS = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 READ_FILE_TOOLS = {"list_files", "read_file"}

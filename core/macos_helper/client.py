@@ -18,8 +18,9 @@ import os
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from core.macos_helper import protocol
 

@@ -174,8 +174,7 @@ _FOCUS_GUIDANCE = (
 
 def _tool_get_selected_text(_args: dict) -> str:
     """Read the current selection, refusing the keystroke path under the guard."""
-    from core import capture
-    from core import context_fetcher
+    from core import capture, context_fetcher
 
     foreground = context_fetcher.get_active_window_info()
     client_focused = int(foreground.pid or 0) in _client_pids()
@@ -368,7 +367,7 @@ def main() -> int:
             _ok(mid, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "wisp-context-server", "version": "0.9.2"},
+                "serverInfo": {"name": "wisp-context-server", "version": "0.9.3"},
             })
         elif method == "ping":
             _ok(mid, {})

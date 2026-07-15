@@ -11,7 +11,6 @@ from __future__ import annotations
 import wave
 
 import pytest
-
 from wisp_brain import handlers
 
 # The handler reads audio via soundfile; skip cleanly where it isn't installed.

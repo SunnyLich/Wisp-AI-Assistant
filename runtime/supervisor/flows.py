@@ -2157,6 +2157,8 @@ class FlowController:
                 )
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
+            elif event == "privacy.review.request":
+                self._handle_privacy_review_request(payload)
 
         try:
             caller_idx = int(data.get("caller_idx", 0) or 0)
@@ -2188,6 +2190,7 @@ class FlowController:
                 context_snippets.append({"label": label, "preview": preview})
         chat_params: dict[str, Any] = {
             "messages": messages,
+            "privacy_session_id": str(data.get("conversation_id") or request_id),
             "memory_enabled": self._context_mode(caller, "memory") == "on",
             "use_tools": bool(allowed_tools),
             "allowed_tools": allowed_tools,
@@ -2211,6 +2214,8 @@ class FlowController:
             final_payload = done_payload if done_seen else (result if isinstance(result, dict) else {})
             text = str((final_payload or {}).get("text") or "")
             file_context = list((final_payload or {}).get("file_context") or [])
+            privacy_report = (final_payload or {}).get("privacy_report")
+            self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
             annotations = self._chat_text_annotations(text, role="assistant")
             if not done_seen:
                 self._emit_file_context_progress(
@@ -2239,6 +2244,17 @@ class FlowController:
                 },
                 timeout=30.0,
             )
+            if (
+                isinstance(privacy_report, dict)
+                and privacy_report.get("count")
+                and not privacy_report.get("reviewed")
+            ):
+                self._safe_call(
+                    self.ui,
+                    "ui.privacy.report",
+                    {"report": privacy_report, "title": t("Privacy Report")},
+                    timeout=30.0,
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception("chat request failed")
             self._safe_call(
@@ -2864,6 +2880,8 @@ class FlowController:
                     self._on_reply_done(payload)
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
+            elif event == "privacy.review.request":
+                self._handle_privacy_review_request(payload)
 
         # Continue the conversation selected in the chat window: replay its prior
         # turns so the model has full context. ui_host is the source of truth for
@@ -2871,6 +2889,8 @@ class FlowController:
         try:
             hist = self._safe_call(self.ui, "ui.chat.active_history", {}, timeout=10.0)
             if isinstance(hist, dict):
+                if hist.get("conversation_id"):
+                    params["privacy_session_id"] = str(hist["conversation_id"])
                 if hist.get("history"):
                     params["history"] = hist["history"]
                 prior_context = str(hist.get("context") or "").strip()
@@ -2903,6 +2923,8 @@ class FlowController:
                 timeout=30.0,
             )
             if isinstance(begin_result, dict) and begin_result.get("started"):
+                if begin_result.get("conversation_id"):
+                    params["privacy_session_id"] = str(begin_result["conversation_id"])
                 raw_idx = begin_result.get("conversation_index")
                 if isinstance(raw_idx, int):
                     early_chat_index = raw_idx
@@ -3006,7 +3028,7 @@ class FlowController:
                 timeout=30.0,
             )
         privacy_count = int((privacy_report or {}).get("count") or 0) if isinstance(privacy_report, dict) else 0
-        if privacy_count:
+        if privacy_count and not bool((privacy_report or {}).get("reviewed")):
             self._safe_call(
                 self.ui,
                 "ui.context.summary",
@@ -3023,7 +3045,7 @@ class FlowController:
             self._safe_call(
                 self.ui,
                 "ui.privacy.report",
-                {"report": privacy_report, "title": "Privacy Report"},
+                {"report": privacy_report, "title": t("Privacy Report")},
                 timeout=30.0,
             )
         if bubble_cancelled:
@@ -3054,6 +3076,8 @@ class FlowController:
             """Handle event events."""
             if event == "reply.chunk":
                 self._on_reply_chunk(payload)
+            elif event == "privacy.review.request":
+                self._handle_privacy_review_request(payload)
 
         try:
             query_params = self._brain_query_params(prompt, pending)
@@ -3084,6 +3108,19 @@ class FlowController:
             return
         text = str((result or {}).get("text") or "").strip()
         visible_text = str((result or {}).get("visible_text") or "").strip()
+        privacy_report = (result or {}).get("privacy_report") if isinstance(result, dict) else None
+        self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
+        if (
+            isinstance(privacy_report, dict)
+            and privacy_report.get("count")
+            and not privacy_report.get("reviewed")
+        ):
+            self._safe_call(
+                self.ui,
+                "ui.privacy.report",
+                {"report": privacy_report, "title": t("Privacy Report")},
+                timeout=30.0,
+            )
         if not visible_text and text:
             visible_text = "Replacement pasted."
         log.info("rewrite result: text_chars=%d visible_chars=%d", len(text), len(visible_text))
@@ -3508,6 +3545,32 @@ class FlowController:
             self.brain,
             "brain.live_file.approval.respond",
             {"approval_id": approval_id, "approved": approved, "feedback": feedback},
+        )
+
+    def _handle_privacy_review_request(self, payload: Any) -> None:
+        """Show the pre-send privacy sheet and resolve the blocked brain request."""
+        if not isinstance(payload, dict):
+            return
+        approval_id = str(payload.get("approval_id") or "")
+        if not approval_id:
+            return
+        result = self._safe_call(
+            self.ui,
+            "ui.privacy.review.request",
+            payload,
+            timeout=600.0,
+        ) or {}
+        decision = str(result.get("decision") or "").strip().lower() if isinstance(result, dict) else ""
+        if decision not in {"redacted", "full", "cancel"}:
+            decision = "redacted" if isinstance(result, dict) and result.get("approved") else "cancel"
+        self._fire(
+            self.brain,
+            "brain.privacy.review.respond",
+            {
+                "approval_id": approval_id,
+                "approved": decision in {"redacted", "full"},
+                "decision": decision,
+            },
         )
 
     def _stt_warming(self) -> bool:

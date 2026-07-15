@@ -13,8 +13,8 @@ pair: each new query bumps the counter, and stale worker threads check
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 
 class GenerationCounter:
@@ -58,6 +58,7 @@ class ContextInputs:
     active_document_label: str = ""                     # app/window/file label for active document text
     priority_context: str = ""                          # e.g. "Browser/Web" or "Active document"
     trust_privacy_mode: bool = True
+    defer_privacy_redaction: bool = False              # final gateway owns scrub/review
 
 
 @dataclass
@@ -110,6 +111,8 @@ def _redact_with_report_if_enabled(
     text: str | None,
     enabled: bool,
     source: str,
+    *,
+    defer: bool = False,
 ) -> tuple[str, dict]:
     """Apply privacy redaction and keep a detected/censored report."""
     if not text:
@@ -118,7 +121,8 @@ def _redact_with_report_if_enabled(
         return str(text), {"source": source, "count": 0, "items": [], "categories": {}}
     from core.privacy_redaction import redact_with_report
 
-    return redact_with_report(str(text), source=source)
+    redacted, report = redact_with_report(str(text), source=source)
+    return (str(text) if defer else redacted), report
 
 
 def build_context(
@@ -144,11 +148,12 @@ def build_context(
 
     screenshot_b64 = inp.screenshot_b64
     privacy_enabled = bool(inp.trust_privacy_mode)
+    defer_privacy = bool(inp.defer_privacy_redaction)
     reports: list[dict] = []
     context_blocks: list[str] = []
     for item in inp.buffered_items:
         redacted, report = _redact_with_report_if_enabled(
-            item, privacy_enabled, "buffered_context"
+            item, privacy_enabled, "buffered_context", defer=defer_privacy
         )
         if redacted:
             context_blocks.append(f"[Buffered context]\n{redacted}")
@@ -162,7 +167,7 @@ def build_context(
             doc_text = read_document_file(content)
             if doc_text:
                 redacted, report = _redact_with_report_if_enabled(
-                    doc_text, privacy_enabled, f"document:{name}"
+                    doc_text, privacy_enabled, f"document:{name}", defer=defer_privacy
                 )
                 if redacted:
                     context_blocks.append(
@@ -173,7 +178,7 @@ def build_context(
                 reports.append(report)
         else:
             redacted, report = _redact_with_report_if_enabled(
-                content, privacy_enabled, f"dropped:{name}"
+                content, privacy_enabled, f"dropped:{name}", defer=defer_privacy
             )
             if redacted:
                 context_blocks.append(
@@ -185,21 +190,21 @@ def build_context(
 
     if inp.clipboard_text:
         redacted, report = _redact_with_report_if_enabled(
-            inp.clipboard_text, privacy_enabled, "clipboard"
+            inp.clipboard_text, privacy_enabled, "clipboard", defer=defer_privacy
         )
         if redacted:
             context_blocks.append(f"[Clipboard]\n{redacted}")
         reports.append(report)
 
     selected, selected_report = _redact_with_report_if_enabled(
-        inp.selected, privacy_enabled, "selection"
+        inp.selected, privacy_enabled, "selection", defer=defer_privacy
     )
     selected_block = f"[Selection]\n{selected}" if selected else ""
     ambient_text, ambient_report = _redact_with_report_if_enabled(
-        inp.ambient_text, privacy_enabled, "ambient"
+        inp.ambient_text, privacy_enabled, "ambient", defer=defer_privacy
     )
     active_document_text, document_report = _redact_with_report_if_enabled(
-        inp.active_document_text, privacy_enabled, "active_document"
+        inp.active_document_text, privacy_enabled, "active_document", defer=defer_privacy
     )
     reports.extend([selected_report, ambient_report, document_report])
 
@@ -230,7 +235,7 @@ def build_context(
     )
 
     user_message, prompt_report = _redact_with_report_if_enabled(
-        inp.intent_prompt, privacy_enabled, "prompt"
+        inp.intent_prompt, privacy_enabled, "prompt", defer=defer_privacy
     )
     reports.append(prompt_report)
     from core.privacy_redaction import merge_reports

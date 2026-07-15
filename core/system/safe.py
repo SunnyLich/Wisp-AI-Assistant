@@ -21,12 +21,10 @@ inline-expression counterpart for the ``x = f() / except: x = default`` shape.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Callable, Iterator, TypeVar
 
 _log = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 __all__ = ["swallow", "safe"]
 
@@ -51,7 +49,7 @@ def swallow(
             _log.debug("%s: %s", log, exc)
 
 
-def safe(
+def safe[T](
     func: Callable[[], T],
     default: T | None = None,
     *,

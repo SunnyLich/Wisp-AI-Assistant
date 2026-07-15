@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import html
-import json
 import itertools
+import json
 import logging
 import math
 import os
@@ -15,12 +15,13 @@ import threading
 import time
 import traceback
 from collections.abc import MutableMapping
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
+from runtime import VERSION, protocol
 from runtime.bootstrap import configure_paths
 from runtime.boundaries import boundary_status
-from runtime import VERSION, protocol
 from ui.agent.activity_i18n import (
     translate_agent_activity_text,
     translate_agent_health_badge,
@@ -88,13 +89,24 @@ _STATUS_LABELS = {
 }
 
 _PRIVACY_CATEGORY_LABELS = {
+    "account_number": "Account number",
+    "address": "Address",
     "api_key": "API key",
     "bearer_token": "Bearer token",
     "card_number": "Card number",
     "credential": "Credential",
+    "custom": "Custom pattern",
+    "date": "Date",
+    "drivers_license": "Driver's license",
     "email": "Email",
+    "iban": "IBAN",
+    "person": "Person",
+    "phone": "Phone",
+    "passport": "Passport",
     "private_key": "Private key",
+    "secret": "Secret",
     "ssn": "SSN",
+    "url": "URL",
     "url_credential": "URL credential",
 }
 
@@ -103,7 +115,11 @@ _PRIVACY_SOURCE_LABELS = {
     "ambient": "App",
     "buffered_context": "Context",
     "clipboard": "Clipboard",
+    "context": "Context",
+    "instruction": "Instruction",
+    "memory": "Memory",
     "prompt": "Prompt",
+    "rewrite_text": "Selected text",
     "selection": "Selection",
 }
 
@@ -144,6 +160,12 @@ def _privacy_source_label(source: str) -> str:
         return f"{t('Document')}: {text.split(':', 1)[1].strip()}"
     if lowered.startswith("dropped:"):
         return f"{t('Dropped file')}: {text.split(':', 1)[1].strip()}"
+    if lowered.startswith("history:"):
+        return t("History")
+    if lowered.startswith("message:"):
+        return t("Chat message")
+    if lowered.startswith("tool:"):
+        return t("Tool result")
     if lowered in _PRIVACY_SOURCE_LABELS:
         return t(_PRIVACY_SOURCE_LABELS[lowered])
     return _context_display_label(text)
@@ -846,16 +868,17 @@ def _make_live_agent_item(
 class MacAgentRunDialog:
     """Protocol-backed agent run window for the pure-Python target."""
 
-    def __init__(self, host: "QtProtocolHost", spec: dict[str, Any]) -> None:
+    def __init__(self, host: QtProtocolHost, spec: dict[str, Any]) -> None:
         """Initialize the mac agent run dialog instance."""
         from PySide6.QtCore import QPointF, Qt, QTimer, QUrl
         from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QPainterPath, QPen, QTextCursor
         from PySide6.QtWidgets import (
             QApplication,
+            QComboBox,
             QDialog,
             QDialogButtonBox,
-            QFrame,
             QFormLayout,
+            QFrame,
             QGraphicsEllipseItem,
             QGraphicsItemGroup,
             QGraphicsRectItem,
@@ -865,7 +888,6 @@ class MacAgentRunDialog:
             QHBoxLayout,
             QLabel,
             QMessageBox,
-            QComboBox,
             QPushButton,
             QSplitter,
             QTabWidget,
@@ -1815,7 +1837,7 @@ class MacAgentRunDialog:
 class MacAgentHistoryDialog:
     """Protocol-backed agent history browser for the pure-Python target."""
 
-    def __init__(self, host: "QtProtocolHost") -> None:
+    def __init__(self, host: QtProtocolHost) -> None:
         """Initialize the mac agent history dialog instance."""
         from PySide6.QtCore import Qt, QUrl
         from PySide6.QtGui import QDesktopServices
@@ -2001,7 +2023,7 @@ class QtProtocolHost:
         self._app = app
         self._out = out
         self._write_lock = threading.Lock()
-        self._lines: "queue.Queue[bytes | None]" = queue.Queue()
+        self._lines: queue.Queue[bytes | None] = queue.Queue()
         self._closing = False
         self._stdin_fd = sys.stdin.fileno()
 
@@ -2032,7 +2054,7 @@ class QtProtocolHost:
             self._all_conversations = []
         self._apply_memory_project()
         self._chat_request_ids = itertools.count(1)
-        self._chat_streams: dict[str, "queue.Queue[tuple[str, Any]]"] = {}
+        self._chat_streams: dict[str, queue.Queue[tuple[str, Any]]] = {}
         self._chat_streams_lock = threading.Lock()
         self._active_dispatch_method = ""
         self._active_dispatch_started = 0.0
@@ -2353,6 +2375,8 @@ class QtProtocolHost:
             return self._chat_ingest()
         if method == "ui.live_file.approval.request":
             return self._live_file_approval_request(**params)
+        if method == "ui.privacy.review.request":
+            return self._privacy_review_request(**params)
         if method == "ui.show_chat":
             return self._show_chat(force_new=bool(params.get("new", False)))
         if method == "ui.show_settings":
@@ -2486,6 +2510,7 @@ class QtProtocolHost:
         """Queue the profile wizard after the overlay has received its first frame."""
         try:
             from PySide6.QtCore import QTimer
+
             from ui.onboarding import OnboardingWizard, should_show_onboarding
             from ui.settings_panel import env as settings_env
 
@@ -3270,6 +3295,7 @@ class QtProtocolHost:
         context = ""
         if idx is not None and 0 <= idx < len(self._all_conversations):
             conv = self._all_conversations[idx]
+            conversation_id = str(conv.get("id") or "")
             project = conv.get("project_id") or conversation_store.GENERAL_PROJECT_ID
             file_context = list(conv.get("file_context") or [])
             tool_context = self._normalized_tool_context(conv.get("tool_context") or {})
@@ -3288,6 +3314,7 @@ class QtProtocolHost:
                     item["attachments"] = attachments
                 history.append(item)
         else:
+            conversation_id = ""
             project = self._active_project_id
             file_context = []
             tool_context = {}
@@ -3295,6 +3322,7 @@ class QtProtocolHost:
         memory_project = None if project == conversation_store.GENERAL_PROJECT_ID else project
         return {
             "history": history,
+            "conversation_id": conversation_id,
             "project_id": memory_project,
             "context": context,
             "file_context": file_context,
@@ -3307,7 +3335,7 @@ class QtProtocolHost:
         def send_with_memory(messages: list, context_policy: dict | None = None):
             """Send with memory."""
             request_id = f"chat-{next(self._chat_request_ids)}"
-            stream: "queue.Queue[tuple[str, Any]]" = queue.Queue()
+            stream: queue.Queue[tuple[str, Any]] = queue.Queue()
             streamed_text = ""
             with self._chat_streams_lock:
                 self._chat_streams[request_id] = stream
@@ -3317,6 +3345,7 @@ class QtProtocolHost:
                 payload["context_policy"] = normalized_policy
             idx = self._active_conversation_idx
             if idx is not None and 0 <= idx < len(self._all_conversations):
+                payload["conversation_id"] = str(self._all_conversations[idx].get("id") or "")
                 if not normalized_policy:
                     stored_policy = self._normalized_context_policy(
                         self._all_conversations[idx].get("context_policy") or {}
@@ -3649,10 +3678,11 @@ class QtProtocolHost:
     ) -> dict[str, Any]:
         """Handle chat add conversation for qt protocol host."""
         import uuid as _uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from core.conversation_store import store as conversation_store
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         idx = conversation_index if conversation_index is not None else self._active_conversation_idx
         if idx is not None and 0 <= idx < len(self._all_conversations):
             conv_id = str(self._all_conversations[idx].get("id") or _uuid.uuid4())
@@ -3771,6 +3801,11 @@ class QtProtocolHost:
         return {
             "started": True,
             "conversation_index": idx,
+            "conversation_id": (
+                str(self._all_conversations[idx].get("id") or "")
+                if idx is not None and 0 <= idx < len(self._all_conversations)
+                else ""
+            ),
             "continued": bool(result.get("continued")),
             "count": result.get("count"),
         }
@@ -3999,6 +4034,7 @@ class QtProtocolHost:
     def _show_settings(self, extra_tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Show settings."""
         from PySide6.QtCore import QTimer
+
         from ui.settings_panel.dialog import open_settings
 
         def _open() -> None:
@@ -4082,7 +4118,7 @@ class QtProtocolHost:
 
     def _runtime_status_show(self, workers: list[dict[str, Any]] | None = None, log_dir: str = "") -> dict[str, Any]:
         """Show or refresh the runtime status diagnostics window."""
-        from PySide6.QtCore import QTimer, Qt
+        from PySide6.QtCore import Qt, QTimer
         from PySide6.QtGui import QTextCursor
         from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTextEdit, QVBoxLayout
 
@@ -4141,26 +4177,153 @@ class QtProtocolHost:
 
     def _privacy_report(self, report: dict[str, Any] | None = None, title: str = "") -> dict[str, Any]:
         """Show privacy redaction details using only safe previews."""
-        from PySide6.QtCore import QTimer
+        from PySide6.QtCore import Qt, QTimer
+        from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout
 
         report = report or {}
         count = int(report.get("count") or 0)
         items = [item for item in (report.get("items") or []) if isinstance(item, dict)]
-        lines = [t("Privacy redaction report"), f"{count} {t('item(s) detected and censored.')}"]
-        for item in items[:8]:
+        lines: list[str] = []
+        for item in items:
             category = _privacy_category_label(str(item.get("category") or "Sensitive data"))
             source = _privacy_source_label(str(item.get("source") or "Context"))
             preview = str(item.get("preview") or item.get("replacement") or "[redacted]")
             lines.append(f"{category} - {source}: {preview}")
-        if count > len(items[:8]):
-            lines.append(t("Additional redactions were hidden from this compact report."))
-        body = "\n".join(lines)
+        body = "\n".join(lines) or t("No status details available.")
 
         def _open() -> None:
-            self._show_status_dialog(title or "Privacy Report", body)
+            dialog = QDialog()
+            dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            dialog.setWindowTitle(t(title or "Privacy Report"))
+            from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
+
+            enable_standard_window_controls(dialog)
+            root = QVBoxLayout(dialog)
+            root.setContentsMargins(18, 18, 18, 18)
+            root.setSpacing(12)
+
+            heading = QLabel(t("Privacy redaction report"))
+            heading.setStyleSheet("font-size: 16px; font-weight: 600;")
+            root.addWidget(heading)
+            count_label = QLabel(f"{count} {t('item(s) detected and censored.')}")
+            count_label.setWordWrap(True)
+            root.addWidget(count_label)
+
+            details = QTextEdit()
+            details.setObjectName("privacyReportDetails")
+            details.setReadOnly(True)
+            details.setPlainText(body)
+            root.addWidget(details, 1)
+
+            footer = QHBoxLayout()
+            footer.addStretch()
+            close = QPushButton(t("Close"))
+            close.clicked.connect(dialog.close)
+            footer.addWidget(close)
+            root.addLayout(footer)
+
+            dialog.setMinimumSize(720, 480)
+            fit_window_to_screen(dialog, preferred_width=840, preferred_height=600)
+            status_dialogs = getattr(self, "_status_dialogs", None)
+            if isinstance(status_dialogs, list):
+                status_dialogs.append(dialog)
+
+                def _forget(_result: int, d=dialog) -> None:
+                    if d in status_dialogs:
+                        status_dialogs.remove(d)
+
+                dialog.finished.connect(_forget)
+            dialog.open()
 
         QTimer.singleShot(0, _open)
         return {"queued": True, "count": count}
+
+    def _privacy_review_request(
+        self,
+        approval_id: str = "",
+        items: list[dict[str, Any]] | None = None,
+        scrubbed_preview: str = "",
+        count: int = 0,
+        ai_enabled: bool = False,
+        **_extra: Any,
+    ) -> dict[str, Any]:
+        """Show one blocking, local-only review before a model request starts."""
+        from PySide6.QtWidgets import (
+            QDialog,
+            QDialogButtonBox,
+            QLabel,
+            QTextEdit,
+            QVBoxLayout,
+        )
+
+        dialog = QDialog()
+        dialog.setWindowTitle(t("Review private information"))
+        dialog.setModal(True)
+        layout = QVBoxLayout(dialog)
+        heading = QLabel(
+            t("Wisp found {count} private item(s). Review the redacted request before sending.").format(
+                count=int(count or len(items or []))
+            )
+        )
+        heading.setWordWrap(True)
+        layout.addWidget(heading)
+        detector = QLabel(
+            t("Detection: advanced local AI model and built-in patterns")
+            if ai_enabled
+            else t("Detection: built-in patterns")
+        )
+        detector.setStyleSheet("color: palette(placeholder-text);")
+        layout.addWidget(detector)
+        summary_lines: list[str] = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            category = _privacy_category_label(str(item.get("category") or "Sensitive data"))
+            source = _privacy_source_label(str(item.get("source") or "Context"))
+            preview = str(item.get("preview") or item.get("replacement") or "[redacted]")
+            replacement = str(item.get("replacement") or "[redacted]")
+            summary_lines.append(f"{category} - {source}: {preview} → {replacement}")
+        if summary_lines:
+            summary = QTextEdit()
+            summary.setObjectName("privacyReviewSummary")
+            summary.setReadOnly(True)
+            summary.setPlainText("\n".join(summary_lines))
+            summary.setMaximumHeight(150)
+            layout.addWidget(summary)
+        preview_label = QLabel(t("Redacted request that the model will receive:"))
+        preview_label.setWordWrap(True)
+        layout.addWidget(preview_label)
+        preview = QTextEdit()
+        preview.setObjectName("privacyReviewPreview")
+        preview.setReadOnly(True)
+        preview.setPlainText(str(scrubbed_preview or ""))
+        layout.addWidget(preview, 1)
+        warning = QLabel(t("Send full message bypasses privacy redaction for this request."))
+        warning.setWordWrap(True)
+        warning.setStyleSheet("color: #d8932a;")
+        layout.addWidget(warning)
+        decision = "cancel"
+
+        def _choose(value: str) -> None:
+            nonlocal decision
+            decision = value
+            dialog.accept() if value != "cancel" else dialog.reject()
+
+        buttons = QDialogButtonBox()
+        send_button = buttons.addButton(t("Send redacted"), QDialogButtonBox.ButtonRole.AcceptRole)
+        full_button = buttons.addButton(t("Send full message"), QDialogButtonBox.ButtonRole.DestructiveRole)
+        cancel_button = buttons.addButton(t("Cancel send"), QDialogButtonBox.ButtonRole.RejectRole)
+        send_button.clicked.connect(lambda: _choose("redacted"))
+        full_button.clicked.connect(lambda: _choose("full"))
+        cancel_button.clicked.connect(lambda: _choose("cancel"))
+        layout.addWidget(buttons)
+        dialog.resize(760, 620)
+        dialog.exec()
+        return {
+            "approval_id": approval_id,
+            "approved": decision in {"redacted", "full"},
+            "decision": decision,
+        }
 
     def _show_memory(self, facts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Show memory."""
@@ -4485,7 +4648,16 @@ class QtProtocolHost:
     def _show_addon_settings_dialog(self, addon_id: str, display_name: str, settings: list):
         """Show addon settings dialog."""
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+        from PySide6.QtWidgets import (
+            QDialog,
+            QFrame,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QScrollArea,
+            QVBoxLayout,
+            QWidget,
+        )
 
         existing = self._addon_settings_dialogs.get(addon_id)
         if existing is not None and existing.isVisible():
@@ -4593,7 +4765,11 @@ class QtProtocolHost:
     def _addon_settings_box(self, addon_id: str, settings: list):
         """Build the addon settings form."""
         from PySide6.QtWidgets import (
-            QCheckBox, QComboBox, QFormLayout, QFrame, QLineEdit,
+            QCheckBox,
+            QComboBox,
+            QFormLayout,
+            QFrame,
+            QLineEdit,
         )
 
         if not settings:
@@ -4778,6 +4954,7 @@ def main() -> int:
     real_out = _protect_stdout()
 
     from PySide6.QtWidgets import QApplication
+
     from ui.shared.app_icon import ensure_linux_desktop_entry, install_app_icon, set_windows_app_user_model_id
 
     set_windows_app_user_model_id()
@@ -4788,8 +4965,8 @@ def main() -> int:
     install_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
     try:
-        from ui.shared.theme import apply_app_theme
         from ui.i18n import install as install_i18n
+        from ui.shared.theme import apply_app_theme
 
         apply_app_theme(app)
         install_i18n(app)

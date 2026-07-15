@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import types
-import os
 
 from wisp_brain import handlers
 
@@ -549,8 +549,7 @@ def test_auth_github_device_login_reports_missing_client(monkeypatch):
 
 def test_auth_copilot_set_and_test_call_shared_modules(monkeypatch):
     """Verify auth copilot set and test call shared modules behavior."""
-    from core.auth import copilot_auth
-    from core.auth import copilot_client
+    from core.auth import copilot_auth, copilot_client
 
     calls: list[tuple[str, str | None]] = []
 

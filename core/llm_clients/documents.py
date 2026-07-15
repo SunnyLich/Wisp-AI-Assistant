@@ -9,6 +9,7 @@ from __future__ import annotations
 import config
 from core.llm_clients.logging_utils import log_context as _log_context
 
+
 def _ambient_document_max_chars() -> int:
     """Handle ambient document max chars for LLM clients client."""
     return config.get_settings().context.ambient_document_max_chars
@@ -110,7 +111,8 @@ def _read_document_file(path: str, max_chars: int | None = None) -> str:
         elif ext == ".pdf":
             text = _read_pdf_text(path, max_chars)
         elif ext in (".odt", ".ods", ".odp"):
-            from odf import text as odf_text, teletype  # type: ignore
+            from odf import teletype
+            from odf import text as odf_text  # type: ignore
             from odf.opendocument import load as odf_load  # type: ignore
             doc = odf_load(path)
             paragraphs = doc.getElementsByType(odf_text.P)

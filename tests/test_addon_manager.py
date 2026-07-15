@@ -5,20 +5,20 @@ import json
 import os
 import shutil
 import sys
-import time
 import textwrap
+import time
 import zipfile
 from pathlib import Path
 
 import pytest
+
 import config
-from core.addon_distribution import install_addon_archive, install_addon_folder
 import core.addon_manager as am
+import core.addon_manager as pm
 import core.addon_runtime as addon_runtime
 import core.addon_store as addon_store
-import core.addon_manager as pm
+from core.addon_distribution import install_addon_archive, install_addon_folder
 from core.tool_registry import ToolRegistry
-
 
 _ADDON_SRC = """
 import os

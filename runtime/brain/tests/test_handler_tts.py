@@ -13,7 +13,6 @@ import types
 import wave
 
 import pytest
-
 from wisp_brain import handlers
 
 np = pytest.importorskip("numpy")

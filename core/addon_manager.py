@@ -21,8 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core import addon_runtime
-from core import addon_store
+from core import addon_runtime, addon_store
 from core.system.paths import ADDONS_DIR, BUNDLED_ADDONS_DIR, REPO_ROOT
 
 log = logging.getLogger("wisp.addons")
@@ -66,7 +65,7 @@ class LoadedAddon:
     name: str
     path: Path
     manifest: AddonManifest
-    host: "AddonHostProcess | None" = None
+    host: AddonHostProcess | None = None
     enabled: bool = True
     status: str = "loaded"
     error: str = ""
@@ -168,9 +167,9 @@ class AddonHostProcess:
         future = self._executor.submit(self._raw_call, method, params or {})
         try:
             return future.result(timeout=self.timeout if timeout is None else timeout)
-        except TimeoutError:
+        except TimeoutError as exc:
             self._kill_for_timeout(method)
-            raise TimeoutError(f"addon {self.addon.id} timed out during {method}")
+            raise TimeoutError(f"addon {self.addon.id} timed out during {method}") from exc
 
     def _raw_call(self, method: str, params: dict[str, Any]) -> Any:
         """Handle raw call for addon host process."""

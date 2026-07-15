@@ -7,11 +7,10 @@ boundaries stay fake unless a test is explicitly opt-in elsewhere.
 """
 from __future__ import annotations
 
-import os
-import sys
 import json
-import types
+import os
 import shutil
+import sys
 import textwrap
 import threading
 import time
@@ -23,6 +22,16 @@ from typing import Any
 import pytest
 
 pytestmark = pytest.mark.workflow
+
+
+@pytest.fixture(autouse=True)
+def _use_builtin_privacy_in_offline_workflows(monkeypatch: pytest.MonkeyPatch):
+    """Keep deterministic workflow tests independent from a user's installed AI model."""
+    import config
+
+    monkeypatch.setattr(config, "PRIVACY_MODE", "builtin", raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+    monkeypatch.setattr(config, "PRIVACY_AI_ENABLED", False, raising=False)
 
 
 @dataclass(frozen=True)
@@ -220,8 +229,8 @@ def test_brain_query_workflow_assembles_context_and_redacts_secrets(
     assert "Selected traceback text" in text
     assert "[Browser/Web]" in text
     assert "[Context priority]\nPrioritize Browser/Web" in text
-    assert "[REDACTED_CREDENTIAL]" in text
-    assert "supersecret" not in text
+    assert "password=supersecret" in text
+    assert result["privacy_report"]["categories"]["credential"] == 1
     assert any(event == "reply.chunk" for event, _data in events)
     assert any(event == "reply.done" and data.get("text") == text for event, data in events)
     done = next(data for event, data in events if event == "reply.done")
@@ -744,9 +753,10 @@ def test_chat_history_projects_and_corruption_recovery_workflow(
 
 def test_bubble_settings_and_platform_popup_styles_workflow(qapp, monkeypatch: pytest.MonkeyPatch):
     """Bubble width and font size change independently; popup styles stay opaque."""
-    import config
     from PySide6.QtGui import QColor, QPalette
     from PySide6.QtWidgets import QToolTip
+
+    import config
     from ui.bubble import SpeechBubble
     from ui.intent_overlay import IntentOverlay
     from ui.shared.theme import apply_app_theme, theme_colors
@@ -1280,8 +1290,9 @@ def test_brain_memory_crud_and_project_scope_workflow(
 ):
     """The Memory UI backend can add, search, edit, delete, and scope facts."""
     _ensure_brain_path()
-    from core.memory_store import store as memory_store
     from wisp_brain import handlers
+
+    from core.memory_store import store as memory_store
 
     memory_store.set_active_project("alpha-project")
     project_add = handlers.brain_memory_add(
@@ -1422,7 +1433,9 @@ def test_settings_env_changes_reach_runtime_surfaces_workflow(
         "CONTEXT_BROWSER_MAX_CHARS",
         "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS",
         "CONTEXT_TOOL_DOCUMENT_MAX_CHARS",
+        "PRIVACY_MODE",
         "TRUST_PRIVACY_MODE",
+        "PRIVACY_AI_ENABLED",
     }
     original_env_file = config._ENV_FILE
     original_loaded_keys = set(config._LOADED_DOTENV_KEYS)
@@ -1551,10 +1564,11 @@ def test_brain_addon_install_settings_actions_and_toggle_workflow(
 ):
     """Add-on management covers install, list, setting save, actions, hotkeys, enable state."""
     _ensure_brain_path()
-    from core import addon_store
+    from wisp_brain import handlers
+
     import core.addon_manager as addon_manager
     import core.system.paths as system_paths
-    from wisp_brain import handlers
+    from core import addon_store
 
     addons_dir = tmp_path / "installed-addons"
     source = tmp_path / "source-addon"
@@ -1675,12 +1689,13 @@ def test_addon_update_remove_bad_archive_and_credentials_reset_workflow(
 ):
     """Add-on reload/update/remove failures and credential reset stay isolated."""
     _ensure_brain_path()
-    from core import addon_store, secret_store
-    from core.addon_distribution import install_addon_archive, install_addon_folder
+    from wisp_brain import handlers
+
+    import config
     import core.addon_manager as addon_manager
     import core.system.paths as system_paths
-    import config
-    from wisp_brain import handlers
+    from core import addon_store, secret_store
+    from core.addon_distribution import install_addon_archive, install_addon_folder
 
     addons_dir = tmp_path / "addons"
     monkeypatch.setattr(system_paths, "ADDONS_DIR", addons_dir)
@@ -1938,8 +1953,8 @@ def test_persistence_corruption_migration_and_reset_scope_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Corrupt/legacy user data recovers while resets remove only intended app state."""
-    from core.conversation_store import store as conversations
     import config
+    from core.conversation_store import store as conversations
     from core.system.env_utils import read_env_file
 
     conversations.PROJECTS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1971,6 +1986,7 @@ def test_persistence_corruption_migration_and_reset_scope_workflow(
 
     _ensure_brain_path()
     from wisp_brain import handlers
+
     from core import secret_store
     from core.auth import chatgpt, copilot_auth, github
 
@@ -2012,7 +2028,7 @@ def test_ui_accessibility_layout_and_model_popup_workflow(qapp, monkeypatch: pyt
 
     import config
     from ui.agent.task_window import AgentTaskDialog
-    from ui.settings_panel.dialog import SettingsDialog, _PROVIDER_LABELS, _PROVIDER_MODELS
+    from ui.settings_panel.dialog import _PROVIDER_LABELS, _PROVIDER_MODELS, SettingsDialog
     from ui.shared.theme import apply_app_theme
 
     monkeypatch.setattr(config, "LLM_PROVIDER", "chatgpt", raising=False)

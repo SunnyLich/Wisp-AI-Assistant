@@ -4,7 +4,6 @@ from __future__ import annotations
 from core.system.env_utils import format_env_value, read_env_file, write_env_file
 from core.system.paths import REPO_ROOT
 
-
 ENV_PATH = REPO_ROOT / ".env"
 
 

@@ -375,8 +375,8 @@ def test_intent_overlay_translates_builtin_labels_but_preserves_runtime_prompt()
     from PySide6.QtWidgets import QApplication
 
     import config
-    from core.prompt_i18n import caller_intent_template
     import ui.intent_overlay as intent_overlay
+    from core.prompt_i18n import caller_intent_template
     from ui import i18n
 
     app = QApplication.instance() or QApplication(sys.argv)

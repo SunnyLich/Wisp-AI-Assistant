@@ -16,14 +16,14 @@ its filesystem sandbox root, not merely include it in the prompt.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
-from pathlib import Path
-from typing import Callable
 import html
 import json
 import math
+from collections.abc import Callable
+from dataclasses import asdict
+from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, QPointF, QTimer, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QPainterPath, QPen, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,30 +35,48 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
     QGraphicsEllipseItem,
     QGraphicsItemGroup,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
     QGraphicsView,
-    QMessageBox,
-    QPushButton,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
-    QSplitter,
     QSpinBox,
+    QSplitter,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
-from ui.agent.log_parser import parse_live_log_event
+
+from core.agent.task_spec import (
+    AgentCommunicationSpec,
+    AgentRoleSpec,
+    AgentTaskSpec,
+    agent_task_spec_from_dict,
+    continue_spec_from_run,
+    default_agent_specs,
+    default_communication_specs,
+    default_generic_agent_name,
+    is_role_template,
+    localize_agent_spec_if_default,
+    localize_communication_spec_if_default,
+    resolve_scope_folder,
+    retry_spec_from_run,
+    role_label,
+    role_responsibility,
+)
+from core.system.paths import AGENT_RUNS_DIR
 from ui.agent.activity_i18n import (
     translate_agent_activity_text,
     translate_agent_health_badge,
@@ -70,57 +88,64 @@ from ui.agent.activity_i18n import (
 )
 from ui.agent.combo_helpers import (
     AGENT_PROVIDER_OPTIONS as _AGENT_PROVIDER_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     AGENT_ROLE_OPTIONS as _AGENT_ROLE_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     COMMUNICATION_PHASE_OPTIONS as _COMMUNICATION_PHASE_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     MAP_AGENT_PROVIDER_OPTIONS as _MAP_AGENT_PROVIDER_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     PERMISSION_OPTIONS as _PERMISSION_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     REASONING_OPTIONS as _REASONING_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     REPORT_OPTIONS as _REPORT_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     SANDBOX_OPTIONS as _SANDBOX_OPTIONS,
+)
+from ui.agent.combo_helpers import (
     add_translated_combo_items as _add_translated_combo_items,
+)
+from ui.agent.combo_helpers import (
     combo_value as _combo_value,
+)
+from ui.agent.combo_helpers import (
     display_agent_name as _display_agent_name,
+)
+from ui.agent.combo_helpers import (
     display_phase as _display_phase,
+)
+from ui.agent.combo_helpers import (
     display_role as _display_role,
+)
+from ui.agent.combo_helpers import (
     set_combo_value as _set_combo_value,
 )
+from ui.agent.log_parser import parse_live_log_event
 from ui.i18n import localize_widget_tree, t
-from ui.settings_panel.helpers import NoScrollCombo as _NoScrollCombo, parse_fallback_rows
 from ui.settings_panel.dialog import (
     _PROVIDER_LABELS,
     _PROVIDER_MODELS,
     _model_hint,
     _refresh_model_combo,
 )
+from ui.settings_panel.helpers import NoScrollCombo as _NoScrollCombo
+from ui.settings_panel.helpers import parse_fallback_rows
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
-from core.agent.task_spec import (
-    ROLE_RESPONSIBILITIES,
-    AgentCommunicationSpec,
-    AgentRoleSpec,
-    AgentTaskSpec,
-    agent_task_spec_from_dict,
-    default_agent_specs,
-    default_communication_specs,
-    default_generic_agent_name,
-    continue_spec_from_run,
-    is_inside_scope,
-    is_role_template,
-    localize_agent_spec_if_default,
-    localize_communication_spec_if_default,
-    resolve_scope_folder,
-    retry_spec_from_run,
-    role_label,
-    role_responsibility,
-)
-from core.system.paths import AGENT_RUNS_DIR
-
 
 TaskSubmitCallback = Callable[["AgentTaskSpec"], None]
 ApprovalNoticeCallback = Callable[[str, bool], None]
-_agent_run_windows: list["AgentRunWindow"] = []
-_agent_task_dialogs: list["AgentTaskDialog"] = []
-_agent_history_windows: list["AgentRunHistoryWindow"] = []
-_diff_windows: list["DiffViewer"] = []
+_agent_run_windows: list[AgentRunWindow] = []
+_agent_task_dialogs: list[AgentTaskDialog] = []
+_agent_history_windows: list[AgentRunHistoryWindow] = []
+_diff_windows: list[DiffViewer] = []
 
 
 def make_agent_task_action(
@@ -170,10 +195,10 @@ def open_agent_history(
 
 
 def launch_agent_run_window(
-    spec: "AgentTaskSpec",
+    spec: AgentTaskSpec,
     parent: QWidget | None = None,
     approval_notice_callback: ApprovalNoticeCallback | None = None,
-) -> "AgentRunWindow":
+) -> AgentRunWindow:
     """Handle launch agent run window for UI agent task window."""
     window = AgentRunWindow(spec, parent=parent, approval_notice_callback=approval_notice_callback)
     _agent_run_windows.append(window)

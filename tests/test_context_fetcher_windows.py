@@ -304,7 +304,7 @@ class WindowsContextFetcherDocumentTests(unittest.TestCase):
 
     def test_repair_mojibake_text_fixes_common_context_garbling(self):
         """Verify fetched context mojibake is repaired before prompt construction."""
-        text = "café — 記事本 😊".encode("utf-8").decode("cp1252")
+        text = "café — 記事本 😊".encode().decode("cp1252")
 
         repaired = self.cf._repair_mojibake_text(text)
 

@@ -41,7 +41,7 @@ class ContextChunk:
         *,
         age_days: float = 0.0,
         importance: float = 0.5,
-    ) -> "ContextChunk":
+    ) -> ContextChunk:
         """Handle from text for context chunk."""
         ex = extract(text)
         now = time.time()

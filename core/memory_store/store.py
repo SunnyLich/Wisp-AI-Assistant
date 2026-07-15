@@ -26,14 +26,12 @@ import os
 import re
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import config
-from core.system.paths import MEMORY_DIR
-from core.system import macos_safety
+from core.system import macos_safety, sdk_clients
 from core.system.native_locks import ssl_init_lock
-from core.system import sdk_clients
+from core.system.paths import MEMORY_DIR
 
 try:
     from core.context_router import ContextChunk, ContextRouter
@@ -57,7 +55,7 @@ _CATEGORIES = ("project_context", "general")
 # ---------------------------------------------------------------------------
 
 _active_project_lock = threading.Lock()
-_active_project_id: Optional[str] = None
+_active_project_id: str | None = None
 
 # Sentinel: "scope to whatever project is currently active" (vs. an explicit
 # None which forces a global/general fact).
@@ -68,26 +66,26 @@ _USE_ACTIVE_PROJECT = object()
 _UNCHANGED = object()
 
 
-def set_active_project(project_id: Optional[str]) -> None:
+def set_active_project(project_id: str | None) -> None:
     """Set the project scope used by subsequent save/retrieve calls."""
     global _active_project_id
     with _active_project_lock:
         _active_project_id = (project_id or "").strip() or None
 
 
-def get_active_project() -> Optional[str]:
+def get_active_project() -> str | None:
     """Return active project."""
     with _active_project_lock:
         return _active_project_id
 
 
-def _fact_project(fact: dict) -> Optional[str]:
+def _fact_project(fact: dict) -> str | None:
     """Handle fact project for memory store store."""
     value = str(fact.get("project") or "").strip()
     return value or None
 
 
-def _fact_in_scope(fact: dict, project_id: Optional[str]) -> bool:
+def _fact_in_scope(fact: dict, project_id: str | None) -> bool:
     """A fact is in scope when it is global or belongs to *project_id*."""
     fact_project = _fact_project(fact)
     return fact_project is None or fact_project == project_id
@@ -170,7 +168,7 @@ def _infer_category(text: str) -> str:
 
 def _now_iso() -> str:
     """Handle now iso for memory store store."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _estimate_tokens(text: str) -> int:
@@ -256,7 +254,7 @@ def _format_memory_block(
     facts: list[dict],
     query: str = "",
     top_k: int | None = None,
-    project_id: Optional[str] = None,
+    project_id: str | None = None,
 ) -> str:
     """Format memory block."""
     if not facts:
@@ -300,7 +298,7 @@ def _fallback_write_all_unlocked(facts: list[dict]) -> None:
 
 
 def add_fact_manual_lightweight(
-    text: str, category: str = "general", project: Optional[str] = None
+    text: str, category: str = "general", project: str | None = None
 ) -> bool:
     """Store a manual fact in the JSON fact store without constructing MemoryManager."""
     if category not in _CATEGORIES:
@@ -314,7 +312,7 @@ def add_fact_manual_lightweight(
 
 
 def update_fact_lightweight(
-    fact_id: str, new_text: str, new_category: Optional[str] = None, project=_UNCHANGED,
+    fact_id: str, new_text: str, new_category: str | None = None, project=_UNCHANGED,
 ) -> bool:
     """Update a JSON-backed fact without constructing MemoryManager.
 
@@ -354,7 +352,7 @@ def delete_fact_lightweight(fact_id: str) -> bool:
 
 
 def _fallback_upsert_unlocked(
-    text: str, category: str, source: str, project: Optional[str] = None
+    text: str, category: str, source: str, project: str | None = None
 ) -> None:
     """Handle fallback upsert unlocked for memory store store."""
     project = (project or "").strip() or None
@@ -538,7 +536,7 @@ class MemoryManager:
     # Long-term memory - explicit writes
     # ------------------------------------------------------------------
 
-    def add_explicit_fact(self, text: str, project: Optional[str] = _USE_ACTIVE_PROJECT) -> None:
+    def add_explicit_fact(self, text: str, project: str | None = _USE_ACTIVE_PROJECT) -> None:
         """
         Immediately commit a user-stated fact to LTM.
         Called when the user's message starts with "remember that -¦".
@@ -554,7 +552,7 @@ class MemoryManager:
             self._upsert_fact(text.strip(), category, source="explicit", project=project)
         print(f"[memory] Explicit fact stored ({category}, project={project!r}): {text!r}")
 
-    def save_memory(self, text: str, scope: Optional[str] = None) -> dict:
+    def save_memory(self, text: str, scope: str | None = None) -> dict:
         """
         Model-facing memory write. ``scope`` decides project vs general:
 
@@ -635,9 +633,9 @@ class MemoryManager:
             if chunks:
                 self._ctx_router = ContextRouter(chunks)
                 self._ctx_router_fact_signature = fact_signature
-                print('[memory] Context router rebuilt with %d chunk(s).' % len(chunks))
+                print(f"[memory] Context router rebuilt with {len(chunks)} chunk(s).")
         except Exception as exc:
-            print('[memory] Context router build failed: %s' % exc)
+            print(f"[memory] Context router build failed: {exc}")
             self._ctx_router = None
 
     def _invalidate_router(self):
@@ -700,7 +698,7 @@ class MemoryManager:
                         return '[Memory]\n' + '\n'.join(lines)
 
             except Exception as exc:
-                print('[memory] Router error, using lexical memory block: %s' % exc)
+                print(f"[memory] Router error, using lexical memory block: {exc}")
         return _format_memory_block(in_scope, query, top_k=k, project_id=project_id)
 
     def _fallback_all_facts(self, query: str = "") -> str:
@@ -800,7 +798,7 @@ class MemoryManager:
 
     def _upsert_fact(
         self, text: str, category: str, source: str = "summarizer",
-        project: Optional[str] = None,
+        project: str | None = None,
     ) -> bool:
         """
         Insert a fact into LTM. If a similar fact already exists in the same
@@ -817,7 +815,7 @@ class MemoryManager:
         return True
 
     def _fallback_upsert(
-        self, text: str, category: str, source: str, project: Optional[str] = None
+        self, text: str, category: str, source: str, project: str | None = None
     ) -> None:
         """Handle fallback upsert for memory manager."""
         text = _normalize_fact_text(text)
@@ -852,7 +850,7 @@ class MemoryManager:
         self,
         fact_id: str,
         new_text: str,
-        new_category: Optional[str] = None,
+        new_category: str | None = None,
         project=_UNCHANGED,
     ) -> None:
         """Update text, scope, and/or category of a fact (viewer action).
@@ -865,7 +863,7 @@ class MemoryManager:
             self._fallback_update(fact_id, new_text, new_category, project)
             self._invalidate_router()
 
-    def add_fact_manual(self, text: str, category: str = "general", project: Optional[str] = None) -> None:
+    def add_fact_manual(self, text: str, category: str = "general", project: str | None = None) -> None:
         """Add a fact directly from the viewer (manual entry).
 
         A non-empty *project* scopes the fact and forces the project_context
@@ -919,7 +917,7 @@ class MemoryManager:
         delete_fact_lightweight(fact_id)
 
     def _fallback_update(
-        self, fact_id: str, new_text: str, new_category: Optional[str], project=_UNCHANGED,
+        self, fact_id: str, new_text: str, new_category: str | None, project=_UNCHANGED,
     ) -> None:
         """Handle fallback update for memory manager."""
         update_fact_lightweight(fact_id, new_text, new_category, project)
@@ -965,6 +963,19 @@ class MemoryManager:
         Raises on transport/provider errors or an unknown provider so the caller
         can fall through to the next route in the fallback chain.
         """
+        from core.privacy_gateway import scrub_cloud_fields
+
+        privacy_session, scrubbed, privacy_report = scrub_cloud_fields(
+            {"memory_prompt": prompt},
+            session_id="memory:background",
+        )
+        prompt = scrubbed["memory_prompt"]
+        if privacy_report.get("count"):
+            print(f"[memory] privacy filter redacted {privacy_report['count']} item(s)")
+
+        def restore(text: str) -> str:
+            return privacy_session.restore(text) if privacy_session is not None else text
+
         if provider in ("groq", "openai", "google"):
             with ssl_init_lock():
                 if provider == "groq":
@@ -986,7 +997,7 @@ class MemoryManager:
                 max_tokens=max_tokens,
                 temperature=0.2,
             )
-            return resp.choices[0].message.content or ""
+            return restore(resp.choices[0].message.content or "")
 
         if provider == "anthropic":
             with ssl_init_lock():
@@ -996,7 +1007,7 @@ class MemoryManager:
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return resp.content[0].text if resp.content else ""
+            return restore(resp.content[0].text if resp.content else "")
 
         raise ValueError(f"Unknown MEMORY_LLM provider: {provider!r}")
 
@@ -1015,7 +1026,7 @@ class MemoryManager:
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
-_manager: Optional[MemoryManager] = None
+_manager: MemoryManager | None = None
 _manager_lock = threading.Lock()
 
 
@@ -1029,7 +1040,7 @@ def get_manager() -> MemoryManager:
     return _manager
 
 
-def get_loaded_manager() -> Optional[MemoryManager]:
+def get_loaded_manager() -> MemoryManager | None:
     """Return the MemoryManager only if it has already been initialized."""
     return _manager
 

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 from .chunks import ContextChunk, load_seed_chunks
 from .embeddings import make_embedder
-from .extract import extract, Extracted
+from .extract import Extracted, extract
 from .index import RetrievalIndexes, build_indexes
 
 log = logging.getLogger("context_router")
@@ -121,7 +121,7 @@ class ContextRouter:
         self.embedder = make_embedder(self.chunks)
         self.rel_cutoff: float = rel_cutoff
 
-    def _eff_floor(self, base_floor: float, top: "ChunkScore | None") -> float:
+    def _eff_floor(self, base_floor: float, top: ChunkScore | None) -> float:
         """Handle eff floor for context router."""
         if top is None or self.rel_cutoff <= 0:
             return base_floor
@@ -129,7 +129,6 @@ class ContextRouter:
 
     def _recency(self, chunk: ContextChunk, now: float) -> float:
         """Handle recency for context router."""
-        import time
         age_days = max(0.0, (now - chunk.last_used_at) / 86400.0)
         return 0.5 ** (age_days / RECENCY_HALFLIFE_DAYS)
 

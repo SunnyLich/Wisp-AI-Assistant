@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from core.agent.runtime import PermissionDenied, ScopeViolation
 

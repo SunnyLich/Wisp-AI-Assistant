@@ -45,8 +45,8 @@ def main() -> int:
     import core.context_fetcher as cf
     assert cf._config_dir().endswith(os.path.join("Library", "Application Support")), cf._config_dir()
     import core.hotkeys  # noqa: F401
-    import ui.overlay  # noqa: F401
     import ui.intent_overlay  # noqa: F401
+    import ui.overlay  # noqa: F401
 
     print("macOS smoke test passed")
     return 0

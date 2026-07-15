@@ -14,7 +14,6 @@ from ui.text_annotations import (
     normalize_range_annotations,
 )
 
-
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _BULLET_RE = re.compile(r"^\s*[-*+]\s+(.*)$")
 

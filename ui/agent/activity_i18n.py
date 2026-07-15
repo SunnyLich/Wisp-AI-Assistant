@@ -7,7 +7,6 @@ from typing import Any
 
 from ui.i18n import t
 
-
 DEFAULT_AGENT_NAMES = {"Coordinator", "Builder", "Reviewer"}
 AGENT_ROLES = {"Coordinator", "Planner", "Implementer", "Reviewer", "Tester", "Researcher", "Agent"}
 STATUS_WORDS = {"waiting", "blocked", "done", "continue", "ready_for_review", "complete"}

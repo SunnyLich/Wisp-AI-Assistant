@@ -10,6 +10,7 @@ Clients are module-level singletons so the TLS connection is reused across
 calls, eliminating handshake overhead from every request.
 """
 from __future__ import annotations
+
 import gzip
 import json as _stdlib_json
 import os
@@ -18,86 +19,142 @@ import sys
 import threading as _threading
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
-import config
+from collections.abc import Callable, Generator
+from dataclasses import dataclass, field
 from pathlib import Path
-from core.tool_registry import ToolRegistry, ToolSpec
-from core.tools.local_files import (
-    execute_live_file_tool,
-    configured_file_roots,
-    normalize_file_access_mode,
+
+import config
+from core.llm_clients.documents import (
+    _ambient_document_max_chars,
+    _read_document_file,
+    _read_document_paths,
+    _tool_document_max_chars,
 )
-from core.system import macos_safety
-from core.system.native_locks import native_init_lock, ssl_init_lock
-from core.system import sdk_clients
-from core.ollama_manager import ensure_ollama_running as _ensure_ollama_running
-from core.llm_clients.routes import (
-    GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
-    DEEPSEEK_BASE_URL as _DEEPSEEK_BASE_URL,
-    OPENROUTER_BASE_URL as _OPENROUTER_BASE_URL,
-    MISTRAL_BASE_URL as _MISTRAL_BASE_URL,
-    XAI_BASE_URL as _XAI_BASE_URL,
-    TOGETHER_BASE_URL as _TOGETHER_BASE_URL,
-    CEREBRAS_BASE_URL as _CEREBRAS_BASE_URL,
-    OLLAMA_BASE_URL as _OLLAMA_BASE_URL,
-    ZAI_BASE_URL as _ZAI_BASE_URL,
-    NVIDIA_BASE_URL as _NVIDIA_BASE_URL,
-    SAMBANOVA_BASE_URL as _SAMBANOVA_BASE_URL,
-    GITHUB_MODELS_BASE_URL as _GITHUB_MODELS_BASE_URL,
-    HUGGINGFACE_BASE_URL as _HUGGINGFACE_BASE_URL,
-    CHUTES_BASE_URL as _CHUTES_BASE_URL,
-    VERCEL_BASE_URL as _VERCEL_BASE_URL,
-    FIREWORKS_BASE_URL as _FIREWORKS_BASE_URL,
-    COHERE_BASE_URL as _COHERE_BASE_URL,
-    AI21_BASE_URL as _AI21_BASE_URL,
-    NEBIUS_BASE_URL as _NEBIUS_BASE_URL,
-    api_key_for as _api_key_for,
-    credential_source_for_provider as _credential_source_for_provider,
-    parse_model_fallbacks as _parse_model_fallbacks,
-    route_candidates as _route_candidates,
-    normalize_model_for_provider as _normalize_model_for_provider,
-)
-from core.llm_clients.logging_utils import log_event
 from core.llm_clients.logging_utils import log_context as _log_context
+from core.llm_clients.logging_utils import log_event
 from core.llm_clients.messages import (
     build_contextual_user_text as _build_contextual_user_text,
+)
+from core.llm_clients.messages import (
     build_openai_messages as _build_openai_messages,
+)
+from core.llm_clients.messages import (
     sanitize_history as _sanitize_history,
+)
+from core.llm_clients.model_quirks import (
+    _apply_max_output,
+    _apply_sampling,
+    _model_accepts_images,
+    _model_rejects_custom_sampling,
+    _model_uses_max_completion_tokens,
 )
 from core.llm_clients.prompt_guidance import (
     REWRITE_SYSTEM_PROMPT as _REWRITE_SYSTEM_PROMPT,
+)
+from core.llm_clients.prompt_guidance import (
     with_memory_save_note as _with_memory_save_note,
+)
+from core.llm_clients.prompt_guidance import (
     with_memory_search_note as _with_memory_search_note,
+)
+from core.llm_clients.prompt_guidance import (
     with_screenshot_note as _with_screenshot_note,
+)
+from core.llm_clients.prompt_guidance import (
     with_tools_note as _with_tools_note,
+)
+from core.llm_clients.routes import (
+    AI21_BASE_URL as _AI21_BASE_URL,
+)
+from core.llm_clients.routes import (
+    CEREBRAS_BASE_URL as _CEREBRAS_BASE_URL,
+)
+from core.llm_clients.routes import (
+    CHUTES_BASE_URL as _CHUTES_BASE_URL,
+)
+from core.llm_clients.routes import (
+    COHERE_BASE_URL as _COHERE_BASE_URL,
+)
+from core.llm_clients.routes import (
+    DEEPSEEK_BASE_URL as _DEEPSEEK_BASE_URL,
+)
+from core.llm_clients.routes import (
+    FIREWORKS_BASE_URL as _FIREWORKS_BASE_URL,
+)
+from core.llm_clients.routes import (
+    GITHUB_MODELS_BASE_URL as _GITHUB_MODELS_BASE_URL,
+)
+from core.llm_clients.routes import (
+    GOOGLE_OPENAI_BASE_URL as _GOOGLE_OPENAI_BASE_URL,
+)
+from core.llm_clients.routes import (
+    HUGGINGFACE_BASE_URL as _HUGGINGFACE_BASE_URL,
+)
+from core.llm_clients.routes import (
+    MISTRAL_BASE_URL as _MISTRAL_BASE_URL,
+)
+from core.llm_clients.routes import (
+    NEBIUS_BASE_URL as _NEBIUS_BASE_URL,
+)
+from core.llm_clients.routes import (
+    NVIDIA_BASE_URL as _NVIDIA_BASE_URL,
+)
+from core.llm_clients.routes import (
+    OLLAMA_BASE_URL as _OLLAMA_BASE_URL,
+)
+from core.llm_clients.routes import (
+    OPENROUTER_BASE_URL as _OPENROUTER_BASE_URL,
+)
+from core.llm_clients.routes import (
+    SAMBANOVA_BASE_URL as _SAMBANOVA_BASE_URL,
+)
+from core.llm_clients.routes import (
+    TOGETHER_BASE_URL as _TOGETHER_BASE_URL,
+)
+from core.llm_clients.routes import (
+    VERCEL_BASE_URL as _VERCEL_BASE_URL,
+)
+from core.llm_clients.routes import (
+    XAI_BASE_URL as _XAI_BASE_URL,
+)
+from core.llm_clients.routes import (
+    ZAI_BASE_URL as _ZAI_BASE_URL,
+)
+from core.llm_clients.routes import (
+    api_key_for as _api_key_for,
+)
+from core.llm_clients.routes import (
+    credential_source_for_provider as _credential_source_for_provider,
+)
+from core.llm_clients.routes import (
+    normalize_model_for_provider as _normalize_model_for_provider,
+)
+from core.llm_clients.routes import (
+    route_candidates as _route_candidates,
 )
 from core.llm_clients.routing import (
     _ROUTE_COOLDOWN_SECONDS,
-    _route_cooldowns,
-    _route_cooldowns_lock,
-    _route_key,
     _is_route_cooling,
-    _mark_route_cooling,
-    _is_quota_error,
     _is_transient_route_error,
+    _mark_route_cooling,
+    _route_cooldowns,
     _route_failure_summary,
 )
-from core.llm_clients.model_quirks import (
-    _model_accepts_images,
-    _model_rejects_custom_sampling,
-    _apply_sampling,
-    _model_uses_max_completion_tokens,
-    _apply_max_output,
+from core.ollama_manager import ensure_ollama_running as _ensure_ollama_running
+from core.system import macos_safety, sdk_clients
+from core.system.native_locks import native_init_lock, ssl_init_lock
+from core.tool_registry import ToolRegistry, ToolSpec
+from core.tools.local_files import (
+    configured_file_roots,
+    execute_live_file_tool,
+    normalize_file_access_mode,
 )
-from core.llm_clients.documents import (
-    _ambient_document_max_chars,
-    _tool_document_max_chars,
-    _normalize_pdf_text,
-    _read_pdf_text,
-    _read_document_file,
-    _read_document_paths,
-)
-from dataclasses import dataclass, field
-from typing import Callable, Generator
+
+__all__ = [
+    "_model_rejects_custom_sampling",
+    "_model_uses_max_completion_tokens",
+    "_route_cooldowns",
+]
 
 _TOOL_REGISTRY = ToolRegistry()
 _LOCAL_FILE_TOOLS = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
@@ -264,6 +321,46 @@ def set_live_file_event_callback(callback: Callable[[dict], None] | None) -> Non
     _LIVE_TOOL_CONTEXT.file_event_callback = callback
 
 
+def set_live_privacy_context(
+    session,
+    *,
+    ai_enabled: bool = False,
+    review_callback: Callable[[dict], bool] | None = None,
+    report_callback: Callable[[dict], None] | None = None,
+) -> None:
+    """Set the privacy gateway used for cloud-bound tool results this request."""
+    if session is None:
+        for name in (
+            "privacy_session",
+            "privacy_ai_enabled",
+            "privacy_review_callback",
+            "privacy_report_callback",
+        ):
+            if hasattr(_LIVE_TOOL_CONTEXT, name):
+                delattr(_LIVE_TOOL_CONTEXT, name)
+        return
+    _LIVE_TOOL_CONTEXT.privacy_session = session
+    _LIVE_TOOL_CONTEXT.privacy_ai_enabled = bool(ai_enabled)
+    _LIVE_TOOL_CONTEXT.privacy_review_callback = review_callback
+    _LIVE_TOOL_CONTEXT.privacy_report_callback = report_callback
+
+
+def _scrub_live_tool_result(name: str, result: str) -> str:
+    """Scrub a newly discovered tool result before the next provider request."""
+    session = getattr(_LIVE_TOOL_CONTEXT, "privacy_session", None)
+    if session is None:
+        return str(result or "")
+    scrubbed, report = session.scrub_fields(
+        {f"tool:{name}": str(result or "")},
+        ai_enabled=bool(getattr(_LIVE_TOOL_CONTEXT, "privacy_ai_enabled", False)),
+        review=getattr(_LIVE_TOOL_CONTEXT, "privacy_review_callback", None),
+    )
+    report_callback = getattr(_LIVE_TOOL_CONTEXT, "privacy_report_callback", None)
+    if report.get("count") and report_callback is not None:
+        report_callback(report)
+    return scrubbed[f"tool:{name}"]
+
+
 def _effective_live_file_approval_callback() -> Callable[[dict], bool] | None:
     """Return the live request approval callback, falling back to the global hook."""
     return getattr(_LIVE_TOOL_CONTEXT, "file_approval_callback", None) or _FILE_EDIT_APPROVAL_CALLBACK
@@ -390,6 +487,7 @@ def _github_get_json(url: str) -> str:
     """Handle github get json for LLM clients client."""
     import json
     import urllib.request
+
     from core.auth import github as github_auth
 
     token = github_auth.get_valid_access_token()
@@ -1089,7 +1187,6 @@ def _append_local_file_tool_schemas(
     if allowed_tools is None:
         return
     allowed = set(allowed_tools)
-    pinned = set(pinned_tools or [])
     if openai_format:
         present = {((s.get("function") or {}).get("name") or "") for s in schemas}
     else:
@@ -1149,18 +1246,23 @@ def _execute_model_tool(name: str, inputs: dict, allowed_tools: list[str] | None
             url = str((inputs or {}).get("url") or "").strip()
             needed = "get_context.browser" if url else "get_context.documents"
             if "get_context" not in allowed and needed not in allowed:
-                return f"Tool {name!r} is disabled for this context source."
+                return _scrub_live_tool_result(
+                    name,
+                    f"Tool {name!r} is disabled for this context source.",
+                )
         elif name not in allowed:
-            return f"Tool {name!r} is disabled for this caller."
+            return _scrub_live_tool_result(name, f"Tool {name!r} is disabled for this caller.")
     if name in _LOCAL_FILE_TOOLS:
-        return execute_live_file_tool(
+        result = execute_live_file_tool(
             name,
             inputs or {},
             access_mode=_effective_live_file_access_mode(allowed_tools),
             approval_callback=_effective_live_file_approval_callback(),
             event_callback=_effective_live_file_event_callback(),
         )
-    return _TOOL_REGISTRY.execute(name, inputs)
+    else:
+        result = _TOOL_REGISTRY.execute(name, inputs)
+    return _scrub_live_tool_result(name, result)
 
 
 def _effective_live_file_access_mode(allowed_tools: list[str] | None = None) -> str:
@@ -1497,7 +1599,6 @@ _TEST_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
 # How many times the OpenAI SDK may retry the *same* model inside one call.
 _OPENAI_MAX_RETRIES = 1
 
-import time as _time
 _codex_client_lock = _threading.Lock()
 
 
@@ -1540,6 +1641,7 @@ class _CodexTransport:
     def handle_request(self, request):
         """Handle request."""
         import httpx
+
         from core.auth import chatgpt as chatgpt_auth
 
         token      = chatgpt_auth.get_valid_access_token()
@@ -1910,7 +2012,7 @@ def _import_certifi_ignoring_broken_optional_layer():
                     if entry not in sys.path:
                         sys.path.insert(0, entry)
         except Exception:
-            raise original_exc
+            raise original_exc from None
 
 
 def _get_openai_compat_stdlib_ssl_context():
@@ -4802,8 +4904,7 @@ def _stream_anthropic(
             _update_route_capabilities("anthropic", model, supports_stream=True)
             if image_base64:
                 _update_route_capabilities("anthropic", model, supports_images=True)
-            for text in stream.text_stream:
-                yield text
+            yield from stream.text_stream
         return
 
     # --- Tool-enabled path: stream first round for fast first-token ---
@@ -5547,8 +5648,7 @@ def _stream_single_history_route(
             messages=turns,
             **({"tools": chat_tools} if chat_tools else {}),
         ) as stream:
-            for text in stream.text_stream:
-                yield text
+            yield from stream.text_stream
             final = stream.get_final_message()
 
         if final.stop_reason != "tool_use":

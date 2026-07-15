@@ -193,8 +193,9 @@ def test_real_gpt55_query_uses_selected_ambient_and_project_memory(
     isolated_real_conversation_and_memory,
 ):
     """Spend a tiny real GPT 5.5 request through the intent/query path."""
-    from core.memory_store import store as memory_store
     from wisp_brain import handlers
+
+    from core.memory_store import store as memory_store
 
     _conversation_store, project = isolated_real_conversation_and_memory
     memory_context = memory_store.get_manager().retrieve_relevant(

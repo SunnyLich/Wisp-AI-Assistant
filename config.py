@@ -4,13 +4,42 @@ config.py — Central configuration loaded from .env
 import json
 import os
 import sys
+
 from dotenv import dotenv_values, load_dotenv
+
 from core import secret_store
-from core.system.env_utils import (
-    env_bool, env_file_access_mode, env_float, env_int, env_screenshot_mode,
-    normalize_file_access_mode, parse_tool_modes, write_env_file,
+from core.prompt_i18n import (
+    ASSISTANT_RESPONSE_LANGUAGE_NAMES as _ASSISTANT_RESPONSE_LANGUAGE_NAMES,
 )
-from core.system.paths import REPO_ROOT, MODEL_FILE_ACCESS_DIR, MODEL_TOOLS_DIR
+from core.prompt_i18n import (
+    CALLER_INTENT_TEMPLATES as _CALLER_INTENT_TEMPLATES,
+)
+from core.prompt_i18n import (
+    CALLER_TEMPLATE_FIELDS as _CALLER_TEMPLATE_FIELDS,
+)
+from core.prompt_i18n import (
+    DEFAULT_LIVE_VOICE_SYSTEM_PROMPT,
+    DEFAULT_SYSTEM_PROMPT_UTILITY,
+    default_caller_intents,
+    localize_chat_elaborate_prompt_if_default,
+    localize_intent_if_default,
+    localize_system_prompt_utility_if_default,
+)
+from core.prompt_i18n import (
+    LEGACY_TOOL_PROMPT_SENTENCE as _LEGACY_TOOL_PROMPT_SENTENCE,
+)
+from core.prompt_i18n import (
+    SYSTEM_PROMPT_UTILITY_TEMPLATES as _SYSTEM_PROMPT_UTILITY_TEMPLATES,
+)
+from core.prompt_i18n import (
+    assistant_language_instruction as _assistant_language_instruction,
+)
+from core.prompt_i18n import (
+    caller_intent_template as _caller_intent_template,
+)
+from core.prompt_i18n import (
+    intent_template_language as _intent_template_language,
+)
 from core.settings_model import (
     AppSettings,
     ContextBudgets,
@@ -18,22 +47,26 @@ from core.settings_model import (
     ProfileSettings,
     ToolTurnBudgets,
 )
-from core.prompt_i18n import (
-    ASSISTANT_RESPONSE_LANGUAGE_NAMES as _ASSISTANT_RESPONSE_LANGUAGE_NAMES,
-    CALLER_INTENT_TEMPLATES as _CALLER_INTENT_TEMPLATES,
-    CALLER_TEMPLATE_FIELDS as _CALLER_TEMPLATE_FIELDS,
-    DEFAULT_LIVE_VOICE_SYSTEM_PROMPT,
-    DEFAULT_SYSTEM_PROMPT_UTILITY,
-    LEGACY_TOOL_PROMPT_SENTENCE as _LEGACY_TOOL_PROMPT_SENTENCE,
-    SYSTEM_PROMPT_UTILITY_TEMPLATES as _SYSTEM_PROMPT_UTILITY_TEMPLATES,
-    assistant_language_instruction as _assistant_language_instruction,
-    caller_intent_template as _caller_intent_template,
-    default_caller_intents,
-    intent_template_language as _intent_template_language,
-    localize_chat_elaborate_prompt_if_default,
-    localize_intent_if_default,
-    localize_system_prompt_utility_if_default,
+from core.system.env_utils import (
+    env_bool,
+    env_file_access_mode,
+    env_float,
+    env_int,
+    env_screenshot_mode,
+    normalize_file_access_mode,
+    parse_tool_modes,
+    write_env_file,
 )
+from core.system.paths import MODEL_FILE_ACCESS_DIR, MODEL_TOOLS_DIR, REPO_ROOT
+
+__all__ = [
+    "_ASSISTANT_RESPONSE_LANGUAGE_NAMES",
+    "_CALLER_INTENT_TEMPLATES",
+    "_CALLER_TEMPLATE_FIELDS",
+    "_SYSTEM_PROMPT_UTILITY_TEMPLATES",
+    "_caller_intent_template",
+    "_intent_template_language",
+]
 
 _ENV_FILE = REPO_ROOT / ".env"
 _LOADED_DOTENV_KEYS: set[str] = set()
@@ -807,7 +840,7 @@ def _load_config() -> None:
     global GPT_SOVITS_SEED, GPT_SOVITS_TIMEOUT_SECONDS
     global KOKORO_VOICE, KOKORO_LANG_CODE, KOKORO_DEVICE, KOKORO_SPEED, KOKORO_SAMPLE_RATE, KOKORO_SPLIT_PATTERN
     global THEME_MODE, DARK_MODE, ICON_AUTO_HIDE, START_ON_LOGIN, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
-    global TRUST_PRIVACY_MODE
+    global PRIVACY_MODE, TRUST_PRIVACY_MODE, PRIVACY_REVIEW_BEFORE_SEND, PRIVACY_AI_ENABLED, PRIVACY_CUSTOM_PATTERNS
     global APP_LANGUAGE, ASSISTANT_LANGUAGE
     global THEME_DARK_BG, THEME_DARK_SURFACE, THEME_DARK_TEXT, THEME_DARK_ACCENT
     global THEME_LIGHT_BG, THEME_LIGHT_SURFACE, THEME_LIGHT_TEXT, THEME_LIGHT_ACCENT
@@ -940,7 +973,21 @@ def _load_config() -> None:
     # --- App behaviour ---
     THEME_MODE            = os.getenv("THEME_MODE", "system")  # "dark" | "light" | "system"
     DARK_MODE             = env_bool("DARK_MODE", THEME_MODE == "dark")
-    TRUST_PRIVACY_MODE    = env_bool("TRUST_PRIVACY_MODE", True)
+    legacy_privacy_enabled = env_bool("TRUST_PRIVACY_MODE", True)
+    legacy_privacy_ai = env_bool("PRIVACY_AI_ENABLED", False)
+    configured_privacy_mode = os.getenv("PRIVACY_MODE", "").strip().lower()
+    if configured_privacy_mode not in {"off", "builtin", "advanced"}:
+        configured_privacy_mode = (
+            "advanced" if legacy_privacy_enabled and legacy_privacy_ai
+            else "builtin" if legacy_privacy_enabled
+            else "off"
+        )
+    PRIVACY_MODE = configured_privacy_mode
+    # Compatibility values for older call sites and existing settings files.
+    TRUST_PRIVACY_MODE = PRIVACY_MODE != "off"
+    PRIVACY_REVIEW_BEFORE_SEND = env_bool("PRIVACY_REVIEW_BEFORE_SEND", True)
+    PRIVACY_AI_ENABLED = PRIVACY_MODE == "advanced"
+    PRIVACY_CUSTOM_PATTERNS = os.getenv("PRIVACY_CUSTOM_PATTERNS", "[]")
     # Customizable theme templates. Each mode (light/dark) is a template of four
     # base colours; switching mode swaps the template. The rest of the palette
     # (cards, borders, buttons, hovers) is derived from these four, so the user

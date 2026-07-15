@@ -22,8 +22,6 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QFont
-from ui.i18n import t
-from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -39,6 +37,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ui.i18n import t
+from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 if TYPE_CHECKING:
     from core.memory_store.store import MemoryManager
@@ -83,7 +84,7 @@ class _FactRow(QWidget):
     """A single editable fact row: [text input] [category] [delete]."""
 
     def __init__(
-        self, fact: dict, manager: "MemoryManager", parent: QWidget, *,
+        self, fact: dict, manager: MemoryManager, parent: QWidget, *,
         read_only: bool = False, projects: list[dict] | None = None,
     ):
         """Initialize the fact row instance."""
@@ -192,7 +193,7 @@ class MemoryPanel(QWidget):
 
     def __init__(
         self,
-        manager: "MemoryManager",
+        manager: MemoryManager,
         parent=None,
         initial_facts: list[dict] | None = None,
         *,
@@ -420,7 +421,7 @@ class MemoryViewer(QDialog):
     Opened from tray icon â†’ Memory-¦ or from Settings â†’ Memory tab.
     """
 
-    def __init__(self, manager: "MemoryManager", parent=None):
+    def __init__(self, manager: MemoryManager, parent=None):
         """Initialize the memory viewer instance."""
         super().__init__(parent)
         self.setWindowTitle(t("Long-term Memory"))

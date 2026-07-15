@@ -128,7 +128,10 @@ class PlannedChunkingSettings:
 @dataclass(frozen=True)
 class PrivacySettings:
     """Store trust and privacy settings configuration data."""
+    mode: str
     trust_privacy_mode: bool
+    review_before_send: bool
+    ai_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -232,7 +235,10 @@ class AppSettings:
                 min_prompt_chars=int(values.get("PLANNED_CHUNKING_MIN_PROMPT_CHARS", 80)),
             ),
             privacy=PrivacySettings(
+                mode=str(values.get("PRIVACY_MODE", "builtin")),
                 trust_privacy_mode=_copy_bool(values.get("TRUST_PRIVACY_MODE"), True),
+                review_before_send=_copy_bool(values.get("PRIVACY_REVIEW_BEFORE_SEND"), True),
+                ai_enabled=_copy_bool(values.get("PRIVACY_AI_ENABLED"), False),
             ),
             callers=CallerSettings(
                 callers=_copy_rows(values.get("CALLER_ROWS")),

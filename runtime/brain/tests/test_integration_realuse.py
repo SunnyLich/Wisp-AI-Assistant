@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from test_brain_host import BrainSidecar
 
 _HAS_SOUNDFILE = importlib.util.find_spec("soundfile") is not None

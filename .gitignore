@@ -26,6 +26,7 @@ secrets.*
 /.agents/
 /.claude/
 /.codex/
+/.pnpm-store/
 
 # Local prototypes (standalone experiments, not part of the app)
 /prototypes/

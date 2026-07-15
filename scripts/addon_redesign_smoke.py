@@ -21,10 +21,9 @@ import tempfile
 import textwrap
 import traceback
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -61,10 +60,11 @@ class Smoke:
 
     def _patch_runtime_paths(self) -> None:
         """Handle patch runtime paths for smoke."""
-        from core import addon_runtime, addon_store
-        import core.addon_manager as addon_manager
         import core.plugin_manager as plugin_manager
+
+        import core.addon_manager as addon_manager
         import core.system.paths as paths
+        from core import addon_runtime, addon_store
 
         addon_runtime.ADDON_ENVS_DIR = self.envs_dir
         addon_store._STORE_PATH = self.store_path
@@ -494,10 +494,11 @@ def test_bad_addon_resilience(smoke: Smoke) -> None:
 
 def test_permission_gating(smoke: Smoke) -> None:
     """Verify permission gating behavior."""
-    from core.addon_distribution import install_addon_folder
     import core.plugin_manager as plugin_manager
-    import core.system.paths as paths
     from wisp_brain import handlers
+
+    import core.system.paths as paths
+    from core.addon_distribution import install_addon_folder
 
     addons_dir = smoke.case_addons_dir("permission-gating")
     source = make_addon(

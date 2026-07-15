@@ -3750,6 +3750,9 @@ Continuer ?</translation>
     <message><source>Context included with this message (display only - not part of the reply).</source><translation>Contexte inclus avec ce message (affichage uniquement, ne fait pas partie de la réponse).</translation></message>
     <message><source>Continuing</source><translation>Suite en cours</translation></message>
     <message><source>Conversation options</source><translation>Options de la conversation</translation></message>
+    <message><source>Browse conversation files</source><translation>Parcourir les fichiers de la conversation</translation></message>
+    <message><source>Could not open conversation files</source><translation>Impossible d’ouvrir les fichiers de la conversation</translation></message>
+    <message><source>Wisp could not open the conversation files: {error}</source><translation>Wisp n’a pas pu ouvrir les fichiers de la conversation : {error}</translation></message>
     <message><source>Copy full bubble text</source><translation>Copier tout le texte de la bulle</translation></message>
     <message><source>Copy selected text</source><translation>Copier le texte sélectionné</translation></message>
     <message><source>Delete</source><translation>Supprimer</translation></message>
@@ -4744,6 +4747,10 @@ Demander avant d’écrire — afficher les différences avant toute modificatio
       <translation>Priorité</translation>
     </message>
     <message>
+      <source>Drag to change priority</source>
+      <translation>Faites glisser pour modifier la priorité</translation>
+    </message>
+    <message>
       <source>Priority {n} — fallback (tried if the rows above fail)</source>
       <translation>Priorité {n} — secours (essayé si les lignes ci-dessus échouent)</translation>
     </message>
@@ -5551,5 +5558,60 @@ Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront 
     <message><source>Could not start uninstaller: {error}</source><translation>Impossible de démarrer le programme de désinstallation : {error}</translation></message>
     <message><source>Uninstaller started</source><translation>Programme de désinstallation démarré</translation></message>
     <message><source>Wisp will now close. The uninstaller will remove only the listed Wisp-owned files after all Wisp processes exit.</source><translation>Wisp va maintenant se fermer. Le programme de désinstallation supprimera uniquement les fichiers répertoriés appartenant à Wisp après l’arrêt de tous les processus Wisp.</translation></message>
+    <message><source>Privacy protection</source><translation>Protection de la vie privée</translation></message>
+    <message><source>Choose privacy protection for model requests. The built-in filter needs no download; Advanced adds a local AI model while keeping built-in protection active.</source><translation>Choisissez la protection de confidentialité pour les requêtes au modèle. Le filtre intégré ne nécessite aucun téléchargement ; le mode Avancé ajoute un modèle d’IA local tout en maintenant la protection intégrée active.</translation></message>
+    <message><source>Off (send full messages)</source><translation>Désactivé (envoyer les messages complets)</translation></message>
+    <message><source>Built-in privacy filter</source><translation>Filtre de confidentialité intégré</translation></message>
+    <message><source>Advanced privacy model</source><translation>Modèle de confidentialité avancé</translation></message>
+    <message><source>Use no filter, built-in patterns, or Advanced mode, which combines the local AI model with built-in patterns.</source><translation>N’utilisez aucun filtre, les motifs intégrés ou le mode Avancé, qui combine le modèle d’IA local avec les motifs intégrés.</translation></message>
+    <message><source>Review detected private information before sending</source><translation>Vérifier les informations privées détectées avant l’envoi</translation></message>
+    <message><source>Show the redacted request and detected categories before any model request, including local models.</source><translation>Affiche la requête masquée et les catégories détectées avant toute requête au modèle, y compris aux modèles locaux.</translation></message>
+    <message><source>Use advanced AI privacy detection</source><translation>Utiliser la détection avancée de confidentialité par IA</translation></message>
+    <message><source>Adds on-device detection for names, addresses, dates, account numbers, and free-form secrets.</source><translation>Ajoute la détection locale des noms, adresses, dates, numéros de compte et secrets en texte libre.</translation></message>
+    <message><source>Install advanced privacy model</source><translation>Installer le modèle avancé de confidentialité</translation></message>
+    <message><source>Downloads OpenAI Privacy Filter (about 2.8 GB) and its local runtime. Nothing is uploaded.</source><translation>Télécharge OpenAI Privacy Filter (environ 2,8 Go) et son environnement d’exécution local. Rien n’est envoyé.</translation></message>
+    <message><source>Remove privacy model</source><translation>Supprimer le modèle de confidentialité</translation></message>
+    <message><source>Advanced privacy model is installed and ready.</source><translation>Le modèle avancé de confidentialité est installé et prêt.</translation></message>
+    <message><source>Privacy model files are present, but the local runtime needs repair.</source><translation>Les fichiers du modèle de confidentialité sont présents, mais l’environnement d’exécution local doit être réparé.</translation></message>
+    <message><source>Optional AI privacy model is not installed. Built-in protection is still available.</source><translation>Le modèle facultatif de confidentialité par IA n’est pas installé. La protection intégrée reste disponible.</translation></message>
+    <message><source>Privacy model status could not be checked: {error}</source><translation>Impossible de vérifier l’état du modèle de confidentialité : {error}</translation></message>
+    <message><source>Repair advanced privacy model</source><translation>Réparer le modèle avancé de confidentialité</translation></message>
+    <message><source>Advanced privacy model required</source><translation>Modèle avancé de confidentialité requis</translation></message>
+    <message><source>Install and verify the optional privacy model before selecting Advanced privacy model.</source><translation>Installez et vérifiez le modèle facultatif de confidentialité avant de sélectionner Modèle de confidentialité avancé.</translation></message>
+    <message><source>Advanced privacy model installer</source><translation>Programme d’installation du modèle avancé de confidentialité</translation></message>
+    <message><source>Download and install advanced privacy model?</source><translation>Télécharger et installer le modèle avancé de confidentialité ?</translation></message>
+    <message><source>Wisp will download the official OpenAI Privacy Filter (about 2.8 GB) and install its dedicated local runtime. The model runs only on this computer. Continue?</source><translation>Wisp téléchargera le filtre OpenAI Privacy Filter officiel (environ 2,8 Go) et installera son environnement d’exécution local dédié. Le modèle s’exécute uniquement sur cet ordinateur. Continuer ?</translation></message>
+    <message><source>Downloads the official OpenAI Privacy Filter (about 2.8 GB) and a local runtime. Detection stays on this computer.</source><translation>Télécharge le filtre OpenAI Privacy Filter officiel (environ 2,8 Go) et un environnement d’exécution local. La détection reste sur cet ordinateur.</translation></message>
+    <message><source>Could not start privacy installer</source><translation>Impossible de démarrer le programme d’installation de confidentialité</translation></message>
+    <message><source>Could not start the privacy-model installer: {error}</source><translation>Impossible de démarrer le programme d’installation du modèle de confidentialité : {error}</translation></message>
+    <message><source>Remove advanced privacy model?</source><translation>Supprimer le modèle avancé de confidentialité ?</translation></message>
+    <message><source>Remove the downloaded privacy model and its local runtime? Built-in protection will remain active.</source><translation>Supprimer le modèle de confidentialité téléchargé et son environnement d’exécution local ? La protection intégrée restera active.</translation></message>
+    <message><source>Could not remove privacy model</source><translation>Impossible de supprimer le modèle de confidentialité</translation></message>
+    <message><source>Could not remove the privacy model: {error}</source><translation>Impossible de supprimer le modèle de confidentialité : {error}</translation></message>
+    <message><source>Review private information</source><translation>Vérifier les informations privées</translation></message>
+    <message><source>Wisp found {count} private item(s). Review the redacted request before sending.</source><translation>Wisp a trouvé {count} élément(s) privé(s). Vérifiez la requête masquée avant l’envoi.</translation></message>
+    <message><source>Detection: advanced local AI model</source><translation>Détection : modèle d’IA local avancé</translation></message>
+    <message><source>Detection: advanced local AI model and built-in patterns</source><translation>Détection : modèle d’IA local avancé et motifs intégrés</translation></message>
+    <message><source>Detection: built-in patterns</source><translation>Détection : motifs intégrés</translation></message>
+    <message><source>Redacted request that the model will receive:</source><translation>Requête masquée que le modèle recevra :</translation></message>
+    <message><source>Send redacted</source><translation>Envoyer avec masquage</translation></message>
+    <message><source>Send full message</source><translation>Envoyer le message complet</translation></message>
+    <message><source>Send full message bypasses privacy redaction for this request.</source><translation>L’envoi du message complet contourne le masquage de confidentialité pour cette requête.</translation></message>
+    <message><source>Cancel send</source><translation>Annuler l’envoi</translation></message>
+    <message><source>Account number</source><translation>Numéro de compte</translation></message>
+    <message><source>Address</source><translation>Adresse</translation></message>
+    <message><source>Custom pattern</source><translation>Motif personnalisé</translation></message>
+    <message><source>Date</source><translation>Date</translation></message>
+    <message><source>Person</source><translation>Personne</translation></message>
+    <message><source>Phone</source><translation>Téléphone</translation></message>
+    <message><source>Secret</source><translation>Secret</translation></message>
+    <message><source>Chat message</source><translation>Message de discussion</translation></message>
+    <message><source>Tool result</source><translation>Résultat d’outil</translation></message>
+    <message><source>Instruction</source><translation>Instruction</translation></message>
+    <message><source>Selected text</source><translation>Texte sélectionné</translation></message>
+    <message><source>IBAN</source><translation>IBAN</translation></message>
+    <message><source>URL</source><translation>URL</translation></message>
+    <message><source>Driver's license</source><translation>Permis de conduire</translation></message>
+    <message><source>Passport</source><translation>Passeport</translation></message>
   </context>
 </TS>

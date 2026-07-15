@@ -61,6 +61,7 @@ def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
 def test_conversation_datetime_formats_for_history_display():
     """Verify conversation timestamps are display metadata."""
     assert _format_conversation_datetime("2026-06-19T15:52:16+00:00")
+    assert _format_conversation_datetime("2026-06-19T15:52:16")
 
 
 def test_chat_model_messages_excludes_timestamp_metadata():
@@ -282,6 +283,7 @@ def test_chat_sidebar_separates_project_chats_from_unheaded_general_history(monk
     """Verify General is translated and visually separated without a heading."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
+
     import ui.chat_window as chat_window_module
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -642,6 +644,8 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
+    from ui.i18n import t
+
     app = QApplication.instance() or QApplication(sys.argv)
     conversations = [{"messages": [{"role": "user", "content": "hello"}]}]
     window = ChatWindow(conversations, lambda _messages: iter(()))
@@ -660,8 +664,49 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
         window._open_conversation_menu(0, menu_btn)
 
         assert captured == [menu_btn.mapToGlobal(menu_btn.rect().bottomLeft())]
+        assert t("Browse conversation files") in {
+            action.text() for action in window._conversation_menu.actions()
+        }
     finally:
         row.deleteLater()
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_browse_conversation_files_persists_then_reveals_record(
+    monkeypatch, tmp_path
+):
+    """The conversation menu reveals the current persisted chat record."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui import chat_window as chat_window_mod
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [{"messages": [{"role": "user", "content": "hello"}]}]
+    persisted = []
+    revealed = []
+    record = tmp_path / "chats" / "conversations.json"
+    record.parent.mkdir()
+    record.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(chat_window_mod._conversation_store, "CONVERSATIONS_FILE", record)
+    monkeypatch.setattr(
+        chat_window_mod._file_browser,
+        "reveal_path",
+        lambda path: revealed.append(path),
+    )
+    window = ChatWindow(
+        conversations,
+        lambda _messages: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+    try:
+        window._browse_conversation_files(0)
+
+        assert persisted == [True]
+        assert revealed == [record]
+    finally:
         window.close()
         app.processEvents()
 

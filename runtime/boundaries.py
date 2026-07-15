@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Iterable
+from collections.abc import Iterable
 
 ROLE_FORBIDDEN_PREFIXES: dict[str, tuple[str, ...]] = {
     "ui": (

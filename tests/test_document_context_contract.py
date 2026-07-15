@@ -133,6 +133,7 @@ def test_docx_reader_extracts_paragraph_text(tmp_path):
     """Verify docx reader extracts paragraph text behavior."""
     pytest.importorskip("docx")
     from docx import Document
+
     from core.llm_clients import client as llm
 
     path = tmp_path / "sample.docx"
@@ -147,6 +148,7 @@ def test_xlsx_reader_extracts_sheet_cells(tmp_path):
     """Verify xlsx reader extracts sheet cells behavior."""
     pytest.importorskip("openpyxl")
     import openpyxl
+
     from core.llm_clients import client as llm
 
     path = tmp_path / "sample.xlsx"
@@ -169,6 +171,7 @@ def test_pptx_reader_extracts_slide_text(tmp_path):
     """Verify pptx reader extracts slide text behavior."""
     pytest.importorskip("pptx")
     from pptx import Presentation
+
     from core.llm_clients import client as llm
 
     path = tmp_path / "sample.pptx"
@@ -185,6 +188,7 @@ def test_odt_reader_extracts_paragraph_text(tmp_path):
     pytest.importorskip("odf")
     from odf import text as odf_text
     from odf.opendocument import OpenDocumentText
+
     from core.llm_clients import client as llm
 
     path = tmp_path / "sample.odt"

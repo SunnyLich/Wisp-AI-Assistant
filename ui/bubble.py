@@ -25,8 +25,8 @@ from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEd
 
 import config
 from ui.i18n import t
-from ui.shared.window_utils import start_wayland_system_move
 from ui.shared.theme import show_tooltip_text
+from ui.shared.window_utils import start_wayland_system_move
 from ui.text_annotations import (
     TextAnnotation,
     annotations_for_subrange,

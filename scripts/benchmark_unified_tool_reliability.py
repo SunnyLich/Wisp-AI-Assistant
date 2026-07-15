@@ -1,14 +1,13 @@
 """Benchmark whether the unified live chat loop reliably uses tools and answers."""
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import datetime
 import argparse
 import json
-from pathlib import Path
 import sys
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -16,21 +15,23 @@ if str(ROOT) not in sys.path:
 
 from core.llm_clients.chat_flow_harness import (  # noqa: E402
     ChatScenario,
-    FakeToolExecutor,
     LiveResponsesUnifiedRunner,
     ScenarioFixtures,
     score_trace,
     synthetic_live_fixtures,
     synthetic_live_scenarios,
 )
-from core.llm_clients.chat_tool_loop import WispToolResult  # noqa: E402
+from core.llm_clients.chat_tool_loop import (  # noqa: E402
+    ChatToolLoop,
+    ChatToolLoopConfig,
+    WispToolResult,  # noqa: E402
+)
 from core.llm_clients.harness_grading import (  # noqa: E402
     ExpectedTool,
     HarnessItem,
     default_items_by_scenario,
     grade_trace,
 )
-from core.llm_clients.chat_tool_loop import ChatToolLoop, ChatToolLoopConfig  # noqa: E402
 
 
 def main() -> int:
@@ -49,7 +50,6 @@ def main() -> int:
         max_rounds=args.max_rounds or None,
     )
     scenarios = reliability_scenarios()
-    fixtures = reliability_fixtures()
     items = reliability_items()
     generated_at = datetime.now().isoformat(timespec="seconds")
     run_dir = Path(args.output_root) / generated_at.replace(":", "-")
@@ -167,8 +167,8 @@ def _unified_runner(
     max_rounds: int | None = None,
 ) -> LiveResponsesUnifiedRunner:
     """Build a live unified runner with safe synthetic fixtures."""
-    from core.llm_clients import client as llm
     import config
+    from core.llm_clients import client as llm
 
     selected_model = model or config.CHAT_LLM_MODEL or config.LLM_MODEL
     budget = config.tool_turn_budget()

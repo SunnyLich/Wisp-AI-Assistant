@@ -56,6 +56,7 @@ def test_get_settings_returns_typed_snapshot():
                 "BUBBLE_FONT_SIZE": "14",
                 "BUBBLE_SCROLL_ENABLED": "false",
                 "BUBBLE_SCROLL_SNAP_DELAY_MS": "1800",
+                "PRIVACY_MODE": "builtin",
                 "TRUST_PRIVACY_MODE": "true",
                 "START_ON_LOGIN": "true",
             },
@@ -73,6 +74,7 @@ def test_get_settings_returns_typed_snapshot():
         assert settings.ui.bubble_scroll_enabled is False
         assert settings.ui.bubble_scroll_snap_delay_ms == 1800
         assert settings.ui.start_on_login is True
+        assert settings.privacy.mode == "builtin"
         assert settings.privacy.trust_privacy_mode is True
         assert settings.callers.callers[0]["label"] == "Typed"
         assert settings.callers.voice["context_memory_mode"] == "model"
@@ -217,6 +219,7 @@ def test_trust_privacy_mode_can_be_disabled():
             config.reload()
 
         assert config.TRUST_PRIVACY_MODE is False
+        assert config.PRIVACY_MODE == "off"
         assert config.get_settings().privacy.trust_privacy_mode is False
     finally:
         _restore_config_globals(previous_config)
@@ -230,6 +233,30 @@ def test_trust_privacy_mode_defaults_on():
             config.reload()
 
         assert config.TRUST_PRIVACY_MODE is True
+        assert config.PRIVACY_MODE == "builtin"
         assert config.get_settings().privacy.trust_privacy_mode is True
+    finally:
+        _restore_config_globals(previous_config)
+
+
+def test_explicit_privacy_mode_derives_legacy_compatibility_flags():
+    """The new selector should be authoritative while old readers keep working."""
+    previous_config = _snapshot_config_globals()
+    try:
+        with patch("config.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "PRIVACY_MODE": "advanced",
+                "TRUST_PRIVACY_MODE": "false",
+                "PRIVACY_AI_ENABLED": "false",
+            },
+            clear=True,
+        ):
+            config.reload()
+
+        assert config.PRIVACY_MODE == "advanced"
+        assert config.TRUST_PRIVACY_MODE is True
+        assert config.PRIVACY_AI_ENABLED is True
+        assert config.get_settings().privacy.mode == "advanced"
     finally:
         _restore_config_globals(previous_config)

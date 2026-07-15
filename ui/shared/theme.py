@@ -14,7 +14,6 @@ from PySide6.QtWidgets import QApplication, QToolTip
 
 import config
 
-
 # Per-mode template defaults. Editable via THEME_<MODE>_<ROLE> config keys.
 _TEMPLATE_DEFAULTS = {
     "dark": {
@@ -96,7 +95,6 @@ def theme_colors(dark: bool | None = None) -> dict[str, str]:
     surface = QColor(base["surface"])
     text = QColor(base["text"])
     accent = QColor(base["accent"])
-    ar, ag, ab = accent.red(), accent.green(), accent.blue()
 
     if dark:
         card = bg.lighter(118)

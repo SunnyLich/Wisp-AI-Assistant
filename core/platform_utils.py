@@ -346,9 +346,9 @@ def _mac_on_screen_windows() -> list:
         try:
             from Quartz import (
                 CGWindowListCopyWindowInfo,
-                kCGWindowListOptionOnScreenOnly,
-                kCGWindowListExcludeDesktopElements,
                 kCGNullWindowID,
+                kCGWindowListExcludeDesktopElements,
+                kCGWindowListOptionOnScreenOnly,
             )
             opts = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements
             return list(CGWindowListCopyWindowInfo(opts, kCGNullWindowID) or [])
@@ -414,7 +414,7 @@ def _mac_focus_window(wid: int) -> None:
             info = _mac_window_info(wid)
             if not info or not info.get("pid"):
                 return
-            from AppKit import NSRunningApplication, NSApplicationActivateIgnoringOtherApps
+            from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
             app = NSRunningApplication.runningApplicationWithProcessIdentifier_(info["pid"])
             if app is not None:
                 app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)

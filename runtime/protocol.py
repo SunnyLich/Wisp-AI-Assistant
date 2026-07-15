@@ -6,6 +6,8 @@ from typing import Any
 
 from core.macos_helper.protocol import read_message, write_message
 
+__all__ = ["read_message", "write_message"]
+
 
 def make_request(req_id: Any, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create request."""

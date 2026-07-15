@@ -9,8 +9,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from runtime.bootstrap import data_root, repo_root
 from runtime.service_host import run_host

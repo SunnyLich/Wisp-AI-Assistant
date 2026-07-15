@@ -1,13 +1,13 @@
 """Unified deterministic harness for chat tool-loop behavior."""
 from __future__ import annotations
 
+import html
+import json
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
-import html
-import json
 from pathlib import Path
-import time
 from typing import Any, Protocol
 
 from core.llm_clients.chat_tool_loop import (
@@ -572,8 +572,8 @@ def live_chatgpt_runner(
     synthetic_tools: bool = False,
 ) -> LiveResponsesUnifiedRunner:
     """Build a live unified runner for ChatGPT Responses harness runs."""
-    from core.llm_clients import client as llm
     import config
+    from core.llm_clients import client as llm
 
     selected_model = model or config.CHAT_LLM_MODEL or config.LLM_MODEL
     allowed_tools = ["list_files", "read_file", "edit_file", "write_file", "memory_search"]

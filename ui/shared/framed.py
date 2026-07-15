@@ -16,10 +16,15 @@ top-level window gets the new chrome for free.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QObject, QEvent
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 _TITLE_BAR_HEIGHT = 38
@@ -307,7 +312,7 @@ class _WindowChrome(QObject):
             (width - m, 0, m, m),
             (0, height - m, m, m),
         ]
-        for grip, (x, y, gw, gh) in zip(self._grips, rects):
+        for grip, (x, y, gw, gh) in zip(self._grips, rects, strict=True):
             grip.setGeometry(x, y, max(0, gw), max(0, gh))
             grip.raise_()
 
