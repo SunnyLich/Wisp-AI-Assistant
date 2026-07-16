@@ -1608,7 +1608,12 @@ class IntentOverlay(QWidget):
         self._prompt_resize_pending = False
         if not self._prompt_input_visible() or self._input_line.isHidden():
             return
-        document_h = int(self._input_line.document().size().height() + 0.999)
+        document = self._input_line.document()
+        # Some offscreen Qt platform plugins defer propagating the viewport
+        # width into QPlainTextEdit's document layout. Force the current width
+        # before measuring so wrapped prompts expand consistently on Linux CI.
+        document.setTextWidth(max(1, self._input_line.viewport().width()))
+        document_h = int(document.documentLayout().documentSize().height() + 0.999)
         required_h = max(_INPUT_MIN_H, document_h + 12)
         max_input_h = self._prompt_input_max_height()
         desired_h = min(max_input_h, required_h)
