@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -118,9 +119,12 @@ class AddonHostProcess:
             "--store",
             str(addon_store.store_path()),
         ]
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
         self._proc = subprocess.Popen(
             cmd,
             cwd=str(REPO_ROOT),
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

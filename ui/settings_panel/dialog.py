@@ -587,6 +587,9 @@ class SettingsDialog(QDialog):
         self._open_warning_boxes: list[QMessageBox] = []
         self._status_refresh_token = 0
         self._status_refresh_running = False
+        self._harness_auth_poll_target: bool | None = None
+        self._harness_auth_poll_ticks = 0
+        self._harness_auth_poll_provider = ""
         self._update_check_result = None
         self._update_download_path = None
         self._update_mode = "check"
@@ -5371,18 +5374,60 @@ class SettingsDialog(QDialog):
         # ── SYSTEM PROMPT card ────────────────────────────────────────────
         prompt_card, prompt_cv = self._card("System Prompt")
         note = QLabel(
-            f"<small>{t('This prompt is prepended to every LLM request as the system instruction.')}</small>"
+            f"<small>{t('Each conversation mode has its own system prompt.')}</small>"
         )
         note.setWordWrap(True)
         prompt_cv.addWidget(note)
-        util = QTextEdit()
-        util.setMinimumHeight(260)
-        util.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+
+        prompt_tabs = QTabWidget()
+        prompt_tabs.setObjectName("systemPromptModeTabs")
+
+        def add_prompt_tab(
+            label: str,
+            field_key: str,
+            description: str,
+            placeholder: str = "",
+        ) -> None:
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(8, 10, 8, 8)
+            layout.setSpacing(8)
+            description_label = QLabel(t(description))
+            description_label.setWordWrap(True)
+            layout.addWidget(description_label)
+            editor = QTextEdit()
+            editor.setMinimumHeight(260)
+            editor.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
+            if placeholder:
+                # QTextEdit renders this as non-editable palette placeholder text;
+                # it is never returned by toPlainText() or persisted to .env.
+                editor.setPlaceholderText(t(placeholder))
+            self._fields[field_key] = editor
+            layout.addWidget(editor, stretch=1)
+            prompt_tabs.addTab(page, t(label))
+
+        add_prompt_tab(
+            "Wisp",
+            "SYSTEM_PROMPT_UTILITY",
+            "Used only when conversations run with Wisp.",
         )
-        self._fields["SYSTEM_PROMPT_UTILITY"] = util
-        prompt_cv.addWidget(util)
+        add_prompt_tab(
+            "ChatGPT",
+            "WISP_CODEX_SYSTEM_PROMPT",
+            "Used only when conversations run with ChatGPT.",
+            "Optional instructions for ChatGPT conversations. Leave blank to use ChatGPT's native instructions.",
+        )
+        add_prompt_tab(
+            "Claude",
+            "WISP_CLAUDE_SYSTEM_PROMPT",
+            "Used only when conversations run with Claude.",
+            "Optional instructions for Claude conversations. Leave blank to use Claude's native instructions.",
+        )
+        self._system_prompt_tabs = prompt_tabs
+        prompt_cv.addWidget(prompt_tabs, stretch=1)
         outer.addWidget(prompt_card, stretch=1)
 
         scroll.setWidget(w)
@@ -6260,6 +6305,125 @@ class SettingsDialog(QDialog):
         cfg_cv.addWidget(fw)
         return cfg_card
 
+    def _selected_harness_provider(self) -> str:
+        """Return the selected external conversation harness, if any."""
+        fields = getattr(self, "_fields", {})
+        field = fields.get("CHAT_EXECUTION_MODE")
+        if field is None:
+            return ""
+        provider = str(field.currentData() or "").strip().lower()  # type: ignore[attr-defined]
+        return provider if provider in {"codex", "claude"} else ""
+
+    def _refresh_harness_login_status(self) -> None:
+        """Refresh the selected harness login alongside other auth states."""
+        if not self._selected_harness_provider():
+            return
+        self._schedule_open_status_refresh()
+
+    def _harness_login(self) -> None:
+        """Open the selected harness's interactive CLI login flow."""
+        provider = self._selected_harness_provider()
+        if not provider:
+            return
+        try:
+            from core.harness_clients.auth import harness_login_command, harness_login_environment
+
+            command = harness_login_command(provider)
+            environment = harness_login_environment(provider)
+        except Exception as exc:  # noqa: BLE001 - shown directly in Settings
+            self._set_status_label(self._harness_auth_status_lbl, False, str(exc))
+            return
+        display_name = "ChatGPT" if provider == "codex" else "Claude Agent"
+        launched = _launch_terminal_command(
+            command,
+            cwd=Path.cwd(),
+            title=f"{display_name} sign-in",
+            failure_label=f"{display_name} sign-in",
+            environment=environment,
+        )
+        if not launched:
+            self._set_status_label(
+                self._harness_auth_status_lbl,
+                False,
+                "Could not open a terminal for sign-in.",
+            )
+            return
+        self._set_status_label(
+            self._harness_auth_status_lbl,
+            None,
+            "Complete sign-in in the terminal or browser. Wisp will refresh automatically.",
+        )
+        self._start_harness_auth_poll(target=True)
+
+    def _harness_logout(self) -> None:
+        """Sign out of the selected harness without blocking the Settings UI."""
+        provider = self._selected_harness_provider()
+        if not provider:
+            return
+        self._cancel_status_refresh()
+        self._status_refresh_token += 1
+        token = self._status_refresh_token
+        self._status_refresh_running = True
+        self._pending_status_attrs = {"_harness_auth_status_lbl"}
+        self._set_status_label(self._harness_auth_status_lbl, None, "Signing out...")
+        self._harness_login_btn.setEnabled(False)
+        self._harness_logout_btn.setEnabled(False)
+        if not self._status_result_timer.isActive():
+            self._status_result_timer.start()
+        QTimer.singleShot(_AUTH_STATUS_TIMEOUT_MS, lambda tok=token: self._expire_status_refresh(tok))
+
+        def _worker() -> None:
+            from core.harness_clients.auth import logout_harness
+
+            status = logout_harness(provider)
+            ok = (
+                True if status.available and status.logged_in is True
+                else None if status.available and status.logged_in is False
+                else False
+            )
+            self._queue_status_result(token, "_harness_auth_status_lbl", ok, status.message)
+
+        threading.Thread(
+            target=_worker,
+            daemon=True,
+            name=f"settings-{provider}-logout",
+        ).start()
+
+    def _start_harness_auth_poll(self, *, target: bool) -> None:
+        """Poll until a CLI login/logout flow reaches its expected state."""
+        self._harness_auth_poll_target = bool(target)
+        self._harness_auth_poll_ticks = 0
+        self._harness_auth_poll_provider = self._selected_harness_provider()
+        timer = getattr(self, "_harness_auth_poll_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setInterval(2000)
+            timer.timeout.connect(self._harness_auth_poll_tick)
+            self._harness_auth_poll_timer = timer
+        timer.start()
+
+    def _harness_auth_poll_tick(self) -> None:
+        """Start another non-blocking login status read while auth is pending."""
+        provider = self._selected_harness_provider()
+        if not provider or provider != self._harness_auth_poll_provider:
+            self._harness_auth_poll_timer.stop()
+            self._harness_auth_poll_target = None
+            self._harness_auth_poll_provider = ""
+            return
+        self._harness_auth_poll_ticks += 1
+        if self._harness_auth_poll_ticks >= 150:
+            self._harness_auth_poll_timer.stop()
+            self._harness_auth_poll_target = None
+            self._harness_auth_poll_provider = ""
+            self._set_status_label(
+                self._harness_auth_status_lbl,
+                False,
+                "Timed out waiting for agent sign-in. Use Refresh to check again.",
+            )
+            return
+        if not self._status_refresh_running:
+            self._schedule_open_status_refresh()
+
     def _tab_app(self) -> QWidget:
         """Handle tab app for settings dialog."""
         from PySide6.QtWidgets import QScrollArea
@@ -6270,6 +6434,111 @@ class SettingsDialog(QDialog):
         outer = QVBoxLayout(outer_w)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
+
+        execution_card, execution_cv = self._card("Run conversations with")
+        execution_cv.addWidget(_desc_label(
+            "",
+            "Choose the agent behind Wisp conversations. Wisp uses the configured model route; "
+            "ChatGPT and Claude run their full local agent harness and stream progress back into Wisp.",
+        ))
+        execution_mode = _NoScrollCombo()
+        execution_mode.addItem(t("Wisp"), "wisp")
+        execution_mode.addItem(t("ChatGPT"), "codex")
+        execution_mode.addItem(t("Claude Agent"), "claude")
+        execution_mode.setToolTip(t(
+            "Wisp always keeps a local chat copy. Agent-managed conversations also keep a resumable ChatGPT or Claude session."
+        ))
+        self._fields["CHAT_EXECUTION_MODE"] = execution_mode
+        conversation_owner = _NoScrollCombo()
+        conversation_owner.addItem(t("Wisp"), "wisp")
+        conversation_owner.addItem(t("Selected agent"), "agent")
+        conversation_owner.setToolTip(t(
+            "Wisp-managed conversations send the full Wisp history with each request. "
+            "Agent-managed conversations transfer once, then resume the ChatGPT or Claude session."
+        ))
+        self._fields["CHAT_CONVERSATION_OWNER"] = conversation_owner
+
+        owner_sync_state = {"provider": str(execution_mode.currentData() or "wisp")}
+
+        def sync_owner_agent_label(*, select_default: bool = True) -> None:
+            selected = str(execution_mode.currentData() or "wisp")
+            previous = owner_sync_state["provider"]
+            label = {
+                "codex": t("ChatGPT"),
+                "claude": t("Claude Agent"),
+            }.get(selected, t("Selected agent"))
+            conversation_owner.setItemText(1, label)
+            conversation_owner.setEnabled(selected in {"codex", "claude"})
+            if selected == "wisp":
+                conversation_owner.setCurrentIndex(conversation_owner.findData("wisp"))
+            elif select_default and previous == "wisp":
+                conversation_owner.setCurrentIndex(conversation_owner.findData("agent"))
+            owner_sync_state["provider"] = selected
+            poll_timer = getattr(self, "_harness_auth_poll_timer", None)
+            poll_provider = getattr(self, "_harness_auth_poll_provider", "")
+            if poll_timer is not None and poll_provider and poll_provider != selected:
+                poll_timer.stop()
+                self._harness_auth_poll_target = None
+                self._harness_auth_poll_provider = ""
+            auth_widget = getattr(self, "_harness_auth_widget", None)
+            if isinstance(auth_widget, QWidget):
+                auth_widget.setVisible(selected in {"codex", "claude"})
+            title_label = getattr(self, "_harness_auth_title_lbl", None)
+            if isinstance(title_label, QLabel):
+                title_label.setText(
+                    t("ChatGPT login") if selected == "codex" else t("Claude Agent login")
+                )
+            if (
+                selected in {"codex", "claude"}
+                and hasattr(self, "_status_result_timer")
+                and not getattr(self, "_loading_values", False)
+            ):
+                self._schedule_open_status_refresh()
+
+        execution_mode.currentIndexChanged.connect(lambda _index: sync_owner_agent_label())
+        sync_owner_agent_label(select_default=False)
+        execution_form_w = QWidget()
+        execution_form = _expanding_form_layout(execution_form_w)
+        execution_form.setContentsMargins(0, 0, 0, 0)
+        execution_form.addRow(t("Agent"), execution_mode)
+        execution_form.addRow(t("Conversation goes to"), conversation_owner)
+        execution_cv.addWidget(execution_form_w)
+
+        self._harness_auth_widget = QWidget()
+        harness_auth_layout = QVBoxLayout(self._harness_auth_widget)
+        harness_auth_layout.setContentsMargins(0, 4, 0, 0)
+        harness_auth_layout.setSpacing(6)
+        harness_auth_layout.addWidget(_sep(visible=True))
+        self._harness_auth_title_lbl = QLabel()
+        self._harness_auth_title_lbl.setObjectName("settingsHarnessLoginTitle")
+        self._harness_auth_title_lbl.setStyleSheet("font-weight: 600;")
+        harness_auth_layout.addWidget(self._harness_auth_title_lbl)
+        harness_auth_layout.addWidget(_desc_label(
+            "",
+            "Wisp keeps ChatGPT agent sessions and login state in an isolated Wisp profile, "
+            "so they do not appear in your personal Codex history. Sign-in opens its terminal and browser flow.",
+        ))
+        self._harness_auth_status_lbl = QLabel()
+        self._harness_auth_status_lbl.setObjectName("settingsHarnessLoginStatus")
+        self._harness_auth_status_lbl.setWordWrap(True)
+        self._set_status_label(self._harness_auth_status_lbl, None, "Checking status...")
+        harness_auth_layout.addWidget(self._harness_auth_status_lbl)
+        harness_auth_row = self._button_row(
+            ("Sign in", self._harness_login),
+            ("Sign out", self._harness_logout),
+            ("Refresh", self._refresh_harness_login_status),
+        )
+        harness_buttons = harness_auth_row.findChildren(QPushButton)
+        self._harness_login_btn = harness_buttons[0]
+        self._harness_logout_btn = harness_buttons[1]
+        self._harness_auth_refresh_btn = harness_buttons[2]
+        self._harness_login_btn.setObjectName("settingsHarnessLoginButton")
+        self._harness_logout_btn.setObjectName("settingsHarnessLogoutButton")
+        self._harness_auth_refresh_btn.setObjectName("settingsHarnessLoginRefreshButton")
+        harness_auth_layout.addWidget(harness_auth_row)
+        execution_cv.addWidget(self._harness_auth_widget)
+        sync_owner_agent_label()
+        outer.addWidget(execution_card)
 
         profile_card, profile_cv = self._card("Profile setup")
         profile_cv.addWidget(_desc_label(
@@ -6427,11 +6696,22 @@ class SettingsDialog(QDialog):
         privacy_mode.addItem(t("Off (send full messages)"), "off")
         privacy_mode.addItem(t("Built-in privacy filter"), "builtin")
         privacy_mode.addItem(t("Advanced privacy model"), "advanced")
-        privacy_mode.setToolTip(
+        privacy_general_tooltip = t(
+            "Use no filter, built-in patterns, or Advanced mode, which combines the local AI model "
+            "with built-in patterns."
+        )
+        privacy_mode.setToolTip(privacy_general_tooltip)
+        privacy_mode.setProperty("generalToolTip", privacy_general_tooltip)
+        advanced_index = privacy_mode.findData("advanced")
+        privacy_mode.setItemData(
+            advanced_index,
             t(
-                "Use no filter, built-in patterns, or Advanced mode, which combines the local AI model "
-                "with built-in patterns."
-            )
+                "Advanced privacy loads a local 2.8 GB AI model into memory and warms it in the "
+                "background when Wisp starts. Warm-up may take tens of seconds on CPU. If you send "
+                "a request before it finishes, that request waits; later requests are faster. The "
+                "privacy model never uploads your text."
+            ),
+            Qt.ItemDataRole.ToolTipRole,
         )
         privacy_mode.currentIndexChanged.connect(self._on_privacy_mode_changed)
         self._fields["PRIVACY_MODE"] = privacy_mode
@@ -6496,6 +6776,8 @@ class SettingsDialog(QDialog):
         if not isinstance(combo, QComboBox):
             return
         mode = str(combo.currentData() or "builtin")
+        item_tooltip = combo.itemData(combo.currentIndex(), Qt.ItemDataRole.ToolTipRole)
+        combo.setToolTip(str(item_tooltip or combo.property("generalToolTip") or ""))
         review = self._fields.get("PRIVACY_REVIEW_BEFORE_SEND")
         if isinstance(review, QCheckBox):
             review.setEnabled(mode != "off")
@@ -6505,6 +6787,7 @@ class SettingsDialog(QDialog):
         combo.blockSignals(True)
         combo.setCurrentIndex(fallback if fallback >= 0 else 0)
         combo.blockSignals(False)
+        combo.setToolTip(str(combo.property("generalToolTip") or ""))
         if isinstance(review, QCheckBox):
             review.setEnabled(True)
         QMessageBox.information(
@@ -7667,6 +7950,19 @@ class SettingsDialog(QDialog):
         import config as cfg
         self._loading_values = True
         self._active_preset_slug = self._env.get(_SETTINGS_PRESET_KEY, "")
+        _set(
+            self._fields["CHAT_EXECUTION_MODE"],
+            self._env.get("CHAT_EXECUTION_MODE", getattr(cfg, "CHAT_EXECUTION_MODE", "wisp")),
+        )
+        _set(
+            self._fields["CHAT_CONVERSATION_OWNER"],
+            self._env.get(
+                "CHAT_CONVERSATION_OWNER",
+                getattr(cfg, "CHAT_CONVERSATION_OWNER", "wisp"),
+            ),
+        )
+        if self._fields["CHAT_EXECUTION_MODE"].currentData() == "wisp":  # type: ignore[attr-defined]
+            _set(self._fields["CHAT_CONVERSATION_OWNER"], "wisp")
         self._pending_active_profile = ""
 
         # ── API key rows ──────────────────────────────────────────────────
@@ -8263,6 +8559,18 @@ class SettingsDialog(QDialog):
             assistant_language,
         )
         self._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(util_val)  # type: ignore
+        self._fields["WISP_CODEX_SYSTEM_PROMPT"].setPlainText(  # type: ignore[attr-defined]
+            self._env.get(
+                "WISP_CODEX_SYSTEM_PROMPT",
+                getattr(cfg, "WISP_CODEX_SYSTEM_PROMPT", ""),
+            )
+        )
+        self._fields["WISP_CLAUDE_SYSTEM_PROMPT"].setPlainText(  # type: ignore[attr-defined]
+            self._env.get(
+                "WISP_CLAUDE_SYSTEM_PROMPT",
+                getattr(cfg, "WISP_CLAUDE_SYSTEM_PROMPT", ""),
+            )
+        )
         self._refresh_capability_warning_markers()
         self._loading_values = False
         self._wire_change_tracking(self)
@@ -8339,10 +8647,16 @@ class SettingsDialog(QDialog):
             self._pending_test_progress.clear()
         if self._test_result_timer.isActive():
             self._test_result_timer.stop()
-        for timer_name in ("_auth_poll_timer", "_github_auth_poll_timer"):
+        for timer_name in (
+            "_auth_poll_timer",
+            "_github_auth_poll_timer",
+            "_harness_auth_poll_timer",
+        ):
             timer = getattr(self, timer_name, None)
             if timer is not None and timer.isActive():
                 timer.stop()
+        self._harness_auth_poll_target = None
+        self._harness_auth_poll_provider = ""
 
     def _schedule_open_status_refresh(self) -> None:
         """Schedule open status refresh."""
@@ -8356,10 +8670,16 @@ class SettingsDialog(QDialog):
             "_github_status_lbl",
             "_copilot_status_lbl",
         }
-        for attr in ("_chatgpt_status_lbl", "_github_status_lbl", "_copilot_status_lbl"):
+        harness_provider = self._selected_harness_provider()
+        if harness_provider:
+            self._pending_status_attrs.add("_harness_auth_status_lbl")
+        for attr in self._pending_status_attrs:
             label = getattr(self, attr, None)
             if isinstance(label, QLabel):
                 self._set_status_label(label, None, "Checking status...")
+        if harness_provider:
+            self._harness_login_btn.setEnabled(False)
+            self._harness_logout_btn.setEnabled(False)
         if not self._status_result_timer.isActive():
             self._status_result_timer.start()
         QTimer.singleShot(_AUTH_STATUS_TIMEOUT_MS, lambda tok=token: self._expire_status_refresh(tok))
@@ -8407,12 +8727,70 @@ class SettingsDialog(QDialog):
             except Exception as exc:
                 self._queue_status_result(token, "_copilot_status_lbl", False, f"Keychain error: {exc}")
 
+        def _harness_worker() -> None:
+            """Read the selected local agent CLI's login state."""
+            try:
+                from core.harness_clients.auth import harness_login_status
+
+                status = harness_login_status(harness_provider)
+                ok = (
+                    True if status.available and status.logged_in is True
+                    else None if status.available and status.logged_in is False
+                    else False
+                )
+                self._queue_status_result(
+                    token,
+                    "_harness_auth_status_lbl",
+                    ok,
+                    status.message,
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced in Settings
+                self._queue_status_result(
+                    token,
+                    "_harness_auth_status_lbl",
+                    False,
+                    f"Error reading status: {exc}",
+                )
+
         for name, worker in (
             ("settings-status-chatgpt", _chatgpt_worker),
             ("settings-status-github", _github_worker),
             ("settings-status-copilot", _copilot_worker),
         ):
             threading.Thread(target=worker, daemon=True, name=name).start()
+        if harness_provider:
+            threading.Thread(
+                target=_harness_worker,
+                daemon=True,
+                name=f"settings-status-{harness_provider}",
+            ).start()
+
+    def _apply_status_result(self, attr: str, ok, message: str) -> None:
+        """Apply one queued auth result and update provider-specific controls."""
+        label = getattr(self, attr, None)
+        if isinstance(label, QLabel):
+            self._set_status_label(label, ok, message)
+        if attr != "_harness_auth_status_lbl":
+            return
+        target = getattr(self, "_harness_auth_poll_target", None)
+        if target is True and ok is None:
+            self._set_status_label(
+                self._harness_auth_status_lbl,
+                None,
+                "Waiting for agent sign-in to finish...",
+            )
+            self._harness_login_btn.setEnabled(False)
+            self._harness_logout_btn.setEnabled(False)
+            return
+        self._harness_login_btn.setEnabled(ok is not False)
+        self._harness_logout_btn.setEnabled(ok is True)
+        reached_target = (target is True and ok is True) or (target is False and ok is None)
+        if reached_target:
+            timer = getattr(self, "_harness_auth_poll_timer", None)
+            if timer is not None:
+                timer.stop()
+            self._harness_auth_poll_target = None
+            self._harness_auth_poll_provider = ""
 
     def _expire_status_refresh(self, token: int) -> None:
         """Replace stuck open-time auth checks with an actionable status."""
@@ -8426,9 +8804,7 @@ class SettingsDialog(QDialog):
         for _token, attr, ok, message in queued:
             if attr not in self._pending_status_attrs:
                 continue
-            label = getattr(self, attr, None)
-            if isinstance(label, QLabel):
-                self._set_status_label(label, ok, message)
+            self._apply_status_result(attr, ok, message)
             self._pending_status_attrs.discard(attr)
         if not self._pending_status_attrs:
             self._status_refresh_running = False
@@ -8437,9 +8813,7 @@ class SettingsDialog(QDialog):
             return
         message = t("Status check timed out. Sign-in may still work; try again or restart Wisp.")
         for attr in tuple(self._pending_status_attrs):
-            label = getattr(self, attr, None)
-            if isinstance(label, QLabel):
-                self._set_status_label(label, False, message)
+            self._apply_status_result(attr, False, message)
         self._pending_status_attrs = set()
         self._status_refresh_running = False
         if self._status_result_timer.isActive():
@@ -8458,9 +8832,7 @@ class SettingsDialog(QDialog):
                 continue
             if attr not in self._pending_status_attrs:
                 continue
-            label = getattr(self, attr, None)
-            if isinstance(label, QLabel):
-                self._set_status_label(label, ok, message)
+            self._apply_status_result(attr, ok, message)
             self._pending_status_attrs.discard(attr)
         if not self._pending_status_attrs:
             self._status_refresh_running = False
@@ -9228,6 +9600,8 @@ class SettingsDialog(QDialog):
             },
             "Prompts": {
                 "SYSTEM_PROMPT_UTILITY",
+                "WISP_CODEX_SYSTEM_PROMPT",
+                "WISP_CLAUDE_SYSTEM_PROMPT",
             },
             "Keybinds": {
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_ADD_CONTEXT_2", "HOTKEY_ADD_CONTEXT_ENABLED",
@@ -9247,6 +9621,8 @@ class SettingsDialog(QDialog):
                 "CALLER_COUNT",
             },
             "App": {
+                "CHAT_EXECUTION_MODE",
+                "CHAT_CONVERSATION_OWNER",
                 "THEME_MODE", "DARK_MODE", "PRIVACY_MODE", "TRUST_PRIVACY_MODE",
                 "PRIVACY_REVIEW_BEFORE_SEND", "PRIVACY_AI_ENABLED",
                 "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE", "START_ON_LOGIN",
@@ -9571,9 +9947,13 @@ class SettingsDialog(QDialog):
             assistant_language,
         )
         _set(self._fields["SYSTEM_PROMPT_UTILITY"], system_prompt_utility)
+        chatgpt_system_prompt = self._fields["WISP_CODEX_SYSTEM_PROMPT"].toPlainText()  # type: ignore[attr-defined]
+        claude_system_prompt = self._fields["WISP_CLAUDE_SYSTEM_PROMPT"].toPlainText()  # type: ignore[attr-defined]
         privacy_mode = str(self._fields["PRIVACY_MODE"].currentData() or "builtin")  # type: ignore[attr-defined]
 
         vals = {
+            "CHAT_EXECUTION_MODE": _get(self._fields["CHAT_EXECUTION_MODE"]),
+            "CHAT_CONVERSATION_OWNER": _get(self._fields["CHAT_CONVERSATION_OWNER"]),
             "LLM_PROVIDER":      llm_p,
             "LLM_MODEL":         llm_m,
             "LLM_FALLBACKS":     llm_f,
@@ -9695,6 +10075,8 @@ class SettingsDialog(QDialog):
             "TTS_PLAYBACK_RATE": _get(self._fields["TTS_PLAYBACK_RATE"]),
             "TTS_HOLD_PLAYBACK_RATE": _get(self._fields["TTS_HOLD_PLAYBACK_RATE"]),
             "SYSTEM_PROMPT_UTILITY": system_prompt_utility,
+            "WISP_CODEX_SYSTEM_PROMPT": chatgpt_system_prompt,
+            "WISP_CLAUDE_SYSTEM_PROMPT": claude_system_prompt,
         }
         vals.update(self._snip_context_values())
         vals.update(theme_vals)
@@ -10602,7 +10984,14 @@ def _cmd_control_escape(text: str) -> str:
     )
 
 
-def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bool:
+def _launch_terminal_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    title: str,
+    failure_label: str = "Wisp installer",
+    environment: dict[str, str] | None = None,
+) -> bool:
     """Launch a command in a user-visible terminal window."""
     try:
         if sys.platform == "win32":
@@ -10612,7 +11001,7 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
                 "if errorlevel 1 ("
                 "set WISP_INSTALL_EXIT=!errorlevel! & "
                 "echo. & "
-                "echo Wisp installer failed with exit code !WISP_INSTALL_EXIT!. & "
+                f"echo {_cmd_control_escape(failure_label)} failed with exit code !WISP_INSTALL_EXIT!. & "
                 "echo This window stayed open so you can copy the error above. & "
                 "echo Press any key to close this window. & "
                 "pause > nul"
@@ -10623,10 +11012,21 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
                 f"{inner} & {failure_prompt}"
             )
             flags = int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0) or 0)
-            subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], cwd=str(cwd), creationflags=flags)
+            kwargs: dict[str, object] = {"cwd": str(cwd), "creationflags": flags}
+            if environment:
+                process_environment = os.environ.copy()
+                process_environment.update(environment)
+                kwargs["env"] = process_environment
+            subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], **kwargs)
             return True
         if sys.platform == "darwin":
-            command_text = _terminal_shell_command(command, cwd, title)
+            command_text = _terminal_shell_command(
+                command,
+                cwd,
+                title,
+                failure_label=failure_label,
+                environment=environment,
+            )
             script = (
                 f"set commandText to {json.dumps(command_text)}\n"
                 "tell application \"Terminal\"\n"
@@ -10642,29 +11042,47 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
             )
             subprocess.Popen(["/usr/bin/osascript", "-e", script], cwd=str(cwd))
             return True
-        shell_cmd = _terminal_shell_command(command, cwd, title)
+        shell_cmd = _terminal_shell_command(
+            command,
+            cwd,
+            title,
+            failure_label=failure_label,
+            environment=environment,
+        )
         for executable, terminal_command in _linux_terminal_candidates(shell_cmd, cwd=cwd, title=title):
-            if shutil.which(executable) and _popen_terminal(terminal_command, cwd):
+            if shutil.which(executable) and _popen_terminal(terminal_command, cwd, environment=environment):
                 return True
     except Exception:
         return False
     return False
 
 
-def _terminal_shell_command(command: list[str], cwd: Path, title: str) -> str:
+def _terminal_shell_command(
+    command: list[str],
+    cwd: Path,
+    title: str,
+    *,
+    failure_label: str = "Wisp installer",
+    environment: dict[str, str] | None = None,
+) -> str:
     """Return the shell body run inside a visible terminal."""
     title_cmd = f"printf '\\033]0;%s\\007' {shlex.quote(str(title))}"
+    failure_message = shlex.quote(f"\n{failure_label} failed with exit code %s.\n")
     failure_prompt = (
         "status=$?; "
         "if [ $status -ne 0 ]; then "
-        "printf '\\nWisp installer failed with exit code %s.\\n' \"$status\"; "
+        f"printf {failure_message} \"$status\"; "
         "printf 'This window stayed open so you can copy the error above.\\n'; "
         "printf 'Press Enter to close this window.\\n'; "
         "read -r _; "
         "fi; "
         "exit $status"
     )
-    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; {shlex.join(command)}; {failure_prompt}"
+    run_command = list(command)
+    if environment:
+        assignments = [f"{key}={value}" for key, value in sorted(environment.items())]
+        run_command = ["env", *assignments, *run_command]
+    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; {shlex.join(run_command)}; {failure_prompt}"
 
 
 def _linux_terminal_candidates(shell_cmd: str, *, cwd: Path, title: str) -> list[tuple[str, list[str]]]:
@@ -10745,15 +11163,24 @@ def _linux_terminal_command(parts: list[str], shell_cmd: str, *, cwd: Path, titl
     return prefix + ["-e", "sh", "-lc", shell_cmd]
 
 
-def _popen_terminal(command: list[str], cwd: Path) -> bool:
+def _popen_terminal(
+    command: list[str],
+    cwd: Path,
+    *,
+    environment: dict[str, str] | None = None,
+) -> bool:
     """Start a terminal launcher, treating immediate non-zero exit as failure."""
-    proc = subprocess.Popen(
-        command,
-        cwd=str(cwd),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    kwargs: dict[str, object] = {
+        "cwd": str(cwd),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if environment:
+        process_environment = os.environ.copy()
+        process_environment.update(environment)
+        kwargs["env"] = process_environment
+    proc = subprocess.Popen(command, **kwargs)
     try:
         return proc.wait(timeout=0.35) == 0
     except subprocess.TimeoutExpired:
@@ -10766,6 +11193,7 @@ def _translate_status_message(message: str) -> str:
     if "\n" in text:
         return "\n".join(_translate_status_message(part) for part in text.splitlines())
     dynamic_patterns: tuple[tuple[str, str], ...] = (
+        (r"^Logged in using (?P<method>.+)$", "Logged in using {method}"),
         (r"^LLM route configured: (?P<route>.+)\.$", "LLM route configured: {route}."),
         (r"^LLM route incomplete: (?P<route>.+)\.$", "LLM route incomplete: {route}."),
         (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),

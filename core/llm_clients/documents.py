@@ -6,8 +6,43 @@ core.llm_clients.client; the names are re-exported there for compatibility.
 """
 from __future__ import annotations
 
+import os
+import zipfile
+
 import config
 from core.llm_clients.logging_utils import log_context as _log_context
+
+_MAX_DOCUMENT_INPUT_BYTES = 25 * 1024 * 1024
+_MAX_ARCHIVE_EXPANDED_BYTES = 100 * 1024 * 1024
+_MAX_ARCHIVE_ENTRIES = 10_000
+_ARCHIVE_DOCUMENT_EXTS = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
+
+
+def _document_safety_error(path: str, ext: str) -> str:
+    """Return a small error for sources unsafe to expand, otherwise empty."""
+    try:
+        size = os.path.getsize(path)
+    except OSError as exc:
+        return f"Failed to read {path!r}: {exc}"
+    if size > _MAX_DOCUMENT_INPUT_BYTES:
+        return (
+            f"Failed to read {path!r}: file is {size:,} bytes; "
+            f"the capture safety limit is {_MAX_DOCUMENT_INPUT_BYTES:,} bytes."
+        )
+    if ext not in _ARCHIVE_DOCUMENT_EXTS or not zipfile.is_zipfile(path):
+        return ""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+            expanded = sum(max(0, int(info.file_size)) for info in infos)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return f"Failed to read {path!r}: invalid document archive ({exc})"
+    if len(infos) > _MAX_ARCHIVE_ENTRIES or expanded > _MAX_ARCHIVE_EXPANDED_BYTES:
+        return (
+            f"Failed to read {path!r}: expanded document is too large "
+            f"({expanded:,} bytes across {len(infos):,} entries)."
+        )
+    return ""
 
 
 def _ambient_document_max_chars() -> int:
@@ -75,11 +110,13 @@ def _read_pdf_text(path: str, max_chars: int) -> str:
 
 def _read_document_file(path: str, max_chars: int | None = None) -> str:
     """Read a local document file and return its plain text."""
-    import os
     if max_chars is None:
         max_chars = _ambient_document_max_chars()
     ext = os.path.splitext(path)[1].lower()
     try:
+        safety_error = _document_safety_error(path, ext)
+        if safety_error:
+            return safety_error
         if ext == ".docx":
             from docx import Document  # type: ignore
             doc = Document(path)
@@ -123,7 +160,8 @@ def _read_document_file(path: str, max_chars: int | None = None) -> str:
         elif ext in (".txt", ".md", ".csv", ".py", ".js", ".ts",
                      ".json", ".xml", ".html", ".log"):
             with open(path, encoding="utf-8", errors="replace") as f:
-                text = f.read()
+                # Never materialize a giant text file just to discard its tail.
+                text = f.read(max(1, max_chars) + 1)
         else:
             return f"File type {ext!r} is not supported for reading."
         if len(text) > max_chars:

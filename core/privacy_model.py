@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,8 @@ _MINIMUM_SIZES = {
 }
 _MODEL_LOCK = threading.RLock()
 _MODEL_RUNTIME: PrivacyModelRuntime | None = None
+_PREWARM_LOCK = threading.RLock()
+_PREWARM_READY = False
 
 
 class PrivacyModelUnavailable(RuntimeError):
@@ -83,15 +86,17 @@ def model_status(path: Path | None = None) -> dict[str, Any]:
 
 def remove_model(path: Path | None = None) -> bool:
     """Remove only Wisp's dedicated privacy-model directory."""
-    global _MODEL_RUNTIME
+    global _MODEL_RUNTIME, _PREWARM_READY
     root = (path or model_dir()).resolve()
     if root.name != "openai-privacy-filter" and not os.environ.get("WISP_PRIVACY_MODEL_DIR"):
         raise ValueError("refusing to remove an unexpected privacy model directory")
-    with _MODEL_LOCK:
-        _MODEL_RUNTIME = None
-        if not root.exists():
-            return False
-        shutil.rmtree(root)
+    with _PREWARM_LOCK:
+        with _MODEL_LOCK:
+            _MODEL_RUNTIME = None
+            _PREWARM_READY = False
+            if not root.exists():
+                return False
+            shutil.rmtree(root)
     return True
 
 
@@ -179,4 +184,33 @@ def _runtime() -> PrivacyModelRuntime:
 
 
 def detect_with_model(text: str, *, source: str = "") -> list[SensitiveEntity]:
-    return _runtime().detect(text, source=source)
+    global _PREWARM_READY
+    # Transformers pipelines are not guaranteed to be thread-safe. The same
+    # lock lets a real request safely join an in-progress startup warmup instead
+    # of loading or running the 2.8 GB model twice.
+    with _PREWARM_LOCK:
+        entities = _runtime().detect(text, source=source)
+        _PREWARM_READY = True
+        return entities
+
+
+def prewarm() -> dict[str, Any]:
+    """Load the advanced privacy model and run one local inference.
+
+    This is intentionally synchronous: the brain host already dispatches the
+    prewarm request on a background request thread. Holding ``_PREWARM_LOCK``
+    also makes an early user query wait for this one warmup instead of racing a
+    second model load.
+    """
+    global _PREWARM_READY
+    started = time.perf_counter()
+    with _PREWARM_LOCK:
+        if _PREWARM_READY:
+            return {"ready": True, "cached": True, "elapsed_seconds": 0.0}
+        _runtime().detect("Wisp advanced privacy warmup.", source="warmup")
+        _PREWARM_READY = True
+    return {
+        "ready": True,
+        "cached": False,
+        "elapsed_seconds": time.perf_counter() - started,
+    }

@@ -25,7 +25,13 @@ pytestmark = pytest.mark.workflow
 
 def _worker(module: str, role: str, name: str | None = None, env: dict[str, str] | None = None) -> WorkerClient:
     """Verify worker behavior."""
-    merged_env = {"WISP_BRAIN_FAKE_LLM": "1", **(env or {})}
+    merged_env = {
+        "WISP_BRAIN_FAKE_LLM": "1",
+        "CHAT_EXECUTION_MODE": "wisp",
+        "CHAT_CONVERSATION_OWNER": "wisp",
+        "PRIVACY_MODE": "builtin",
+        **(env or {}),
+    }
     return WorkerClient(WorkerSpec(name or role, module, role, env=merged_env))
 
 
@@ -41,6 +47,9 @@ def _app_supervisor(tmp_path) -> WispSupervisor:
         spec.env = {
             **spec.env,
             "WISP_BRAIN_FAKE_LLM": "1",
+            "CHAT_EXECUTION_MODE": "wisp",
+            "CHAT_CONVERSATION_OWNER": "wisp",
+            "PRIVACY_MODE": "builtin",
             "WISP_RUN_LOG_DIR": str(tmp_path),
         }
         if name == "ui":
@@ -696,6 +705,58 @@ def test_brain_worker_cancel_stops_active_stream_over_ipc():
     finally:
         worker.shutdown()
         thread.join(timeout=2)
+
+
+def test_stream_activity_renews_idle_timeout():
+    """A healthy stream may run past its idle limit while events keep arriving."""
+    worker = _worker("runtime.workers.brain_host", "brain")
+    words = [str(index) for index in range(10)]
+    events = []
+    try:
+        assert worker.call("brain.ping", timeout=5)["pong"] is True
+        reply = worker.call_with_events(
+            "brain.echo",
+            {"text": " ".join(words), "delay": 0.05},
+            timeout=0.15,
+            on_event=lambda event, data, req_id: events.append((event, data, req_id)),
+        )
+
+        assert reply == {"text": " ".join(words)}
+        assert "".join(
+            data["text"] for event, data, _req_id in events if event == "reply.chunk"
+        ) == reply["text"]
+    finally:
+        worker.shutdown()
+
+
+def test_stream_total_timeout_cancels_active_brain_request(monkeypatch):
+    """Continuous events cannot bypass the hard cap, and the orphan is cancelled."""
+    worker = _worker("runtime.workers.brain_host", "brain")
+    original_call = worker.call
+    cancel_requests = []
+
+    def recording_call(method, params=None, **kwargs):
+        if method == "brain.cancel":
+            cancel_requests.append(dict(params or {}))
+        return original_call(method, params, **kwargs)
+
+    monkeypatch.setattr(worker, "call", recording_call)
+    try:
+        assert worker.call("brain.ping", timeout=5)["pong"] is True
+        with pytest.raises(WorkerError, match=r"total timeout"):
+            worker.call_with_events(
+                "brain.echo",
+                {"text": " ".join(str(index) for index in range(100)), "delay": 0.03},
+                timeout=0.1,
+                total_timeout=0.25,
+                on_event=lambda _event, _data, _req_id: None,
+            )
+
+        assert len(cancel_requests) == 1
+        assert isinstance(cancel_requests[0]["target"], int)
+        assert worker.call("brain.ping", timeout=5)["pong"] is True
+    finally:
+        worker.shutdown()
 
 
 def test_live_file_edit_crosses_real_brain_approval_boundary(tmp_path):

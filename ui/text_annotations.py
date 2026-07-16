@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -72,6 +73,15 @@ class AnnotatedSlice:
 
     text: str
     annotation: TextAnnotation | None = None
+
+
+def annotation_tooltip_anchor(annotation: TextAnnotation) -> str:
+    """Return an opaque internal anchor for one annotation tooltip."""
+    if not annotation.tooltip:
+        return ""
+    payload = "\x00".join((annotation.source, annotation.id, annotation.tooltip))
+    token = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+    return f"wisp-annotation:{token}"
 
 
 def normalize_range_annotations(

@@ -40,6 +40,8 @@ _IMAGE_EXT_BY_MAGIC: tuple[tuple[bytes, str, str], ...] = (
     (b"RIFF", ".webp", "image/webp"),
     (b"BM", ".bmp", "image/bmp"),
 )
+_MAX_ATTACHMENT_IMAGE_BYTES = 10 * 1024 * 1024
+_MAX_ATTACHMENT_IMAGE_BASE64_CHARS = 16_000_000
 
 
 def _now_iso() -> str:
@@ -137,7 +139,11 @@ def save_image_attachment(
 ) -> dict:
     """Persist an image blob outside conversations.json and return a reference."""
     payload, mime_hint = _strip_data_url(image_base64)
+    if len(payload) > _MAX_ATTACHMENT_IMAGE_BASE64_CHARS:
+        raise ValueError("image exceeds the attachment capture safety limit")
     data = base64.b64decode(payload, validate=False)
+    if len(data) > _MAX_ATTACHMENT_IMAGE_BYTES:
+        raise ValueError("image exceeds the attachment capture safety limit")
     digest = hashlib.sha256(data).hexdigest()
     suffix, mime = _image_suffix_and_mime(data, mime_hint, name)
     stem = _safe_segment(Path(name or "image").stem, "image")
@@ -231,9 +237,18 @@ def attachment_image_base64(ref: dict) -> str:
     """Read one image attachment as base64 for a model call or thumbnail."""
     if not isinstance(ref, dict) or str(ref.get("kind") or "") != "image":
         return ""
+    declared_size = ref.get("size")
+    if isinstance(declared_size, int) and declared_size > _MAX_ATTACHMENT_IMAGE_BYTES:
+        return ""
     try:
-        data = attachment_path(ref).read_bytes()
+        path = attachment_path(ref)
+        if path.stat().st_size > _MAX_ATTACHMENT_IMAGE_BYTES:
+            return ""
+        with path.open("rb") as stream:
+            data = stream.read(_MAX_ATTACHMENT_IMAGE_BYTES + 1)
     except OSError:
+        return ""
+    if len(data) > _MAX_ATTACHMENT_IMAGE_BYTES:
         return ""
     return base64.b64encode(data).decode("ascii")
 
@@ -242,7 +257,8 @@ def first_image_base64_from_message(message: dict) -> str:
     """Return the first image for a message, supporting old in-memory blobs."""
     legacy = message.get("image_base64") if isinstance(message, dict) else None
     if legacy:
-        return str(legacy)
+        encoded = str(legacy)
+        return encoded if len(encoded) <= _MAX_ATTACHMENT_IMAGE_BASE64_CHARS else ""
     for ref in normalize_attachments(message.get("attachments") if isinstance(message, dict) else []):
         image = attachment_image_base64(ref)
         if image:
@@ -307,19 +323,34 @@ def save_projects(projects: list[dict]) -> None:
         _atomic_write_json(PROJECTS_FILE, _ensure_general(projects))
 
 
-def add_project(name: str) -> dict:
+def project_scope(project: dict) -> str:
+    """Return the conversation namespace that owns a project."""
+    scope = str((project or {}).get("conversation_scope") or "wisp").strip().lower()
+    return scope or "wisp"
+
+
+def add_project(name: str, *, conversation_scope: str = "wisp") -> dict:
     """Create and persist a new project; returns the project dict."""
     name = (name or "").strip()
     if not name:
         raise ValueError("project name is required")
+    scope = str(conversation_scope or "wisp").strip().lower() or "wisp"
     with _lock:
         projects = load_projects()
         existing = next(
-            (p for p in projects if p.get("name", "").lower() == name.lower()), None
+            (
+                p
+                for p in projects
+                if p.get("name", "").lower() == name.lower()
+                and project_scope(p) == scope
+            ),
+            None,
         )
         if existing is not None:
             return existing
         project = {"id": str(uuid.uuid4()), "name": name, "created_at": _now_iso()}
+        if scope != "wisp":
+            project["conversation_scope"] = scope
         projects.append(project)
         save_projects(projects)
         return project
@@ -357,6 +388,30 @@ def project_name(project_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Conversations
 # ---------------------------------------------------------------------------
+
+def conversation_scope(conv: dict) -> str:
+    """Return a stable Wisp/Codex/Claude namespace for a conversation.
+
+    Older records predate the explicit field.  A linked external session is the
+    strongest signal that such a record belongs to an agent-backed namespace.
+    """
+    explicit = str((conv or {}).get("conversation_scope") or "").strip().lower()
+    if explicit:
+        return explicit
+    source = conv.get("external_source") if isinstance(conv, dict) else None
+    source_provider = str((source or {}).get("provider") or "").strip().lower()
+    if source_provider in {"codex", "claude"}:
+        return source_provider
+    sessions = conv.get("harness_sessions") if isinstance(conv, dict) else None
+    candidates: list[tuple[str, str]] = []
+    if isinstance(sessions, dict):
+        for provider in ("codex", "claude"):
+            raw = sessions.get(provider)
+            if isinstance(raw, dict) and str(raw.get("session_id") or "").strip():
+                candidates.append((str(raw.get("updated_at") or ""), provider))
+    if candidates:
+        return max(candidates)[1]
+    return "wisp"
 
 def load_conversations() -> list[dict]:
     """Return persisted conversations (oldest first), each with a project_id."""
@@ -404,9 +459,10 @@ def save_conversations(conversations: list[dict]) -> None:
 def _clean_conversation(conv: dict) -> dict:
     """Project a conversation dict down to persistable fields."""
     created_at = conv.get("created_at") or _now_iso()
-    return {
+    cleaned = {
         "id": conv.get("id") or str(uuid.uuid4()),
         "project_id": conv.get("project_id") or GENERAL_PROJECT_ID,
+        "conversation_scope": conversation_scope(conv),
         "title": conv.get("title") or _derive_title(conv),
         "title_override": conv.get("title_override", ""),
         "pinned": bool(conv.get("pinned")),
@@ -418,6 +474,42 @@ def _clean_conversation(conv: dict) -> dict:
         "created_at": created_at,
         "updated_at": _now_iso(),
     }
+    source = conv.get("external_source")
+    if isinstance(source, dict):
+        cleaned["external_source"] = {
+            key: source.get(key)
+            for key in (
+                "provider",
+                "session_id",
+                "path",
+                "signature",
+                "message_count",
+                "cwd",
+                "source_updated_at",
+                "synced_at",
+                "last_backup",
+            )
+            if source.get(key) not in (None, "")
+        }
+    harness_sessions = conv.get("harness_sessions")
+    if isinstance(harness_sessions, dict):
+        cleaned_sessions: dict[str, dict] = {}
+        for provider in ("codex", "claude"):
+            raw = harness_sessions.get(provider)
+            if not isinstance(raw, dict):
+                continue
+            session_id = str(raw.get("session_id") or "").strip()
+            if not session_id:
+                continue
+            cleaned_sessions[provider] = {
+                key: raw.get(key)
+                for key in ("session_id", "cwd", "updated_at")
+                if raw.get(key) not in (None, "")
+            }
+            cleaned_sessions[provider]["provider"] = provider
+        if cleaned_sessions:
+            cleaned["harness_sessions"] = cleaned_sessions
+    return cleaned
 
 
 def _clean_messages(messages: list, fallback_created_at: str) -> list[dict]:

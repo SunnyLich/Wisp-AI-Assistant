@@ -48,6 +48,7 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"
 _DOCUMENT_EXTS = {".docx", ".pdf", ".xlsx", ".xls", ".pptx", ".odt", ".ods", ".odp"}
 
 _MAX_TEXT_BYTES = 51_200  # 50 KB cap when reading text files
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # avoid base64-expanding huge image files
 
 _TYPE_COLORS = {
     "image": QColor(180,  90, 255),
@@ -103,6 +104,15 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
 
             if ext in _IMAGE_EXTS:
                 try:
+                    size = os.path.getsize(path)
+                    if size > _MAX_IMAGE_BYTES:
+                        items.append((
+                            name,
+                            f"[Image omitted: {size:,} bytes exceeds the "
+                            f"{_MAX_IMAGE_BYTES:,}-byte capture safety limit]",
+                            "file",
+                        ))
+                        continue
                     with open(path, "rb") as fh:
                         data = base64.b64encode(fh.read()).decode()
                     items.append((name, data, "image"))
@@ -124,7 +134,9 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
             else:
                 items.append((name, f"[File: {path}]", "file"))
 
-    elif mime.hasText():
+    # Rich clipboard images often also advertise HTML/text containing their
+    # source URL. Let the image branch below win for those payloads.
+    elif mime.hasText() and not mime.hasImage():
         text = mime.text().strip()
         if text:
             preview = text[:28].replace("\n", " ")

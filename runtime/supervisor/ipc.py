@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ from runtime import protocol
 from runtime.bootstrap import data_root, repo_root
 
 log = logging.getLogger("wisp.runtime.supervisor")
+
+_STREAM_TOTAL_TIMEOUT_MULTIPLIER = 6.0
 
 _MANAGED_CHILD_MODULES = frozenset(
     {
@@ -219,6 +222,9 @@ class WorkerClient:
             if slot is not None:
                 slot["resp"] = msg
                 slot["event"].set()
+                wake = slot.get("wake")
+                if wake is not None:
+                    wake.set()
         with self._spawn_lock:
             if self._proc is proc:
                 self._fail_pending("worker exited")
@@ -290,6 +296,9 @@ class WorkerClient:
             for slot in self._pending.values():
                 slot["resp"] = {"ok": False, "error": error}
                 slot["event"].set()
+                wake = slot.get("wake")
+                if wake is not None:
+                    wake.set()
             self._pending.clear()
 
     def _dispatch_event(self, event: str, data: Any, req_id: Any) -> None:
@@ -383,6 +392,7 @@ class WorkerClient:
         params: dict[str, Any] | None = None,
         *,
         timeout: float = 30.0,
+        total_timeout: float | None = None,
         on_event: Callable[[str, Any, Any], None],
         on_started: Callable[[Any], None] | None = None,
     ) -> Any:
@@ -391,16 +401,40 @@ class WorkerClient:
         Streaming brain methods emit generic names like ``reply.chunk``. Scoped
         routing lets the supervisor decide whether those chunks belong to the
         overlay, chat, auth, or an agent run without changing the wire format.
+
+        ``timeout`` is an inactivity limit: every scoped event renews it.
+        ``total_timeout`` is an independent hard limit and defaults to six times
+        the inactivity limit. Timed-out brain streams receive a cooperative
+        cancellation request instead of being abandoned without notification.
         """
         self._ensure_started()
         rid = next(self._ids)
         req = protocol.make_request(rid, method, params or {})
         ev = threading.Event()
-        slot: dict[str, Any] = {"event": ev, "resp": None}
+        wake = threading.Event()
+        activity_lock = threading.Lock()
+        last_activity = time.monotonic()
+        idle_timeout = max(0.0, float(timeout))
+        hard_timeout = (
+            max(0.0, float(total_timeout))
+            if total_timeout is not None
+            else idle_timeout * _STREAM_TOTAL_TIMEOUT_MULTIPLIER
+        )
+        hard_timeout = max(idle_timeout, hard_timeout)
+        hard_deadline = last_activity + hard_timeout
+        slot: dict[str, Any] = {"event": ev, "resp": None, "wake": wake}
+
+        def scoped_event(event: str, data: Any, req_id: Any) -> None:
+            nonlocal last_activity
+            with activity_lock:
+                last_activity = time.monotonic()
+            wake.set()
+            on_event(event, data, req_id)
+
         with self._pending_lock:
             self._pending[rid] = slot
         with self._scoped_event_lock:
-            self._scoped_event_handlers[rid] = on_event
+            self._scoped_event_handlers[rid] = scoped_event
         if on_started is not None:
             try:
                 on_started(rid)
@@ -414,11 +448,37 @@ class WorkerClient:
                     self._pending.pop(rid, None)
                 raise
 
-            if not ev.wait(timeout):
+            timeout_kind = ""
+            while not ev.is_set():
+                now = time.monotonic()
+                with activity_lock:
+                    idle_deadline = last_activity + idle_timeout
+                deadline = min(idle_deadline, hard_deadline)
+                remaining = deadline - now
+                if remaining <= 0:
+                    timeout_kind = "total" if hard_deadline <= idle_deadline else "idle"
+                    break
+                wake.wait(remaining)
+                wake.clear()
+
+            if timeout_kind:
                 with self._pending_lock:
                     self._pending.pop(rid, None)
+                if method.startswith("brain.") and method != "brain.cancel":
+                    try:
+                        self.call(
+                            "brain.cancel",
+                            {"target": rid},
+                            timeout=5.0,
+                        )
+                    except Exception:  # noqa: BLE001 - timeout reporting must survive cancel failure
+                        log.exception("could not cancel timed-out %s request %s", method, rid)
                 tail = self.stderr_tail()
-                detail = f"{self.spec.name} call {method!r} timed out after {timeout:.1f}s"
+                elapsed_limit = hard_timeout if timeout_kind == "total" else idle_timeout
+                detail = (
+                    f"{self.spec.name} call {method!r} timed out after "
+                    f"{elapsed_limit:.1f}s ({timeout_kind} timeout)"
+                )
                 if tail:
                     detail += f"\nRecent {self.spec.name} stderr:\n{tail}"
                 raise WorkerError(detail)

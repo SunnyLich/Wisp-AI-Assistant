@@ -736,6 +736,72 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
 <span class="c-key">TTS_HOLD_PLAYBACK_RATE</span>=<span class="c-val">1.35</span></code></pre>`
 },
 
+'live-agents': {
+  title: 'ChatGPT, Codex & Claude CLI',
+  sub: 'Run full local agent sessions behind Wisp, with live progress, approvals, and resumable continuity.',
+  toc: ['overview','setup','continuity','live-events','controls','workspace','offline-history'],
+  html: `
+<h2 id="overview">How the agent modes work</h2>
+<p>Wisp can use more than a model API. It can run a complete local coding-agent harness behind both the overlay and the full chat window. The <strong>ChatGPT</strong> option starts the installed Codex CLI in app-server mode; <strong>Claude Agent</strong> uses the Claude Agent SDK and the same Claude Code CLI authentication. Wisp supplies the prompt and captured context, then streams the agent's visible output back into the normal Wisp interface.</p>
+<table>
+  <thead><tr><th>Run conversations with</th><th>Behavior</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Wisp</strong></td><td>Uses the LLM provider and model configured in Wisp.</td></tr>
+    <tr><td><strong>ChatGPT</strong></td><td>Runs the local Codex CLI app-server and uses your ChatGPT/Codex account.</td></tr>
+    <tr><td><strong>Claude Agent</strong></td><td>Runs the Claude Agent SDK with the Claude Code CLI and uses your Claude account.</td></tr>
+  </tbody>
+</table>
+<div class="callout note"><div class="callout-label">One Wisp interface</div><p>Hotkey queries and full-chat prompts use the selected engine. Wisp still captures context, applies privacy controls, displays the stream, and stores a local copy of the conversation.</p></div>
+
+<hr />
+<h2 id="setup">Select and sign in</h2>
+<p>Open <strong>Settings → App → Run conversations with</strong> and choose Wisp, ChatGPT, or Claude Agent. When an agent is selected, the same card shows its login status and provides <strong>Sign in</strong>, <strong>Sign out</strong>, and <strong>Refresh</strong> actions. Sign-in opens the provider's terminal and browser flow.</p>
+<p>ChatGPT mode requires the Codex CLI. Wisp gives Codex an isolated local profile, so its login and resumable Wisp sessions do not appear in your personal Codex history. Claude Agent uses the bundled Claude Agent SDK when available and authenticates through the Claude Code CLI.</p>
+
+<hr />
+<h2 id="continuity">Choose who owns continuity</h2>
+<p>The <strong>Conversation goes to</strong> setting decides how follow-up prompts carry context:</p>
+<table>
+  <thead><tr><th>Owner</th><th>What happens</th><th>Best for</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Wisp</strong></td><td>Wisp sends the complete local Wisp history on every request. Each request starts without a retained provider continuation link.</td><td>Portable conversations that can change engines without depending on a provider session.</td></tr>
+    <tr><td><strong>ChatGPT or Claude Agent</strong></td><td>Wisp transfers the existing history once, stores the returned provider session ID, and resumes that session for later prompts.</td><td>Long agent conversations that should preserve native provider state efficiently.</td></tr>
+  </tbody>
+</table>
+<p>Wisp keeps separate Wisp, ChatGPT/Codex, and Claude conversation namespaces so switching engines does not append a prompt to the wrong provider's history. Changing the project folder also starts a clean provider session.</p>
+
+<hr />
+<h2 id="live-events">What appears while the agent works</h2>
+<p>Replies stream normally, while visible reasoning summaries, plans, tool starts, command or file progress, status updates, and approval requests appear as progress in the bubble and chat. Wisp can only show events the provider exposes; private hidden chain-of-thought is never available.</p>
+<p>When a command, file change, or other protected tool needs permission, Wisp presents the action, path, command, or diff it received and sends your decision back to the running agent.</p>
+
+<hr />
+<h2 id="controls">Live provider controls</h2>
+<p>When ChatGPT or Claude Agent is active, a provider badge appears below the floating Wisp icon. Click it to change settings for the next turn:</p>
+<table>
+  <thead><tr><th>Control</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td>Model</td><td>Use the provider default or enter a supported model name.</td></tr>
+    <tr><td>Project</td><td>Choose the folder the agent may inspect or modify, or leave it on Auto.</td></tr>
+    <tr><td>Fast mode</td><td>Requests the provider's faster tier when supported; it may use more quota or cost more.</td></tr>
+    <tr><td>Reasoning effort</td><td>Sets the effort level passed to the provider when supported.</td></tr>
+    <tr><td>Visible reasoning</td><td>Choose detailed or concise Codex summaries, provider Claude summaries, or turn summaries off.</td></tr>
+    <tr><td>Permission mode</td><td>Ask for permission, allow changes inside the project, or keep the agent in plan-only read-only mode.</td></tr>
+  </tbody>
+</table>
+<p>Older provider versions that do not support a reasoning or approval option are retried with compatible settings when possible.</p>
+
+<hr />
+<h2 id="workspace">Project and context behavior</h2>
+<p>In Auto mode, Wisp reuses the resumed session's folder, then looks at attached files and file context, and finally falls back to Wisp's current directory. A manually selected project overrides that inference. Agent write access remains limited to the selected project, and Codex runs without network access in its workspace sandbox.</p>
+<p>Selected text, ambient app context, attachments, memory, and privacy-filtered content are assembled by Wisp before the turn. Provider-specific system prompts stay in the native harness instructions instead of being pasted into your message.</p>
+
+<hr />
+<h2 id="offline-history">Offline transcript fallback</h2>
+<p>Live agent sessions are the normal path. Wisp also provides local transcript pull, push, and export as an experimental compatibility fallback. Pull discovers Codex and Claude JSONL histories on disk without contacting either provider. Push requires confirmation, creates a full backup, and appends only Wisp-only turns to an existing transcript. Export requires confirmation and creates a new provider transcript without overwriting existing history.</p>
+<div class="callout warn"><div class="callout-label">Local files, separate from live sessions</div><p>Transcript sync edits local compatibility files; it does not send a live request or replace the supported Codex app-server and Claude Agent SDK session flow.</p></div>`
+},
+
 'team-mode': {
   title: 'Agent framework',
   sub: 'An experimental background task runner for bigger, multi-step jobs.',
@@ -852,7 +918,7 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
 'security': {
   title: 'Security & privacy',
   sub: 'Wisp reads your screen — so we built it to keep what it sees on your machine. Here is exactly how.',
-  toc: ['pillars','local-first','keychain','redaction','opt-in','no-telemetry','open-source'],
+  toc: ['pillars','local-first','keychain','redaction','advanced-privacy','opt-in','no-telemetry','open-source'],
   html: `
 <div id="pillars" class="sec-pillars">
   <div class="sec-pillar">
@@ -867,8 +933,8 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
   </div>
   <div class="sec-pillar">
     <div class="sec-pillar-k">Redacted</div>
-    <div class="sec-pillar-t">PII stripped before it leaves</div>
-    <p>Cards, SSNs, keys, tokens, and passwords are scrubbed before anything touches disk or the model.</p>
+    <div class="sec-pillar-t">Sensitive text filtered before cloud sends</div>
+    <p>Built-in patterns — and optional local AI — replace likely sensitive text before cloud-bound requests are sent.</p>
   </div>
   <div class="sec-pillar">
     <div class="sec-pillar-k">Open source</div>
@@ -906,20 +972,24 @@ Release             → <span class="c-blue">stop_and_transcribe()</span> → te
 <div class="callout tip"><div class="callout-label">What this means</div><p>Your keys are encrypted at rest by the OS, scoped to your user account, and never sync to us. Rotating or revoking a key is just a keychain edit away.</p></div>
 
 <hr />
-<h2 id="redaction">Sensitive data is redacted automatically</h2>
-<p>Everything Wisp captures from your screen passes through <code>_redact()</code> <strong>before it reaches disk or the model</strong>. High-risk patterns are replaced with safe placeholders:</p>
+<h2 id="redaction">Choose your privacy mode</h2>
+<p>Wisp offers three mutually exclusive settings under <strong>Settings → App → Privacy mode</strong>:</p>
 <table>
-  <thead><tr><th>Pattern</th><th>Replaced with</th></tr></thead>
+  <thead><tr><th>Mode</th><th>What it does</th></tr></thead>
   <tbody>
-    <tr><td>Credit / debit card numbers</td><td><code>[CARD_NUMBER]</code></td></tr>
-    <tr><td>Social Security Numbers</td><td><code>[SSN]</code></td></tr>
-    <tr><td>PEM private keys</td><td><code>[PRIVATE_KEY]</code></td></tr>
-    <tr><td>API keys (<code>sk-</code>, <code>sk-ant-</code>)</td><td><code>[API_KEY]</code></td></tr>
-    <tr><td>Bearer tokens</td><td><code>[BEARER_TOKEN]</code></td></tr>
-    <tr><td><code>password=</code> / <code>secret=</code></td><td><code>[REDACTED_CREDENTIAL]</code></td></tr>
+    <tr><td><strong>Off</strong></td><td>No automatic privacy filtering.</td></tr>
+    <tr><td><strong>Built-in</strong> (default)</td><td>Local pattern detection for credentials, tokens, payment details, and other structured secrets.</td></tr>
+    <tr><td><strong>Advanced</strong></td><td>The built-in detector plus a local, context-aware AI model for names, addresses, email addresses, phone numbers, private URLs and dates, account numbers, and secrets.</td></tr>
   </tbody>
 </table>
 <p>You can add your own patterns to suit your environment — see <a onclick="navigate('context-capture')">Context capture → Redaction</a> for the full list and how to extend it.</p>
+
+<hr />
+<h2 id="advanced-privacy">Advanced privacy runs locally</h2>
+<p>Advanced mode uses the optional <a href="https://openai.com/index/introducing-openai-privacy-filter/" target="_blank" rel="noopener">OpenAI Privacy Filter</a> on your computer. Unfiltered text is not sent to a cloud service for detection. Installing it downloads about 2.8 GB plus a dedicated local runtime.</p>
+<p>Wisp loads the advanced model into memory and warms it in the background when Wisp starts or after you enable Advanced mode. Warm-up may take tens of seconds on a CPU. If you send a request before it finishes, that request waits; later scans reuse the loaded model and are faster.</p>
+<p>Wisp merges the AI model's findings with the built-in detector, replaces sensitive spans with stable session placeholders such as <code>[PERSON_1]</code>, and can show a review before the request is sent. It then checks the redacted text again. If the model is unavailable, detection fails, or sensitive text remains, Wisp blocks the cloud send.</p>
+<div class="callout warn"><div class="callout-label">Know the limits</div><p>Privacy filtering reduces accidental disclosure; it is not a guarantee of anonymization or regulatory compliance. Review high-sensitivity content before sending it to any provider.</p></div>
 
 <hr />
 <h2 id="opt-in">Sensitive features are opt-in</h2>
@@ -2050,6 +2120,7 @@ const NAV_TREE = [
     { id: 'overlay',         label: 'Overlay' },
     { id: 'context-capture', label: 'Context capture' },
     { id: 'voice',           label: 'Voice mode' },
+    { id: 'live-agents',     label: 'ChatGPT, Codex & Claude CLI' },
     { id: 'team-mode',       label: 'Agent framework' },
     { id: 'memory',          label: 'Memory' },
     { id: 'addons',          label: 'Add-ons' },

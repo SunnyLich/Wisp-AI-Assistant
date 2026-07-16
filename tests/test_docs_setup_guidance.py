@@ -42,8 +42,8 @@ class DocsSetupGuidanceTests(unittest.TestCase):
         with (ROOT / "pyproject.toml").open("rb") as handle:
             version = tomllib.load(handle)["project"]["version"]
 
-        self.assertIn(f"git tag v{version}", build_docs)
-        self.assertIn(f"git push origin v{version}", build_docs)
+        self.assertIn(f"git tag {version}", build_docs)
+        self.assertIn(f"git push origin {version}", build_docs)
 
     def test_architecture_docs_do_not_reference_removed_paths(self) -> None:
         docs = "\n".join(

@@ -29,6 +29,8 @@ def _use_builtin_privacy_in_offline_workflows(monkeypatch: pytest.MonkeyPatch):
     """Keep deterministic workflow tests independent from a user's installed AI model."""
     import config
 
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp", raising=False)
+    monkeypatch.setattr(config, "CHAT_CONVERSATION_OWNER", "wisp", raising=False)
     monkeypatch.setattr(config, "PRIVACY_MODE", "builtin", raising=False)
     monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
     monkeypatch.setattr(config, "PRIVACY_AI_ENABLED", False, raising=False)

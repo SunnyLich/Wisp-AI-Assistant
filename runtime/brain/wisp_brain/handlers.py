@@ -239,6 +239,54 @@ def brain_config_reload() -> dict[str, Any]:
     }
 
 
+@handler("brain.privacy.prewarm")
+def brain_privacy_prewarm() -> dict[str, Any]:
+    """Warm Advanced Privacy in the brain process without blocking startup."""
+    import config
+
+    if str(getattr(config, "PRIVACY_MODE", "builtin") or "builtin").strip().lower() != "advanced":
+        return {"ready": False, "skipped": True, "reason": "disabled"}
+    try:
+        from core import privacy_model
+
+        status = privacy_model.model_status()
+        if not status.get("valid"):
+            return {"ready": False, "skipped": True, "reason": "not_installed"}
+        _log("Advanced privacy warmup starting.")
+        result = privacy_model.prewarm()
+        _log(
+            "Advanced privacy warmup ready "
+            f"in {float(result.get('elapsed_seconds') or 0.0):.2f}s"
+            f"{' (cached)' if result.get('cached') else ''}."
+        )
+        return dict(result)
+    except Exception as exc:  # noqa: BLE001 - warmup is best effort; requests remain fail-closed.
+        message = f"{type(exc).__name__}: {exc}"
+        _log(f"Advanced privacy warmup failed: {message}")
+        return {"ready": False, "skipped": False, "error": message}
+
+
+@handler("brain.harness.prewarm")
+def brain_harness_prewarm() -> dict[str, Any]:
+    """Start the selected reusable local harness before the first prompt."""
+    import config
+
+    provider = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+    if provider != "codex":
+        return {"ready": False, "skipped": True, "provider": provider}
+    try:
+        from core.harness_clients.codex import prewarm_codex
+
+        _log("Codex app-server prewarm starting.")
+        result = prewarm_codex()
+        _log(f"Codex app-server prewarm ready backend={result.get('backend') or 'unknown'}.")
+        return {"provider": "codex", **result}
+    except Exception as exc:  # noqa: BLE001 - the first real turn can retry startup.
+        message = f"{type(exc).__name__}: {exc}"
+        _log(f"Codex app-server prewarm failed: {message}")
+        return {"ready": False, "skipped": False, "provider": "codex", "error": message}
+
+
 _SECRET_LABELS = {
     "GROQ_API_KEY": "Groq",
     "OPENAI_API_KEY": "OpenAI",
@@ -1325,6 +1373,185 @@ def _custom_base_url_for_route(provider: str, custom_base_url: str) -> str | Non
 # Imports are lazy so this module still loads with no LLM deps/keys present.
 # ---------------------------------------------------------------------------
 
+def _harness_session_id(raw: dict[str, Any] | None, provider: str) -> str:
+    """Return a session id only when it belongs to the selected harness."""
+    if not isinstance(raw, dict):
+        return ""
+    if str(raw.get("provider") or "").strip().lower() != provider:
+        return ""
+    return str(raw.get("session_id") or "").strip()
+
+
+def _harness_history_text(messages: list[dict[str, Any]]) -> str:
+    """Format Wisp history for the first turn of a newly linked harness session."""
+    lines = ["[Existing Wisp conversation]"]
+    for message in messages:
+        role = str(message.get("role") or "user").strip().lower()
+        content = str(message.get("content") or "").strip()
+        if content:
+            lines.append(f"{role.title()}: {content}")
+    return "\n\n".join(lines)
+
+
+def _harness_chat_prompt(turns: list[dict[str, Any]], *, include_history: bool) -> str:
+    """Return either a complete Wisp handoff or only the newest user turn."""
+    if include_history:
+        return _harness_history_text(turns)
+    return next(
+        (
+            str(message.get("content") or "").strip()
+            for message in reversed(turns)
+            if message.get("role") == "user" and str(message.get("content") or "").strip()
+        ),
+        "",
+    )
+
+
+def _run_live_harness(
+    ctx: StreamContext,
+    provider: str,
+    prompt: str,
+    *,
+    harness_session: dict[str, Any] | None,
+    harness_cwd: str,
+    conversation_owner: str,
+    privacy_session: Any = None,
+    privacy_report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run an external harness turn and map its events onto Wisp's live stream."""
+    from core.harness_clients import run_harness
+
+    owner = "agent" if str(conversation_owner).strip().lower() == "agent" else "wisp"
+    display_segments: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = []
+    session_id = _harness_session_id(harness_session, provider) if owner == "agent" else ""
+    stored_cwd = ""
+    if session_id and isinstance(harness_session, dict):
+        stored_cwd = str(harness_session.get("cwd") or "")
+    requested_cwd = str(harness_cwd or "").strip()
+    if session_id and stored_cwd and requested_cwd:
+        try:
+            workspace_changed = Path(stored_cwd).expanduser().resolve() != Path(
+                requested_cwd
+            ).expanduser().resolve()
+        except OSError:
+            workspace_changed = stored_cwd != requested_cwd
+        if workspace_changed:
+            _log(
+                "harness workspace changed; starting a new provider session "
+                f"old={stored_cwd} new={requested_cwd}"
+            )
+            session_id = ""
+            stored_cwd = ""
+    _log(
+        "harness starting "
+        f"provider={provider} owner={owner} resume={'yes' if session_id else 'no'} "
+        f"cwd={stored_cwd or requested_cwd or Path.cwd()}"
+    )
+    if not ctx.cancelled:
+        ctx.emit(
+            "reply.chunk",
+            {
+                "text": "Starting ChatGPT..." if provider == "codex" else "Claude is working...",
+                "is_progress": True,
+                "is_thought": False,
+            },
+        )
+
+    def on_harness_event(event: Any) -> None:
+        text = str(getattr(event, "text", "") or "")
+        kind = str(getattr(event, "kind", "reply") or "reply")
+        attachment = getattr(event, "attachment", None)
+        if kind == "image" and isinstance(attachment, dict):
+            candidate = dict(attachment)
+            key = (str(candidate.get("path") or ""), str(candidate.get("name") or ""))
+            if key[0] and not any(
+                (str(item.get("path") or ""), str(item.get("name") or "")) == key
+                for item in attachments
+            ):
+                attachments.append(candidate)
+        if (not text and kind != "image") or ctx.cancelled:
+            return
+        if privacy_session is not None:
+            text = privacy_session.restore(text)
+        if kind == "image":
+            ctx.emit(
+                "reply.chunk",
+                {
+                    "text": text or "Image generated.",
+                    "is_progress": True,
+                    "is_thought": False,
+                },
+            )
+            return
+        if kind == "progress":
+            text = f"\n{text.strip()}\n"
+        if kind in {"reply", "thought", "progress"}:
+            is_thought = kind in {"thought", "progress"}
+            if is_thought and not display_segments:
+                # Progress events carry surrounding newlines so they separate
+                # from prior content. The first durable event has no prior
+                # content and must still begin on the bubble's first line.
+                text = text.lstrip("\r\n")
+            if display_segments and bool(display_segments[-1].get("is_thought")) == is_thought:
+                display_segments[-1]["text"] = str(display_segments[-1].get("text") or "") + text
+            else:
+                display_segments.append({"text": text, "is_thought": is_thought})
+        ctx.emit(
+            "reply.chunk",
+            {
+                "text": text,
+                # Provider actions belong to the persistent activity transcript.
+                # Only the initial "is working" line is a replaceable preview.
+                "is_progress": kind in {"progress", "status"},
+                "is_thought": kind in {"thought", "progress"},
+            },
+        )
+
+    result = run_harness(
+        provider,
+        prompt,
+        session_id=session_id,
+        cwd=stored_cwd or requested_cwd or None,
+        on_event=on_harness_event,
+        approval_callback=_live_file_approval_callback(ctx),
+    )
+    text = str(result.text or "")
+    for raw_attachment in getattr(result, "attachments", ()) or ():
+        if not isinstance(raw_attachment, dict):
+            continue
+        candidate = dict(raw_attachment)
+        key = (str(candidate.get("path") or ""), str(candidate.get("name") or ""))
+        if key[0] and not any(
+            (str(item.get("path") or ""), str(item.get("name") or "")) == key
+            for item in attachments
+        ):
+            attachments.append(candidate)
+    if privacy_session is not None:
+        text = privacy_session.restore(text)
+    _log(
+        "harness completed "
+        f"provider={result.provider} backend={result.backend or 'unknown'} "
+        f"session_id={result.session_id}"
+    )
+    done_payload: dict[str, Any] = {
+        "text": text,
+        "display_segments": display_segments,
+        "attachments": attachments,
+        "harness": {
+            "provider": result.provider,
+            "session_id": result.session_id if owner == "agent" else "",
+            "cwd": result.cwd,
+            "conversation_owner": owner,
+            "clear_session": owner == "wisp",
+        },
+    }
+    if isinstance(privacy_report, dict) and privacy_report.get("count"):
+        done_payload["privacy_report"] = privacy_report
+    ctx.emit("reply.done", done_payload)
+    return done_payload
+
+
 @handler("brain.query", streaming=True)
 def brain_query(
     ctx: StreamContext,
@@ -1348,6 +1575,10 @@ def brain_query(
     history: list[dict] | None = None,
     memory_project: str | None = None,
     privacy_session_id: str = "",
+    harness_provider: str = "",
+    conversation_owner: str = "",
+    harness_session: dict[str, Any] | None = None,
+    harness_cwd: str = "",
 ) -> dict[str, Any]:
     """Assemble context and stream an LLM reply, mirroring App._query_and_speak.
 
@@ -1446,6 +1677,41 @@ def brain_query(
             normalized_history = [dict(message) for message in normalized_history]
             for index, message in enumerate(normalized_history):
                 message["content"] = scrubbed[f"history:{index}"]
+    harness_mode = str(
+        harness_provider or getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp"
+    ).strip().lower()
+    if harness_mode not in {"wisp", "codex", "claude"}:
+        harness_mode = "wisp"
+    owner = str(
+        conversation_owner or getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+    ).strip().lower()
+    if owner not in {"wisp", "agent"}:
+        owner = "wisp"
+    if harness_mode in {"codex", "claude"}:
+        # External harnesses own their system instructions. Their optional
+        # provider-specific prompts are applied through the native harness API,
+        # never pasted into the user's message.
+        prompt_parts: list[str] = []
+        has_agent_session = owner == "agent" and bool(_harness_session_id(harness_session, harness_mode))
+        if not has_agent_session and normalized_history:
+            prompt_parts.append(_harness_history_text(normalized_history))
+        if memory_context:
+            prompt_parts.append(f"[Wisp memory]\n{memory_context}")
+        ambient = str(getattr(built, "ambient_ctx", "") or "").strip()
+        if ambient:
+            prompt_parts.append(ambient)
+        prompt_parts.append(str(getattr(built, "user_message", "") or ""))
+        return _run_live_harness(
+            ctx,
+            harness_mode,
+            "\n\n---\n\n".join(part for part in prompt_parts if part),
+            harness_session=harness_session,
+            harness_cwd=harness_cwd,
+            conversation_owner=owner,
+            privacy_session=privacy_session,
+            privacy_report=getattr(built, "privacy_report", None),
+        )
+
     parts: list[str] = []
     file_context: list[dict[str, Any]] = []
     _log(
@@ -1844,6 +2110,10 @@ def brain_chat(
     pinned_tools: list[str] | None = None,
     file_access_mode: str = "",
     privacy_session_id: str = "",
+    harness_provider: str = "",
+    conversation_owner: str = "",
+    harness_session: dict[str, Any] | None = None,
+    harness_cwd: str = "",
 ) -> dict[str, Any]:
     """Stream a multi-turn chat reply from the existing chat LLM path."""
     _reload_config_for_live_file_tools(
@@ -1907,6 +2177,32 @@ def brain_chat(
         turns = [dict(message) for message in turns]
         for index, message in enumerate(turns):
             message["content"] = scrubbed[f"message:{index}"]
+
+    harness_mode = str(
+        harness_provider or getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp"
+    ).strip().lower()
+    if harness_mode not in {"wisp", "codex", "claude"}:
+        harness_mode = "wisp"
+    owner = str(
+        conversation_owner or getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+    ).strip().lower()
+    if owner not in {"wisp", "agent"}:
+        owner = "wisp"
+    if harness_mode in {"codex", "claude"}:
+        session_id = _harness_session_id(harness_session, harness_mode) if owner == "agent" else ""
+        prompt = _harness_chat_prompt(turns, include_history=not bool(session_id))
+        if memory_context:
+            prompt = f"[Wisp memory]\n{memory_context}\n\n---\n\n{prompt}"
+        return _run_live_harness(
+            ctx,
+            harness_mode,
+            prompt,
+            harness_session=harness_session,
+            harness_cwd=harness_cwd,
+            conversation_owner=owner,
+            privacy_session=privacy_session,
+            privacy_report=privacy_report,
+        )
 
     parts: list[str] = []
     file_context: list[dict[str, Any]] = []

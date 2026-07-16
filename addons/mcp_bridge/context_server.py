@@ -167,6 +167,18 @@ _FOCUS_GUIDANCE = (
     "copy the text, then call get_clipboard.)"
 )
 
+_MAX_TEXT_RESULT_CHARS = 40_000
+_TEXT_TRUNCATION_MARKER = "\n[context truncated at safety limit]"
+
+
+def _clip_text_result(text: str, limit: int = _MAX_TEXT_RESULT_CHARS) -> str:
+    """Keep a single MCP capture from returning an unbounded text payload."""
+    value = str(text or "")
+    if limit <= 0 or len(value) <= limit:
+        return value
+    keep = max(0, limit - len(_TEXT_TRUNCATION_MARKER))
+    return value[:keep].rstrip() + _TEXT_TRUNCATION_MARKER
+
 
 # --- tool implementations ----------------------------------------------------
 # core.* imports stay inside the handlers: a broken capture dependency then
@@ -180,7 +192,7 @@ def _tool_get_selected_text(_args: dict) -> str:
     client_focused = int(foreground.pid or 0) in _client_pids()
     text = capture.get_selected_text(allow_synthetic_copy=not client_focused)
     if text:
-        return text
+        return _clip_text_result(text)
     if client_focused:
         return _FOCUS_GUIDANCE
     return "(no selection)"
@@ -191,7 +203,7 @@ def _tool_get_clipboard(_args: dict) -> str:
     from core import capture
 
     text = capture.get_clipboard_text()
-    return text or "(clipboard is empty or has no text)"
+    return _clip_text_result(text) if text else "(clipboard is empty or has no text)"
 
 
 def _tool_get_active_window(_args: dict) -> str:
@@ -221,9 +233,9 @@ def _tool_read_browser_page(args: dict) -> str:
     )
     if not text:
         return f"(browser window found ({win.url or win.title}) but its page text could not be read)"
-    max_chars = int(args.get("max_chars", 0) or 0)
-    if max_chars > 0:
-        text = text[:max_chars]
+    requested = int(args.get("max_chars", 0) or 0)
+    max_chars = min(requested, _MAX_TEXT_RESULT_CHARS) if requested > 0 else _MAX_TEXT_RESULT_CHARS
+    text = _clip_text_result(text, max_chars)
     header = f"url: {win.url}\n\n" if win.url else ""
     return header + text
 

@@ -62,6 +62,44 @@ def test_query_includes_intent_and_selected_in_prompt(record_ctx):
     assert "def add(a, b)" in result["text"]
 
 
+def test_external_query_does_not_paste_wisp_system_prompt_into_user_message(
+    record_ctx,
+    monkeypatch,
+):
+    """ChatGPT and Claude receive their prompts through their native harness settings."""
+    from core import harness_clients
+    from core.harness_clients.base import HarnessResult
+
+    captured = {}
+
+    def fake_run(provider, prompt, **_kwargs):
+        captured["provider"] = provider
+        captured["prompt"] = prompt
+        return HarnessResult(provider, "Done", "thread-1", "/repo")
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_run)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+    monkeypatch.setattr(config, "SYSTEM_PROMPT_UTILITY", "DO NOT PASTE THIS WISP PROMPT")
+    _events, ctx = record_ctx()
+
+    handlers.HANDLERS["brain.query"](
+        ctx,
+        intent_prompt="how are you",
+        history=[
+            {"role": "user", "content": "testing 123"},
+            {"role": "assistant", "content": "test received"},
+        ],
+        memory_enabled=False,
+        harness_provider="codex",
+        conversation_owner="agent",
+    )
+
+    assert captured["provider"] == "codex"
+    assert "DO NOT PASTE THIS WISP PROMPT" not in captured["prompt"]
+    assert "testing 123" in captured["prompt"]
+    assert captured["prompt"].endswith("how are you")
+
+
 def test_query_memory_disabled_skips_retrieval(record_ctx, monkeypatch):
     """Verify query memory disabled skips retrieval behavior."""
     from core.memory_store import store
@@ -101,6 +139,7 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
         ctx=None,
         file_access_mode="",
         file_context=None,
+        **_kwargs,
     ):
         """Verify fake stream behavior."""
         captured["use_tools"] = use_tools
@@ -266,6 +305,7 @@ def test_query_normalizes_history_context_and_attachments(record_ctx, monkeypatc
         ctx=None,
         file_access_mode="",
         file_context=None,
+        **_kwargs,
     ):
         captured["history"] = history
         yield "ok"

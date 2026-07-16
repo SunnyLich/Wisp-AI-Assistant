@@ -150,6 +150,7 @@ def test_audio_prewarm_reports_local_warmup_events(monkeypatch):
     events: list[tuple[str, dict]] = []
     stt_calls: list[bool] = []
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: True)
     monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: stt_calls.append(wait))
     monkeypatch.setattr(tts, "prewarm", lambda: None)
@@ -176,6 +177,7 @@ def test_audio_prewarm_reports_component_progress(monkeypatch):
 
     events: list[tuple[str, dict]] = []
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: True)
     monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: None)
     monkeypatch.setattr(tts, "prewarm", lambda: None)
@@ -202,6 +204,7 @@ def test_audio_prewarm_skips_missing_kokoro(monkeypatch):
 
     events: list[tuple[str, dict]] = []
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: True)
     monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: False)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: None)
     monkeypatch.setattr(tts, "prewarm", lambda: (_ for _ in ()).throw(AssertionError("unexpected tts prewarm")))
@@ -229,6 +232,7 @@ def test_audio_prewarm_warms_stt_and_tts_in_parallel(monkeypatch):
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
     monkeypatch.setattr(config, "KOKORO_DEVICE", "cpu", raising=False)
     monkeypatch.setattr(config, "STT_DEVICE", "cpu", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: True)
     monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
 
     def stt_prewarm(wait=False):
@@ -259,6 +263,7 @@ def test_audio_prewarm_serializes_kokoro_cuda_warmup(monkeypatch):
     monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
     monkeypatch.setattr(config, "KOKORO_DEVICE", "cuda", raising=False)
     monkeypatch.setattr(config, "STT_DEVICE", "auto", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: True)
     monkeypatch.setattr(audio_host, "_kokoro_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: calls.append(f"stt:{wait}"))
     monkeypatch.setattr(tts, "prewarm", lambda: calls.append("tts"))
@@ -278,6 +283,7 @@ def test_audio_prewarm_warms_cartesia_tts(monkeypatch):
     events: list[tuple[str, dict]] = []
     calls: list[str] = []
     monkeypatch.setattr(config, "TTS_PROVIDER", "cartesia", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: True)
     monkeypatch.setattr(stt_handlers, "stt_prewarm", lambda wait=False: calls.append(f"stt:{wait}"))
     monkeypatch.setattr(tts, "prewarm", lambda: calls.append("tts"))
     audio_host.set_event_sink(lambda name, data, _req_id: events.append((name, data)))
@@ -292,6 +298,44 @@ def test_audio_prewarm_warms_cartesia_tts(monkeypatch):
     assert events[0][1]["reason"] == "startup"
     assert events[0][1]["warmup_id"].startswith("startup:")
     assert events[-1][1]["ok"] is True
+
+
+def test_audio_prewarm_silently_skips_unavailable_stt(monkeypatch):
+    """A stale/missing optional STT install must not create a startup failure notice."""
+    import config
+    from core.macos_helper import handlers as stt_handlers
+
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(config, "TTS_PROVIDER", "none", raising=False)
+    monkeypatch.setattr(audio_host, "_stt_prewarm_available", lambda: False)
+    monkeypatch.setattr(audio_host, "_prewarm_tts_provider", lambda _provider: False)
+    monkeypatch.setattr(
+        stt_handlers,
+        "stt_prewarm",
+        lambda wait=False: (_ for _ in ()).throw(AssertionError("unexpected STT prewarm")),
+    )
+    audio_host.set_event_sink(lambda name, data, _req_id: events.append((name, data)))
+
+    result = audio_host.audio_prewarm()
+
+    assert result == {"stt": "skipped", "tts": "skipped"}
+    assert events == []
+
+
+def test_stt_prewarm_is_unavailable_when_voice_and_dictation_are_disabled(monkeypatch):
+    """Disabled speech shortcuts should not warm STT even if its package exists."""
+    import config
+    from core import optional_deps
+
+    for key in ("HOTKEY_VOICE", "HOTKEY_VOICE_2", "HOTKEY_DICTATE", "HOTKEY_DICTATE_2"):
+        monkeypatch.setattr(config, key, "", raising=False)
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected package probe")),
+    )
+
+    assert audio_host._stt_prewarm_available() is False
 
 
 def test_tts_synthesize_raises_while_local_voice_is_warming(monkeypatch):

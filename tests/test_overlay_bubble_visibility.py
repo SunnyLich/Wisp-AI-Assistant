@@ -11,6 +11,101 @@ import pytest
 pytestmark = pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 
 
+def test_post_submit_surfaces_show_without_taking_focus(monkeypatch):
+    """Thinking UI shown after intent submission must remain non-activating."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from ui.overlay import IconOverlay, OverlaySignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(IconOverlay, "_pin_overlay_windows", lambda self: None)
+    overlay = IconOverlay(OverlaySignals())
+
+    try:
+        show_without_activating = Qt.WidgetAttribute.WA_ShowWithoutActivating
+        assert overlay.testAttribute(show_without_activating)
+        assert overlay._icon_label.testAttribute(show_without_activating)
+        assert overlay._provider_badge.testAttribute(show_without_activating)
+        assert overlay._bubble.testAttribute(show_without_activating)
+    finally:
+        overlay._bubble.clear()
+        overlay._provider_badge.close()
+        overlay._icon_label.close()
+        overlay.close()
+        app.processEvents()
+
+
+@pytest.mark.parametrize(("mode", "text"), [("codex", "CHATGPT ⚙"), ("claude", "CLAUDE ⚙")])
+def test_external_harness_badge_sits_under_icon(monkeypatch, mode: str, text: str):
+    """The selected live harness is always visible directly below Wisp's icon."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.overlay import IconOverlay, OverlaySignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(IconOverlay, "_pin_overlay_windows", lambda self: None)
+    opened = []
+    monkeypatch.setattr(IconOverlay, "_open_harness_controls", lambda self: opened.append(mode))
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", mode, raising=False)
+    overlay = IconOverlay(OverlaySignals())
+
+    try:
+        app.processEvents()
+        assert overlay._provider_badge.text() == text
+        assert overlay._provider_badge.width() > overlay._provider_badge.sizeHint().width()
+        assert overlay._provider_badge.isVisible() == overlay._icon_label.isVisible()
+        assert overlay._provider_badge.y() >= overlay._icon_label.y() + config.ICON_SIZE
+        assert "controls" in overlay._provider_badge.toolTip().lower()
+        badge_style = overlay._provider_badge.styleSheet()
+        assert "background: transparent" in badge_style
+        assert "border: none" in badge_style
+        assert "border-radius" not in badge_style
+        overlay._provider_badge.click()
+        assert opened == [mode]
+
+        overlay._icon_label.move(120, 140)
+        overlay._on_icon_dragged(overlay._icon_label.pos())
+        assert overlay._provider_badge.y() == 140 + config.ICON_SIZE + 2
+    finally:
+        overlay._bubble.clear()
+        overlay._icon_label.close()
+        overlay.close()
+        app.processEvents()
+
+
+def test_harness_controls_report_only_their_changed_keys(monkeypatch):
+    """Saving provider controls must not look like a full settings/audio reload."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.overlay import IconOverlay, OverlaySignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(IconOverlay, "_pin_overlay_windows", lambda self: None)
+    monkeypatch.setattr(config, "reload", lambda: None)
+    signals = OverlaySignals()
+    payloads: list[dict] = []
+    signals.settings_applied.connect(payloads.append)
+    overlay = IconOverlay(signals)
+
+    try:
+        keys = ["WISP_CODEX_MODEL", "WISP_CODEX_FAST_MODE"]
+        overlay._on_harness_controls_applied(keys)
+        app.processEvents()
+
+        assert payloads == [{"changed_keys": keys, "source": "harness_controls"}]
+    finally:
+        overlay._bubble.clear()
+        overlay._icon_label.close()
+        overlay.close()
+        app.processEvents()
+
+
 def test_bubble_chunk_restores_hidden_icon(monkeypatch):
     """Verify bubble chunk restores hidden icon behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

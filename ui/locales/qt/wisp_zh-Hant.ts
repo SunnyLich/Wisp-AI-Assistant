@@ -519,10 +519,6 @@
       <translation>應用到全部</translation>
     </message>
     <message>
-      <source>Approvals</source>
-      <translation>審批</translation>
-    </message>
-    <message>
       <source>Approve</source>
       <translation>批准</translation>
     </message>
@@ -2775,6 +2771,10 @@ Let model decide — expose an open-document tool during the answer.</source>
       <translation>Wisp 附加元件 (*.wisp *.zip)</translation>
     </message>
     <message>
+      <source>Wisp keeps ChatGPT agent sessions and login state in an isolated Wisp profile, so they do not appear in your personal Codex history. Sign-in opens its terminal and browser flow.</source>
+      <translation>Wisp 會將 ChatGPT 代理程式工作階段和登入狀態保存在隔離的 Wisp 設定檔中，因此它們不會出現在你的個人 Codex 歷史記錄中。登入會開啟其終端機和瀏覽器流程。</translation>
+    </message>
+    <message>
       <source>X Remove</source>
       <translation>X 移除</translation>
     </message>
@@ -3303,12 +3303,12 @@ Continue?</source>
       <translation>核准此檔案變更？</translation>
     </message>
     <message>
-      <source>Request Changes</source>
-      <translation>請求變更</translation>
+      <source>Alternate option</source>
+      <translation>替代方案</translation>
     </message>
     <message>
-      <source>Send Changes</source>
-      <translation>送出變更</translation>
+      <source>Send alternate option</source>
+      <translation>送出替代方案</translation>
     </message>
     <message>
       <source>Tell Wisp what to change before trying again.</source>
@@ -5567,6 +5567,7 @@ Shared uv/pip caches and unrelated Hugging Face models will not be removed.</sou
     <message><source>Built-in privacy filter</source><translation>內建隱私篩選器</translation></message>
     <message><source>Advanced privacy model</source><translation>進階隱私模型</translation></message>
     <message><source>Use no filter, built-in patterns, or Advanced mode, which combines the local AI model with built-in patterns.</source><translation>不使用篩選器、使用內建規則或使用進階模式；進階模式會將本機 AI 模型與內建規則搭配使用。</translation></message>
+    <message><source>Advanced privacy loads a local 2.8 GB AI model into memory and warms it in the background when Wisp starts. Warm-up may take tens of seconds on CPU. If you send a request before it finishes, that request waits; later requests are faster. The privacy model never uploads your text.</source><translation>進階隱私會將一個 2.8 GB 的本機 AI 模型載入記憶體，並在 Wisp 啟動時於背景預熱。使用 CPU 預熱可能需要數十秒。如果您在預熱完成前傳送請求，該請求會等待；後續請求會更快。隱私模型絕不會上傳您的文字。</translation></message>
     <message><source>Review detected private information before sending</source><translation>傳送前檢查偵測到的隱私資訊</translation></message>
     <message><source>Show the redacted request and detected categories before any model request, including local models.</source><translation>在任何模型請求（包括本機模型）開始前顯示已遮蔽的請求與偵測到的類別。</translation></message>
     <message><source>Use advanced AI privacy detection</source><translation>使用進階 AI 隱私偵測</translation></message>
@@ -5616,5 +5617,104 @@ Shared uv/pip caches and unrelated Hugging Face models will not be removed.</sou
     <message><source>URL</source><translation>網址</translation></message>
     <message><source>Driver's license</source><translation>駕駛執照</translation></message>
     <message><source>Passport</source><translation>護照</translation></message>
+    <message><source>Pull Codex + Claude</source><translation>匯入 Codex + Claude</translation></message>
+    <message><source>Import new and updated local Codex and Claude Code conversations</source><translation>匯入 Codex 和 Claude Code 中新增及更新的本機對話</translation></message>
+    <message><source>Pulling…</source><translation>正在匯入…</translation></message>
+    <message><source>Imported {imported}, updated {updated}, unchanged {unchanged}.</source><translation>已匯入 {imported} 個，已更新 {updated} 個，未變更 {unchanged} 個。</translation></message>
+    <message><source>{count} transcript(s) could not be read.</source><translation>有 {count} 個對話記錄無法讀取。</translation></message>
+    <message><source>External conversation pull</source><translation>匯入外部對話</translation></message>
+    <message><source>External conversation pull failed</source><translation>外部對話匯入失敗</translation></message>
+    <message><source>Wisp could not pull local conversations: {error}</source><translation>Wisp 無法匯入本機對話：{error}</translation></message>
+    <message><source>Push Wisp turns to {provider}</source><translation>將 Wisp 對話回合寫入 {provider}</translation></message>
+    <message><source>Append Wisp's new turns to this {provider} history file?&#10;&#10;Wisp will create a full backup first. Close this conversation in {provider} before continuing. This experimental integration edits an undocumented local transcript format and may stop working after an app update.</source><translation>要將 Wisp 的新對話回合附加到此 {provider} 歷史檔案嗎？&#10;&#10;Wisp 會先建立完整備份。繼續前，請在 {provider} 中關閉此對話。此實驗性整合會編輯未公開的本機對話記錄格式，並可能在應用程式更新後停止運作。</translation></message>
+    <message><source>Experimental history write</source><translation>實驗性歷史記錄寫入</translation></message>
+    <message><source>Conversation push</source><translation>寫入對話</translation></message>
+    <message><source>Pushed {count} turn(s) to {provider}.&#10;&#10;Backup: {backup}</source><translation>已將 {count} 個對話回合寫入 {provider}。&#10;&#10;備份：{backup}</translation></message>
+    <message><source>Conversation push failed</source><translation>對話寫入失敗</translation></message>
+    <message><source>Wisp could not update the external history: {error}</source><translation>Wisp 無法更新外部歷史記錄：{error}</translation></message>
+    <message><source>Export as new conversation</source><translation>匯出為新對話</translation></message>
+    <message><source>Choose workspace folder for {provider}</source><translation>為 {provider} 選擇工作區資料夾</translation></message>
+    <message><source>Create a new local {provider} conversation from this Wisp history?&#10;&#10;This experimental integration writes a new transcript file and never overwrites an existing provider conversation.</source><translation>要從此 Wisp 歷史記錄建立新的本機 {provider} 對話嗎？&#10;&#10;此實驗性整合會寫入新的對話記錄檔案，絕不會覆寫提供者中現有的對話。</translation></message>
+    <message><source>Experimental conversation export</source><translation>實驗性對話匯出</translation></message>
+    <message><source>Conversation exported</source><translation>對話已匯出</translation></message>
+    <message><source>Created a new {provider} conversation with {count} turn(s).&#10;&#10;Transcript: {path}&#10;&#10;Refresh or restart {provider} if it does not appear immediately.</source><translation>已建立包含 {count} 個回合的新 {provider} 對話。&#10;&#10;對話記錄：{path}&#10;&#10;如果未立即顯示，請重新整理或重新啟動 {provider}。</translation></message>
+    <message><source>Conversation export failed</source><translation>對話匯出失敗</translation></message>
+    <message><source>Wisp could not create the external conversation: {error}</source><translation>Wisp 無法建立外部對話：{error}</translation></message>
+    <message><source>Run conversations with</source><translation>使用以下代理執行對話</translation></message>
+    <message><source>Choose the agent behind Wisp conversations. Wisp uses the configured model route; Codex and Claude run their full local agent harness and stream progress back into Wisp.</source><translation>選擇用來執行 Wisp 對話的代理。Wisp 使用已設定的模型路由；Codex 與 Claude 會執行完整的本機代理框架，並將進度即時傳回 Wisp。</translation></message>
+    <message><source>Claude Agent</source><translation>Claude 代理</translation></message>
+    <message><source>Codex</source><translation>Codex</translation></message>
+    <message><source>Wisp always keeps a local chat copy. Agent-managed conversations also keep a resumable Codex or Claude session.</source><translation>Wisp 一律保留本機聊天副本。由代理管理的對話也會保留可恢復的 Codex 或 Claude 工作階段。</translation></message>
+    <message><source>Selected agent</source><translation>選定的代理</translation></message>
+    <message><source>Conversation goes to</source><translation>對話傳送至</translation></message>
+    <message><source>Wisp-managed conversations send the full Wisp history with each request. Agent-managed conversations transfer once, then resume the Codex or Claude session.</source><translation>由 Wisp 管理的對話會在每次請求時傳送完整的 Wisp 歷史記錄。由代理管理的對話只傳輸一次，之後恢復 Codex 或 Claude 工作階段。</translation></message>
+    <message><source>Codex is working...</source><translation>Codex 正在處理...</translation></message>
+    <message><source>Starting Codex...</source><translation>正在啟動 Codex...</translation></message>
+    <message><source>Opening conversation in Codex...</source><translation>正在 Codex 中開啟對話...</translation></message>
+    <message><source>Model is thinking...</source><translation>模型正在思考...</translation></message>
+    <message><source>Claude is working...</source><translation>Claude 正在處理...</translation></message>
+    <message><source>Retrying with this Codex version's approval policy…</source><translation>正在使用此 Codex 版本的核准原則重試…</translation></message>
+    <message><source>This Codex version does not stream reasoning summaries.</source><translation>此 Codex 版本不支援串流傳送推理摘要。</translation></message>
+    <message><source>Open {provider} controls</source><translation>開啟 {provider} 控制項</translation></message>
+    <message><source>{provider} controls</source><translation>{provider} 控制項</translation></message>
+    <message><source>Live {provider} controls</source><translation>{provider} 即時控制</translation></message>
+    <message><source>Wisp shows every thought, plan, tool action, approval, and reply event the provider exposes. Private hidden chain-of-thought is not available.</source><translation>Wisp 會顯示提供者公開的每個思考、計畫、工具動作、核准與回覆事件。無法取得私密的隱藏思維鏈。</translation></message>
+    <message><source>Fast mode (uses more quota or may cost more)</source><translation>快速模式（使用更多配額或可能產生更高費用）</translation></message>
+    <message><source>Xhigh</source><translation>超高</translation></message>
+    <message><source>Max</source><translation>最大</translation></message>
+    <message><source>Ultra</source><translation>極致</translation></message>
+    <message><source>Detailed summaries</source><translation>詳細摘要</translation></message>
+    <message><source>Concise summaries</source><translation>精簡摘要</translation></message>
+    <message><source>Provider summaries</source><translation>提供者摘要</translation></message>
+    <message><source>Visible reasoning</source><translation>可見推理</translation></message>
+    <message><source>Require approval</source><translation>要求核准</translation></message>
+    <message><source>Allow within project</source><translation>允許在專案內操作</translation></message>
+    <message><source>Full access</source><translation>完整存取權</translation></message>
+    <message><source>Plan only (read-only)</source><translation>僅規劃（唯讀）</translation></message>
+    <message><source>Permission mode</source><translation>權限模式</translation></message>
+    <message><source>Ask before file changes, commands, or other protected actions.</source><translation>在變更檔案、執行命令或進行其他受保護的操作前詢問。</translation></message>
+    <message><source>Work within the project automatically; ask before network or outside access.</source><translation>在專案內自動操作；使用網路或存取專案外部內容前詢問。</translation></message>
+    <message><source>Allow file changes within the selected project folder. Other actions may still require approval.</source><translation>允許變更所選專案資料夾內的檔案。其他操作可能仍需核准。</translation></message>
+    <message><source>Allow actions within the selected project folder. Network and outside access stay blocked.</source><translation>允許在所選專案資料夾內執行操作。網路與專案外部存取仍會被封鎖。</translation></message>
+    <message><source>Allow unrestricted access to files and the network without asking.</source><translation>無需詢問即可不受限制地存取檔案與網路。</translation></message>
+    <message><source>Read files and make a plan without changing anything.</source><translation>讀取檔案並制定計畫，不進行任何變更。</translation></message>
+    <message><source>Running: {detail}</source><translation>正在執行：{detail}</translation></message>
+    <message><source>Codex started {action}: {detail}</source><translation>Codex 已開始 {action}：{detail}</translation></message>
+    <message><source>Codex started {action}</source><translation>Codex 已開始 {action}</translation></message>
+    <message><source>Codex {action}: {status}</source><translation>Codex {action}：{status}</translation></message>
+    <message><source>Claude started {action}</source><translation>Claude 已開始 {action}</translation></message>
+    <message><source>Claude action: {detail}</source><translation>Claude 動作：{detail}</translation></message>
+    <message><source>Claude event: {detail}</source><translation>Claude 事件：{detail}</translation></message>
+    <message><source>Provider default</source><translation>提供者預設值</translation></message>
+    <message><source>Low</source><translation>低</translation></message>
+    <message><source>Medium</source><translation>中</translation></message>
+    <message><source>High</source><translation>高</translation></message>
+    <message><source>Save</source><translation>儲存</translation></message>
+    <message><source>Codex login</source><translation>Codex 登入</translation></message>
+    <message><source>Claude Agent login</source><translation>Claude 代理程式登入</translation></message>
+    <message><source>Wisp uses the account saved by the selected local agent CLI. Sign-in opens its terminal and browser flow.</source><translation>Wisp 使用所選本機代理程式 CLI 中儲存的帳戶。登入會開啟其終端機和瀏覽器流程。</translation></message>
+    <message><source>Logged in using {method}</source><translation>已使用 {method} 登入</translation></message>
+    <message><source>Each conversation mode has its own system prompt.</source><translation>每種對話模式都有各自的系統提示詞。</translation></message>
+    <message><source>Used only when conversations run with Wisp.</source><translation>只在使用 Wisp 執行對話時套用。</translation></message>
+    <message><source>ChatGPT</source><translation>ChatGPT</translation></message>
+    <message><source>Used only when conversations run with ChatGPT.</source><translation>只在使用 ChatGPT 執行對話時套用。</translation></message>
+    <message><source>Optional instructions for ChatGPT conversations. Leave blank to use ChatGPT's native instructions.</source><translation>ChatGPT 對話的選用指令。留空即可使用 ChatGPT 的原生指令。</translation></message>
+    <message><source>Claude</source><translation>Claude</translation></message>
+    <message><source>Used only when conversations run with Claude.</source><translation>只在使用 Claude 執行對話時套用。</translation></message>
+    <message><source>Optional instructions for Claude conversations. Leave blank to use Claude's native instructions.</source><translation>Claude 對話的選用指令。留空即可使用 Claude 的原生指令。</translation></message>
+    <message><source>Pull ChatGPT + Claude</source><translation>匯入 ChatGPT + Claude</translation></message>
+    <message><source>Import new and updated local ChatGPT and Claude Code conversations</source><translation>匯入 ChatGPT 和 Claude Code 中新增及更新的本機對話</translation></message>
+    <message><source>Choose the agent behind Wisp conversations. Wisp uses the configured model route; ChatGPT and Claude run their full local agent harness and stream progress back into Wisp.</source><translation>選擇用來執行 Wisp 對話的代理。Wisp 使用已設定的模型路由；ChatGPT 與 Claude 會執行完整的本機代理框架，並將進度即時傳回 Wisp。</translation></message>
+    <message><source>Wisp always keeps a local chat copy. Agent-managed conversations also keep a resumable ChatGPT or Claude session.</source><translation>Wisp 一律保留本機聊天副本。由代理管理的對話也會保留可恢復的 ChatGPT 或 Claude 工作階段。</translation></message>
+    <message><source>Wisp-managed conversations send the full Wisp history with each request. Agent-managed conversations transfer once, then resume the ChatGPT or Claude session.</source><translation>由 Wisp 管理的對話會在每次請求時傳送完整的 Wisp 歷史記錄。由代理管理的對話只傳輸一次，之後恢復 ChatGPT 或 Claude 工作階段。</translation></message>
+    <message><source>Starting ChatGPT...</source><translation>正在啟動 ChatGPT...</translation></message>
+    <message><source>Opening conversation in ChatGPT...</source><translation>正在 ChatGPT 中開啟對話...</translation></message>
+    <message><source>Preparing ChatGPT turn...</source><translation>正在準備 ChatGPT 回合...</translation></message>
+    <message><source>Retrying with this ChatGPT version's approval policy…</source><translation>正在使用此 ChatGPT 版本的核准原則重試…</translation></message>
+    <message><source>This ChatGPT version does not stream reasoning summaries.</source><translation>此 ChatGPT 版本不支援串流傳送推理摘要。</translation></message>
+    <message><source>ChatGPT started {action}: {detail}</source><translation>ChatGPT 已開始 {action}：{detail}</translation></message>
+    <message><source>ChatGPT started {action}</source><translation>ChatGPT 已開始 {action}</translation></message>
+    <message><source>ChatGPT {action}: {status}</source><translation>ChatGPT {action}：{status}</translation></message>
+    <message><source>ChatGPT login</source><translation>ChatGPT 登入</translation></message>
   </context>
 </TS>

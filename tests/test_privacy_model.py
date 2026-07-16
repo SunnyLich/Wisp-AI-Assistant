@@ -45,6 +45,38 @@ def test_runtime_maps_official_model_categories_to_spans():
     ]
 
 
+def test_prewarm_runs_one_inference_and_reuses_the_ready_runtime(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class Runtime:
+        def detect(self, text: str, *, source: str = ""):
+            calls.append((text, source))
+            return []
+
+    monkeypatch.setattr(privacy_model, "_MODEL_RUNTIME", Runtime())
+    monkeypatch.setattr(privacy_model, "_PREWARM_READY", False)
+
+    first = privacy_model.prewarm()
+    second = privacy_model.prewarm()
+
+    assert first["ready"] is True
+    assert first["cached"] is False
+    assert second == {"ready": True, "cached": True, "elapsed_seconds": 0.0}
+    assert calls == [("Wisp advanced privacy warmup.", "warmup")]
+
+
+def test_normal_detection_marks_the_model_as_already_warm(monkeypatch):
+    class Runtime:
+        def detect(self, text: str, *, source: str = ""):
+            return []
+
+    monkeypatch.setattr(privacy_model, "_MODEL_RUNTIME", Runtime())
+    monkeypatch.setattr(privacy_model, "_PREWARM_READY", False)
+
+    assert privacy_model.detect_with_model("hello", source="prompt") == []
+    assert privacy_model.prewarm()["cached"] is True
+
+
 def test_installer_uses_official_weights_and_verified_pinned_runtime(tmp_path, monkeypatch):
     from core import optional_deps
     from runtime.workers import privacy_model_installer

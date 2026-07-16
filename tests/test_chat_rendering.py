@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ui.chat_rendering import _assistant_text_to_html, _user_text_to_html
-from ui.text_annotations import annotations_from_keyword_rules
+from ui.chat_rendering import _assistant_text_to_html, _compact_markdown_tables, _user_text_to_html
+from ui.text_annotations import annotation_tooltip_anchor, annotations_from_keyword_rules, normalize_range_annotations
 
 
 def test_assistant_html_preserves_markdown_blocks():
@@ -24,6 +24,62 @@ def test_assistant_html_keeps_inline_code_literal():
 
     assert "<code>**literal**</code>" in rendered
     assert "<strong>bold</strong>" in rendered
+
+
+def test_assistant_html_renders_pipe_tables_as_themed_grids():
+    """GitHub-style tables should never expose their pipe/divider syntax."""
+    rendered = _assistant_text_to_html(
+        "| Aspect | Small model | Typical model |\n"
+        "|:---|:---:|---:|\n"
+        "| Memory | Similar (~4 GB) | Similar |\n"
+        "| Speed | Much higher | Lower |"
+    )
+
+    assert "<table" in rendered
+    assert "<thead><tr>" in rendered
+    assert "<th style=" in rendered
+    assert "text-align:center" in rendered
+    assert "text-align:right" in rendered
+    assert "Similar (~4 GB)" in rendered
+    assert "|:---|" not in rendered
+
+
+def test_table_cells_keep_inline_markdown_and_escaped_pipes():
+    """Table parsing preserves safe inline formatting and literal pipes."""
+    rendered = _assistant_text_to_html(
+        "Name | Detail\n"
+        "--- | ---\n"
+        "**Mode** | `a|b` and left\\|right"
+    )
+
+    assert "<strong>Mode</strong>" in rendered
+    assert "<code>a|b</code>" in rendered
+    assert "left|right" in rendered
+
+
+def test_compact_table_rendering_for_narrow_speech_bubbles():
+    """The bubble uses a stacked object view instead of raw Markdown pipes."""
+    compact = _compact_markdown_tables(
+        "| Aspect | Small model | Typical model |\n"
+        "|---|---|---|\n"
+        "| Memory | Similar (~4 GB) | Similar |"
+    )
+
+    assert compact.splitlines() == [
+        "**Aspect  ·  Small model  ·  Typical model**",
+        "**Memory** — Similar (~4 GB)  ·  Similar",
+    ]
+    assert "|---|" not in compact
+
+
+def test_tts_highlight_does_not_flatten_table_back_to_pipe_syntax():
+    """Mirrored read progress keeps the structured table presentation stable."""
+    text = "| Name | Value |\n|---|---|\n| Memory | 4 GB |"
+
+    rendered = _assistant_text_to_html(text, read_count=2)
+
+    assert "<table" in rendered
+    assert "|---|" not in rendered
 
 
 def test_empty_annotations_keep_assistant_html_unchanged():
@@ -57,6 +113,11 @@ def test_assistant_annotations_escape_untrusted_text_and_tooltips():
     assert "position:absolute" not in rendered
     assert "title=" not in rendered
     assert "quoted" not in rendered
+    annotation = normalize_range_annotations(
+        [{"start": 5, "end": len(text), "tooltip": '"quoted" <tip>', "id": "unsafe"}],
+        text,
+    )[0]
+    assert annotation_tooltip_anchor(annotation) in rendered
 
 
 def test_annotations_preserve_inline_code_and_markdown_structure():

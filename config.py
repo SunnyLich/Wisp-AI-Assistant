@@ -823,7 +823,14 @@ def _load_config() -> None:
     global NVIDIA_API_KEY, SAMBANOVA_API_KEY, GITHUB_MODELS_API_KEY, HUGGINGFACE_API_KEY
     global CHUTES_API_KEY, VERCEL_API_KEY, FIREWORKS_API_KEY, COHERE_API_KEY, AI21_API_KEY, NEBIUS_API_KEY
     global LLM_PROVIDER, LLM_MODEL, LLM_FALLBACKS
-    global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, TOOL_LLM_MODEL
+    global CHAT_LLM_PROVIDER, CHAT_LLM_MODEL, CHAT_LLM_FALLBACKS, CHAT_EXECUTION_MODE, CHAT_CONVERSATION_OWNER
+    global WISP_CODEX_MODEL, WISP_CODEX_FAST_MODE, WISP_CODEX_APPROVAL_MODE, WISP_CODEX_WORKSPACE
+    global WISP_CODEX_SYSTEM_PROMPT
+    global WISP_CODEX_REASONING_EFFORT, WISP_CODEX_REASONING_SUMMARY
+    global WISP_CLAUDE_MODEL, WISP_CLAUDE_FAST_MODE, WISP_CLAUDE_APPROVAL_MODE, WISP_CLAUDE_WORKSPACE
+    global WISP_CLAUDE_SYSTEM_PROMPT
+    global WISP_CLAUDE_REASONING_EFFORT, WISP_CLAUDE_REASONING_SUMMARY
+    global TOOL_LLM_MODEL
     global CHAT_REASONING_EFFORT, CHAT_TOOL_TRACE_UI
     global PLANNED_CHUNKING, PLANNED_CHUNKING_CHUNKS, PLANNED_CHUNKING_MIN_PROMPT_CHARS
     global VISION_LLM_PROVIDER, VISION_LLM_MODEL, VISION_LLM_FALLBACKS
@@ -915,6 +922,40 @@ def _load_config() -> None:
     CHAT_LLM_PROVIDER  = LLM_PROVIDER
     CHAT_LLM_MODEL     = LLM_MODEL
     CHAT_LLM_FALLBACKS = LLM_FALLBACKS
+    CHAT_EXECUTION_MODE = os.getenv("CHAT_EXECUTION_MODE", "wisp").strip().lower()
+    if CHAT_EXECUTION_MODE not in {"wisp", "codex", "claude"}:
+        CHAT_EXECUTION_MODE = "wisp"
+    default_conversation_owner = "agent" if CHAT_EXECUTION_MODE in {"codex", "claude"} else "wisp"
+    CHAT_CONVERSATION_OWNER = os.getenv(
+        "CHAT_CONVERSATION_OWNER",
+        default_conversation_owner,
+    ).strip().lower()
+    if CHAT_CONVERSATION_OWNER not in {"wisp", "agent"}:
+        CHAT_CONVERSATION_OWNER = default_conversation_owner
+    if CHAT_EXECUTION_MODE == "wisp":
+        CHAT_CONVERSATION_OWNER = "wisp"
+    WISP_CODEX_MODEL = os.getenv("WISP_CODEX_MODEL", "").strip()
+    WISP_CODEX_WORKSPACE = os.getenv("WISP_CODEX_WORKSPACE", "").strip()
+    WISP_CODEX_SYSTEM_PROMPT = os.getenv("WISP_CODEX_SYSTEM_PROMPT", "")
+    WISP_CODEX_FAST_MODE = env_bool("WISP_CODEX_FAST_MODE", False)
+    WISP_CODEX_APPROVAL_MODE = os.getenv("WISP_CODEX_APPROVAL_MODE", "ask").strip().lower()
+    if WISP_CODEX_APPROVAL_MODE not in {"ask", "auto_edits", "full_access", "read_only"}:
+        WISP_CODEX_APPROVAL_MODE = "ask"
+    WISP_CODEX_REASONING_EFFORT = os.getenv("WISP_CODEX_REASONING_EFFORT", "high").strip().lower()
+    WISP_CODEX_REASONING_SUMMARY = os.getenv("WISP_CODEX_REASONING_SUMMARY", "detailed").strip().lower()
+    if WISP_CODEX_REASONING_SUMMARY not in {"detailed", "concise", "none"}:
+        WISP_CODEX_REASONING_SUMMARY = "detailed"
+    WISP_CLAUDE_MODEL = os.getenv("WISP_CLAUDE_MODEL", "").strip()
+    WISP_CLAUDE_WORKSPACE = os.getenv("WISP_CLAUDE_WORKSPACE", "").strip()
+    WISP_CLAUDE_SYSTEM_PROMPT = os.getenv("WISP_CLAUDE_SYSTEM_PROMPT", "")
+    WISP_CLAUDE_FAST_MODE = env_bool("WISP_CLAUDE_FAST_MODE", False)
+    WISP_CLAUDE_APPROVAL_MODE = os.getenv("WISP_CLAUDE_APPROVAL_MODE", "ask").strip().lower()
+    if WISP_CLAUDE_APPROVAL_MODE not in {"ask", "auto_edits", "full_access", "read_only"}:
+        WISP_CLAUDE_APPROVAL_MODE = "ask"
+    WISP_CLAUDE_REASONING_EFFORT = os.getenv("WISP_CLAUDE_REASONING_EFFORT", "high").strip().lower()
+    WISP_CLAUDE_REASONING_SUMMARY = os.getenv("WISP_CLAUDE_REASONING_SUMMARY", "summarized").strip().lower()
+    if WISP_CLAUDE_REASONING_SUMMARY not in {"summarized", "none"}:
+        WISP_CLAUDE_REASONING_SUMMARY = "summarized"
 
     # --- Tool model override (optional) ---
     # Empty = use the Main LLM model for tool calls. Set this only to force a

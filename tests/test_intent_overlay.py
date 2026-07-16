@@ -26,6 +26,169 @@ def _close_overlay_if_valid(overlay, app) -> None:
         app.processEvents()
 
 
+def test_custom_prompt_wraps_and_grows_vertically(qapp, monkeypatch):
+    """Long freeform prompts wrap into additional visible editor lines."""
+    from PySide6.QtCore import Qt
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        overlay.show()
+        overlay._enter_custom_mode(drop_trigger_key=False)
+        qapp.processEvents()
+        initial_overlay_h = overlay.height()
+
+        overlay._input_line.setText("wrapped prompt " * 80)
+        qapp.processEvents()
+        overlay._resize_prompt_input()
+
+        assert overlay._input_line.height() > intent_overlay._INPUT_MIN_H
+        assert overlay.height() > initial_overlay_h
+        assert overlay._input_line.horizontalScrollBar().maximum() == 0
+        assert overlay._input_line.height() <= overlay._prompt_input_max_height()
+        assert (
+            overlay._input_line.verticalScrollBarPolicy()
+            == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_custom_prompt_scrolls_only_after_overlay_fills_screen(qapp, monkeypatch):
+    """The editor uses available screen height before showing a scrollbar."""
+    from PySide6.QtCore import QRect, Qt
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        overlay._screen_geometry = QRect(0, 0, 800, 360)
+        overlay.show()
+        overlay._enter_custom_mode(drop_trigger_key=False)
+        overlay._input_line.setText("very long wrapped prompt " * 300)
+        qapp.processEvents()
+        overlay._resize_prompt_input()
+
+        assert overlay.height() <= 360 - intent_overlay._SCREEN_MARGIN
+        assert overlay._input_line.height() == overlay._prompt_input_max_height()
+        assert (
+            overlay._input_line.verticalScrollBarPolicy()
+            == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        assert overlay._input_line.verticalScrollBar().maximum() > 0
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_custom_prompt_enter_submits_and_shift_enter_adds_line(qapp, monkeypatch):
+    """Enter sends the prompt while Shift+Enter remains available for newlines."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    chosen: list[tuple[str, str]] = []
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
+    try:
+        overlay.show()
+        overlay._enter_custom_mode(drop_trigger_key=False)
+        overlay._input_line.setText("first line")
+        overlay._input_line.moveCursor(overlay._input_line.textCursor().MoveOperation.End)
+        QTest.keyClick(
+            overlay._input_line,
+            Qt.Key.Key_Return,
+            Qt.KeyboardModifier.ShiftModifier,
+        )
+        QTest.keyClicks(overlay._input_line, "second line")
+        assert overlay._input_line.text() == "first line\nsecond line"
+
+        QTest.keyClick(overlay._input_line, Qt.Key.Key_Return)
+        qapp.processEvents()
+
+        assert chosen == [("S", "first line\nsecond line")]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
+@pytest.mark.parametrize("clipboard_kind", ["image", "file"])
+def test_custom_prompt_paste_attaches_non_text_clipboard_context(
+    qapp,
+    monkeypatch,
+    tmp_path,
+    clipboard_kind,
+):
+    """Ctrl+V attaches copied images/files without inserting paths in the prompt."""
+    from PySide6.QtCore import QEvent, QMimeData, Qt, QUrl
+    from PySide6.QtGui import QImage, QKeyEvent
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    mime = QMimeData()
+    if clipboard_kind == "image":
+        image = QImage(3, 2, QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.magenta)
+        mime.setImageData(image)
+        mime.setText("https://example.test/source-image")
+    else:
+        path = tmp_path / "copied.txt"
+        path.write_text("copied file body", encoding="utf-8")
+        mime.setUrls([QUrl.fromLocalFile(str(path))])
+
+    class Clipboard:
+        @staticmethod
+        def mimeData():
+            return mime
+
+    old_rows = list(config.CALLER_ROWS)
+    monkeypatch.setattr(intent_overlay.QApplication, "clipboard", staticmethod(Clipboard))
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    pasted: list[list[tuple[str, str, str]]] = []
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    overlay.context_items_pasted.connect(lambda items: pasted.append(list(items)))
+    try:
+        overlay.show()
+        overlay._enter_custom_mode(drop_trigger_key=False)
+        overlay._input_line.setText("describe this")
+        event = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_V,
+            Qt.KeyboardModifier.ControlModifier,
+            "v",
+        )
+
+        assert overlay.eventFilter(overlay._input_line, event) is True
+        assert overlay._input_line.text() == "describe this"
+        assert len(pasted) == 1
+        assert pasted[0][0][2] == clipboard_kind.replace("file", "text")
+        if clipboard_kind == "image":
+            assert pasted[0][0][0] == "Pasted image"
+        else:
+            assert pasted[0][0][0] == "copied.txt"
+            assert pasted[0][0][1] == "copied file body"
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_context_preview_entries_expand_item_sources(monkeypatch):
     """Verify one App chip can show multiple detected source previews."""
@@ -746,6 +909,74 @@ def test_intent_overlay_conversation_choice_toggles_new_and_continue():
     finally:
         overlay.close()
         app.processEvents()
+
+
+@pytest.mark.parametrize("caller_idx", [0, 1])
+def test_space_toggles_conversation_for_intent_and_action_overlays(qapp, caller_idx):
+    """Space invokes the same new/continue toggle in either overlay."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        caller_idx=caller_idx,
+        conversation_options=[{"index": 1, "title": "Previous chat"}],
+    )
+    try:
+        assert overlay.conversation_choice() == {"mode": "new"}
+
+        overlay.keyPressEvent(
+            QKeyEvent(
+                QEvent.Type.KeyPress,
+                Qt.Key.Key_Space,
+                Qt.KeyboardModifier.NoModifier,
+                " ",
+            )
+        )
+        assert overlay.conversation_choice() == {"mode": "continue", "index": 1}
+
+        overlay.keyPressEvent(
+            QKeyEvent(
+                QEvent.Type.KeyPress,
+                Qt.Key.Key_Space,
+                Qt.KeyboardModifier.NoModifier,
+                " ",
+            )
+        )
+        assert overlay.conversation_choice() == {"mode": "new"}
+        assert overlay.conversation_choice_touched() is True
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_windows_raw_space_toggle_is_not_repeated_by_qt(qapp):
+    """A forwarded Windows Space press toggles only once if Qt also sees it."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    from ui.intent_overlay import IntentOverlay
+
+    overlay = IntentOverlay(
+        conversation_options=[{"index": 1, "title": "Previous chat"}],
+    )
+    try:
+        assert "space" in overlay._raw_shortcut_names()
+
+        overlay._on_raw_key("space")
+        assert overlay.conversation_choice() == {"mode": "continue", "index": 1}
+
+        overlay.keyPressEvent(
+            QKeyEvent(
+                QEvent.Type.KeyPress,
+                Qt.Key.Key_Space,
+                Qt.KeyboardModifier.NoModifier,
+                " ",
+            )
+        )
+        assert overlay.conversation_choice() == {"mode": "continue", "index": 1}
+    finally:
+        _close_overlay_if_valid(overlay, qapp)
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")

@@ -40,6 +40,18 @@ def test_add_and_delete_project(tmp_path, monkeypatch):
     assert all(p["id"] != proj["id"] for p in store.load_projects())
 
 
+def test_projects_with_same_name_are_isolated_by_conversation_scope(tmp_path, monkeypatch):
+    """Native Wisp and Codex can each own an independent project name."""
+    _isolate(tmp_path, monkeypatch)
+
+    native = store.add_project("Overlay", conversation_scope="wisp")
+    codex = store.add_project("Overlay", conversation_scope="codex")
+
+    assert native["id"] != codex["id"]
+    assert store.project_scope(native) == "wisp"
+    assert store.project_scope(codex) == "codex"
+
+
 def test_cannot_delete_general(tmp_path, monkeypatch):
     """Verify cannot delete general behavior."""
     _isolate(tmp_path, monkeypatch)
@@ -66,9 +78,34 @@ def test_conversation_round_trip_and_title(tmp_path, monkeypatch):
     assert len(loaded) == 1
     assert loaded[0]["title"].startswith("How do I configure the overlay hotkey")
     assert loaded[0]["project_id"] == store.GENERAL_PROJECT_ID
+    assert loaded[0]["conversation_scope"] == "wisp"
     assert loaded[0]["id"]
     assert all(msg.get("created_at") for msg in loaded[0]["messages"])
     assert all(msg.get("id") for msg in loaded[0]["messages"])
+
+
+def test_legacy_harness_conversation_migrates_to_provider_scope(tmp_path, monkeypatch):
+    """Existing Codex sessions remain available in the new isolated picker."""
+    _isolate(tmp_path, monkeypatch)
+    store.save_conversations(
+        [
+            {
+                "messages": [{"role": "user", "content": "continue agent work"}],
+                "harness_sessions": {
+                    "codex": {
+                        "session_id": "thread-1",
+                        "cwd": "C:/repo",
+                        "updated_at": "2026-07-16T12:00:00+00:00",
+                    }
+                },
+            }
+        ]
+    )
+
+    loaded = store.load_conversations()[0]
+
+    assert loaded["conversation_scope"] == "codex"
+    assert store.conversation_scope(loaded) == "codex"
 
 
 def test_pin_and_rename_round_trip(tmp_path, monkeypatch):

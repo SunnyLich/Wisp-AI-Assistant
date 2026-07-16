@@ -6,6 +6,7 @@ import unittest
 import pytest
 
 from core.query_pipeline import (
+    MAX_CAPTURED_CONTEXT_CHARS,
     ContextInputs,
     GenerationCounter,
     build_context,
@@ -66,15 +67,21 @@ class BuildContextTests(unittest.TestCase):
         self.assertEqual(out.ambient_ctx, "")
 
     def test_dropped_image_kept_as_context_when_screenshot_exists(self):
-        """Verify dropped image kept as context when screenshot exists behavior."""
+        """Additional image base64 is not injected as enormous text context."""
         out = _build(screenshot_b64="EXISTING", drop_items=[("shot.png", "BASE64", "image")])
         self.assertEqual(out.screenshot_b64, "EXISTING")
-        self.assertEqual(
-            out.ambient_ctx,
-            "--- BEGIN DROPPED CONTEXT: shot.png ---\n"
-            "BASE64\n"
-            "--- END DROPPED CONTEXT: shot.png ---",
+        self.assertEqual(out.ambient_ctx, "[Additional image omitted from text context: shot.png]")
+
+    def test_captured_context_has_aggregate_safety_limit(self):
+        """Several large sources cannot create an unbounded outgoing prompt."""
+        out = _build(
+            ambient_text="a" * MAX_CAPTURED_CONTEXT_CHARS,
+            clipboard_text="b" * MAX_CAPTURED_CONTEXT_CHARS,
+            selected="c" * MAX_CAPTURED_CONTEXT_CHARS,
+            trust_privacy_mode=False,
         )
+        self.assertLessEqual(len(out.ambient_ctx), MAX_CAPTURED_CONTEXT_CHARS)
+        self.assertTrue(out.ambient_ctx.endswith("[captured context truncated at safety limit]"))
 
     def test_dropped_document_is_read_and_labelled(self):
         """Verify dropped document is read and labelled behavior."""

@@ -434,6 +434,16 @@ def test_ui_lab_addon_exercises_saved_label_surfaces(tmp_path, monkeypatch):
     assert by_match["Wisp"]["tooltip"] == "Assistant name"
     assert by_match["Wisp"]["style"] == "font-weight:700; text-decoration:underline"
     assert by_match["bubble label"]["style"] == "font-style:italic; color:#b8b8ff"
+
+    unicode_text = "“quoted”—Wisp"
+    unicode_annotations = manager.get_text_annotations(
+        {"text": unicode_text, "surface": "chat", "role": "assistant"}
+    )
+    wisp_annotation = next(
+        item for item in unicode_annotations if item.get("id") == "ui-lab-label-wisp"
+    )
+    assert unicode_text[wisp_annotation["start"]:wisp_annotation["end"]] == "Wisp"
+
     setting_keys = {item["key"] for item in manager.get_settings("ui-lab")}
     assert {"enabled", "annotate_user_messages", "rewrite_enabled", "rewrite_prefix"} <= setting_keys
 

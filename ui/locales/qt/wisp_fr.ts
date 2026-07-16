@@ -519,10 +519,6 @@
       <translation>Appliquer à tout</translation>
     </message>
     <message>
-      <source>Approvals</source>
-      <translation>Approbations</translation>
-    </message>
-    <message>
       <source>Approve</source>
       <translation>Approuver</translation>
     </message>
@@ -2775,6 +2771,10 @@ Laisser le modèle décider — expose un outil de document ouvert pendant la r�
       <translation>Addons Wisp (*.wisp *.zip)</translation>
     </message>
     <message>
+      <source>Wisp keeps ChatGPT agent sessions and login state in an isolated Wisp profile, so they do not appear in your personal Codex history. Sign-in opens its terminal and browser flow.</source>
+      <translation>Wisp conserve les sessions de l’agent ChatGPT et l’état de connexion dans un profil Wisp isolé ; elles n’apparaissent donc pas dans votre historique Codex personnel. La connexion ouvre le flux du terminal et du navigateur.</translation>
+    </message>
+    <message>
       <source>X Remove</source>
       <translation>X Supprimer</translation>
     </message>
@@ -3339,12 +3339,12 @@ Continuer ?</translation>
       <translation>Approuver cette modification de fichier ?</translation>
     </message>
     <message>
-      <source>Request Changes</source>
-      <translation>Demander des changements</translation>
+      <source>Alternate option</source>
+      <translation>Autre option</translation>
     </message>
     <message>
-      <source>Send Changes</source>
-      <translation>Envoyer les changements</translation>
+      <source>Send alternate option</source>
+      <translation>Envoyer l’autre option</translation>
     </message>
     <message>
       <source>Tell Wisp what to change before trying again.</source>
@@ -5564,6 +5564,7 @@ Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront 
     <message><source>Built-in privacy filter</source><translation>Filtre de confidentialité intégré</translation></message>
     <message><source>Advanced privacy model</source><translation>Modèle de confidentialité avancé</translation></message>
     <message><source>Use no filter, built-in patterns, or Advanced mode, which combines the local AI model with built-in patterns.</source><translation>N’utilisez aucun filtre, les motifs intégrés ou le mode Avancé, qui combine le modèle d’IA local avec les motifs intégrés.</translation></message>
+    <message><source>Advanced privacy loads a local 2.8 GB AI model into memory and warms it in the background when Wisp starts. Warm-up may take tens of seconds on CPU. If you send a request before it finishes, that request waits; later requests are faster. The privacy model never uploads your text.</source><translation>La protection avancée charge en mémoire un modèle d’IA local de 2,8 Go et le préchauffe en arrière-plan au démarrage de Wisp. Le préchauffage sur processeur peut prendre plusieurs dizaines de secondes. Si vous envoyez une requête avant la fin, elle attendra ; les suivantes seront plus rapides. Le modèle de confidentialité ne téléverse jamais votre texte.</translation></message>
     <message><source>Review detected private information before sending</source><translation>Vérifier les informations privées détectées avant l’envoi</translation></message>
     <message><source>Show the redacted request and detected categories before any model request, including local models.</source><translation>Affiche la requête masquée et les catégories détectées avant toute requête au modèle, y compris aux modèles locaux.</translation></message>
     <message><source>Use advanced AI privacy detection</source><translation>Utiliser la détection avancée de confidentialité par IA</translation></message>
@@ -5613,5 +5614,104 @@ Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront 
     <message><source>URL</source><translation>URL</translation></message>
     <message><source>Driver's license</source><translation>Permis de conduire</translation></message>
     <message><source>Passport</source><translation>Passeport</translation></message>
+    <message><source>Pull Codex + Claude</source><translation>Importer Codex + Claude</translation></message>
+    <message><source>Import new and updated local Codex and Claude Code conversations</source><translation>Importer les conversations locales nouvelles et mises à jour de Codex et Claude Code</translation></message>
+    <message><source>Pulling…</source><translation>Importation…</translation></message>
+    <message><source>Imported {imported}, updated {updated}, unchanged {unchanged}.</source><translation>Importées : {imported}, mises à jour : {updated}, inchangées : {unchanged}.</translation></message>
+    <message><source>{count} transcript(s) could not be read.</source><translation>{count} transcriptions n’ont pas pu être lues.</translation></message>
+    <message><source>External conversation pull</source><translation>Importation de conversations externes</translation></message>
+    <message><source>External conversation pull failed</source><translation>Échec de l’importation des conversations externes</translation></message>
+    <message><source>Wisp could not pull local conversations: {error}</source><translation>Wisp n’a pas pu importer les conversations locales : {error}</translation></message>
+    <message><source>Push Wisp turns to {provider}</source><translation>Envoyer les tours Wisp vers {provider}</translation></message>
+    <message><source>Append Wisp's new turns to this {provider} history file?&#10;&#10;Wisp will create a full backup first. Close this conversation in {provider} before continuing. This experimental integration edits an undocumented local transcript format and may stop working after an app update.</source><translation>Ajouter les nouveaux tours Wisp à ce fichier d’historique {provider} ?&#10;&#10;Wisp créera d’abord une sauvegarde complète. Fermez cette conversation dans {provider} avant de continuer. Cette intégration expérimentale modifie un format de transcription local non documenté et peut cesser de fonctionner après une mise à jour de l’application.</translation></message>
+    <message><source>Experimental history write</source><translation>Écriture expérimentale de l’historique</translation></message>
+    <message><source>Conversation push</source><translation>Envoi de la conversation</translation></message>
+    <message><source>Pushed {count} turn(s) to {provider}.&#10;&#10;Backup: {backup}</source><translation>{count} tours envoyés vers {provider}.&#10;&#10;Sauvegarde : {backup}</translation></message>
+    <message><source>Conversation push failed</source><translation>Échec de l’envoi de la conversation</translation></message>
+    <message><source>Wisp could not update the external history: {error}</source><translation>Wisp n’a pas pu mettre à jour l’historique externe : {error}</translation></message>
+    <message><source>Export as new conversation</source><translation>Exporter comme nouvelle conversation</translation></message>
+    <message><source>Choose workspace folder for {provider}</source><translation>Choisir le dossier de travail pour {provider}</translation></message>
+    <message><source>Create a new local {provider} conversation from this Wisp history?&#10;&#10;This experimental integration writes a new transcript file and never overwrites an existing provider conversation.</source><translation>Créer une nouvelle conversation locale {provider} à partir de cet historique Wisp ?&#10;&#10;Cette intégration expérimentale écrit un nouveau fichier de transcription et ne remplace jamais une conversation existante du fournisseur.</translation></message>
+    <message><source>Experimental conversation export</source><translation>Exportation expérimentale de conversation</translation></message>
+    <message><source>Conversation exported</source><translation>Conversation exportée</translation></message>
+    <message><source>Created a new {provider} conversation with {count} turn(s).&#10;&#10;Transcript: {path}&#10;&#10;Refresh or restart {provider} if it does not appear immediately.</source><translation>Une nouvelle conversation {provider} de {count} tours a été créée.&#10;&#10;Transcription : {path}&#10;&#10;Actualisez ou redémarrez {provider} si elle n’apparaît pas immédiatement.</translation></message>
+    <message><source>Conversation export failed</source><translation>Échec de l’exportation de la conversation</translation></message>
+    <message><source>Wisp could not create the external conversation: {error}</source><translation>Wisp n’a pas pu créer la conversation externe : {error}</translation></message>
+    <message><source>Run conversations with</source><translation>Exécuter les conversations avec</translation></message>
+    <message><source>Choose the agent behind Wisp conversations. Wisp uses the configured model route; Codex and Claude run their full local agent harness and stream progress back into Wisp.</source><translation>Choisissez l’agent qui exécute les conversations Wisp. Wisp utilise le routage de modèle configuré ; Codex et Claude exécutent leur agent local complet et retransmettent la progression dans Wisp.</translation></message>
+    <message><source>Claude Agent</source><translation>Agent Claude</translation></message>
+    <message><source>Codex</source><translation>Codex</translation></message>
+    <message><source>Wisp always keeps a local chat copy. Agent-managed conversations also keep a resumable Codex or Claude session.</source><translation>Wisp conserve toujours une copie locale de la discussion. Les conversations gérées par l’agent conservent aussi une session Codex ou Claude pouvant être reprise.</translation></message>
+    <message><source>Selected agent</source><translation>Agent sélectionné</translation></message>
+    <message><source>Conversation goes to</source><translation>Conversation envoyée à</translation></message>
+    <message><source>Wisp-managed conversations send the full Wisp history with each request. Agent-managed conversations transfer once, then resume the Codex or Claude session.</source><translation>Les conversations gérées par Wisp envoient tout l’historique Wisp à chaque requête. Celles gérées par l’agent sont transférées une fois, puis reprennent la session Codex ou Claude.</translation></message>
+    <message><source>Codex is working...</source><translation>Codex travaille...</translation></message>
+    <message><source>Starting Codex...</source><translation>Démarrage de Codex...</translation></message>
+    <message><source>Opening conversation in Codex...</source><translation>Ouverture de la conversation dans Codex...</translation></message>
+    <message><source>Model is thinking...</source><translation>Le modèle réfléchit...</translation></message>
+    <message><source>Claude is working...</source><translation>Claude travaille...</translation></message>
+    <message><source>Retrying with this Codex version's approval policy…</source><translation>Nouvelle tentative avec la politique d’approbation de cette version de Codex…</translation></message>
+    <message><source>This Codex version does not stream reasoning summaries.</source><translation>Cette version de Codex ne diffuse pas les résumés de raisonnement.</translation></message>
+    <message><source>Open {provider} controls</source><translation>Ouvrir les contrôles de {provider}</translation></message>
+    <message><source>{provider} controls</source><translation>Contrôles de {provider}</translation></message>
+    <message><source>Live {provider} controls</source><translation>Contrôles en direct de {provider}</translation></message>
+    <message><source>Wisp shows every thought, plan, tool action, approval, and reply event the provider exposes. Private hidden chain-of-thought is not available.</source><translation>Wisp affiche chaque événement de réflexion, de plan, d’action d’outil, d’approbation et de réponse exposé par le fournisseur. Le raisonnement interne privé masqué n’est pas disponible.</translation></message>
+    <message><source>Fast mode (uses more quota or may cost more)</source><translation>Mode rapide (utilise plus de quota ou peut coûter plus cher)</translation></message>
+    <message><source>Xhigh</source><translation>Très élevé</translation></message>
+    <message><source>Max</source><translation>Maximum</translation></message>
+    <message><source>Ultra</source><translation>Ultra</translation></message>
+    <message><source>Detailed summaries</source><translation>Résumés détaillés</translation></message>
+    <message><source>Concise summaries</source><translation>Résumés concis</translation></message>
+    <message><source>Provider summaries</source><translation>Résumés du fournisseur</translation></message>
+    <message><source>Visible reasoning</source><translation>Raisonnement visible</translation></message>
+    <message><source>Require approval</source><translation>Approbation requise</translation></message>
+    <message><source>Allow within project</source><translation>Autoriser dans le projet</translation></message>
+    <message><source>Full access</source><translation>Accès complet</translation></message>
+    <message><source>Plan only (read-only)</source><translation>Planification uniquement (lecture seule)</translation></message>
+    <message><source>Permission mode</source><translation>Mode d’autorisation</translation></message>
+    <message><source>Ask before file changes, commands, or other protected actions.</source><translation>Demander avant de modifier des fichiers, d’exécuter des commandes ou d’effectuer d’autres actions protégées.</translation></message>
+    <message><source>Work within the project automatically; ask before network or outside access.</source><translation>Travailler automatiquement dans le projet ; demander avant d’utiliser le réseau ou d’accéder à l’extérieur du projet.</translation></message>
+    <message><source>Allow file changes within the selected project folder. Other actions may still require approval.</source><translation>Autoriser les modifications de fichiers dans le dossier de projet sélectionné. D’autres actions peuvent toujours nécessiter une approbation.</translation></message>
+    <message><source>Allow actions within the selected project folder. Network and outside access stay blocked.</source><translation>Autoriser les actions dans le dossier de projet sélectionné. Le réseau et l’accès extérieur restent bloqués.</translation></message>
+    <message><source>Allow unrestricted access to files and the network without asking.</source><translation>Autoriser un accès sans restriction aux fichiers et au réseau sans demander.</translation></message>
+    <message><source>Read files and make a plan without changing anything.</source><translation>Lire les fichiers et préparer un plan sans rien modifier.</translation></message>
+    <message><source>Running: {detail}</source><translation>Exécution : {detail}</translation></message>
+    <message><source>Codex started {action}: {detail}</source><translation>Codex a démarré {action} : {detail}</translation></message>
+    <message><source>Codex started {action}</source><translation>Codex a démarré {action}</translation></message>
+    <message><source>Codex {action}: {status}</source><translation>Codex {action} : {status}</translation></message>
+    <message><source>Claude started {action}</source><translation>Claude a démarré {action}</translation></message>
+    <message><source>Claude action: {detail}</source><translation>Action Claude : {detail}</translation></message>
+    <message><source>Claude event: {detail}</source><translation>Événement Claude : {detail}</translation></message>
+    <message><source>Provider default</source><translation>Valeur par défaut du fournisseur</translation></message>
+    <message><source>Low</source><translation>Faible</translation></message>
+    <message><source>Medium</source><translation>Moyen</translation></message>
+    <message><source>High</source><translation>Élevé</translation></message>
+    <message><source>Save</source><translation>Enregistrer</translation></message>
+    <message><source>Codex login</source><translation>Connexion à Codex</translation></message>
+    <message><source>Claude Agent login</source><translation>Connexion à Claude Agent</translation></message>
+    <message><source>Wisp uses the account saved by the selected local agent CLI. Sign-in opens its terminal and browser flow.</source><translation>Wisp utilise le compte enregistré par l’interface en ligne de commande de l’agent local sélectionné. La connexion ouvre son terminal et le parcours d’authentification dans le navigateur.</translation></message>
+    <message><source>Logged in using {method}</source><translation>Connecté avec {method}</translation></message>
+    <message><source>Each conversation mode has its own system prompt.</source><translation>Chaque mode de conversation possède sa propre instruction système.</translation></message>
+    <message><source>Used only when conversations run with Wisp.</source><translation>Utilisé uniquement lorsque les conversations s’exécutent avec Wisp.</translation></message>
+    <message><source>ChatGPT</source><translation>ChatGPT</translation></message>
+    <message><source>Used only when conversations run with ChatGPT.</source><translation>Utilisé uniquement lorsque les conversations s’exécutent avec ChatGPT.</translation></message>
+    <message><source>Optional instructions for ChatGPT conversations. Leave blank to use ChatGPT's native instructions.</source><translation>Instructions facultatives pour les conversations ChatGPT. Laissez vide pour utiliser les instructions natives de ChatGPT.</translation></message>
+    <message><source>Claude</source><translation>Claude</translation></message>
+    <message><source>Used only when conversations run with Claude.</source><translation>Utilisé uniquement lorsque les conversations s’exécutent avec Claude.</translation></message>
+    <message><source>Optional instructions for Claude conversations. Leave blank to use Claude's native instructions.</source><translation>Instructions facultatives pour les conversations Claude. Laissez vide pour utiliser les instructions natives de Claude.</translation></message>
+    <message><source>Pull ChatGPT + Claude</source><translation>Importer ChatGPT + Claude</translation></message>
+    <message><source>Import new and updated local ChatGPT and Claude Code conversations</source><translation>Importer les conversations locales nouvelles et mises à jour de ChatGPT et Claude Code</translation></message>
+    <message><source>Choose the agent behind Wisp conversations. Wisp uses the configured model route; ChatGPT and Claude run their full local agent harness and stream progress back into Wisp.</source><translation>Choisissez l’agent qui exécute les conversations Wisp. Wisp utilise le routage de modèle configuré ; ChatGPT et Claude exécutent leur agent local complet et retransmettent la progression dans Wisp.</translation></message>
+    <message><source>Wisp always keeps a local chat copy. Agent-managed conversations also keep a resumable ChatGPT or Claude session.</source><translation>Wisp conserve toujours une copie locale de la discussion. Les conversations gérées par l’agent conservent aussi une session ChatGPT ou Claude pouvant être reprise.</translation></message>
+    <message><source>Wisp-managed conversations send the full Wisp history with each request. Agent-managed conversations transfer once, then resume the ChatGPT or Claude session.</source><translation>Les conversations gérées par Wisp envoient tout l’historique Wisp à chaque requête. Celles gérées par l’agent sont transférées une fois, puis reprennent la session ChatGPT ou Claude.</translation></message>
+    <message><source>Starting ChatGPT...</source><translation>Démarrage de ChatGPT...</translation></message>
+    <message><source>Opening conversation in ChatGPT...</source><translation>Ouverture de la conversation dans ChatGPT...</translation></message>
+    <message><source>Preparing ChatGPT turn...</source><translation>Préparation du tour ChatGPT...</translation></message>
+    <message><source>Retrying with this ChatGPT version's approval policy…</source><translation>Nouvelle tentative avec la politique d’approbation de cette version de ChatGPT…</translation></message>
+    <message><source>This ChatGPT version does not stream reasoning summaries.</source><translation>Cette version de ChatGPT ne diffuse pas les résumés de raisonnement.</translation></message>
+    <message><source>ChatGPT started {action}: {detail}</source><translation>ChatGPT a démarré {action} : {detail}</translation></message>
+    <message><source>ChatGPT started {action}</source><translation>ChatGPT a démarré {action}</translation></message>
+    <message><source>ChatGPT {action}: {status}</source><translation>ChatGPT {action} : {status}</translation></message>
+    <message><source>ChatGPT login</source><translation>Connexion à ChatGPT</translation></message>
   </context>
 </TS>

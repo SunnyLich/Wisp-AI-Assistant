@@ -98,8 +98,8 @@ Tagged releases are built by `.github/workflows/build.yml`.
 Create a release tag that matches the current `pyproject.toml` version:
 
 ```powershell
-git tag v0.9.3
-git push origin v0.9.3
+git tag 0.10.0
+git push origin 0.10.0
 ```
 
 The workflow builds:

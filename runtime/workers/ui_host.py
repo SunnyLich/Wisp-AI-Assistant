@@ -78,6 +78,7 @@ _CONTEXT_SOURCE_LABELS = {
     "Git/GitHub",
     "Memory",
     "Files",
+    "Attachments",
     "Context",
 }
 
@@ -234,6 +235,13 @@ _NOTICE_DYNAMIC_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^Could not read selected text: (?P<message>.+)$", "Could not read selected text: {message}"),
     (r"^Preparing local voice\.\.\. (?P<detail>.+)$", "Preparing local voice... {detail}"),
     (r"^Local speech warmup failed: (?P<message>.+)$", "Local speech warmup failed: {message}"),
+    (r"^Running: (?P<detail>.+)$", "Running: {detail}"),
+    (r"^ChatGPT started (?P<action>[^:]+): (?P<detail>.+)$", "ChatGPT started {action}: {detail}"),
+    (r"^ChatGPT started (?P<action>.+)$", "ChatGPT started {action}"),
+    (r"^ChatGPT (?P<action>[^:]+): (?P<status>.+)$", "ChatGPT {action}: {status}"),
+    (r"^Claude started (?P<action>.+)$", "Claude started {action}"),
+    (r"^Claude action: (?P<detail>.+)$", "Claude action: {detail}"),
+    (r"^Claude event: (?P<detail>.+)$", "Claude event: {detail}"),
 )
 
 
@@ -316,7 +324,10 @@ def _translate_notice_line(line: str) -> str:
     for pattern, template in _NOTICE_DYNAMIC_PATTERNS:
         match = re.match(pattern, line)
         if match:
-            return t(template).format(**match.groupdict())
+            groups = match.groupdict()
+            if groups.get("status"):
+                groups["status"] = t(groups["status"])
+            return t(template).format(**groups)
     return t(line)
 
 
@@ -2045,6 +2056,7 @@ class QtProtocolHost:
         self._agent_history_dialog: MacAgentHistoryDialog | None = None
         from core.conversation_store import store as conversation_store
         self._active_project_id = conversation_store.GENERAL_PROJECT_ID
+        self._conversation_scope_key = self._configured_conversation_scope()
         # Conversation hotkey/voice prompts continue when the intent overlay or
         # chat window selects a target. None means the next prompt starts fresh.
         self._active_conversation_idx: int | None = None
@@ -2410,6 +2422,7 @@ class QtProtocolHost:
         import config
 
         config.reload()
+        self._conversation_scope_key = self._configured_conversation_scope()
         try:
             if self._overlay is not None:
                 self._overlay.apply_settings()
@@ -2589,6 +2602,7 @@ class QtProtocolHost:
             conversation_options=self._intent_conversation_options(),
             project_options=self._intent_project_options(),
             active_project_id=self._intent_active_project_id(),
+            conversation_namespace_label=self._intent_conversation_namespace_label(),
             initial_custom_text=initial_custom_text,
             focus_overlay=focus_overlay,
         )
@@ -2641,6 +2655,7 @@ class QtProtocolHost:
                 overlay.hide_without_cancel()
 
         self._intent.selection_capture_requested.connect(_request_selection_capture)
+        self._intent.context_items_pasted.connect(self._context_items_dropped)
         def _context_source_removed(item_id: str, source_id: str) -> None:
             self.emit(
                 "ui.intent.context.remove",
@@ -3004,12 +3019,13 @@ class QtProtocolHost:
     ) -> dict[str, Any]:
         """Handle reply chunk for qt protocol host."""
         bubble = self._ensure_bubble()
-        if is_progress:
+        if is_progress and not is_thought:
             # Transient status (e.g. "Using tools...") — show it as a preview that
             # the first real reply token replaces, not appended reply content.
-            bubble.show_progress(text)
+            bubble.show_progress(_translate_notice_text(text))
         else:
-            bubble.append_chunk(text, is_thought=is_thought, annotations=annotations)
+            visible_text = _translate_notice_text(text) if is_progress else text
+            bubble.append_chunk(visible_text, is_thought=is_thought, annotations=annotations)
         return {"appended": len(text or ""), "is_progress": bool(is_progress)}
 
     def _live_voice_session(self, active: bool = False) -> dict[str, Any]:
@@ -3113,6 +3129,36 @@ class QtProtocolHost:
         except Exception:
             log.exception("failed to persist conversations")
 
+    @staticmethod
+    def _configured_conversation_scope() -> str:
+        """Read the independent history namespace from the active chat route."""
+        import config
+
+        mode = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+        owner = str(
+            getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+        ).strip().lower()
+        return mode if owner == "agent" and mode in {"codex", "claude"} else "wisp"
+
+    def _intent_conversation_scope(self) -> str:
+        """Return this UI host's current independent history namespace."""
+        return str(getattr(self, "_conversation_scope_key", "wisp") or "wisp")
+
+    def _intent_conversation_namespace_label(self) -> str:
+        """Return a compact visible label for provider-owned overlay history."""
+        scope = self._intent_conversation_scope()
+        if scope == "codex":
+            return "ChatGPT / Codex"
+        if scope == "claude":
+            return "Claude"
+        return ""
+
+    def _conversation_matches_intent_scope(self, conv: dict[str, Any]) -> bool:
+        """Return whether a conversation belongs in the active route's picker."""
+        from core.conversation_store import store as conversation_store
+
+        return conversation_store.conversation_scope(conv) == self._intent_conversation_scope()
+
     def _apply_memory_project(self) -> None:
         """Apply memory project."""
         try:
@@ -3135,7 +3181,10 @@ class QtProtocolHost:
         """Create project."""
         try:
             from core.conversation_store import store as conversation_store
-            return conversation_store.add_project(name)
+            scope = self._intent_conversation_scope()
+            if scope == "wisp":
+                return conversation_store.add_project(name)
+            return conversation_store.add_project(name, conversation_scope=scope)
         except Exception:
             log.exception("failed to create project %r", name)
             return None
@@ -3145,6 +3194,14 @@ class QtProtocolHost:
         previous_idx = self._active_conversation_idx
         if idx is None or (isinstance(idx, int) and 0 <= idx < len(self._all_conversations)):
             self._active_conversation_idx = idx
+        if isinstance(idx, int) and 0 <= idx < len(self._all_conversations):
+            conv = self._all_conversations[idx]
+            if not any(
+                str(message.get("content") or "").strip()
+                for message in conv.get("messages", [])
+                if isinstance(message, dict)
+            ):
+                conv["conversation_scope"] = self._intent_conversation_scope()
         if (
             isinstance(idx, int)
             and idx != previous_idx
@@ -3186,16 +3243,31 @@ class QtProtocolHost:
         """Return project options for the intent overlay selector."""
         from core.conversation_store import store as conversation_store
 
-        return conversation_store.load_projects()
+        scope = self._intent_conversation_scope()
+        return [
+            project
+            for project in conversation_store.load_projects()
+            if project.get("id") == conversation_store.GENERAL_PROJECT_ID
+            or conversation_store.project_scope(project) == scope
+        ]
 
     def _intent_active_project_id(self) -> str:
         """Return the project that should be selected when the intent overlay opens."""
         from core.conversation_store import store as conversation_store
 
         idx = self._active_conversation_idx
-        if isinstance(idx, int) and 0 <= idx < len(self._all_conversations):
+        if (
+            isinstance(idx, int)
+            and 0 <= idx < len(self._all_conversations)
+            and self._conversation_matches_intent_scope(self._all_conversations[idx])
+        ):
             return self._all_conversations[idx].get("project_id") or conversation_store.GENERAL_PROJECT_ID
-        return self._active_project_id or conversation_store.GENERAL_PROJECT_ID
+        valid_projects = {
+            str(project.get("id") or "") for project in self._intent_project_options()
+        }
+        if self._active_project_id in valid_projects:
+            return self._active_project_id
+        return conversation_store.GENERAL_PROJECT_ID
 
     def _intent_conversation_options(self, limit: int = 12) -> list[dict[str, Any]]:
         """Return latest-first chat history options for the intent overlay.
@@ -3211,12 +3283,17 @@ class QtProtocolHost:
             self._active_conversation_idx
             if isinstance(self._active_conversation_idx, int)
             and 0 <= self._active_conversation_idx < len(self._all_conversations)
+            and self._conversation_matches_intent_scope(
+                self._all_conversations[self._active_conversation_idx]
+            )
             else None
         )
         options: list[dict[str, Any]] = []
         seen: set[int] = set()
         counts_by_project: dict[str, int] = {}
         for idx in range(len(self._all_conversations) - 1, -1, -1):
+            if not self._conversation_matches_intent_scope(self._all_conversations[idx]):
+                continue
             project_id = self._all_conversations[idx].get("project_id") or conversation_store.GENERAL_PROJECT_ID
             if counts_by_project.get(project_id, 0) >= limit:
                 continue
@@ -3260,7 +3337,7 @@ class QtProtocolHost:
             self._set_active_project(project_id)
             return {"mode": "existing", "project_id": project_id}
         project_id = str(choice.get("project_id") or "").strip() or conversation_store.GENERAL_PROJECT_ID
-        valid = {str(project.get("id") or "") for project in conversation_store.load_projects()}
+        valid = {str(project.get("id") or "") for project in self._intent_project_options()}
         if project_id not in valid:
             project_id = conversation_store.GENERAL_PROJECT_ID
         self._set_active_project(project_id)
@@ -3276,7 +3353,10 @@ class QtProtocolHost:
             idx = int(choice.get("index"))
         except (TypeError, ValueError):
             idx = len(self._all_conversations) - 1 if self._all_conversations else -1
-        if 0 <= idx < len(self._all_conversations):
+        if (
+            0 <= idx < len(self._all_conversations)
+            and self._conversation_matches_intent_scope(self._all_conversations[idx])
+        ):
             self._active_conversation_idx = idx
             return {"mode": "continue", "index": idx}
         self._active_conversation_idx = None
@@ -3293,13 +3373,19 @@ class QtProtocolHost:
         idx = self._active_conversation_idx
         history: list[dict] = []
         context = ""
-        if idx is not None and 0 <= idx < len(self._all_conversations):
+        if (
+            idx is not None
+            and 0 <= idx < len(self._all_conversations)
+            and self._conversation_matches_intent_scope(self._all_conversations[idx])
+        ):
             conv = self._all_conversations[idx]
             conversation_id = str(conv.get("id") or "")
             project = conv.get("project_id") or conversation_store.GENERAL_PROJECT_ID
             file_context = list(conv.get("file_context") or [])
             tool_context = self._normalized_tool_context(conv.get("tool_context") or {})
             context_policy = self._normalized_context_policy(conv.get("context_policy") or {})
+            harness_sessions = dict(conv.get("harness_sessions") or {})
+            harness_cwd = self._conversation_harness_cwd(conv)
             context = str(conv.get("context") or "")
             for m in conv.get("messages", []):
                 if (
@@ -3319,6 +3405,8 @@ class QtProtocolHost:
             file_context = []
             tool_context = {}
             context_policy = {}
+            harness_sessions = {}
+            harness_cwd = str(Path.cwd())
         memory_project = None if project == conversation_store.GENERAL_PROJECT_ID else project
         return {
             "history": history,
@@ -3328,7 +3416,49 @@ class QtProtocolHost:
             "file_context": file_context,
             "tool_context": tool_context,
             "context_policy": context_policy,
+            "harness_sessions": harness_sessions,
+            "harness_cwd": harness_cwd,
         }
+
+    @staticmethod
+    def _conversation_harness_cwd(conv: dict[str, Any]) -> str:
+        """Infer a harness workspace from existing local context and attachments."""
+        import config
+        from core.conversation_store import store as conversation_store
+
+        provider = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+        sessions = conv.get("harness_sessions")
+        if provider in {"codex", "claude"} and isinstance(sessions, dict):
+            session = sessions.get(provider)
+            if isinstance(session, dict):
+                raw = str(session.get("cwd") or "").strip()
+                if raw:
+                    path = Path(raw).expanduser()
+                    if path.is_dir():
+                        return str(path.resolve())
+
+        for item in conv.get("file_context", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("root", "path"):
+                raw = str(item.get(key) or "").strip()
+                if not raw:
+                    continue
+                path = Path(raw).expanduser()
+                if path.is_file():
+                    path = path.parent
+                if path.is_dir():
+                    return str(path)
+        for message in reversed(conv.get("messages", []) or []):
+            if not isinstance(message, dict):
+                continue
+            for ref in conversation_store.normalize_attachments(message.get("attachments")):
+                path = conversation_store.attachment_path(ref)
+                if path.is_file():
+                    return str(path.parent)
+                if path.is_dir():
+                    return str(path)
+        return str(Path.cwd())
 
     def _make_chat_send_fn(self):
         """Create chat send fn."""
@@ -3345,7 +3475,10 @@ class QtProtocolHost:
                 payload["context_policy"] = normalized_policy
             idx = self._active_conversation_idx
             if idx is not None and 0 <= idx < len(self._all_conversations):
-                payload["conversation_id"] = str(self._all_conversations[idx].get("id") or "")
+                active_conversation = self._all_conversations[idx]
+                payload["conversation_id"] = str(active_conversation.get("id") or "")
+                payload["harness_sessions"] = dict(active_conversation.get("harness_sessions") or {})
+                payload["harness_cwd"] = self._conversation_harness_cwd(active_conversation)
                 if not normalized_policy:
                     stored_policy = self._normalized_context_policy(
                         self._all_conversations[idx].get("context_policy") or {}
@@ -3383,21 +3516,38 @@ class QtProtocolHost:
                     elif kind == "done":
                         final_text = ""
                         file_context = []
+                        assistant_attachments = []
                         tool_context = {}
                         context_snippets = []
                         annotations = []
                         user_annotations = []
+                        display_segments = []
+                        harness = {}
                         if isinstance(payload, dict):
                             final_text = str(payload.get("text") or "")
                             file_context = list(payload.get("file_context") or [])
+                            assistant_attachments = list(payload.get("assistant_attachments") or [])
                             tool_context = self._normalized_tool_context(payload.get("tool_context") or {})
                             context_snippets = list(payload.get("context_snippets") or [])
                             annotations = list(payload.get("annotations") or [])
                             user_annotations = list(payload.get("user_annotations") or [])
+                            display_segments = self._normalized_display_segments(
+                                payload.get("display_segments") or []
+                            )
+                            harness = dict(payload.get("harness") or {})
                         elif payload is not None:
                             final_text = str(payload)
-                        if file_context or tool_context or context_snippets or annotations or user_annotations:
-                            yield {
+                        if (
+                            file_context
+                            or assistant_attachments
+                            or tool_context
+                            or context_snippets
+                            or annotations
+                            or user_annotations
+                            or display_segments
+                            or harness
+                        ):
+                            metadata = {
                                 "type": "metadata",
                                 "file_context": file_context,
                                 "tool_context": tool_context,
@@ -3405,6 +3555,13 @@ class QtProtocolHost:
                                 "annotations": annotations,
                                 "user_annotations": user_annotations,
                             }
+                            if assistant_attachments:
+                                metadata["assistant_attachments"] = assistant_attachments
+                            if display_segments:
+                                metadata["display_segments"] = display_segments
+                            if harness:
+                                metadata["harness"] = harness
+                            yield metadata
                         if final_text and final_text != streamed_text:
                             yield {"type": "final", "text": final_text}
                         return
@@ -3464,8 +3621,22 @@ class QtProtocolHost:
         context_snippets: list | None = None,
         annotations: list | None = None,
         user_annotations: list | None = None,
+        display_segments: list | None = None,
+        assistant_attachments: list | None = None,
+        harness: dict | None = None,
     ) -> dict[str, Any]:
         """Handle chat done for qt protocol host."""
+        import uuid as _uuid
+
+        conversation_id = "conversation"
+        idx = self._active_conversation_idx
+        if idx is not None and 0 <= idx < len(self._all_conversations):
+            conversation_id = str(self._all_conversations[idx].get("id") or conversation_id)
+        durable_attachments = self._persist_assistant_attachments(
+            assistant_attachments or [],
+            conversation_id=conversation_id,
+            message_id=f"generated-{_uuid.uuid4()}",
+        )
         stream = self._chat_stream(request_id)
         if stream is not None:
             stream.put(
@@ -3478,6 +3649,9 @@ class QtProtocolHost:
                         "context_snippets": list(context_snippets or []),
                         "annotations": list(annotations or []),
                         "user_annotations": list(user_annotations or []),
+                        "display_segments": self._normalized_display_segments(display_segments or []),
+                        "assistant_attachments": durable_attachments,
+                        "harness": dict(harness or {}),
                     },
                 )
             )
@@ -3673,6 +3847,9 @@ class QtProtocolHost:
         context_policy: dict | None = None,
         user_annotations: list | None = None,
         assistant_annotations: list | None = None,
+        display_segments: list | None = None,
+        assistant_attachments: list | None = None,
+        harness: dict | None = None,
         append_user: bool = True,
         conversation_index: int | None = None,
     ) -> dict[str, Any]:
@@ -3684,6 +3861,16 @@ class QtProtocolHost:
 
         now = datetime.now(UTC).isoformat()
         idx = conversation_index if conversation_index is not None else self._active_conversation_idx
+        conversation_scope = self._intent_conversation_scope()
+        if (
+            idx is not None
+            and 0 <= idx < len(self._all_conversations)
+            and not self._conversation_matches_intent_scope(self._all_conversations[idx])
+            and not bool((harness or {}).get("clear_session"))
+        ):
+            # A route switch (native Wisp -> Codex/Claude or back) must never
+            # append into the other route's conversation.
+            idx = None
         if idx is not None and 0 <= idx < len(self._all_conversations):
             conv_id = str(self._all_conversations[idx].get("id") or _uuid.uuid4())
             self._all_conversations[idx]["id"] = conv_id
@@ -3723,10 +3910,34 @@ class QtProtocolHost:
             "content": assistant,
             "created_at": now,
         }
+        normalized_assistant_attachments = self._persist_assistant_attachments(
+            assistant_attachments or [],
+            conversation_id=conv_id,
+            message_id=str(assistant_msg["id"]),
+        )
+        if normalized_assistant_attachments:
+            assistant_msg["attachments"] = normalized_assistant_attachments
         if assistant_annotations:
             assistant_msg["annotations"] = list(assistant_annotations)
+        normalized_display_segments = self._normalized_display_segments(display_segments or [])
+        if normalized_display_segments:
+            assistant_msg["display_segments"] = normalized_display_segments
+            assistant_msg["display_content"] = self._display_content_from_segments(normalized_display_segments)
         normalized_file_context = self._normalized_file_context(file_context or [])
         normalized_tool_context = self._normalized_tool_context(tool_context or {})
+        harness_info = dict(harness or {})
+        harness_provider = str(harness_info.get("provider") or "").strip().lower()
+        harness_session_id = str(harness_info.get("session_id") or "").strip()
+        clear_harness_session = (
+            harness_provider in {"codex", "claude"}
+            and bool(harness_info.get("clear_session"))
+        )
+        normalized_harness = {
+            "provider": harness_provider,
+            "session_id": harness_session_id,
+            "cwd": str(harness_info.get("cwd") or ""),
+            "updated_at": now,
+        } if harness_provider in {"codex", "claude"} and harness_session_id else {}
         if normalized_file_context:
             assistant_msg["file_context"] = normalized_file_context
         if normalized_tool_context:
@@ -3735,6 +3946,7 @@ class QtProtocolHost:
         if idx is not None and 0 <= idx < len(self._all_conversations):
             # Continue the active conversation (the one selected in the chat window).
             conv = self._all_conversations[idx]
+            conv["conversation_scope"] = conversation_scope
             conv.setdefault("created_at", now)
             conv["updated_at"] = now
             if context_text:
@@ -3743,13 +3955,21 @@ class QtProtocolHost:
             messages = conv.setdefault("messages", [])
             if append_user:
                 messages.append(user_msg)
-            if assistant:
+            if assistant or normalized_assistant_attachments:
                 messages.append(assistant_msg)
             self._merge_file_context(conv, normalized_file_context)
             self._merge_tool_context(conv, normalized_tool_context)
             normalized_policy = self._normalized_context_policy(context_policy or {})
             if normalized_policy:
                 conv["context_policy"] = normalized_policy
+            if clear_harness_session:
+                sessions = conv.get("harness_sessions")
+                if isinstance(sessions, dict):
+                    sessions.pop(harness_provider, None)
+                    if not sessions:
+                        conv.pop("harness_sessions", None)
+            elif normalized_harness:
+                conv.setdefault("harness_sessions", {})[harness_provider] = normalized_harness
             self._persist_conversations()
             if self._chat_is_visible():
                 self._chat.sync_conversation(idx)
@@ -3760,13 +3980,22 @@ class QtProtocolHost:
             {
                 "id": conv_id,
                 "project_id": self._active_project_id,
-                "messages": [msg for msg in (user_msg if append_user else None, assistant_msg if assistant else None) if msg],
+                "conversation_scope": conversation_scope,
+                "messages": [
+                    msg
+                    for msg in (
+                        user_msg if append_user else None,
+                        assistant_msg if assistant or normalized_assistant_attachments else None,
+                    )
+                    if msg
+                ],
                 "context": context_text,
                 "created_at": now,
                 "updated_at": now,
                 "file_context": normalized_file_context,
                 "tool_context": normalized_tool_context,
                 "context_policy": self._normalized_context_policy(context_policy or {}),
+                "harness_sessions": ({harness_provider: normalized_harness} if normalized_harness else {}),
             }
         )
         self._active_conversation_idx = len(self._all_conversations) - 1
@@ -3809,6 +4038,81 @@ class QtProtocolHost:
             "continued": bool(result.get("continued")),
             "count": result.get("count"),
         }
+
+    @staticmethod
+    def _normalized_display_segments(items: object) -> list[dict[str, Any]]:
+        """Return JSON-safe chronological thought/reply segments for local history."""
+        if not isinstance(items, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for raw in items:
+            if isinstance(raw, dict):
+                text = str(raw.get("text") or "")
+                is_thought = bool(raw.get("is_thought"))
+            elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+                text = str(raw[0] or "")
+                is_thought = bool(raw[1])
+            else:
+                continue
+            if not text:
+                continue
+            if normalized and bool(normalized[-1]["is_thought"]) == is_thought:
+                normalized[-1]["text"] = str(normalized[-1]["text"]) + text
+            else:
+                normalized.append({"text": text, "is_thought": is_thought})
+        return normalized
+
+    @staticmethod
+    def _persist_assistant_attachments(
+        items: object,
+        *,
+        conversation_id: str,
+        message_id: str,
+    ) -> list[dict[str, Any]]:
+        """Turn generated-image payloads into durable chat attachment refs."""
+        from core.conversation_store import store as conversation_store
+
+        if not isinstance(items, list):
+            return []
+        refs: list[dict[str, Any]] = []
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            data_url = str(raw.get("data_url") or "").strip()
+            path = str(raw.get("path") or "").strip()
+            name = str(raw.get("name") or Path(path).name or "generated-image.png")
+            source = str(raw.get("source") or "generated_image")
+            try:
+                if data_url:
+                    ref = conversation_store.save_image_attachment(
+                        data_url,
+                        conversation_id=conversation_id,
+                        message_id=message_id,
+                        source=source,
+                        name=name,
+                    )
+                elif path:
+                    ref = conversation_store.external_file_attachment(
+                        path,
+                        kind="image",
+                        source=source,
+                    )
+                    ref["name"] = name
+                else:
+                    continue
+            except Exception:
+                log.exception("failed to persist generated image attachment")
+                continue
+            refs.append(ref)
+        return conversation_store.normalize_attachments(refs)
+
+    @staticmethod
+    def _display_content_from_segments(items: list[dict[str, Any]]) -> str:
+        """Serialize structured activity for the existing tagged history renderer."""
+        return "".join(
+            f"<thought>{item['text']}</thought>" if item.get("is_thought") else str(item.get("text") or "")
+            for item in items
+        )
 
     @staticmethod
     def _normalized_file_context(items: list) -> list[dict[str, Any]]:

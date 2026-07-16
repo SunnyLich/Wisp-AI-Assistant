@@ -900,6 +900,27 @@ Object.assign(I18N.reg['zh-Hant'].tr, {
 
 });
 
+Object.assign(I18N.reg['zh-Hant'].tr, {
+  "Sensitive text filtered before cloud sends": "傳送至雲端前過濾敏感文字",
+  "Built-in patterns — and optional local AI — replace likely sensitive text before cloud-bound requests are sent.": "內建模式比對和選用的本機 AI 會在雲端請求送出前替換可能的敏感文字。",
+  "Choose your privacy mode": "選擇隱私模式",
+  "Wisp offers three mutually exclusive settings under Settings → App → Privacy mode:": "Wisp 在<strong>設定 → 應用程式 → 隱私模式</strong>下提供三個互斥選項：",
+  "Mode": "模式",
+  "What it does": "功能",
+  "Off": "<strong>關閉</strong>",
+  "No automatic privacy filtering.": "不進行自動隱私過濾。",
+  "Built-in (default)": "<strong>內建</strong>（預設）",
+  "Local pattern detection for credentials, tokens, payment details, and other structured secrets.": "使用本機模式偵測認證資訊、權杖、付款資料及其他結構化機密。",
+  "Advanced": "<strong>進階</strong>",
+  "The built-in detector plus a local, context-aware AI model for names, addresses, email addresses, phone numbers, private URLs and dates, account numbers, and secrets.": "在內建偵測器之外，使用本機、可感知上下文的 AI 模型偵測姓名、地址、電子郵件地址、電話號碼、私人 URL 和日期、帳號及機密。",
+  "Advanced privacy runs locally": "進階隱私功能在本機執行",
+  "Advanced mode uses the optional OpenAI Privacy Filter on your computer. Unfiltered text is not sent to a cloud service for detection. Installing it downloads about 2.8 GB plus a dedicated local runtime.": "進階模式會在您的電腦上使用選用的 <a href=\"https://openai.com/index/introducing-openai-privacy-filter/\" target=\"_blank\" rel=\"noopener\">OpenAI Privacy Filter</a>。未經過濾的文字不會傳送到雲端服務進行偵測。安裝時需下載約 2.8 GB 的內容以及專用本機執行環境。",
+  "Wisp loads the advanced model into memory and warms it in the background when Wisp starts or after you enable Advanced mode. Warm-up may take tens of seconds on a CPU. If you send a request before it finishes, that request waits; later scans reuse the loaded model and are faster.": "Wisp 啟動時或您啟用進階模式後，會在背景將進階模型載入記憶體並進行預熱。在 CPU 上，預熱可能需要數十秒。如果您在預熱完成前傳送請求，該請求會等待；後續掃描會重複使用已載入的模型，因此速度更快。",
+  "Wisp merges the AI model's findings with the built-in detector, replaces sensitive spans with stable session placeholders such as [PERSON_1], and can show a review before the request is sent. It then checks the redacted text again. If the model is unavailable, detection fails, or sensitive text remains, Wisp blocks the cloud send.": "Wisp 會合併 AI 模型與內建偵測器的結果，將敏感片段替換為 <code>[PERSON_1]</code> 等穩定的工作階段預留位置，並可在請求送出前顯示審查畫面。隨後，它會再次檢查去識別化文字。如果模型無法使用、偵測失敗或仍有敏感文字殘留，Wisp 會阻止傳送至雲端。",
+  "Know the limits": "了解限制",
+  "Privacy filtering reduces accidental disclosure; it is not a guarantee of anonymization or regulatory compliance. Review high-sensitivity content before sending it to any provider.": "隱私過濾可以降低意外洩露的風險，但不能保證匿名化或符合法規要求。向任何提供商傳送高度敏感的內容之前，請務必進行審查。",
+});
+
 Object.assign(I18N.reg['zh-Hant'].ui, {
   closeDemo: '關閉放大的示範',
 });

@@ -13,6 +13,151 @@ import config
 
 class ConfigEnvTests(unittest.TestCase):
     """Test case for config env tests behavior."""
+    def test_reload_parses_chat_harness_and_conversation_owner(self):
+        """The two top-level conversation selectors load independently."""
+        previous = {
+            "CHAT_EXECUTION_MODE": getattr(config, "CHAT_EXECUTION_MODE", "wisp"),
+            "CHAT_CONVERSATION_OWNER": getattr(config, "CHAT_CONVERSATION_OWNER", "wisp"),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "CHAT_EXECUTION_MODE": "claude",
+                    "CHAT_CONVERSATION_OWNER": "agent",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.CHAT_EXECUTION_MODE, "claude")
+            self.assertEqual(config.CHAT_CONVERSATION_OWNER, "agent")
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_local_harness_defaults_to_agent_owned_conversation(self):
+        """Choosing Codex without an owner override should resume Codex sessions."""
+        previous = {
+            "CHAT_EXECUTION_MODE": getattr(config, "CHAT_EXECUTION_MODE", "wisp"),
+            "CHAT_CONVERSATION_OWNER": getattr(config, "CHAT_CONVERSATION_OWNER", "wisp"),
+            "SETTINGS": config.SETTINGS,
+        }
+        prior_owner = os.environ.pop("CHAT_CONVERSATION_OWNER", None)
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {"CHAT_EXECUTION_MODE": "codex"},
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.CHAT_EXECUTION_MODE, "codex")
+            self.assertEqual(config.CHAT_CONVERSATION_OWNER, "agent")
+        finally:
+            if prior_owner is not None:
+                os.environ["CHAT_CONVERSATION_OWNER"] = prior_owner
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_wisp_execution_forces_wisp_owned_conversation(self):
+        """The built-in Wisp engine cannot own a Codex or Claude session."""
+        previous = {
+            "CHAT_EXECUTION_MODE": getattr(config, "CHAT_EXECUTION_MODE", "wisp"),
+            "CHAT_CONVERSATION_OWNER": getattr(config, "CHAT_CONVERSATION_OWNER", "wisp"),
+            "SETTINGS": config.SETTINGS,
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "CHAT_EXECUTION_MODE": "wisp",
+                    "CHAT_CONVERSATION_OWNER": "agent",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.CHAT_EXECUTION_MODE, "wisp")
+            self.assertEqual(config.CHAT_CONVERSATION_OWNER, "wisp")
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_reload_parses_live_harness_controls(self):
+        previous = {
+            name: getattr(config, name, None)
+            for name in (
+                "WISP_CODEX_MODEL",
+                "WISP_CODEX_WORKSPACE",
+                "WISP_CODEX_SYSTEM_PROMPT",
+                "WISP_CODEX_FAST_MODE",
+                "WISP_CODEX_APPROVAL_MODE",
+                "WISP_CLAUDE_MODEL",
+                "WISP_CLAUDE_WORKSPACE",
+                "WISP_CLAUDE_SYSTEM_PROMPT",
+                "WISP_CLAUDE_APPROVAL_MODE",
+                "WISP_CLAUDE_REASONING_SUMMARY",
+                "SETTINGS",
+            )
+        }
+        try:
+            with patch("config.load_dotenv"), patch.dict(
+                os.environ,
+                {
+                    "WISP_CODEX_MODEL": "gpt-test",
+                    "WISP_CODEX_WORKSPACE": "/tmp/codex-project",
+                    "WISP_CODEX_SYSTEM_PROMPT": "ChatGPT-only rules.",
+                    "WISP_CODEX_FAST_MODE": "true",
+                    "WISP_CODEX_APPROVAL_MODE": "full_access",
+                    "WISP_CLAUDE_MODEL": "opus",
+                    "WISP_CLAUDE_WORKSPACE": "/tmp/claude-project",
+                    "WISP_CLAUDE_SYSTEM_PROMPT": "Claude-only rules.",
+                    "WISP_CLAUDE_APPROVAL_MODE": "full_access",
+                    "WISP_CLAUDE_REASONING_SUMMARY": "summarized",
+                },
+                clear=False,
+            ):
+                config.reload()
+
+            self.assertEqual(config.WISP_CODEX_MODEL, "gpt-test")
+            self.assertEqual(config.WISP_CODEX_WORKSPACE, "/tmp/codex-project")
+            self.assertEqual(config.WISP_CODEX_SYSTEM_PROMPT, "ChatGPT-only rules.")
+            self.assertTrue(config.WISP_CODEX_FAST_MODE)
+            self.assertEqual(config.WISP_CODEX_APPROVAL_MODE, "full_access")
+            self.assertEqual(config.WISP_CLAUDE_MODEL, "opus")
+            self.assertEqual(config.WISP_CLAUDE_WORKSPACE, "/tmp/claude-project")
+            self.assertEqual(config.WISP_CLAUDE_SYSTEM_PROMPT, "Claude-only rules.")
+            self.assertEqual(config.WISP_CLAUDE_APPROVAL_MODE, "full_access")
+            self.assertEqual(config.WISP_CLAUDE_REASONING_SUMMARY, "summarized")
+        finally:
+            for name, value in previous.items():
+                setattr(config, name, value)
+
+    def test_external_harness_system_prompts_default_to_empty(self):
+        """Native ChatGPT and Claude instructions stay untouched until customized."""
+        previous = {
+            "WISP_CODEX_SYSTEM_PROMPT": getattr(config, "WISP_CODEX_SYSTEM_PROMPT", ""),
+            "WISP_CLAUDE_SYSTEM_PROMPT": getattr(config, "WISP_CLAUDE_SYSTEM_PROMPT", ""),
+            "SETTINGS": config.SETTINGS,
+        }
+        prior_codex = os.environ.pop("WISP_CODEX_SYSTEM_PROMPT", None)
+        prior_claude = os.environ.pop("WISP_CLAUDE_SYSTEM_PROMPT", None)
+        try:
+            with patch("config.load_dotenv"):
+                config.reload()
+
+            self.assertEqual(config.WISP_CODEX_SYSTEM_PROMPT, "")
+            self.assertEqual(config.WISP_CLAUDE_SYSTEM_PROMPT, "")
+        finally:
+            if prior_codex is not None:
+                os.environ["WISP_CODEX_SYSTEM_PROMPT"] = prior_codex
+            if prior_claude is not None:
+                os.environ["WISP_CLAUDE_SYSTEM_PROMPT"] = prior_claude
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_reload_parses_icon_size_and_bool_aliases(self):
         """Verify reload parses icon size and bool aliases behavior."""
         previous = {

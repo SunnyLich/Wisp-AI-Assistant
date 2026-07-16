@@ -340,8 +340,21 @@ def _respond(req_id: Any, result: Any = None, error: str | None = None) -> None:
     print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
+def _configure_protocol_stdio() -> None:
+    """Force the JSONL protocol streams to use UTF-8 on every platform."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="strict")
+        except (OSError, ValueError):
+            continue
+
+
 def main() -> int:
     """Handle main for addon host."""
+    _configure_protocol_stdio()
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", required=True)
     parser.add_argument("--folder", required=True)

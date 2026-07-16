@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from core.agent.runner import (
     AgentPermissions,
     AgentRunControl,
@@ -24,6 +26,16 @@ from core.agent.runner import (
     ScopeViolation,
     ToolResult,
 )
+
+
+@pytest.fixture(autouse=True)
+def _use_builtin_privacy_for_agent_runner(monkeypatch: pytest.MonkeyPatch):
+    """Keep model-call tests independent from a developer's privacy profile."""
+    import config
+
+    monkeypatch.setattr(config, "PRIVACY_MODE", "builtin", raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+    monkeypatch.setattr(config, "PRIVACY_AI_ENABLED", False, raising=False)
 
 
 @dataclass

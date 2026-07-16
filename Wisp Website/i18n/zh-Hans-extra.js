@@ -1095,3 +1095,24 @@ Object.assign(I18N.reg['zh-Hans'].tr, {
   "Ctrl Q on Windows; Ctrl Alt Space on macOS/Linux": "<kbd>Ctrl Q</kbd>（Windows）；<kbd>Ctrl Alt Space</kbd>（macOS/Linux）",
   "Fast hosted open-model inference": "快速的托管开放模型推理",
 });
+
+Object.assign(I18N.reg['zh-Hans'].tr, {
+  "Sensitive text filtered before cloud sends": "云端发送前过滤敏感文本",
+  "Built-in patterns — and optional local AI — replace likely sensitive text before cloud-bound requests are sent.": "内置模式匹配和可选的本地 AI 会在云端请求发出前替换可能的敏感文本。",
+  "Choose your privacy mode": "选择隐私模式",
+  "Wisp offers three mutually exclusive settings under Settings → App → Privacy mode:": "Wisp 在<strong>设置 → 应用 → 隐私模式</strong>下提供三个互斥选项：",
+  "Mode": "模式",
+  "What it does": "功能",
+  "Off": "<strong>关闭</strong>",
+  "No automatic privacy filtering.": "不进行自动隐私过滤。",
+  "Built-in (default)": "<strong>内置</strong>（默认）",
+  "Local pattern detection for credentials, tokens, payment details, and other structured secrets.": "使用本地模式检测凭据、令牌、付款信息及其他结构化机密。",
+  "Advanced": "<strong>高级</strong>",
+  "The built-in detector plus a local, context-aware AI model for names, addresses, email addresses, phone numbers, private URLs and dates, account numbers, and secrets.": "在内置检测器之外，使用本地、可感知上下文的 AI 模型检测姓名、地址、电子邮件地址、电话号码、私人 URL 和日期、账号及机密。",
+  "Advanced privacy runs locally": "高级隐私功能在本地运行",
+  "Advanced mode uses the optional OpenAI Privacy Filter on your computer. Unfiltered text is not sent to a cloud service for detection. Installing it downloads about 2.8 GB plus a dedicated local runtime.": "高级模式会在您的电脑上使用可选的 <a href=\"https://openai.com/index/introducing-openai-privacy-filter/\" target=\"_blank\" rel=\"noopener\">OpenAI Privacy Filter</a>。未经筛选的文本不会发送到云服务进行检测。安装时需下载约 2.8 GB 的内容以及专用本地运行环境。",
+  "Wisp loads the advanced model into memory and warms it in the background when Wisp starts or after you enable Advanced mode. Warm-up may take tens of seconds on a CPU. If you send a request before it finishes, that request waits; later scans reuse the loaded model and are faster.": "Wisp 启动时或您启用高级模式后，会在后台将高级模型加载到内存并进行预热。在 CPU 上，预热可能需要数十秒。如果您在预热完成前发送请求，该请求会等待；后续扫描会复用已加载的模型，因此速度更快。",
+  "Wisp merges the AI model's findings with the built-in detector, replaces sensitive spans with stable session placeholders such as [PERSON_1], and can show a review before the request is sent. It then checks the redacted text again. If the model is unavailable, detection fails, or sensitive text remains, Wisp blocks the cloud send.": "Wisp 会合并 AI 模型与内置检测器的结果，将敏感片段替换为 <code>[PERSON_1]</code> 等稳定的会话占位符，并可在请求发出前显示审查界面。随后，它会再次检查脱敏文本。如果模型不可用、检测失败或仍有敏感文本残留，Wisp 会阻止向云端发送。",
+  "Know the limits": "了解限制",
+  "Privacy filtering reduces accidental disclosure; it is not a guarantee of anonymization or regulatory compliance. Review high-sensitivity content before sending it to any provider.": "隐私过滤可以降低意外泄露的风险，但不能保证匿名化或符合监管要求。向任何提供商发送高度敏感的内容之前，请务必进行审查。",
+});

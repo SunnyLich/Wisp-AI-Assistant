@@ -12,6 +12,8 @@ from wisp_brain import handlers
 def test_config_reload_handler_registered():
     """Verify config reload handler registered behavior."""
     assert "brain.config.reload" in handlers.HANDLERS
+    assert "brain.privacy.prewarm" in handlers.HANDLERS
+    assert "brain.harness.prewarm" in handlers.HANDLERS
 
 
 def test_llm_test_handler_registered():
@@ -72,6 +74,68 @@ def test_config_reload_calls_config_reload(monkeypatch):
         "llm_provider": "anthropic",
         "llm_model": "claude-sonnet-4-5",
         "tts_provider": "cartesia",
+    }
+
+
+def test_privacy_prewarm_skips_non_advanced_mode(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config, "PRIVACY_MODE", "builtin", raising=False)
+
+    assert handlers.HANDLERS["brain.privacy.prewarm"]() == {
+        "ready": False,
+        "skipped": True,
+        "reason": "disabled",
+    }
+
+
+def test_privacy_prewarm_loads_installed_advanced_model(monkeypatch):
+    import config
+    from core import privacy_model
+
+    monkeypatch.setattr(config, "PRIVACY_MODE", "advanced", raising=False)
+    monkeypatch.setattr(privacy_model, "model_status", lambda: {"valid": True})
+    monkeypatch.setattr(
+        privacy_model,
+        "prewarm",
+        lambda: {"ready": True, "cached": False, "elapsed_seconds": 12.5},
+    )
+
+    assert handlers.HANDLERS["brain.privacy.prewarm"]() == {
+        "ready": True,
+        "cached": False,
+        "elapsed_seconds": 12.5,
+    }
+
+
+def test_harness_prewarm_skips_when_codex_is_not_selected(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp", raising=False)
+
+    assert handlers.HANDLERS["brain.harness.prewarm"]() == {
+        "ready": False,
+        "skipped": True,
+        "provider": "wisp",
+    }
+
+
+def test_harness_prewarm_starts_reusable_codex_server(monkeypatch):
+    import config
+    from core.harness_clients import codex
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "codex", raising=False)
+    monkeypatch.setattr(
+        codex,
+        "prewarm_codex",
+        lambda: {"ready": True, "cached": False, "backend": "codex-test"},
+    )
+
+    assert handlers.HANDLERS["brain.harness.prewarm"]() == {
+        "provider": "codex",
+        "ready": True,
+        "cached": False,
+        "backend": "codex-test",
     }
 
 
