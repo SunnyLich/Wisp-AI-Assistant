@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QTextLayout,
     QTextOption,
 )
 from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QPlainTextEdit, QToolTip, QWidget
@@ -1608,12 +1609,33 @@ class IntentOverlay(QWidget):
         self._prompt_resize_pending = False
         if not self._prompt_input_visible() or self._input_line.isHidden():
             return
-        document = self._input_line.document()
-        # Some offscreen Qt platform plugins defer propagating the viewport
-        # width into QPlainTextEdit's document layout. Force the current width
-        # before measuring so wrapped prompts expand consistently on Linux CI.
-        document.setTextWidth(max(1, self._input_line.viewport().width()))
-        document_h = int(document.documentLayout().documentSize().height() + 0.999)
+        # QPlainTextDocumentLayout can report a single-line height until the
+        # offscreen Linux platform plugin paints the editor. Measure wrapping
+        # explicitly so synchronous resizes behave the same on every platform.
+        # The viewport can temporarily retain QPlainTextEdit's 100 px default
+        # width before an offscreen backend propagates setGeometry(). The
+        # editor geometry is authoritative. QTextLayout measures the glyph
+        # area directly, so its line width should use that stable geometry.
+        text_width = max(1, self._input_line.width())
+        wrap_option = QTextOption()
+        wrap_option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        document_h = 0.0
+        font = self._input_line.font()
+        line_height = float(QFontMetrics(font).lineSpacing())
+        for paragraph in self._input_line.toPlainText().split("\n"):
+            layout = QTextLayout(paragraph or " ", font)
+            layout.setTextOption(wrap_option)
+            layout.beginLayout()
+            paragraph_h = 0.0
+            while True:
+                line = layout.createLine()
+                if not line.isValid():
+                    break
+                line.setLineWidth(text_width)
+                paragraph_h += line.height()
+            layout.endLayout()
+            document_h += max(line_height, paragraph_h)
+        document_h = int(document_h + 0.999)
         required_h = max(_INPUT_MIN_H, document_h + 12)
         max_input_h = self._prompt_input_max_height()
         desired_h = min(max_input_h, required_h)
