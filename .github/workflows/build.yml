@@ -59,6 +59,14 @@ jobs:
         shell: pwsh
         run: .\tools\build_exe.ps1 -Clean -Yes
 
+      - name: Ensure PowerShell Gallery is available
+        shell: pwsh
+        run: |
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
       - name: Sign in to Azure
         uses: azure/login@v3
         with:
