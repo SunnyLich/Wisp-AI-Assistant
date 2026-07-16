@@ -34,8 +34,8 @@ Usage:
 
 from __future__ import annotations
 
-import config
 import json
+import logging
 import os
 import re
 import sys
@@ -43,19 +43,20 @@ import tempfile
 import time
 import unicodedata
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from html import unescape as html_unescape
 from html.parser import HTMLParser
 from threading import Lock
-from typing import Any, Optional
-from urllib.parse import parse_qs, urlencode, urlparse, unquote
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
 
-from core.system import macos_safety
-from core.system.native_locks import ssl_init_lock
-from core.system import sdk_clients
-from core.system.safe import swallow
+import config
 from core import context_fetcher_page
+from core.system import macos_safety, sdk_clients
+from core.system.native_locks import ssl_init_lock
+from core.system.safe import swallow
 
+_log = logging.getLogger("wisp.context_fetcher")
 _IS_WIN = sys.platform == "win32"
 _IS_MAC = sys.platform == "darwin"
 
@@ -176,7 +177,7 @@ def get_temp_path() -> str:
 _fs_events_buf: deque[str] = deque(maxlen=30)
 _fs_events_lock = Lock()
 _fs_observer = None   # watchdog Observer | False
-_context_window: "WindowInfo | None" = None  # window captured at last fetch_and_save()
+_context_window: WindowInfo | None = None  # window captured at last fetch_and_save()
 
 
 def start_fs_watcher(paths: list[str] | None = None) -> None:
@@ -311,7 +312,7 @@ def _fetch_browser_content(url: str, max_chars: int | None = None) -> str:
         return ""
 
     try:
-        import requests                        # type: ignore
+        import requests  # type: ignore
 
         resp = requests.get(
             url,
@@ -351,6 +352,13 @@ def _search_online(query: str, max_results: int = 5) -> list[dict]:
         return []
 
     try:
+        from core.privacy_gateway import scrub_cloud_fields
+
+        privacy_session, scrubbed, _privacy_report = scrub_cloud_fields(
+            {"search_query": query.strip()},
+            session_id="context:online-search",
+        )
+        query = scrubbed["search_query"]
         with ssl_init_lock():
             client = sdk_clients.anthropic_client(api_key=config.ANTHROPIC_API_KEY)
 
@@ -400,7 +408,12 @@ def _search_online(query: str, max_results: int = 5) -> list[dict]:
                         if cited_text and not results[url]["snippet"]:
                             results[url]["snippet"] = _redact(cited_text)
 
-        return list(results.values())[:max_results]
+        output = list(results.values())[:max_results]
+        if privacy_session is not None:
+            for item in output:
+                item["title"] = privacy_session.restore(str(item.get("title") or ""))
+                item["snippet"] = privacy_session.restore(str(item.get("snippet") or ""))
+        return output
 
     except Exception as exc:
         print(f"[context_fetcher] online search failed: {exc}")
@@ -574,8 +587,7 @@ def _osascript_run(script: str, timeout: float = 4.0) -> str:
     try:
         proc = subprocess.run(
             ["/usr/bin/osascript", "-e", script],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=timeout,
             check=False,
@@ -640,7 +652,7 @@ def _fetch_active_window() -> WindowInfo:
     return _fetch_active_window_linux()
 
 
-def get_active_window_info(*, exclude_pids: "set[int] | None" = None) -> WindowInfo:
+def get_active_window_info(*, exclude_pids: set[int] | None = None) -> WindowInfo:
     """Public: the current foreground window, optionally skipping given pids.
 
     exclude_pids lets an out-of-process caller (the MCP context server) skip
@@ -660,7 +672,7 @@ def get_active_window_info(*, exclude_pids: "set[int] | None" = None) -> WindowI
 _SHELL_WINDOW_CLASSES = {"progman", "workerw", "shell_traywnd"}
 
 
-def _topmost_window_excluding(excluded: "set[int]") -> WindowInfo:
+def _topmost_window_excluding(excluded: set[int]) -> WindowInfo:
     """Topmost visible titled window whose owner pid is not in `excluded`."""
     if _IS_WIN:
         return _topmost_window_excluding_win(excluded)
@@ -691,7 +703,7 @@ def _topmost_window_excluding(excluded: "set[int]") -> WindowInfo:
     return WindowInfo()
 
 
-def _topmost_window_excluding_win(excluded: "set[int]") -> WindowInfo:
+def _topmost_window_excluding_win(excluded: set[int]) -> WindowInfo:
     """EnumWindows walks top-level windows in z-order, topmost first."""
     if not _IS_WIN:
         return WindowInfo()
@@ -960,7 +972,6 @@ def _get_browser_url_uia(hwnd: int) -> str | None:
     if not _IS_WIN:
         return None
     try:
-        import comtypes.client
         import comtypes.gen.UIAutomationClient as uiac  # type: ignore
 
         uia = _get_uia()
@@ -976,7 +987,6 @@ def _get_browser_url_uia(hwnd: int) -> str | None:
             30003,  # UIA_ControlTypePropertyId
             50004,  # UIA_EditControlTypeId
         )
-        import comtypes.gen.UIAutomationClient as uiac  # type: ignore
         el = root.FindFirst(uiac.TreeScope_Descendants, condition)
         if el is None:
             return None
@@ -985,7 +995,6 @@ def _get_browser_url_uia(hwnd: int) -> str | None:
         if raw is None:
             return None
 
-        import comtypes
         vp = raw.QueryInterface(uiac.IUIAutomationValuePattern)
         val = (vp.CurrentValue or "").strip()
         if val.startswith(("http://", "https://", "file://", "ftp://")):
@@ -1011,10 +1020,10 @@ _BROWSER_TEXT_CONTROL_TYPES = {
 def _rect_tuple(rect) -> tuple[float, float, float, float] | None:
     """Return (left, top, right, bottom) for a UIA rectangle-like object."""
     try:
-        left = float(getattr(rect, "left"))
-        top = float(getattr(rect, "top"))
-        right = float(getattr(rect, "right"))
-        bottom = float(getattr(rect, "bottom"))
+        left = float(rect.left)
+        top = float(rect.top)
+        right = float(rect.right)
+        bottom = float(rect.bottom)
     except Exception:
         return None
     if right <= left or bottom <= top:
@@ -2470,8 +2479,8 @@ def _obsidian_find_note(stripped_title: str) -> str:
     already removed, e.g. "Note Name" or "Note Name - Vault Name".
     Reads vault paths from %APPDATA%\\obsidian\\obsidian.json.
     """
-    import json
     import glob
+    import json
 
     # Split "Note Name - Vault Name" from the right so note names with " - "
     # in them are preserved correctly.
@@ -2720,7 +2729,7 @@ def _enumerate_open_doc_windows_win() -> list[WindowInfo]:
 
 def _enumerate_open_doc_windows_linux() -> list[WindowInfo]:
     """Handle enumerate open doc windows linux for context fetcher."""
-    from core.platform_utils import list_visible_windows, get_window_title, get_window_pid
+    from core.platform_utils import get_window_pid, get_window_title, list_visible_windows
 
     results: list[WindowInfo] = []
     for wid in list_visible_windows()[:60]:
@@ -2784,8 +2793,7 @@ def _mac_open_files_for_pid(pid: int) -> list[str]:
     try:
         result = subprocess.run(
             ["/usr/sbin/lsof", "-Fn", "-p", str(pid)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=2.0,
             check=False,

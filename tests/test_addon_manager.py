@@ -5,20 +5,20 @@ import json
 import os
 import shutil
 import sys
-import time
 import textwrap
+import time
 import zipfile
 from pathlib import Path
 
 import pytest
+
 import config
-from core.addon_distribution import install_addon_archive, install_addon_folder
 import core.addon_manager as am
+import core.addon_manager as pm
 import core.addon_runtime as addon_runtime
 import core.addon_store as addon_store
-import core.addon_manager as pm
+from core.addon_distribution import install_addon_archive, install_addon_folder
 from core.tool_registry import ToolRegistry
-
 
 _ADDON_SRC = """
 import os
@@ -434,6 +434,16 @@ def test_ui_lab_addon_exercises_saved_label_surfaces(tmp_path, monkeypatch):
     assert by_match["Wisp"]["tooltip"] == "Assistant name"
     assert by_match["Wisp"]["style"] == "font-weight:700; text-decoration:underline"
     assert by_match["bubble label"]["style"] == "font-style:italic; color:#b8b8ff"
+
+    unicode_text = "“quoted”—Wisp"
+    unicode_annotations = manager.get_text_annotations(
+        {"text": unicode_text, "surface": "chat", "role": "assistant"}
+    )
+    wisp_annotation = next(
+        item for item in unicode_annotations if item.get("id") == "ui-lab-label-wisp"
+    )
+    assert unicode_text[wisp_annotation["start"]:wisp_annotation["end"]] == "Wisp"
+
     setting_keys = {item["key"] for item in manager.get_settings("ui-lab")}
     assert {"enabled", "annotate_user_messages", "rewrite_enabled", "rewrite_prefix"} <= setting_keys
 

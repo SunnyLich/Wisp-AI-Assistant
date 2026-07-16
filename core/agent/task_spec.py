@@ -28,6 +28,29 @@ from core.agent.preset_i18n import (
     role_responsibility,
 )
 
+__all__ = [
+    "AGENT_NAME_LABELS",
+    "AGENT_ROLE_LABELS",
+    "AGENT_TEMPLATE_DEFAULTS",
+    "COMMUNICATION_PHASE_LABELS",
+    "COMMUNICATION_TEMPLATES",
+    "ROLE_RESPONSIBILITIES",
+    "ROLE_RESPONSIBILITY_TEMPLATES",
+    "agent_name_label",
+    "agent_template_language",
+    "canonical_agent_name",
+    "canonical_agent_role",
+    "canonical_communication_phase",
+    "default_agent_specs",
+    "default_communication_specs",
+    "default_generic_agent_name",
+    "is_role_template",
+    "localize_agent_spec_if_default",
+    "localize_communication_spec_if_default",
+    "role_label",
+    "role_responsibility",
+]
+
 
 def _int_or(value, default: int) -> int:  # noqa: ANN001
     """Coerce to int, keeping an explicit 0 (used as the 'no token cap' sentinel).

@@ -36,8 +36,8 @@ _DEFAULT_TIMEOUT = 8.0  # stay under the host's 8s execute_tool cap
 # Live clients keyed by server name, and a map from the tool name we expose to
 # Wisp back to (server name, original MCP tool name). Both persist for the life
 # of the addon host process, so get_tools() and executors share them.
-_clients: "dict[str, MCPStdioClient]" = {}
-_tool_index: "dict[str, tuple[str, str]]" = {}
+_clients: dict[str, MCPStdioClient] = {}
+_tool_index: dict[str, tuple[str, str]] = {}
 
 
 _TRUE = {"1", "true", "yes", "on"}
@@ -90,11 +90,11 @@ class MCPStdioClient:
         self.env = env
         self.cwd = cwd
         self.timeout = float(timeout)
-        self._proc: "subprocess.Popen[str] | None" = None
+        self._proc: subprocess.Popen[str] | None = None
         self._ids = itertools.count(1)
         self._write_lock = threading.Lock()
         self._cond = threading.Condition()
-        self._responses: "dict[int, dict]" = {}
+        self._responses: dict[int, dict] = {}
         self._alive = False
 
     def start(self) -> None:
@@ -226,7 +226,7 @@ def _load_servers() -> list:
     return [s for s in (servers or []) if isinstance(s, dict)]
 
 
-def _resolve_command(server: dict) -> "tuple[str, list[str]]":
+def _resolve_command(server: dict) -> tuple[str, list[str]]:
     """Map 'python' to this interpreter and resolve bundled script paths."""
     command = str(server.get("command") or "").strip()
     if command in ("", "python", "python3"):

@@ -23,7 +23,7 @@ def main() -> int:
     parser.add_argument("--auto-close", action="store_true", help="Close the dialog automatically after the worker exits.")
     args = parser.parse_args()
 
-    app = QApplication.instance() or QApplication(sys.argv)
+    _app = QApplication.instance() or QApplication(sys.argv)
     log_path = ROOT / "build_logs" / "optional_install_dialog_smoke.log"
     try:
         log_path.unlink(missing_ok=True)

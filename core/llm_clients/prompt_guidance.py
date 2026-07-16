@@ -1,7 +1,6 @@
 """Prompt fragments that introduce built-in model capabilities."""
 from __future__ import annotations
 
-
 # Appended to the system prompt only when the screenshot tool is actually
 # offered, so the model knows it can see the screen instead of denying it.
 SCREENSHOT_TOOL_NOTE = (

@@ -14,9 +14,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOG_ROOT = REPO_ROOT / "build_logs" / "audio-stack-smoke"

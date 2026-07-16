@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-
 VersionSpec = tuple[int, int, int | None]
 
 

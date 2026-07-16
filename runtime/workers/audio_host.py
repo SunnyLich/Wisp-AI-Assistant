@@ -55,6 +55,44 @@ def _kokoro_prewarm_available() -> bool:
         return False
 
 
+def _stt_feature_enabled() -> bool:
+    """Return whether a configured shortcut can invoke local STT."""
+    try:
+        import config
+
+        hotkeys = (
+            getattr(config, "HOTKEY_VOICE", ""),
+            getattr(config, "HOTKEY_VOICE_2", ""),
+            getattr(config, "HOTKEY_DICTATE", ""),
+            getattr(config, "HOTKEY_DICTATE_2", ""),
+        )
+    except Exception:
+        return False
+    return any(str(hotkey or "").strip() for hotkey in hotkeys)
+
+
+def _stt_prewarm_available() -> bool:
+    """Return whether STT is enabled and its managed package is usable.
+
+    Startup warmup is opportunistic. A missing or stale optional package should
+    stay silent until the user actually invokes a speech feature, where the
+    normal STT path can present the actionable install/repair error.
+    """
+    if not _stt_feature_enabled():
+        return False
+    try:
+        import config
+        from core import optional_deps
+
+        status = optional_deps.optional_package_spec_status(
+            "stt",
+            device=str(getattr(config, "STT_DEVICE", "auto") or "auto"),
+        )
+        return bool(status.get("valid"))
+    except Exception:
+        return False
+
+
 def _serialize_audio_warmup(provider: str) -> bool:
     """Return whether local warmups should avoid concurrent native GPU init."""
     if provider != "kokoro":
@@ -73,7 +111,9 @@ def _serialize_audio_warmup(provider: str) -> bool:
 
 def _warmup_items(provider: str) -> list[str]:
     """Return local audio components that should warm up in this process."""
-    items = ["stt"]
+    items: list[str] = []
+    if _stt_prewarm_available():
+        items.append("stt")
     if _prewarm_tts_provider(provider):
         items.append("tts")
     return items
@@ -228,7 +268,9 @@ def _warm_local_audio_impl(
         if on_progress is not None:
             on_progress("tts", status)
 
-    workers = [threading.Thread(target=_warm_stt, name="audio-stt-prewarm")]
+    workers: list[threading.Thread] = []
+    if _stt_prewarm_available():
+        workers.append(threading.Thread(target=_warm_stt, name="audio-stt-prewarm"))
     if _prewarm_tts_provider(provider):
         workers.append(threading.Thread(target=_warm_tts, name="audio-tts-prewarm"))
     else:
@@ -277,6 +319,13 @@ def _output_dir() -> Path:
 def _prewarm_after_config_reload(generation: int, provider: str) -> None:
     """Warm STT/TTS after config reload without blocking the IPC response."""
     items = _warmup_items(provider)
+    if not items:
+        print(
+            f"[audio] config reload prewarm skipped: tts_provider={provider!r} "
+            "no enabled, installed speech service",
+            flush=True,
+        )
+        return
     warmup_id = f"config_reload:{generation}"
     _event(
         "audio.warmup.started",
@@ -370,6 +419,13 @@ def audio_prewarm() -> dict[str, Any]:
 
     provider = config.TTS_PROVIDER.lower()
     items = _warmup_items(provider)
+    if not items:
+        print(
+            f"[audio] startup prewarm skipped: tts_provider={provider!r} "
+            "no enabled, installed speech service",
+            flush=True,
+        )
+        return {"stt": "skipped", "tts": "skipped"}
     warmup_id = f"startup:{time.monotonic_ns()}"
     _event(
         "audio.warmup.started",

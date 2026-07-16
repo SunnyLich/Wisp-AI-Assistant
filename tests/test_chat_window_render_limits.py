@@ -7,6 +7,8 @@ import time
 
 import pytest
 
+from core import addon_store
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
@@ -17,6 +19,7 @@ except ImportError as exc:
 else:
     PYSIDE6_AVAILABLE = True
 
+from ui.chat_rendering import _assistant_text_to_html
 from ui.chat_window import (
     _CHAT_RENDER_CHAR_LIMIT,
     _SIDEBAR_GENERAL_GROUP_GAP,
@@ -27,10 +30,13 @@ from ui.chat_window import (
     _format_conversation_datetime,
     _latest_tool_context_from_messages,
     _merge_file_context_from_messages,
+    _merged_annotations,
     _message_timestamp_text,
+    _MessageTextView,
     _truncate_for_display,
     _truncate_segments_for_display,
 )
+from ui.text_annotations import annotation_tooltip_anchor, normalize_range_annotations
 
 
 def test_truncate_for_display_caps_large_text():
@@ -58,9 +64,89 @@ def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
     assert "chat display truncated" in result[1][0]
 
 
+def test_merged_annotations_hides_disabled_sources_and_rebuilds_ui_lab(monkeypatch):
+    """Disabled add-ons disappear and stale UI Lab ranges are never reused."""
+    monkeypatch.setattr(
+        addon_store,
+        "is_enabled",
+        lambda addon_id, default=True: addon_id == "active-addon",
+    )
+    monkeypatch.setattr(
+        "ui.chat_window._ui_lab_label_annotations",
+        lambda _text, _role: [{"start": 4, "end": 7, "source": "addon:ui-lab", "id": "fresh"}],
+    )
+    stored = [
+        {"start": 99, "end": 102, "source": "addon:ui-lab", "id": "stale"},
+        {"start": 0, "end": 3, "source": "addon:disabled-addon"},
+        {"start": 0, "end": 3, "source": "addon:active-addon"},
+        {"start": 0, "end": 3, "source": "builtin:test"},
+    ]
+
+    merged = _merged_annotations(stored, "say for", "assistant")
+
+    assert {item.get("id") for item in merged if isinstance(item, dict)} == {None, "fresh"}
+    assert {item.get("source") for item in merged if isinstance(item, dict)} == {
+        "addon:active-addon",
+        "addon:ui-lab",
+        "builtin:test",
+    }
+
+
+def test_ui_lab_annotations_are_empty_when_addon_is_disabled(monkeypatch):
+    """The chat renderer must honor the manager's top-level enabled state."""
+    monkeypatch.setattr(addon_store, "is_enabled", lambda _addon_id, default=True: False)
+    from ui.chat_window import _ui_lab_label_annotations
+
+    assert _ui_lab_label_annotations("for", "assistant") == []
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_tooltip_anchor_stays_on_annotated_word_after_markdown_rendering():
+    """Rendered Markdown structure must not shift an annotation's hover target."""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    text = "1. **Make onboarding task-based.**\nInstead of primarily choosing the best for code."
+    start = text.index("for code")
+    raw = [
+        {
+            "start": start,
+            "end": start + 3,
+            "style": "text-decoration:underline",
+            "tooltip": "This is from the addon",
+            "source": "addon:test",
+            "id": "label-for",
+        }
+    ]
+    annotation = normalize_range_annotations(raw, text)[0]
+    anchor = annotation_tooltip_anchor(annotation)
+    view = _MessageTextView("#222222")
+    try:
+        view.setHtml(_assistant_text_to_html(text, annotations=raw))
+        view.set_annotation_tooltips(text, raw)
+        anchored_fragments: list[tuple[str, str]] = []
+        block = view.document().begin()
+        while block.isValid():
+            iterator = block.begin()
+            while not iterator.atEnd():
+                fragment = iterator.fragment()
+                if fragment.isValid() and fragment.charFormat().anchorHref():
+                    anchored_fragments.append((fragment.text(), fragment.charFormat().anchorHref()))
+                iterator += 1
+            block = block.next()
+
+        assert anchored_fragments == [("for", anchor)]
+        assert view._tooltip_for_anchor(anchor) == "This is from the addon"
+        assert view._tooltip_for_anchor("") == ""
+    finally:
+        view.close()
+        app.processEvents()
+
+
 def test_conversation_datetime_formats_for_history_display():
     """Verify conversation timestamps are display metadata."""
     assert _format_conversation_datetime("2026-06-19T15:52:16+00:00")
+    assert _format_conversation_datetime("2026-06-19T15:52:16")
 
 
 def test_chat_model_messages_excludes_timestamp_metadata():
@@ -282,6 +368,7 @@ def test_chat_sidebar_separates_project_chats_from_unheaded_general_history(monk
     """Verify General is translated and visually separated without a heading."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
+
     import ui.chat_window as chat_window_module
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -642,6 +729,8 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
+    from ui.i18n import t
+
     app = QApplication.instance() or QApplication(sys.argv)
     conversations = [{"messages": [{"role": "user", "content": "hello"}]}]
     window = ChatWindow(conversations, lambda _messages: iter(()))
@@ -660,8 +749,49 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
         window._open_conversation_menu(0, menu_btn)
 
         assert captured == [menu_btn.mapToGlobal(menu_btn.rect().bottomLeft())]
+        assert t("Browse conversation files") in {
+            action.text() for action in window._conversation_menu.actions()
+        }
     finally:
         row.deleteLater()
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_browse_conversation_files_persists_then_reveals_record(
+    monkeypatch, tmp_path
+):
+    """The conversation menu reveals the current persisted chat record."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui import chat_window as chat_window_mod
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [{"messages": [{"role": "user", "content": "hello"}]}]
+    persisted = []
+    revealed = []
+    record = tmp_path / "chats" / "conversations.json"
+    record.parent.mkdir()
+    record.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(chat_window_mod._conversation_store, "CONVERSATIONS_FILE", record)
+    monkeypatch.setattr(
+        chat_window_mod._file_browser,
+        "reveal_path",
+        lambda path: revealed.append(path),
+    )
+    window = ChatWindow(
+        conversations,
+        lambda _messages: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+    try:
+        window._browse_conversation_files(0)
+
+        assert persisted == [True]
+        assert revealed == [record]
+    finally:
         window.close()
         app.processEvents()
 
@@ -691,6 +821,59 @@ def test_chat_final_text_replaces_partial_stream_before_persist():
         assert saved["id"]
         assert conversations[0]["updated_at"]
     finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_window_streams_and_persists_remote_agent_activity_in_order():
+    """ChatGPT/Claude progress should render live and remain in Wisp history."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [{"messages": [{"role": "user", "content": "inspect"}]}]
+    window = ChatWindow(conversations, lambda _messages: iter(()))
+
+    class _Label:
+        def __init__(self) -> None:
+            self.html = ""
+
+        def setHtml(self, value: str) -> None:  # noqa: N802 - Qt-compatible test double
+            self.html = value
+
+    label = _Label()
+    window._current_ai_label = label  # type: ignore[assignment]
+    try:
+        window._on_chunk({"text": "Starting ChatGPT...", "is_progress": True})
+        assert "Starting ChatGPT" in label.html
+
+        window._on_chunk({"text": "Model is thinking...", "is_progress": True})
+        assert "Model is thinking" in label.html
+        assert "Starting ChatGPT" not in label.html
+
+        window._on_chunk({"text": "Inspecting", "is_thought": True})
+        window._on_chunk({"text": "First answer"})
+        window._on_chunk({"text": "\nRunning: rg\n", "is_progress": True, "is_thought": True})
+        window._on_chunk({"text": "Second answer"})
+        window._on_metadata({
+            "display_segments": [
+                {"text": "Inspecting", "is_thought": True},
+                {"text": "First answer", "is_thought": False},
+                {"text": "\nRunning: rg\n", "is_thought": True},
+                {"text": "Second answer", "is_thought": False},
+            ],
+            "harness": {"provider": "codex", "session_id": "thread-1", "cwd": "/repo"},
+        })
+        window._on_finished()
+
+        saved = conversations[0]["messages"][-1]
+        assert saved["content"] == "First answer\nSecond answer"
+        assert [segment["is_thought"] for segment in saved["display_segments"]] == [True, False, True, False]
+        assert "Running: rg" in saved["display_content"]
+        assert conversations[0]["harness_sessions"]["codex"]["session_id"] == "thread-1"
+    finally:
+        window._current_ai_label = None
         window.close()
         app.processEvents()
 
@@ -985,6 +1168,41 @@ def test_chat_window_drop_attachments_feed_next_message_context_and_image(tmp_pa
         assert window.findChild(QLabel, "messageAttachmentContextHint") is not None
     finally:
         window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_assistant_image_only_bubble_renders_a_thumbnail(tmp_path):
+    """Generated images render for assistants without requiring fallback text."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QColor, QPixmap
+    from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    image_path = tmp_path / "generated.png"
+    source = QPixmap(24, 16)
+    source.fill(QColor("#3b82f6"))
+    assert source.save(str(image_path), "PNG")
+    image_b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    window = ChatWindow([{"messages": []}], lambda _messages: iter(()))
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.addStretch()
+    try:
+        view = window._bubble(layout, "", "assistant", image_b64)
+        wrapper = view.parentWidget()
+        thumbnails = [
+            label
+            for label in wrapper.findChildren(QLabel)
+            if label.pixmap() is not None and not label.pixmap().isNull()
+        ]
+
+        assert thumbnails
+        assert view.property("wisp_has_image") is True
+        assert view.isHidden()
+    finally:
+        window.close()
+        container.close()
         app.processEvents()
 
 

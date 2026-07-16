@@ -28,13 +28,14 @@ import base64
 import hashlib
 import html
 import json
+import logging
 import secrets
 import threading
 import time
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Callable
-import logging
-from urllib.parse import urlencode, parse_qs, urlparse
+from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from core.system.native_locks import keychain_lock
 
@@ -76,10 +77,8 @@ def _generate_state() -> str:
 # Token storage — keyring with fallback to a local file
 # ---------------------------------------------------------------------------
 
-import pathlib as _pathlib
-
-_TOKEN_FILE = _pathlib.Path(__file__).parent.parent / "private" / ".chatgpt_tokens.json"
-_APP_ICON_FILE = _pathlib.Path(__file__).resolve().parents[2] / "assets" / "app.ico"
+_TOKEN_FILE = Path(__file__).parent.parent / "private" / ".chatgpt_tokens.json"
+_APP_ICON_FILE = Path(__file__).resolve().parents[2] / "assets" / "app.ico"
 
 
 def _app_icon_data_uri() -> str:

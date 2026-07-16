@@ -1,9 +1,9 @@
 """Tests for the unified chat flow harness."""
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest import mock
 
 from core.llm_clients import chat_flow_harness as harness

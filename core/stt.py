@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import os
 import threading
+
 import numpy as np
+
 import config
-from core.system.main_thread import run_on_main
-from core.system import macos_safety
 from core import macos_helper
 from core.stt_postprocess import clean_transcript
+from core.system import macos_safety
+from core.system.main_thread import run_on_main
 
 # sounddevice is imported lazily (inside start_recording) so that when the macOS
 # helper owns the mic, or safe mode disables in-process recording, this
@@ -56,9 +58,12 @@ def _get_model():
             from core import optional_deps
 
             optional_deps.require_optional_package_runtime("stt", device=config.STT_DEVICE)
-            from core.stt_device import resolve_device, resolve_compute_type, build_model
             from faster_whisper import WhisperModel
-            _log = lambda m: print(f"[stt] {m}")
+
+            from core.stt_device import build_model, resolve_compute_type, resolve_device
+            def _log(message: str) -> None:
+                print(f"[stt] {message}")
+
             device = resolve_device(config.STT_DEVICE, log=_log)
             compute_type = resolve_compute_type(device, config.STT_COMPUTE_TYPE, log=_log)
             _model, device, compute_type = build_model(

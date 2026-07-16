@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)

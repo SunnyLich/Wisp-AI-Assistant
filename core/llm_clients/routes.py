@@ -5,7 +5,6 @@ import config
 from core import secret_store
 from core.ollama_manager import OLLAMA_BASE_URL as _OLLAMA_MANAGED_BASE_URL
 
-
 GOOGLE_OPENAI_BASE_URL  = "https://generativelanguage.googleapis.com/v1beta/openai/"
 DEEPSEEK_BASE_URL       = "https://api.deepseek.com"
 OPENROUTER_BASE_URL     = "https://openrouter.ai/api/v1"

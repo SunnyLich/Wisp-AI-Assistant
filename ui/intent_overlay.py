@@ -12,8 +12,19 @@ import os
 import sys
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMenu, QToolTip, QWidget
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QTextLayout,
+    QTextOption,
+)
+from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QPlainTextEdit, QToolTip, QWidget
 
 import config
 from core.prompt_i18n import localize_intent_if_default
@@ -158,6 +169,9 @@ _BADGE_X       = 12       # badge left offset inside row
 _TEXT_X        = _BADGE_X + _BADGE_W + 12
 _AUTO_CLOSE_MS = 60000
 _INPUT_EXTRA   = 54
+_INPUT_MIN_H   = 34
+_INPUT_MAX_H   = 118      # fallback when usable screen geometry is unavailable
+_SCREEN_MARGIN = 24
 _CONV_H        = 38
 _CONV_TOP      = 4
 _CTX_H         = 92
@@ -243,7 +257,7 @@ def _input_line_stylesheet() -> str:
     accent = colors.get("accent", _KEY_COLOR.name())
     on_accent = colors.get("on_accent", "#ffffff")
     return (
-        "QLineEdit {"
+        "QPlainTextEdit {"
         f"  background: {surface};"
         f"  border: 1px solid {border};"
         "  border-radius: 6px;"
@@ -253,10 +267,37 @@ def _input_line_stylesheet() -> str:
         f"  selection-background-color: {accent};"
         f"  selection-color: {on_accent};"
         "}"
-        "QLineEdit:focus {"
+        "QPlainTextEdit:focus {"
         f"  border-color: {accent};"
         "}"
     )
+
+
+class _ExpandingPromptEdit(QPlainTextEdit):
+    """A wrapping prompt editor with the small QLineEdit API used here."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # The owning overlay enables this only after it has used all available
+        # vertical screen space.  Keeping it off while the editor can grow also
+        # avoids a one-line scrollbar caused by the document/frame padding.
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setTabChangesFocus(True)
+
+    def text(self) -> str:
+        return self.toPlainText()
+
+    def setText(self, text: str) -> None:  # noqa: N802 - QLineEdit compatibility
+        self.setPlainText(text)
+
+    def selectedText(self) -> str:  # noqa: N802 - QLineEdit compatibility
+        return self.textCursor().selectedText()
+
+    def cursorPosition(self) -> int:  # noqa: N802 - QLineEdit compatibility
+        return self.textCursor().position()
 
 
 def _context_toggle_keys() -> str:
@@ -311,6 +352,7 @@ class IntentOverlay(QWidget):
     cancelled     = Signal()
     screenshot_snip_requested = Signal()
     selection_capture_requested = Signal(str)
+    context_items_pasted = Signal(object)
     context_source_removed = Signal(str, str)
     context_source_reenabled = Signal(str)
     _raw_key      = Signal(str)
@@ -323,6 +365,7 @@ class IntentOverlay(QWidget):
         conversation_options: list[dict] | None = None,
         project_options: list[dict] | None = None,
         active_project_id: str | None = None,
+        conversation_namespace_label: str = "",
         initial_custom_text: str = "",
         focus_overlay: bool = False,
         parent=None,
@@ -360,6 +403,9 @@ class IntentOverlay(QWidget):
         self._new_project_name = ""
         self._project_dialog_open = False
         self._conversation_options = self._normalize_conversation_options(conversation_options or [])
+        self._conversation_namespace_label = " ".join(
+            str(conversation_namespace_label or "").split()
+        ).strip()
         selected = next(
             (item for item in self._filtered_conversation_options() if item.get("selected")),
             None,
@@ -392,6 +438,8 @@ class IntentOverlay(QWidget):
         self._selection_pending_idx: int | None = None
         self._custom_mode = False
         self._prefilled_custom_mode = False
+        self._prompt_input_h = _INPUT_MIN_H
+        self._prompt_resize_pending = False
         self._initial_custom_text = str(initial_custom_text or "").strip()
         self._focus_overlay_requested = bool(focus_overlay)
         self._was_activated = False   # macOS: dismiss on focus-out once activated
@@ -403,12 +451,12 @@ class IntentOverlay(QWidget):
         self._last_raw_context_at = 0.0
         self._raw_key.connect(self._on_raw_key)
 
-        self._input_line = QLineEdit(self)
+        self._input_line = _ExpandingPromptEdit(self)
         self._input_line.installEventFilter(self)
         self._input_line.setPlaceholderText(t("Type your prompt, press Enter…"))
         self._input_line.setStyleSheet(_input_line_stylesheet())
         self._input_line.hide()
-        self._input_line.returnPressed.connect(self._fire_custom)
+        self._input_line.textChanged.connect(self._schedule_prompt_input_resize)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -483,7 +531,7 @@ class IntentOverlay(QWidget):
                         )
                         screen = app.screenAt(center) if app is not None else None
                         if screen is not None:
-                            return screen.geometry()
+                            return screen.availableGeometry()
                 except Exception:
                     pass
             else:
@@ -491,9 +539,13 @@ class IntentOverlay(QWidget):
                 cursor_pos = QCursor.pos()
                 screen = app.screenAt(cursor_pos) if app is not None else None
                 if screen is not None:
-                    return screen.geometry()
+                    return screen.availableGeometry()
         primary = QApplication.primaryScreen()
-        return primary.geometry() if primary is not None else QRect(0, 0, _W, self._normal_h)
+        return (
+            primary.availableGeometry()
+            if primary is not None
+            else QRect(0, 0, _W, self._normal_h + _INPUT_EXTRA + _INPUT_MAX_H)
+        )
 
     def _move_to_screen_center(self, height: int) -> None:
         """Handle move to screen center for intent overlay."""
@@ -510,6 +562,21 @@ class IntentOverlay(QWidget):
     def current_custom_text(self) -> str:
         """Return the currently typed custom prompt text, if any."""
         return self._input_line.text().strip()
+
+    def _paste_clipboard_context(self) -> bool:
+        """Attach clipboard files/images instead of inserting path-like text."""
+        clipboard = QApplication.clipboard()
+        mime = clipboard.mimeData() if clipboard is not None else None
+        if mime is None or not (mime.hasUrls() or mime.hasImage()):
+            return False
+        from ui.drop_zone import process_drop_mime
+
+        items = process_drop_mime(mime)
+        if not items:
+            return False
+        self.context_items_pasted.emit(items)
+        self._note_interaction()
+        return True
 
     def _base_height(self) -> int:
         """Return the picker height for the current rows and context previews."""
@@ -668,11 +735,14 @@ class IntentOverlay(QWidget):
             return
         self._normal_h = next_h
         if self._prompt_input_visible():
-            next_h += _INPUT_EXTRA
+            next_h += self._prompt_input_extra()
         self.setFixedSize(_W, next_h)
         if self._prompt_input_visible():
             self._input_line.setGeometry(
-                _PAD_H, self._normal_h - 20, _W - _PAD_H * 2, 34
+                _PAD_H,
+                self._normal_h - 20,
+                _W - _PAD_H * 2,
+                self._prompt_input_h,
             )
         if hasattr(self, "_screen_geometry"):
             self._move_to_screen_center(next_h)
@@ -772,7 +842,7 @@ class IntentOverlay(QWidget):
 
         # ESC hint
         if self._prompt_input_visible():
-            esc_y = y + _INPUT_EXTRA + 4
+            esc_y = y + self._prompt_input_extra() + 4
         else:
             esc_y = y + 4
         p.setFont(esc_font)
@@ -810,7 +880,12 @@ class IntentOverlay(QWidget):
 
         p.setFont(label_font)
         p.setPen(QPen(palette["ctx_text"]))
-        project_value = f"{t('Project')}  {self._selected_project_name()}  ▾"
+        project_prefix = (
+            f"{self._conversation_namespace_label} · "
+            if self._conversation_namespace_label
+            else f"{t('Project')}  "
+        )
+        project_value = f"{project_prefix}{self._selected_project_name()}  ▾"
         project_value = QFontMetrics(label_font).elidedText(
             project_value,
             Qt.TextElideMode.ElideRight,
@@ -941,7 +1016,11 @@ class IntentOverlay(QWidget):
     def _context_preview_entries(self) -> list[tuple[str, str, str, str]]:
         """Return (label, preview, item id, source id) rows for enabled context."""
         entries: list[tuple[str, str, str, str]] = []
-        for item in self._context_items:
+        preview_items = sorted(
+            self._context_items,
+            key=lambda item: 0 if str(item.get("id") or "") == "attachments" else 1,
+        )
+        for item in preview_items:
             if len(entries) >= _CTX_PREVIEW_MAX:
                 break
             state = str(item.get("state") or "off").lower()
@@ -961,10 +1040,11 @@ class IntentOverlay(QWidget):
                     if not preview:
                         continue
                     source_label = " ".join(str(source.get("label") or "").split())
+                    source_id = str(source.get("id") or source_label)
                     label = f"{base_label} {source_idx}"
                     if source_label:
                         label = f"{label}: {source_label}"
-                    entries.append((label, preview, item_id, source_label))
+                    entries.append((label, preview, item_id, source_id))
                     added_source = True
                 if added_source:
                     continue
@@ -1097,6 +1177,8 @@ class IntentOverlay(QWidget):
 
     def _cycle_context_item(self, item: dict) -> None:
         """Cycle one context source through its explicit prompt states."""
+        if item.get("locked"):
+            return
         item_id = str(item.get("id") or "")
         state = str(item.get("state") or "off").lower()
         if state == "auto":
@@ -1140,7 +1222,10 @@ class IntentOverlay(QWidget):
                 sources = [s for s in (item.get("sources") or []) if isinstance(s, dict)]
                 kept = [
                     s for s in sources
-                    if " ".join(str(s.get("label") or "").split()) != source_id
+                    if str(
+                        s.get("id")
+                        or " ".join(str(s.get("label") or "").split())
+                    ) != source_id
                 ]
                 item["sources"] = kept
                 if not kept:
@@ -1449,11 +1534,15 @@ class IntentOverlay(QWidget):
         self._prefilled_custom_mode = False
         self._debug("enter-custom-before")
         self._timer.stop()
-        new_h = self._normal_h + _INPUT_EXTRA
+        self._prompt_input_h = _INPUT_MIN_H
+        new_h = self._normal_h + self._prompt_input_extra()
         self.setFixedSize(_W, new_h)
         self._move_to_screen_center(new_h)
         self._input_line.setGeometry(
-            _PAD_H, self._normal_h - 20, _W - _PAD_H * 2, 34
+            _PAD_H,
+            self._normal_h - 20,
+            _W - _PAD_H * 2,
+            self._prompt_input_h,
         )
         self._input_line.show()
         self._focus_custom_input()
@@ -1470,20 +1559,106 @@ class IntentOverlay(QWidget):
         if not self._initial_custom_text:
             return
         self._prefilled_custom_mode = True
-        new_h = self._normal_h + _INPUT_EXTRA
+        self._prompt_input_h = _INPUT_MIN_H
+        new_h = self._normal_h + self._prompt_input_extra()
         self.setFixedSize(_W, new_h)
         self._move_to_screen_center(new_h)
         self._input_line.setGeometry(
-            _PAD_H, self._normal_h - 20, _W - _PAD_H * 2, 34
+            _PAD_H,
+            self._normal_h - 20,
+            _W - _PAD_H * 2,
+            self._prompt_input_h,
         )
         self._input_line.setText(self._initial_custom_text)
         self._input_line.show()
+        self._schedule_prompt_input_resize()
         self.update()
         self._focus_overlay()
 
     def _prompt_input_visible(self) -> bool:
         """Return whether the custom prompt input is visible below the rows."""
         return bool(self._custom_mode or self._prefilled_custom_mode)
+
+    def _prompt_input_extra(self) -> int:
+        """Return total space reserved below the rows for the prompt editor."""
+        return _INPUT_EXTRA + max(0, self._prompt_input_h - _INPUT_MIN_H)
+
+    def _prompt_input_max_height(self) -> int:
+        """Return the tallest editor that keeps the overlay on the usable screen."""
+        screen_h = self._screen_geometry.height()
+        if screen_h <= 0:
+            return _INPUT_MAX_H
+        max_overlay_h = max(0, screen_h - _SCREEN_MARGIN)
+        available_h = (
+            max_overlay_h
+            - self._normal_h
+            - _INPUT_EXTRA
+            + _INPUT_MIN_H
+        )
+        return max(_INPUT_MIN_H, available_h)
+
+    def _schedule_prompt_input_resize(self) -> None:
+        """Coalesce document relayouts before measuring wrapped prompt lines."""
+        if self._prompt_resize_pending:
+            return
+        self._prompt_resize_pending = True
+        QTimer.singleShot(0, self._resize_prompt_input)
+
+    def _resize_prompt_input(self) -> None:
+        """Grow with wrapped lines until the overlay reaches the usable screen."""
+        self._prompt_resize_pending = False
+        if not self._prompt_input_visible() or self._input_line.isHidden():
+            return
+        # QPlainTextDocumentLayout can report a single-line height until the
+        # offscreen Linux platform plugin paints the editor. Measure wrapping
+        # explicitly so synchronous resizes behave the same on every platform.
+        # The viewport can temporarily retain QPlainTextEdit's 100 px default
+        # width before an offscreen backend propagates setGeometry(). The
+        # editor geometry is authoritative. QTextLayout measures the glyph
+        # area directly, so its line width should use that stable geometry.
+        text_width = max(1, self._input_line.width())
+        wrap_option = QTextOption()
+        wrap_option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        document_h = 0.0
+        font = self._input_line.font()
+        line_height = float(QFontMetrics(font).lineSpacing())
+        for paragraph in self._input_line.toPlainText().split("\n"):
+            layout = QTextLayout(paragraph or " ", font)
+            layout.setTextOption(wrap_option)
+            layout.beginLayout()
+            paragraph_h = 0.0
+            while True:
+                line = layout.createLine()
+                if not line.isValid():
+                    break
+                line.setLineWidth(text_width)
+                paragraph_h += line.height()
+            layout.endLayout()
+            document_h += max(line_height, paragraph_h)
+        document_h = int(document_h + 0.999)
+        required_h = max(_INPUT_MIN_H, document_h + 12)
+        max_input_h = self._prompt_input_max_height()
+        desired_h = min(max_input_h, required_h)
+        scrollbar_policy = (
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            if required_h > max_input_h
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        if self._input_line.verticalScrollBarPolicy() != scrollbar_policy:
+            self._input_line.setVerticalScrollBarPolicy(scrollbar_policy)
+        if desired_h == self._prompt_input_h:
+            return
+        self._prompt_input_h = desired_h
+        total_h = self._normal_h + self._prompt_input_extra()
+        self.setFixedSize(_W, total_h)
+        self._input_line.setGeometry(
+            _PAD_H,
+            self._normal_h - 20,
+            _W - _PAD_H * 2,
+            self._prompt_input_h,
+        )
+        self._move_to_screen_center(total_h)
+        self.update()
 
     def _focus_custom_input(self) -> None:
         """Focus custom input."""
@@ -1589,8 +1764,18 @@ class IntentOverlay(QWidget):
             if event.type() == QEvent.Type.ShortcutOverride:
                 event.accept()
                 return True
+            if event.matches(QKeySequence.StandardKey.Paste) and self._paste_clipboard_context():
+                event.accept()
+                return True
             if event.key() == Qt.Key.Key_Escape:
                 self._cancel()
+                return True
+            if (
+                event.type() == QEvent.Type.KeyPress
+                and event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}
+                and not bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            ):
+                self._fire_custom()
                 return True
             if self._drop_next_keypress and event.type() == QEvent.Type.KeyPress:
                 self._debug_key("input-filter-before-drop", event)
@@ -1639,6 +1824,10 @@ class IntentOverlay(QWidget):
         if name in ('escape', 'esc'):
             self._cancel()
             return
+        if name.lower() in {"space", "spacebar"}:
+            self._toggle_conversation_mode()
+            self._mark_raw_context_key("space")
+            return
         if self._cycle_context_key(name):
             self._mark_raw_context_key(name)
             return
@@ -1650,8 +1839,16 @@ class IntentOverlay(QWidget):
     def keyPressEvent(self, event):
         """Handle key press event for intent overlay."""
         self._debug_key("overlay-keypress", event)
+        if event.matches(QKeySequence.StandardKey.Paste) and self._paste_clipboard_context():
+            event.accept()
+            return
         if self._custom_mode:
             super().keyPressEvent(event)
+            return
+        if event.key() == Qt.Key.Key_Space:
+            if not self._is_duplicate_qt_context_key("space"):
+                self._toggle_conversation_mode()
+            event.accept()
             return
         if self._prefilled_custom_mode and event.key() in {
             Qt.Key.Key_Return,
@@ -1685,7 +1882,7 @@ class IntentOverlay(QWidget):
 
     def _raw_shortcut_names(self) -> list[str]:
         """Return overlay-local keys that should be captured by the raw hook."""
-        keys: list[str] = ["escape"]
+        keys: list[str] = ["escape", "space"]
         for item in self._context_items:
             key = str(item.get("key") or "").strip().lower()
             if key and key not in keys:

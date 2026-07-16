@@ -343,7 +343,7 @@ class _Bubble:
         self.progress: list[str] = []
         self.labeled: list[tuple[str, str, int, bool]] = []
 
-    def append_chunk(self, text: str, is_thought: bool = False) -> None:
+    def append_chunk(self, text: str, is_thought: bool = False, annotations=None) -> None:
         self.chunks.append((text, is_thought))
 
     def show_progress(self, text: str) -> None:
@@ -376,6 +376,21 @@ def test_reply_chunk_accepts_progress_metadata() -> None:
     # first real reply token replaces it.
     assert bubble.chunks == []
     assert bubble.progress == ["Reading files..."]
+
+
+def test_reply_chunk_keeps_provider_action_in_thought_transcript() -> None:
+    """Provider actions are translated activity, not replaceable status text."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = _Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_chunk(text="Claude started Read", is_progress=True, is_thought=True)
+
+    assert result == {"appended": len("Claude started Read"), "is_progress": True}
+    assert bubble.progress == []
+    assert bubble.chunks == [("Claude started Read", True)]
 
 
 def test_reply_labeled_text_keeps_label_out_of_reply_content() -> None:
@@ -544,6 +559,80 @@ def test_chat_add_conversation_stamps_metadata() -> None:
     assert conv["messages"][1]["created_at"] == conv["created_at"]
 
 
+def test_chat_add_conversation_persists_image_only_assistant(tmp_path) -> None:
+    """A generated image is an assistant message even when final text is empty."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    image_path = tmp_path / "generated.png"
+    image_path.write_bytes(b"generated-image")
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = None
+    host._active_project_id = "general"
+    host._all_conversations = []
+    host._chat = None
+    persisted = []
+    host._persist_conversations = lambda: persisted.append(True)  # type: ignore[attr-defined]
+
+    result = host._chat_add_conversation(
+        user="Generate a test image",
+        assistant="",
+        assistant_attachments=[
+            {
+                "kind": "image",
+                "source": "codex_image_generation",
+                "path": str(image_path),
+                "name": "generated.png",
+            }
+        ],
+    )
+
+    assert result == {"count": 1, "continued": False}
+    assert persisted == [True]
+    messages = host._all_conversations[0]["messages"]
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[1]["content"] == ""
+    assert messages[1]["attachments"][0]["kind"] == "image"
+    assert messages[1]["attachments"][0]["source"] == "codex_image_generation"
+    assert messages[1]["attachments"][0]["path"] == str(image_path)
+
+
+def test_agent_owned_chat_is_mirrored_into_wisp_history_with_live_activity() -> None:
+    """A remote-owned turn must still leave a complete local Wisp transcript."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = None
+    host._active_project_id = "general"
+    host._all_conversations = []
+    host._chat = None
+    persisted = []
+    host._persist_conversations = lambda: persisted.append(True)  # type: ignore[attr-defined]
+
+    host._chat_add_conversation(
+        user="inspect the project",
+        assistant="Finished",
+        display_segments=[
+            {"text": "Inspecting\nRunning: rg\n", "is_thought": True},
+            {"text": "Finished", "is_thought": False},
+        ],
+        harness={
+            "provider": "codex",
+            "session_id": "thread-1",
+            "cwd": "/repo",
+            "conversation_owner": "agent",
+        },
+    )
+
+    conv = host._all_conversations[0]
+    assert [message["content"] for message in conv["messages"]] == ["inspect the project", "Finished"]
+    assert conv["messages"][1]["display_segments"][0]["is_thought"] is True
+    assert conv["messages"][1]["display_content"] == (
+        "<thought>Inspecting\nRunning: rg\n</thought>Finished"
+    )
+    assert conv["harness_sessions"]["codex"]["session_id"] == "thread-1"
+    assert persisted == [True]
+
+
 def test_macos_snip_app_region_avoids_ui_quartz_by_default(monkeypatch) -> None:
     """The UI worker should not import Quartz just to preselect Snip's App mode."""
     import builtins
@@ -663,6 +752,37 @@ def test_chat_add_conversation_persists_text_annotations() -> None:
     messages = host._all_conversations[0]["messages"]
     assert messages[0]["annotations"] == user_annotations
     assert messages[1]["annotations"] == assistant_annotations
+
+
+def test_wisp_owned_harness_reply_clears_provider_continuation() -> None:
+    """Switching continuity to Wisp must not later resume a stale agent session."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = 0
+    host._active_project_id = "general"
+    host._all_conversations = [{
+        "messages": [{"role": "user", "content": "old"}],
+        "harness_sessions": {
+            "codex": {"provider": "codex", "session_id": "thread-old", "cwd": "/repo"}
+        },
+    }]
+    host._chat = None
+    host._persist_conversations = lambda: None  # type: ignore[attr-defined]
+
+    host._chat_add_conversation(
+        user="new",
+        assistant="answer",
+        harness={
+            "provider": "codex",
+            "session_id": "",
+            "cwd": "/repo",
+            "conversation_owner": "wisp",
+            "clear_session": True,
+        },
+    )
+
+    assert "harness_sessions" not in host._all_conversations[0]
 
 
 def test_chat_begin_conversation_persists_user_then_final_appends_assistant() -> None:
@@ -851,6 +971,62 @@ def test_intent_conversation_options_start_new_until_chat_is_active() -> None:
     selected_options = host._intent_conversation_options()
 
     assert [option for option in selected_options if option["selected"]][0]["index"] == 0
+
+
+def test_intent_conversation_options_are_isolated_by_provider_scope() -> None:
+    """Codex-owned pickers must not offer native Wisp or Claude history."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._conversation_scope_key = "codex"
+    host._active_conversation_idx = 0
+    host._all_conversations = [
+        {
+            "messages": [{"role": "user", "content": "native"}],
+            "project_id": "general",
+            "conversation_scope": "wisp",
+        },
+        {
+            "messages": [{"role": "user", "content": "codex"}],
+            "project_id": "codex-project",
+            "conversation_scope": "codex",
+        },
+        {
+            "messages": [{"role": "user", "content": "claude"}],
+            "project_id": "claude-project",
+            "conversation_scope": "claude",
+        },
+    ]
+
+    options = host._intent_conversation_options()
+
+    assert [option["index"] for option in options] == [1]
+    assert options[0]["selected"] is False
+
+
+def test_chat_add_conversation_does_not_cross_provider_scope() -> None:
+    """A route switch starts a new record instead of appending to native Wisp."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._conversation_scope_key = "codex"
+    host._active_conversation_idx = 0
+    host._active_project_id = "general"
+    host._all_conversations = [
+        {
+            "messages": [{"role": "user", "content": "native"}],
+            "project_id": "general",
+            "conversation_scope": "wisp",
+        }
+    ]
+    host._chat = None
+    host._persist_conversations = lambda: None  # type: ignore[attr-defined]
+
+    host._chat_add_conversation(user="agent question", assistant="agent answer")
+
+    assert [message["content"] for message in host._all_conversations[0]["messages"]] == ["native"]
+    assert host._all_conversations[1]["conversation_scope"] == "codex"
+    assert host._active_conversation_idx == 1
 
 
 def test_apply_intent_conversation_choice_preserves_new_selection() -> None:
@@ -1183,7 +1359,7 @@ def test_agent_approval_bubble_notice_does_not_timeout() -> None:
 
     assert result == {"shown": True, "actionable": True}
     assert bubble.notice["timeout_ms"] == 0
-    assert [label for label, _callback in bubble.notice["actions"]] == ["Approve", "Request Changes", "Decline"]
+    assert [label for label, _callback in bubble.notice["actions"]] == ["Approve", "Alternate option", "Decline"]
     assert timer.starts == 0
     assert timer.stops >= 1
 

@@ -1,10 +1,10 @@
 """Tool execution facade for scoped agent tasks."""
 from __future__ import annotations
 
-import subprocess
-import sys
 import fnmatch
 import os
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 

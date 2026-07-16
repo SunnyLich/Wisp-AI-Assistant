@@ -16,7 +16,8 @@ from __future__ import annotations
 import os
 import re
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # Stray library prints are redirected to stderr by host.py, but keep HF quiet too.
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -117,8 +118,9 @@ def _get_model():
             from core import optional_deps
 
             optional_deps.require_optional_package_runtime("stt", device=config.STT_DEVICE)
-            from core.stt_device import resolve_device, resolve_compute_type, build_model
             from faster_whisper import WhisperModel
+
+            from core.stt_device import build_model, resolve_compute_type, resolve_device
             device = resolve_device(config.STT_DEVICE, log=_log)
             compute_type = resolve_compute_type(device, config.STT_COMPUTE_TYPE, log=_log)
             _model, device, compute_type = build_model(
@@ -198,6 +200,7 @@ def _chunk_audio_slice(chunks: list[Any], start_sample: int, end_sample: int):
 def _transcribe_audio(audio, *, label: str) -> str:
     """Normalize and transcribe one audio buffer."""
     import numpy as np
+
     import config
     from core.stt_postprocess import clean_transcript
 
@@ -435,7 +438,9 @@ def stt_selftest(seconds: float = 1.0) -> dict[str, Any]:
     near-silence) — we are checking the pipeline executes, not accuracy.
     """
     import time
+
     import numpy as np
+
     import config
 
     t0 = time.time()

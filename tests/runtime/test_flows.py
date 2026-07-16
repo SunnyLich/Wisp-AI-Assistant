@@ -195,6 +195,42 @@ def test_safe_call_still_logs_real_ui_failures(caplog):
     assert "worker call failed: ui.reply.notice" in caplog.text
 
 
+def test_privacy_review_is_resolved_through_the_local_ui():
+    """A blocked brain request receives the user's review decision."""
+    ui = FakeWorker({"ui.privacy.review.request": lambda _params: {"approved": True}})
+    flow, _native, ui, brain, _audio = make_flow(ui=ui)
+
+    payload = {"approval_id": "privacy-1", "count": 1, "scrubbed_preview": "[EMAIL_1]"}
+    flow._handle_privacy_review_request(payload)
+
+    assert ui.last_call("ui.privacy.review.request")["params"] == payload
+    response = brain.last_call("brain.privacy.review.respond")
+    assert response["params"] == {
+        "approval_id": "privacy-1",
+        "approved": True,
+        "decision": "redacted",
+    }
+    assert response["wait"] is False
+
+
+def test_privacy_review_can_authorize_the_full_unredacted_message():
+    """The explicit full-send decision must reach the blocked brain request."""
+    ui = FakeWorker(
+        {"ui.privacy.review.request": lambda _params: {"approved": True, "decision": "full"}}
+    )
+    flow, _native, ui, brain, _audio = make_flow(ui=ui)
+
+    flow._handle_privacy_review_request(
+        {"approval_id": "privacy-full", "count": 1, "scrubbed_preview": "[PERSON_1]"}
+    )
+
+    assert brain.last_call("brain.privacy.review.respond")["params"] == {
+        "approval_id": "privacy-full",
+        "approved": True,
+        "decision": "full",
+    }
+
+
 def context_handler(
     selected: str = "selected",
     clipboard: str = "",
@@ -307,11 +343,13 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     ]
     native = FakeWorker({"native.context.snapshot": context_handler()})
     with caller_config(rows):
-        _flow, native, ui, _brain, audio = make_flow(native=native)
+        _flow, native, ui, brain, audio = make_flow(native=native)
         native.emit("native.hotkey", {"kind": "caller", "index": 0})
 
     assert ui.calls_for("ui.show_overlay")
     assert ui.last_call("ui.prewarm_intent")["wait"] is False
+    assert brain.last_call("brain.privacy.prewarm")["wait"] is False
+    assert brain.last_call("brain.harness.prewarm")["wait"] is False
     assert audio.last_call("audio.prewarm")["wait"] is False
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
     assert native.last_call("native.context.snapshot")["params"]["selection_dedupe_key"] == "intent"
@@ -915,6 +953,62 @@ def test_intent_context_source_removal_filters_items_and_disables_empty_group():
         assert chips["ambient"]["tokens"].startswith("~")
 
 
+def test_pasted_context_appears_in_intent_and_can_be_removed():
+    """Intent paste attachments are visible, queued for send, and removable."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    with caller_config([{}]):
+        flow, _native, ui, _brain, _audio = make_flow(native=native)
+        flow.begin_caller(0)
+        ui.emit(
+            "ui.context.dropped",
+            {
+                "items": [
+                    {"name": "pasted.png", "content": "aW1hZ2U=", "type": "image"},
+                    {"name": "notes.txt", "content": "pasted notes", "type": "text"},
+                ]
+            },
+        )
+
+        shown = ui.last_call("ui.intent.context_items")["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        assert chips["attachments"]["state"] == "on"
+        assert chips["attachments"]["locked"] is True
+        assert [source["label"] for source in chips["attachments"]["sources"]] == [
+            "pasted.png",
+            "notes.txt",
+        ]
+        assert len(flow._drop_context_items) == 2
+
+        ui.emit(
+            "ui.intent.context.remove",
+            {"id": "attachments", "source_id": "dropped:0"},
+        )
+
+        shown = ui.last_call("ui.intent.context_items")["params"]
+        chips = {item["id"]: item for item in shown["context_items"]}
+        assert [source["label"] for source in chips["attachments"]["sources"]] == [
+            "notes.txt"
+        ]
+        assert [item["name"] for item in flow._drop_context_items] == ["notes.txt"]
+
+
+def test_pasted_intent_image_reaches_query_as_vision_context():
+    """A clipboard bitmap attached in the picker is sent through screenshot vision."""
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("described")})
+    with caller_config([{}]):
+        flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit(
+            "ui.context.dropped",
+            {"items": [{"name": "Pasted image", "content": "aW1hZ2U=", "type": "image"}]},
+        )
+        ui.emit("ui.intent.chosen", {"custom": "Describe this image"})
+
+    params = brain.last_call("brain.query")["params"]
+    assert params["screenshot_b64"] == "aW1hZ2U="
+
+
 def test_intent_app_context_reenable_restores_removed_document_sources():
     """Verify App recaptures all document rows after an emptied group is re-enabled."""
     active_doc = "[Doc A]\nalpha body\n\n[Doc B]\nbeta body\n\n[Doc C]\ngamma body"
@@ -1262,6 +1356,43 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert "App" in summary_labels
     assert not any(label.startswith(("Selection -", "Clipboard -")) for label in summary_labels)
     assert ui.calls_for("ui.context.clear")
+
+
+def test_query_flow_persists_image_only_assistant_result():
+    """An overlay image generation creates a chat turn even without reply text."""
+    rows = [{"paste_back": False, "context_ambient": True, "context_screenshot": "off"}]
+    attachment = {
+        "kind": "image",
+        "source": "codex_image_generation",
+        "path": "/repo/generated.png",
+        "name": "generated.png",
+    }
+
+    def image_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event(
+            "reply.chunk",
+            {"text": "Image generated.", "is_progress": True, "is_thought": False},
+            1,
+        )
+        payload = {"text": "", "attachments": [attachment]}
+        on_event("reply.done", payload, 1)
+        return payload
+
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": image_stream})
+    with caller_config(rows):
+        flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "Generate a test image"})
+
+    chat_params = ui.last_call("ui.chat.add_conversation")["params"]
+    assert chat_params["assistant"] == ""
+    assert chat_params["assistant_attachments"] == [attachment]
+    assert ui.last_call("ui.reply.chunk")["params"] == {
+        "text": "Image generated.",
+        "is_progress": True,
+        "is_thought": False,
+    }
 
 
 def test_query_flow_streams_reply_into_open_chat_conversation():
@@ -1795,7 +1926,7 @@ def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
         )
         assert updated_browser_chip["state"] == "on"
         assert updated_browser_chip["tokens"].startswith("~")
-        assert updated_browser_chip["warning"] == ""
+        assert updated_browser_chip["warning"] == "Privacy: 1 item(s) detected and censored."
         ui.emit("ui.intent.chosen", {"custom": "What is this page?"})
 
     fetch = native.last_call("native.context.browser_content")["params"]
@@ -4391,6 +4522,27 @@ def test_query_privacy_report_surfaces_redacted_summary_badge_and_report():
     assert privacy["report"]["count"] == 2
     assert privacy["report"]["items"][0]["preview"] == "[email redacted]"
 
+    reviewed_report = dict(report, reviewed=True, decision="redacted")
+
+    def query_after_review(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event("reply.done", {"text": "ok", "privacy_report": reviewed_report}, 1)
+        return {"text": "ok", "privacy_report": reviewed_report}
+
+    reviewed_ui = FakeWorker()
+    reviewed_native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    reviewed_brain = FakeWorker(stream_handlers={"brain.query": query_after_review})
+    with caller_config(rows):
+        _flow, reviewed_native, reviewed_ui, _brain, _audio = make_flow(
+            native=reviewed_native,
+            ui=reviewed_ui,
+            brain=reviewed_brain,
+        )
+        reviewed_native.emit("native.hotkey", {"kind": "caller", "index": 0})
+        reviewed_ui.emit("ui.intent.chosen", {"custom": "go"})
+
+    assert reviewed_ui.calls_for("ui.privacy.report") == []
+    assert reviewed_ui.calls_for("ui.context.summary") == []
+
 
 @pytest.mark.workflow
 def test_health_request_uses_fast_static_rows_and_warns(monkeypatch):
@@ -4525,6 +4677,90 @@ def test_chat_request_streams_through_brain_chat():
     assert done_params["text"] == "chat reply"
 
 
+def test_chat_request_forwards_remote_activity_transcript_to_chat_window():
+    """The final ordered provider transcript reaches local chat persistence."""
+    display_segments = [
+        {"text": "Inspecting\n", "is_thought": True},
+        {"text": "Done", "is_thought": False},
+    ]
+
+    def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event("reply.chunk", {"text": "Inspecting\n", "is_thought": True}, 1)
+        on_event("reply.chunk", {"text": "Done", "is_thought": False}, 1)
+        payload = {"text": "Done", "display_segments": display_segments}
+        on_event("reply.done", payload, 1)
+        return payload
+
+    brain = FakeWorker(stream_handlers={"brain.chat": stream})
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.chat.request",
+        {"request_id": "chat-activity", "messages": [{"role": "user", "content": "inspect"}]},
+    )
+
+    done_params = ui.last_call("ui.chat.done")["params"]
+    assert done_params["text"] == "Done"
+    assert done_params["display_segments"] == display_segments
+
+
+def test_chat_request_forwards_image_only_result_to_chat_window():
+    """Direct chat completion includes generated media when final text is empty."""
+    attachment = {
+        "kind": "image",
+        "source": "codex_image_generation",
+        "path": "/repo/generated.png",
+        "name": "generated.png",
+    }
+
+    def stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        payload = {"text": "", "attachments": [attachment]}
+        on_event("reply.done", payload, 1)
+        return payload
+
+    brain = FakeWorker(stream_handlers={"brain.chat": stream})
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.chat.request",
+        {
+            "request_id": "chat-image",
+            "messages": [{"role": "user", "content": "Generate a test image"}],
+        },
+    )
+
+    done_params = ui.last_call("ui.chat.done")["params"]
+    assert done_params["request_id"] == "chat-image"
+    assert done_params["text"] == ""
+    assert done_params["assistant_attachments"] == [attachment]
+
+
+def test_chat_request_uses_selected_codex_project(monkeypatch, tmp_path):
+    """The provider popup's project overrides automatic conversation context."""
+    brain = FakeWorker(stream_handlers={"brain.chat": query_stream("chat reply")})
+    _flow, _native, ui, brain, _audio = make_flow(brain=brain)
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "codex", raising=False)
+    monkeypatch.setattr(config, "CHAT_CONVERSATION_OWNER", "agent", raising=False)
+    monkeypatch.setattr(config, "WISP_CODEX_WORKSPACE", str(tmp_path), raising=False)
+
+    ui.emit(
+        "ui.chat.request",
+        {
+            "request_id": "chat-project",
+            "messages": [{"role": "user", "content": "inspect this project"}],
+            "harness_cwd": "/automatic/context",
+            "harness_sessions": {
+                "codex": {"provider": "codex", "session_id": "old", "cwd": "/old"},
+            },
+        },
+    )
+
+    params = brain.last_call("brain.chat")["params"]
+    assert params["harness_provider"] == "codex"
+    assert params["conversation_owner"] == "agent"
+    assert params["harness_cwd"] == str(tmp_path.resolve())
+
+
 def test_chat_context_preview_updates_token_estimates_before_send():
     """Verify chat context preview refreshes visible context token estimates."""
     native = FakeWorker(
@@ -4568,7 +4804,7 @@ def test_chat_context_preview_updates_token_estimates_before_send():
     assert first_browser["tokens"].startswith("~")
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["tokens"].startswith("~")
-    assert updated_browser["warning"] == ""
+    assert updated_browser["warning"] == "Privacy: 1 item(s) detected and censored."
     assert native.last_call("native.context.browser_content")["params"] == {
         "url": "https://example.test/page",
         "hwnd": 777,
@@ -4621,7 +4857,7 @@ def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
     updated_browser = next(item for item in calls[-1]["params"]["context_items"] if item["id"] == "browser")
     assert updated_browser["state"] == "on"
     assert updated_browser["tokens"].startswith("~")
-    assert updated_browser["warning"] == ""
+    assert updated_browser["warning"] == "Privacy: 1 item(s) detected and censored."
     assert native.last_call("native.context.browser_content")["params"] == {
         "url": "https://example.test/page",
         "hwnd": 777,
@@ -5465,13 +5701,43 @@ def test_settings_reload_skips_audio_when_audio_settings_unchanged(monkeypatch):
     reload_calls: list[str] = []
     monkeypatch.setattr(config, "reload", lambda: reload_calls.append("supervisor"))
     _flow, native, ui, brain, audio = make_flow()
+    privacy_prewarms = len(brain.calls_for("brain.privacy.prewarm"))
+    harness_prewarms = len(brain.calls_for("brain.harness.prewarm"))
 
     ui.emit("ui.settings.applied", {"changed_keys": ["THEME_MODE"]})
 
     assert reload_calls == ["supervisor"]
     assert brain.calls_for("brain.config.reload")
+    assert len(brain.calls_for("brain.privacy.prewarm")) == privacy_prewarms
+    assert len(brain.calls_for("brain.harness.prewarm")) == harness_prewarms
     assert not audio.calls_for("audio.config.reload")
     assert native.calls_for("native.hotkeys.reload")
+
+
+def test_settings_reload_prewarms_new_advanced_privacy_mode(monkeypatch):
+    reload_calls: list[str] = []
+    monkeypatch.setattr(config, "reload", lambda: reload_calls.append("supervisor"))
+    _flow, _native, ui, brain, _audio = make_flow()
+    privacy_prewarms = len(brain.calls_for("brain.privacy.prewarm"))
+
+    ui.emit("ui.settings.applied", {"changed_keys": ["PRIVACY_MODE"]})
+
+    assert reload_calls == ["supervisor"]
+    assert len(brain.calls_for("brain.privacy.prewarm")) == privacy_prewarms + 1
+    assert brain.last_call("brain.privacy.prewarm")["wait"] is False
+
+
+def test_settings_reload_prewarms_new_codex_execution_mode(monkeypatch):
+    reload_calls: list[str] = []
+    monkeypatch.setattr(config, "reload", lambda: reload_calls.append("supervisor"))
+    _flow, _native, ui, brain, _audio = make_flow()
+    harness_prewarms = len(brain.calls_for("brain.harness.prewarm"))
+
+    ui.emit("ui.settings.applied", {"changed_keys": ["CHAT_EXECUTION_MODE"]})
+
+    assert reload_calls == ["supervisor"]
+    assert len(brain.calls_for("brain.harness.prewarm")) == harness_prewarms + 1
+    assert brain.last_call("brain.harness.prewarm")["wait"] is False
 
 
 def test_start_hotkeys_surfaces_failed_registration_to_user():

@@ -35,7 +35,7 @@ def log_context(
         """Handle trim for LLM clients client."""
         return line if len(line) <= max_line else line[:max_line] + "-¦"
 
-    lines = [_trim(l) for l in text.splitlines() if l.strip()]
+    lines = [_trim(line) for line in text.splitlines() if line.strip()]
     truncated = False
 
     if len(lines) > max_lines:

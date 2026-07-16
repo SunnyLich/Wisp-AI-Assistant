@@ -6,7 +6,6 @@ import os
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     pytest.importorskip("PySide6", reason="PySide6 not installed") is None,
     reason="PySide6 not installed",
@@ -54,6 +53,7 @@ def test_agent_task_forms_expand_across_platform_styles():
     """Verify agent task forms expand across platform styles behavior."""
     _qapp()
     from PySide6.QtWidgets import QFormLayout
+
     from ui.agent.task_window import AgentTaskDialog
 
     dialog = AgentTaskDialog()
@@ -74,6 +74,7 @@ def test_agent_task_title_field_uses_extra_window_width():
     """Verify the title field is configured to consume available form width."""
     _qapp()
     from PySide6.QtWidgets import QSizePolicy
+
     from ui.agent.task_window import AgentTaskDialog
 
     dialog = AgentTaskDialog()
@@ -93,6 +94,7 @@ def test_agent_communication_forms_expand_across_platform_styles():
     """Verify agent communication forms expand across platform styles behavior."""
     _qapp()
     from PySide6.QtWidgets import QFormLayout
+
     from ui.agent.task_window import (
         AgentCommunicationDialog,
         AgentCommunicationMapWindow,
@@ -174,6 +176,7 @@ def test_agent_meeting_view_wheel_zoom_persists_across_refit():
     """Verify the meeting graphics view zooms with the mouse wheel."""
     _qapp()
     from PySide6.QtWidgets import QGraphicsScene
+
     from ui.agent.task_window import _FitGraphicsView
 
     class _Delta:
@@ -426,6 +429,7 @@ def test_agent_task_preview_dialog_uses_scrollable_text_view(monkeypatch):
     app = _qapp()
 
     from PySide6.QtWidgets import QDialog, QTextEdit
+
     from ui.agent.task_window import AgentTaskDialog
 
     captured = {}
@@ -463,6 +467,7 @@ def test_agent_task_combos_ignore_passive_wheel_events():
     app = _qapp()
 
     from PySide6.QtWidgets import QComboBox
+
     from ui.agent.task_window import (
         AgentCommunicationDialog,
         AgentCommunicationMapWindow,

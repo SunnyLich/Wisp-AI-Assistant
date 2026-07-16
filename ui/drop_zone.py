@@ -9,17 +9,26 @@ Components:
   process_drop_mime  -- converts dropped MIME data to (name, content, type) items
 """
 from __future__ import annotations
+
+import base64
 import math
 import os
-import base64
-from typing import Callable, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QWidget, QGraphicsOpacityEffect
 from PySide6.QtCore import (
-    Qt, QTimer, QPoint, QRect, QRectF,
-    QPropertyAnimation, QEasingCurve, QMimeData,
+    QEasingCurve,
+    QMimeData,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    Qt,
+    QTimer,
 )
-from PySide6.QtGui import QPainter, QColor, QFont, QBrush, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QWidget
+
 from ui.i18n import t
 
 if TYPE_CHECKING:
@@ -39,6 +48,7 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"
 _DOCUMENT_EXTS = {".docx", ".pdf", ".xlsx", ".xls", ".pptx", ".odt", ".ods", ".odp"}
 
 _MAX_TEXT_BYTES = 51_200  # 50 KB cap when reading text files
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # avoid base64-expanding huge image files
 
 _TYPE_COLORS = {
     "image": QColor(180,  90, 255),
@@ -94,6 +104,15 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
 
             if ext in _IMAGE_EXTS:
                 try:
+                    size = os.path.getsize(path)
+                    if size > _MAX_IMAGE_BYTES:
+                        items.append((
+                            name,
+                            f"[Image omitted: {size:,} bytes exceeds the "
+                            f"{_MAX_IMAGE_BYTES:,}-byte capture safety limit]",
+                            "file",
+                        ))
+                        continue
                     with open(path, "rb") as fh:
                         data = base64.b64encode(fh.read()).decode()
                     items.append((name, data, "image"))
@@ -102,7 +121,7 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
 
             elif ext in _TEXT_EXTS or ext == "":
                 try:
-                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    with open(path, encoding="utf-8", errors="replace") as fh:
                         content = fh.read(_MAX_TEXT_BYTES)
                     items.append((name, content, "text"))
                 except OSError:
@@ -115,7 +134,9 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
             else:
                 items.append((name, f"[File: {path}]", "file"))
 
-    elif mime.hasText():
+    # Rich clipboard images often also advertise HTML/text containing their
+    # source URL. Let the image branch below win for those payloads.
+    elif mime.hasText() and not mime.hasImage():
         text = mime.text().strip()
         if text:
             preview = text[:28].replace("\n", " ")
@@ -126,7 +147,7 @@ def process_drop_mime(mime: QMimeData) -> list[tuple[str, str, str]]:
     elif mime.hasImage():
         image = mime.imageData()
         if image is not None and not image.isNull():
-            from PySide6.QtCore import QByteArray, QBuffer
+            from PySide6.QtCore import QBuffer, QByteArray
             ba  = QByteArray()
             buf = QBuffer(ba)
             buf.open(QBuffer.OpenModeFlag.WriteOnly)

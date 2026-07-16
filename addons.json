@@ -1,3 +1,7 @@
 {
-  "addons": {}
+  "addons": {
+    "ui-lab": {
+      "enabled": false
+    }
+  }
 }

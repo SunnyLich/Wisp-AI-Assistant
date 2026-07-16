@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
-
+from collections.abc import Iterable
 
 _OPEN_TAGS = ("<think>", "<thinking>", "<thought>")
 _CLOSE_TAGS = ("</think>", "</thinking>", "</thought>")

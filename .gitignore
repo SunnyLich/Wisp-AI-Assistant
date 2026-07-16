@@ -26,9 +26,11 @@ secrets.*
 /.agents/
 /.claude/
 /.codex/
+/.pnpm-store/
 
 # Local prototypes (standalone experiments, not part of the app)
 /prototypes/
+/videos/
 
 # Machine-specific MCP client config snippet (regenerated at addon startup)
 addons/mcp_bridge/claude_config_snippet.json

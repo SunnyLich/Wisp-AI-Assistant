@@ -15,17 +15,18 @@ tested from Windows/CI without the LLM stack.
 """
 from __future__ import annotations
 
-import json
-import os
 import ast
 import importlib
+import json
+import os
 import threading
 import time
 import uuid
 import wave
+from collections.abc import Callable, Iterator
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 # Keep optional-dependency chatter off the protocol channel's stderr mirror.
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -40,6 +41,8 @@ _AGENT_RUN_CONTROLS: dict[Any, Any] = {}
 _AGENT_RUN_CONTROLS_LOCK = threading.Lock()
 _LIVE_FILE_APPROVALS: dict[str, dict[str, Any]] = {}
 _LIVE_FILE_APPROVALS_LOCK = threading.Lock()
+_PRIVACY_APPROVALS: dict[str, dict[str, Any]] = {}
+_PRIVACY_APPROVALS_LOCK = threading.Lock()
 _LIVE_FILE_TOOL_NAMES = {"list_files", "read_file", "create_file", "edit_file", "write_file"}
 
 
@@ -234,6 +237,54 @@ def brain_config_reload() -> dict[str, Any]:
         "llm_model": getattr(config, "LLM_MODEL", ""),
         "tts_provider": getattr(config, "TTS_PROVIDER", ""),
     }
+
+
+@handler("brain.privacy.prewarm")
+def brain_privacy_prewarm() -> dict[str, Any]:
+    """Warm Advanced Privacy in the brain process without blocking startup."""
+    import config
+
+    if str(getattr(config, "PRIVACY_MODE", "builtin") or "builtin").strip().lower() != "advanced":
+        return {"ready": False, "skipped": True, "reason": "disabled"}
+    try:
+        from core import privacy_model
+
+        status = privacy_model.model_status()
+        if not status.get("valid"):
+            return {"ready": False, "skipped": True, "reason": "not_installed"}
+        _log("Advanced privacy warmup starting.")
+        result = privacy_model.prewarm()
+        _log(
+            "Advanced privacy warmup ready "
+            f"in {float(result.get('elapsed_seconds') or 0.0):.2f}s"
+            f"{' (cached)' if result.get('cached') else ''}."
+        )
+        return dict(result)
+    except Exception as exc:  # noqa: BLE001 - warmup is best effort; requests remain fail-closed.
+        message = f"{type(exc).__name__}: {exc}"
+        _log(f"Advanced privacy warmup failed: {message}")
+        return {"ready": False, "skipped": False, "error": message}
+
+
+@handler("brain.harness.prewarm")
+def brain_harness_prewarm() -> dict[str, Any]:
+    """Start the selected reusable local harness before the first prompt."""
+    import config
+
+    provider = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+    if provider != "codex":
+        return {"ready": False, "skipped": True, "provider": provider}
+    try:
+        from core.harness_clients.codex import prewarm_codex
+
+        _log("Codex app-server prewarm starting.")
+        result = prewarm_codex()
+        _log(f"Codex app-server prewarm ready backend={result.get('backend') or 'unknown'}.")
+        return {"provider": "codex", **result}
+    except Exception as exc:  # noqa: BLE001 - the first real turn can retry startup.
+        message = f"{type(exc).__name__}: {exc}"
+        _log(f"Codex app-server prewarm failed: {message}")
+        return {"ready": False, "skipped": False, "provider": "codex", "error": message}
 
 
 _SECRET_LABELS = {
@@ -565,7 +616,7 @@ def brain_settings_reset_credentials() -> dict[str, Any]:
         import config
         from core.system.env_utils import read_env_file, write_env_file
 
-        env_path = getattr(config, "_ENV_FILE")
+        env_path = config._ENV_FILE
         env_values = read_env_file(env_path)
         credential_keys = set(getattr(secret_store, "API_KEY_NAMES", ())) & set(env_values)
         if credential_keys:
@@ -741,29 +792,47 @@ def brain_addons_llm_call(
         raise ValueError("addon_id is required")
     if not prompt:
         raise ValueError("prompt is required")
-    from core.system.paths import ADDONS_DIR
     from core import addon_store
+    from core.system.paths import ADDONS_DIR
 
     manager = _loaded_addon_manager(Path(ADDONS_DIR))
-    addon = getattr(manager, "_find")(addon_id) if hasattr(manager, "_find") else None
+    addon = manager._find(addon_id) if hasattr(manager, "_find") else None
     if addon is None or not getattr(addon, "enabled", False):
         raise ValueError(f"Addon not loaded: {addon_id}")
-    if not bool(getattr(addon, "manifest").permissions.get("llm")):
+    if not bool(addon.manifest.permissions.get("llm")):
         raise PermissionError(f"Addon is missing llm permission: {addon_id}")
     stored_addon_id = str(getattr(addon, "id", addon_id) or addon_id)
     allowed, remaining = addon_store.record_llm_call(stored_addon_id, limit=5, window_seconds=3600)
     if not allowed:
         raise PermissionError(f"Addon LLM call cap reached: {addon_id}")
 
-    from core.llm_clients.client import stream_response
+    from core.llm_clients import client as llm_client
+    from core.privacy_gateway import scrub_cloud_fields
 
-    chunks = list(stream_response(
-        prompt,
-        use_tools=False,
-        max_tokens=max(1, min(int(max_tokens or 512), 2048)),
-        temperature=temperature,
-    ))
-    return {"text": "".join(chunks), "remaining": remaining}
+    privacy_session, scrubbed, privacy_report = scrub_cloud_fields(
+        {"addon_prompt": prompt},
+        session_id=f"addon:{stored_addon_id}",
+    )
+    llm_client.set_live_privacy_context(
+        privacy_session,
+        ai_enabled=bool(privacy_report.get("ai_enabled")),
+    )
+    try:
+        chunks = list(llm_client.stream_response(
+            scrubbed["addon_prompt"],
+            use_tools=False,
+            max_tokens=max(1, min(int(max_tokens or 512), 2048)),
+            temperature=temperature,
+        ))
+    finally:
+        llm_client.set_live_privacy_context(None)
+    text = "".join(chunks)
+    if privacy_session is not None:
+        text = privacy_session.restore(text)
+    result = {"text": text, "remaining": remaining}
+    if privacy_report.get("count"):
+        result["privacy_report"] = privacy_report
+    return result
 
 
 def _addon_summaries(addons_dir: Path) -> list[dict[str, Any]]:
@@ -807,8 +876,8 @@ def run_addon_startup() -> None:
     _addon_startup_done = True
     try:
         import config
-        from core.system.paths import ADDONS_DIR
         from core.llm_clients.client import get_tool_registry
+        from core.system.paths import ADDONS_DIR
 
         addon_manager = importlib.import_module("core.addon_manager")
         try:
@@ -1035,6 +1104,7 @@ def brain_transcribe(pcm_path: str = "", language: str | None = None) -> dict[st
 
     import numpy as np
     import soundfile as sf
+
     import config
 
     data, sample_rate = sf.read(pcm_path, dtype="float32", always_2d=False)
@@ -1042,8 +1112,9 @@ def brain_transcribe(pcm_path: str = "", language: str | None = None) -> dict[st
         data = data.mean(axis=1)
     if sample_rate != 16_000:
         try:
-            from scipy.signal import resample_poly
             from math import gcd
+
+            from scipy.signal import resample_poly
             g = gcd(int(sample_rate), 16_000)
             data = resample_poly(data, 16_000 // g, int(sample_rate) // g).astype("float32")
         except Exception:
@@ -1100,6 +1171,7 @@ def brain_tts_synthesize(text: str = "", voice: str | None = None) -> dict[str, 
         return {"path": str(out_path), "sample_rate": 22_050, "bytes": n_bytes, "provider": "fake"}
 
     import numpy as np
+
     import config
 
     tts = importlib.import_module("core.tts")
@@ -1301,6 +1373,185 @@ def _custom_base_url_for_route(provider: str, custom_base_url: str) -> str | Non
 # Imports are lazy so this module still loads with no LLM deps/keys present.
 # ---------------------------------------------------------------------------
 
+def _harness_session_id(raw: dict[str, Any] | None, provider: str) -> str:
+    """Return a session id only when it belongs to the selected harness."""
+    if not isinstance(raw, dict):
+        return ""
+    if str(raw.get("provider") or "").strip().lower() != provider:
+        return ""
+    return str(raw.get("session_id") or "").strip()
+
+
+def _harness_history_text(messages: list[dict[str, Any]]) -> str:
+    """Format Wisp history for the first turn of a newly linked harness session."""
+    lines = ["[Existing Wisp conversation]"]
+    for message in messages:
+        role = str(message.get("role") or "user").strip().lower()
+        content = str(message.get("content") or "").strip()
+        if content:
+            lines.append(f"{role.title()}: {content}")
+    return "\n\n".join(lines)
+
+
+def _harness_chat_prompt(turns: list[dict[str, Any]], *, include_history: bool) -> str:
+    """Return either a complete Wisp handoff or only the newest user turn."""
+    if include_history:
+        return _harness_history_text(turns)
+    return next(
+        (
+            str(message.get("content") or "").strip()
+            for message in reversed(turns)
+            if message.get("role") == "user" and str(message.get("content") or "").strip()
+        ),
+        "",
+    )
+
+
+def _run_live_harness(
+    ctx: StreamContext,
+    provider: str,
+    prompt: str,
+    *,
+    harness_session: dict[str, Any] | None,
+    harness_cwd: str,
+    conversation_owner: str,
+    privacy_session: Any = None,
+    privacy_report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run an external harness turn and map its events onto Wisp's live stream."""
+    from core.harness_clients import run_harness
+
+    owner = "agent" if str(conversation_owner).strip().lower() == "agent" else "wisp"
+    display_segments: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = []
+    session_id = _harness_session_id(harness_session, provider) if owner == "agent" else ""
+    stored_cwd = ""
+    if session_id and isinstance(harness_session, dict):
+        stored_cwd = str(harness_session.get("cwd") or "")
+    requested_cwd = str(harness_cwd or "").strip()
+    if session_id and stored_cwd and requested_cwd:
+        try:
+            workspace_changed = Path(stored_cwd).expanduser().resolve() != Path(
+                requested_cwd
+            ).expanduser().resolve()
+        except OSError:
+            workspace_changed = stored_cwd != requested_cwd
+        if workspace_changed:
+            _log(
+                "harness workspace changed; starting a new provider session "
+                f"old={stored_cwd} new={requested_cwd}"
+            )
+            session_id = ""
+            stored_cwd = ""
+    _log(
+        "harness starting "
+        f"provider={provider} owner={owner} resume={'yes' if session_id else 'no'} "
+        f"cwd={stored_cwd or requested_cwd or Path.cwd()}"
+    )
+    if not ctx.cancelled:
+        ctx.emit(
+            "reply.chunk",
+            {
+                "text": "Starting ChatGPT..." if provider == "codex" else "Claude is working...",
+                "is_progress": True,
+                "is_thought": False,
+            },
+        )
+
+    def on_harness_event(event: Any) -> None:
+        text = str(getattr(event, "text", "") or "")
+        kind = str(getattr(event, "kind", "reply") or "reply")
+        attachment = getattr(event, "attachment", None)
+        if kind == "image" and isinstance(attachment, dict):
+            candidate = dict(attachment)
+            key = (str(candidate.get("path") or ""), str(candidate.get("name") or ""))
+            if key[0] and not any(
+                (str(item.get("path") or ""), str(item.get("name") or "")) == key
+                for item in attachments
+            ):
+                attachments.append(candidate)
+        if (not text and kind != "image") or ctx.cancelled:
+            return
+        if privacy_session is not None:
+            text = privacy_session.restore(text)
+        if kind == "image":
+            ctx.emit(
+                "reply.chunk",
+                {
+                    "text": text or "Image generated.",
+                    "is_progress": True,
+                    "is_thought": False,
+                },
+            )
+            return
+        if kind == "progress":
+            text = f"\n{text.strip()}\n"
+        if kind in {"reply", "thought", "progress"}:
+            is_thought = kind in {"thought", "progress"}
+            if is_thought and not display_segments:
+                # Progress events carry surrounding newlines so they separate
+                # from prior content. The first durable event has no prior
+                # content and must still begin on the bubble's first line.
+                text = text.lstrip("\r\n")
+            if display_segments and bool(display_segments[-1].get("is_thought")) == is_thought:
+                display_segments[-1]["text"] = str(display_segments[-1].get("text") or "") + text
+            else:
+                display_segments.append({"text": text, "is_thought": is_thought})
+        ctx.emit(
+            "reply.chunk",
+            {
+                "text": text,
+                # Provider actions belong to the persistent activity transcript.
+                # Only the initial "is working" line is a replaceable preview.
+                "is_progress": kind in {"progress", "status"},
+                "is_thought": kind in {"thought", "progress"},
+            },
+        )
+
+    result = run_harness(
+        provider,
+        prompt,
+        session_id=session_id,
+        cwd=stored_cwd or requested_cwd or None,
+        on_event=on_harness_event,
+        approval_callback=_live_file_approval_callback(ctx),
+    )
+    text = str(result.text or "")
+    for raw_attachment in getattr(result, "attachments", ()) or ():
+        if not isinstance(raw_attachment, dict):
+            continue
+        candidate = dict(raw_attachment)
+        key = (str(candidate.get("path") or ""), str(candidate.get("name") or ""))
+        if key[0] and not any(
+            (str(item.get("path") or ""), str(item.get("name") or "")) == key
+            for item in attachments
+        ):
+            attachments.append(candidate)
+    if privacy_session is not None:
+        text = privacy_session.restore(text)
+    _log(
+        "harness completed "
+        f"provider={result.provider} backend={result.backend or 'unknown'} "
+        f"session_id={result.session_id}"
+    )
+    done_payload: dict[str, Any] = {
+        "text": text,
+        "display_segments": display_segments,
+        "attachments": attachments,
+        "harness": {
+            "provider": result.provider,
+            "session_id": result.session_id if owner == "agent" else "",
+            "cwd": result.cwd,
+            "conversation_owner": owner,
+            "clear_session": owner == "wisp",
+        },
+    }
+    if isinstance(privacy_report, dict) and privacy_report.get("count"):
+        done_payload["privacy_report"] = privacy_report
+    ctx.emit("reply.done", done_payload)
+    return done_payload
+
+
 @handler("brain.query", streaming=True)
 def brain_query(
     ctx: StreamContext,
@@ -1323,6 +1574,11 @@ def brain_query(
     context_priority: str = "",
     history: list[dict] | None = None,
     memory_project: str | None = None,
+    privacy_session_id: str = "",
+    harness_provider: str = "",
+    conversation_owner: str = "",
+    harness_session: dict[str, Any] | None = None,
+    harness_cwd: str = "",
 ) -> dict[str, Any]:
     """Assemble context and stream an LLM reply, mirroring App._query_and_speak.
 
@@ -1331,8 +1587,8 @@ def brain_query(
     token stream. Each chunk becomes a ``reply.chunk`` event tagged with this
     request's id; the full text is the final response result.
     """
-    from core.query_pipeline import ContextInputs, build_context
     import config
+    from core.query_pipeline import ContextInputs, build_context
 
     query_started = time.monotonic()
     _reload_config_for_live_file_tools(
@@ -1383,15 +1639,79 @@ def brain_query(
             active_document_label=active_document_label,
             priority_context=context_priority,
             trust_privacy_mode=trust_privacy_mode,
+            defer_privacy_redaction=trust_privacy_mode,
         )
     )
     built = _apply_frontloaded_tools(built, frontload_tools)
     built = _apply_addon_before_query(built)
-    if trust_privacy_mode:
-        built = _redact_built_context(built)
-        memory_context = _redact_text(memory_context)
-
     normalized_history = _normalize_chat_messages(history or []) if history else None
+    privacy_session = None
+    if trust_privacy_mode:
+        from core.privacy_gateway import ai_detection_enabled, get_session, review_enabled
+
+        privacy_session = get_session(privacy_session_id or f"query:{ctx.req_id}")
+        fields = {
+            "prompt": str(getattr(built, "user_message", "") or ""),
+            "context": str(getattr(built, "ambient_ctx", "") or ""),
+            "memory": str(memory_context or ""),
+        }
+        for index, message in enumerate(normalized_history or []):
+            fields[f"history:{index}"] = str(message.get("content") or "")
+        scrubbed, privacy_report = privacy_session.scrub_fields(
+            fields,
+            ai_enabled=ai_detection_enabled(),
+            review=(
+                _privacy_review_callback(ctx)
+                if review_enabled() and not _offline_brain()
+                else None
+            ),
+        )
+        built = type(built)(
+            user_message=scrubbed["prompt"],
+            ambient_ctx=scrubbed["context"],
+            screenshot_b64=getattr(built, "screenshot_b64", None),
+            privacy_report=privacy_report,
+        )
+        memory_context = scrubbed["memory"]
+        if normalized_history:
+            normalized_history = [dict(message) for message in normalized_history]
+            for index, message in enumerate(normalized_history):
+                message["content"] = scrubbed[f"history:{index}"]
+    harness_mode = str(
+        harness_provider or getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp"
+    ).strip().lower()
+    if harness_mode not in {"wisp", "codex", "claude"}:
+        harness_mode = "wisp"
+    owner = str(
+        conversation_owner or getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+    ).strip().lower()
+    if owner not in {"wisp", "agent"}:
+        owner = "wisp"
+    if harness_mode in {"codex", "claude"}:
+        # External harnesses own their system instructions. Their optional
+        # provider-specific prompts are applied through the native harness API,
+        # never pasted into the user's message.
+        prompt_parts: list[str] = []
+        has_agent_session = owner == "agent" and bool(_harness_session_id(harness_session, harness_mode))
+        if not has_agent_session and normalized_history:
+            prompt_parts.append(_harness_history_text(normalized_history))
+        if memory_context:
+            prompt_parts.append(f"[Wisp memory]\n{memory_context}")
+        ambient = str(getattr(built, "ambient_ctx", "") or "").strip()
+        if ambient:
+            prompt_parts.append(ambient)
+        prompt_parts.append(str(getattr(built, "user_message", "") or ""))
+        return _run_live_harness(
+            ctx,
+            harness_mode,
+            "\n\n---\n\n".join(part for part in prompt_parts if part),
+            harness_session=harness_session,
+            harness_cwd=harness_cwd,
+            conversation_owner=owner,
+            privacy_session=privacy_session,
+            privacy_report=getattr(built, "privacy_report", None),
+        )
+
     parts: list[str] = []
     file_context: list[dict[str, Any]] = []
     _log(
@@ -1412,10 +1732,14 @@ def brain_query(
         ctx=ctx,
         file_access_mode=file_access_mode,
         file_context=file_context,
+        privacy_session=privacy_session,
+        privacy_report=getattr(built, "privacy_report", None),
     ):
         if ctx.cancelled:
             break
         text = str(chunk)
+        if privacy_session is not None:
+            text = privacy_session.restore(text)
         kind = _stream_chunk_kind(chunk)
         if not first_chunk_seen:
             first_chunk_seen = True
@@ -1430,6 +1754,8 @@ def brain_query(
         ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress, "is_thought": is_thought})
 
     full = _transform_addon_response_text("".join(parts), surface="reply")
+    if privacy_session is not None:
+        full = privacy_session.restore(full)
     if full and not ctx.cancelled:
         ctx.emit(
             "reply.chunk",
@@ -1449,29 +1775,6 @@ def brain_query(
     ctx.emit("reply.done", done_payload)
     _notify_addon_after_response(full)
     return done_payload
-
-
-def _redact_text(text: str | None) -> str:
-    """Apply the shared sensitive-data redactor to model-bound text."""
-    if not text:
-        return ""
-    from core.context_fetcher import _redact
-
-    return _redact(str(text))
-
-
-def _redact_built_context(built: Any) -> Any:
-    """Redact text fields on a BuiltContext-like object after hooks/tools run."""
-    try:
-        return type(built)(
-            user_message=_redact_text(getattr(built, "user_message", "")),
-            ambient_ctx=_redact_text(getattr(built, "ambient_ctx", "")),
-            screenshot_b64=getattr(built, "screenshot_b64", None),
-            privacy_report=getattr(built, "privacy_report", {}),
-        )
-    except Exception as exc:  # noqa: BLE001 - privacy pass should not block answering
-        _log(f"privacy redaction skipped: {type(exc).__name__}: {exc}")
-        return built
 
 
 def _apply_frontloaded_tools(built: Any, frontload_tools: list[str] | None) -> Any:
@@ -1600,6 +1903,8 @@ def _stream_query_reply(
     ctx: StreamContext | None = None,
     file_access_mode: str = "",
     file_context: list[dict[str, Any]] | None = None,
+    privacy_session: Any | None = None,
+    privacy_report: dict[str, Any] | None = None,
 ) -> Iterator[str]:
     """Token stream for ``brain.query``: real provider, or deterministic offline.
 
@@ -1625,6 +1930,23 @@ def _stream_query_reply(
         llm_client.set_live_file_access_mode(file_access_mode or None)
         llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
         llm_client.set_live_file_event_callback(_record_file_context(file_context) if file_context is not None else None)
+        if privacy_session is not None:
+            from core.privacy_gateway import ai_detection_enabled, review_enabled
+
+            llm_client.set_live_privacy_context(
+                privacy_session,
+                ai_enabled=ai_detection_enabled(),
+                review_callback=(
+                    _privacy_review_callback(ctx)
+                    if ctx is not None and review_enabled()
+                    else None
+                ),
+                report_callback=(
+                    (lambda report: _merge_privacy_report(privacy_report, report))
+                    if privacy_report is not None
+                    else None
+                ),
+            )
         try:
             yield from llm_client.stream_response(
                 built.user_message,
@@ -1642,6 +1964,7 @@ def _stream_query_reply(
             llm_client.set_live_file_access_mode(None)
             llm_client.set_live_file_approval_callback(None)
             llm_client.set_live_file_event_callback(None)
+            llm_client.set_live_privacy_context(None)
 
     if _planned_chunking_query_enabled(
         built,
@@ -1703,11 +2026,36 @@ def brain_rewrite(
     selected_text: str = "",
     intent_prompt: str = "Rewrite or fix the following text",
     rewrite_context: str = "",
+    privacy_session_id: str = "",
 ) -> dict[str, Any]:
     """Stream an inline rewrite for native paste-back callers."""
     selected_text = selected_text.strip()
     if not selected_text:
         raise ValueError("selected_text is required")
+
+    privacy_session = None
+    privacy_report: dict[str, Any] = {}
+    import config
+    if bool(getattr(config, "TRUST_PRIVACY_MODE", True)):
+        from core.privacy_gateway import ai_detection_enabled, get_session, review_enabled
+
+        privacy_session = get_session(privacy_session_id or f"rewrite:{ctx.req_id}")
+        scrubbed, privacy_report = privacy_session.scrub_fields(
+            {
+                "rewrite_text": selected_text,
+                "instruction": intent_prompt,
+                "context": rewrite_context,
+            },
+            ai_enabled=ai_detection_enabled(),
+            review=(
+                _privacy_review_callback(ctx)
+                if review_enabled() and not _offline_brain()
+                else None
+            ),
+        )
+        selected_text = scrubbed["rewrite_text"]
+        intent_prompt = scrubbed["instruction"]
+        rewrite_context = scrubbed["context"]
 
     replacement_parts: list[str] = []
     visible_parts: list[str] = []
@@ -1716,6 +2064,8 @@ def brain_rewrite(
             break
         kind = str(getattr(chunk, "kind", "answer") or "answer")
         text = str(chunk)
+        if privacy_session is not None:
+            text = privacy_session.restore(text)
         if kind == "rewrite_result":
             replacement_parts.append(text)
             continue
@@ -1724,8 +2074,14 @@ def brain_rewrite(
 
     full = "".join(replacement_parts)
     visible = "".join(visible_parts).strip()
-    ctx.emit("reply.done", {"text": full, "visible_text": visible})
-    return {"text": full, "visible_text": visible}
+    if privacy_session is not None:
+        full = privacy_session.restore(full)
+        visible = privacy_session.restore(visible)
+    done_payload = {"text": full, "visible_text": visible}
+    if privacy_report.get("count"):
+        done_payload["privacy_report"] = privacy_report
+    ctx.emit("reply.done", done_payload)
+    return done_payload
 
 
 def _stream_rewrite_reply(selected_text: str, intent_prompt: str, rewrite_context: str = "") -> Iterator[str]:
@@ -1753,6 +2109,11 @@ def brain_chat(
     allowed_tools: list[str] | None = None,
     pinned_tools: list[str] | None = None,
     file_access_mode: str = "",
+    privacy_session_id: str = "",
+    harness_provider: str = "",
+    conversation_owner: str = "",
+    harness_session: dict[str, Any] | None = None,
+    harness_cwd: str = "",
 ) -> dict[str, Any]:
     """Stream a multi-turn chat reply from the existing chat LLM path."""
     _reload_config_for_live_file_tools(
@@ -1793,6 +2154,56 @@ def brain_chat(
         except Exception as exc:  # memory should not block chat
             _log(f"chat memory retrieval skipped: {type(exc).__name__}: {exc}")
 
+    privacy_session = None
+    privacy_report: dict[str, Any] = {}
+    import config
+    if bool(getattr(config, "TRUST_PRIVACY_MODE", True)):
+        from core.privacy_gateway import ai_detection_enabled, get_session, review_enabled
+
+        privacy_session = get_session(privacy_session_id or f"chat:{ctx.req_id}")
+        fields = {"memory": str(memory_context or "")}
+        for index, message in enumerate(turns):
+            fields[f"message:{index}"] = str(message.get("content") or "")
+        scrubbed, privacy_report = privacy_session.scrub_fields(
+            fields,
+            ai_enabled=ai_detection_enabled(),
+            review=(
+                _privacy_review_callback(ctx)
+                if review_enabled() and not _offline_brain()
+                else None
+            ),
+        )
+        memory_context = scrubbed["memory"]
+        turns = [dict(message) for message in turns]
+        for index, message in enumerate(turns):
+            message["content"] = scrubbed[f"message:{index}"]
+
+    harness_mode = str(
+        harness_provider or getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp"
+    ).strip().lower()
+    if harness_mode not in {"wisp", "codex", "claude"}:
+        harness_mode = "wisp"
+    owner = str(
+        conversation_owner or getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+    ).strip().lower()
+    if owner not in {"wisp", "agent"}:
+        owner = "wisp"
+    if harness_mode in {"codex", "claude"}:
+        session_id = _harness_session_id(harness_session, harness_mode) if owner == "agent" else ""
+        prompt = _harness_chat_prompt(turns, include_history=not bool(session_id))
+        if memory_context:
+            prompt = f"[Wisp memory]\n{memory_context}\n\n---\n\n{prompt}"
+        return _run_live_harness(
+            ctx,
+            harness_mode,
+            prompt,
+            harness_session=harness_session,
+            harness_cwd=harness_cwd,
+            conversation_owner=owner,
+            privacy_session=privacy_session,
+            privacy_report=privacy_report,
+        )
+
     parts: list[str] = []
     file_context: list[dict[str, Any]] = []
     for chunk in _stream_chat_reply(
@@ -1804,10 +2215,14 @@ def brain_chat(
         ctx=ctx,
         file_access_mode=file_access_mode,
         file_context=file_context,
+        privacy_session=privacy_session,
+        privacy_report=privacy_report,
     ):
         if ctx.cancelled:
             break
         text = str(chunk)
+        if privacy_session is not None:
+            text = privacy_session.restore(text)
         kind = _stream_chunk_kind(chunk)
         is_progress = kind == "progress"
         is_thought = kind == "thought"
@@ -1819,11 +2234,15 @@ def brain_chat(
         ctx.emit("reply.chunk", {"text": text, "is_progress": is_progress, "is_thought": is_thought})
 
     full = _transform_addon_response_text("".join(parts), surface="chat")
+    if privacy_session is not None:
+        full = privacy_session.restore(full)
     if full and not ctx.cancelled:
         ctx.emit("reply.chunk", {"text": full, "is_progress": False, "is_thought": False})
     done_payload: dict[str, Any] = {"text": full}
     if file_context:
         done_payload["file_context"] = file_context
+    if privacy_report.get("count"):
+        done_payload["privacy_report"] = privacy_report
     ctx.emit("reply.done", done_payload)
     return done_payload
 
@@ -1921,6 +2340,8 @@ def _stream_chat_reply(
     ctx: StreamContext | None = None,
     file_access_mode: str = "",
     file_context: list[dict[str, Any]] | None = None,
+    privacy_session: Any | None = None,
+    privacy_report: dict[str, Any] | None = None,
 ) -> Iterator[str]:
     """Stream chat reply."""
     if _offline_brain():
@@ -1935,6 +2356,23 @@ def _stream_chat_reply(
     llm_client.set_live_file_access_mode(file_access_mode or None)
     llm_client.set_live_file_approval_callback(_live_file_approval_callback(ctx) if ctx is not None else None)
     llm_client.set_live_file_event_callback(_record_file_context(file_context) if file_context is not None else None)
+    if privacy_session is not None:
+        from core.privacy_gateway import ai_detection_enabled, review_enabled
+
+        llm_client.set_live_privacy_context(
+            privacy_session,
+            ai_enabled=ai_detection_enabled(),
+            review_callback=(
+                _privacy_review_callback(ctx)
+                if ctx is not None and review_enabled()
+                else None
+            ),
+            report_callback=(
+                (lambda report: _merge_privacy_report(privacy_report, report))
+                if privacy_report is not None
+                else None
+            ),
+        )
     try:
         yield from llm_client.stream_response_with_history(
             messages,
@@ -1947,6 +2385,7 @@ def _stream_chat_reply(
         llm_client.set_live_file_access_mode(None)
         llm_client.set_live_file_approval_callback(None)
         llm_client.set_live_file_event_callback(None)
+        llm_client.set_live_privacy_context(None)
 
 
 @handler("brain.memory.add")
@@ -2260,6 +2699,46 @@ def _live_file_approval_callback(ctx: StreamContext) -> Callable[[dict], dict[st
     return request_approval
 
 
+def _privacy_review_callback(ctx: StreamContext) -> Callable[[dict[str, Any]], str]:
+    """Return a callback that blocks the model send until the user reviews it."""
+    def request_review(request: dict[str, Any]) -> str:
+        approval_id = uuid.uuid4().hex
+        event = threading.Event()
+        state: dict[str, Any] = {"event": event, "decision": "cancel"}
+        with _PRIVACY_APPROVALS_LOCK:
+            _PRIVACY_APPROVALS[approval_id] = state
+        payload = dict(request)
+        payload["approval_id"] = approval_id
+        ctx.emit("privacy.review.request", payload)
+        try:
+            while not event.wait(0.1):
+                if ctx.cancelled:
+                    return "cancel"
+            return str(state.get("decision") or "cancel")
+        finally:
+            with _PRIVACY_APPROVALS_LOCK:
+                _PRIVACY_APPROVALS.pop(approval_id, None)
+
+    return request_review
+
+
+def _merge_privacy_report(target: dict[str, Any] | None, report: dict[str, Any]) -> None:
+    """Merge later tool-result detections into the request's safe report."""
+    if target is None or not report.get("count"):
+        return
+    target["count"] = int(target.get("count") or 0) + int(report.get("count") or 0)
+    target.setdefault("items", []).extend(list(report.get("items") or []))
+    for key in ("categories", "sources"):
+        destination = target.setdefault(key, {})
+        for name, count in dict(report.get(key) or {}).items():
+            destination[name] = int(destination.get(name) or 0) + int(count or 0)
+    target["ai_enabled"] = bool(target.get("ai_enabled") or report.get("ai_enabled"))
+    target["reviewed"] = bool(target.get("reviewed") or report.get("reviewed"))
+    if report.get("decision") == "full":
+        target["decision"] = "full"
+        target["redacted"] = False
+
+
 @handler("brain.debug.live_file.execute", streaming=True)
 def brain_debug_live_file_execute(
     ctx: StreamContext,
@@ -2327,6 +2806,34 @@ def brain_live_file_approval_respond(
     if state["feedback"]:
         result["feedback"] = state["feedback"]
     return result
+
+
+@handler("brain.privacy.review.respond")
+def brain_privacy_review_respond(
+    approval_id: str = "",
+    decision: str = "",
+    approved: bool = False,
+) -> dict[str, Any]:
+    """Resolve one pending pre-send privacy review."""
+    cleaned = approval_id.strip()
+    if not cleaned:
+        raise ValueError("approval_id is required")
+    with _PRIVACY_APPROVALS_LOCK:
+        state = _PRIVACY_APPROVALS.get(cleaned)
+    if state is None:
+        return {"ok": False, "message": "privacy review is no longer pending"}
+    normalized = str(decision or ("redacted" if approved else "cancel")).strip().lower()
+    if normalized not in {"redacted", "full", "cancel"}:
+        normalized = "cancel"
+    state["decision"] = normalized
+    event = state.get("event")
+    if isinstance(event, threading.Event):
+        event.set()
+    return {
+        "ok": True,
+        "approved": normalized in {"redacted", "full"},
+        "decision": normalized,
+    }
 
 
 @handler("brain.agent.control")
@@ -2541,9 +3048,9 @@ def brain_agent_run(ctx: StreamContext, spec: Any = None, log_root: str | None =
     if not isinstance(spec, dict):
         raise ValueError("spec (a serialized agent task dict) is required")
 
-    from core.agent.task_spec import agent_task_spec_from_dict
     from core.agent.runner import AgentTaskRunner
     from core.agent.runtime import AgentRunControl
+    from core.agent.task_spec import agent_task_spec_from_dict
 
     task_spec = agent_task_spec_from_dict(spec)
     _save_agent_last_task_spec(asdict(task_spec), log_root)

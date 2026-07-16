@@ -1,6 +1,5 @@
 """Tests for test tool registry."""
 
-import json
 import textwrap
 import unittest
 from pathlib import Path

@@ -203,6 +203,34 @@ def test_selected_text_empty_is_friendly(monkeypatch):
     assert _text_of(context_server._call_tool("get_selected_text", {})) == "(no selection)"
 
 
+def test_selected_text_is_clipped_to_safety_limit(monkeypatch):
+    """A giant desktop selection cannot become a giant MCP result."""
+    monkeypatch.setattr(
+        "core.capture.get_selected_text",
+        lambda **kw: "x" * (context_server._MAX_TEXT_RESULT_CHARS * 3),
+    )
+    monkeypatch.setattr(
+        "core.context_fetcher.get_active_window_info",
+        lambda **kw: WindowInfo(title="Notepad", pid=99999999),
+    )
+    monkeypatch.setattr(context_server, "_client_pids", lambda: {1})
+
+    text = _text_of(context_server._call_tool("get_selected_text", {}))
+    assert len(text) <= context_server._MAX_TEXT_RESULT_CHARS
+    assert text.endswith("[context truncated at safety limit]")
+
+
+def test_clipboard_is_clipped_to_safety_limit(monkeypatch):
+    """A giant clipboard value cannot become a giant MCP result."""
+    monkeypatch.setattr(
+        "core.capture.get_clipboard_text",
+        lambda: "x" * (context_server._MAX_TEXT_RESULT_CHARS * 3),
+    )
+    text = _text_of(context_server._call_tool("get_clipboard", {}))
+    assert len(text) <= context_server._MAX_TEXT_RESULT_CHARS
+    assert text.endswith("[context truncated at safety limit]")
+
+
 def test_active_window_excludes_client_pids(monkeypatch):
     """The tool passes the client's process tree as the exclusion set."""
     seen = {}

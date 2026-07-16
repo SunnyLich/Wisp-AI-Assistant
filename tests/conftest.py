@@ -102,9 +102,12 @@ def isolated_default_profile(monkeypatch):
     }
 
     with monkeypatch.context() as profile_env:
+        for key in loaded_dotenv_keys:
+            profile_env.delenv(key, raising=False)
         for key in profile_keys:
             profile_env.delenv(key, raising=False)
         with patch("config.load_dotenv"):
+            config._LOADED_DOTENV_KEYS = set()
             config.reload()
         assert config.ACTIVE_PROFILE == "default"
         try:

@@ -1,11 +1,11 @@
 """Agent protocol response parsing and repair helpers."""
 from __future__ import annotations
 
-from typing import Callable
 import ast
 import json
 import re
 import time
+from collections.abc import Callable
 
 from core.agent.runtime import LogCallback
 

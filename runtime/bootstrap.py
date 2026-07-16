@@ -7,7 +7,6 @@ import sys
 import threading
 from pathlib import Path
 
-
 _console_ctrl_suppressed = False
 
 

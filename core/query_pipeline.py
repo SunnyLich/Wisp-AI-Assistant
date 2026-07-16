@@ -13,8 +13,26 @@ pair: each new query bumps the counter, and stale worker threads check
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
+
+# Captured desktop context is supporting material, not the user's prompt.  Keep
+# one bad clipboard/drop/document from turning into a model request measured in
+# tens of megabytes.  Individual inputs are clipped before privacy scanning and
+# the assembled context is clipped again so several individually-safe sources
+# cannot exceed the per-request ceiling together.
+MAX_CAPTURED_CONTEXT_CHARS = 60_000
+_CONTEXT_TRUNCATION_MARKER = "\n[captured context truncated at safety limit]"
+_MAX_IMAGE_BASE64_CHARS = 16_000_000  # about 12 MiB of encoded image bytes
+
+
+def _clip_captured_text(text: object, limit: int = MAX_CAPTURED_CONTEXT_CHARS) -> str:
+    """Bound one captured text value before redaction or prompt assembly."""
+    value = str(text or "")
+    if limit <= 0 or len(value) <= limit:
+        return value
+    keep = max(0, limit - len(_CONTEXT_TRUNCATION_MARKER))
+    return value[:keep].rstrip() + _CONTEXT_TRUNCATION_MARKER
 
 
 class GenerationCounter:
@@ -58,6 +76,7 @@ class ContextInputs:
     active_document_label: str = ""                     # app/window/file label for active document text
     priority_context: str = ""                          # e.g. "Browser/Web" or "Active document"
     trust_privacy_mode: bool = True
+    defer_privacy_redaction: bool = False              # final gateway owns scrub/review
 
 
 @dataclass
@@ -110,6 +129,8 @@ def _redact_with_report_if_enabled(
     text: str | None,
     enabled: bool,
     source: str,
+    *,
+    defer: bool = False,
 ) -> tuple[str, dict]:
     """Apply privacy redaction and keep a detected/censored report."""
     if not text:
@@ -118,7 +139,8 @@ def _redact_with_report_if_enabled(
         return str(text), {"source": source, "count": 0, "items": [], "categories": {}}
     from core.privacy_redaction import redact_with_report
 
-    return redact_with_report(str(text), source=source)
+    redacted, report = redact_with_report(str(text), source=source)
+    return (str(text) if defer else redacted), report
 
 
 def build_context(
@@ -144,11 +166,12 @@ def build_context(
 
     screenshot_b64 = inp.screenshot_b64
     privacy_enabled = bool(inp.trust_privacy_mode)
+    defer_privacy = bool(inp.defer_privacy_redaction)
     reports: list[dict] = []
     context_blocks: list[str] = []
     for item in inp.buffered_items:
         redacted, report = _redact_with_report_if_enabled(
-            item, privacy_enabled, "buffered_context"
+            _clip_captured_text(item), privacy_enabled, "buffered_context", defer=defer_privacy
         )
         if redacted:
             context_blocks.append(f"[Buffered context]\n{redacted}")
@@ -157,12 +180,23 @@ def build_context(
     for name, content, item_type in inp.drop_items:
         label = str(name or "Dropped context").strip() or "Dropped context"
         if item_type == "image" and screenshot_b64 is None:
-            screenshot_b64 = content  # first dropped image becomes the vision input
+            encoded = str(content or "")
+            if len(encoded) <= _MAX_IMAGE_BASE64_CHARS:
+                screenshot_b64 = encoded  # first dropped image becomes the vision input
+            else:
+                context_blocks.append(f"[Image omitted: {label} exceeds the capture safety limit]")
+        elif item_type == "image":
+            # The request contract has one vision-image slot.  Base64 for later
+            # images is not useful as text and can be enormous.
+            context_blocks.append(f"[Additional image omitted from text context: {label}]")
         elif item_type == "document_path":
             doc_text = read_document_file(content)
             if doc_text:
                 redacted, report = _redact_with_report_if_enabled(
-                    doc_text, privacy_enabled, f"document:{name}"
+                    _clip_captured_text(doc_text),
+                    privacy_enabled,
+                    f"document:{name}",
+                    defer=defer_privacy,
                 )
                 if redacted:
                     context_blocks.append(
@@ -173,7 +207,10 @@ def build_context(
                 reports.append(report)
         else:
             redacted, report = _redact_with_report_if_enabled(
-                content, privacy_enabled, f"dropped:{name}"
+                _clip_captured_text(content),
+                privacy_enabled,
+                f"dropped:{name}",
+                defer=defer_privacy,
             )
             if redacted:
                 context_blocks.append(
@@ -185,21 +222,27 @@ def build_context(
 
     if inp.clipboard_text:
         redacted, report = _redact_with_report_if_enabled(
-            inp.clipboard_text, privacy_enabled, "clipboard"
+            _clip_captured_text(inp.clipboard_text),
+            privacy_enabled,
+            "clipboard",
+            defer=defer_privacy,
         )
         if redacted:
             context_blocks.append(f"[Clipboard]\n{redacted}")
         reports.append(report)
 
     selected, selected_report = _redact_with_report_if_enabled(
-        inp.selected, privacy_enabled, "selection"
+        _clip_captured_text(inp.selected), privacy_enabled, "selection", defer=defer_privacy
     )
     selected_block = f"[Selection]\n{selected}" if selected else ""
     ambient_text, ambient_report = _redact_with_report_if_enabled(
-        inp.ambient_text, privacy_enabled, "ambient"
+        _clip_captured_text(inp.ambient_text), privacy_enabled, "ambient", defer=defer_privacy
     )
     active_document_text, document_report = _redact_with_report_if_enabled(
-        inp.active_document_text, privacy_enabled, "active_document"
+        _clip_captured_text(inp.active_document_text),
+        privacy_enabled,
+        "active_document",
+        defer=defer_privacy,
     )
     reports.extend([selected_report, ambient_report, document_report])
 
@@ -228,9 +271,10 @@ def build_context(
         for part in (priority_note, ambient_text, ctx_block, active_doc_block)
         if part
     )
+    ambient_ctx = _clip_captured_text(ambient_ctx)
 
     user_message, prompt_report = _redact_with_report_if_enabled(
-        inp.intent_prompt, privacy_enabled, "prompt"
+        inp.intent_prompt, privacy_enabled, "prompt", defer=defer_privacy
     )
     reports.append(prompt_report)
     from core.privacy_redaction import merge_reports

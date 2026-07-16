@@ -1,9 +1,9 @@
 """Tests for test stt macos safety."""
 
-import unittest
 import sys
 import threading
 import types
+import unittest
 from unittest import mock
 
 import numpy as np

@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 _PYTEST_NO_TESTS_COLLECTED = 5
 
 

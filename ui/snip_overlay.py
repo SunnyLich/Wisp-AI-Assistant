@@ -7,11 +7,13 @@ region_selected with an mss-compatible region dict on release,
 or cancelled on Escape / zero-size drag.
 """
 from __future__ import annotations
+
 import sys
 import time
-from PySide6.QtWidgets import QWidget, QApplication
-from PySide6.QtCore import Qt, Signal, QRect, QPoint, QTimer
-from PySide6.QtGui import QPainter, QColor, QFont, QCursor, QPen
+
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QWidget
 
 from ui.i18n import t
 

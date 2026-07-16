@@ -15,7 +15,7 @@ import os
 from collections import Counter
 
 from .chunks import ContextChunk
-from .extract import STOPWORDS, _WORD_RE
+from .extract import _WORD_RE, STOPWORDS
 
 
 def _tokenize(text: str) -> list[str]:
@@ -73,12 +73,12 @@ class SentenceTransformerEmbedder:
 
     def __init__(self, chunks: list[ContextChunk], model: str = "all-MiniLM-L6-v2") -> None:
         """Initialize the sentence transformer embedder instance."""
-        from sentence_transformers import SentenceTransformer  # type: ignore
         import numpy as np  # type: ignore
+        from sentence_transformers import SentenceTransformer  # type: ignore
 
         self._np = np
         self._model = SentenceTransformer(model)
-        self._cache: dict[str, "np.ndarray"] = {}
+        self._cache: dict[str, np.ndarray] = {}
         for c in chunks:
             self._cache[c.text] = self._encode(c.text)
 

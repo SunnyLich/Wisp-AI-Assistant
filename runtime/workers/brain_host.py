@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 
 from runtime import VERSION
-from runtime.boundaries import boundary_status
 from runtime.bootstrap import configure_paths
+from runtime.boundaries import boundary_status
 
 
 def main() -> int:

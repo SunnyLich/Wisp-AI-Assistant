@@ -50,6 +50,7 @@ Highlight text, press the general hotkey, hit one action key, and Wisp asks your
 
 - **Overlay first** - a floating icon, action picker, and reply bubble stay on top without taking over your desktop.
 - **Full chat window** - click the floating icon to open a persistent chat that remembers past conversations, keeps the context you captured in the overlay, and can expand a quick overlay reply into a longer back-and-forth.
+- **Live ChatGPT/Codex and Claude agents** - choose Wisp, ChatGPT, or Claude Agent at the top of Settings, then choose whether conversation continuity stays with Wisp or transfers to the selected agent. The Codex CLI app-server and Claude Agent SDK can run behind Wisp with live reasoning summaries, replies, tool progress, approvals, and optional resumable sessions. Transcript pull/push/export remains available as an offline fallback.
 - **Privacy by default** - Wisp has no hosted storage layer; data stays on your machine unless you send it to your chosen model, and privacy mode can warn or redact before sensitive context leaves.
 - **Highly customizable** - every hotkey, action key, prompt, context source, paste-back behavior, model route, voice setting, and bubble dimension can be changed.
 - **Approachable GUI** - Settings, setup checks, privacy reports, memory tools, and model warnings explain what is happening without requiring you to read the code.
@@ -167,6 +168,26 @@ Start Wisp Debug.sh
 
 Use the Settings window for normal setup. It can store provider keys, choose model routes, configure voice, run a setup check, explain missing optional features, and show warnings for unsupported model capabilities. Provider keys and OAuth tokens are saved in the **OS keychain**: Windows Credential Manager, macOS Keychain, or Secret Service/KWallet on Linux, **not a plain-text config file**.
 
+### ChatGPT / Codex and Claude CLI
+
+The first App setting, **Run conversations with**, chooses the engine for both overlay queries and the full chat window:
+
+| Engine | Behavior |
+| --- | --- |
+| **Wisp** | Uses the LLM provider and model configured in Wisp. |
+| **ChatGPT** | Runs the installed Codex CLI in app-server mode and uses your ChatGPT/Codex account. |
+| **Claude Agent** | Runs the Claude Agent SDK with Claude Code CLI authentication and uses your Claude account. |
+
+Select ChatGPT or Claude Agent to see its login status and **Sign in**, **Sign out**, and **Refresh** actions. ChatGPT mode requires the Codex CLI; Wisp stores its Codex login and resumable sessions in an isolated local profile so they do not appear in your personal Codex history. Claude Agent uses the bundled SDK when available and authenticates through the Claude Code CLI.
+
+**Conversation goes to** controls continuity. Choose **Wisp** to send the complete local Wisp history on every request without retaining a provider continuation link. Choose **ChatGPT** or **Claude Agent** to transfer the history once, store the returned session ID, and resume that provider session on follow-up prompts. Wisp always keeps a local display copy and keeps Wisp, ChatGPT/Codex, and Claude histories in separate namespaces so switching engines cannot append to the wrong conversation.
+
+While an agent works, Wisp streams its reply plus every visible reasoning summary, plan, tool start, command or file status, and approval request the provider exposes. Private hidden chain-of-thought is not available. A provider badge below the floating icon opens live controls for the next turn: model, project, fast mode, reasoning effort, visible summaries, and one of three permission modes—ask, allow changes within the project, or plan-only read-only.
+
+The project is either selected explicitly or inferred from the resumed session, attached files, and file context, then falls back to Wisp's current directory. Changing the project starts a clean provider session. Agent write access stays scoped to that project; Codex also runs without network access in its workspace sandbox.
+
+Live agent sessions are the supported path. Experimental transcript pull/push/export is a local compatibility fallback: pull reads Codex and Claude JSONL history without contacting either provider; push requires confirmation, makes a full backup, and appends only Wisp-only turns; export requires confirmation and creates a new transcript without overwriting existing provider history. See the [full live-agent guide](../Wisp%20Website/Wisp%20Docs.html#live-agents).
+
 For source builds and advanced setups, `.env.example` documents the available configuration keys. You usually do not need to edit those by hand.
 
 For no-cost and free-tier model options, see [Free Model API Sources](#free-model-api-sources).
@@ -252,6 +273,7 @@ Wisp is designed as a local desktop assistant. **Storage stays on your machine**
 - **Direct requests:** model requests go straight from your machine to the provider or local server you configured.
 - **You choose what is sent:** your configured model provider receives only the prompt you send and the context sources selected or enabled for that caller.
 - **Previews stay local:** Wisp may inspect available context locally to show token estimates, availability, and privacy redaction counts before you send. Previewing a source does not send it to the model provider or save it as chat/memory.
+- **External chat sync stays local:** pulls are read-only and never contact provider services. Experimental push/export actions require confirmation; pushes back up and append to an existing transcript, while exports create a new transcript without overwriting provider history.
 - **Per-hotkey context control:** ambient app context, clipboard, documents, browser pages, GitHub context, memory, and screenshots can each be disabled, attached up front, or exposed as model-fetchable context where supported.
 - **Separate tool permissions:** allowed tools are separate from context controls and cover the remaining model-callable capabilities, such as local file tools and add-on tools.
 - **Privacy mode:** privacy-first setup checks and warning behavior stay enabled, including redaction status before sensitive context is sent.
@@ -259,6 +281,14 @@ Wisp is designed as a local desktop assistant. **Storage stays on your machine**
 - **No surprise connections:** cloud TTS, model providers, compatible servers, or GitHub Copilot are contacted only when you configure and use those features.
 - **Sandboxed addons:** addons run in isolated Python host processes and must declare the capabilities they need.
 - **Lean setup checks:** heavy provider, audio, and STT stacks are not imported unless the feature is enabled.
+
+### Advanced Privacy Mode
+
+Choose **Settings → App → Privacy mode** to use one of three mutually exclusive modes: **Off**, **Built-in** (the default), or **Advanced**. Built-in mode uses local pattern matching for credentials, tokens, payment details, and other structured secrets. Advanced mode keeps those rules and adds the optional [OpenAI Privacy Filter](https://openai.com/index/introducing-openai-privacy-filter/), running entirely on your computer for context-aware detection of names, addresses, email addresses, phone numbers, private URLs and dates, account numbers, and secrets.
+
+The advanced model is an optional download of about 2.8 GB plus its dedicated local runtime. Wisp loads it into memory and warms it in the background when Wisp starts or after you enable Advanced mode. Warm-up may take tens of seconds on a CPU. If you send a request before it finishes, that request waits; later scans reuse the loaded model and are faster. Wisp replaces detected spans with stable placeholders such as `[PERSON_1]`, can show a review before sending, and checks the redacted text again. If the advanced model is unavailable, detection fails, or sensitive text remains, Wisp blocks the cloud send.
+
+Privacy filtering reduces accidental disclosure; it is not a guarantee of anonymization or regulatory compliance.
 
 ## Platform Status
 

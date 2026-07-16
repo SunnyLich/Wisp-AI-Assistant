@@ -21,8 +21,7 @@ COMMON_WORDS: frozenset[str] = frozenset({
     "app", "application", "model", "code", "file", "files", "error", "errors",
     "question", "thing", "things", "stuff", "data", "function", "method",
     "value", "system", "work", "works", "working", "use", "used", "using",
-    "make", "made", "way", "ways", "issue", "problem", "thing", "stuff",
-    "run", "running", "test", "tests", "line", "lines", "case", "cases",
+    "make", "made", "way", "ways", "issue", "problem", "run", "running", "test", "tests", "line", "lines", "case", "cases",
 })
 
 # Ordinary English stopwords — dropped from the term list entirely.

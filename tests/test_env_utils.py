@@ -7,7 +7,12 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from core.system.env_utils import (
-    env_bool, env_float, env_int, format_tool_modes, parse_tool_modes, write_env_file,
+    env_bool,
+    env_float,
+    env_int,
+    format_tool_modes,
+    parse_tool_modes,
+    write_env_file,
 )
 
 

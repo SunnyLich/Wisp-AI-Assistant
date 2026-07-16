@@ -24,9 +24,10 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEdit, QToolTip, QWidget
 
 import config
+from ui.chat_rendering import _compact_markdown_tables
 from ui.i18n import t
-from ui.shared.window_utils import start_wayland_system_move
 from ui.shared.theme import show_tooltip_text
+from ui.shared.window_utils import start_wayland_system_move
 from ui.text_annotations import (
     TextAnnotation,
     annotations_for_subrange,
@@ -124,6 +125,9 @@ class _BubbleTextView(QTextBrowser):
 
     def mousePressEvent(self, event):  # noqa: N802
         """Track whether a text press becomes a selection drag."""
+        parent = self.parent()
+        if hasattr(parent, "_mark_user_engaged"):
+            parent._mark_user_engaged()  # type: ignore[attr-defined]
         if event.button() == Qt.MouseButton.LeftButton:
             self._press_pos = event.position().toPoint()
             self._dragged = False
@@ -229,6 +233,10 @@ class SpeechBubble(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # Reply/status bubbles appear as soon as the intent picker submits. They
+        # are passive UI and must not become the active window when shown, or the
+        # user's original app loses focus at the start of every request.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMouseTracking(True)
 
         self._font = QFont("Segoe UI", _DEFAULT_FONT_SIZE)
@@ -245,6 +253,7 @@ class SpeechBubble(QWidget):
 
         self._full_text = ""
         self._thought_text = ""
+        self._display_segments: list[tuple[str, bool]] = []
         self._lines: list[str] = []
         self._all_line_segments: list[list[tuple[str, bool, int | None, bool, bool]]] = []
         self._line_segments: list[list[tuple[str, bool, int | None, bool, bool]]] = []
@@ -279,6 +288,7 @@ class SpeechBubble(QWidget):
         self._live_ready_shown = False
         self._auto_hide_holds = 0
         self._auto_hide_pending_ms: int | None = None
+        self._user_engaged = False
         self._hide_timer_elapsed = QElapsedTimer()
         self._static_text_top_anchor = False
         self._static_text_visible_lines: int | None = None
@@ -449,6 +459,7 @@ class SpeechBubble(QWidget):
 
     def mousePressEvent(self, event):
         """Handle mouse press event for speech bubble."""
+        self._mark_user_engaged()
         if event.button() == Qt.MouseButton.LeftButton:
             action_idx = self._action_index_at(event.position().toPoint())
             if action_idx >= 0:
@@ -582,6 +593,7 @@ class SpeechBubble(QWidget):
 
     def wheelEvent(self, event):  # noqa: N802
         """Scroll the bubble text without requiring focus."""
+        self._mark_user_engaged()
         if not self._bubble_scroll_enabled() or not self._all_line_segments:
             super().wheelEvent(event)
             return
@@ -615,10 +627,12 @@ class SpeechBubble(QWidget):
 
     def show_listening(self, text: str | None = None):
         """Show a static status indicator while the app waits for user input."""
+        self._reset_user_engagement()
         message = str(text or "Recording - release to send").strip()
         self._restore_base_size()
         self._full_text = ""
         self._thought_text = ""
+        self._display_segments = []
         self._highlight_generation += 1
         self._lines = [f"\u25cf {message}"]
         self._all_line_segments = []
@@ -649,10 +663,12 @@ class SpeechBubble(QWidget):
 
     def start_thinking(self):
         """Show animated dots while waiting for the first LLM token."""
+        self._reset_user_engagement()
         self._clear_notice_actions()
         self._restore_base_size()
         self._full_text = ""
         self._thought_text = ""
+        self._display_segments = []
         self._highlight_generation += 1
         self._lines = []
         self._all_line_segments = []
@@ -785,6 +801,13 @@ class SpeechBubble(QWidget):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
         if not chunk:
             return
+        if is_thought and not self._thought_text:
+            # Harness progress entries use leading newlines to separate them
+            # from earlier activity.  There is nothing to separate on the first
+            # thought, so keeping that newline wastes the bubble's first row.
+            chunk = chunk.lstrip("\r\n")
+            if not chunk:
+                return
         if self._notice_actions or self._static_text_top_anchor or self._static_text_visible_lines is not None:
             self._clear_notice_actions()
             self._restore_base_size()
@@ -792,6 +815,7 @@ class SpeechBubble(QWidget):
             self._transcript_preview = False
             self._pending_words = []
             self._full_text = ""
+            self._display_segments = []
             self._highlight_index_offset = 0
             self._display_label_prefix = ""
             self._highlight_callback_text = ""
@@ -806,6 +830,10 @@ class SpeechBubble(QWidget):
             self._thinking = False
             self._dot_timer.stop()
         self._close_cancels = True
+        starts_new_display_block = bool(
+            self._display_segments and self._display_segments[-1][1] != bool(is_thought)
+        )
+        self._append_display_segment(chunk, is_thought=is_thought)
         if is_thought:
             self._thought_text += chunk
             self._rewrap()
@@ -817,12 +845,22 @@ class SpeechBubble(QWidget):
         self._highlight_index_offset = 0
         self._display_label_prefix = ""
         self._highlight_callback_text = ""
-        new_words = self._reveal_units(chunk)
+        reply_chunk = chunk
+        if (
+            starts_new_display_block
+            and self._full_text
+            and not self._full_text.endswith(("\r", "\n"))
+            and not reply_chunk.startswith(("\r", "\n"))
+        ):
+            # A reply that resumes after thought/tool activity is a new visible
+            # block, not a token continuation of the earlier reply.
+            reply_chunk = f"\n{reply_chunk}"
+        new_words = self._reveal_units(reply_chunk)
         if new_words:
             # If this chunk starts mid-word (no leading space) and the previous
             # chunk also ended mid-word (no trailing space), merge into last word.
             if (self._pending_words
-                    and not chunk[0].isspace()
+                    and not reply_chunk[0].isspace()
                     and not self._last_chunk_ended_with_space
                     and not self._is_cjk(self._pending_words[-1][-1])
                     and not self._is_cjk(new_words[0][0])):
@@ -830,10 +868,11 @@ class SpeechBubble(QWidget):
                 new_words = new_words[1:]
             self._pending_words.extend(new_words)
         chunk_start = len(self._full_text)
-        self._full_text += chunk
+        annotation_start = chunk_start + len(reply_chunk) - len(chunk)
+        self._full_text += reply_chunk
         if annotations is not None:
-            self._set_reply_annotations(annotations, base_offset=chunk_start, text=chunk)
-        self._last_chunk_ended_with_space = chunk[-1].isspace()
+            self._set_reply_annotations(annotations, base_offset=annotation_start, text=chunk)
+        self._last_chunk_ended_with_space = reply_chunk[-1].isspace()
         # Kick off WPM reveal on first token so words always appear gradually,
         # even when TTS=none.  start_word_reveal() / schedule_words() will take
         # over once audio actually starts.
@@ -890,6 +929,7 @@ class SpeechBubble(QWidget):
 
     def clear(self):
         """Hard reset — hide immediately."""
+        self._user_engaged = False
         self._hide_timer.stop()
         self._auto_hide_holds = 0
         self._auto_hide_pending_ms = None
@@ -918,6 +958,7 @@ class SpeechBubble(QWidget):
         self._transcript_preview = False
         self._full_text = ""
         self._thought_text = ""
+        self._display_segments = []
         self._lines = []
         self._all_line_segments = []
         self._line_segments = []
@@ -1056,6 +1097,7 @@ class SpeechBubble(QWidget):
         text = self._compact_static_text(text)
         if not text:
             return
+        self._reset_user_engagement()
         self._hide_timer.stop()
         self._auto_hide_pending_ms = None
         self._dot_timer.stop()
@@ -1071,6 +1113,7 @@ class SpeechBubble(QWidget):
         self._manual_scroll_start = None
         self._reply_chunk_count = 0
         self._thought_text = ""
+        self._display_segments = []
         self._close_cancels = bool(cancel_on_close)
         self._notice_actions = list(actions or [])
         self._action_hover = -1
@@ -1092,6 +1135,7 @@ class SpeechBubble(QWidget):
         self._reply_annotations = []
         self._revealed_count = 0 if prefix else len(self._pending_words)
         self._full_text = text
+        self._display_segments = [(text, False)]
         self._static_text_top_anchor = self._should_top_anchor_static_text(
             cancel_on_close=cancel_on_close,
             label_prefix=prefix,
@@ -1135,6 +1179,14 @@ class SpeechBubble(QWidget):
         body = self._join_reveal_units(self._pending_words)
         self._highlight_callback_text = body if self._display_label_prefix else ""
         self._full_text = f"{self._display_label_prefix}{body}" if self._display_label_prefix else body
+
+    def _append_display_segment(self, text: str, *, is_thought: bool) -> None:
+        """Record streamed content in arrival order while coalescing token deltas."""
+        if self._display_segments and self._display_segments[-1][1] == bool(is_thought):
+            previous, segment_kind = self._display_segments[-1]
+            self._display_segments[-1] = (previous + text, segment_kind)
+            return
+        self._display_segments.append((text, bool(is_thought)))
 
     def _close_rect(self) -> QRect:
         """Return the top-right close/stop hit target inside the bubble body."""
@@ -1357,6 +1409,10 @@ class SpeechBubble(QWidget):
         """Start hide timer."""
         interval = max(1, int(self._hide_delay_ms() if delay_ms is None else delay_ms))
         self._hide_timer.setInterval(interval)
+        if self._user_engaged:
+            self._auto_hide_pending_ms = None
+            self._hide_timer.stop()
+            return
         if self._auto_hide_holds > 0:
             self._auto_hide_pending_ms = interval
             self._hide_timer.stop()
@@ -1379,12 +1435,26 @@ class SpeechBubble(QWidget):
         if self._auto_hide_holds <= 0:
             return
         self._auto_hide_holds -= 1
+        if self._user_engaged:
+            self._auto_hide_pending_ms = None
+            self._hide_timer.stop()
+            return
         if self._auto_hide_holds > 0 or self._auto_hide_pending_ms is None:
             return
         self._hide_timer.setInterval(max(1, int(self._auto_hide_pending_ms)))
         self._auto_hide_pending_ms = None
         self._hide_timer.start()
         self._hide_timer_elapsed.restart()
+
+    def _mark_user_engaged(self) -> None:
+        """Disable auto-hide after a deliberate click or wheel interaction."""
+        self._user_engaged = True
+        self._auto_hide_pending_ms = None
+        self._hide_timer.stop()
+
+    def _reset_user_engagement(self) -> None:
+        """Allow auto-hide again when a new bubble session begins."""
+        self._user_engaged = False
 
     def _set_speed_boost(self, enabled: bool):
         """Set speed boost."""
@@ -1400,7 +1470,10 @@ class SpeechBubble(QWidget):
         if not hasattr(self, "_text_view"):
             return
         body_h = max(1, self._bubble_h - self._notice_action_extra_h())
-        height = max(1, min(body_h - _PAD * 2, self._line_h * self._visible_line_count()))
+        # The body height intentionally omits the final inter-line gap.  The
+        # QTextBrowser still needs a full line box for its last row, otherwise
+        # its invisible viewport edge clips the bottom few pixels of glyphs.
+        height = max(1, min(body_h - _PAD * 2 + _LINE_GAP, self._line_h * self._visible_line_count()))
         self._text_view.setGeometry(_PAD, _PAD, max(1, self._text_w), height)
 
     def _sync_text_view(self) -> None:
@@ -1457,6 +1530,7 @@ class SpeechBubble(QWidget):
         tooltip_annotations: list[TextAnnotation] = []
         reply_offset = 0
         doc_offset = 0
+        highlight_end = self._visible_highlight_end(lines)
         for line_idx, line in enumerate(lines):
             parts: list[str] = []
             for idx, (word, bold, word_idx, is_thought, space_before) in enumerate(line):
@@ -1469,7 +1543,7 @@ class SpeechBubble(QWidget):
                     not is_thought
                     and word_idx is not None
                     and word_idx >= self._highlight_index_offset
-                    and word_idx < self._highlight_index_offset + self._revealed_count
+                    and word_idx < highlight_end
                 )
                 color = self._thought_color if is_thought else (self._read_word_color if is_read else self._text_color)
                 styles = [f"color:{_css_color(color)}"]
@@ -1495,6 +1569,43 @@ class SpeechBubble(QWidget):
             + "<br>".join(html_lines)
             + "</body></html>"
         )
+
+    def _visible_highlight_end(
+        self,
+        lines: list[list[tuple[str, bool, int | None, bool, bool]]],
+    ) -> int:
+        """Map raw reveal progress onto the visible reply-word indexes.
+
+        Bubble-only formatting can change the number of visible units without
+        changing the streamed/TTS units.  Compact Markdown tables are the main
+        example: decorative separators and split cells can create more visible
+        units than the raw pipe-delimited source.  Scale only the presentation
+        boundary so the final raw unit always reaches the final visible word;
+        callbacks and timestamp accounting keep their original raw counts.
+        """
+        start = max(0, self._highlight_index_offset)
+        revealed = max(0, self._revealed_count)
+        pending_total = len(self._pending_words)
+        if revealed <= 0 or pending_total <= 0:
+            return start
+
+        reply_indexes = [
+            word_idx
+            for line in lines
+            for _word, _bold, word_idx, is_thought, _space_before in line
+            if not is_thought and word_idx is not None and word_idx >= start
+        ]
+        if not reply_indexes:
+            return start
+
+        visible_total = max(reply_indexes) - start + 1
+        if revealed >= pending_total:
+            visible_revealed = visible_total
+        else:
+            # Keep the first tick at one visible unit, then distribute any
+            # formatting-created units across the remaining raw progress.
+            visible_revealed = 1 + (revealed - 1) * visible_total // pending_total
+        return start + min(visible_total, visible_revealed)
 
     def _set_reply_annotations(self, annotations: object, *, base_offset: int, text: str) -> None:
         """Store sanitized addon annotations for rendered reply text."""
@@ -1698,29 +1809,47 @@ class SpeechBubble(QWidget):
 
     def _rewrap(self):
         """Word-wrap _full_text and update the visible window."""
-        thought_words = self._markdown_words(self._thought_text)
-        reply_words = self._markdown_words(self._full_text)
         # Expand each whitespace word into breakable units. CJK text has no
         # spaces, so each CJK character is its own unit (Latin runs stay whole),
         # letting the wrap break mid-"word". space_before marks the first unit of
         # a source word so spacing and the read-highlight index stay correct.
         words: list[tuple[str, bool, int | None, bool, bool]] = []
-        for word, bold in thought_words:
-            if word == "\n":
-                words.append((word, bold, None, True, False))
-                continue
-            for u_i, unit in enumerate(self._wrap_units(word)):
-                words.append((unit, bold, None, True, u_i == 0))
         reply_idx = 0
-        for word, bold in reply_words:
-            if word == "\n":
-                words.append((word, bold, None, False, False))
+        display_segments = list(self._display_segments)
+        if not display_segments:
+            if self._thought_text:
+                display_segments.append((self._thought_text, True))
+            if self._full_text:
+                display_segments.append((self._full_text, False))
+        previous_kind: bool | None = None
+        for text, is_thought in display_segments:
+            segment_words = self._markdown_words(text)
+            if previous_kind is None:
+                while segment_words and segment_words[0][0] == "\n":
+                    segment_words.pop(0)
+            elif previous_kind != is_thought:
+                # A type transition is one visual line break. Collapse protocol
+                # padding around the boundary so it never creates blank rows.
+                while words and words[-1][0] == "\n":
+                    words.pop()
+                while segment_words and segment_words[0][0] == "\n":
+                    segment_words.pop(0)
+            if not segment_words:
                 continue
-            reveal_units = self._reveal_units(word) or [word]
-            for reveal_i, reveal_unit in enumerate(reveal_units):
-                for u_i, unit in enumerate(self._wrap_units(reveal_unit)):
-                    words.append((unit, bold, reply_idx, False, reveal_i == 0 and u_i == 0))
-                reply_idx += 1
+            for word, bold in segment_words:
+                if word == "\n":
+                    words.append((word, bold, None, is_thought, False))
+                    continue
+                if is_thought:
+                    for u_i, unit in enumerate(self._wrap_units(word)):
+                        words.append((unit, bold, None, True, u_i == 0))
+                    continue
+                reveal_units = self._reveal_units(word) or [word]
+                for reveal_i, reveal_unit in enumerate(reveal_units):
+                    for u_i, unit in enumerate(self._wrap_units(reveal_unit)):
+                        words.append((unit, bold, reply_idx, False, reveal_i == 0 and u_i == 0))
+                    reply_idx += 1
+            previous_kind = is_thought
         lines: list[list[tuple[str, bool, int | None, bool, bool]]] = []
         current: list[tuple[str, bool, int | None, bool, bool]] = []
         current_w = 0
@@ -1734,9 +1863,13 @@ class SpeechBubble(QWidget):
                 continue
             fm = self._bold_fm if bold else self._fm
             word_w = fm.horizontalAdvance(word)
-            # Break onto a new line where the model's thinking ends and the
-            # reply begins, so they're separated by a line, not just colour.
-            force_break = bool(current) and prev_is_thought is True and not is_thought
+            # Keep thought/tool activity in arrival order, separated from reply
+            # blocks on either side instead of hoisting all gray text to the top.
+            force_break = (
+                bool(current)
+                and prev_is_thought is not None
+                and prev_is_thought != is_thought
+            )
             extra_space = self._space_w if (current and space_before) else 0
             if force_break or (current and current_w + extra_space + word_w > self._text_w):
                 lines.append(current)
@@ -1763,7 +1896,7 @@ class SpeechBubble(QWidget):
         return max(1, int(getattr(config, "BUBBLE_LINES", 1)))
 
     def _highlight_start_line(self, lines: list[list[tuple[str, bool, int | None, bool, bool]]]) -> int:
-        """Return the line window start that follows the last highlighted word."""
+        """Center the last highlighted word in the visible line window."""
         visible_lines = self._visible_line_count()
         if not lines:
             return 0
@@ -1779,16 +1912,14 @@ class SpeechBubble(QWidget):
         if not reply_indexes:
             return max(0, len(lines) - visible_lines)
 
-        target_idx = min(
-            self._highlight_index_offset + self._revealed_count - 1,
-            max(reply_indexes),
-        )
+        target_idx = min(self._visible_highlight_end(lines) - 1, max(reply_indexes))
         target_line = 0
         for line_idx, line in enumerate(lines):
             if any(reply_idx == target_idx for _word, _bold, reply_idx, _is_thought, _sb in line):
                 target_line = line_idx
                 break
-        return max(0, target_line - visible_lines + 1)
+        max_start = max(0, len(lines) - visible_lines)
+        return max(0, min(max_start, target_line - visible_lines // 2))
 
     def _apply_visible_lines(self) -> None:
         """Apply either manual scroll or highlight-follow to visible lines."""
@@ -1959,6 +2090,7 @@ class SpeechBubble(QWidget):
     @staticmethod
     def _markdown_words(text: str) -> list[tuple[str, bool]]:
         """Handle markdown words for speech bubble."""
+        text = _compact_markdown_tables(text)
         words: list[tuple[str, bool]] = []
         bold = False
         buf = ""

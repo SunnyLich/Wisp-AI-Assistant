@@ -8,7 +8,6 @@ import types
 
 import pytest
 
-
 pytest.importorskip("PySide6", reason="PySide6 not installed")
 
 

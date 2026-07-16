@@ -1,12 +1,11 @@
 """Tests for test memory quality."""
 
 import json
-import sys
 import threading
 import time
+from unittest.mock import patch
 
 from core.memory_store import store
-from unittest.mock import patch
 
 
 def _seed_router_attrs(manager):

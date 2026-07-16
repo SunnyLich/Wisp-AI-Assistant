@@ -1,7 +1,6 @@
 """Browser page-content extraction helpers for ambient context."""
 from __future__ import annotations
 
-import config
 import re
 from dataclasses import dataclass, field
 from html import unescape as html_unescape
@@ -9,6 +8,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin
 
+import config
 
 _PAGE_BOILERPLATE_TOKENS = {
     "ad",
@@ -35,10 +35,10 @@ _MAX_PAGE_LINKS = 12
 
 
 def _redact(text: str) -> str:
-    """Remove sensitive patterns before page context is returned."""
+    """Remove secrets while deferring URLs to the session-aware cloud gate."""
     from core.privacy_redaction import redact_text
 
-    return redact_text(text)
+    return redact_text(text, exclude_categories={"url"})
 
 
 @dataclass

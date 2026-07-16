@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 
-
 # Matches only unambiguous imperative memory commands at the START of a message.
 # The (?=[a-zA-Z]) after ^ rejects messages that begin with a quotation mark,
 # symbol, or any non-letter character before the trigger word.

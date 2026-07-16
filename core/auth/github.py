@@ -10,9 +10,9 @@ import json
 import pathlib
 import threading
 import time
-from typing import Callable
-import config
+from collections.abc import Callable
 
+import config
 from core.system.native_locks import keychain_lock
 
 _DEVICE_CODE_URL = "https://github.com/login/device/code"

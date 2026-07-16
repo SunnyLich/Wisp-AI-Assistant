@@ -12,8 +12,6 @@ import threading
 import time
 from types import SimpleNamespace
 
-import pytest
-
 from core.live_voice import (
     HANGOVER_S,
     LiveVoiceConfig,

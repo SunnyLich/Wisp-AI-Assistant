@@ -5,8 +5,7 @@ import asyncio
 import importlib.util
 import os
 import time
-from typing import Iterable
-
+from collections.abc import Iterable
 
 _SDK_MODULE = "copilot"
 _COPILOT_STATE_HOME = os.path.abspath(
@@ -72,6 +71,7 @@ async def _ask_async(
 ) -> str:
     """Handle ask async for auth copilot client."""
     from copilot import CopilotClient  # type: ignore
+
     from core.auth import copilot_auth
 
     token = copilot_auth.get_effective_token()

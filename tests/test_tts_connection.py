@@ -205,7 +205,6 @@ class TtsConnectionTests(unittest.TestCase):
 
     def test_prepare_kokoro_assets_skips_network_when_cached(self):
         """Verify asset preparation stays offline when pinned files are already intact."""
-        from core import tts_assets
 
         calls = []
 
@@ -319,7 +318,6 @@ class TtsConnectionTests(unittest.TestCase):
 
             def __call__(self, text, voice, speed, split_pattern):
                 """Capture synthesis args and return float audio."""
-                import numpy as np
 
                 calls.append({
                     "lang_code": self.lang_code,
@@ -366,7 +364,6 @@ class TtsConnectionTests(unittest.TestCase):
 
             def __call__(self, text, voice, speed, split_pattern):
                 """Capture synthesis args and return float audio."""
-                import numpy as np
 
                 calls.append({
                     "lang_code": self.lang_code,
@@ -413,7 +410,6 @@ class TtsConnectionTests(unittest.TestCase):
 
             def __call__(self, text, voice, speed, split_pattern):
                 """Capture synthesis args and return float audio."""
-                import numpy as np
 
                 calls.append({"lang_code": self.lang_code, "device": self.device, "text": text})
                 yield text, "phonemes", np.array([0.0, 0.25, -0.25], dtype=np.float32)

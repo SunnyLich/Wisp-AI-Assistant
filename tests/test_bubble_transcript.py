@@ -38,6 +38,108 @@ def test_transcript_preview_is_replaced_by_first_reply_chunk():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_progress_preview_is_replaced_by_first_reasoning_summary():
+    """A live Codex thought must replace the temporary working status."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.show_progress("Codex is working...")
+        assert bubble._transcript_preview is True
+
+        bubble.append_chunk("Inspecting constraints", is_thought=True)
+
+        assert bubble._transcript_preview is False
+        assert bubble._thought_text == "Inspecting constraints"
+        assert "Codex is working" not in bubble._full_text
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_first_chatgpt_activity_does_not_reserve_an_empty_top_line():
+    """A newline-delimited first harness activity should begin on row one."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.show_progress("Model is thinking...")
+        bubble.append_chunk("\nRunning: rg\n", is_thought=True)
+
+        assert bubble._thought_text == "Running: rg\n"
+        assert bubble._lines[0] == "Running: rg"
+        assert bubble._text_view.toPlainText().startswith("Running: rg")
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_thoughts_tools_and_reply_blocks_keep_stream_arrival_order():
+    """Later tool activity must remain between the reply blocks around it."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 4)
+    old_width = getattr(config, "BUBBLE_WIDTH", 340)
+    config.BUBBLE_LINES = 8
+    config.BUBBLE_WIDTH = 600
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("Planning", is_thought=True)
+        bubble.append_chunk("First answer")
+        bubble.append_chunk("\nRunning: rg\n", is_thought=True)
+        bubble.append_chunk("Second answer")
+
+        assert bubble._lines == ["Planning", "First answer", "Running: rg", "Second answer"]
+        assert bubble._full_text == "First answer\nSecond answer"
+    finally:
+        config.BUBBLE_LINES = old_lines
+        config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_token_deltas_in_the_same_reply_block_still_join_without_forced_newlines():
+    """Chronological blocks must not turn normal token streaming into one line per token."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("Hello")
+        bubble.append_chunk(", world")
+
+        assert bubble._full_text == "Hello, world"
+        assert bubble._display_segments == [("Hello, world", False)]
+        assert bubble._lines[0] == "Hello, world"
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_notice_bubble_close_is_dismiss_only():
     """Informational notices should not route their close button to backend stop."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -316,6 +418,97 @@ def test_document_view_keeps_legacy_bubble_text_width():
         assert not bubble._text_view.geometry().intersects(bubble._fast_forward_rect())
     finally:
         config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_document_view_has_room_for_the_last_line_box():
+    """The invisible document viewport must not clip the last configured row."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        expected_height = bubble._line_h * max(1, int(config.BUBBLE_LINES))
+        assert bubble._text_view.height() == expected_height
+        assert bubble._text_view.geometry().bottom() < bubble._bubble_h
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_clicking_bubble_permanently_disables_auto_hide_for_current_session():
+    """A deliberate click should keep the current bubble open after hover ends."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("keep this reply open")
+        bubble.finish(flush_remaining=True)
+        assert bubble._hide_timer.isActive()
+
+        QTest.mouseClick(bubble._text_view, Qt.MouseButton.LeftButton, pos=bubble._text_view.rect().center())
+        assert bubble._user_engaged is True
+        assert not bubble._hide_timer.isActive()
+
+        bubble._start_hide_timer()
+        assert not bubble._hide_timer.isActive()
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_wheel_interaction_disables_auto_hide_but_hover_does_not():
+    """Wheel input latches the bubble open; a hover hold remains temporary."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    class _Delta:
+        def y(self) -> int:
+            return -120
+
+    class _WheelEvent:
+        def angleDelta(self) -> _Delta:
+            return _Delta()
+
+        def pixelDelta(self) -> _Delta:
+            return _Delta()
+
+        def accept(self) -> None:
+            pass
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    try:
+        bubble._all_line_segments = [[("reply", False, 0, False, False)]]
+        bubble._start_hide_timer()
+        bubble._pause_auto_hide()  # hover only
+        bubble._resume_auto_hide()
+        assert bubble._user_engaged is False
+        assert bubble._hide_timer.isActive()
+
+        bubble.wheelEvent(_WheelEvent())
+        assert bubble._user_engaged is True
+        assert not bubble._hide_timer.isActive()
+    finally:
         bubble.deleteLater()
         app.processEvents()
 
@@ -789,6 +982,44 @@ def test_cjk_timestamp_words_are_split_for_reveal():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_compact_table_highlight_reaches_final_visible_word():
+    """Visible table formatting must not leave trailing reply words unread."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble, _css_color
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    text = (
+        "|Model|Result|\n"
+        "|---|---|\n"
+        "|1-bit|Usually faster/easier|\n\n"
+        "On this hardware a 4B model will typically generate faster."
+    )
+
+    try:
+        bubble.append_chunk(text)
+        visible_indexes = [
+            reply_idx
+            for line in bubble._all_line_segments
+            for _word, _bold, reply_idx, is_thought, _space_before in line
+            if not is_thought and reply_idx is not None
+        ]
+        assert max(visible_indexes) + 1 > len(bubble._pending_words)
+
+        bubble.finish(flush_remaining=True)
+
+        accent = _css_color(bubble._read_word_color)
+        rendered = bubble._line_segments_html(bubble._all_line_segments)
+        assert f'<span style="color:{accent}">faster.</span>' in rendered
+        assert bubble._visible_highlight_end(bubble._all_line_segments) == max(visible_indexes) + 1
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_bubble_font_size_applies_without_changing_width():
     """Verify bubble text size can change independently from bubble width."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -818,6 +1049,39 @@ def test_bubble_font_size_applies_without_changing_width():
     finally:
         config.BUBBLE_FONT_SIZE = old_font_size
         config.BUBBLE_WIDTH = old_width
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_read_highlight_stays_in_middle_of_bubble_while_following():
+    """The live read position should be centered instead of pinned to the bottom row."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_lines = getattr(config, "BUBBLE_LINES", 3)
+    config.BUBBLE_LINES = 5
+    bubble = SpeechBubble()
+
+    try:
+        words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+        bubble._pending_words = words
+        bubble._revealed_count = 6
+        bubble._all_line_segments = [
+            [(word, False, idx, False, True)]
+            for idx, word in enumerate(words)
+        ]
+
+        bubble._apply_visible_lines()
+
+        assert bubble._visible_start_line == 3
+        assert bubble._lines == ["four", "five", "six", "seven", "eight"]
+    finally:
+        config.BUBBLE_LINES = old_lines
         bubble.deleteLater()
         app.processEvents()
 

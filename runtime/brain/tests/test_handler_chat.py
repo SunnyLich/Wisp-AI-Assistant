@@ -6,7 +6,6 @@ import threading
 import types
 
 import pytest
-
 from wisp_brain import handlers
 
 
@@ -68,6 +67,7 @@ def test_chat_normalizes_messages_and_forwards_memory_context(record_ctx, monkey
         ctx=None,
         file_access_mode="",
         file_context=None,
+        **_kwargs,
     ):
         """Verify fake stream behavior."""
         captured["messages"] = messages
@@ -190,6 +190,187 @@ def test_chat_emits_progress_chunks_without_saving_them(record_ctx, monkeypatch)
     progress = [data for event, data in events if event == "reply.chunk" and data.get("is_progress")]
     assert progress == [{"text": "Checking the file first.", "is_progress": True, "is_thought": False}]
     assert [data for event, data in events if event == "reply.done"] == [{"text": "Done."}]
+
+
+def test_chat_harness_streams_thought_and_reply_and_returns_session(record_ctx, monkeypatch):
+    """The harness route preserves live channel types and resumable metadata."""
+    import config
+    from core import harness_clients
+    from core.harness_clients.base import HarnessEvent, HarnessResult
+
+    # IPC selection must win over a stale value in the long-lived brain worker.
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp", raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+
+    def fake_run(provider, prompt, **kwargs):
+        assert provider == "codex"
+        assert "Continue this" in prompt
+        assert kwargs["session_id"] == "thread-old"
+        kwargs["on_event"](HarnessEvent("status", "Opening conversation in ChatGPT..."))
+        kwargs["on_event"](HarnessEvent("status", "Preparing ChatGPT turn..."))
+        kwargs["on_event"](HarnessEvent("status", "Model is thinking..."))
+        kwargs["on_event"](HarnessEvent("progress", "Reading file"))
+        kwargs["on_event"](HarnessEvent("thought", "Inspecting"))
+        kwargs["on_event"](HarnessEvent("reply", "Finished"))
+        return HarnessResult("codex", "Finished", "thread-new", "/repo")
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_run)
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[{"role": "user", "content": "Continue this"}],
+        memory_enabled=False,
+        harness_provider="codex",
+        conversation_owner="agent",
+        harness_session={"provider": "codex", "session_id": "thread-old", "cwd": "/repo"},
+    )
+
+    chunks = [data for event, data in events if event == "reply.chunk"]
+    assert chunks == [
+        {"text": "Starting ChatGPT...", "is_progress": True, "is_thought": False},
+        {"text": "Opening conversation in ChatGPT...", "is_progress": True, "is_thought": False},
+        {"text": "Preparing ChatGPT turn...", "is_progress": True, "is_thought": False},
+        {"text": "Model is thinking...", "is_progress": True, "is_thought": False},
+        {"text": "Reading file\n", "is_progress": True, "is_thought": True},
+        {"text": "Inspecting", "is_progress": False, "is_thought": True},
+        {"text": "Finished", "is_progress": False, "is_thought": False},
+    ]
+    assert result["harness"] == {
+        "provider": "codex",
+        "session_id": "thread-new",
+        "cwd": "/repo",
+        "conversation_owner": "agent",
+        "clear_session": False,
+    }
+    assert result["display_segments"] == [
+        {"text": "Reading file\nInspecting", "is_thought": True},
+        {"text": "Finished", "is_thought": False},
+    ]
+
+
+def test_chat_harness_returns_image_when_the_turn_has_no_text(record_ctx, monkeypatch):
+    """Image-only harness output remains a durable result and visible live status."""
+    import config
+    from core import harness_clients
+    from core.harness_clients.base import HarnessEvent, HarnessResult
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp", raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+    attachment = {
+        "kind": "image",
+        "source": "codex_image_generation",
+        "path": "/repo/generated.png",
+        "name": "generated.png",
+    }
+
+    def fake_run(provider, _prompt, **kwargs):
+        kwargs["on_event"](
+            HarnessEvent(
+                kind="image",
+                text="Image generated.",
+                attachment=attachment,
+            )
+        )
+        return HarnessResult(
+            provider,
+            "",
+            "thread-image",
+            "/repo",
+            attachments=(attachment,),
+        )
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_run)
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[{"role": "user", "content": "Generate a test image"}],
+        memory_enabled=False,
+        harness_provider="codex",
+        conversation_owner="agent",
+    )
+
+    assert result["text"] == ""
+    assert result["attachments"] == [attachment]
+    chunks = [data for event, data in events if event == "reply.chunk"]
+    assert chunks == [
+        {"text": "Starting ChatGPT...", "is_progress": True, "is_thought": False},
+        {"text": "Image generated.", "is_progress": True, "is_thought": False},
+    ]
+    done = [data for event, data in events if event == "reply.done"][-1]
+    assert done["text"] == ""
+    assert done["attachments"] == [attachment]
+
+
+def test_wisp_owned_harness_turn_sends_full_history_without_resuming(record_ctx, monkeypatch):
+    """Wisp ownership keeps Wisp canonical and clears an older provider link."""
+    import config
+    from core import harness_clients
+    from core.harness_clients.base import HarnessResult
+
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+
+    def fake_run(_provider, prompt, **kwargs):
+        assert "Earlier question" in prompt
+        assert "Earlier answer" in prompt
+        assert "New question" in prompt
+        assert kwargs["session_id"] == ""
+        return HarnessResult("codex", "New answer", "throwaway-thread", "/repo")
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_run)
+    _events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[
+            {"role": "user", "content": "Earlier question"},
+            {"role": "assistant", "content": "Earlier answer"},
+            {"role": "user", "content": "New question"},
+        ],
+        memory_enabled=False,
+        harness_provider="codex",
+        conversation_owner="wisp",
+        harness_session={"provider": "codex", "session_id": "thread-old", "cwd": "/repo"},
+    )
+
+    assert result["harness"] == {
+        "provider": "codex",
+        "session_id": "",
+        "cwd": "/repo",
+        "conversation_owner": "wisp",
+        "clear_session": True,
+    }
+
+
+def test_changing_harness_workspace_starts_a_clean_provider_session(
+    record_ctx,
+    monkeypatch,
+    tmp_path,
+):
+    """A provider session must never carry context into a different project."""
+    import config
+    from core import harness_clients
+    from core.harness_clients.base import HarnessResult
+
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+
+    def fake_run(_provider, _prompt, **kwargs):
+        assert kwargs["session_id"] == ""
+        assert kwargs["cwd"] == str(tmp_path)
+        return HarnessResult("codex", "Done", "thread-new", str(tmp_path))
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_run)
+    _events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[{"role": "user", "content": "Work here"}],
+        memory_enabled=False,
+        harness_provider="codex",
+        conversation_owner="agent",
+        harness_session={"provider": "codex", "session_id": "thread-old", "cwd": "/old"},
+        harness_cwd=str(tmp_path),
+    )
+
+    assert result["harness"]["session_id"] == "thread-new"
+    assert result["harness"]["cwd"] == str(tmp_path)
 
 
 def test_chat_uses_addon_modified_final_response(record_ctx, monkeypatch):

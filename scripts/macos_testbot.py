@@ -47,7 +47,6 @@ import os
 import queue
 import sys
 import threading
-import time
 
 # Run from the repo root so `core`, `ui`, `config` import.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,8 +69,8 @@ def _note_platform() -> None:
 
 def _build_openai(unsafe: bool) -> None:
     """Build openai."""
-    from core.system.native_locks import ssl_init_lock
     from core.system import sdk_clients
+    from core.system.native_locks import ssl_init_lock
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
     with cm:
         sdk_clients.openai_client(api_key=_DUMMY_KEYS["openai"], max_retries=0)
@@ -79,8 +78,8 @@ def _build_openai(unsafe: bool) -> None:
 
 def _build_anthropic(unsafe: bool) -> None:
     """Build anthropic."""
-    from core.system.native_locks import ssl_init_lock
     from core.system import sdk_clients
+    from core.system.native_locks import ssl_init_lock
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
     with cm:
         sdk_clients.anthropic_client(api_key=_DUMMY_KEYS["anthropic"])
@@ -92,6 +91,7 @@ def _build_cartesia(unsafe: bool) -> None:
     # (core/tts.py _get_cartesia_ws -> Cartesia(...) -> create_ssl_context).
     """Build cartesia."""
     from cartesia import Cartesia  # type: ignore
+
     from core.system.native_locks import ssl_init_lock
     cm = contextlib.nullcontext() if unsafe else ssl_init_lock()
     with cm:
@@ -126,7 +126,7 @@ def run_ssl_race(iterations: int, unsafe: bool) -> int:
         barrier = threading.Barrier(len(builders))
         errors: list[BaseException] = []
 
-        def worker(build):
+        def worker(build, *, barrier=barrier, errors=errors):
             """Handle worker for local."""
             try:
                 barrier.wait()          # release all builders at the same instant
@@ -157,8 +157,8 @@ def run_ssl_race(iterations: int, unsafe: bool) -> int:
 def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
     """Run query."""
     _note_platform()
-    from core.llm_clients import client as llm
     from core import tts as tts_module
+    from core.llm_clients import client as llm
 
     # Prewarm sequentially first (this is what the app does at startup).
     print("[testbot] prewarming clients (sequential)...")
@@ -170,7 +170,7 @@ def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
     llm.prewarm()
 
     faulthandler.dump_traceback_later(timeout, exit=True)
-    text_q: "queue.Queue[str | None]" = queue.Queue()
+    text_q: queue.Queue[str | None] = queue.Queue()
 
     def llm_producer():
         """Support command-line helper for scripts macos testbot for llm producer."""
@@ -221,12 +221,13 @@ def run_query(prompt: str, with_tts: bool, timeout: float) -> int:
 def run_qt(prompt: str, timeout: float) -> int:
     """Run qt."""
     _note_platform()
-    from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    import main as app_main  # module-level only; main() is not called
     from core import audio
     from core import tts as tts_module
     from core.llm_clients import client as llm
-    import main as app_main  # module-level only; main() is not called
 
     qt = QApplication(sys.argv)
 
@@ -248,7 +249,7 @@ def run_qt(prompt: str, timeout: float) -> int:
 
     def worker():
         """Support command-line helper for scripts macos testbot for worker."""
-        text_q: "queue.Queue[str | None]" = queue.Queue()
+        text_q: queue.Queue[str | None] = queue.Queue()
 
         def llm_producer():
             """Support command-line helper for scripts macos testbot for llm producer."""

@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMenu, QPushButton, QSystemTrayIcon
 
 import config
 from core.system.paths import DOLL_ASSETS_DIR
@@ -26,6 +26,8 @@ from ui.shared.window_utils import is_wayland, start_wayland_system_move
 
 ASSETS_DIR = str(DOLL_ASSETS_DIR)
 _BUBBLE_SHOW_DEFER_MS = 75
+_PROVIDER_BADGE_HEIGHT = 18
+_PROVIDER_BADGE_GAP = 2
 
 
 class OverlaySignals(QObject):
@@ -48,7 +50,7 @@ class OverlaySignals(QObject):
     show_icon          = Signal()      # make icon visible
     hide_icon          = Signal()      # hide icon after short delay
     raise_overlay      = Signal()      # bring overlay to foreground (Linux)
-    settings_applied   = Signal()      # settings were applied; re-register hotkeys etc.
+    settings_applied   = Signal(object)  # apply payload, including the keys that changed
     show_settings      = Signal()      # tray "Settings" clicked
     show_new_chat          = Signal()        # tray "New chat" clicked
     show_last_chat         = Signal()        # tray "Last chat" clicked
@@ -88,6 +90,7 @@ class IconOverlay(QMainWindow):
 
         self._build_window()
         self._build_icon_label()
+        self._build_provider_badge()
         self._build_tray()
 
         # Speech bubble
@@ -150,6 +153,7 @@ class IconOverlay(QMainWindow):
         from core.platform_utils import keep_overlay_visible_across_apps
         for w in (
             getattr(self, "_icon_label", None),
+            getattr(self, "_provider_badge", None),
             getattr(self, "_context_panel", None),
             getattr(self, "_bubble", None),
         ):
@@ -165,6 +169,10 @@ class IconOverlay(QMainWindow):
         # a small independent QLabel so it can be dragged without a window frame.
         """Build window."""
         self.setWindowFlags(Qt.WindowType.Tool)
+        # This host is shown again when a submitted prompt enters the thinking
+        # state. It has no interactive content of its own, so showing it must
+        # never take focus from the app behind the intent picker.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(0, 0)
 
     def _build_icon_label(self):
@@ -184,6 +192,7 @@ class IconOverlay(QMainWindow):
         )
         self._icon_label.setWindowTitle(t("AI Assistant Icon"))
         self._icon_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._icon_label.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         _app_icon = QApplication.instance().windowIcon()
         if not _app_icon.isNull():
             self._icon_label.setWindowIcon(_app_icon)
@@ -212,6 +221,77 @@ class IconOverlay(QMainWindow):
         # has auto-hide off. The manual "Hide icon" action bypasses this via
         # _hide_icon_now.
         self._icon_hide_timer.timeout.connect(self._on_icon_hide_timeout)
+
+    def _build_provider_badge(self) -> None:
+        """Create a clickable external-harness control below the floating icon."""
+        self._provider_badge = QPushButton(None)
+        self._provider_badge.setObjectName("harnessProviderBadge")
+        self._provider_badge.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self._provider_badge.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._provider_badge.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self._provider_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._provider_badge.setFixedHeight(_PROVIDER_BADGE_HEIGHT)
+        self._provider_badge.clicked.connect(self._open_harness_controls)
+        self._refresh_provider_badge()
+
+    @staticmethod
+    def _provider_badge_mode() -> str:
+        """Return the configured external harness, or blank for normal Wisp."""
+        mode = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+        return mode if mode in {"codex", "claude"} else ""
+
+    def _position_provider_badge(self, icon_pos: QPoint | None = None) -> None:
+        """Keep the provider badge centered directly below the floating icon."""
+        if not hasattr(self, "_provider_badge") or not hasattr(self, "_icon_label"):
+            return
+        if icon_pos is None:
+            icon_pos = self._icon_label.pos()
+        size = config.ICON_SIZE
+        # The provider name can be wider than the icon (notably "CHATGPT" at
+        # the default 60 px icon size).  Size from the rendered contents
+        # instead of capping the button and clipping its outer glyphs.  Keep a
+        # small allowance for font rounding/letter spacing at fractional DPI.
+        width = max(56, size + 8, self._provider_badge.sizeHint().width() + 4)
+        self._provider_badge.setFixedWidth(width)
+        self._provider_badge.move(
+            icon_pos.x() + (size - width) // 2,
+            icon_pos.y() + size + _PROVIDER_BADGE_GAP,
+        )
+
+    def _refresh_provider_badge(self) -> None:
+        """Refresh badge text, colour, position, and visibility from settings."""
+        if not hasattr(self, "_provider_badge"):
+            return
+        mode = self._provider_badge_mode()
+        if not mode:
+            self._provider_badge.hide()
+            return
+        provider_name = "ChatGPT" if mode == "codex" else "Claude"
+        text = f"{provider_name.upper()} ⚙"
+        self._provider_badge.setText(text)
+        self._provider_badge.setAccessibleName(text)
+        self._provider_badge.setToolTip(t("Open {provider} controls").format(provider=provider_name))
+        self._provider_badge.setStyleSheet(
+            "QPushButton#harnessProviderBadge {"
+            "background: transparent; color: white; border: none;"
+            "font-size: 9px; font-weight: 800;"
+            "padding: 1px 6px; letter-spacing: 0.5px;"
+            "} QPushButton#harnessProviderBadge:hover {"
+            "background: transparent; color: #d2d2d2; border: none;"
+            "} QPushButton#harnessProviderBadge:pressed {"
+            "background: transparent; color: #aaaaaa; border: none;"
+            "}"
+        )
+        self._position_provider_badge()
+        if hasattr(self, "_icon_label") and self._icon_label.isVisible():
+            self._provider_badge.show()
+            self._provider_badge.raise_()
+        else:
+            self._provider_badge.hide()
 
     def _update_tray_context_menu(self) -> None:
         """Update tray context menu."""
@@ -324,6 +404,7 @@ class IconOverlay(QMainWindow):
                 self._icon_label.show()
             elif getattr(self, "_current_state", "idle") == "idle":
                 self._icon_label.hide()
+        self._refresh_provider_badge()
         if hasattr(self, "_bubble"):
             self._bubble.apply_config()
             if hasattr(self, "_icon_label"):
@@ -381,6 +462,7 @@ class IconOverlay(QMainWindow):
             self._set_icon_pixmap("thinking" if not resolved else "idle")
             self._icon_label.show()
             self._icon_label.raise_()
+            self._refresh_provider_badge()
         shown = False
         actionable = bool(on_approve and on_decline and not resolved)
         if hasattr(self, "_bubble"):
@@ -389,7 +471,7 @@ class IconOverlay(QMainWindow):
             if actionable:
                 actions = [(t("Approve"), on_approve)]
                 if on_feedback:
-                    actions.append((t("Request Changes"), on_feedback))
+                    actions.append((t("Alternate option"), on_feedback))
                 actions.append((t("Decline"), on_decline))
             self._run_bubble_after_icon(
                 lambda: self._bubble.show_notice(text, timeout_ms=timeout, actions=actions)
@@ -423,9 +505,35 @@ class IconOverlay(QMainWindow):
             0,
             lambda: open_settings(
                 parent=self,
-                on_apply=self.signals.settings_applied.emit,
+                on_apply=lambda payload=None: self.signals.settings_applied.emit(payload or {}),
                 on_setup_check=self.signals.request_setup_check.emit,
             ),
+        )
+
+    def _open_harness_controls(self) -> None:
+        """Open controls for the external provider shown on the badge."""
+        provider = self._provider_badge_mode()
+        if not provider:
+            return
+        from ui.harness_controls import HarnessControlsDialog
+
+        def show_dialog() -> None:
+            dialog = HarnessControlsDialog(provider, parent=self)
+            dialog.applied.connect(self._on_harness_controls_applied)
+            self._harness_controls_dialog = dialog
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+
+        QTimer.singleShot(0, show_dialog)
+
+    def _on_harness_controls_applied(self, changed_keys: object = None) -> None:
+        """Refresh the UI and all workers after harness controls are saved."""
+        config.reload()
+        self._refresh_provider_badge()
+        keys = [str(key) for key in (changed_keys or [])]
+        self.signals.settings_applied.emit(
+            {"changed_keys": keys, "source": "harness_controls"}
         )
 
     def _open_addon_manager(self):
@@ -457,6 +565,7 @@ class IconOverlay(QMainWindow):
         self._icon_hide_timer.stop()
         self._icon_label.show()
         self._icon_label.raise_()
+        self._refresh_provider_badge()
 
     def _hide_icon(self):
         """Hide icon."""
@@ -479,6 +588,8 @@ class IconOverlay(QMainWindow):
         """Backstop timer fired — only hide if auto-hide is on (see _icon_hide_timer)."""
         if config.ICON_AUTO_HIDE and hasattr(self, "_icon_label"):
             self._icon_label.hide()
+            if hasattr(self, "_provider_badge"):
+                self._provider_badge.hide()
 
     def _hide_icon_now(self):
         """Manual 'Hide icon' tray action — always hides, regardless of auto-hide."""
@@ -488,6 +599,8 @@ class IconOverlay(QMainWindow):
         if hasattr(self, "_bubble"):
             self._bubble.clear()
         self._icon_label.hide()
+        if hasattr(self, "_provider_badge"):
+            self._provider_badge.hide()
 
     def _toggle_icon(self):
         """Tray/right-click 'Show/Hide icon' toggle for the floating icon."""
@@ -537,6 +650,8 @@ class IconOverlay(QMainWindow):
         self._icon_hide_timer.stop()
         if config.ICON_AUTO_HIDE:
             self._icon_label.hide()
+            if hasattr(self, "_provider_badge"):
+                self._provider_badge.hide()
 
     def _icon_label_clear(self):
         """Handle icon label clear for icon overlay."""
@@ -546,6 +661,8 @@ class IconOverlay(QMainWindow):
         self._icon_hide_timer.stop()
         if config.ICON_AUTO_HIDE:
             self._icon_label.hide()
+            if hasattr(self, "_provider_badge"):
+                self._provider_badge.hide()
 
     # ------------------------------------------------------------------
     # Mouse
@@ -682,6 +799,7 @@ class IconOverlay(QMainWindow):
         """Reposition bubble and context panel after a drag."""
         sz = config.ICON_SIZE
         self._position_bubble_next_to_icon(icon_pos)
+        self._position_provider_badge(icon_pos)
         if hasattr(self, "_context_panel"):
             self._context_panel.reposition(icon_pos, sz)
 
@@ -768,6 +886,13 @@ class IconOverlay(QMainWindow):
         """Reposition icon to stay to the right of the bubble after a drag."""
         icon_pos = self._bubble.icon_pos_for_bubble(bubble_pos, config.ICON_SIZE)
         self._icon_label.move(icon_pos)
+        self._position_provider_badge(icon_pos)
+
+    def closeEvent(self, event):  # noqa: N802 - Qt API
+        """Close the independent provider badge surface with the overlay."""
+        if hasattr(self, "_provider_badge"):
+            self._provider_badge.close()
+        super().closeEvent(event)
 
     def _on_bubble_speed_boost(self, enabled: bool):
         """Handle bubble speed boost events."""

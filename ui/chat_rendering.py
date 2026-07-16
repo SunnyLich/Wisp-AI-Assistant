@@ -9,14 +9,15 @@ import config
 from core.assistant_text import split_tagged_text
 from ui.text_annotations import (
     TextAnnotation,
+    annotation_tooltip_anchor,
     annotations_for_subrange,
     compose_annotated_slices,
     normalize_range_annotations,
 )
 
-
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _BULLET_RE = re.compile(r"^\s*[-*+]\s+(.*)$")
+_TABLE_DIVIDER_CELL_RE = re.compile(r"^:?-{3,}:?$")
 
 # Colours for code blocks and "thinking" text in rendered replies. Seeded with
 # the original dark values and refreshed from the app theme by
@@ -25,10 +26,23 @@ _RENDER_PALETTE: dict[str, str] = {
     "code_bg": "#26263a",
     "code_inline_bg": "#303044",
     "thought": "#8f8f9e",
+    "table_header_bg": "#34345a",
+    "table_row_bg": "#26263a",
+    "table_alt_bg": "#2b2b43",
+    "table_border": "#494967",
 }
 
 
-def set_render_palette(*, code_bg: str = "", code_inline_bg: str = "", thought: str = "") -> None:
+def set_render_palette(
+    *,
+    code_bg: str = "",
+    code_inline_bg: str = "",
+    thought: str = "",
+    table_header_bg: str = "",
+    table_row_bg: str = "",
+    table_alt_bg: str = "",
+    table_border: str = "",
+) -> None:
     """Update the themed colours used when rendering chat reply HTML."""
     if code_bg:
         _RENDER_PALETTE["code_bg"] = code_bg
@@ -36,9 +50,136 @@ def set_render_palette(*, code_bg: str = "", code_inline_bg: str = "", thought: 
         _RENDER_PALETTE["code_inline_bg"] = code_inline_bg
     if thought:
         _RENDER_PALETTE["thought"] = thought
+    if table_header_bg:
+        _RENDER_PALETTE["table_header_bg"] = table_header_bg
+    if table_row_bg:
+        _RENDER_PALETTE["table_row_bg"] = table_row_bg
+    if table_alt_bg:
+        _RENDER_PALETTE["table_alt_bg"] = table_alt_bg
+    if table_border:
+        _RENDER_PALETTE["table_border"] = table_border
 _NUMBER_RE = re.compile(r"^\s*\d+[.)]\s+(.*)$")
 _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*$")
 _WS_RE = re.compile(r"(\s+)")
+
+
+def _split_table_row(line: str) -> list[tuple[str, int]]:
+    """Return Markdown table cells and their source offsets.
+
+    Pipes inside inline-code spans or escaped as ``\\|`` remain part of the
+    cell. Offsets let addon annotations keep targeting the original text.
+    """
+    cells: list[tuple[str, int]] = []
+    boundaries: list[int] = []
+    in_code = False
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "`":
+            in_code = not in_code
+            continue
+        if char == "|" and not in_code:
+            boundaries.append(index)
+
+    if not boundaries:
+        return []
+    starts = [0, *(position + 1 for position in boundaries)]
+    ends = [*boundaries, len(line)]
+    raw_cells = list(zip(starts, ends, strict=True))
+    if raw_cells and not line[raw_cells[0][0]:raw_cells[0][1]].strip():
+        raw_cells.pop(0)
+    if raw_cells and not line[raw_cells[-1][0]:raw_cells[-1][1]].strip():
+        raw_cells.pop()
+    for start, end in raw_cells:
+        raw = line[start:end]
+        leading = len(raw) - len(raw.lstrip())
+        value = raw.strip().replace(r"\|", "|")
+        cells.append((value, start + leading))
+    return cells
+
+
+def _table_block_at(lines: list[str], start: int) -> tuple[list, list, list, int] | None:
+    """Parse a GitHub-style pipe table beginning at ``start``."""
+    if start + 1 >= len(lines):
+        return None
+    header = _split_table_row(lines[start])
+    divider = _split_table_row(lines[start + 1])
+    if not header or len(header) != len(divider):
+        return None
+    if not all(_TABLE_DIVIDER_CELL_RE.fullmatch(cell.strip()) for cell, _offset in divider):
+        return None
+    alignments: list[str] = []
+    for cell, _offset in divider:
+        if cell.startswith(":") and cell.endswith(":"):
+            alignments.append("center")
+        elif cell.endswith(":"):
+            alignments.append("right")
+        else:
+            alignments.append("left")
+    rows: list[list[tuple[str, int]]] = []
+    end = start + 2
+    while end < len(lines):
+        row = _split_table_row(lines[end])
+        if not row:
+            break
+        if len(row) < len(header):
+            row.extend([("", len(lines[end]))] * (len(header) - len(row)))
+        rows.append(row[:len(header)])
+        end += 1
+    return header, alignments, rows, end
+
+
+def _compact_markdown_tables(text: str) -> str:
+    """Turn pipe tables into a narrow, speech-bubble-friendly card list."""
+    lines = str(text or "").splitlines()
+    output: list[str] = []
+    index = 0
+    in_fence = False
+    while index < len(lines):
+        if _FENCE_RE.match(lines[index]):
+            in_fence = not in_fence
+            output.append(lines[index])
+            index += 1
+            continue
+        if in_fence:
+            output.append(lines[index])
+            index += 1
+            continue
+        table = _table_block_at(lines, index)
+        if table is None:
+            output.append(lines[index])
+            index += 1
+            continue
+        header, _alignments, rows, end = table
+        header_values = [cell for cell, _offset in header]
+        output.append("**" + "  ·  ".join(header_values) + "**")
+        for row in rows:
+            values = [cell for cell, _offset in row]
+            if not values:
+                continue
+            lead = values[0]
+            rest = "  ·  ".join(value for value in values[1:] if value)
+            output.append(f"**{lead}** — {rest}" if rest else f"**{lead}**")
+        index = end
+    return "\n".join(output)
+
+
+def _contains_markdown_table(text: str) -> bool:
+    """Return whether text contains a table outside a fenced code block."""
+    lines = str(text or "").splitlines()
+    in_fence = False
+    for index, line in enumerate(lines):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if not in_fence and _table_block_at(lines, index) is not None:
+            return True
+    return False
 
 
 def _annotation_attrs(annotation: TextAnnotation, extra_style: str = "") -> str:
@@ -70,7 +211,14 @@ def _annotated_text_html(text: str, annotations: list[TextAnnotation], extra_sty
         else:
             attrs = _annotation_attrs(item.annotation, extra_style)
             attr_text = f" {attrs}" if attrs else ""
-            parts.append(f"<{item.annotation.tag}{attr_text}>{escaped}</{item.annotation.tag}>")
+            rendered = f"<{item.annotation.tag}{attr_text}>{escaped}</{item.annotation.tag}>"
+            anchor = annotation_tooltip_anchor(item.annotation)
+            if anchor:
+                rendered = (
+                    f'<a href="{anchor}" style="color: inherit; text-decoration: none;">'
+                    f"{rendered}</a>"
+                )
+            parts.append(rendered)
     return "".join(parts)
 
 
@@ -206,7 +354,15 @@ def _chat_markdown_html(
             parts.append(f"</{list_kind}>")
             list_kind = None
 
+    line_offsets: list[int] = []
+    running_offset = base_offset
     for raw_line in lines:
+        line_offsets.append(running_offset)
+        running_offset += len(raw_line) + 1
+
+    line_index = 0
+    while line_index < len(lines):
+        raw_line = lines[line_index]
         line = raw_line.rstrip()
         if code_lines is not None:
             if _FENCE_RE.match(line):
@@ -216,17 +372,61 @@ def _chat_markdown_html(
             else:
                 code_lines.append(raw_line)
             offset += len(raw_line) + 1
+            line_index += 1
             continue
         if _FENCE_RE.match(line):
             flush_paragraph()
             close_list()
             code_lines = []
             offset += len(raw_line) + 1
+            line_index += 1
             continue
         if not line.strip():
             flush_paragraph()
             close_list()
             offset += len(raw_line) + 1
+            line_index += 1
+            continue
+        table = _table_block_at(lines, line_index)
+        if table is not None:
+            flush_paragraph()
+            close_list()
+            header, alignments, rows, end = table
+            table_border = _RENDER_PALETTE["table_border"]
+            parts.append(
+                '<table cellspacing="0" cellpadding="0" '
+                'style="border-collapse:collapse; width:100%; margin:2px 0 10px 0;">'
+            )
+            parts.append("<thead><tr>")
+            for column, ((cell, cell_offset), alignment) in enumerate(
+                zip(header, alignments, strict=True)
+            ):
+                edge = "" if column else f"border-left:1px solid {table_border};"
+                parts.append(
+                    f'<th style="text-align:{alignment}; padding:7px 9px; font-weight:700; '
+                    f'background:{_RENDER_PALETTE["table_header_bg"]}; '
+                    f'border-top:1px solid {table_border}; border-right:1px solid {table_border}; '
+                    f'border-bottom:1px solid {table_border}; {edge}">'
+                    f'{_inline_markdown_html(cell, annotations, line_offsets[line_index] + cell_offset)}</th>'
+                )
+            parts.append("</tr></thead><tbody>")
+            for row_index, row in enumerate(rows):
+                row_bg = _RENDER_PALETTE["table_alt_bg" if row_index % 2 else "table_row_bg"]
+                parts.append("<tr>")
+                source_line = line_index + 2 + row_index
+                for column, ((cell, cell_offset), alignment) in enumerate(
+                    zip(row, alignments, strict=True)
+                ):
+                    edge = "" if column else f"border-left:1px solid {table_border};"
+                    parts.append(
+                        f'<td style="text-align:{alignment}; padding:7px 9px; background:{row_bg}; '
+                        f'border-right:1px solid {table_border}; border-bottom:1px solid {table_border}; {edge}">'
+                        f'{_inline_markdown_html(cell, annotations, line_offsets[source_line] + cell_offset)}</td>'
+                    )
+                parts.append("</tr>")
+            parts.append("</tbody></table>")
+            offset = line_offsets[end] if end < len(lines) else running_offset
+            line_index = end
             continue
         heading = _HEADING_RE.match(line)
         if heading:
@@ -237,6 +437,7 @@ def _chat_markdown_html(
             heading_offset = offset + heading.start(2)
             parts.append(f"<h{level}>{_inline_markdown_html(heading_text, annotations, heading_offset)}</h{level}>")
             offset += len(raw_line) + 1
+            line_index += 1
             continue
         bullet = _BULLET_RE.match(line)
         number = _NUMBER_RE.match(line)
@@ -251,10 +452,12 @@ def _chat_markdown_html(
             item_offset = offset + (bullet or number).start(1)
             parts.append(f"<li>{_inline_markdown_html(item, annotations, item_offset)}</li>")
             offset += len(raw_line) + 1
+            line_index += 1
             continue
         close_list()
         paragraph.append((line, offset))
         offset += len(raw_line) + 1
+        line_index += 1
 
     if code_lines is not None:
         code = html.escape("\n".join(code_lines))
@@ -383,6 +586,14 @@ def _assistant_segments_to_html(
     """Render assistant thought/reply segments for the chat transcript."""
     full_text = "".join(text for text, _is_thought in segments)
     safe_annotations = normalize_range_annotations(annotations, full_text) if annotations else []
+    # The legacy TTS renderer is a flat word stream and cannot retain block
+    # structure. Prefer a stable table over momentarily exposing raw pipes while
+    # the read position is mirrored into the full chat window.
+    if read_count != 0 and any(
+        not is_thought and _contains_markdown_table(text)
+        for text, is_thought in segments
+    ):
+        read_count = 0
     if read_count == 0:
         code_bg = _RENDER_PALETTE["code_bg"]
         code_inline_bg = _RENDER_PALETTE["code_inline_bg"]

@@ -48,6 +48,7 @@ Sélectionnez du texte, appuyez sur le raccourci général, appuyez sur une touc
 ## Points forts
 
 - **Superposition d'abord** — une icône flottante, un sélecteur d'action et une bulle de réponse restent au premier plan sans envahir votre bureau.
+- **Agents ChatGPT/Codex et Claude en direct** — choisissez Wisp, ChatGPT ou Claude Agent en haut des Paramètres, puis décidez si la continuité reste gérée par Wisp ou est transférée à l’agent. L’app-server de la CLI Codex et le SDK Claude Agent s’exécutent derrière Wisp avec résumés de raisonnement, réponses, progression des outils, approbations et sessions reprenables facultatives. L’importation, le renvoi et l’exportation de transcriptions restent disponibles comme solution hors ligne.
 - **Confidentialité par défaut** — Wisp n'a pas de couche de stockage hébergée ; les données restent sur votre machine, et le mode confidentialité peut avertir ou masquer avant que le contexte sensible ne parte.
 - **Hautement personnalisable** — chaque raccourci, touche d'action, invite, source de contexte, comportement de collage, route de modèle, paramètre vocal et dimension de bulle peut être modifié.
 - **Interface graphique accessible** — les paramètres, les vérifications de configuration, les rapports de confidentialité, les outils de mémoire et les avertissements de modèle expliquent ce qui se passe sans nécessiter de lire le code.
@@ -153,6 +154,26 @@ Start Wisp Debug.sh
 
 Utilisez la fenêtre Paramètres pour la configuration normale. Elle peut stocker les clés de fournisseur, choisir les routes de modèle, configurer la voix, exécuter une vérification de configuration, expliquer les fonctionnalités optionnelles manquantes, et afficher des avertissements pour les capacités de modèle non supportées. Les clés fournisseur et les tokens OAuth sont enregistrés dans le **trousseau du système** : Gestionnaire d'identifiants Windows, Trousseau macOS ou Secret Service/KWallet sous Linux, **pas dans un fichier de configuration en clair**.
 
+### ChatGPT / Codex et Claude CLI
+
+Le premier réglage de l’application, **Exécuter les conversations avec**, choisit le moteur pour les requêtes de la superposition comme pour la fenêtre de chat complète :
+
+| Moteur | Comportement |
+| --- | --- |
+| **Wisp** | Utilise le fournisseur LLM et le modèle configurés dans Wisp. |
+| **ChatGPT** | Exécute la CLI Codex installée en mode app-server et utilise votre compte ChatGPT/Codex. |
+| **Claude Agent** | Exécute le SDK Claude Agent avec l’authentification de la CLI Claude Code et utilise votre compte Claude. |
+
+Sélectionnez ChatGPT ou Claude Agent pour afficher son état de connexion et les actions **Se connecter**, **Se déconnecter** et **Actualiser**. Le mode ChatGPT nécessite la CLI Codex ; Wisp enregistre sa connexion Codex et ses sessions reprenables dans un profil local isolé afin qu’elles n’apparaissent pas dans votre historique Codex personnel. Claude Agent utilise le SDK inclus lorsqu’il est disponible et s’authentifie via la CLI Claude Code.
+
+**Conversation envoyée à** contrôle la continuité. Choisissez **Wisp** pour envoyer tout l’historique Wisp local à chaque requête sans conserver de lien de continuation avec le fournisseur. Choisissez **ChatGPT** ou **Claude Agent** pour transférer l’historique une fois, enregistrer l’identifiant de session renvoyé et reprendre cette session fournisseur pour les prompts suivants. Wisp conserve toujours une copie locale visible et sépare les historiques Wisp, ChatGPT/Codex et Claude afin qu’un changement de moteur ne puisse pas ajouter un message à la mauvaise conversation.
+
+Pendant le travail d’un agent, Wisp diffuse sa réponse ainsi que chaque résumé de raisonnement visible, plan, lancement d’outil, état de commande ou de fichier et demande d’approbation exposés par le fournisseur. La chaîne de pensée privée et masquée n’est pas disponible. Un badge du fournisseur sous l’icône flottante ouvre les contrôles en direct du prochain tour : modèle, projet, mode rapide, effort de raisonnement, résumés visibles et l’un des trois modes d’autorisation — demander, autoriser les modifications dans le projet ou planification uniquement en lecture seule.
+
+Le projet est soit sélectionné explicitement, soit déduit de la session reprise, des pièces jointes et du contexte de fichiers, puis utilise en dernier recours le répertoire courant de Wisp. Changer de projet démarre une nouvelle session fournisseur. L’accès en écriture de l’agent reste limité à ce projet ; Codex s’exécute également sans accès réseau dans le bac à sable de son espace de travail.
+
+Les sessions d’agent en direct constituent le parcours pris en charge. L’importation, le renvoi et l’exportation expérimentaux de transcriptions sont une solution locale de compatibilité : l’importation lit les historiques JSONL de Codex et Claude sans contacter les fournisseurs ; le renvoi exige une confirmation, crée une sauvegarde complète et ajoute uniquement les tours propres à Wisp ; l’exportation exige une confirmation et crée une nouvelle transcription sans écraser l’historique du fournisseur. Consultez le [guide complet des agents en direct](../Wisp%20Website/Wisp%20Docs.html#live-agents).
+
 Pour les builds de source et les configurations avancées, `.env.example` documente les clés de configuration disponibles. Vous n'avez généralement pas besoin de les modifier manuellement.
 
 Pour les options de modèles sans coût et avec offres gratuites, voir [Sources d'API de modèles gratuites](#sources-dapi-de-modèles-gratuites).
@@ -233,12 +254,21 @@ Wisp est conçu comme un assistant de bureau local. **Le stockage reste sur votr
 - **Requêtes directes :** les requêtes de modèle vont directement de votre machine au fournisseur ou serveur local que vous avez configuré.
 - **Vous choisissez ce qui est envoyé :** votre fournisseur de modèle configuré reçoit uniquement l'invite que vous envoyez et les sources de contexte sélectionnées ou activées pour cet appelant.
 - **Les aperçus restent locaux :** Wisp peut inspecter le contexte disponible localement pour afficher des estimations de tokens, la disponibilité et les comptes de suppression de confidentialité avant que vous envoyiez. Prévisualiser une source ne l'envoie pas au fournisseur de modèle ni ne la sauvegarde en tant que chat/mémoire.
+- **La synchronisation des chats externes reste locale :** les importations sont en lecture seule et ne contactent jamais les fournisseurs. Les actions expérimentales de renvoi et d’exportation exigent une confirmation ; le renvoi crée une sauvegarde et ajoute à une transcription existante, tandis que l’exportation crée une nouvelle transcription sans écraser l’historique du fournisseur.
 - **Contexte contrôlé par raccourci :** le contexte d'application ambiant, le presse-papiers, les documents, les pages de navigateur, le contexte GitHub, la mémoire, les outils et les captures d'écran peuvent chacun être activés, désactivés ou routés à la demande.
 - **Mode confidentialité :** les vérifications de configuration prioritaires à la confidentialité et le comportement d'avertissement restent activés, y compris l'état de suppression avant l'envoi de contexte sensible.
 - **Inactif tant que non configuré :** la voix optionnelle, la lecture de documents, le contenu du navigateur, les captures d'écran, GitHub Copilot et les extensions restent inactifs jusqu'à leur configuration.
 - **Pas de connexions surprises :** le TTS cloud, les fournisseurs de modèle, les serveurs compatibles, ou GitHub Copilot ne sont contactés que lorsque vous configurez et utilisez ces fonctionnalités.
 - **Extensions isolées :** les extensions s'exécutent dans des processus hôtes Python isolés et doivent déclarer les capacités dont elles ont besoin.
 - **Vérifications de configuration légères :** les piles de fournisseur, d'audio ou de STT lourdes ne sont importées que si la fonctionnalité est activée.
+
+### Mode de confidentialité avancé
+
+Dans **Paramètres → Application → Mode de confidentialité**, choisissez l'un des trois modes mutuellement exclusifs : **Désactivé**, **Intégré** (par défaut) ou **Avancé**. Le mode intégré utilise des règles locales pour détecter les identifiants, les jetons, les données de paiement et d'autres secrets structurés. Le mode avancé conserve ces règles et ajoute le modèle facultatif [OpenAI Privacy Filter](https://openai.com/index/introducing-openai-privacy-filter/), exécuté entièrement sur votre ordinateur pour détecter en fonction du contexte les noms, adresses, adresses e-mail, numéros de téléphone, URL et dates privées, numéros de compte et secrets.
+
+Le modèle avancé représente un téléchargement facultatif d'environ 2,8 Go, auquel s'ajoute son environnement d'exécution local dédié. Wisp le charge en mémoire et le préchauffe en arrière-plan au démarrage ou après l'activation du mode avancé. Le préchauffage peut prendre plusieurs dizaines de secondes sur un processeur. Si vous envoyez une requête avant la fin, elle attend ; les analyses suivantes réutilisent le modèle chargé et sont plus rapides. Wisp remplace les passages détectés par des espaces réservés stables comme `[PERSON_1]`, peut afficher une vérification avant l'envoi, puis contrôle à nouveau le texte expurgé. Si le modèle avancé est indisponible, si la détection échoue ou s'il reste du texte sensible, Wisp bloque l'envoi vers le cloud.
+
+Le filtrage de confidentialité réduit les divulgations accidentelles ; il ne garantit ni l'anonymisation ni la conformité réglementaire.
 
 ## État des plateformes
 

@@ -102,7 +102,7 @@ def _tool_add(args: dict) -> str:
 def _tool_current_time(_args: dict) -> str:
     """Return local and UTC time the model can't know on its own."""
     local = datetime.datetime.now().astimezone()
-    utc = datetime.datetime.now(datetime.timezone.utc)
+    utc = datetime.datetime.now(datetime.UTC)
     return f"local: {local.isoformat(timespec='seconds')}\nutc:   {utc.isoformat(timespec='seconds')}"
 
 

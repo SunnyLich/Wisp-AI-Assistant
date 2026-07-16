@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core import updater
+from core import updater  # noqa: E402
 
 
 def _wait_for(predicate, timeout_seconds: float) -> bool:
@@ -85,7 +85,7 @@ def main() -> int:
         old_update_dir = updater.UPDATE_DOWNLOAD_DIR
         old_lock = updater.SINGLE_INSTANCE_LOCK
         try:
-            setattr(sys, "frozen", True)
+            sys.frozen = True
             sys.executable = str(install_root / "Wisp.exe")
             updater.UPDATE_DOWNLOAD_DIR = updates_dir
             updater.SINGLE_INSTANCE_LOCK = temp_root / "wisp.lock"
@@ -100,7 +100,7 @@ def main() -> int:
                 except AttributeError:
                     pass
             else:
-                setattr(sys, "frozen", old_frozen)
+                sys.frozen = old_frozen
 
         print(f"Temporary test root: {temp_root}")
         print(f"Generated helper: {script_path}")

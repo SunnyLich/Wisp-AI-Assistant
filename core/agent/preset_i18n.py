@@ -450,7 +450,7 @@ def default_communication_specs(language: str | None = None) -> list[dict[str, s
             "trigger": template["trigger"],
             "message": template["message"],
         }
-        for (source_idx, target_idx), template in zip(routes, templates)
+        for (source_idx, target_idx), template in zip(routes, templates, strict=True)
     ]
 
 

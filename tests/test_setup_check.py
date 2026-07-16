@@ -4,7 +4,6 @@ import pytest
 
 from core import setup_check
 
-
 pytestmark = pytest.mark.workflow
 
 

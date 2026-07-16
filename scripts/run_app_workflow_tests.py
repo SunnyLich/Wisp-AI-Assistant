@@ -24,7 +24,6 @@ import sys
 import time
 from pathlib import Path
 
-
 WORKFLOW_TESTS = (
     "tests/test_app_user_workflows.py",
     "tests/runtime/test_flows.py",
@@ -111,8 +110,7 @@ def _pytest_preflight_message(python: str, root: Path, env: dict[str, str]) -> s
             [python, "-c", "import pytest"],
             cwd=root,
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=15,
             check=False,

@@ -16,13 +16,13 @@ def _default_settings_tests_to_english():
     from ui import i18n
 
     old_language = getattr(config, "APP_LANGUAGE", "")
-    config.APP_LANGUAGE = ""
-    i18n.set_language(None)
+    config.APP_LANGUAGE = "en"
+    i18n.set_language("en")
     try:
         yield
     finally:
         config.APP_LANGUAGE = old_language
-        i18n.set_language(None)
+        i18n.set_language(old_language or None)
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -91,9 +91,8 @@ def test_settings_combo_ignores_wheel_when_popup_closed():
 def test_settings_memory_tab_does_not_show_stored_facts():
     """Verify settings memory tab does not show stored facts behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+    from PySide6.QtWidgets import QApplication, QLabel
 
-    from ui.i18n import t
     from ui.settings_panel.dialog import SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -107,6 +106,49 @@ def test_settings_memory_tab_does_not_show_stored_facts():
         combined = "\n".join(labels)
         assert "Stored Facts" not in combined
         assert "Stored facts" not in combined
+    finally:
+        tab.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_app_settings_starts_with_conversation_harness_selector():
+    """The first App card includes route selection and local agent login."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from ui.i18n import t
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    dialog._env = {}
+    tab = SettingsDialog._tab_app(dialog)
+
+    try:
+        first_card = tab.widget().layout().itemAt(0).widget()
+        header = first_card.findChild(QLabel, "sectionHeader")
+        assert header is not None
+        assert header.text() == t("Run conversations with").upper()
+        combo = dialog._fields["CHAT_EXECUTION_MODE"]
+        assert [combo.itemData(index) for index in range(combo.count())] == ["wisp", "codex", "claude"]
+        owner = dialog._fields["CHAT_CONVERSATION_OWNER"]
+        assert [owner.itemData(index) for index in range(owner.count())] == ["wisp", "agent"]
+        assert owner.isEnabled() is False
+        assert dialog._harness_auth_widget.isHidden() is True
+        combo.setCurrentIndex(combo.findData("codex"))
+        assert owner.isEnabled() is True
+        assert owner.itemText(1) == t("ChatGPT")
+        assert owner.currentData() == "agent"
+        assert dialog._harness_auth_widget.isHidden() is False
+        assert dialog._harness_auth_title_lbl.text() == t("ChatGPT login")
+        assert dialog._harness_login_btn.objectName() == "settingsHarnessLoginButton"
+        assert dialog._harness_logout_btn.objectName() == "settingsHarnessLogoutButton"
+        owner.setCurrentIndex(owner.findData("wisp"))
+        combo.setCurrentIndex(combo.findData("claude"))
+        assert owner.currentData() == "wisp"
+        assert dialog._harness_auth_title_lbl.text() == t("Claude Agent login")
     finally:
         tab.deleteLater()
         app.processEvents()
@@ -720,7 +762,7 @@ def test_optional_installer_finish_prompts_restart_for_restart_apply(monkeypatch
 def test_stt_install_uses_optional_installer(monkeypatch, tmp_path):
     """STT install should use the same optional installer flow as TTS."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox, QMessageBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QMessageBox, QPushButton
 
     from core import optional_deps
     from ui.settings_panel import dialog as dialog_mod
@@ -807,6 +849,46 @@ def test_optional_install_terminal_closes_on_windows(monkeypatch, tmp_path):
     assert "Wisp installer failed with exit code !WISP_INSTALL_EXIT!." in cmdline
     assert "pause > nul" in cmdline.lower()
     assert launched["creationflags"] == 16
+
+
+def test_terminal_command_forwards_isolated_environment_on_windows(monkeypatch, tmp_path):
+    """Visible Codex login terminals inherit Wisp's private state roots."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    launched: dict[str, object] = {}
+    monkeypatch.setattr(dialog_mod.sys, "platform", "win32")
+    monkeypatch.setattr(dialog_mod.subprocess, "CREATE_NEW_CONSOLE", 16, raising=False)
+    monkeypatch.setattr(
+        dialog_mod.subprocess,
+        "Popen",
+        lambda command, **kwargs: launched.update(command=command, **kwargs),
+    )
+
+    ok = dialog_mod._launch_terminal_command(
+        ["codex", "login"],
+        cwd=tmp_path,
+        title="ChatGPT sign-in",
+        environment={"CODEX_HOME": "wisp-codex", "CODEX_SQLITE_HOME": "wisp-codex"},
+    )
+
+    assert ok is True
+    environment = launched["env"]
+    assert environment["CODEX_HOME"] == "wisp-codex"
+    assert environment["CODEX_SQLITE_HOME"] == "wisp-codex"
+
+
+def test_terminal_shell_command_scopes_isolated_environment(tmp_path):
+    """macOS and Linux login shells scope Codex state to the launched command."""
+    from ui.settings_panel import dialog as dialog_mod
+
+    command = dialog_mod._terminal_shell_command(
+        ["codex", "login"],
+        tmp_path,
+        "ChatGPT sign-in",
+        environment={"CODEX_HOME": "/wisp/codex", "CODEX_SQLITE_HOME": "/wisp/codex"},
+    )
+
+    assert "env CODEX_HOME=/wisp/codex CODEX_SQLITE_HOME=/wisp/codex codex login" in command
 
 
 def test_optional_install_terminal_auto_closes_on_macos(monkeypatch, tmp_path):
@@ -1031,8 +1113,8 @@ def test_live_voice_voice_dropdown_supports_custom_value():
 
     from ui.settings_panel.dialog import (
         _CUSTOM_MODEL_SENTINEL,
-        _NoScrollCombo,
         SettingsDialog,
+        _NoScrollCombo,
     )
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -1087,7 +1169,8 @@ def test_provider_model_lists_include_current_defaults():
 def test_app_tab_exposes_assistant_language_setting():
     """Verify app tab exposes assistant language setting behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QCheckBox, QLabel
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QLabel
 
     import config
     from ui import i18n
@@ -1104,14 +1187,39 @@ def test_app_tab_exposes_assistant_language_setting():
     try:
         assert "APP_LANGUAGE" in dialog._fields
         assert "ASSISTANT_LANGUAGE" in dialog._fields
-        assert "TRUST_PRIVACY_MODE" in dialog._fields
+        assert "PRIVACY_MODE" in dialog._fields
         assert "START_ON_LOGIN" in dialog._fields
         labels = {label.text() for label in tab.findChildren(QLabel)}
         checkboxes = {checkbox.text() for checkbox in tab.findChildren(QCheckBox)}
         assert "App language" in labels
         assert "Assistant language" in labels
-        assert "Trust/privacy mode" in checkboxes
+        assert "Review detected private information before sending" in checkboxes
         assert "Start Wisp when you sign in" in checkboxes
+        privacy_selector = dialog._fields["PRIVACY_MODE"]
+        assert isinstance(privacy_selector, QComboBox)
+        assert {
+            privacy_selector.itemData(index)
+            for index in range(privacy_selector.count())
+        } == {"off", "builtin", "advanced"}
+        advanced_index = privacy_selector.findData("advanced")
+        advanced_tooltip = privacy_selector.itemData(
+            advanced_index,
+            Qt.ItemDataRole.ToolTipRole,
+        )
+        assert "warms it in the background" in advanced_tooltip
+        assert "tens of seconds" in advanced_tooltip
+        privacy_card = privacy_selector.parentWidget()
+        while privacy_card is not None and privacy_card.objectName() != "card":
+            privacy_card = privacy_card.parentWidget()
+        assert privacy_card is not None
+        privacy_headers = {
+            label.text()
+            for label in privacy_card.findChildren(QLabel)
+            if label.objectName() == "sectionHeader"
+        }
+        assert "PRIVACY PROTECTION" in privacy_headers
+        cards = [frame for frame in tab.findChildren(QFrame) if frame.objectName() == "card"]
+        assert cards[-1] is privacy_card
         app_values = {
             dialog._fields["APP_LANGUAGE"].itemData(i)
             for i in range(dialog._fields["APP_LANGUAGE"].count())
@@ -1127,6 +1235,244 @@ def test_app_tab_exposes_assistant_language_setting():
         i18n.set_language(app=app)
         tab.deleteLater()
         app.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("language", "translated_fragment"),
+    [
+        ("es", "decenas de segundos"),
+        ("fr", "plusieurs dizaines de secondes"),
+        ("zh", "数十秒"),
+        ("zh-Hant", "數十秒"),
+    ],
+)
+def test_advanced_privacy_warmup_tooltip_is_translated(
+    language: str,
+    translated_fragment: str,
+):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui import i18n
+
+    source = (
+        "Advanced privacy loads a local 2.8 GB AI model into memory and warms it in the "
+        "background when Wisp starts. Warm-up may take tens of seconds on CPU. If you send "
+        "a request before it finishes, that request waits; later requests are faster. The "
+        "privacy model never uploads your text."
+    )
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = language
+    i18n.set_language(language, app=app)
+
+    try:
+        assert translated_fragment in i18n.t(source)
+    finally:
+        config.APP_LANGUAGE = old_language
+        i18n.set_language(old_language or None, app=app)
+
+
+@pytest.mark.parametrize(
+    ("language", "title", "description_fragment", "status"),
+    [
+        ("zh", "ChatGPT 登录", "所选本地代理 CLI", "已使用 ChatGPT 登录"),
+        ("zh-Hant", "ChatGPT 登入", "所選本機代理程式 CLI", "已使用 ChatGPT 登入"),
+        ("fr", "Connexion à ChatGPT", "l’agent local sélectionné", "Connecté avec ChatGPT"),
+        ("es", "Inicio de sesión en ChatGPT", "agente local seleccionado", "Sesión iniciada con ChatGPT"),
+    ],
+)
+def test_harness_login_surface_is_translated(
+    language: str,
+    title: str,
+    description_fragment: str,
+    status: str,
+):
+    """The local-agent login card should never mix English into translated UI."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui import i18n
+    from ui.settings_panel import dialog
+
+    description = (
+        "Wisp uses the account saved by the selected local agent CLI. "
+        "Sign-in opens its terminal and browser flow."
+    )
+    app = QApplication.instance() or QApplication(sys.argv)
+    old_language = getattr(config, "APP_LANGUAGE", "")
+    config.APP_LANGUAGE = language
+    i18n.set_language(language, app=app)
+
+    try:
+        assert i18n.t("ChatGPT login") == title
+        assert description_fragment in i18n.t(description)
+        assert dialog._translate_status_message("Logged in using ChatGPT") == status
+    finally:
+        config.APP_LANGUAGE = old_language
+        i18n.set_language(old_language or None, app=app)
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_privacy_model_install_requires_explicit_confirmation(monkeypatch):
+    """Canceling the confirmation must stop before installer paths are prepared."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    prompt: dict[str, object] = {}
+
+    def reject(_parent, title, body, buttons, default_button):
+        prompt.update(
+            title=title,
+            body=body,
+            buttons=buttons,
+            default_button=default_button,
+        )
+        return QMessageBox.StandardButton.No
+
+    monkeypatch.setattr(QMessageBox, "question", reject)
+    monkeypatch.setattr(
+        dialog,
+        "_privacy_model_install_paths",
+        lambda: pytest.fail("installer preparation ran before approval"),
+    )
+
+    SettingsDialog._install_privacy_model(dialog)
+
+    assert "2.8 GB" in str(prompt["body"])
+    assert prompt["default_button"] == QMessageBox.StandardButton.No
+    assert prompt["buttons"] & QMessageBox.StandardButton.Yes
+    app.processEvents()
+
+
+def test_privacy_model_installer_reuses_per_user_huggingface_token(monkeypatch):
+    """Wisp should forward saved HF auth without ever embedding a shared token."""
+    import ui.settings_panel.dialog as dialog_mod
+    from core import secret_store
+
+    monkeypatch.setattr(dialog_mod, "_optional_install_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(
+        secret_store,
+        "get_secret",
+        lambda name: "hf_user_token" if name == "HUGGINGFACE_API_KEY" else "",
+    )
+
+    env = dialog_mod._privacy_model_install_env()
+
+    assert env["HF_TOKEN"] == "hf_user_token"
+    assert env["HF_HUB_VERBOSITY"] == "error"
+    assert env["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
+    assert env["HF_HUB_DISABLE_TELEMETRY"] == "1"
+
+
+def test_privacy_model_installer_preserves_existing_hf_token(monkeypatch):
+    """An explicit process token takes precedence over Wisp's saved provider key."""
+    import ui.settings_panel.dialog as dialog_mod
+    from core import secret_store
+
+    monkeypatch.setattr(
+        dialog_mod,
+        "_optional_install_env",
+        lambda: {"HF_TOKEN": "hf_process_token"},
+    )
+    monkeypatch.setattr(secret_store, "get_secret", lambda _name: "hf_saved_token")
+
+    env = dialog_mod._privacy_model_install_env()
+
+    assert env["HF_TOKEN"] == "hf_process_token"
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_visible_install_status_refreshes_privacy_stt_and_tts(monkeypatch):
+    """Returning to App or Voice settings should re-read live install state."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QTabWidget, QWidget
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_refresh_privacy_model_status",
+        lambda self: calls.append("privacy"),
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_refresh_stt_active_backend",
+        lambda self: calls.append("stt"),
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_refresh_tts_optional_install_status",
+        lambda self: calls.append("tts"),
+    )
+
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    tabs = QTabWidget()
+    dialog._tabs = tabs
+    dialog._app_tab_index = tabs.addTab(QWidget(), "App")
+    dialog._tts_tab_index = tabs.addTab(QWidget(), "TTS / Voice")
+    dialog._privacy_model_status_lbl = QLabel()
+    dialog._disposing = False
+    dialog._tts_install_status_running = False
+    dialog._tts_install_status_checked = True
+    dialog._tts_install_status_result = {"ok": True}
+    try:
+        tabs.setCurrentIndex(dialog._app_tab_index)
+        SettingsDialog._refresh_current_install_status(dialog, force_tts=True)
+        assert calls == ["privacy"]
+
+        calls.clear()
+        tabs.setCurrentIndex(dialog._tts_tab_index)
+        SettingsDialog._refresh_current_install_status(dialog, force_tts=True)
+        assert calls == ["stt", "tts"]
+        assert dialog._tts_install_status_checked is False
+        assert dialog._tts_install_status_result is None
+    finally:
+        tabs.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_privacy_installer_finish_refreshes_status_immediately(monkeypatch):
+    """A completed privacy installer should update its existing Settings page."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    installer = object()
+    calls: list[object] = []
+    monkeypatch.setattr(
+        dialog,
+        "_refresh_privacy_model_status",
+        lambda: calls.append("refresh"),
+    )
+    monkeypatch.setattr(
+        dialog,
+        "_forget_optional_install_dialog",
+        lambda value: calls.append(value),
+    )
+    monkeypatch.setattr(QTimer, "singleShot", lambda _delay, callback: callback())
+
+    SettingsDialog._finish_privacy_model_install(
+        dialog,
+        exit_code=0,
+        dialog=installer,
+    )
+
+    assert calls == ["refresh", "refresh", installer]
+    app.processEvents()
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
@@ -1233,7 +1579,7 @@ def test_update_download_switches_button_to_apply(monkeypatch, tmp_path):
 def test_localize_widget_tree_uses_app_language(monkeypatch):
     """Verify localize widget tree uses app language behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QVBoxLayout
+    from PySide6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
 
     import config
     from ui.i18n import localize_widget_tree
@@ -1416,7 +1762,6 @@ def test_kokoro_install_progress_text_classifies_pip_output():
 def test_optional_install_plan_and_env_follow_app_language(monkeypatch, tmp_path):
     """Detached optional installers should inherit Wisp's selected UI language."""
     import config
-
     from core import optional_deps, updater
     from ui.settings_panel import dialog as dialog_mod
 
@@ -1453,7 +1798,7 @@ def test_optional_install_no_output_timeout_is_opt_in(monkeypatch):
 def test_kokoro_status_explains_gpu_install_when_gpu_spec_missing(monkeypatch):
     """Kokoro status should explain the selected GPU install when the GPU package spec is missing."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from core import optional_deps
     from ui.settings_panel.dialog import SettingsDialog
@@ -1497,7 +1842,7 @@ def test_kokoro_status_explains_gpu_install_when_gpu_spec_missing(monkeypatch):
 def test_kokoro_fast_status_defers_gpu_availability_check():
     """Fast Voice-page status should not warn that Torch is CPU-only."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1533,7 +1878,7 @@ def test_kokoro_fast_status_defers_gpu_availability_check():
 def test_kokoro_status_preserves_persisted_runtime_failure():
     """Reopening Settings should keep a prior Kokoro verification failure visible."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1573,7 +1918,7 @@ def test_kokoro_status_preserves_persisted_runtime_failure():
 def test_kokoro_status_preserves_staged_apply_retry():
     """A failed staged apply should stay visible instead of looking uninstalled."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1616,7 +1961,7 @@ def test_kokoro_status_preserves_staged_apply_retry():
 def test_kokoro_device_change_reuses_cached_status_without_rechecking(monkeypatch):
     """Changing CPU/GPU/Auto should update Kokoro UI without another background check."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1669,7 +2014,7 @@ def test_kokoro_device_change_reuses_cached_status_without_rechecking(monkeypatc
 def test_kokoro_device_change_to_cuda_rechecks_fast_status(monkeypatch):
     """Switching to CUDA must not reuse a metadata-only Torch status."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1791,7 +2136,7 @@ def test_kokoro_background_cuda_status_uses_subprocess(monkeypatch):
 def test_kokoro_refresh_status_does_not_run_full_torch_check(monkeypatch):
     """Manual Kokoro status refresh should not freeze the UI with Torch verification."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1832,7 +2177,7 @@ def test_kokoro_refresh_status_does_not_run_full_torch_check(monkeypatch):
 def test_kokoro_status_warns_when_torch_probe_times_out():
     """Settings should show timeout as inconclusive instead of incomplete."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1869,7 +2214,7 @@ def test_kokoro_status_warns_when_torch_probe_times_out():
 def test_kokoro_status_warns_when_install_is_incomplete():
     """Settings should offer reinstall when Torch import is incomplete."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QComboBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -1903,8 +2248,7 @@ def test_kokoro_status_warns_when_install_is_incomplete():
 
 def test_kokoro_post_install_fails_when_required_gpu_is_unavailable(monkeypatch):
     """GPU Kokoro install should fail when Torch cannot see CUDA after install."""
-    from core import optional_deps
-    from core import tts
+    from core import optional_deps, tts
     from ui.settings_panel.dialog import SettingsDialog
 
     monkeypatch.setattr(tts, "prepare_kokoro_assets", lambda voice: {"voice": "voice.pt"})
@@ -1931,8 +2275,7 @@ def test_kokoro_post_install_fails_when_required_gpu_is_unavailable(monkeypatch)
 
 def test_kokoro_post_install_verifies_runtime_import(monkeypatch):
     """Kokoro install should fail if runtime imports are broken after install."""
-    from core import optional_deps
-    from core import tts
+    from core import optional_deps, tts
     from ui.settings_panel.dialog import SettingsDialog
 
     monkeypatch.setattr(tts, "prepare_kokoro_assets", lambda voice: {"voice": "voice.pt"})
@@ -1955,8 +2298,7 @@ def test_kokoro_post_install_verifies_runtime_import(monkeypatch):
 
 def test_kokoro_post_install_uses_subprocess_verification(monkeypatch):
     """Inline post-install checks should not pin native Kokoro/Torch modules."""
-    from core import optional_deps
-    from core import tts
+    from core import optional_deps, tts
     from ui.settings_panel.dialog import SettingsDialog
 
     calls: list[str] = []
@@ -1998,7 +2340,7 @@ def test_kokoro_post_install_uses_subprocess_verification(monkeypatch):
 def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
     """The install button should pass CUDA Torch packages when Kokoro device is GPU."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
 
     from core import optional_deps
     from ui.settings_panel import dialog as dialog_mod
@@ -2048,7 +2390,7 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
 def test_kokoro_reinstall_click_does_not_run_full_torch_check(monkeypatch):
     """Clicking GPU support should use package metadata, not full Torch verification."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
 
     from core import optional_deps
     from ui.settings_panel import dialog as dialog_mod
@@ -2237,7 +2579,7 @@ def test_elevenlabs_reinstall_click_passes_reinstall(monkeypatch):
     from ui.settings_panel import dialog as dialog_mod
     from ui.settings_panel.dialog import SettingsDialog
 
-    app = QApplication.instance() or QApplication(sys.argv)
+    _app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
     captured: dict[str, object] = {}
     monkeypatch.setattr(SettingsDialog, "_elevenlabs_installed", lambda self: True)
@@ -2316,7 +2658,7 @@ def test_i18n_translates_stt_backend_status_messages(monkeypatch):
 def test_llm_model_routing_surface_translates_to_traditional_chinese():
     """Verify llm model routing surface translates to traditional chinese behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QComboBox, QLineEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
 
     import config
     from core.prompt_i18n import caller_intent_template
@@ -2514,7 +2856,7 @@ def test_i18n_translates_auth_ui_but_keeps_technical_tokens(monkeypatch):
 def test_app_settings_surface_translates_to_traditional_chinese():
     """Verify app settings page checkboxes and labels translate to Traditional Chinese."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QAbstractButton, QLabel, QLineEdit
+    from PySide6.QtWidgets import QAbstractButton, QApplication, QComboBox, QLabel, QLineEdit
 
     import config
     from ui import i18n
@@ -2541,9 +2883,16 @@ def test_app_settings_surface_translates_to_traditional_chinese():
             for edit in dialog.findChildren(QLineEdit)
             if edit.placeholderText()
         )
+        visible_texts.update(
+            combo.itemText(index)
+            for combo in dialog.findChildren(QComboBox)
+            for index in range(combo.count())
+            if combo.itemText(index)
+        )
 
         for fragment in (
             "Trust/privacy mode",
+            "Built-in privacy filter",
             "Wheel-scroll text bubble",
             "Snap bubble scroll back while speaking",
             "Elaborate prompt",
@@ -2557,7 +2906,7 @@ def test_app_settings_surface_translates_to_traditional_chinese():
         ):
             assert not any(fragment in text for text in visible_texts)
 
-        assert "\u4fe1\u4efb\uff0f\u96b1\u79c1\u6a21\u5f0f" in visible_texts
+        assert "\u5167\u5efa\u96b1\u79c1\u7be9\u9078\u5668" in visible_texts
         assert "\u5141\u8a31\u6efe\u8f2a\u6372\u52d5\u6587\u5b57\u6c23\u6ce1" in visible_texts
         assert "\u6717\u8b80\u6642\u81ea\u52d5\u6372\u56de\u76ee\u524d\u4f4d\u7f6e" in visible_texts
         assert "\u89e3\u9664\u5b89\u88dd Wisp" in visible_texts
@@ -3215,6 +3564,37 @@ def test_settings_sidebar_uses_task_based_page_order_without_memory_page():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_system_prompt_page_has_separate_provider_tabs_and_real_placeholders():
+    """ChatGPT and Claude prompts default to empty editable values, not fake text."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+
+    try:
+        tabs = dialog._system_prompt_tabs
+        assert [tabs.tabText(index) for index in range(tabs.count())] == [
+            "Wisp",
+            "ChatGPT",
+            "Claude",
+        ]
+        chatgpt = dialog._fields["WISP_CODEX_SYSTEM_PROMPT"]
+        claude = dialog._fields["WISP_CLAUDE_SYSTEM_PROMPT"]
+        chatgpt.clear()
+        claude.clear()
+        assert chatgpt.toPlainText() == ""
+        assert claude.toPlainText() == ""
+        assert "native instructions" in chatgpt.placeholderText()
+        assert "native instructions" in claude.placeholderText()
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_theme_is_reapplied_after_sidebar_items_exist(monkeypatch):
     """The initial theme pass must polish navigation items, not just the empty dialog."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -3247,7 +3627,7 @@ def test_settings_sidebar_uses_uniform_explicit_row_spacing():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from ui.settings_panel.dialog import SettingsDialog, _SETTINGS_NAV_ITEM_HEIGHT
+    from ui.settings_panel.dialog import _SETTINGS_NAV_ITEM_HEIGHT, SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog()
@@ -3260,7 +3640,7 @@ def test_settings_sidebar_uses_uniform_explicit_row_spacing():
         assert {rect.height() for rect in rects} == {_SETTINGS_NAV_ITEM_HEIGHT}
         gaps = [
             following.top() - current.bottom() - 1
-            for current, following in zip(rects, rects[1:])
+            for current, following in zip(rects, rects[1:], strict=False)
         ]
         assert len(set(gaps)) == 1
         assert gaps[0] >= nav.spacing()
@@ -3368,6 +3748,41 @@ def test_model_and_voice_workspaces_show_one_scalable_section_at_a_time():
         assert dialog._voice_feature_cards["stt"].isHidden()
         assert not dialog._voice_playback_card.isHidden()
         assert dialog._voice_feature_buttons["live"].isChecked()
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_model_routes_add_inline_and_drag_to_reorder():
+    """Fallback rows are created inline and their drag order becomes priority order."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    try:
+        rows = dialog._model_section_rows["LLM"]
+        original_count = len(rows)
+
+        dialog._model_route_add_buttons["LLM"].click()
+        assert len(rows) == original_count + 1
+        assert rows[-1]["api_key_combo"].currentData() == ""
+        assert dialog._model_value(rows[-1]) == ""
+
+        dragged_row = dialog._add_model_section_row("LLM", "ollama", "dragged-model")
+        dialog._model_route_rows_containers["LLM"].rowDropped.emit(
+            dragged_row["widget"], 0
+        )
+
+        assert rows[0] is dragged_row
+        assert dialog._model_section_layouts["LLM"].itemAt(0).widget() is dragged_row["widget"]
+        assert rows[0]["priority_lbl"].text() == "<b>1</b>"
+        assert dialog._snapshot_settings()["LLM_1_MODEL"] == "dragged-model"
+        if len(rows) > 1:
+            assert rows[1]["priority_lbl"].text() == "2"
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -3648,7 +4063,7 @@ def test_tts_provider_timing_notice_only_for_providers_without_word_timestamps()
     from PySide6.QtWidgets import QApplication, QLabel
 
     from ui.i18n import t
-    from ui.settings_panel.dialog import SettingsDialog, _TTS_TIMING_NOTICE, _get, _set
+    from ui.settings_panel.dialog import _TTS_TIMING_NOTICE, SettingsDialog, _get, _set
 
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog()
@@ -3836,7 +4251,6 @@ def test_settings_has_reset_page_button():
         assert {
             "Reset All…",
             "全部重置…",
-            "全部重置…",
             "Restablecer todo…",
             "Tout réinitialiser…",
         } & button_texts
@@ -4004,6 +4418,8 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
         _set(dialog._fields["APP_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["CHAT_ELABORATE_PROMPT"], "Please elaborate on that.")
+        dialog._fields["WISP_CODEX_SYSTEM_PROMPT"].setPlainText("ChatGPT-only rules.")
+        dialog._fields["WISP_CLAUDE_SYSTEM_PROMPT"].setPlainText("")
         dialog._fields["WISP_PLANNED_CHUNKING"].setChecked(True)
         dialog._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setText("4")
         dialog._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setText("120")
@@ -4021,6 +4437,8 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
         assert _get(row["prompt"]) == captured["CALLER_1_INTENT_1_PROMPT"]
         assert captured["CHAT_ELABORATE_PROMPT"] == "\u8acb\u8a73\u7d30\u8aaa\u660e\u4e00\u4e0b\u3002"
         assert _get(dialog._fields["CHAT_ELABORATE_PROMPT"]) == captured["CHAT_ELABORATE_PROMPT"]
+        assert captured["WISP_CODEX_SYSTEM_PROMPT"] == "ChatGPT-only rules."
+        assert captured["WISP_CLAUDE_SYSTEM_PROMPT"] == ""
         assert captured["WISP_PLANNED_CHUNKING"] == "True"
         assert captured["WISP_PLANNED_CHUNKING_CHUNKS"] == "4"
         assert captured["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] == "120"
@@ -4167,12 +4585,12 @@ def test_settings_apply_reports_unexpected_save_exception(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_preset_marks_reviewable_changes_without_saving():
+def test_settings_preset_marks_reviewable_changes_without_saving(isolated_default_profile):
     """Verify settings preset marks reviewable changes without saving behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
-    from ui.settings_panel.dialog import SettingsDialog, _get
+    from ui.settings_panel.dialog import SettingsDialog, _get, _set
 
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog()
@@ -4180,6 +4598,12 @@ def test_settings_preset_marks_reviewable_changes_without_saving():
     try:
         apply_btn = dialog.findChild(QPushButton, "settingsApplyButton")
         assert apply_btn is not None
+
+        llm_row = dialog._model_section_rows["LLM"][0]
+        if llm_row["api_key_combo"].findData("openai") < 0:
+            llm_row["api_key_combo"].addItem("OpenAI", "openai")
+        _set(llm_row["api_key_combo"], "openai")
+        dialog._reset_dirty_baseline()
 
         dialog._apply_preset("Low setup")
         app.processEvents()
@@ -4418,7 +4842,7 @@ def test_settings_can_rename_and_delete_custom_profile(tmp_path, monkeypatch):
 def test_settings_advanced_tab_contains_tuning_and_memory_controls():
     """Verify settings advanced tab contains tuning and memory controls."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication
 
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -4567,8 +4991,8 @@ def test_memory_panel_read_only_hides_mutation_controls():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
-    from ui.memory_viewer import MemoryPanel
     from ui.i18n import t
+    from ui.memory_viewer import MemoryPanel
 
     app = QApplication.instance() or QApplication(sys.argv)
 
@@ -4693,7 +5117,7 @@ def test_settings_keybinds_has_voice_block_and_tools_buttons():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_settings_shortcuts_are_categorized_with_two_bindings_and_inline_details():
+def test_settings_shortcuts_are_categorized_with_two_bindings_and_inline_details(isolated_default_profile):
     """The shortcut page uses categorized rows and inline per-action editors."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
@@ -4711,17 +5135,25 @@ def test_settings_shortcuts_are_categorized_with_two_bindings_and_inline_details
         app.processEvents()
         assert dialog._tabs.currentWidget().horizontalScrollBar().maximum() == 0
 
-        labels = {label.text() for label in dialog.findChildren(QLabel)}
+        all_labels = dialog.findChildren(QLabel)
+        labels = {label.text() for label in all_labels}
+        section_titles = {
+            label.text().removeprefix("⚠ ")
+            for label in all_labels
+            if label.objectName() == "shortcutSectionTitle"
+        }
         assert {
-            t("Global shortcuts"),
-            t("Voice shortcuts"),
-            t("Context shortcuts"),
             t("On"),
             t("Action"),
             t("Shortcut 1"),
             t("Shortcut 2"),
             t("Details"),
         } <= labels
+        assert {
+            t("Global shortcuts"),
+            t("Voice shortcuts"),
+            t("Context shortcuts"),
+        } <= section_titles
 
         for key in (
             "HOTKEY_ADD_CONTEXT",

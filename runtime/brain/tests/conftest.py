@@ -26,6 +26,26 @@ for _p in (str(_BRAIN_DIR), str(_REPO_ROOT), str(_TESTS_DIR)):
         sys.path.insert(0, _p)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_offline_brain_runtime(monkeypatch: pytest.MonkeyPatch):
+    """Keep offline brain tests independent from the developer's active profile."""
+    import config
+
+    monkeypatch.setattr(config, "load_dotenv", lambda *_args, **_kwargs: None)
+    values = {
+        "CHAT_EXECUTION_MODE": "wisp",
+        "CHAT_CONVERSATION_OWNER": "wisp",
+        "PRIVACY_MODE": "builtin",
+        "TRUST_PRIVACY_MODE": "True",
+        "PRIVACY_AI_ENABLED": "False",
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+        monkeypatch.setattr(config, key, value, raising=False)
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True, raising=False)
+    monkeypatch.setattr(config, "PRIVACY_AI_ENABLED", False, raising=False)
+
+
 @pytest.fixture
 def record_ctx():
     """Factory for a StreamContext that records emitted (event, data) pairs.
@@ -45,4 +65,3 @@ def record_ctx():
         return events, ctx
 
     return _make
-

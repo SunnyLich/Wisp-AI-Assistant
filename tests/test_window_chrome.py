@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import sys
-import gc
 
 import pytest
 

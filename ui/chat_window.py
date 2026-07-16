@@ -14,7 +14,8 @@ import re
 import threading
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QMimeData, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
@@ -51,15 +52,24 @@ from PySide6.QtWidgets import (
 )
 
 import config
+from core import addon_store
 from core.assistant_text import ThoughtStreamParser, merge_segment_iterables
 from core.conversation_store import store as _conversation_store
+from core.conversation_store.external_sync import (
+    apply_external_conversations,
+    discover_external_conversations,
+    export_conversation_as_new_session,
+    pending_external_push_count,
+    push_conversation_to_source,
+)
 from core.conversation_store.store import GENERAL_PROJECT_ID as _GENERAL_PROJECT_ID
+from core.system import file_browser as _file_browser
 from runtime.supervisor import tool_modes
 from ui.chat_rendering import _assistant_segments_to_html, _assistant_text_to_html, _user_text_to_html
 from ui.i18n import t
 from ui.shared.theme import show_tooltip_text
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
-from ui.text_annotations import TextAnnotation, normalize_range_annotations
+from ui.text_annotations import TextAnnotation, annotation_tooltip_anchor, normalize_range_annotations
 
 _W          = 840
 _H          = 640
@@ -97,6 +107,16 @@ _ATTACHMENT_CONTEXT_CHAR_LIMIT = 40_000
 _SIDEBAR_MENU_W = 32
 _SIDEBAR_FADE_W = 34
 _SIDEBAR_GENERAL_GROUP_GAP = 8
+
+
+def _external_provider_display_name(provider: object) -> str:
+    """Return the user-facing name without changing stored provider keys."""
+    key = str(provider or "").strip().lower()
+    if key == "codex":
+        return "ChatGPT"
+    if key == "claude":
+        return "Claude"
+    return key.title()
 
 
 def _mix_hex(a: str, b: str, t: float) -> str:
@@ -163,6 +183,10 @@ def _refresh_chat_palette() -> None:
             code_bg=_mix_hex(bg, text, 0.08),
             code_inline_bg=_mix_hex(bg, text, 0.16),
             thought=c["text_dim"],
+            table_header_bg=_mix_hex(bg, accent, 0.24),
+            table_row_bg=c["card"],
+            table_alt_bg=_mix_hex(c["card"], accent, 0.06),
+            table_border=c["border"],
         )
     except Exception:
         pass
@@ -213,7 +237,7 @@ def _is_concrete_token_label(value: str) -> bool:
 
 def _now_iso() -> str:
     """Return current UTC time for conversation metadata."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_iso_datetime(value: str | None) -> datetime | None:
@@ -632,6 +656,8 @@ def _truncate_for_display(text: str, limit: int, label: str = "display") -> str:
 
 def _ui_lab_label_annotations(text: str, role: str) -> list[dict]:
     """Return saved UI Lab label annotations for chat-window display."""
+    if not addon_store.is_enabled("ui-lab", default=True):
+        return []
     try:
         from addons.ui_lab import get_text_annotations
 
@@ -650,8 +676,21 @@ def _ui_lab_label_annotations(text: str, role: str) -> list[dict]:
 
 
 def _merged_annotations(base: object, text: str, role: str) -> list:
-    """Merge stored message annotations with current UI Lab label rules."""
-    out = list(base or []) if isinstance(base, list) else []
+    """Return enabled stored annotations plus current UI Lab label rules."""
+    out: list = []
+    for item in list(base or []) if isinstance(base, list) else []:
+        source = str(item.get("source") or "") if isinstance(item, dict) else str(
+            getattr(item, "source", "") or ""
+        )
+        if source == "addon:ui-lab":
+            # UI Lab labels are editable rules. Rebuild them against the current
+            # text so old byte-based offsets and deleted rules cannot survive.
+            continue
+        if source.startswith("addon:"):
+            addon_id = source.removeprefix("addon:")
+            if addon_id and not addon_store.is_enabled(addon_id, default=True):
+                continue
+        out.append(item)
     out.extend(_ui_lab_label_annotations(text, role))
     return out
 
@@ -692,6 +731,7 @@ class _StreamSignals(QObject):
     final     = Signal(str)
     metadata  = Signal(object)
     finished  = Signal()
+    external_sync = Signal(object)
 
 
 class _MessageTextView(QTextBrowser):
@@ -704,6 +744,7 @@ class _MessageTextView(QTextBrowser):
         self._bg = bg
         self._scale = scale
         self._tooltip_annotations: list[TextAnnotation] = []
+        self._tooltips_by_anchor: dict[str, str] = {}
         self._context_menu_handler = None
         self.setOpenLinks(False)
         self.setReadOnly(True)
@@ -720,10 +761,15 @@ class _MessageTextView(QTextBrowser):
         self.textChanged.connect(self._sync_height)
 
     def set_annotation_tooltips(self, text: str, annotations: object) -> None:
-        """Store annotation tooltips for explicit hover handling."""
+        """Store rendered-anchor tooltips for explicit hover handling."""
         self._tooltip_annotations = [
             item for item in normalize_range_annotations(annotations, text) if item.tooltip
         ]
+        self._tooltips_by_anchor = {
+            annotation_tooltip_anchor(item): item.tooltip
+            for item in self._tooltip_annotations
+            if annotation_tooltip_anchor(item)
+        }
 
     def set_message_context_menu_handler(self, handler) -> None:
         """Install the owning chat-window message menu callback."""
@@ -760,7 +806,7 @@ class _MessageTextView(QTextBrowser):
 
     def mouseMoveEvent(self, event):  # noqa: N802
         """Show annotation tooltips over labeled text."""
-        tooltip = self._tooltip_at_position(self.cursorForPosition(event.position().toPoint()).position())
+        tooltip = self._tooltip_for_anchor(self.anchorAt(event.position().toPoint()))
         if tooltip:
             show_tooltip_text(event.globalPosition().toPoint(), tooltip, self)
         else:
@@ -784,11 +830,9 @@ class _MessageTextView(QTextBrowser):
         """Let the conversation page scroll instead of the individual bubble."""
         event.ignore()
 
-    def _tooltip_at_position(self, position: int) -> str:
-        for annotation in self._tooltip_annotations:
-            if annotation.start <= position < annotation.end:
-                return annotation.tooltip
-        return ""
+    def _tooltip_for_anchor(self, anchor: str) -> str:
+        """Return the tooltip associated with one rendered internal anchor."""
+        return self._tooltips_by_anchor.get(str(anchor or ""), "")
 
 
 class _ConversationTitleButton(QPushButton):
@@ -921,6 +965,29 @@ def _merge_display_segments(segments: list[tuple[str, bool]], text: str, is_thou
     return segments
 
 
+def _normalized_display_segments(items: object) -> list[tuple[str, bool]]:
+    """Normalize persisted or streamed chronological assistant segments."""
+    if not isinstance(items, list):
+        return []
+    segments: list[tuple[str, bool]] = []
+    for raw in items:
+        if isinstance(raw, dict):
+            text = str(raw.get("text") or "")
+            is_thought = bool(raw.get("is_thought"))
+        elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+            text = str(raw[0] or "")
+            is_thought = bool(raw[1])
+        else:
+            continue
+        _merge_display_segments(segments, text, is_thought)
+    return segments
+
+
+def _segments_to_display_content(segments: list[tuple[str, bool]]) -> str:
+    """Serialize chronological activity for Wisp's tagged history renderer."""
+    return "".join(f"<thought>{text}</thought>" if is_thought else text for text, is_thought in segments)
+
+
 class ChatWindow(QWidget):
     """Qt window for chat window."""
     def __init__(
@@ -998,11 +1065,14 @@ class ChatWindow(QWidget):
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments: list[tuple[str, bool]] = []
+        self._current_ai_status_text = ""
         self._current_ai_parser: ThoughtStreamParser | None = None
         self._current_ai_annotations: list[dict] = []
+        self._current_ai_attachments: list[dict] = []
         self._current_file_context: list[dict] = []
         self._current_tool_context: dict = {}
         self._current_context_snippets: list[dict] = []
+        self._current_harness: dict = {}
         self._current_user_message: dict | None = None
         self._pending_attachment_context = ""
         self._pending_attachment_image_b64: str | None = None
@@ -1032,6 +1102,7 @@ class ChatWindow(QWidget):
         self._signals.final.connect(self._on_final_text)
         self._signals.metadata.connect(self._on_metadata)
         self._signals.finished.connect(self._on_finished)
+        self._signals.external_sync.connect(self._on_external_sync_finished)
 
         self.setWindowTitle(t("Chat"))
         self.setWindowFlags(Qt.WindowType.Window)
@@ -1207,6 +1278,7 @@ class ChatWindow(QWidget):
         controls_l.setSpacing(6)
         controls_l.addWidget(self._make_project_selector())
         controls_l.addWidget(self._make_new_chat_button())
+        controls_l.addWidget(self._make_external_sync_button())
         vl.addWidget(controls)
 
         scroll = QScrollArea()
@@ -1225,6 +1297,78 @@ class ChatWindow(QWidget):
         scroll.setWidget(self._sidebar_items)
         vl.addWidget(scroll, stretch=1)
         return sidebar
+
+    def _make_external_sync_button(self) -> QPushButton:
+        """Create the read-only ChatGPT/Claude history pull button."""
+        button = QPushButton(t("Pull ChatGPT + Claude"))
+        button.setFixedHeight(28)
+        button.setToolTip(t("Import new and updated local ChatGPT and Claude Code conversations"))
+        button.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {_HINT};"
+            f" border: 1px solid {_BORDER}; border-radius: 6px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_10}; color: {_TEXT}; }}"
+            f"QPushButton:disabled {{ color: {_DISABLED_TEXT}; }}"
+        )
+        button.clicked.connect(self._pull_external_conversations)
+        self._external_sync_btn = button
+        return button
+
+    def _pull_external_conversations(self) -> None:
+        """Pull local external transcripts and refresh the conversation stack."""
+        button = self._external_sync_btn
+        button.setEnabled(False)
+        button.setText(t("Pulling…"))
+        threading.Thread(target=self._external_sync_worker, daemon=True).start()
+
+    def _external_sync_worker(self) -> None:
+        """Read external transcript files away from the Qt UI thread."""
+        try:
+            discovered, report = discover_external_conversations()
+            payload = {"discovered": discovered, "report": report}
+        except Exception as exc:
+            payload = {"error": str(exc)}
+        try:
+            self._signals.external_sync.emit(payload)
+        except RuntimeError:
+            pass
+
+    def _on_external_sync_finished(self, payload: object) -> None:
+        """Merge a completed background pull and refresh the chat UI."""
+        button = self._external_sync_btn
+        try:
+            result = payload if isinstance(payload, dict) else {}
+            if result.get("error"):
+                raise RuntimeError(str(result["error"]))
+            report = apply_external_conversations(
+                self._conversations,
+                list(result.get("discovered") or []),
+                report=result.get("report"),
+            )
+            if report.changed:
+                self._persist()
+                self._rebuild_stack()
+                self._rebuild_sidebar()
+                if self._conversations:
+                    self._switch(min(self._active_idx, len(self._conversations) - 1))
+            summary = t("Imported {imported}, updated {updated}, unchanged {unchanged}.").format(
+                imported=report.imported,
+                updated=report.updated,
+                unchanged=report.unchanged,
+            )
+            if report.errors:
+                summary += " " + t("{count} transcript(s) could not be read.").format(
+                    count=len(report.errors)
+                )
+            QMessageBox.information(self, t("External conversation pull"), summary)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                t("External conversation pull failed"),
+                t("Wisp could not pull local conversations: {error}").format(error=exc),
+            )
+        finally:
+            button.setText(t("Pull ChatGPT + Claude"))
+            button.setEnabled(True)
 
     def _rebuild_sidebar(self):
         """Handle rebuild sidebar for chat window."""
@@ -1304,9 +1448,17 @@ class ChatWindow(QWidget):
         if override:
             return override
         first_user = next((m for m in conv["messages"] if m["role"] == "user"), None)
-        raw = first_user["content"] if first_user else f"{t('Conversation')} {idx+1}"
+        source = conv.get("external_source") if isinstance(conv.get("external_source"), dict) else {}
+        provider = _external_provider_display_name(source.get("provider"))
+        raw = (
+            conv.get("title")
+            if provider and conv.get("title")
+            else (first_user["content"] if first_user else f"{t('Conversation')} {idx+1}")
+        )
         has_image = bool(first_user and _conversation_store.first_image_base64_from_message(first_user))
-        prefix = f"[{t('image')}] " if has_image else ""
+        prefix = f"{provider} · " if provider else ""
+        if has_image:
+            prefix += f"[{t('image')}] "
         return prefix + str(raw).strip().replace("\n", " ")
 
     def _conversation_timestamp(self, conv: dict) -> str:
@@ -1366,6 +1518,28 @@ class ChatWindow(QWidget):
             act.setCheckable(True)
             act.setChecked(conv.get("project_id", _GENERAL_PROJECT_ID) == pid)
 
+        menu.addAction(
+            t("Browse conversation files"),
+            lambda: self._browse_conversation_files(idx),
+        )
+        source = conv.get("external_source") if isinstance(conv.get("external_source"), dict) else {}
+        provider = _external_provider_display_name(source.get("provider"))
+        if provider:
+            push_action = menu.addAction(
+                t("Push Wisp turns to {provider}").format(provider=provider),
+                lambda: self._push_conversation_to_source(idx),
+            )
+            push_action.setEnabled(pending_external_push_count(conv) > 0)
+        elif any(str(message.get("content") or "").strip() for message in conv.get("messages", [])):
+            export_menu = menu.addMenu(t("Export as new conversation"))
+            export_menu.addAction(
+                "ChatGPT",
+                lambda: self._export_conversation_as_new_session(idx, "codex"),
+            )
+            export_menu.addAction(
+                "Claude",
+                lambda: self._export_conversation_as_new_session(idx, "claude"),
+            )
         menu.addSeparator()
         menu.addAction(t("Delete"), lambda: self._delete_conversation(idx))
         # Drop the menu just below the ⋮ button that opened it.
@@ -1377,6 +1551,133 @@ class ChatWindow(QWidget):
         self._conversation_menu = menu
         menu.aboutToHide.connect(lambda: setattr(self, "_conversation_menu", None))
         menu.popup(pos)
+
+    def _push_conversation_to_source(self, idx: int) -> None:
+        """Append Wisp-only turns to the imported source transcript after confirmation."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        conv = self._conversations[idx]
+        source = conv.get("external_source") if isinstance(conv.get("external_source"), dict) else {}
+        provider = _external_provider_display_name(source.get("provider"))
+        if not provider or pending_external_push_count(conv) <= 0:
+            return
+        prompt = t(
+            "Append Wisp's new turns to this {provider} history file?\n\n"
+            "Wisp will create a full backup first. Close this conversation in {provider} before continuing. "
+            "This experimental integration edits an undocumented local transcript format and may stop working after an app update."
+        ).format(provider=provider)
+        if QMessageBox.question(
+            self,
+            t("Experimental history write"),
+            prompt,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            report = push_conversation_to_source(conv)
+            self._persist()
+            QMessageBox.information(
+                self,
+                t("Conversation push"),
+                t("Pushed {count} turn(s) to {provider}.\n\nBackup: {backup}").format(
+                    count=report.pushed,
+                    provider=provider,
+                    backup=report.backup_path,
+                ),
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                t("Conversation push failed"),
+                t("Wisp could not update the external history: {error}").format(error=exc),
+            )
+
+    def _suggested_export_cwd(self, conv: dict) -> Path:
+        """Return the best available workspace folder for a new provider session."""
+        for item in conv.get("file_context", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("root", "path"):
+                raw = str(item.get(key) or "").strip()
+                if not raw:
+                    continue
+                path = Path(raw).expanduser()
+                if path.is_file():
+                    path = path.parent
+                if path.is_dir():
+                    return path
+        for message in reversed(conv.get("messages", []) or []):
+            if not isinstance(message, dict):
+                continue
+            for ref in _conversation_store.normalize_attachments(message.get("attachments")):
+                path = _conversation_store.attachment_path(ref)
+                if path.is_file():
+                    return path.parent
+                if path.is_dir():
+                    return path
+        return Path.cwd()
+
+    def _export_conversation_as_new_session(self, idx: int, provider_key: str) -> None:
+        """Create and link a new ChatGPT or Claude session from a Wisp-native chat."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        conv = self._conversations[idx]
+        provider = _external_provider_display_name(provider_key)
+        workspace = self._suggested_export_cwd(conv)
+        prompt = t(
+            "Create a new local {provider} conversation from this Wisp history?\n\n"
+            "This experimental integration writes a new transcript file and never overwrites an existing provider conversation."
+        ).format(provider=provider)
+        if QMessageBox.question(
+            self,
+            t("Experimental conversation export"),
+            prompt,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            report = export_conversation_as_new_session(
+                conv,
+                provider_key,
+                cwd=workspace,
+            )
+            self._persist()
+            self._rebuild_sidebar()
+            QMessageBox.information(
+                self,
+                t("Conversation exported"),
+                t(
+                    "Created a new {provider} conversation with {count} turn(s).\n\n"
+                    "Transcript: {path}\n\n"
+                    "Refresh or restart {provider} if it does not appear immediately."
+                ).format(
+                    provider=provider,
+                    count=report.exported,
+                    path=report.path,
+                ),
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                t("Conversation export failed"),
+                t("Wisp could not create the external conversation: {error}").format(error=exc),
+            )
+
+    def _browse_conversation_files(self, idx: int) -> None:
+        """Reveal the persisted conversation record and its adjacent attachments."""
+        if not (0 <= idx < len(self._conversations)):
+            return
+        self._persist()
+        record_path = _conversation_store.CONVERSATIONS_FILE
+        try:
+            if not record_path.exists():
+                record_path.parent.mkdir(parents=True, exist_ok=True)
+                record_path = record_path.parent
+            _file_browser.reveal_path(record_path)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                t("Could not open conversation files"),
+                t("Wisp could not open the conversation files: {error}").format(error=exc),
+            )
 
     def _toggle_pin(self, idx: int) -> None:
         """Handle toggle pin for chat window."""
@@ -1538,11 +1839,14 @@ class ChatWindow(QWidget):
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
+        self._current_ai_status_text = ""
         self._current_ai_parser = ThoughtStreamParser()
         self._current_ai_annotations = []
+        self._current_ai_attachments = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
+        self._current_harness = {}
         self._current_user_message = None
         self._current_ai_label = self._bubble(layout, "...", "assistant", created_at=_now_iso())
         self._scroll_bottom()
@@ -1575,11 +1879,14 @@ class ChatWindow(QWidget):
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
+        self._current_ai_status_text = ""
         self._current_ai_parser = None
         self._current_ai_annotations = []
+        self._current_ai_attachments = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
+        self._current_harness = {}
         self._current_user_message = None
         self._streaming = False
         self._streaming_idx = None
@@ -2340,31 +2647,66 @@ class ChatWindow(QWidget):
             hl.addWidget(menu_btn)
         wl.addWidget(header)
 
-        if image_b64 and role == "user":
-            try:
-                import base64
-                img_bytes = base64.b64decode(image_b64)
-                pixmap = QPixmap()
-                pixmap.loadFromData(img_bytes)
-                if not pixmap.isNull():
-                    thumb = pixmap.scaled(
-                        280, 160,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    img_lbl = QLabel()
-                    img_lbl.setPixmap(thumb)
-                    img_lbl.setStyleSheet(
-                        f"QLabel {{ background: {_USER_BG}; border-radius: 8px; padding: 4px; }}"
-                    )
-                    img_lbl.setFixedSize(thumb.width() + 8, thumb.height() + 8)
-                    wl.addWidget(img_lbl)
-            except Exception:
-                pass
+        image_label = self._image_thumbnail_label(image_b64, role)
+        if image_label is not None:
+            wl.addWidget(image_label)
+            lbl.setProperty("wisp_has_image", True)
 
         wl.addWidget(lbl)
+        if not display_text and image_label is not None:
+            lbl.hide()
         layout.insertWidget(layout.count() - 1, wrapper)  # before trailing stretch
         return lbl
+
+    @staticmethod
+    def _image_thumbnail_label(image_b64: str | None, role: str) -> QLabel | None:
+        """Build a thumbnail for either user input or assistant output images."""
+        if not image_b64:
+            return None
+        try:
+            import base64
+
+            img_bytes = base64.b64decode(image_b64)
+            pixmap = QPixmap()
+            pixmap.loadFromData(img_bytes)
+            if pixmap.isNull():
+                return None
+            thumb = pixmap.scaled(
+                360 if role == "assistant" else 280,
+                240 if role == "assistant" else 160,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            img_lbl = QLabel()
+            img_lbl.setPixmap(thumb)
+            background = _AI_BG if role == "assistant" else _USER_BG
+            img_lbl.setStyleSheet(
+                f"QLabel {{ background: {background}; border-radius: 8px; padding: 4px; }}"
+            )
+            img_lbl.setFixedSize(thumb.width() + 8, thumb.height() + 8)
+            return img_lbl
+        except Exception:
+            return None
+
+    def _insert_bubble_image(
+        self,
+        view: _MessageTextView,
+        image_b64: str | None,
+        role: str,
+    ) -> None:
+        """Attach a late-arriving generated image above a live text view."""
+        if bool(view.property("wisp_has_image")):
+            return
+        image_label = self._image_thumbnail_label(image_b64, role)
+        if image_label is None:
+            return
+        wrapper = view.parentWidget()
+        layout = wrapper.layout() if wrapper is not None else None
+        if layout is None:
+            return
+        index = layout.indexOf(view)
+        layout.insertWidget(index if index >= 0 else layout.count(), image_label)
+        view.setProperty("wisp_has_image", True)
 
     def _open_message_menu(
         self,
@@ -2823,11 +3165,14 @@ class ChatWindow(QWidget):
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
+        self._current_ai_status_text = ""
         self._current_ai_parser = ThoughtStreamParser()
         self._current_ai_annotations = []
+        self._current_ai_attachments = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
+        self._current_harness = {}
         self._current_user_message = user_message
         self._current_ai_label = self._bubble(layout, "...", "assistant", created_at=_now_iso()) if layout else None
         self._scroll_bottom()
@@ -2874,16 +3219,36 @@ class ChatWindow(QWidget):
         """Handle chunk events."""
         if isinstance(chunk, dict):
             text = str(chunk.get("text") or "")
-            if bool(chunk.get("is_thought")) or bool(chunk.get("is_progress")):
+            is_thought = bool(chunk.get("is_thought"))
+            is_progress = bool(chunk.get("is_progress"))
+            if is_progress and not is_thought:
+                # Match the overlay bubble: startup/status notices replace each
+                # other until durable thought, tool, or reply content arrives.
+                self._current_ai_status_text = text.strip()
+                self._render_current_ai_stream()
+                self._scroll_bottom()
+                return
+            self._current_ai_status_text = ""
+            if is_thought or is_progress:
+                if not self._current_ai_segments:
+                    text = text.lstrip("\r\n")
                 _merge_display_segments(self._current_ai_segments, text, True)
-                if self._current_ai_label:
-                    self._current_ai_label.setHtml(
-                        _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
-                    )
+                self._render_current_ai_stream()
                 self._scroll_bottom()
                 return
             chunk = text
+        self._current_ai_status_text = ""
         chunk = str(chunk or "")
+        if (
+            self._current_ai_segments
+            and self._current_ai_segments[-1][1]
+            and self._current_ai_reply_text
+            and not self._current_ai_reply_text.endswith(("\r", "\n"))
+            and not chunk.startswith(("\r", "\n"))
+        ):
+            # A reply resuming after thought/tool activity is a new block. Token
+            # deltas inside an uninterrupted reply still concatenate normally.
+            chunk = f"\n{chunk}"
         self._current_ai_text += chunk
         if self._current_ai_parser is None:
             self._current_ai_parser = ThoughtStreamParser()
@@ -2891,16 +3256,25 @@ class ChatWindow(QWidget):
             _merge_display_segments(self._current_ai_segments, text, is_thought)
             if not is_thought:
                 self._current_ai_reply_text += text
-        if self._current_ai_label:
-            self._current_ai_label.setHtml(
-                _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
-            )
+        self._render_current_ai_stream()
         self._scroll_bottom()
+
+    def _render_current_ai_stream(self) -> None:
+        """Render durable chronological segments plus the replaceable live status."""
+        if not self._current_ai_label:
+            return
+        segments = list(self._current_ai_segments)
+        if self._current_ai_status_text:
+            _merge_display_segments(segments, self._current_ai_status_text, True)
+        self._current_ai_label.setHtml(
+            _assistant_segments_to_html(_truncate_segments_for_display(segments))
+        )
 
     def _on_final_text(self, text: str):
         """Replace the streamed draft with the final assistant text."""
         if not text or text == self._current_ai_text:
             return
+        self._current_ai_status_text = ""
         self._current_ai_text = text
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
@@ -2928,6 +3302,24 @@ class ChatWindow(QWidget):
             self._current_tool_context = _normalized_tool_context(item.get("tool_context") or {})
             self._current_context_snippets = _normalized_context_snippets(item.get("context_snippets") or [])
             self._current_ai_annotations = list(item.get("annotations") or [])
+            if "assistant_attachments" in item:
+                self._current_ai_attachments = _conversation_store.normalize_attachments(
+                    item.get("assistant_attachments") or []
+                )
+            if self._current_ai_label is not None and self._current_ai_attachments:
+                image_b64 = _conversation_store.attachment_image_base64(
+                    self._current_ai_attachments[0]
+                )
+                self._insert_bubble_image(
+                    self._current_ai_label,
+                    image_b64,
+                    "assistant",
+                )
+            self._current_harness = dict(item.get("harness") or {})
+            final_segments = _normalized_display_segments(item.get("display_segments") or [])
+            if final_segments:
+                self._current_ai_segments = final_segments
+                self._render_current_ai_stream()
             if self._current_user_message is not None:
                 user_annotations = list(item.get("user_annotations") or [])
                 if user_annotations:
@@ -3000,7 +3392,7 @@ class ChatWindow(QWidget):
         row = QHBoxLayout()
         row.addStretch()
         approve = QPushButton(t("Approve"))
-        request_changes = QPushButton(t("Request Changes"))
+        request_changes = QPushButton(t("Alternate option"))
         deny = QPushButton(t("Decline"))
         for btn in (approve, request_changes, deny):
             btn.setFixedHeight(28)
@@ -3047,7 +3439,7 @@ class ChatWindow(QWidget):
         def request_change_feedback() -> None:
             if not feedback_box.isVisible():
                 feedback_box.setVisible(True)
-                request_changes.setText(t("Send Changes"))
+                request_changes.setText(t("Send alternate option"))
                 feedback_box.setFocus()
                 self._scroll_bottom()
                 return
@@ -3083,6 +3475,7 @@ class ChatWindow(QWidget):
 
     def _on_finished(self):
         """Handle finished events."""
+        self._current_ai_status_text = ""
         if self._current_ai_parser is not None:
             flushed = self._current_ai_parser.finish()
             self._current_ai_segments = merge_segment_iterables(self._current_ai_segments, flushed)
@@ -3093,18 +3486,39 @@ class ChatWindow(QWidget):
                 self._current_ai_label.setHtml(
                     _assistant_segments_to_html(_truncate_segments_for_display(self._current_ai_segments))
                 )
+        if (
+            self._current_ai_label is not None
+            and self._current_ai_attachments
+            and not self._current_ai_segments
+            and not self._current_ai_reply_text
+        ):
+            self._current_ai_label.hide()
         if self._current_context_snippets:
             if isinstance(self._current_user_message, dict):
                 self._current_user_message["context_snippets"] = list(self._current_context_snippets)
             self._insert_live_context_snippets()
-        if self._current_ai_reply_text and self._conversations and 0 <= self._active_idx < len(self._conversations):
+        if (
+            (self._current_ai_reply_text or self._current_ai_attachments)
+            and self._conversations
+            and 0 <= self._active_idx < len(self._conversations)
+        ):
             conv = self._conversations[self._active_idx]
             stamp = _touch_conversation(conv)
             message = {"role": "assistant", "content": self._current_ai_reply_text, "created_at": stamp}
             _ensure_message_metadata(message, fallback_created_at=stamp)
             if self._current_ai_annotations:
                 message["annotations"] = list(self._current_ai_annotations)
-            if self._current_ai_text != self._current_ai_reply_text:
+            if self._current_ai_attachments:
+                message["attachments"] = list(self._current_ai_attachments)
+            durable_segments = list(self._current_ai_segments)
+            if durable_segments and any(is_thought for _text, is_thought in durable_segments):
+                message["display_segments"] = [
+                    {"text": text, "is_thought": is_thought}
+                    for text, is_thought in durable_segments
+                    if text
+                ]
+                message["display_content"] = _segments_to_display_content(durable_segments)
+            elif self._current_ai_text != self._current_ai_reply_text:
                 message["display_content"] = self._current_ai_text
             if self._current_file_context:
                 message["file_context"] = self._current_file_context
@@ -3113,12 +3527,34 @@ class ChatWindow(QWidget):
             conv["messages"].append(message)
             _merge_file_context(conv, self._current_file_context)
             _merge_tool_context(conv, self._current_tool_context)
+            harness_provider = str(self._current_harness.get("provider") or "").strip().lower()
+            harness_session_id = str(self._current_harness.get("session_id") or "").strip()
+            if (
+                harness_provider in {"codex", "claude"}
+                and bool(self._current_harness.get("clear_session"))
+            ):
+                sessions = conv.get("harness_sessions")
+                if isinstance(sessions, dict):
+                    sessions.pop(harness_provider, None)
+                    if not sessions:
+                        conv.pop("harness_sessions", None)
+            elif harness_provider in {"codex", "claude"} and harness_session_id:
+                conv.setdefault("harness_sessions", {})[harness_provider] = {
+                    "provider": harness_provider,
+                    "session_id": harness_session_id,
+                    "cwd": str(self._current_harness.get("cwd") or ""),
+                    "updated_at": stamp,
+                }
             if self._persist_fn:
                 try:
                     self._persist_fn()
                 except Exception:
                     pass
-            if self._current_ai_label is not None and self._current_ai_annotations:
+            if (
+                self._current_ai_label is not None
+                and self._current_ai_annotations
+                and not any(is_thought for _text, is_thought in self._current_ai_segments)
+            ):
                 display_text = _truncate_for_display(
                     self._current_ai_reply_text,
                     _CHAT_RENDER_CHAR_LIMIT,
@@ -3131,11 +3567,14 @@ class ChatWindow(QWidget):
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
         self._current_ai_segments = []
+        self._current_ai_status_text = ""
         self._current_ai_parser = None
         self._current_ai_annotations = []
+        self._current_ai_attachments = []
         self._current_file_context = []
         self._current_tool_context = {}
         self._current_context_snippets = []
+        self._current_harness = {}
         self._current_user_message = None
         self._streaming = False
         self._streaming_idx = None

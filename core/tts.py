@@ -21,7 +21,7 @@ iterator of text pieces (e.g. LLM stream chunks) so TTS starts before the
 full LLM response is available — this is the lowest-latency path.
 """
 from __future__ import annotations
-import config
+
 import importlib.util
 import inspect
 import io
@@ -30,14 +30,13 @@ import sys
 import threading
 import time
 import wave
+from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Generator, Iterable
 
+import config
 from core import tts_assets
-from core.system import macos_safety
+from core.system import macos_safety, sdk_clients
 from core.system.native_locks import ssl_init_lock
-from core.system import sdk_clients
-
 
 SAMPLE_RATE = 44100   # Hz  (Cartesia / default)
 CHANNELS = 1

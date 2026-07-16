@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from types import SimpleNamespace
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 from core.agent.runner import AgentTaskRunner
 from core.agent.task_spec import (
@@ -18,8 +18,8 @@ from core.agent.task_spec import (
     default_communication_specs,
     localize_agent_spec_if_default,
     localize_communication_spec_if_default,
-    role_responsibility,
     retry_spec_from_run,
+    role_responsibility,
 )
 
 

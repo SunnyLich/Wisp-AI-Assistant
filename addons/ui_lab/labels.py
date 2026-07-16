@@ -9,7 +9,6 @@ from typing import Any
 
 from core.system.paths import REPO_ROOT
 
-
 ADDON_ID = "ui-lab"
 SETTING_KEY = "labels"
 DATA_FILENAME = "labels.json"

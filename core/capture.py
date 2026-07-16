@@ -99,7 +99,7 @@ def _get_selected_text_uia() -> str | None:
 
 def _get_selected_text_clipboard() -> str | None:
     """Fallback: Ctrl+C with save/restore so existing clipboard is preserved."""
-    from core.platform_utils import send_keys, COPY_COMBO
+    from core.platform_utils import COPY_COMBO, send_keys
 
     if _IS_MAC:
         from core.platform import macos_native
@@ -404,8 +404,9 @@ def get_screen_snippet(region: dict | None = None) -> Image.Image:
         PIL Image of the captured region.
     """
     if _IS_MAC:
-        from tempfile import gettempdir
         from pathlib import Path
+        from tempfile import gettempdir
+
         from core.platform import macos_native
 
         out_path = Path(gettempdir()) / "wisp_screen_snippet.png"

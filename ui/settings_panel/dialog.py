@@ -6,58 +6,90 @@ Reads from and writes to the .env file.
 Launch via tray icon → Settings, or call open_settings().
 """
 from __future__ import annotations
-import os
-import sys
+
 import importlib.util
 import json
 import logging
-import shutil
-import subprocess
-import threading
+import os
 import re
 import shlex
+import shutil
+import subprocess
+import sys
+import threading
 import time
 import warnings
 from collections.abc import Callable
-from contextlib import contextmanager
 from pathlib import Path
+
+from PySide6.QtCore import QMimeData, QObject, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QDrag, QFont, QPainter, QPalette
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QTextEdit, QComboBox, QCheckBox,
-    QPushButton, QTabWidget, QWidget, QFrame, QGroupBox, QMessageBox,
-    QScrollArea, QSizePolicy, QCompleter, QInputDialog, QMenu, QSlider,
-    QApplication, QListWidget, QListWidgetItem, QDialogButtonBox, QButtonGroup,
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QCompleter,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
     QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, QObject, Signal, QSize
-from PySide6.QtGui import QFont, QPainter, QPalette
+
+import ui.settings_panel.env as settings_env
 from core import secret_store
 from core.system.env_utils import (
-    format_tool_modes, normalize_file_access_mode, normalize_screenshot_mode,
+    format_tool_modes,
+    normalize_file_access_mode,
+    normalize_screenshot_mode,
     parse_tool_modes,
-)
-import ui.settings_panel.env as settings_env
-from ui.settings_panel import context_controls
-from ui.settings_panel.hotkey_capture import HotkeyCaptureEdit
-from ui.settings_panel.helpers import (
-    NoScrollCombo as _NoScrollCombo,
-    WarningHeaderLabel as _WarningHeaderLabel,
-    expanding_form_layout as _expanding_form_layout,
-    parse_fallback_rows,
 )
 from ui.i18n import (
     COMBO_I18N_SOURCE_ROLE,
     LANGUAGE_OPTIONS,
-    current_language as current_app_language,
     localize_widget_tree,
     t,
 )
+from ui.i18n import (
+    current_language as current_app_language,
+)
 from ui.optional_install_dialog import OptionalInstallDialog
+from ui.settings_panel import context_controls
+from ui.settings_panel.helpers import (
+    NoScrollCombo as _NoScrollCombo,
+)
+from ui.settings_panel.helpers import (
+    WarningHeaderLabel as _WarningHeaderLabel,
+)
+from ui.settings_panel.helpers import (
+    expanding_form_layout as _expanding_form_layout,
+)
+from ui.settings_panel.helpers import (
+    parse_fallback_rows,
+)
+from ui.settings_panel.hotkey_capture import HotkeyCaptureEdit
 from ui.shared.window_utils import enable_standard_window_controls, fit_window_to_screen
 
 ENV_PATH = settings_env.ENV_PATH
 _settings_log = logging.getLogger("wisp.settings")
-_settings_dialog: "SettingsDialog | None" = None
+_settings_dialog: SettingsDialog | None = None
 _settings_open_pending = False
 _SETUP_CHECK_STATUS_LABELS = {
     "pass": "PASS",
@@ -114,8 +146,9 @@ _CONNECTION_PROVIDER_IDS: tuple[str, ...] = (
     "sambanova", "github_models", "huggingface", "chutes", "vercel",
     "fireworks", "cohere", "ai21", "nebius", "ollama", "custom", "copilot",
 )
-# Fixed width of the leading "Priority" column shown beside each model row.
-_MODEL_PRIORITY_COL_W = 46
+# Fixed width of the leading drag-handle/priority column beside each model row.
+_MODEL_PRIORITY_COL_W = 72
+_MODEL_ROUTE_ROW_MIME = "application/x-wisp-model-route-row"
 _SECRET_MASK_PLACEHOLDER = "●" * 16
 
 
@@ -168,6 +201,118 @@ class _SecretLineEdit(QLineEdit):
             rect,
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             mask,
+        )
+
+
+class _ModelRouteDragHandle(QLabel):
+    """Small handle that starts a model-route row drag."""
+
+    def __init__(self, row_widget: QWidget) -> None:
+        super().__init__("⠿")
+        self.row_widget = row_widget
+        self._press_pos = None
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setFixedWidth(24)
+        self.setToolTip(t("Drag to change priority"))
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if not (event.buttons() & Qt.MouseButton.LeftButton) or self._press_pos is None:
+            super().mouseMoveEvent(event)
+            return
+        distance = (event.position().toPoint() - self._press_pos).manhattanLength()
+        if distance < QApplication.startDragDistance():
+            return
+        mime = QMimeData()
+        mime.setData(_MODEL_ROUTE_ROW_MIME, b"row")
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        drag.exec(Qt.DropAction.MoveAction)
+        self._press_pos = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._press_pos = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        super().mouseReleaseEvent(event)
+
+
+class _ModelRouteRowsWidget(QWidget):
+    """Drop target for reordering model-route rows."""
+
+    rowDropped = Signal(object, int)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._drop_index: int | None = None
+        self.setAcceptDrops(True)
+
+    def _is_model_row_drag(self, event) -> bool:
+        return event.mimeData().hasFormat(_MODEL_ROUTE_ROW_MIME)
+
+    def _insertion_index(self, y: int) -> int:
+        layout = self.layout()
+        if layout is None:
+            return 0
+        for index in range(layout.count()):
+            widget = layout.itemAt(index).widget()
+            if widget is not None and y < widget.geometry().center().y():
+                return index
+        return layout.count()
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self._is_model_row_drag(event):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if not self._is_model_row_drag(event):
+            return
+        self._drop_index = self._insertion_index(event.position().toPoint().y())
+        self.update()
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._drop_index = None
+        self.update()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802 - Qt override
+        source = event.source()
+        row_widget = getattr(source, "row_widget", None)
+        drop_index = self._insertion_index(event.position().toPoint().y())
+        self._drop_index = None
+        self.update()
+        if self._is_model_row_drag(event) and isinstance(row_widget, QWidget):
+            self.rowDropped.emit(row_widget, drop_index)
+            event.acceptProposedAction()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().paintEvent(event)
+        if self._drop_index is None:
+            return
+        layout = self.layout()
+        if layout is None or layout.count() == 0:
+            y = 1
+        elif self._drop_index <= 0:
+            y = layout.itemAt(0).widget().geometry().top()
+        elif self._drop_index >= layout.count():
+            y = layout.itemAt(layout.count() - 1).widget().geometry().bottom()
+        else:
+            y = layout.itemAt(self._drop_index).widget().geometry().top()
+        painter = QPainter(self)
+        painter.fillRect(
+            0,
+            max(0, y - 1),
+            self.width(),
+            3,
+            self.palette().color(QPalette.ColorRole.Highlight),
         )
 
 _ASSISTANT_LANGUAGE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -413,7 +558,8 @@ class SettingsDialog(QDialog):
         self._model_section_rows: dict[str, list[dict]] = {
             "LLM": [], "VISION_LLM": [], "MEMORY_LLM": []
         }
-        self._model_section_layouts: dict[str, "QVBoxLayout"] = {}
+        self._model_section_layouts: dict[str, QVBoxLayout] = {}
+        self._model_route_rows_containers: dict[str, _ModelRouteRowsWidget] = {}
         self._warning_headers: dict[str, QLabel] = {}
         self._warning_header_base_texts: dict[str, str] = {}
         self._chat_elaborate_prompt_label: QLabel | None = None
@@ -441,11 +587,15 @@ class SettingsDialog(QDialog):
         self._open_warning_boxes: list[QMessageBox] = []
         self._status_refresh_token = 0
         self._status_refresh_running = False
+        self._harness_auth_poll_target: bool | None = None
+        self._harness_auth_poll_ticks = 0
+        self._harness_auth_poll_provider = ""
         self._update_check_result = None
         self._update_download_path = None
         self._update_mode = "check"
         self._update_running = False
         self._update_signal_carriers: list[_UpdateSignals] = []
+        self._app_tab_index = -1
         self._tts_tab_index = -1
         self._tts_install_status_checked = False
         self._tts_install_status_running = False
@@ -492,8 +642,28 @@ class SettingsDialog(QDialog):
                 self._page_title_lbl.setText(t(title))
             if isinstance(self._page_subtitle_lbl, QLabel):
                 self._page_subtitle_lbl.setText(t(subtitle))
-        if index == getattr(self, "_tts_tab_index", -1):
-            self._refresh_tts_optional_install_status()
+        self._refresh_current_install_status(force_tts=False)
+
+    def _refresh_current_install_status(self, *, force_tts: bool) -> None:
+        """Refresh install state for the visible Settings page."""
+        if getattr(self, "_disposing", False):
+            return
+        tabs = getattr(self, "_tabs", None)
+        if not isinstance(tabs, QTabWidget):
+            return
+        index = tabs.currentIndex()
+        if index == getattr(self, "_app_tab_index", -1):
+            if hasattr(self, "_privacy_model_status_lbl"):
+                self._refresh_privacy_model_status()
+            return
+        if index != getattr(self, "_tts_tab_index", -1):
+            return
+
+        self._refresh_stt_active_backend()
+        if force_tts and not self._tts_install_status_running:
+            self._tts_install_status_checked = False
+            self._tts_install_status_result = None
+        self._refresh_tts_optional_install_status()
 
     def _save_api_keys_to_keychain(self) -> bool:
         """Persist every typed API key to the OS keychain, one at a time.
@@ -594,12 +764,14 @@ class SettingsDialog(QDialog):
                 if w._recording:
                     w._cancel()
         super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowActivate:
+            QTimer.singleShot(0, lambda: self._refresh_current_install_status(force_tts=True))
 
     def showEvent(self, event):                 # noqa: N802
         """Show event."""
         super().showEvent(event)
         fit_window_to_screen(self, preferred_width=980, preferred_height=760)
-        self._refresh_stt_active_backend()
+        self._refresh_current_install_status(force_tts=True)
 
     def hideEvent(self, event):                 # noqa: N802
         """Hide event."""
@@ -872,6 +1044,8 @@ class SettingsDialog(QDialog):
         )
         for page, internal_name in pages:
             index = tabs.addTab(page, internal_name)
+            if internal_name == "App":
+                self._app_tab_index = index
             if internal_name == "TTS / Voice":
                 self._tts_tab_index = index
         tabs.currentChanged.connect(self._on_settings_tab_changed)
@@ -939,7 +1113,7 @@ class SettingsDialog(QDialog):
         saved_profiles = self._saved_custom_profile_entries()
         if saved_profiles:
             menu.addSeparator()
-            for index, profile_id, label in saved_profiles:
+            for index, _profile_id, label in saved_profiles:
                 action = menu.addAction(label)
                 action.setToolTip(t("Load this custom profile into Settings."))
                 action.triggered.connect(
@@ -2034,6 +2208,7 @@ class SettingsDialog(QDialog):
         self._model_route_button_group = QButtonGroup(route_switcher)
         self._model_route_button_group.setExclusive(True)
         self._model_route_buttons: dict[str, QPushButton] = {}
+        self._model_route_add_buttons: dict[str, QPushButton] = {}
         self._model_route_cards: dict[str, QWidget] = {}
         for section_key, section_title, _test_attr, _test_fn in section_configs:
             button = QPushButton(t(section_title))
@@ -2089,12 +2264,18 @@ class SettingsDialog(QDialog):
             cv.addWidget(mch_w)
 
             # rows container
-            rows_container = QWidget()
+            rows_container = _ModelRouteRowsWidget()
             rows_layout = QVBoxLayout(rows_container)
             rows_layout.setSpacing(4)
             rows_layout.setContentsMargins(0, 0, 0, 0)
+            rows_container.rowDropped.connect(
+                lambda row_widget, drop_index, sk=section_key: self._reorder_model_section_row(
+                    sk, row_widget, drop_index
+                )
+            )
             cv.addWidget(rows_container)
             self._model_section_layouts[section_key] = rows_layout
+            self._model_route_rows_containers[section_key] = rows_container
 
             # test status + button
             test_lbl = QLabel()
@@ -2110,15 +2291,15 @@ class SettingsDialog(QDialog):
             tr_h.addWidget(test_lbl, 1)
             cv.addWidget(test_row_w)
 
-            # Search the catalog before adding another fallback route.
             add_row_btn = QPushButton(t("+ Add fallback"))
+            self._model_route_add_buttons[section_key] = add_row_btn
             arw = QHBoxLayout()
             arw.setContentsMargins(0, 0, 0, 0)
             arw.addWidget(add_row_btn)
             arw.addStretch()
             cv.addLayout(arw)
             add_row_btn.clicked.connect(
-                lambda _checked=False, sk=section_key: self._show_add_model_route_dialog(sk)
+                lambda _checked=False, sk=section_key: self._add_inline_model_section_row(sk)
             )
             model_layout.addWidget(card)
 
@@ -2407,7 +2588,7 @@ class SettingsDialog(QDialog):
         self._refresh_search_index()
         self._schedule_dirty_refresh()
 
-    def _get_api_key_display_options(self) -> "list[tuple[str, str]]":
+    def _get_api_key_display_options(self) -> list[tuple[str, str]]:
         """Return api key display options."""
         options: list[tuple[str, str]] = []
         for row in getattr(self, "_api_key_rows", []):
@@ -2424,7 +2605,7 @@ class SettingsDialog(QDialog):
             options.append((t(_PROVIDER_LABELS.get("custom", "Custom (OpenAI-compatible)")), "custom"))
         return options
 
-    def _credential_availability(self) -> "dict[str, tuple[bool, str]]":
+    def _credential_availability(self) -> dict[str, tuple[bool, str]]:
         """Map OAuth/keychain providers to (available, hint-when-unavailable).
 
         Routes that authenticate via sign-in (chatgpt, copilot) are only usable
@@ -2515,97 +2696,10 @@ class SettingsDialog(QDialog):
             button.setChecked(key == section_key)
         self._active_model_route = section_key
 
-    def _show_add_model_route_dialog(self, section_key: str) -> None:
-        """Choose a connection and search its model catalog before adding a route."""
-        titles = {
-            "LLM": "Chat model",
-            "VISION_LLM": "Image model",
-            "MEMORY_LLM": "Memory model",
-        }
-        dialog = QDialog(self)
-        dialog.setWindowTitle(t("Add fallback model"))
-        dialog.setModal(True)
-        dialog.resize(540, 560)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-
-        title = QLabel(t("Add fallback to {route}").format(route=t(titles.get(section_key, section_key))))
-        title.setObjectName("settingsPageTitle")
-        layout.addWidget(title)
-        hint = QLabel(t("Choose a configured connection, then search its models or enter an exact model name."))
-        hint.setWordWrap(True)
-        hint.setObjectName("settingsPageSubtitle")
-        layout.addWidget(hint)
-
-        connection = _NoScrollCombo()
-        self._fill_credential_combo(connection)
-        layout.addWidget(_tooltip_label("Connection", "The credential or local endpoint used by this fallback."))
-        layout.addWidget(connection)
-        search = QLineEdit()
-        search.setPlaceholderText(t("Search models or enter a model name..."))
-        search.setClearButtonEnabled(True)
-        layout.addWidget(search)
-        model_list = QListWidget()
-        model_list.setObjectName("settingsModelCatalog")
-        layout.addWidget(model_list, 1)
-        catalog_status = QLabel()
-        catalog_status.setStyleSheet("color: palette(placeholder-text); font-size: 9pt;")
-        layout.addWidget(catalog_status)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(t("Add fallback"))
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        def _update_add_enabled(*_args) -> None:
-            buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-                bool(
-                    connection.currentData()
-                    and (model_list.currentItem() is not None or search.text().strip())
-                )
-            )
-
-        def _rebuild_models(*_args) -> None:
-            provider = str(connection.currentData() or "")
-            query = search.text().strip().lower()
-            model_list.clear()
-            matches = [
-                model for model in _PROVIDER_MODELS.get(provider, [])
-                if not query or query in model.lower()
-            ]
-            for model in matches:
-                item = QListWidgetItem(model)
-                item.setData(Qt.ItemDataRole.UserRole, model)
-                model_list.addItem(item)
-            if model_list.count():
-                model_list.setCurrentRow(0)
-            catalog_status.setText(
-                t("{count} catalog models").format(count=len(matches))
-                if matches
-                else t("No catalog match. The text above will be used as a custom model name.")
-            )
-            _update_add_enabled()
-
-        connection.currentIndexChanged.connect(_rebuild_models)
-        search.textChanged.connect(_rebuild_models)
-        model_list.currentItemChanged.connect(_update_add_enabled)
-        model_list.itemDoubleClicked.connect(lambda *_: dialog.accept())
-        _rebuild_models()
-        search.setFocus()
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        provider = str(connection.currentData() or "")
-        selected = model_list.currentItem()
-        model = (
-            str(selected.data(Qt.ItemDataRole.UserRole) or "")
-            if selected is not None
-            else search.text().strip()
-        )
-        if provider and model:
-            self._add_model_section_row(section_key, provider, model)
+    def _add_inline_model_section_row(self, section_key: str) -> None:
+        """Insert an editable route row without interrupting the settings flow."""
+        row = self._add_model_section_row(section_key)
+        row["api_key_combo"].setFocus(Qt.FocusReason.ShortcutFocusReason)
 
     def _add_model_section_row(
         self,
@@ -2619,9 +2713,16 @@ class SettingsDialog(QDialog):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(8)
 
+        priority_cell = QWidget()
+        priority_cell.setFixedWidth(_MODEL_PRIORITY_COL_W)
+        priority_h = QHBoxLayout(priority_cell)
+        priority_h.setContentsMargins(0, 0, 0, 0)
+        priority_h.setSpacing(2)
+        drag_handle = _ModelRouteDragHandle(row_w)
         priority_lbl = QLabel()
-        priority_lbl.setFixedWidth(_MODEL_PRIORITY_COL_W)
         priority_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        priority_h.addWidget(drag_handle)
+        priority_h.addWidget(priority_lbl, 1)
 
         api_key_combo = _NoScrollCombo()
         api_key_combo.setMinimumWidth(140)
@@ -2650,7 +2751,7 @@ class SettingsDialog(QDialog):
         remove_btn.setFixedWidth(40)
         remove_btn.setStyleSheet("QPushButton { padding: 5px 4px; }")
 
-        h.addWidget(priority_lbl)
+        h.addWidget(priority_cell)
         h.addWidget(api_key_combo, 2)
         h.addWidget(model_container, 3)
         h.addWidget(refresh_btn)
@@ -2658,6 +2759,7 @@ class SettingsDialog(QDialog):
 
         row_info: dict = {
             "widget":        row_w,
+            "drag_handle":   drag_handle,
             "priority_lbl":  priority_lbl,
             "api_key_combo": api_key_combo,
             "model_combo":   model_combo,
@@ -2700,6 +2802,32 @@ class SettingsDialog(QDialog):
         self._refresh_search_index()
         self._schedule_dirty_refresh()
         return row_info
+
+    def _reorder_model_section_row(
+        self,
+        section_key: str,
+        row_widget: QWidget,
+        drop_index: int,
+    ) -> None:
+        """Move a dropped row and keep its saved priority order in sync."""
+        rows = self._model_section_rows.get(section_key, [])
+        row_info = next((row for row in rows if row.get("widget") is row_widget), None)
+        if row_info is None:
+            return
+        old_index = rows.index(row_info)
+        target_index = max(0, min(int(drop_index), len(rows)))
+        if target_index > old_index:
+            target_index -= 1
+        if target_index == old_index:
+            return
+
+        rows.pop(old_index)
+        rows.insert(target_index, row_info)
+        layout = self._model_section_layouts[section_key]
+        layout.removeWidget(row_widget)
+        layout.insertWidget(target_index, row_widget)
+        self._relabel_section_priorities(section_key)
+        self._schedule_dirty_refresh()
 
     def _relabel_section_priorities(self, section_key: str) -> None:
         """Number each model row by priority — row 1 is primary, the rest fallbacks."""
@@ -2890,8 +3018,8 @@ class SettingsDialog(QDialog):
 
     def _show_custom_endpoints_menu(self) -> None:
         """Show custom provider endpoint shortcuts."""
-        from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QMenu
 
         menu = QMenu(self)
         for name, url, model_hint, api_key_hint in self._CUSTOM_ENDPOINTS:
@@ -3017,6 +3145,7 @@ class SettingsDialog(QDialog):
     def _github_login_device(self) -> None:
         """Handle github login device for settings dialog."""
         import webbrowser
+
         import config as cfg
         from core.auth import github as github_auth
 
@@ -4577,8 +4706,7 @@ class SettingsDialog(QDialog):
             button.setEnabled(False)
 
         def _run() -> tuple[bool, str]:
-            from core import tts
-            from core import tts_assets
+            from core import tts, tts_assets
 
             if mode == "repair":
                 tts.prepare_kokoro_assets(voice=voice)
@@ -4738,8 +4866,7 @@ class SettingsDialog(QDialog):
     ) -> tuple[bool, str]:
         """Download Kokoro runtime assets after pip install succeeds."""
         try:
-            from core import optional_deps
-            from core import tts
+            from core import optional_deps, tts
 
             progress("Installing Kokoro: preparing local voice assets for 0s.")
             write_log("[kokoro install] Preparing Kokoro model and voice assets.")
@@ -4880,7 +5007,6 @@ class SettingsDialog(QDialog):
         if not isinstance(status, QLabel):
             return False
         try:
-            from core import optional_deps
 
             command, root, log_path, status_path = _optional_install_plan_command(
                 display_name=display_name,
@@ -5248,18 +5374,60 @@ class SettingsDialog(QDialog):
         # ── SYSTEM PROMPT card ────────────────────────────────────────────
         prompt_card, prompt_cv = self._card("System Prompt")
         note = QLabel(
-            f"<small>{t('This prompt is prepended to every LLM request as the system instruction.')}</small>"
+            f"<small>{t('Each conversation mode has its own system prompt.')}</small>"
         )
         note.setWordWrap(True)
         prompt_cv.addWidget(note)
-        util = QTextEdit()
-        util.setMinimumHeight(260)
-        util.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+
+        prompt_tabs = QTabWidget()
+        prompt_tabs.setObjectName("systemPromptModeTabs")
+
+        def add_prompt_tab(
+            label: str,
+            field_key: str,
+            description: str,
+            placeholder: str = "",
+        ) -> None:
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(8, 10, 8, 8)
+            layout.setSpacing(8)
+            description_label = QLabel(t(description))
+            description_label.setWordWrap(True)
+            layout.addWidget(description_label)
+            editor = QTextEdit()
+            editor.setMinimumHeight(260)
+            editor.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
+            if placeholder:
+                # QTextEdit renders this as non-editable palette placeholder text;
+                # it is never returned by toPlainText() or persisted to .env.
+                editor.setPlaceholderText(t(placeholder))
+            self._fields[field_key] = editor
+            layout.addWidget(editor, stretch=1)
+            prompt_tabs.addTab(page, t(label))
+
+        add_prompt_tab(
+            "Wisp",
+            "SYSTEM_PROMPT_UTILITY",
+            "Used only when conversations run with Wisp.",
         )
-        self._fields["SYSTEM_PROMPT_UTILITY"] = util
-        prompt_cv.addWidget(util)
+        add_prompt_tab(
+            "ChatGPT",
+            "WISP_CODEX_SYSTEM_PROMPT",
+            "Used only when conversations run with ChatGPT.",
+            "Optional instructions for ChatGPT conversations. Leave blank to use ChatGPT's native instructions.",
+        )
+        add_prompt_tab(
+            "Claude",
+            "WISP_CLAUDE_SYSTEM_PROMPT",
+            "Used only when conversations run with Claude.",
+            "Optional instructions for Claude conversations. Leave blank to use Claude's native instructions.",
+        )
+        self._system_prompt_tabs = prompt_tabs
+        prompt_cv.addWidget(prompt_tabs, stretch=1)
         outer.addWidget(prompt_card, stretch=1)
 
         scroll.setWidget(w)
@@ -5806,12 +5974,11 @@ class SettingsDialog(QDialog):
         context_memory_mode: str = "off",
         context_screenshot: str = "off",
         file_access: str = "off",
-        tools: "dict[str, str] | None" = None,
-        intents: "list[dict] | None" = None,
+        tools: dict[str, str] | None = None,
+        intents: list[dict] | None = None,
         display_language: str | None = None,
     ) -> None:
         """Add an intent shortcut row with its editor directly underneath."""
-        from PySide6.QtWidgets import QSizePolicy
         detail, outer = self._shortcut_detail()
 
         hotkey_edit = HotkeyCaptureEdit()
@@ -6138,6 +6305,125 @@ class SettingsDialog(QDialog):
         cfg_cv.addWidget(fw)
         return cfg_card
 
+    def _selected_harness_provider(self) -> str:
+        """Return the selected external conversation harness, if any."""
+        fields = getattr(self, "_fields", {})
+        field = fields.get("CHAT_EXECUTION_MODE")
+        if field is None:
+            return ""
+        provider = str(field.currentData() or "").strip().lower()  # type: ignore[attr-defined]
+        return provider if provider in {"codex", "claude"} else ""
+
+    def _refresh_harness_login_status(self) -> None:
+        """Refresh the selected harness login alongside other auth states."""
+        if not self._selected_harness_provider():
+            return
+        self._schedule_open_status_refresh()
+
+    def _harness_login(self) -> None:
+        """Open the selected harness's interactive CLI login flow."""
+        provider = self._selected_harness_provider()
+        if not provider:
+            return
+        try:
+            from core.harness_clients.auth import harness_login_command, harness_login_environment
+
+            command = harness_login_command(provider)
+            environment = harness_login_environment(provider)
+        except Exception as exc:  # noqa: BLE001 - shown directly in Settings
+            self._set_status_label(self._harness_auth_status_lbl, False, str(exc))
+            return
+        display_name = "ChatGPT" if provider == "codex" else "Claude Agent"
+        launched = _launch_terminal_command(
+            command,
+            cwd=Path.cwd(),
+            title=f"{display_name} sign-in",
+            failure_label=f"{display_name} sign-in",
+            environment=environment,
+        )
+        if not launched:
+            self._set_status_label(
+                self._harness_auth_status_lbl,
+                False,
+                "Could not open a terminal for sign-in.",
+            )
+            return
+        self._set_status_label(
+            self._harness_auth_status_lbl,
+            None,
+            "Complete sign-in in the terminal or browser. Wisp will refresh automatically.",
+        )
+        self._start_harness_auth_poll(target=True)
+
+    def _harness_logout(self) -> None:
+        """Sign out of the selected harness without blocking the Settings UI."""
+        provider = self._selected_harness_provider()
+        if not provider:
+            return
+        self._cancel_status_refresh()
+        self._status_refresh_token += 1
+        token = self._status_refresh_token
+        self._status_refresh_running = True
+        self._pending_status_attrs = {"_harness_auth_status_lbl"}
+        self._set_status_label(self._harness_auth_status_lbl, None, "Signing out...")
+        self._harness_login_btn.setEnabled(False)
+        self._harness_logout_btn.setEnabled(False)
+        if not self._status_result_timer.isActive():
+            self._status_result_timer.start()
+        QTimer.singleShot(_AUTH_STATUS_TIMEOUT_MS, lambda tok=token: self._expire_status_refresh(tok))
+
+        def _worker() -> None:
+            from core.harness_clients.auth import logout_harness
+
+            status = logout_harness(provider)
+            ok = (
+                True if status.available and status.logged_in is True
+                else None if status.available and status.logged_in is False
+                else False
+            )
+            self._queue_status_result(token, "_harness_auth_status_lbl", ok, status.message)
+
+        threading.Thread(
+            target=_worker,
+            daemon=True,
+            name=f"settings-{provider}-logout",
+        ).start()
+
+    def _start_harness_auth_poll(self, *, target: bool) -> None:
+        """Poll until a CLI login/logout flow reaches its expected state."""
+        self._harness_auth_poll_target = bool(target)
+        self._harness_auth_poll_ticks = 0
+        self._harness_auth_poll_provider = self._selected_harness_provider()
+        timer = getattr(self, "_harness_auth_poll_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setInterval(2000)
+            timer.timeout.connect(self._harness_auth_poll_tick)
+            self._harness_auth_poll_timer = timer
+        timer.start()
+
+    def _harness_auth_poll_tick(self) -> None:
+        """Start another non-blocking login status read while auth is pending."""
+        provider = self._selected_harness_provider()
+        if not provider or provider != self._harness_auth_poll_provider:
+            self._harness_auth_poll_timer.stop()
+            self._harness_auth_poll_target = None
+            self._harness_auth_poll_provider = ""
+            return
+        self._harness_auth_poll_ticks += 1
+        if self._harness_auth_poll_ticks >= 150:
+            self._harness_auth_poll_timer.stop()
+            self._harness_auth_poll_target = None
+            self._harness_auth_poll_provider = ""
+            self._set_status_label(
+                self._harness_auth_status_lbl,
+                False,
+                "Timed out waiting for agent sign-in. Use Refresh to check again.",
+            )
+            return
+        if not self._status_refresh_running:
+            self._schedule_open_status_refresh()
+
     def _tab_app(self) -> QWidget:
         """Handle tab app for settings dialog."""
         from PySide6.QtWidgets import QScrollArea
@@ -6148,6 +6434,111 @@ class SettingsDialog(QDialog):
         outer = QVBoxLayout(outer_w)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
+
+        execution_card, execution_cv = self._card("Run conversations with")
+        execution_cv.addWidget(_desc_label(
+            "",
+            "Choose the agent behind Wisp conversations. Wisp uses the configured model route; "
+            "ChatGPT and Claude run their full local agent harness and stream progress back into Wisp.",
+        ))
+        execution_mode = _NoScrollCombo()
+        execution_mode.addItem(t("Wisp"), "wisp")
+        execution_mode.addItem(t("ChatGPT"), "codex")
+        execution_mode.addItem(t("Claude Agent"), "claude")
+        execution_mode.setToolTip(t(
+            "Wisp always keeps a local chat copy. Agent-managed conversations also keep a resumable ChatGPT or Claude session."
+        ))
+        self._fields["CHAT_EXECUTION_MODE"] = execution_mode
+        conversation_owner = _NoScrollCombo()
+        conversation_owner.addItem(t("Wisp"), "wisp")
+        conversation_owner.addItem(t("Selected agent"), "agent")
+        conversation_owner.setToolTip(t(
+            "Wisp-managed conversations send the full Wisp history with each request. "
+            "Agent-managed conversations transfer once, then resume the ChatGPT or Claude session."
+        ))
+        self._fields["CHAT_CONVERSATION_OWNER"] = conversation_owner
+
+        owner_sync_state = {"provider": str(execution_mode.currentData() or "wisp")}
+
+        def sync_owner_agent_label(*, select_default: bool = True) -> None:
+            selected = str(execution_mode.currentData() or "wisp")
+            previous = owner_sync_state["provider"]
+            label = {
+                "codex": t("ChatGPT"),
+                "claude": t("Claude Agent"),
+            }.get(selected, t("Selected agent"))
+            conversation_owner.setItemText(1, label)
+            conversation_owner.setEnabled(selected in {"codex", "claude"})
+            if selected == "wisp":
+                conversation_owner.setCurrentIndex(conversation_owner.findData("wisp"))
+            elif select_default and previous == "wisp":
+                conversation_owner.setCurrentIndex(conversation_owner.findData("agent"))
+            owner_sync_state["provider"] = selected
+            poll_timer = getattr(self, "_harness_auth_poll_timer", None)
+            poll_provider = getattr(self, "_harness_auth_poll_provider", "")
+            if poll_timer is not None and poll_provider and poll_provider != selected:
+                poll_timer.stop()
+                self._harness_auth_poll_target = None
+                self._harness_auth_poll_provider = ""
+            auth_widget = getattr(self, "_harness_auth_widget", None)
+            if isinstance(auth_widget, QWidget):
+                auth_widget.setVisible(selected in {"codex", "claude"})
+            title_label = getattr(self, "_harness_auth_title_lbl", None)
+            if isinstance(title_label, QLabel):
+                title_label.setText(
+                    t("ChatGPT login") if selected == "codex" else t("Claude Agent login")
+                )
+            if (
+                selected in {"codex", "claude"}
+                and hasattr(self, "_status_result_timer")
+                and not getattr(self, "_loading_values", False)
+            ):
+                self._schedule_open_status_refresh()
+
+        execution_mode.currentIndexChanged.connect(lambda _index: sync_owner_agent_label())
+        sync_owner_agent_label(select_default=False)
+        execution_form_w = QWidget()
+        execution_form = _expanding_form_layout(execution_form_w)
+        execution_form.setContentsMargins(0, 0, 0, 0)
+        execution_form.addRow(t("Agent"), execution_mode)
+        execution_form.addRow(t("Conversation goes to"), conversation_owner)
+        execution_cv.addWidget(execution_form_w)
+
+        self._harness_auth_widget = QWidget()
+        harness_auth_layout = QVBoxLayout(self._harness_auth_widget)
+        harness_auth_layout.setContentsMargins(0, 4, 0, 0)
+        harness_auth_layout.setSpacing(6)
+        harness_auth_layout.addWidget(_sep(visible=True))
+        self._harness_auth_title_lbl = QLabel()
+        self._harness_auth_title_lbl.setObjectName("settingsHarnessLoginTitle")
+        self._harness_auth_title_lbl.setStyleSheet("font-weight: 600;")
+        harness_auth_layout.addWidget(self._harness_auth_title_lbl)
+        harness_auth_layout.addWidget(_desc_label(
+            "",
+            "Wisp keeps ChatGPT agent sessions and login state in an isolated Wisp profile, "
+            "so they do not appear in your personal Codex history. Sign-in opens its terminal and browser flow.",
+        ))
+        self._harness_auth_status_lbl = QLabel()
+        self._harness_auth_status_lbl.setObjectName("settingsHarnessLoginStatus")
+        self._harness_auth_status_lbl.setWordWrap(True)
+        self._set_status_label(self._harness_auth_status_lbl, None, "Checking status...")
+        harness_auth_layout.addWidget(self._harness_auth_status_lbl)
+        harness_auth_row = self._button_row(
+            ("Sign in", self._harness_login),
+            ("Sign out", self._harness_logout),
+            ("Refresh", self._refresh_harness_login_status),
+        )
+        harness_buttons = harness_auth_row.findChildren(QPushButton)
+        self._harness_login_btn = harness_buttons[0]
+        self._harness_logout_btn = harness_buttons[1]
+        self._harness_auth_refresh_btn = harness_buttons[2]
+        self._harness_login_btn.setObjectName("settingsHarnessLoginButton")
+        self._harness_logout_btn.setObjectName("settingsHarnessLogoutButton")
+        self._harness_auth_refresh_btn.setObjectName("settingsHarnessLoginRefreshButton")
+        harness_auth_layout.addWidget(harness_auth_row)
+        execution_cv.addWidget(self._harness_auth_widget)
+        sync_owner_agent_label()
+        outer.addWidget(execution_card)
 
         profile_card, profile_cv = self._card("Profile setup")
         profile_cv.addWidget(_desc_label(
@@ -6172,10 +6563,6 @@ class SettingsDialog(QDialog):
         theme_combo.addItem(t("Dark"), "dark")
         self._fields["THEME_MODE"] = theme_combo
         theme_tip = "System follows your OS theme. Light and Dark use Wisp's saved color templates."
-        self._fields["TRUST_PRIVACY_MODE"] = QCheckBox(t("Trust/privacy mode"))
-        self._fields["TRUST_PRIVACY_MODE"].setToolTip(
-            t("Default on. Redacts sensitive text patterns from context before model requests.")
-        )
         self._fields["ICON_AUTO_HIDE"] = QCheckBox(t("Auto-hide icon (only visible when active)"))
         self._fields["ICON_AUTO_HIDE"].setToolTip(
             "Hide the floating icon when Wisp is idle, then show it again while listening or responding."
@@ -6238,7 +6625,6 @@ class SettingsDialog(QDialog):
         f.addRow(_tooltip_label("Surface color", theme_color_tip), _surface_row)
         f.addRow(_tooltip_label("Text color", theme_color_tip), _text_row)
         f.addRow(_tooltip_label("Accent color", theme_color_tip), _accent_row)
-        f.addRow("", self._fields["TRUST_PRIVACY_MODE"])
         f.addRow("", self._fields["ICON_AUTO_HIDE"])
         f.addRow("", self._fields["START_ON_LOGIN"])
         f.addRow(_tooltip_label("App language", app_language_tip), self._fields["APP_LANGUAGE"])
@@ -6299,9 +6685,228 @@ class SettingsDialog(QDialog):
         self._uninstall_btn.clicked.connect(self._uninstall_wisp)
         uninstall_cv.addWidget(self._uninstall_btn)
         self._about_uninstall_card = uninstall_card
+
+        privacy_card, privacy_cv = self._card("Privacy protection")
+        privacy_cv.addWidget(_desc_label(
+            "",
+            "Choose privacy protection for model requests. The built-in filter needs no download; "
+            "Advanced adds a local AI model while keeping built-in protection active.",
+        ))
+        privacy_mode = _NoScrollCombo()
+        privacy_mode.addItem(t("Off (send full messages)"), "off")
+        privacy_mode.addItem(t("Built-in privacy filter"), "builtin")
+        privacy_mode.addItem(t("Advanced privacy model"), "advanced")
+        privacy_general_tooltip = t(
+            "Use no filter, built-in patterns, or Advanced mode, which combines the local AI model "
+            "with built-in patterns."
+        )
+        privacy_mode.setToolTip(privacy_general_tooltip)
+        privacy_mode.setProperty("generalToolTip", privacy_general_tooltip)
+        advanced_index = privacy_mode.findData("advanced")
+        privacy_mode.setItemData(
+            advanced_index,
+            t(
+                "Advanced privacy loads a local 2.8 GB AI model into memory and warms it in the "
+                "background when Wisp starts. Warm-up may take tens of seconds on CPU. If you send "
+                "a request before it finishes, that request waits; later requests are faster. The "
+                "privacy model never uploads your text."
+            ),
+            Qt.ItemDataRole.ToolTipRole,
+        )
+        privacy_mode.currentIndexChanged.connect(self._on_privacy_mode_changed)
+        self._fields["PRIVACY_MODE"] = privacy_mode
+        privacy_cv.addWidget(privacy_mode)
+        self._fields["PRIVACY_REVIEW_BEFORE_SEND"] = QCheckBox(
+            t("Review detected private information before sending")
+        )
+        self._fields["PRIVACY_REVIEW_BEFORE_SEND"].setToolTip(
+            t("Show the redacted request and detected categories before any model request, including local models.")
+        )
+        privacy_cv.addWidget(self._fields["PRIVACY_REVIEW_BEFORE_SEND"])
+        self._privacy_model_status_lbl = QLabel()
+        self._privacy_model_status_lbl.setWordWrap(True)
+        self._privacy_model_status_lbl.setStyleSheet("color: palette(placeholder-text);")
+        privacy_cv.addWidget(self._privacy_model_status_lbl)
+        privacy_actions = QHBoxLayout()
+        self._privacy_model_install_btn = QPushButton(t("Install advanced privacy model"))
+        self._privacy_model_install_btn.setToolTip(
+            t("Downloads OpenAI Privacy Filter (about 2.8 GB) and its local runtime. Nothing is uploaded.")
+        )
+        self._privacy_model_install_btn.clicked.connect(self._install_privacy_model)
+        self._privacy_model_remove_btn = QPushButton(t("Remove privacy model"))
+        self._privacy_model_remove_btn.clicked.connect(self._remove_privacy_model)
+        privacy_actions.addWidget(self._privacy_model_install_btn)
+        privacy_actions.addWidget(self._privacy_model_remove_btn)
+        privacy_actions.addStretch()
+        privacy_cv.addLayout(privacy_actions)
+        outer.addWidget(privacy_card)
+        self._refresh_privacy_model_status()
+
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _refresh_privacy_model_status(self) -> None:
+        """Refresh the optional privacy-model controls without loading the model."""
+        try:
+            from core.privacy_model import model_status
+
+            status = model_status()
+        except Exception as exc:  # noqa: BLE001
+            status = {"valid": False, "error": f"{type(exc).__name__}: {exc}"}
+        valid = bool(status.get("valid"))
+        if valid:
+            text = t("Advanced privacy model is installed and ready.")
+        elif status.get("model_downloaded") and not status.get("runtime_ready"):
+            text = t("Privacy model files are present, but the local runtime needs repair.")
+        else:
+            text = t("Optional AI privacy model is not installed. Built-in protection is still available.")
+        if status.get("error"):
+            text = t("Privacy model status could not be checked: {error}").format(error=status["error"])
+        self._privacy_model_status_lbl.setText(text)
+        self._privacy_model_install_btn.setText(
+            t("Repair advanced privacy model") if status.get("model_downloaded") else t("Install advanced privacy model")
+        )
+        self._privacy_model_remove_btn.setVisible(bool(status.get("model_downloaded") or valid))
+        self._privacy_model_ready = valid
+
+    def _on_privacy_mode_changed(self, _index: int = -1) -> None:
+        """Keep privacy modes exclusive and reject an unavailable advanced model."""
+        combo = self._fields.get("PRIVACY_MODE")
+        if not isinstance(combo, QComboBox):
+            return
+        mode = str(combo.currentData() or "builtin")
+        item_tooltip = combo.itemData(combo.currentIndex(), Qt.ItemDataRole.ToolTipRole)
+        combo.setToolTip(str(item_tooltip or combo.property("generalToolTip") or ""))
+        review = self._fields.get("PRIVACY_REVIEW_BEFORE_SEND")
+        if isinstance(review, QCheckBox):
+            review.setEnabled(mode != "off")
+        if mode != "advanced" or bool(getattr(self, "_privacy_model_ready", False)):
+            return
+        fallback = combo.findData("builtin")
+        combo.blockSignals(True)
+        combo.setCurrentIndex(fallback if fallback >= 0 else 0)
+        combo.blockSignals(False)
+        combo.setToolTip(str(combo.property("generalToolTip") or ""))
+        if isinstance(review, QCheckBox):
+            review.setEnabled(True)
+        QMessageBox.information(
+            self,
+            t("Advanced privacy model required"),
+            t("Install and verify the optional privacy model before selecting Advanced privacy model."),
+        )
+
+    def _privacy_model_install_paths(self) -> tuple[Path, Path]:
+        from core.privacy_model import model_dir
+
+        root = model_dir().parent / "installers"
+        root.mkdir(parents=True, exist_ok=True)
+        return root / "privacy-model.log", root / "privacy-model.status.json"
+
+    def _install_privacy_model(self) -> None:
+        """Launch the official model download in Wisp's installer window."""
+        answer = QMessageBox.question(
+            self,
+            t("Download and install advanced privacy model?"),
+            t(
+                "Wisp will download the official OpenAI Privacy Filter (about 2.8 GB) and install "
+                "its dedicated local runtime. The model runs only on this computer. Continue?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            log_path, status_path = self._privacy_model_install_paths()
+            command = [
+                sys.executable,
+                "-m",
+                "runtime.workers.privacy_model_installer",
+                "--status-path",
+                str(status_path),
+            ]
+            env = _privacy_model_install_env()
+            env.setdefault("PYTHONUTF8", "1")
+            env.setdefault("PYTHONIOENCODING", "utf-8")
+            root = (
+                Path(sys.executable).resolve().parent
+                if getattr(sys, "frozen", False)
+                else Path(__file__).resolve().parents[2]
+            )
+            dialog = OptionalInstallDialog(
+                title=t("Advanced privacy model installer"),
+                subtitle=t(
+                    "Downloads the official OpenAI Privacy Filter (about 2.8 GB) and a local runtime. "
+                    "Detection stays on this computer."
+                ),
+                command=command,
+                cwd=root,
+                log_path=log_path,
+                status_path=status_path,
+                env=env,
+                parent=self,
+                auto_start=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                t("Could not start privacy installer"),
+                t("Could not start the privacy-model installer: {error}").format(error=exc),
+            )
+            return
+        dialogs = getattr(self, "_optional_install_dialogs", None)
+        if not isinstance(dialogs, list):
+            dialogs = []
+            self._optional_install_dialogs = dialogs
+        dialogs.append(dialog)
+        dialog.install_finished.connect(
+            lambda code, _dialog=dialog: self._finish_privacy_model_install(
+                exit_code=int(code),
+                dialog=_dialog,
+            )
+        )
+        dialog.destroyed.connect(lambda _obj=None, _dialog=dialog: self._forget_optional_install_dialog(_dialog))
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _finish_privacy_model_install(
+        self,
+        *,
+        exit_code: int,
+        dialog: OptionalInstallDialog,
+    ) -> None:
+        """Refresh privacy controls immediately after the installer exits."""
+        self._refresh_privacy_model_status()
+        QTimer.singleShot(0, self._refresh_privacy_model_status)
+        if exit_code == 0:
+            self._forget_optional_install_dialog(dialog)
+
+    def _remove_privacy_model(self) -> None:
+        """Remove the optional model after explicit confirmation."""
+        answer = QMessageBox.question(
+            self,
+            t("Remove advanced privacy model?"),
+            t("Remove the downloaded privacy model and its local runtime? Built-in protection will remain active."),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            from core.privacy_model import remove_model
+
+            remove_model()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                t("Could not remove privacy model"),
+                t("Could not remove the privacy model: {error}").format(error=exc),
+            )
+            return
+        combo = self._fields.get("PRIVACY_MODE")
+        if isinstance(combo, QComboBox) and combo.currentData() == "advanced":
+            combo.setCurrentIndex(combo.findData("builtin"))
+        self._refresh_privacy_model_status()
 
     def _tab_about(self) -> QWidget:
         """Build the version, update, and removal page."""
@@ -6887,8 +7492,8 @@ class SettingsDialog(QDialog):
         Stores ``#RRGGBBAA`` when *alpha* is True (text-bubble colours), or plain
         opaque ``#RRGGBB`` when False (theme colours, where alpha is meaningless).
         """
-        from PySide6.QtWidgets import QColorDialog
         from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QColorDialog
 
         edit = QLineEdit()
         edit.setPlaceholderText(placeholder)
@@ -7177,26 +7782,37 @@ class SettingsDialog(QDialog):
         pmh.setContentsMargins(0, 0, 0, 0)
         pmh.setSpacing(12)
 
-        pc = QWidget(); pvl = QVBoxLayout(pc)
-        pvl.setContentsMargins(0, 0, 0, 0); pvl.setSpacing(4)
-        pvl.addWidget(QLabel("Provider")); pvl.addWidget(provider_field)
+        pc = QWidget()
+        pvl = QVBoxLayout(pc)
+        pvl.setContentsMargins(0, 0, 0, 0)
+        pvl.setSpacing(4)
+        pvl.addWidget(QLabel("Provider"))
+        pvl.addWidget(provider_field)
 
-        mc = QWidget(); mvl = QVBoxLayout(mc)
-        mvl.setContentsMargins(0, 0, 0, 0); mvl.setSpacing(4)
-        mvl.addWidget(QLabel("Model")); mvl.addWidget(model_field)
+        mc = QWidget()
+        mvl = QVBoxLayout(mc)
+        mvl.setContentsMargins(0, 0, 0, 0)
+        mvl.setSpacing(4)
+        mvl.addWidget(QLabel("Model"))
+        mvl.addWidget(model_field)
 
-        pmh.addWidget(pc); pmh.addWidget(mc)
+        pmh.addWidget(pc)
+        pmh.addWidget(mc)
         v.addWidget(pm)
 
         test_label.setWordWrap(True)
-        tr = QWidget(); trh = QHBoxLayout(tr)
-        trh.setContentsMargins(0, 0, 0, 0); trh.setSpacing(10)
+        tr = QWidget()
+        trh = QHBoxLayout(tr)
+        trh.setContentsMargins(0, 0, 0, 0)
+        trh.setSpacing(10)
         trh.addWidget(self._button_row((test_btn_label, test_slot)))
         trh.addWidget(test_label, 1)
         v.addWidget(tr)
 
-        fb_w = QWidget(); fb_f = _expanding_form_layout(fb_w)
-        fb_f.setContentsMargins(0, 4, 0, 0); fb_f.setSpacing(8)
+        fb_w = QWidget()
+        fb_f = _expanding_form_layout(fb_w)
+        fb_f.setContentsMargins(0, 4, 0, 0)
+        fb_f.setSpacing(8)
         self._add_fallback_section(fb_f, fallback_key, fallback_prefix, providers=fallback_providers)
         v.addWidget(fb_w)
 
@@ -7334,6 +7950,19 @@ class SettingsDialog(QDialog):
         import config as cfg
         self._loading_values = True
         self._active_preset_slug = self._env.get(_SETTINGS_PRESET_KEY, "")
+        _set(
+            self._fields["CHAT_EXECUTION_MODE"],
+            self._env.get("CHAT_EXECUTION_MODE", getattr(cfg, "CHAT_EXECUTION_MODE", "wisp")),
+        )
+        _set(
+            self._fields["CHAT_CONVERSATION_OWNER"],
+            self._env.get(
+                "CHAT_CONVERSATION_OWNER",
+                getattr(cfg, "CHAT_CONVERSATION_OWNER", "wisp"),
+            ),
+        )
+        if self._fields["CHAT_EXECUTION_MODE"].currentData() == "wisp":  # type: ignore[attr-defined]
+            _set(self._fields["CHAT_CONVERSATION_OWNER"], "wisp")
         self._pending_active_profile = ""
 
         # ── API key rows ──────────────────────────────────────────────────
@@ -7435,7 +8064,7 @@ class SettingsDialog(QDialog):
         )
 
         # ── TTS / Custom keys (still in self._fields) ─────────────────────
-        for name, label in [
+        for name, _label in [
             ("CARTESIA_API_KEY",   "Cartesia"),
             ("ELEVENLABS_API_KEY", "ElevenLabs"),
             ("TTS_CUSTOM_API_KEY", "Custom TTS endpoint"),
@@ -7835,10 +8464,34 @@ class SettingsDialog(QDialog):
             self._env.get("START_ON_LOGIN", str(getattr(cfg, "START_ON_LOGIN", False))).lower()
             == "true"
         )
-        self._fields["TRUST_PRIVACY_MODE"].setChecked(
-            self._env.get("TRUST_PRIVACY_MODE", str(getattr(cfg, "TRUST_PRIVACY_MODE", True))).lower()
-            == "true"
-        )  # type: ignore
+        privacy_mode = self._env.get("PRIVACY_MODE", "").strip().lower()
+        if privacy_mode not in {"off", "builtin", "advanced"}:
+            legacy_enabled = self._env.get(
+                "TRUST_PRIVACY_MODE",
+                str(getattr(cfg, "TRUST_PRIVACY_MODE", True)),
+            ).lower() == "true"
+            legacy_advanced = self._env.get(
+                "PRIVACY_AI_ENABLED",
+                str(getattr(cfg, "PRIVACY_AI_ENABLED", False)),
+            ).lower() == "true"
+            privacy_mode = (
+                "advanced" if legacy_enabled and legacy_advanced
+                else "builtin" if legacy_enabled
+                else "off"
+            )
+        if privacy_mode == "advanced" and not bool(getattr(self, "_privacy_model_ready", False)):
+            privacy_mode = "builtin"
+        privacy_combo = self._fields["PRIVACY_MODE"]
+        privacy_combo.blockSignals(True)  # type: ignore[attr-defined]
+        privacy_combo.setCurrentIndex(max(0, privacy_combo.findData(privacy_mode)))  # type: ignore[attr-defined]
+        privacy_combo.blockSignals(False)  # type: ignore[attr-defined]
+        self._fields["PRIVACY_REVIEW_BEFORE_SEND"].setChecked(
+            self._env.get(
+                "PRIVACY_REVIEW_BEFORE_SEND",
+                str(getattr(cfg, "PRIVACY_REVIEW_BEFORE_SEND", True)),
+            ).lower() == "true"
+        )
+        self._on_privacy_mode_changed()
 
         auto_elab = self._env.get("CHAT_AUTO_ELABORATE", str(cfg.CHAT_AUTO_ELABORATE)).lower() == "true"
         self._fields["CHAT_AUTO_ELABORATE"].setChecked(auto_elab)  # type: ignore
@@ -7906,6 +8559,18 @@ class SettingsDialog(QDialog):
             assistant_language,
         )
         self._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(util_val)  # type: ignore
+        self._fields["WISP_CODEX_SYSTEM_PROMPT"].setPlainText(  # type: ignore[attr-defined]
+            self._env.get(
+                "WISP_CODEX_SYSTEM_PROMPT",
+                getattr(cfg, "WISP_CODEX_SYSTEM_PROMPT", ""),
+            )
+        )
+        self._fields["WISP_CLAUDE_SYSTEM_PROMPT"].setPlainText(  # type: ignore[attr-defined]
+            self._env.get(
+                "WISP_CLAUDE_SYSTEM_PROMPT",
+                getattr(cfg, "WISP_CLAUDE_SYSTEM_PROMPT", ""),
+            )
+        )
         self._refresh_capability_warning_markers()
         self._loading_values = False
         self._wire_change_tracking(self)
@@ -7982,10 +8647,16 @@ class SettingsDialog(QDialog):
             self._pending_test_progress.clear()
         if self._test_result_timer.isActive():
             self._test_result_timer.stop()
-        for timer_name in ("_auth_poll_timer", "_github_auth_poll_timer"):
+        for timer_name in (
+            "_auth_poll_timer",
+            "_github_auth_poll_timer",
+            "_harness_auth_poll_timer",
+        ):
             timer = getattr(self, timer_name, None)
             if timer is not None and timer.isActive():
                 timer.stop()
+        self._harness_auth_poll_target = None
+        self._harness_auth_poll_provider = ""
 
     def _schedule_open_status_refresh(self) -> None:
         """Schedule open status refresh."""
@@ -7999,10 +8670,16 @@ class SettingsDialog(QDialog):
             "_github_status_lbl",
             "_copilot_status_lbl",
         }
-        for attr in ("_chatgpt_status_lbl", "_github_status_lbl", "_copilot_status_lbl"):
+        harness_provider = self._selected_harness_provider()
+        if harness_provider:
+            self._pending_status_attrs.add("_harness_auth_status_lbl")
+        for attr in self._pending_status_attrs:
             label = getattr(self, attr, None)
             if isinstance(label, QLabel):
                 self._set_status_label(label, None, "Checking status...")
+        if harness_provider:
+            self._harness_login_btn.setEnabled(False)
+            self._harness_logout_btn.setEnabled(False)
         if not self._status_result_timer.isActive():
             self._status_result_timer.start()
         QTimer.singleShot(_AUTH_STATUS_TIMEOUT_MS, lambda tok=token: self._expire_status_refresh(tok))
@@ -8050,12 +8727,70 @@ class SettingsDialog(QDialog):
             except Exception as exc:
                 self._queue_status_result(token, "_copilot_status_lbl", False, f"Keychain error: {exc}")
 
+        def _harness_worker() -> None:
+            """Read the selected local agent CLI's login state."""
+            try:
+                from core.harness_clients.auth import harness_login_status
+
+                status = harness_login_status(harness_provider)
+                ok = (
+                    True if status.available and status.logged_in is True
+                    else None if status.available and status.logged_in is False
+                    else False
+                )
+                self._queue_status_result(
+                    token,
+                    "_harness_auth_status_lbl",
+                    ok,
+                    status.message,
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced in Settings
+                self._queue_status_result(
+                    token,
+                    "_harness_auth_status_lbl",
+                    False,
+                    f"Error reading status: {exc}",
+                )
+
         for name, worker in (
             ("settings-status-chatgpt", _chatgpt_worker),
             ("settings-status-github", _github_worker),
             ("settings-status-copilot", _copilot_worker),
         ):
             threading.Thread(target=worker, daemon=True, name=name).start()
+        if harness_provider:
+            threading.Thread(
+                target=_harness_worker,
+                daemon=True,
+                name=f"settings-status-{harness_provider}",
+            ).start()
+
+    def _apply_status_result(self, attr: str, ok, message: str) -> None:
+        """Apply one queued auth result and update provider-specific controls."""
+        label = getattr(self, attr, None)
+        if isinstance(label, QLabel):
+            self._set_status_label(label, ok, message)
+        if attr != "_harness_auth_status_lbl":
+            return
+        target = getattr(self, "_harness_auth_poll_target", None)
+        if target is True and ok is None:
+            self._set_status_label(
+                self._harness_auth_status_lbl,
+                None,
+                "Waiting for agent sign-in to finish...",
+            )
+            self._harness_login_btn.setEnabled(False)
+            self._harness_logout_btn.setEnabled(False)
+            return
+        self._harness_login_btn.setEnabled(ok is not False)
+        self._harness_logout_btn.setEnabled(ok is True)
+        reached_target = (target is True and ok is True) or (target is False and ok is None)
+        if reached_target:
+            timer = getattr(self, "_harness_auth_poll_timer", None)
+            if timer is not None:
+                timer.stop()
+            self._harness_auth_poll_target = None
+            self._harness_auth_poll_provider = ""
 
     def _expire_status_refresh(self, token: int) -> None:
         """Replace stuck open-time auth checks with an actionable status."""
@@ -8069,9 +8804,7 @@ class SettingsDialog(QDialog):
         for _token, attr, ok, message in queued:
             if attr not in self._pending_status_attrs:
                 continue
-            label = getattr(self, attr, None)
-            if isinstance(label, QLabel):
-                self._set_status_label(label, ok, message)
+            self._apply_status_result(attr, ok, message)
             self._pending_status_attrs.discard(attr)
         if not self._pending_status_attrs:
             self._status_refresh_running = False
@@ -8080,9 +8813,7 @@ class SettingsDialog(QDialog):
             return
         message = t("Status check timed out. Sign-in may still work; try again or restart Wisp.")
         for attr in tuple(self._pending_status_attrs):
-            label = getattr(self, attr, None)
-            if isinstance(label, QLabel):
-                self._set_status_label(label, False, message)
+            self._apply_status_result(attr, False, message)
         self._pending_status_attrs = set()
         self._status_refresh_running = False
         if self._status_result_timer.isActive():
@@ -8101,9 +8832,7 @@ class SettingsDialog(QDialog):
                 continue
             if attr not in self._pending_status_attrs:
                 continue
-            label = getattr(self, attr, None)
-            if isinstance(label, QLabel):
-                self._set_status_label(label, ok, message)
+            self._apply_status_result(attr, ok, message)
             self._pending_status_attrs.discard(attr)
         if not self._pending_status_attrs:
             self._status_refresh_running = False
@@ -8677,8 +9406,8 @@ class SettingsDialog(QDialog):
         try:
             from core.llm_clients.client import (
                 screenshot_capability_warnings,
-                tool_capability_warnings,
                 subscription_auth_warnings,
+                tool_capability_warnings,
             )
 
             vb = self._voice_block
@@ -8759,8 +9488,8 @@ class SettingsDialog(QDialog):
             saved = self._do_save()
             if saved:
                 import config
-                from core.llm_clients import client as _llm
                 from core import tts as _tts
+                from core.llm_clients import client as _llm
                 from ui.shared.theme import apply_app_theme
                 config.reload()
                 _llm.reset_clients()
@@ -8871,6 +9600,8 @@ class SettingsDialog(QDialog):
             },
             "Prompts": {
                 "SYSTEM_PROMPT_UTILITY",
+                "WISP_CODEX_SYSTEM_PROMPT",
+                "WISP_CLAUDE_SYSTEM_PROMPT",
             },
             "Keybinds": {
                 "HOTKEY_ADD_CONTEXT", "HOTKEY_ADD_CONTEXT_2", "HOTKEY_ADD_CONTEXT_ENABLED",
@@ -8890,7 +9621,10 @@ class SettingsDialog(QDialog):
                 "CALLER_COUNT",
             },
             "App": {
-                "THEME_MODE", "DARK_MODE", "TRUST_PRIVACY_MODE",
+                "CHAT_EXECUTION_MODE",
+                "CHAT_CONVERSATION_OWNER",
+                "THEME_MODE", "DARK_MODE", "PRIVACY_MODE", "TRUST_PRIVACY_MODE",
+                "PRIVACY_REVIEW_BEFORE_SEND", "PRIVACY_AI_ENABLED",
                 "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE", "START_ON_LOGIN",
                 "THEME_DARK_BG", "THEME_DARK_SURFACE", "THEME_DARK_TEXT", "THEME_DARK_ACCENT",
                 "THEME_LIGHT_BG", "THEME_LIGHT_SURFACE", "THEME_LIGHT_TEXT", "THEME_LIGHT_ACCENT",
@@ -8924,8 +9658,8 @@ class SettingsDialog(QDialog):
         """Handle reload after page reset for settings dialog."""
         try:
             import config
-            from core.llm_clients import client as _llm
             from core import tts as _tts
+            from core.llm_clients import client as _llm
             from ui.shared.theme import apply_app_theme
 
             config.reload()
@@ -9116,8 +9850,8 @@ class SettingsDialog(QDialog):
         # 3. Reload config + live app and refresh the dialog to show defaults.
         try:
             import config
-            from core.llm_clients import client as _llm
             from core import tts as _tts
+            from core.llm_clients import client as _llm
             from ui.shared.theme import apply_app_theme
             config.reload()
             _llm.reset_clients()
@@ -9213,8 +9947,13 @@ class SettingsDialog(QDialog):
             assistant_language,
         )
         _set(self._fields["SYSTEM_PROMPT_UTILITY"], system_prompt_utility)
+        chatgpt_system_prompt = self._fields["WISP_CODEX_SYSTEM_PROMPT"].toPlainText()  # type: ignore[attr-defined]
+        claude_system_prompt = self._fields["WISP_CLAUDE_SYSTEM_PROMPT"].toPlainText()  # type: ignore[attr-defined]
+        privacy_mode = str(self._fields["PRIVACY_MODE"].currentData() or "builtin")  # type: ignore[attr-defined]
 
         vals = {
+            "CHAT_EXECUTION_MODE": _get(self._fields["CHAT_EXECUTION_MODE"]),
+            "CHAT_CONVERSATION_OWNER": _get(self._fields["CHAT_CONVERSATION_OWNER"]),
             "LLM_PROVIDER":      llm_p,
             "LLM_MODEL":         llm_m,
             "LLM_FALLBACKS":     llm_f,
@@ -9306,7 +10045,10 @@ class SettingsDialog(QDialog):
             "MEMORY_STM_TOKEN_BUDGET":  _get(self._fields["MEMORY_STM_TOKEN_BUDGET"]),
             "CALLER_COUNT":  str(len(self._caller_blocks)),
             "THEME_MODE":       self._fields["THEME_MODE"].currentData(),  # type: ignore[attr-defined]
-            "TRUST_PRIVACY_MODE": str(self._fields["TRUST_PRIVACY_MODE"].isChecked()),  # type: ignore
+            "PRIVACY_MODE": privacy_mode,
+            "TRUST_PRIVACY_MODE": str(privacy_mode != "off"),
+            "PRIVACY_REVIEW_BEFORE_SEND": str(self._fields["PRIVACY_REVIEW_BEFORE_SEND"].isChecked()),
+            "PRIVACY_AI_ENABLED": str(privacy_mode == "advanced"),
             "ICON_AUTO_HIDE":    str(self._fields["ICON_AUTO_HIDE"].isChecked()),  # type: ignore
             "START_ON_LOGIN": str(self._fields["START_ON_LOGIN"].isChecked()),  # type: ignore
             "CHAT_AUTO_ELABORATE": str(self._fields["CHAT_AUTO_ELABORATE"].isChecked()),  # type: ignore
@@ -9333,6 +10075,8 @@ class SettingsDialog(QDialog):
             "TTS_PLAYBACK_RATE": _get(self._fields["TTS_PLAYBACK_RATE"]),
             "TTS_HOLD_PLAYBACK_RATE": _get(self._fields["TTS_HOLD_PLAYBACK_RATE"]),
             "SYSTEM_PROMPT_UTILITY": system_prompt_utility,
+            "WISP_CODEX_SYSTEM_PROMPT": chatgpt_system_prompt,
+            "WISP_CLAUDE_SYSTEM_PROMPT": claude_system_prompt,
         }
         vals.update(self._snip_context_values())
         vals.update(theme_vals)
@@ -10055,6 +10799,27 @@ def _optional_install_env() -> dict[str, str]:
     return env
 
 
+def _privacy_model_install_env() -> dict[str, str]:
+    """Return a quiet privacy-installer environment with per-user HF auth."""
+    env = _optional_install_env()
+    if not str(env.get("HF_TOKEN") or "").strip():
+        try:
+            from core import secret_store
+
+            token = secret_store.get_secret("HUGGINGFACE_API_KEY").strip()
+        except Exception:
+            token = ""
+        if token:
+            env["HF_TOKEN"] = token
+
+    # The model is public, so authentication is an optimization rather than a
+    # requirement. Wisp owns the progress UI and reports real failures itself.
+    env["HF_HUB_VERBOSITY"] = "error"
+    env["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+    env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    return env
+
+
 def _optional_install_plan_command(
     *,
     display_name: str,
@@ -10219,7 +10984,14 @@ def _cmd_control_escape(text: str) -> str:
     )
 
 
-def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bool:
+def _launch_terminal_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    title: str,
+    failure_label: str = "Wisp installer",
+    environment: dict[str, str] | None = None,
+) -> bool:
     """Launch a command in a user-visible terminal window."""
     try:
         if sys.platform == "win32":
@@ -10229,7 +11001,7 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
                 "if errorlevel 1 ("
                 "set WISP_INSTALL_EXIT=!errorlevel! & "
                 "echo. & "
-                "echo Wisp installer failed with exit code !WISP_INSTALL_EXIT!. & "
+                f"echo {_cmd_control_escape(failure_label)} failed with exit code !WISP_INSTALL_EXIT!. & "
                 "echo This window stayed open so you can copy the error above. & "
                 "echo Press any key to close this window. & "
                 "pause > nul"
@@ -10240,10 +11012,21 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
                 f"{inner} & {failure_prompt}"
             )
             flags = int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0) or 0)
-            subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], cwd=str(cwd), creationflags=flags)
+            kwargs: dict[str, object] = {"cwd": str(cwd), "creationflags": flags}
+            if environment:
+                process_environment = os.environ.copy()
+                process_environment.update(environment)
+                kwargs["env"] = process_environment
+            subprocess.Popen(["cmd.exe", "/V:ON", "/C", cmdline], **kwargs)
             return True
         if sys.platform == "darwin":
-            command_text = _terminal_shell_command(command, cwd, title)
+            command_text = _terminal_shell_command(
+                command,
+                cwd,
+                title,
+                failure_label=failure_label,
+                environment=environment,
+            )
             script = (
                 f"set commandText to {json.dumps(command_text)}\n"
                 "tell application \"Terminal\"\n"
@@ -10259,29 +11042,47 @@ def _launch_terminal_command(command: list[str], *, cwd: Path, title: str) -> bo
             )
             subprocess.Popen(["/usr/bin/osascript", "-e", script], cwd=str(cwd))
             return True
-        shell_cmd = _terminal_shell_command(command, cwd, title)
+        shell_cmd = _terminal_shell_command(
+            command,
+            cwd,
+            title,
+            failure_label=failure_label,
+            environment=environment,
+        )
         for executable, terminal_command in _linux_terminal_candidates(shell_cmd, cwd=cwd, title=title):
-            if shutil.which(executable) and _popen_terminal(terminal_command, cwd):
+            if shutil.which(executable) and _popen_terminal(terminal_command, cwd, environment=environment):
                 return True
     except Exception:
         return False
     return False
 
 
-def _terminal_shell_command(command: list[str], cwd: Path, title: str) -> str:
+def _terminal_shell_command(
+    command: list[str],
+    cwd: Path,
+    title: str,
+    *,
+    failure_label: str = "Wisp installer",
+    environment: dict[str, str] | None = None,
+) -> str:
     """Return the shell body run inside a visible terminal."""
     title_cmd = f"printf '\\033]0;%s\\007' {shlex.quote(str(title))}"
+    failure_message = shlex.quote(f"\n{failure_label} failed with exit code %s.\n")
     failure_prompt = (
         "status=$?; "
         "if [ $status -ne 0 ]; then "
-        "printf '\\nWisp installer failed with exit code %s.\\n' \"$status\"; "
+        f"printf {failure_message} \"$status\"; "
         "printf 'This window stayed open so you can copy the error above.\\n'; "
         "printf 'Press Enter to close this window.\\n'; "
         "read -r _; "
         "fi; "
         "exit $status"
     )
-    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; {shlex.join(command)}; {failure_prompt}"
+    run_command = list(command)
+    if environment:
+        assignments = [f"{key}={value}" for key, value in sorted(environment.items())]
+        run_command = ["env", *assignments, *run_command]
+    return f"{title_cmd}; cd {shlex.quote(str(cwd))}; {shlex.join(run_command)}; {failure_prompt}"
 
 
 def _linux_terminal_candidates(shell_cmd: str, *, cwd: Path, title: str) -> list[tuple[str, list[str]]]:
@@ -10362,15 +11163,24 @@ def _linux_terminal_command(parts: list[str], shell_cmd: str, *, cwd: Path, titl
     return prefix + ["-e", "sh", "-lc", shell_cmd]
 
 
-def _popen_terminal(command: list[str], cwd: Path) -> bool:
+def _popen_terminal(
+    command: list[str],
+    cwd: Path,
+    *,
+    environment: dict[str, str] | None = None,
+) -> bool:
     """Start a terminal launcher, treating immediate non-zero exit as failure."""
-    proc = subprocess.Popen(
-        command,
-        cwd=str(cwd),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    kwargs: dict[str, object] = {
+        "cwd": str(cwd),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if environment:
+        process_environment = os.environ.copy()
+        process_environment.update(environment)
+        kwargs["env"] = process_environment
+    proc = subprocess.Popen(command, **kwargs)
     try:
         return proc.wait(timeout=0.35) == 0
     except subprocess.TimeoutExpired:
@@ -10383,6 +11193,7 @@ def _translate_status_message(message: str) -> str:
     if "\n" in text:
         return "\n".join(_translate_status_message(part) for part in text.splitlines())
     dynamic_patterns: tuple[tuple[str, str], ...] = (
+        (r"^Logged in using (?P<method>.+)$", "Logged in using {method}"),
         (r"^LLM route configured: (?P<route>.+)\.$", "LLM route configured: {route}."),
         (r"^LLM route incomplete: (?P<route>.+)\.$", "LLM route incomplete: {route}."),
         (r"^TTS provider configured: (?P<provider>.+)\.$", "TTS provider configured: {provider}."),
@@ -10451,7 +11262,7 @@ def _translate_status_message(message: str) -> str:
     return t(text)
 
 
-def _dialog_is_usable(dialog: "SettingsDialog | None") -> bool:
+def _dialog_is_usable(dialog: SettingsDialog | None) -> bool:
     """Handle dialog is usable for UI settings panel dialog."""
     if dialog is None or getattr(dialog, "_disposing", False):
         return False

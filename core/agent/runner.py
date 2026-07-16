@@ -9,19 +9,21 @@ next iteration can add edit tools without weakening the boundary.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 import base64
 import hashlib
 import json
 import shlex
 import threading
-import traceback
 import time
-from typing import Callable, Sequence
+import traceback
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 
+from core.agent.artifacts import AgentRunArtifactsMixin
+from core.agent.response import AgentResponseMixin
 from core.agent.runtime import (
     AgentCancelled,
     AgentPermissions,
@@ -35,13 +37,12 @@ from core.agent.runtime import (
     ScopeViolation,
     ToolResult,
 )
-from core.system.paths import AGENT_RUNS_DIR
-
-from core.agent.artifacts import AgentRunArtifactsMixin
-from core.agent.response import AgentResponseMixin
 from core.agent.task_spec import canonical_agent_name, canonical_agent_role, canonical_communication_phase
 from core.agent.toolbox import AgentToolbox
 from core.agent.workspace import ScopedWorkspace
+from core.system.paths import AGENT_RUNS_DIR
+
+__all__ = ["PermissionDenied", "ScopeViolation"]
 
 
 class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
@@ -76,6 +77,7 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
     ) -> Path:
         """Execute the agent task, writing logs to a fresh run directory; returns that dir."""
         run_dir = self._make_run_dir(spec.title)
+        self._privacy_session_id = f"agent:{run_dir.name}"
         log_path = run_dir / "run.log"
         verbose_path = run_dir / "verbose.log"
         log_lock = threading.Lock()
@@ -1910,6 +1912,19 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             return response
         try:
             from core.llm_clients import client as llm
+            from core.privacy_gateway import scrub_cloud_fields
+
+            privacy_session, scrubbed, privacy_report = scrub_cloud_fields(
+                {"agent_prompt": prompt},
+                session_id=getattr(self, "_privacy_session_id", f"agent:{id(self)}"),
+            )
+            prompt = scrubbed["agent_prompt"]
+            if privacy_report.get("count"):
+                log(f"privacy filter redacted {privacy_report['count']} item(s) from the agent request")
+            llm.set_live_privacy_context(
+                privacy_session,
+                ai_enabled=bool(privacy_report.get("ai_enabled")),
+            )
 
             route = f"{provider or 'configured provider'} / {model or 'configured model'}"
             log(f"requesting LLM tool response via {route}")
@@ -1960,7 +1975,10 @@ class AgentTaskRunner(AgentResponseMixin, AgentRunArtifactsMixin):
             finally:
                 heartbeat_done.set()
                 heartbeat_thread.join(timeout=0.2)
+                llm.set_live_privacy_context(None)
             response = "".join(chunks).strip()
+            if privacy_session is not None:
+                response = privacy_session.restore(response)
             log(f"model response received in {time.perf_counter() - started:.1f}s ({len(response)} chars)")
             return response
         except Exception as exc:

@@ -94,12 +94,47 @@ _AUDIO_CONFIG_KEYS = {
     "STT_BACKGROUND_CHUNK_STEP_SECONDS",
     "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS",
     "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS",
+    "HOTKEY_VOICE",
+    "HOTKEY_VOICE_2",
+    "HOTKEY_VOICE_ENABLED",
+    "HOTKEY_DICTATE",
+    "HOTKEY_DICTATE_2",
+    "HOTKEY_DICTATE_ENABLED",
     "LIVE_VOICE_PROVIDER",
     "LIVE_VOICE_MODEL",
     "LIVE_VOICE_VOICE_NAME",
     "LIVE_VOICE_HALF_DUPLEX",
     "LIVE_VOICE_SYSTEM_PROMPT",
 }
+_PRIVACY_CONFIG_KEYS = {
+    "PRIVACY_MODE",
+    "PRIVACY_AI_ENABLED",
+    "TRUST_PRIVACY_MODE",
+}
+_HARNESS_CONFIG_KEYS = {
+    "CHAT_EXECUTION_MODE",
+    "WISP_CLAUDE_CLI",
+    "WISP_CLAUDE_SYSTEM_PROMPT",
+    "WISP_CLAUDE_WORKSPACE",
+    "WISP_CODEX_CLI",
+    "WISP_CODEX_SYSTEM_PROMPT",
+    "WISP_CODEX_WORKSPACE",
+}
+
+
+def _configured_harness_workspace(provider: str) -> str:
+    """Return an existing provider-specific workspace, or automatic mode."""
+    import config
+
+    key = "WISP_CLAUDE_WORKSPACE" if provider == "claude" else "WISP_CODEX_WORKSPACE"
+    raw = str(getattr(config, key, "") or "").strip()
+    if not raw:
+        return ""
+    try:
+        path = Path(raw).expanduser().resolve()
+    except OSError:
+        return ""
+    return str(path) if path.is_dir() else ""
 
 
 def _is_transient_local_tts_warmup_error(text: str) -> bool:
@@ -364,6 +399,8 @@ class FlowController:
             self.ui.call("ui.prewarm_intent", timeout=30.0, wait=False)
         except Exception:
             log.exception("intent prewarm did not start")
+        self._prewarm_privacy()
+        self._prewarm_harness()
         try:
             self.audio.call("audio.prewarm", timeout=30.0, wait=False)
         except Exception:
@@ -530,7 +567,10 @@ class FlowController:
 
     def _on_context_dropped(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle context dropped events."""
-        self._schedule(self.context_items_dropped, list((data or {}).get("items") or []))
+        # Keep clipboard/drop ordering deterministic: a user can paste and hit
+        # Enter immediately, and the following intent-chosen event must see the
+        # newly attached context.
+        self.context_items_dropped(list((data or {}).get("items") or []))
 
     def _on_context_remove(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle context remove events."""
@@ -1374,6 +1414,19 @@ class FlowController:
             pending = self._pending
         if pending is None:
             return
+        if item_id == "attachments" and source_id.startswith("dropped:"):
+            try:
+                index = int(source_id.partition(":")[2])
+            except ValueError:
+                index = -1
+            if 0 <= index < len(self._drop_context_items):
+                self._drop_context_items.pop(index)
+            self._fire(
+                self.ui,
+                "ui.intent.context_items",
+                {"context_items": self._intent_context_items(pending)},
+            )
+            return
         pending.removed_context_sources.add((str(item_id), str(source_id)))
         context = pending.context if isinstance(pending.context, dict) else {}
         if item_id == "ambient":
@@ -1757,8 +1810,23 @@ class FlowController:
 
     def context_items_dropped(self, items: list[dict[str, Any]]) -> None:
         """Handle context items dropped for flow controller."""
-        cleaned = [self._normalize_context_item(item) for item in items]
+        cleaned: list[dict[str, Any]] = []
+        for raw in items:
+            item = self._normalize_context_item(raw)
+            if item.get("type") == "document_path":
+                expanded = self._path_context_items([item.get("content")])
+                cleaned.extend(expanded or [item])
+            else:
+                cleaned.append(item)
         self._drop_context_items.extend(cleaned)
+        with self._lock:
+            pending = self._pending
+        if pending is not None:
+            self._fire(
+                self.ui,
+                "ui.intent.context_items",
+                {"context_items": self._intent_context_items(pending)},
+            )
 
     def remove_context_item(self, index: int) -> None:
         """Remove context item."""
@@ -2080,6 +2148,16 @@ class FlowController:
         self._config_mtime = self._current_config_mtime()
         log.info("supervisor config reloaded")
         self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
+        privacy_changed = changed_keys is None or any(
+            key in _PRIVACY_CONFIG_KEYS for key in changed_keys
+        )
+        if privacy_changed:
+            self._prewarm_privacy()
+        harness_changed = changed_keys is None or any(
+            key in _HARNESS_CONFIG_KEYS for key in changed_keys
+        )
+        if harness_changed:
+            self._prewarm_harness()
         # The audio worker owns the live TTS path and is long-lived, so it must
         # reload config + drop cached TTS connections here - prewarm alone leaves
         # the old provider/voice in effect until restart.
@@ -2099,6 +2177,20 @@ class FlowController:
         ) or {}
         if isinstance(result, dict) and not result.get("started"):
             self._notice("Global hotkeys did not start. Click the Wisp icon to summon it.", severity="warning")
+
+    def _prewarm_privacy(self) -> None:
+        """Start best-effort Advanced Privacy warmup in the brain worker."""
+        try:
+            self.brain.call("brain.privacy.prewarm", timeout=600.0, wait=False)
+        except Exception:
+            log.exception("advanced privacy prewarm did not start")
+
+    def _prewarm_harness(self) -> None:
+        """Start the selected reusable local agent harness in the brain worker."""
+        try:
+            self.brain.call("brain.harness.prewarm", timeout=120.0, wait=False)
+        except Exception:
+            log.exception("agent harness prewarm did not start")
 
     def _on_health_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
         from core.setup_check import run_setup_check
@@ -2121,6 +2213,8 @@ class FlowController:
 
     def chat_request(self, data: dict[str, Any]) -> None:
         """Handle chat request for flow controller."""
+        import config
+
         self._reload_supervisor_config_if_changed()
         request_id = str(data.get("request_id") or "")
         messages = data.get("messages") or []
@@ -2157,6 +2251,8 @@ class FlowController:
                 )
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
+            elif event == "privacy.review.request":
+                self._handle_privacy_review_request(payload)
 
         try:
             caller_idx = int(data.get("caller_idx", 0) or 0)
@@ -2188,12 +2284,30 @@ class FlowController:
                 context_snippets.append({"label": label, "preview": preview})
         chat_params: dict[str, Any] = {
             "messages": messages,
+            "privacy_session_id": str(data.get("conversation_id") or request_id),
             "memory_enabled": self._context_mode(caller, "memory") == "on",
             "use_tools": bool(allowed_tools),
             "allowed_tools": allowed_tools,
             "pinned_tools": pinned_tools,
             "file_access_mode": file_access_mode,
         }
+        harness_mode = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+        if harness_mode not in {"wisp", "codex", "claude"}:
+            harness_mode = "wisp"
+        chat_params["harness_provider"] = harness_mode
+        conversation_owner = str(
+            getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+        ).strip().lower()
+        chat_params["conversation_owner"] = conversation_owner if conversation_owner in {"wisp", "agent"} else "wisp"
+        harness_sessions = data.get("harness_sessions") if isinstance(data.get("harness_sessions"), dict) else {}
+        if harness_mode in {"codex", "claude"}:
+            selected_session = harness_sessions.get(harness_mode)
+            if isinstance(selected_session, dict):
+                chat_params["harness_session"] = dict(selected_session)
+            chat_params["harness_cwd"] = (
+                _configured_harness_workspace(harness_mode)
+                or str(data.get("harness_cwd") or "")
+            )
         try:
             hist = self._safe_call(self.ui, "ui.chat.active_history", {}, timeout=10.0)
             if isinstance(hist, dict):
@@ -2211,6 +2325,10 @@ class FlowController:
             final_payload = done_payload if done_seen else (result if isinstance(result, dict) else {})
             text = str((final_payload or {}).get("text") or "")
             file_context = list((final_payload or {}).get("file_context") or [])
+            assistant_attachments = list((final_payload or {}).get("attachments") or [])
+            harness = dict((final_payload or {}).get("harness") or {})
+            privacy_report = (final_payload or {}).get("privacy_report")
+            self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
             annotations = self._chat_text_annotations(text, role="assistant")
             if not done_seen:
                 self._emit_file_context_progress(
@@ -2236,9 +2354,23 @@ class FlowController:
                     "context_snippets": context_snippets,
                     "annotations": annotations,
                     "user_annotations": user_annotations,
+                    "display_segments": list((final_payload or {}).get("display_segments") or []),
+                    "assistant_attachments": assistant_attachments,
+                    "harness": harness,
                 },
                 timeout=30.0,
             )
+            if (
+                isinstance(privacy_report, dict)
+                and privacy_report.get("count")
+                and not privacy_report.get("reviewed")
+            ):
+                self._safe_call(
+                    self.ui,
+                    "ui.privacy.report",
+                    {"report": privacy_report, "title": t("Privacy Report")},
+                    timeout=30.0,
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception("chat request failed")
             self._safe_call(
@@ -2785,6 +2917,9 @@ class FlowController:
         preserve_reply_bubble: bool = False,
     ) -> None:
         """Run a prompt through the pipeline: stop audio, show 'thinking', stream the reply."""
+        import config
+
+        self._reload_supervisor_config_if_changed()
         query_started = time.monotonic()
         gen = self._new_generation()
         self._safe_call(self.audio, "audio.stop", timeout=5.0)
@@ -2793,6 +2928,21 @@ class FlowController:
             self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
             self._safe_call(self.ui, "ui.reply.thinking", timeout=30.0)
         params = self._brain_query_params(prompt, pending)
+        harness_mode = str(getattr(config, "CHAT_EXECUTION_MODE", "wisp") or "wisp").strip().lower()
+        if harness_mode not in {"wisp", "codex", "claude"}:
+            harness_mode = "wisp"
+        params["harness_provider"] = harness_mode
+        conversation_owner = str(
+            getattr(config, "CHAT_CONVERSATION_OWNER", "wisp") or "wisp"
+        ).strip().lower()
+        params["conversation_owner"] = conversation_owner if conversation_owner in {"wisp", "agent"} else "wisp"
+        configured_harness_workspace = (
+            _configured_harness_workspace(harness_mode)
+            if harness_mode in {"codex", "claude"}
+            else ""
+        )
+        if configured_harness_workspace:
+            params["harness_cwd"] = configured_harness_workspace
         self._discard_unused_pending_context(pending, params)
         log.info(
             "query context ready in %.2fs prompt_chars=%d ambient_chars=%d "
@@ -2864,6 +3014,8 @@ class FlowController:
                     self._on_reply_done(payload)
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
+            elif event == "privacy.review.request":
+                self._handle_privacy_review_request(payload)
 
         # Continue the conversation selected in the chat window: replay its prior
         # turns so the model has full context. ui_host is the source of truth for
@@ -2871,6 +3023,8 @@ class FlowController:
         try:
             hist = self._safe_call(self.ui, "ui.chat.active_history", {}, timeout=10.0)
             if isinstance(hist, dict):
+                if hist.get("conversation_id"):
+                    params["privacy_session_id"] = str(hist["conversation_id"])
                 if hist.get("history"):
                     params["history"] = hist["history"]
                 prior_context = str(hist.get("context") or "").strip()
@@ -2884,6 +3038,15 @@ class FlowController:
                     params["ambient_text"] = (base + "\n\n" + file_ctx).strip() if base else file_ctx
                 # Scope memory (retrieval + saves) to the conversation's project.
                 params["memory_project"] = hist.get("project_id")
+                harness_sessions = hist.get("harness_sessions") if isinstance(hist.get("harness_sessions"), dict) else {}
+                if harness_mode in {"codex", "claude"}:
+                    selected_session = harness_sessions.get(harness_mode)
+                    if isinstance(selected_session, dict):
+                        params["harness_session"] = dict(selected_session)
+                    params["harness_cwd"] = (
+                        configured_harness_workspace
+                        or str(hist.get("harness_cwd") or "")
+                    )
         except Exception:
             log.exception("failed to fetch active conversation history")
 
@@ -2903,6 +3066,8 @@ class FlowController:
                 timeout=30.0,
             )
             if isinstance(begin_result, dict) and begin_result.get("started"):
+                if begin_result.get("conversation_id"):
+                    params["privacy_session_id"] = str(begin_result["conversation_id"])
                 raw_idx = begin_result.get("conversation_index")
                 if isinstance(raw_idx, int):
                     early_chat_index = raw_idx
@@ -2947,6 +3112,9 @@ class FlowController:
             self._reply_thought_parser = None
         text = str((result or {}).get("text") or "")
         file_context = list((result or {}).get("file_context") or [])
+        assistant_attachments = list((result or {}).get("attachments") or [])
+        display_segments = list((result or {}).get("display_segments") or [])
+        harness = dict((result or {}).get("harness") or {})
         if not done_seen:
             self._emit_file_context_progress(file_context, conversation_index=early_chat_index)
         privacy_report = (result or {}).get("privacy_report") if isinstance(result, dict) else None
@@ -2970,6 +3138,9 @@ class FlowController:
                         }
                     ),
                     "annotations": assistant_annotations,
+                    "display_segments": display_segments,
+                    "assistant_attachments": assistant_attachments,
+                    "harness": harness,
                 },
                 timeout=30.0,
             )
@@ -2979,7 +3150,7 @@ class FlowController:
             for tts_segment in tts_segmenter.finish():
                 self._queue_tts_segment(gen, tts_segment)
             self._finish_tts_sequence(gen)
-        if text:
+        if text or assistant_attachments:
             tool_context = _normalized_tool_context(
                 {
                     "allowed_tools": params.get("allowed_tools") or [],
@@ -2993,6 +3164,7 @@ class FlowController:
                 {
                     "user": prompt,
                     "assistant": text,
+                    "assistant_attachments": assistant_attachments,
                     "context": chat_context,
                     "image_base64": params.get("screenshot_b64"),
                     "file_context": file_context,
@@ -3000,13 +3172,15 @@ class FlowController:
                     "context_policy": context_policy,
                     "user_annotations": user_annotations if early_chat_index is None else [],
                     "assistant_annotations": assistant_annotations,
+                    "display_segments": display_segments,
+                    "harness": harness,
                     "append_user": early_chat_index is None,
                     "conversation_index": early_chat_index,
                 },
                 timeout=30.0,
             )
         privacy_count = int((privacy_report or {}).get("count") or 0) if isinstance(privacy_report, dict) else 0
-        if privacy_count:
+        if privacy_count and not bool((privacy_report or {}).get("reviewed")):
             self._safe_call(
                 self.ui,
                 "ui.context.summary",
@@ -3023,7 +3197,7 @@ class FlowController:
             self._safe_call(
                 self.ui,
                 "ui.privacy.report",
-                {"report": privacy_report, "title": "Privacy Report"},
+                {"report": privacy_report, "title": t("Privacy Report")},
                 timeout=30.0,
             )
         if bubble_cancelled:
@@ -3054,6 +3228,8 @@ class FlowController:
             """Handle event events."""
             if event == "reply.chunk":
                 self._on_reply_chunk(payload)
+            elif event == "privacy.review.request":
+                self._handle_privacy_review_request(payload)
 
         try:
             query_params = self._brain_query_params(prompt, pending)
@@ -3084,6 +3260,19 @@ class FlowController:
             return
         text = str((result or {}).get("text") or "").strip()
         visible_text = str((result or {}).get("visible_text") or "").strip()
+        privacy_report = (result or {}).get("privacy_report") if isinstance(result, dict) else None
+        self._last_privacy_report = privacy_report if isinstance(privacy_report, dict) else {}
+        if (
+            isinstance(privacy_report, dict)
+            and privacy_report.get("count")
+            and not privacy_report.get("reviewed")
+        ):
+            self._safe_call(
+                self.ui,
+                "ui.privacy.report",
+                {"report": privacy_report, "title": t("Privacy Report")},
+                timeout=30.0,
+            )
         if not visible_text and text:
             visible_text = "Replacement pasted."
         log.info("rewrite result: text_chars=%d visible_chars=%d", len(text), len(visible_text))
@@ -3508,6 +3697,32 @@ class FlowController:
             self.brain,
             "brain.live_file.approval.respond",
             {"approval_id": approval_id, "approved": approved, "feedback": feedback},
+        )
+
+    def _handle_privacy_review_request(self, payload: Any) -> None:
+        """Show the pre-send privacy sheet and resolve the blocked brain request."""
+        if not isinstance(payload, dict):
+            return
+        approval_id = str(payload.get("approval_id") or "")
+        if not approval_id:
+            return
+        result = self._safe_call(
+            self.ui,
+            "ui.privacy.review.request",
+            payload,
+            timeout=600.0,
+        ) or {}
+        decision = str(result.get("decision") or "").strip().lower() if isinstance(result, dict) else ""
+        if decision not in {"redacted", "full", "cancel"}:
+            decision = "redacted" if isinstance(result, dict) and result.get("approved") else "cancel"
+        self._fire(
+            self.brain,
+            "brain.privacy.review.respond",
+            {
+                "approval_id": approval_id,
+                "approved": decision in {"redacted", "full"},
+                "decision": decision,
+            },
         )
 
     def _stt_warming(self) -> bool:
@@ -4768,7 +4983,41 @@ class FlowController:
             else self._screen_token_label(context)
         )
 
-        return [
+        attachment_sources: list[dict[str, str]] = []
+        attachment_text: list[str] = []
+        attachment_images: list[str] = []
+        for index, raw in enumerate(self._drop_context_items):
+            item = self._normalize_context_item(raw)
+            name = " ".join(str(item.get("name") or "Attachment").split()) or "Attachment"
+            item_type = str(item.get("type") or "text")
+            content = self._content_to_text(item.get("content"))
+            if item_type == "image":
+                preview = f"Image: {name}"
+                if content:
+                    attachment_images.append(content)
+            else:
+                preview = self._context_preview_text(content) or f"Attached file: {name}"
+                if content:
+                    attachment_text.append(content)
+            attachment_sources.append(
+                {
+                    "id": f"dropped:{index}",
+                    "label": name,
+                    "preview": preview,
+                }
+            )
+
+        attachment_tokens = ""
+        if attachment_images:
+            attachment_tokens = (
+                self._image_token_label(attachment_images[0])
+                if len(attachment_sources) == 1
+                else self._deferred_token_label()
+            )
+        elif attachment_text:
+            attachment_tokens = self._token_label("\n\n".join(attachment_text))
+
+        context_items = [
             {
                 "id": "ambient",
                 "key": keys[0],
@@ -4879,6 +5128,24 @@ class FlowController:
                 "warning": "",
             },
         ]
+        if attachment_sources:
+            attachment_privacy_count = self._redaction_count("\n\n".join(attachment_text))
+            context_items.append(
+                {
+                    "id": "attachments",
+                    "key": "",
+                    "label": "Attachments",
+                    "state": "on",
+                    "default_state": "on",
+                    "locked": True,
+                    "tokens": attachment_tokens,
+                    "preview": attachment_sources[0]["preview"],
+                    "sources": attachment_sources,
+                    "privacy_count": attachment_privacy_count,
+                    "warning": self._with_privacy_warning("", attachment_privacy_count),
+                }
+            )
+        return context_items
 
     @staticmethod
     def _apply_intent_context_choices(
