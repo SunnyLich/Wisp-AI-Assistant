@@ -53,6 +53,27 @@ def _run_streamed(cmd: list[str], env: dict[str, str], label: str) -> int:
     return proc.wait()
 
 
+def _kokoro_install_plan(optional_deps, device: str) -> tuple[dict[str, object], str, str]:
+    """Build the Settings-equivalent Kokoro plan and inference device."""
+    selected = str(device or "auto").strip().lower()
+    mode = optional_deps.kokoro_install_mode_for_device(selected)
+    require_gpu = selected == "cuda"
+    plan: dict[str, object] = {
+        "display_name": "Kokoro",
+        "packages": optional_deps.kokoro_install_packages(selected),
+        "pre_install_packages": optional_deps.kokoro_torch_install_packages(selected),
+        "remove_artifacts": optional_deps.kokoro_remove_artifacts(),
+        "post_install": "kokoro_prepare",
+        "kokoro_voice": "af_heart",
+        # Auto provisions the CUDA-capable wheel but must still accept CPU
+        # fallback on machines without an NVIDIA driver.
+        "kokoro_require_gpu": require_gpu,
+        "kokoro_install_device": "cuda" if mode == "gpu" else "cpu",
+    }
+    verify_device = "cuda" if require_gpu else ("cpu" if selected == "cpu" else "auto")
+    return plan, verify_device, mode
+
+
 def run_install_check(kind: str, *, device: str = "auto", keep: bool = False) -> int:
     """Run the full fresh-install check for ``kind`` ("stt" or "kokoro")."""
     _lab.bootstrap()
@@ -75,18 +96,7 @@ def run_install_check(kind: str, *, device: str = "auto", keep: bool = False) ->
         }
         verify_device = "auto"
     elif kind == "kokoro":
-        mode = optional_deps.kokoro_install_mode_for_device(device)
-        plan = {
-            "display_name": "Kokoro",
-            "packages": optional_deps.kokoro_install_packages(device),
-            "pre_install_packages": optional_deps.kokoro_torch_install_packages(device),
-            "remove_artifacts": optional_deps.kokoro_remove_artifacts(),
-            "post_install": "kokoro_prepare",
-            "kokoro_voice": "af_heart",
-            "kokoro_require_gpu": mode == "gpu",
-            "kokoro_install_device": "cuda" if mode == "gpu" else "cpu",
-        }
-        verify_device = "cuda" if mode == "gpu" else "cpu"
+        plan, verify_device, mode = _kokoro_install_plan(optional_deps, device)
         _lab.log(f"kokoro install mode: {mode} (requested device: {device})")
     else:
         return _lab.finish(_lab.FAIL, f"unknown install kind {kind!r}")
