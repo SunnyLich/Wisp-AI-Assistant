@@ -42,8 +42,17 @@ class DocsSetupGuidanceTests(unittest.TestCase):
         with (ROOT / "pyproject.toml").open("rb") as handle:
             version = tomllib.load(handle)["project"]["version"]
 
-        self.assertIn(f"git tag {version}", build_docs)
-        self.assertIn(f"git push origin {version}", build_docs)
+        self.assertIn(f"git tag v{version}", build_docs)
+        self.assertIn(f"git push origin v{version}", build_docs)
+        self.assertIn("Tags without the `v` prefix do not trigger release builds.", build_docs)
+
+    def test_release_workflow_requires_v_prefixed_version_tags(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn('      - "v*"', workflow)
+        self.assertNotIn('      - "[0-9]*.[0-9]*.[0-9]*"', workflow)
+        self.assertIn('expected_tag="v${project_version}"', workflow)
+        self.assertIn("Release tag mismatch", workflow)
 
     def test_architecture_docs_do_not_reference_removed_paths(self) -> None:
         docs = "\n".join(

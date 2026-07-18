@@ -95,12 +95,15 @@ Notes:
 
 Tagged releases are built by `.github/workflows/build.yml`.
 
-Create a release tag that matches the current `pyproject.toml` version:
+Create a `v`-prefixed release tag that matches the current
+`pyproject.toml` version:
 
 ```powershell
-git tag 0.10.1
-git push origin 0.10.1
+git tag v0.10.1
+git push origin v0.10.1
 ```
+
+Tags without the `v` prefix do not trigger release builds.
 
 The workflow builds:
 

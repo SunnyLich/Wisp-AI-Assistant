@@ -5,7 +5,6 @@ on:
   push:
     tags:
       - "v*"
-      - "[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
 
 permissions:
@@ -28,8 +27,11 @@ jobs:
       - name: Verify tag matches pyproject version
         run: |
           project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          tag_version="${GITHUB_REF_NAME#v}"
-          test "$project_version" = "$tag_version"
+          expected_tag="v${project_version}"
+          if [ "$GITHUB_REF_NAME" != "$expected_tag" ]; then
+            echo "::error title=Release tag mismatch::Tag '$GITHUB_REF_NAME' does not match pyproject.toml version '$project_version'; expected '$expected_tag'."
+            exit 1
+          fi
 
       - name: Create or update draft release
         env:
