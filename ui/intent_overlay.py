@@ -278,6 +278,10 @@ class _ExpandingPromptEdit(QPlainTextEdit):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        # QPlainTextEdit adds a hidden 4 px document margin on every side.
+        # Combined with the stylesheet padding, that consumed the one-line
+        # editor's entire vertical budget and clipped glyph bottoms/descenders.
+        self.document().setDocumentMargin(0.0)
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)

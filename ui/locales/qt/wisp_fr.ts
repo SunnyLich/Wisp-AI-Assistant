@@ -3243,6 +3243,10 @@ Continuer ?</translation>
       <translation>Programme d'installation Wisp pour {display_name}</translation>
     </message>
     <message>
+      <source>Downloading and preparing the local speech features selected during setup.</source>
+      <translation>Téléchargement et préparation des fonctionnalités vocales locales sélectionnées pendant la configuration.</translation>
+    </message>
+    <message>
       <source>Installing {display_name} into Wisp's optional packages folder.</source>
       <translation>Installation de {display_name} dans le dossier des paquets optionnels de Wisp.</translation>
     </message>
@@ -5367,10 +5371,10 @@ Continue?</translation>
     <message>
       <source>
 
-Windows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
+Auto/GPU support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
       <translation>
 
-La prise en charge de CUDA sous Windows télécharge également les paquets NVIDIA CUDA Runtime et cuBLAS (environ 570 Mo), afin que l’application distribuée ne dépende pas d’une installation distincte de CUDA Toolkit.</translation>
+La prise en charge Auto/GPU télécharge également les paquets NVIDIA CUDA Runtime et cuBLAS (environ 570 Mo), afin que l’application distribuée ne dépende pas d’une installation distincte de CUDA Toolkit.</translation>
     </message>
     <message>
       <source>preparing local assets for {elapsed}</source>

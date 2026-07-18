@@ -178,6 +178,10 @@ class OptionalInstallDialog(QDialog):
         self._cancel_btn = QPushButton(t("Cancel"))
         self._cancel_btn.clicked.connect(self.cancel)
         buttons.addWidget(self._cancel_btn)
+        self._restart_btn = QPushButton(t("Restart app now"))
+        self._restart_btn.clicked.connect(self._restart_app_now)
+        self._restart_btn.setVisible(False)
+        buttons.addWidget(self._restart_btn)
         self._close_btn = QPushButton(t("Close"))
         self._close_btn.clicked.connect(self.close)
         self._close_btn.setEnabled(False)
@@ -368,7 +372,25 @@ class OptionalInstallDialog(QDialog):
             message = self._persisted_failure_message() or t("Installer failed with exit code {code}.").format(code=code)
             self._status.setText(message)
             self._append_line(message)
+        if code == 0 and self._restart_apply_ready():
+            self._restart_btn.setVisible(True)
+            self._restart_btn.setDefault(True)
         self.install_finished.emit(code)
+
+    def _restart_apply_ready(self) -> bool:
+        if self._status_path is None:
+            return False
+        try:
+            data = json.loads(self._status_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        return isinstance(data, dict) and bool(data.get("restart_apply"))
+
+    @staticmethod
+    def _restart_app_now() -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def _persisted_failure_message(self) -> str:
         """Return the installer's durable, actionable failure when available."""

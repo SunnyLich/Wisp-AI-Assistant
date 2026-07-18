@@ -1106,6 +1106,47 @@ def test_optional_tts_installer_kokoro_cpu_plan_verifies_cpu_spec(monkeypatch, t
     assert seen == {"key": "kokoro", "device": "cpu"}
 
 
+def test_optional_tts_installer_combined_speech_plan_verifies_both(monkeypatch, tmp_path):
+    from core import optional_deps
+    from scripts import optional_tts_installer
+
+    verified: list[str] = []
+    monkeypatch.setattr(
+        optional_deps,
+        "optional_package_spec_status",
+        lambda key, **_kwargs: verified.append(key) or {"valid": True},
+    )
+    monkeypatch.setattr("core.tts.prepare_kokoro_assets", lambda **_kwargs: {})
+    monkeypatch.setattr(optional_deps, "kokoro_runtime_import_status", lambda: {"valid": True})
+    monkeypatch.setattr(optional_deps, "kokoro_torch_status", lambda: {"valid": True, "cuda_available": False})
+    monkeypatch.setattr(
+        optional_deps,
+        "stt_model_status_subprocess",
+        lambda *_args, **_kwargs: {"valid": True, "model": "base", "device": "cpu", "compute": "int8"},
+    )
+
+    with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+        ok, message = optional_tts_installer._post_install_result(
+            log,
+            "[local speech install]",
+            {
+                "display_name": "Local speech",
+                "post_install": "speech_prepare",
+                "kokoro_install_device": "cuda",
+                "kokoro_require_gpu": False,
+                "stt_model": "base",
+                "stt_device": "cpu",
+                "stt_compute_type": "int8",
+            },
+            tmp_path / "status.json",
+        )
+
+    assert ok is True
+    assert verified[-2:] == ["kokoro", "stt"]
+    assert "Kokoro installed successfully" in message
+    assert "STT installed and model ready" in message
+
+
 def test_optional_tts_installer_stages_restart_apply_plan(monkeypatch, tmp_path):
     """The Windows repair path should install into staging and hand off an apply plan."""
     from core import optional_deps, updater
@@ -1331,12 +1372,14 @@ def test_optional_install_apply_reopens_wisp_after_post_install_failure(monkeypa
 def test_optional_install_apply_status_window_starts_after_wisp_exits(monkeypatch, tmp_path):
     """The visible apply helper should appear only after Wisp has closed."""
     from core import updater
+    from core.system import paths
     from scripts import optional_tts_installer
 
     plan_path = tmp_path / "plan.json"
     status_path = tmp_path / "status.json"
     staging = tmp_path / "stage"
     staging.mkdir()
+    (tmp_path / ".env").write_text("UNCHANGED=keep\nTTS_PROVIDER=none\n", encoding="utf-8")
     plan_path.write_text(
         json.dumps(
             {
@@ -1345,6 +1388,11 @@ def test_optional_install_apply_status_window_starts_after_wisp_exits(monkeypatc
                 "status_path": str(status_path),
                 "staging_path": str(staging),
                 "target_path": str(tmp_path / "python_packages"),
+                "settings_updates": {
+                    "TTS_PROVIDER": "kokoro",
+                    "KOKORO_DEVICE": "auto",
+                    "NOT_AN_INSTALL_SETTING": "ignored",
+                },
             }
         ),
         encoding="utf-8",
@@ -1363,11 +1411,24 @@ def test_optional_install_apply_status_window_starts_after_wisp_exits(monkeypatc
         "_post_install_result",
         lambda *_args: events.append("verify") or (True, "Kokoro installed successfully."),
     )
+    original_apply_settings = optional_tts_installer._apply_post_install_settings
+
+    def apply_settings(*args):
+        events.append("settings")
+        return original_apply_settings(*args)
+
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(optional_tts_installer, "_apply_post_install_settings", apply_settings)
     monkeypatch.setattr(optional_tts_installer, "_restart_wisp", lambda *_args: events.append("restart"))
 
     assert optional_tts_installer._run_staged_apply(plan_path) == 0
 
-    assert events == ["wait", "window", "apply", "verify", "restart"]
+    assert events == ["wait", "window", "apply", "verify", "settings", "restart"]
+    saved_env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "UNCHANGED=keep" in saved_env
+    assert "TTS_PROVIDER=kokoro" in saved_env
+    assert "KOKORO_DEVICE=auto" in saved_env
+    assert "NOT_AN_INSTALL_SETTING" not in saved_env
 
 
 def test_optional_install_staged_apply_keeps_staging_when_wisp_stays_open(monkeypatch, tmp_path):
@@ -1837,11 +1898,14 @@ def test_kokoro_gpu_install_includes_cuda_torch_index():
     assert any(str(item).endswith("/en_core_web_sm-3.8.0-py3-none-any.whl") for item in packages)
 
 
-def test_kokoro_auto_install_selects_gpu_when_cuda_detected(monkeypatch):
-    """Auto should install the GPU stack when the host has CUDA."""
+def test_kokoro_auto_install_does_not_depend_on_cuda_probe(monkeypatch):
+    """Auto should deterministically provision GPU capability and CPU fallback."""
     from core import optional_deps
 
-    monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: True)
+    def fail_probe():
+        raise AssertionError("Auto package selection must not depend on a hardware probe")
+
+    monkeypatch.setattr(optional_deps, "system_cuda_available", fail_probe)
 
     assert optional_deps.kokoro_install_mode_for_device("auto") == "gpu"
     assert "torch==2.11.0+cu128" in optional_deps.kokoro_torch_install_packages("auto")
@@ -1859,15 +1923,15 @@ def test_kokoro_none_install_selects_cpu_even_when_cuda_detected(monkeypatch):
     assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages(None)
 
 
-def test_kokoro_auto_install_selects_cpu_without_cuda(monkeypatch):
-    """Auto should keep the smaller CPU stack on machines without CUDA."""
+def test_kokoro_auto_install_still_provisions_gpu_without_cuda_probe(monkeypatch):
+    """Auto should provision CPU fallback and GPU capability without probing."""
     from core import optional_deps
 
     monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: False)
 
-    assert optional_deps.kokoro_install_mode_for_device("auto") == "cpu"
-    assert optional_deps.kokoro_torch_install_packages("auto") == []
-    assert "torch==2.11.0+cu128" not in optional_deps.kokoro_install_packages("auto")
+    assert optional_deps.kokoro_install_mode_for_device("auto") == "gpu"
+    assert "torch==2.11.0+cu128" in optional_deps.kokoro_torch_install_packages("auto")
+    assert "torch==2.11.0+cu128" in optional_deps.kokoro_install_packages("auto")
 
 
 def test_kokoro_install_uses_cpu_on_macos_even_when_cuda_selected(monkeypatch):

@@ -295,6 +295,139 @@ def profile_values(
     return values
 
 
+def local_speech_install_request(
+    *,
+    tts_preference: str,
+    stt_preference: str,
+    settings: dict[str, str],
+) -> dict[str, object] | None:
+    """Build one staged installer request for the wizard's local speech choices."""
+    install_tts = str(tts_preference).strip().lower() == "local"
+    install_stt = str(stt_preference).strip().lower() == "local"
+    if not install_tts and not install_stt:
+        return None
+
+    from core import optional_deps
+
+    def unique(items: list[str]) -> list[str]:
+        return list(dict.fromkeys(items))
+
+    packages: list[str] = []
+    pre_install_packages: list[str] = []
+    remove_artifacts: list[str] = []
+    settings_updates: dict[str, str] = {}
+    extra: dict[str, object] = {}
+    if install_tts:
+        kokoro_device = str(settings.get("KOKORO_DEVICE") or "auto")
+        pre_install_packages.extend(optional_deps.kokoro_torch_install_packages(kokoro_device))
+        packages.extend(optional_deps.kokoro_install_packages(kokoro_device))
+        remove_artifacts.extend(optional_deps.kokoro_remove_artifacts())
+        settings_updates.update(
+            {
+                "TTS_PROVIDER": "kokoro",
+                "WISP_TTS_PREFERENCE": "local",
+                "KOKORO_VOICE": str(settings.get("KOKORO_VOICE") or "af_heart"),
+                "KOKORO_LANG_CODE": str(settings.get("KOKORO_LANG_CODE") or "a"),
+                "KOKORO_DEVICE": kokoro_device,
+            }
+        )
+        extra.update(
+            {
+                "kokoro_voice": settings_updates["KOKORO_VOICE"],
+                "kokoro_require_gpu": False,
+                "kokoro_install_device": (
+                    "cuda"
+                    if optional_deps.kokoro_install_mode_for_device(kokoro_device) == "gpu"
+                    else "cpu"
+                ),
+            }
+        )
+    if install_stt:
+        stt_device = str(settings.get("STT_DEVICE") or "auto")
+        packages.extend(optional_deps.stt_install_packages(stt_device))
+        remove_artifacts.extend(optional_deps.stt_remove_artifacts())
+        settings_updates.update(
+            {
+                "WISP_STT_PREFERENCE": "local",
+                "STT_MODEL": str(settings.get("STT_MODEL") or "base"),
+                "STT_DEVICE": stt_device,
+                "STT_COMPUTE_TYPE": str(settings.get("STT_COMPUTE_TYPE") or "int8"),
+                "STT_LANGUAGE": str(settings.get("STT_LANGUAGE") or "en"),
+                "STT_BEAM_SIZE": str(settings.get("STT_BEAM_SIZE") or "5"),
+            }
+        )
+        extra.update(
+            {
+                "stt_model": settings_updates["STT_MODEL"],
+                "stt_device": stt_device,
+                "stt_compute_type": settings_updates["STT_COMPUTE_TYPE"],
+            }
+        )
+
+    if install_tts and install_stt:
+        display_name = "Local speech"
+        post_install = "speech_prepare"
+    elif install_tts:
+        display_name = "Kokoro"
+        post_install = "kokoro_prepare"
+    else:
+        display_name = "STT"
+        post_install = "stt_prepare"
+    return {
+        "display_name": display_name,
+        "packages": unique(packages),
+        "pre_install_packages": unique(pre_install_packages),
+        "remove_artifacts": unique(remove_artifacts),
+        "external_plan_extra": {
+            **extra,
+            "post_install": post_install,
+            "settings_updates": settings_updates,
+        },
+    }
+
+
+_ONBOARDING_SPEECH_INSTALL_DIALOGS: list[object] = []
+
+
+def launch_local_speech_installer(request: dict[str, object]) -> object:
+    """Open the real staged speech installer for a completed setup wizard."""
+    from ui.optional_install_dialog import OptionalInstallDialog
+    from ui.settings_panel.dialog import _optional_install_env, _optional_install_plan_command
+
+    display_name = str(request.get("display_name") or "Local speech")
+    command, root, log_path, status_path = _optional_install_plan_command(
+        display_name=display_name,
+        packages=list(request.get("packages") or []),
+        pre_install_packages=list(request.get("pre_install_packages") or []),
+        remove_artifacts=list(request.get("remove_artifacts") or []),
+        external_plan_extra=dict(request.get("external_plan_extra") or {}),
+    )
+    dialog = OptionalInstallDialog(
+        title=t("Wisp {display_name} installer").format(display_name=display_name),
+        subtitle=t("Downloading and preparing the local speech features selected during setup."),
+        command=command,
+        cwd=root,
+        log_path=log_path,
+        status_path=status_path,
+        env=_optional_install_env(),
+        mirror_output_to_log=False,
+        parent=None,
+        auto_start=True,
+    )
+    dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    _ONBOARDING_SPEECH_INSTALL_DIALOGS.append(dialog)
+
+    def forget(_obj=None, *, target=dialog) -> None:
+        if target in _ONBOARDING_SPEECH_INSTALL_DIALOGS:
+            _ONBOARDING_SPEECH_INSTALL_DIALOGS.remove(target)
+
+    dialog.destroyed.connect(forget)
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
+    return dialog
+
+
 class OnboardingWizard(QDialog):
     """A small, non-blocking step-by-step first-run setup dialog."""
 
@@ -485,12 +618,12 @@ class OnboardingWizard(QDialog):
         tts_label = QLabel("Would you like Wisp to speak replies?")
         self._tts = QComboBox()
         self._tts.addItem("Not now", "none")
-        self._tts.addItem("Local voice — Kokoro (may download on first use)", "local")
+        self._tts.addItem("Local voice — Kokoro (installer opens after setup)", "local")
         self._tts.addItem("Cloud voice — configure in Settings", "cloud")
         stt_label = QLabel("Would you like to speak to Wisp?")
         self._stt = QComboBox()
         self._stt.addItem("Not now", "none")
-        self._stt.addItem("Local speech recognition — Whisper (may download on first use)", "local")
+        self._stt.addItem("Local speech recognition — Whisper (installer opens after setup)", "local")
         self._stt.addItem("Cloud/live voice — configure in Settings", "cloud")
         layout.addWidget(tts_label)
         layout.addWidget(self._tts)
@@ -713,6 +846,8 @@ class OnboardingWizard(QDialog):
                     self._provider_hint.setText(t("Profile saved, but the key could not be stored: {error}").format(error=exc))
                     self._provider_hint.setStyleSheet("color: #c04040;")
                     return
+        tts_preference = str(self._tts.currentData() or "none")
+        stt_preference = str(self._stt.currentData() or "none")
         values = profile_values(
             name=self._name.text(),
             setup_mode="advanced" if self._is_advanced() else "simple",
@@ -720,11 +855,16 @@ class OnboardingWizard(QDialog):
             model=model,
             custom_base_url=custom_base_url,
             oauth_connected=self._oauth_connected,
-            tts_preference=str(self._tts.currentData() or "none"),
-            stt_preference=str(self._stt.currentData() or "none"),
+            tts_preference=tts_preference,
+            stt_preference=stt_preference,
             app_language=str(self._app_language.currentData() or ""),
             assistant_language=str(self._assistant_language.currentData() or ""),
             theme_mode=str(self._theme_mode.currentData() or "system"),
+        )
+        speech_install_request = local_speech_install_request(
+            tts_preference=tts_preference,
+            stt_preference=stt_preference,
+            settings=values,
         )
         values = persisted_profile_setup_values(
             name=self._name.text(),
@@ -736,3 +876,5 @@ class OnboardingWizard(QDialog):
         if self._on_complete:
             self._on_complete(self.open_chat_requested)
         self.accept()
+        if speech_install_request is not None:
+            QTimer.singleShot(0, lambda request=speech_install_request: launch_local_speech_installer(request))

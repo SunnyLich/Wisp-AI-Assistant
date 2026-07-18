@@ -3243,6 +3243,10 @@ Continue?</source>
       <translation>Wisp {display_name} 安装程序</translation>
     </message>
     <message>
+      <source>Downloading and preparing the local speech features selected during setup.</source>
+      <translation>正在下载并准备设置期间选择的本地语音功能。</translation>
+    </message>
+    <message>
       <source>Installing {display_name} into Wisp's optional packages folder.</source>
       <translation>正在将 {display_name} 安装到 Wisp 的可选包文件夹。</translation>
     </message>
@@ -5367,10 +5371,10 @@ Continue?</translation>
     <message>
       <source>
 
-Windows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
+Auto/GPU support also downloads NVIDIA CUDA runtime and cuBLAS packages (approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install.</source>
       <translation>
 
-Windows CUDA 支持还会下载 NVIDIA CUDA Runtime 和 cuBLAS 软件包（约 570 MB），因此发行版应用无需依赖单独安装的 CUDA Toolkit。</translation>
+自动/GPU 支持还会下载 NVIDIA CUDA Runtime 和 cuBLAS 软件包（约 570 MB），因此发行版应用无需依赖单独安装的 CUDA Toolkit。</translation>
     </message>
     <message>
       <source>preparing local assets for {elapsed}</source>

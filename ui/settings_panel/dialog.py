@@ -3411,7 +3411,8 @@ class SettingsDialog(QDialog):
             if sys.platform == "darwin"
             else (
                 "Where Whisper runs. GPU (CUDA) is much faster, especially for large-v3, but needs an "
-                "NVIDIA GPU with CUDA installed. Auto uses the GPU when present and falls back to CPU."
+                "NVIDIA GPU. Auto installs CPU and GPU runtime support, uses the GPU when present, and "
+                "falls back to CPU."
             )
         )
         self._fields["STT_DEVICE"] = stt_device
@@ -3559,7 +3560,10 @@ class SettingsDialog(QDialog):
         kokoro_device_tip = (
             "Where local Kokoro TTS runs. macOS uses CPU for Kokoro in this release."
             if sys.platform == "darwin"
-            else "Where local Kokoro TTS runs. Auto uses CUDA when Torch can see an NVIDIA GPU and falls back to CPU."
+            else (
+                "Where local Kokoro TTS runs. Auto installs CUDA-enabled Torch, which supports both GPU "
+                "and CPU execution, then uses CUDA when available and falls back to CPU."
+            )
         )
         self._fields["KOKORO_DEVICE"] = kokoro_device
         kokoro_device.currentIndexChanged.connect(lambda _idx: self._handle_kokoro_device_changed())
@@ -4102,7 +4106,6 @@ class SettingsDialog(QDialog):
         """Return a non-blocking Kokoro install snapshot for UI decisions."""
         installed = self._kokoro_installed()
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
-        selected = selected_device.strip().lower()
         install_status: dict[str, object] = {}
         try:
             from core import optional_deps
@@ -4111,6 +4114,7 @@ class SettingsDialog(QDialog):
         except Exception:
             install_status = {}
         result = getattr(self, "_tts_install_status_result", None)
+        mode = self._kokoro_install_mode()
         if isinstance(result, dict) and result.get("ok"):
             torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
             install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else install_status
@@ -4118,14 +4122,13 @@ class SettingsDialog(QDialog):
             installed = bool(result.get("kokoro_installed"))
         else:
             try:
-                spec_device = "cuda" if selected == "cuda" else "cpu"
+                spec_device = "cuda" if mode == "gpu" else "cpu"
                 spec_status = optional_deps.optional_package_spec_status("kokoro", device=spec_device)
                 installed = bool(spec_status.get("valid"))
             except Exception:
                 pass
             torch_status = self._kokoro_torch_status_fast() if installed else {}
             system_has_cuda = False
-        mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
         needs_gpu = self._kokoro_needs_gpu_install_from_status(
             installed=installed,
             selected_device=selected_device,
@@ -4223,16 +4226,13 @@ class SettingsDialog(QDialog):
                 elevenlabs_install_status = _read_optional_install_status("ElevenLabs", optional_deps.OPTIONAL_PACKAGES_DIR)
                 kokoro_install_status = _read_optional_install_status("Kokoro", optional_deps.OPTIONAL_PACKAGES_DIR)
                 system_has_cuda = optional_deps.system_cuda_available()
-                selected = selected_device.strip().lower()
-                mode = "gpu" if selected == "auto" and system_has_cuda else (
-                    "gpu" if selected == "cuda" else "cpu"
-                )
+                mode = optional_deps.kokoro_install_mode_for_device(selected_device)
                 kokoro_spec_status = optional_deps.optional_package_spec_status(
                     "kokoro",
                     device="cuda" if mode == "gpu" else "cpu",
                 )
                 kokoro_installed = bool(kokoro_spec_status.get("valid"))
-                needs_cuda_status = selected == "cuda" or (selected == "auto" and system_has_cuda)
+                needs_cuda_status = mode == "gpu"
                 torch_status = (
                     optional_deps.kokoro_torch_status_subprocess()
                     if kokoro_installed and needs_cuda_status
@@ -4313,7 +4313,12 @@ class SettingsDialog(QDialog):
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
         selected = selected_device.strip().lower()
         system_has_cuda = bool(result.get("system_cuda_available"))
-        mode = "gpu" if selected == "auto" and system_has_cuda else ("gpu" if selected == "cuda" else "cpu")
+        try:
+            from core import optional_deps
+
+            mode = optional_deps.kokoro_install_mode_for_device(selected_device)
+        except Exception:
+            mode = "gpu" if selected == "cuda" else "cpu"
         torch_status = result.get("kokoro_torch_status") if isinstance(result.get("kokoro_torch_status"), dict) else {}
         install_status = result.get("kokoro_install_status") if isinstance(result.get("kokoro_install_status"), dict) else {}
         installed = bool(result.get("kokoro_installed"))
@@ -4824,6 +4829,8 @@ class SettingsDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
+        self._select_installed_tts_provider("kokoro")
+
         self._install_optional_tts_package(
             test_key="kokoro_install",
             display_name="Kokoro",
@@ -4844,13 +4851,22 @@ class SettingsDialog(QDialog):
             external_plan_extra={
                 "post_install": "kokoro_prepare",
                 "kokoro_voice": voice,
-                "kokoro_require_gpu": mode == "gpu",
+                # Auto installs the CUDA-capable wheel as well, but lack of a
+                # usable GPU is not an error because CPU fallback is expected.
+                "kokoro_require_gpu": device.strip().lower() == "cuda",
                 "kokoro_install_device": install_device,
                 "pre_install_packages": pre_install_packages,
+                "settings_updates": {
+                    "TTS_PROVIDER": "kokoro",
+                    "WISP_TTS_PREFERENCE": "local",
+                    "KOKORO_VOICE": voice,
+                    "KOKORO_LANG_CODE": lang_code,
+                    "KOKORO_DEVICE": device,
+                },
             },
             post_install=lambda progress, write_log: self._prepare_kokoro_after_install(
                 voice=voice,
-                require_gpu=mode == "gpu",
+                require_gpu=device.strip().lower() == "cuda",
                 progress=progress,
                 write_log=write_log,
             ),
@@ -4927,6 +4943,8 @@ class SettingsDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
+        self._select_installed_tts_provider("elevenlabs")
+
         self._install_optional_tts_package(
             test_key="elevenlabs_install",
             display_name="ElevenLabs",
@@ -4940,7 +4958,22 @@ class SettingsDialog(QDialog):
             ),
             thread_name="elevenlabs-install",
             reinstall=installed,
+            external_plan_extra={
+                "settings_updates": {
+                    "TTS_PROVIDER": "elevenlabs",
+                    "WISP_TTS_PREFERENCE": "cloud",
+                },
+            },
         )
+
+    def _select_installed_tts_provider(self, provider: str) -> None:
+        """Select the provider whose installer the user just confirmed."""
+        fields = getattr(self, "_fields", {})
+        widget = fields.get("TTS_PROVIDER") if isinstance(fields, dict) else None
+        if widget is None:
+            return
+        _set(widget, provider)
+        self._update_tts_provider_fields()
 
     def _install_live_voice(self) -> None:
         """Confirm and install the optional google-genai package for live voice."""
@@ -9248,9 +9281,9 @@ class SettingsDialog(QDialog):
             language=language,
             beam_size=beam_size,
         )
-        if sys.platform == "win32" and device.lower() == "cuda":
+        if sys.platform == "win32" and device.lower() in {"auto", "cuda"}:
             message += t(
-                "\n\nWindows CUDA support also downloads NVIDIA CUDA runtime and cuBLAS packages "
+                "\n\nAuto/GPU support also downloads NVIDIA CUDA runtime and cuBLAS packages "
                 "(approximately 570 MB) so the released app does not depend on a separate CUDA Toolkit install."
             )
         answer = QMessageBox.question(
@@ -9277,6 +9310,14 @@ class SettingsDialog(QDialog):
                 "stt_model": model,
                 "stt_device": device,
                 "stt_compute_type": compute_type,
+                "settings_updates": {
+                    "WISP_STT_PREFERENCE": "local",
+                    "STT_MODEL": model,
+                    "STT_DEVICE": device,
+                    "STT_COMPUTE_TYPE": compute_type,
+                    "STT_LANGUAGE": language,
+                    "STT_BEAM_SIZE": beam_size,
+                },
             },
             post_install_progress_detail="downloading or loading Whisper model for {elapsed}",
             post_install=lambda progress, write_log: self._prepare_stt_after_install(
@@ -10088,23 +10129,6 @@ class SettingsDialog(QDialog):
             for row in self._api_key_rows
             if _get(row["provider"]).strip() and row["alias"].text().strip()
         })
-        tts_provider = str(vals.get("TTS_PROVIDER", "")).strip().lower()
-        if tts_provider == "kokoro" and not self._kokoro_installed():
-            self._refresh_kokoro_install_status()
-            QMessageBox.warning(
-                self,
-                t("Kokoro not installed"),
-                t("Install Kokoro before applying it as the active TTS provider."),
-            )
-            return False
-        if tts_provider == "elevenlabs" and not self._elevenlabs_installed():
-            self._refresh_elevenlabs_install_status()
-            QMessageBox.warning(
-                self,
-                t("ElevenLabs not installed"),
-                t("Install ElevenLabs before applying it as the active TTS provider."),
-            )
-            return False
         pending_active_profile = str(getattr(self, "_pending_active_profile", "") or "").strip()
         if pending_active_profile:
             vals["ACTIVE_PROFILE"] = pending_active_profile
@@ -10881,6 +10905,11 @@ def _optional_install_plan_command(
         plan["install_contract"] = optional_deps.optional_package_contract(
             spec_key,
             device=str(spec_device) if spec_device is not None else None,
+        )
+    elif str(plan.get("post_install") or "") == "speech_prepare":
+        plan["install_contract"] = optional_deps.local_speech_install_contract(
+            kokoro_device=str(plan.get("kokoro_install_device") or "cuda"),
+            stt_device=str(plan.get("stt_device") or "auto"),
         )
     plan["app_version"] = updater.current_version()
     log_path.parent.mkdir(parents=True, exist_ok=True)

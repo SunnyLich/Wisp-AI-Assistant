@@ -5,6 +5,7 @@ import os
 
 from ui.onboarding import (
     clean_profile_name,
+    local_speech_install_request,
     persisted_profile_setup_values,
     personal_profile_values,
     profile_values,
@@ -32,6 +33,34 @@ def test_simple_profile_uses_oauth_and_local_speech_defaults():
     assert values["LLM_PROVIDER"] == "chatgpt"
     assert values["TTS_PROVIDER"] == "kokoro"
     assert values["STT_MODEL"] == "base"
+
+
+def test_local_speech_choices_build_one_combined_real_installer_request():
+    from core import optional_deps
+
+    request = local_speech_install_request(
+        tts_preference="local",
+        stt_preference="local",
+        settings={"TTS_PROVIDER": "kokoro", "STT_MODEL": "base", "STT_DEVICE": "auto"},
+    )
+
+    assert request is not None
+    assert request["display_name"] == "Local speech"
+    assert optional_deps.KOKORO_PACKAGE in request["packages"]
+    assert optional_deps.STT_PACKAGE in request["packages"]
+    assert optional_deps.KOKORO_CUDA_TORCH_PACKAGE in request["pre_install_packages"]
+    extra = request["external_plan_extra"]
+    assert extra["post_install"] == "speech_prepare"
+    assert extra["settings_updates"]["TTS_PROVIDER"] == "kokoro"
+    assert extra["settings_updates"]["STT_MODEL"] == "base"
+
+
+def test_no_local_speech_choice_skips_the_installer():
+    assert local_speech_install_request(
+        tts_preference="none",
+        stt_preference="cloud",
+        settings={},
+    ) is None
 
 
 def test_advanced_profile_keeps_cloud_speech_as_a_preference():
@@ -237,6 +266,33 @@ def test_wizard_finish_persists_the_named_profile_contract(tmp_path, monkeypatch
         assert saved["PROFILE_1_LABEL"] == "Barry"
         assert saved["ACTIVE_PROFILE"] == "barry"
         assert saved["SETTINGS_PROFILE"] == "barry"
+    finally:
+        wizard.close()
+        qapp.processEvents()
+
+
+def test_wizard_finish_launches_selected_local_speech_installer(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui import onboarding
+    from ui.settings_panel import env as settings_env
+
+    monkeypatch.setattr(settings_env, "ENV_PATH", tmp_path / ".env")
+    launched: list[dict[str, object]] = []
+    monkeypatch.setattr(onboarding, "launch_local_speech_installer", launched.append)
+    qapp = QApplication.instance() or QApplication([])
+    wizard = onboarding.OnboardingWizard()
+    try:
+        wizard._name.setText("Voice User")
+        wizard._tts.setCurrentIndex(wizard._tts.findData("local"))
+        wizard._stt.setCurrentIndex(wizard._stt.findData("local"))
+        wizard._finish()
+        qapp.processEvents()
+
+        assert len(launched) == 1
+        assert launched[0]["display_name"] == "Local speech"
+        assert launched[0]["external_plan_extra"]["post_install"] == "speech_prepare"
     finally:
         wizard.close()
         qapp.processEvents()

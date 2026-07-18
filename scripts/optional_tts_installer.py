@@ -26,6 +26,19 @@ STAGED_APPLY_MAX_ATTEMPTS = 3
 STAGED_FILE_RETRY_SECONDS = 12.0
 STAGED_FILE_RETRY_INTERVAL_SECONDS = 0.4
 _LAST_INSTALL_FAILURE_DETAIL = ""
+_POST_INSTALL_SETTING_KEYS = {
+    "TTS_PROVIDER",
+    "WISP_TTS_PREFERENCE",
+    "KOKORO_VOICE",
+    "KOKORO_LANG_CODE",
+    "KOKORO_DEVICE",
+    "STT_MODEL",
+    "STT_DEVICE",
+    "STT_COMPUTE_TYPE",
+    "STT_LANGUAGE",
+    "STT_BEAM_SIZE",
+    "WISP_STT_PREFERENCE",
+}
 
 _DISK_FULL_MARKERS = (
     "os error 112",
@@ -93,6 +106,29 @@ def _apply_plan_language(plan: dict[str, Any]) -> None:
         config.APP_LANGUAGE = language
     except Exception:
         pass
+
+
+def _apply_post_install_settings(log, prefix: str, plan: dict[str, Any]) -> str:
+    """Persist the speech choice only after package verification succeeds."""
+    raw_updates = plan.get("settings_updates")
+    if not isinstance(raw_updates, dict):
+        return ""
+    updates = {
+        str(key): str(value)
+        for key, value in raw_updates.items()
+        if str(key) in _POST_INSTALL_SETTING_KEYS and isinstance(value, (str, int, float, bool))
+    }
+    if not updates:
+        return ""
+    try:
+        from core.system.env_utils import write_env_file
+        from core.system.paths import REPO_ROOT
+
+        write_env_file(REPO_ROOT / ".env", updates)
+        _log(log, prefix, f"Selected installed speech settings: {', '.join(sorted(updates))}.")
+        return ""
+    except Exception as exc:  # noqa: BLE001 - installer status must explain activation failures
+        return f"{type(exc).__name__}: {exc}"
 
 
 def _log(handle, prefix: str, message: str) -> None:
@@ -375,6 +411,26 @@ def _post_install_result(log, prefix: str, plan: dict[str, Any], status_path: Pa
     if spec_status and spec_status.get("valid") is not True:
         detail = _format_spec_status_message(spec_status)
         return False, f"{display_name} package install failed: {detail}"
+    if post_install == "speech_prepare":
+        kokoro_plan = {
+            **plan,
+            "display_name": "Kokoro",
+            "post_install": "kokoro_prepare",
+            "spec_key": "kokoro",
+        }
+        kokoro_ok, kokoro_message = _post_install_result(log, prefix, kokoro_plan, status_path)
+        if not kokoro_ok:
+            return False, kokoro_message
+        stt_plan = {
+            **plan,
+            "display_name": "STT",
+            "post_install": "stt_prepare",
+            "spec_key": "stt",
+        }
+        stt_ok, stt_message = _post_install_result(log, prefix, stt_plan, status_path)
+        if not stt_ok:
+            return False, stt_message
+        return True, f"{kokoro_message} {stt_message}"
     if post_install == "kokoro_prepare":
         voice = str(plan.get("kokoro_voice") or "af_heart")
         require_gpu = bool(plan.get("kokoro_require_gpu"))
@@ -706,6 +762,11 @@ def _run_staged_apply(plan_path: Path) -> int:
                 extra=_status_extra(plan, progress_percent=70),
             )
             ok, message = _post_install_result(log, prefix, plan, status_path)
+            if ok:
+                settings_error = _apply_post_install_settings(log, prefix, plan)
+                if settings_error:
+                    ok = False
+                    message = f"{message} Installed, but the selected speech setting could not be saved: {settings_error}"
             _log(log, prefix, message)
             _write_status(
                 status_path,
@@ -849,10 +910,16 @@ def _current_plan_contract(plan: dict[str, Any]) -> tuple[str, str]:
         if spec_key == "stt"
         else None
     )
-    contract = optional_deps.optional_package_contract(
-        spec_key,
-        device=str(spec_device) if spec_device is not None else None,
-    )
+    if str(plan.get("post_install") or "") == "speech_prepare":
+        contract = optional_deps.local_speech_install_contract(
+            kokoro_device=str(plan.get("kokoro_install_device") or "cuda"),
+            stt_device=str(plan.get("stt_device") or "auto"),
+        )
+    else:
+        contract = optional_deps.optional_package_contract(
+            spec_key,
+            device=str(spec_device) if spec_device is not None else None,
+        )
     return contract, updater.current_version()
 
 
@@ -1099,6 +1166,11 @@ def main() -> int:
 
         _warn_duplicate_dist_infos(log, prefix)
         ok, message = _post_install_result(log, prefix, plan, status_path)
+        if ok:
+            settings_error = _apply_post_install_settings(log, prefix, plan)
+            if settings_error:
+                ok = False
+                message = f"{message} Installed, but the selected speech setting could not be saved: {settings_error}"
         _log(log, prefix, message if not ok else "Completed successfully.")
         _write_status(status_path, ok=ok, message=message, extra=_plan_status_metadata(plan))
         return 0 if ok else 1

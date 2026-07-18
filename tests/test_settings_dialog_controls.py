@@ -804,7 +804,7 @@ def test_stt_install_uses_optional_installer(monkeypatch, tmp_path):
 
         assert captured["test_key"] == "stt_install"
         assert captured["display_name"] == "STT"
-        assert captured["packages"] == optional_deps.stt_install_packages()
+        assert captured["packages"] == optional_deps.stt_install_packages("auto")
         assert captured["remove_artifacts"] == optional_deps.stt_remove_artifacts()
         assert captured["button_attr"] == "_stt_download_btn"
         assert captured["status_attr"] == "_stt_active_lbl"
@@ -813,6 +813,14 @@ def test_stt_install_uses_optional_installer(monkeypatch, tmp_path):
             "stt_model": "base",
             "stt_device": "auto",
             "stt_compute_type": "int8",
+            "settings_updates": {
+                "WISP_STT_PREFERENCE": "local",
+                "STT_MODEL": "base",
+                "STT_DEVICE": "auto",
+                "STT_COMPUTE_TYPE": "int8",
+                "STT_LANGUAGE": "en",
+                "STT_BEAM_SIZE": "5",
+            },
         }
         assert captured["post_install_progress_detail"] == "downloading or loading Whisper model for {elapsed}"
     finally:
@@ -2337,8 +2345,9 @@ def test_kokoro_post_install_uses_subprocess_verification(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
-    """The install button should pass CUDA Torch packages when Kokoro device is GPU."""
+@pytest.mark.parametrize(("device_value", "expected_require_gpu"), [("cuda", True), ("auto", False)])
+def test_kokoro_install_uses_gpu_packages_for_gpu_and_auto(monkeypatch, device_value, expected_require_gpu):
+    """GPU and Auto should install CUDA Torch while only explicit GPU requires CUDA."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
 
@@ -2349,8 +2358,9 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
     device = QComboBox()
-    device.addItem("GPU (CUDA)", "cuda")
+    device.addItem("Device", device_value)
     dialog._fields = {
+        "TTS_PROVIDER": QComboBox(),
         "KOKORO_DEVICE": device,
         "KOKORO_VOICE": QLineEdit("af_heart"),
         "KOKORO_LANG_CODE": QLineEdit("a"),
@@ -2358,6 +2368,7 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
         "KOKORO_SAMPLE_RATE": QLineEdit("24000"),
         "TTS_VOLUME": QLineEdit("1.0"),
     }
+    dialog._fields["TTS_PROVIDER"].addItems(["none", "kokoro"])
     captured: dict[str, object] = {}
     monkeypatch.setattr(SettingsDialog, "_kokoro_installed", lambda self: False)
     monkeypatch.setattr(
@@ -2379,6 +2390,10 @@ def test_kokoro_install_uses_gpu_packages_when_gpu_selected(monkeypatch):
         assert captured["remove_artifacts"] == optional_deps.kokoro_remove_artifacts()
         assert "torch==2.11.0+cu128" in captured["pre_install_packages"]
         assert "torch==2.11.0+cu128" in captured["packages"]
+        assert captured["external_plan_extra"]["kokoro_require_gpu"] is expected_require_gpu
+        assert captured["external_plan_extra"]["settings_updates"]["TTS_PROVIDER"] == "kokoro"
+        assert captured["external_plan_extra"]["settings_updates"]["KOKORO_DEVICE"] == device_value
+        assert dialog._fields["TTS_PROVIDER"].currentText() == "kokoro"
         assert captured["success_message"] == "Kokoro GPU support installed and local voice is ready."
     finally:
         for widget in dialog._fields.values():
@@ -2573,7 +2588,7 @@ def test_elevenlabs_status_preserves_staged_apply_retry():
 def test_elevenlabs_reinstall_click_passes_reinstall(monkeypatch):
     """Clicking ElevenLabs reinstall should force package replacement."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
 
     from core import optional_deps
     from ui.settings_panel import dialog as dialog_mod
@@ -2581,6 +2596,9 @@ def test_elevenlabs_reinstall_click_passes_reinstall(monkeypatch):
 
     _app = QApplication.instance() or QApplication(sys.argv)
     dialog = SettingsDialog.__new__(SettingsDialog)
+    provider = QComboBox()
+    provider.addItems(["none", "elevenlabs"])
+    dialog._fields = {"TTS_PROVIDER": provider}
     captured: dict[str, object] = {}
     monkeypatch.setattr(SettingsDialog, "_elevenlabs_installed", lambda self: True)
     monkeypatch.setattr(
@@ -2594,11 +2612,17 @@ def test_elevenlabs_reinstall_click_passes_reinstall(monkeypatch):
 
     monkeypatch.setattr(SettingsDialog, "_install_optional_tts_package", fake_install)
 
-    SettingsDialog._install_elevenlabs(dialog)
+    try:
+        SettingsDialog._install_elevenlabs(dialog)
 
-    assert captured["packages"] == [optional_deps.ELEVENLABS_PACKAGE]
-    assert captured["reinstall"] is True
-    assert captured["success_message"] == "ElevenLabs reinstalled. Add your API key, then click Test TTS."
+        assert captured["packages"] == [optional_deps.ELEVENLABS_PACKAGE]
+        assert captured["reinstall"] is True
+        assert captured["external_plan_extra"]["settings_updates"]["TTS_PROVIDER"] == "elevenlabs"
+        assert provider.currentText() == "elevenlabs"
+        assert captured["success_message"] == "ElevenLabs reinstalled. Add your API key, then click Test TTS."
+    finally:
+        provider.deleteLater()
+        _app.processEvents()
 
 
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
@@ -2655,7 +2679,7 @@ def test_i18n_translates_stt_backend_status_messages(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
-def test_llm_model_routing_surface_translates_to_traditional_chinese():
+def test_llm_model_routing_surface_translates_to_traditional_chinese(isolated_default_profile, monkeypatch):
     """Verify llm model routing surface translates to traditional chinese behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
@@ -2663,7 +2687,10 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese():
     import config
     from core.prompt_i18n import caller_intent_template
     from ui import i18n
-    from ui.settings_panel.dialog import SettingsDialog
+    from ui.settings_panel import dialog as settings_dialog
+
+    monkeypatch.setattr(settings_dialog, "_read_env", lambda: {})
+    SettingsDialog = settings_dialog.SettingsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
     old_language = getattr(config, "APP_LANGUAGE", "")
@@ -4403,8 +4430,16 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
         monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
         monkeypatch.setattr(dialog, "_capability_warnings_for_values", lambda _vals: ([], {}))
         monkeypatch.setattr(dialog, "_set_warning_markers", lambda _warnings: None)
-        monkeypatch.setattr(dialog, "_kokoro_installed", lambda: True)
-        monkeypatch.setattr(dialog, "_elevenlabs_installed", lambda: True)
+        monkeypatch.setattr(
+            dialog,
+            "_kokoro_installed",
+            lambda: (_ for _ in ()).throw(AssertionError("saving must not require an installed TTS package")),
+        )
+        monkeypatch.setattr(
+            dialog,
+            "_elevenlabs_installed",
+            lambda: (_ for _ in ()).throw(AssertionError("saving must not require an installed TTS package")),
+        )
         monkeypatch.setattr(settings_dialog, "_write_env", lambda vals, remove_keys=None: captured.update(vals))
 
         for index, block in enumerate(dialog._caller_blocks, 1):
@@ -4417,6 +4452,7 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
 
         _set(dialog._fields["APP_LANGUAGE"], "Chinese (Traditional)")
         _set(dialog._fields["ASSISTANT_LANGUAGE"], "Chinese (Traditional)")
+        _set(dialog._fields["TTS_PROVIDER"], "kokoro")
         _set(dialog._fields["CHAT_ELABORATE_PROMPT"], "Please elaborate on that.")
         dialog._fields["WISP_CODEX_SYSTEM_PROMPT"].setPlainText("ChatGPT-only rules.")
         dialog._fields["WISP_CLAUDE_SYSTEM_PROMPT"].setPlainText("")
@@ -4442,6 +4478,7 @@ def test_settings_do_save_localizes_qtextedit_prompt_fields(monkeypatch):
         assert captured["WISP_PLANNED_CHUNKING"] == "True"
         assert captured["WISP_PLANNED_CHUNKING_CHUNKS"] == "4"
         assert captured["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] == "120"
+        assert captured["TTS_PROVIDER"] == "kokoro"
         assert captured["WISP_CONNECTION_ALIAS_OPENAI"] == "Work"
         assert captured["CALLER_1_HOTKEY_2"] == "ctrl+win+1"
         assert captured["CALLER_1_ENABLED"] == "True"

@@ -125,6 +125,36 @@ def test_optional_install_dialog_preserves_persisted_failure_detail(tmp_path: Pa
         app.processEvents()
 
 
+def test_optional_install_dialog_offers_restart_for_staged_packages(tmp_path: Path):
+    from PySide6.QtCore import QProcess
+    from PySide6.QtWidgets import QApplication
+
+    from ui.optional_install_dialog import OptionalInstallDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    status_path = tmp_path / "speech-install.status.json"
+    status_path.write_text(
+        json.dumps({"ok": None, "restart_apply": True, "message": "Local speech packages are staged."}),
+        encoding="utf-8",
+    )
+    dialog = OptionalInstallDialog(
+        title="Local speech installer",
+        command=[sys.executable, "--version"],
+        status_path=status_path,
+        auto_start=False,
+    )
+    try:
+        dialog._handle_finished(0, QProcess.ExitStatus.NormalExit)
+
+        assert not dialog._restart_btn.isHidden()
+        assert dialog._restart_btn.text() == "Restart app now"
+        assert dialog._restart_btn.isDefault()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_optional_install_dialog_shows_percentage_and_spinner(tmp_path: Path):
     from PySide6.QtWidgets import QApplication
 

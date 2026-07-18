@@ -289,7 +289,11 @@ def stt_install_packages(device: str | None = None, *, platform_name: str | None
     """Return the exact packages for the selected STT platform/device."""
     platform_name = platform_name or sys.platform
     packages = stt_locked_packages(platform_name)
-    if platform_name == "win32" and str(device or "").strip().lower() == "cuda":
+    selected = str(device or "").strip().lower()
+    # The faster-whisper/ctranslate2 stack already supports CPU execution.
+    # Auto must also provision the optional CUDA DLLs so the first install can
+    # use either backend instead of permanently reflecting a missed GPU probe.
+    if platform_name == "win32" and selected in {"auto", "cuda"}:
         packages.extend(STT_WINDOWS_CUDA_PACKAGES)
     return packages
 
@@ -355,6 +359,19 @@ def optional_package_contract(key: str, *, device: str | None = None) -> str:
         "key": spec.key,
         "packages": list(spec.packages),
         "required_modules": list(spec.required_modules),
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return f"{OPTIONAL_INSTALL_CONTRACT_SCHEMA}:{digest[:24]}"
+
+
+def local_speech_install_contract(*, kokoro_device: str, stt_device: str) -> str:
+    """Return one fingerprint for the wizard's combined TTS and STT install."""
+    payload = {
+        "schema": OPTIONAL_INSTALL_CONTRACT_SCHEMA,
+        "platform": sys.platform,
+        "key": "local-speech",
+        "kokoro": optional_package_contract("kokoro", device=kokoro_device),
+        "stt": optional_package_contract("stt", device=stt_device),
     }
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return f"{OPTIONAL_INSTALL_CONTRACT_SCHEMA}:{digest[:24]}"
@@ -776,9 +793,12 @@ def kokoro_install_mode_for_device(device: str | None) -> str:
     selected = "cpu" if device is None else str(device or "auto").strip().lower()
     if selected == "cpu":
         return "cpu"
-    if selected == "cuda":
+    if selected in {"auto", "cuda"}:
+        # A CUDA-enabled Torch wheel still supports CPU execution. Installing
+        # it for Auto therefore provisions both runtime paths up front and
+        # avoids making package selection depend on a fallible hardware probe.
         return "gpu"
-    return "gpu" if system_cuda_available() else "cpu"
+    return "cpu"
 
 
 def kokoro_install_packages(device: str | None) -> list[str]:

@@ -60,6 +60,31 @@ def test_custom_prompt_wraps_and_grows_vertically(qapp, monkeypatch):
         _close_overlay_if_valid(overlay, qapp)
 
 
+def test_custom_prompt_single_line_has_vertical_room(qapp, monkeypatch):
+    """The prompt editor leaves room for complete glyphs and descenders."""
+    from PySide6.QtGui import QFontMetrics
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        overlay.show()
+        overlay._enter_custom_mode(drop_trigger_key=False)
+        overlay._input_line.setText("Summarize this. glyphs: gypq")
+        qapp.processEvents()
+
+        font_height = QFontMetrics(overlay._input_line.font()).lineSpacing()
+        assert overlay._input_line.document().documentMargin() == 0
+        assert overlay._input_line.viewport().height() >= font_height + 8
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
 def test_custom_prompt_scrolls_only_after_overlay_fills_screen(qapp, monkeypatch):
     """The editor uses available screen height before showing a scrollbar."""
     from PySide6.QtCore import QRect, Qt

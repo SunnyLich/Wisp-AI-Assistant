@@ -80,6 +80,11 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "nvidia-cuda-runtime-cu12==12.8.90",
         "nvidia-cublas-cu12==12.8.4.1",
     ]
+    assert optional_deps.stt_install_packages("auto", platform_name="win32") == [
+        *optional_deps.stt_locked_packages("win32"),
+        "nvidia-cuda-runtime-cu12==12.8.90",
+        "nvidia-cublas-cu12==12.8.4.1",
+    ]
     assert optional_deps.stt_install_packages("cuda", platform_name="linux") == optional_deps.stt_locked_packages(
         "linux"
     )
