@@ -543,3 +543,218 @@ def test_custom_endpoint_and_exact_manual_model_reach_real_test_button(
             assert exact_model in dialog._llm_test_status_lbl.text()
     finally:
         _close(dialog, app)
+
+
+def test_every_provider_reaches_its_real_chat_route_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All 25 chat providers traverse Settings, validation, and their real adapter."""
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth, copilot_client
+    from core.llm_clients import client as llm
+    from ui.settings_panel import dialog as settings_dialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    openai_requests: list[tuple[dict[str, object], dict[str, object]]] = []
+    response_requests: list[tuple[dict[str, object], dict[str, object]]] = []
+    anthropic_requests: list[tuple[dict[str, object], dict[str, object]]] = []
+    copilot_requests: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    ollama_readiness: list[dict[str, object]] = []
+
+    class FakeStream:
+        def __enter__(self):
+            return iter([object()])
+
+        def __exit__(self, _exc_type, _exc, _tb) -> bool:
+            return False
+
+    class FakeCompletions:
+        def __init__(self, factory_kwargs: dict[str, object]) -> None:
+            self._factory_kwargs = factory_kwargs
+
+        def create(self, **kwargs):
+            openai_requests.append((dict(self._factory_kwargs), dict(kwargs)))
+            return FakeStream() if kwargs.get("stream") else object()
+
+    class FakeResponses:
+        def __init__(self, factory_kwargs: dict[str, object]) -> None:
+            self._factory_kwargs = factory_kwargs
+
+        def create(self, **kwargs):
+            response_requests.append((dict(self._factory_kwargs), dict(kwargs)))
+            return object()
+
+    class FakeOpenAIClient:
+        def __init__(self, factory_kwargs: dict[str, object]) -> None:
+            self.chat = type("Chat", (), {"completions": FakeCompletions(factory_kwargs)})()
+            self.responses = FakeResponses(factory_kwargs)
+
+    class FakeAnthropicMessages:
+        def __init__(self, factory_kwargs: dict[str, object]) -> None:
+            self._factory_kwargs = factory_kwargs
+
+        def create(self, **kwargs):
+            anthropic_requests.append((dict(self._factory_kwargs), dict(kwargs)))
+            return object()
+
+    class FakeAnthropicClient:
+        def __init__(self, factory_kwargs: dict[str, object]) -> None:
+            self.messages = FakeAnthropicMessages(factory_kwargs)
+
+    monkeypatch.setattr(
+        llm.sdk_clients,
+        "openai_client",
+        lambda **kwargs: FakeOpenAIClient(dict(kwargs)),
+    )
+    monkeypatch.setattr(
+        llm.sdk_clients,
+        "anthropic_client",
+        lambda **kwargs: FakeAnthropicClient(dict(kwargs)),
+    )
+    monkeypatch.setattr(llm.sdk_clients, "httpx_client", lambda **_kwargs: object())
+    monkeypatch.setattr(chatgpt_auth, "get_tokens", lambda: {"access_token": "oauth", "account_id": "acct"})
+    monkeypatch.setattr(copilot_auth, "get_effective_token", lambda: "copilot-token")
+    monkeypatch.setattr(
+        settings_dialog.secret_store,
+        "get_keychain_secret",
+        lambda name: f"stored-{name}",
+    )
+    monkeypatch.setattr(
+        copilot_client,
+        "ask",
+        lambda *args, **kwargs: copilot_requests.append((args, dict(kwargs))) or "OK",
+    )
+    monkeypatch.setattr(
+        llm,
+        "_ensure_ollama_running",
+        lambda **kwargs: ollama_readiness.append(dict(kwargs)),
+    )
+    llm._codex_client = None
+    llm._dynamic_openai_clients.clear()
+
+    dialog = _new_dialog(monkeypatch)
+    try:
+        _remove_loaded_rows(dialog)
+        connection_rows: dict[str, dict] = {}
+        for provider in settings_dialog._CONNECTION_PROVIDER_IDS:
+            connection = dialog._add_api_key_row(provider)
+            connection_rows[provider] = connection
+            if provider not in {"ollama", "custom", "copilot"}:
+                connection["key"].setText(f"typed-{provider}")
+            elif provider == "copilot":
+                connection["key"].setText("typed-copilot")
+        dialog._fields["CUSTOM_BASE_URL"].setText("https://custom.runtime.example/v1")
+        dialog._fields["CUSTOM_API_KEY"].setText("typed-custom")
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("LLM"))
+        app.processEvents()
+
+        row = dialog._model_section_rows["LLM"][0]
+        for fallback in list(dialog._model_section_rows["LLM"])[1:]:
+            dialog._remove_model_section_row("LLM", fallback)
+        test_button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == "Test Chat model"
+        )
+        providers = (*settings_dialog._CONNECTION_PROVIDER_IDS, "chatgpt")
+        before_counts = (0, 0, 0, 0)
+        selected_models: dict[str, str] = {}
+
+        for provider in providers:
+            dialog._fill_credential_combo(row["api_key_combo"], provider)
+            row["api_key_combo"].setCurrentIndex(row["api_key_combo"].findData(provider))
+            app.processEvents()
+            models = list(settings_dialog._PROVIDER_MODELS.get(provider, []))
+            model = models[0] if models else f"exact/{provider}-runtime-model"
+            selected_models[provider] = model
+            model_index = row["model_combo"].findData(model)
+            if model_index >= 0:
+                row["model_combo"].setCurrentIndex(model_index)
+            else:
+                row["model_combo"].setCurrentIndex(
+                    row["model_combo"].findData(settings_dialog._CUSTOM_MODEL_SENTINEL)
+                )
+                row["model_edit"].setText(model)
+
+            if provider in settings_dialog._PROVIDER_KEY_NAMES:
+                key_name = settings_dialog._PROVIDER_KEY_NAMES[provider]
+                credential_cases = [
+                    (f"typed-{provider}" if provider != "custom" else "typed-custom", False),
+                    (f"stored-{key_name}", True),
+                ]
+            else:
+                credential_cases = [("ollama" if provider == "ollama" else "", False)]
+
+            for expected_key, use_stored in credential_cases:
+                if use_stored:
+                    if provider == "custom":
+                        dialog._fields["CUSTOM_API_KEY"].clear()
+                    else:
+                        connection_rows[provider]["key"].clear()
+                test_button.click()
+                _wait_until(app, lambda: not dialog._running_test_tokens)
+                assert f"✓ Primary — {provider} / {model}: OK" in dialog._llm_test_status_lbl.text()
+                after_counts = (
+                    len(openai_requests),
+                    len(response_requests),
+                    len(anthropic_requests),
+                    len(copilot_requests),
+                )
+                assert sum(after_counts) == sum(before_counts) + 1
+                before_counts = after_counts
+                if provider in llm._OPENAI_COMPAT_PROVIDER_SET:
+                    factory, request = openai_requests[-1]
+                    assert request["model"] == model
+                    assert factory["api_key"] == expected_key
+                    expected_base_url = (
+                        "https://custom.runtime.example/v1"
+                        if provider == "custom"
+                        else llm._openai_compat_base_url(provider)
+                    )
+                    if provider == "openai":
+                        assert "base_url" not in factory
+                    elif expected_base_url:
+                        assert factory["base_url"] == expected_base_url
+                    else:
+                        assert "base_url" not in factory
+                elif provider == "anthropic":
+                    factory, request = anthropic_requests[-1]
+                    assert factory == {"api_key": expected_key}
+                    assert request["model"] == model
+
+        assert len(openai_requests) == sum(
+            2 if provider in settings_dialog._PROVIDER_KEY_NAMES else 1
+            for provider in providers
+            if provider in llm._OPENAI_COMPAT_PROVIDER_SET
+        )
+
+        assert [factory["api_key"] for factory, _request in anthropic_requests] == [
+            "typed-anthropic",
+            "stored-ANTHROPIC_API_KEY",
+        ]
+        assert all(
+            request
+            == {
+                "model": selected_models["anthropic"],
+                "max_tokens": 8,
+                "messages": [{"role": "user", "content": "Reply with OK."}],
+            }
+            for _factory, request in anthropic_requests
+        )
+        assert response_requests[0][0]["base_url"] == "https://chatgpt.com/backend-api/codex"
+        assert response_requests[0][1]["model"] == selected_models["chatgpt"]
+        assert copilot_requests == [
+            (
+                ("Reply with OK.", selected_models["copilot"]),
+                {"system": "Return exactly OK.", "allow_tools": False},
+            )
+        ]
+        assert ollama_readiness == [{}, {}]
+    finally:
+        llm._codex_client = None
+        llm._dynamic_openai_clients.clear()
+        _close(dialog, app)

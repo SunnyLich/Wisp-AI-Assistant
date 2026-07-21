@@ -28,11 +28,11 @@ The workflow manifest must preserve traceability back to the earlier inventory:
 
 Current honest status:
 
-- **293 / 472** functions are accepted through a production entry point with a successful observable result.
-- **45 / 472** have a name-matched candidate test that still needs code-path audit.
-- **134 / 472** are untested at the real-entry acceptance level.
-- **278 / 472** have completed dependency audits.
-- **108 / 108** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking, automatic elaboration, external transcript synchronization/ownership, every provider-control option, ChatGPT/GitHub/Copilot authentication, and the full connection/alias/search/filter/pagination/keychain/endpoint/model-refresh relationships.
+- **320 / 472** functions are accepted through a production entry point with a successful observable result.
+- **43 / 472** have a name-matched candidate test that still needs code-path audit.
+- **109 / 472** are untested at the real-entry acceptance level.
+- **305 / 472** have completed dependency audits.
+- **113 / 113** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking, automatic elaboration, external transcript synchronization/ownership, every provider-control option, authentication, connection/model management, and every supported provider x credential x primary-route x Test-Chat relationship.
 
 The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
 
@@ -56,6 +56,7 @@ The first foundation slice is merged into the existing workflow system:
 - Launcher acceptance now executes the platform source launcher and a freshly rebuilt packaged executable. Both must show the real overlay, start four distinct worker processes, complete ping/flow/hotkey startup, shut down in-band, and leave no managed process; every release build runs the packaged smoke before creating its archive.
 - Floating-shell acceptance now drives every icon state under both auto-hide settings, real Qt drag events, and the real tray visibility toggle. A four-worker UI-host workflow triggers the actual Last chat, Memory, Addon Manager, Settings, Runtime Status, and Quit actions, verifies their real target windows/process exit, and opens both ChatGPT and Claude provider controls. Windows, macOS, and Linux login entries are verified in enabled and disabled states against the proven source/packaged launch commands.
 - Connection-management acceptance now drives the real Add connection modal for all 24 providers; crosses every provider/alias query with All, Cloud, and Local filters; verifies collapsed/expanded behavior; proves Save/Cancel and last/sibling removal keychain semantics; triggers all 21 endpoint menu actions; refreshes models for all 24 connection providers plus ChatGPT with typed and stored credentials; and sends exact manual models through local and remote Custom route probes. The audit fixed removal persistence so saving the final-row removal now clears its credential while Cancel remains non-destructive.
+- Provider-runtime acceptance now selects every one of the 25 Chat providers as the primary route and clicks the visible Test Chat model button. Forty-seven executions cover typed and stored credentials for every keyed route plus ChatGPT OAuth, Copilot, and Ollama; each must reach the correct OpenAI-compatible endpoint, Anthropic Messages request, Codex Responses request, Copilot call, or Ollama readiness/client path with the exact selected model.
 - Intent-action acceptance now opens both production pickers and executes What is this, Explain simply, How do I fix this, Fix grammar, Simplify, and Improve tone through both their assigned keys and their painted clickable rows, asserting the exact configured prompt in all twelve combinations.
 - `tests/workflows/manifest.json` contains all **472 / 472** machine-readable trace/candidate mappings, validated by `tests/test_workflow_manifest.py` against exact inventory text, all **3,296 / 3,296** failure references, and real pytest node IDs. This is not positive feature acceptance coverage.
 - `scripts/generate_workflow_manifest.py` reproducibly expands the inventory using curated test-family pools while preserving hand-verified records. It labels records as `verified`, `direct`, or broader `section` mappings so mapping completeness is not confused with direct workflow maturity.
