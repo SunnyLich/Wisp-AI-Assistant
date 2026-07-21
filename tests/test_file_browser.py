@@ -6,25 +6,41 @@ import pytest
 from core.system import file_browser
 
 
-@pytest.mark.parametrize(
-    ("platform", "expected"),
-    (
-        ("win32", lambda path: ["explorer.exe", f"/select,{path}"]),
-        ("darwin", lambda path: ["open", "-R", str(path)]),
-        ("linux", lambda path: ["xdg-open", str(path.parent)]),
-    ),
-)
-def test_reveal_file_uses_native_browser(platform, expected, tmp_path, monkeypatch):
-    """Each desktop platform receives its native reveal/open command."""
-    record = tmp_path / "conversations.json"
-    record.write_text("[]", encoding="utf-8")
+@pytest.mark.parametrize("target_kind", ("file", "folder"))
+@pytest.mark.parametrize("platform", ("win32", "darwin", "linux"))
+def test_reveal_path_file_folder_platform_matrix(
+    platform, target_kind, tmp_path, monkeypatch
+):
+    """File/folder kind and desktop platform select the exact native command."""
+    record = tmp_path / ("conversations.json" if target_kind == "file" else "task-run")
+    if target_kind == "file":
+        record.write_text("[]", encoding="utf-8")
+    else:
+        record.mkdir()
     launched = []
     monkeypatch.setattr(file_browser.subprocess, "Popen", lambda command: launched.append(command))
 
     file_browser.reveal_path(record, platform=platform)
 
     resolved = record.resolve()
-    assert launched == [expected(resolved)]
+    if platform == "win32":
+        expected = (
+            ["explorer.exe", f"/select,{resolved}"]
+            if target_kind == "file"
+            else ["explorer.exe", str(resolved)]
+        )
+    elif platform == "darwin":
+        expected = (
+            ["open", "-R", str(resolved)]
+            if target_kind == "file"
+            else ["open", str(resolved)]
+        )
+    else:
+        expected = [
+            "xdg-open",
+            str(resolved.parent if target_kind == "file" else resolved),
+        ]
+    assert launched == [expected]
 
 
 def test_reveal_failure_matrix_surfaces_exact_os_faults(tmp_path, monkeypatch):

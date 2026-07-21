@@ -41,7 +41,8 @@ class _HotkeyHelper:
         self._stop_stale_helpers()
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
-        env.setdefault("WISP_REPO_ROOT", str(data_root()))
+        if "WISP_DATA_ROOT" not in env and "WISP_REPO_ROOT" not in env:
+            env["WISP_DATA_ROOT"] = str(data_root())
         if addon_hotkeys:
             env["WISP_ADDON_HOTKEYS"] = json.dumps(addon_hotkeys)
         self.proc = subprocess.Popen(

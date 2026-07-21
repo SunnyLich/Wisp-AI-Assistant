@@ -240,9 +240,21 @@ setup_venv() {
   req_hash > "$STAMP_FILE"
 }
 
-setup_venv
+if [ -n "${WISP_LAUNCH_PYTHON:-}" ]; then
+  if ! python_matches_want "$WISP_LAUNCH_PYTHON"; then
+    echo "ERROR: WISP_LAUNCH_PYTHON is not Python $WANT." >&2
+    exit 1
+  fi
+  if ! ui_deps_ok "$WISP_LAUNCH_PYTHON"; then
+    echo "ERROR: WISP_LAUNCH_PYTHON is missing required runtime dependencies." >&2
+    exit 1
+  fi
+  VPY="$WISP_LAUNCH_PYTHON"
+else
+  setup_venv
+fi
 
-export WISP_REPO_ROOT="$REPO_ROOT"
+export WISP_REPO_ROOT="${WISP_REPO_ROOT:-$REPO_ROOT}"
 export PYTHONUNBUFFERED=1
 
 WISP_APP_LAUNCHED=1

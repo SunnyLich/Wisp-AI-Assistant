@@ -18,9 +18,9 @@
         9
       ],
       "test_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent",
+      "production_entry_point": "Production entry point exercised by tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry",
       "scenarios": [
         "normal",
         "repeat",
@@ -37,8 +37,8 @@
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.309,
+      "mapping_status": "direct",
+      "mapping_score": 0.483,
       "source_section": "launch_setup_shell"
     },
     {
@@ -56,9 +56,9 @@
         18
       ],
       "test_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent",
+      "production_entry_point": "Section-level production surface represented by tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry",
       "scenarios": [
         "normal",
         "repeat",
@@ -76,7 +76,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.227,
+      "mapping_score": 0.396,
       "source_section": "launch_setup_shell"
     },
     {
@@ -282,9 +282,9 @@
         60
       ],
       "test_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change",
+      "production_entry_point": "Section-level production surface represented by tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix",
       "scenarios": [
         "normal",
         "repeat",
@@ -304,7 +304,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.27,
+      "mapping_score": 0.42,
       "source_section": "launch_setup_shell"
     },
     {
@@ -354,9 +354,9 @@
         72
       ],
       "test_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language",
+      "production_entry_point": "Production entry point exercised by tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix",
       "scenarios": [
         "normal",
         "repeat",
@@ -377,8 +377,8 @@
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.354,
+      "mapping_status": "direct",
+      "mapping_score": 0.667,
       "source_section": "launch_setup_shell"
     },
     {
@@ -394,9 +394,9 @@
         79
       ],
       "test_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow",
+      "production_entry_point": "Section-level production surface represented by tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix",
       "scenarios": [
         "normal",
         "repeat",
@@ -407,14 +407,16 @@
         "macos",
         "linux"
       ],
-      "optional_components": [],
+      "optional_components": [
+        "PySide6"
+      ],
       "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.21,
+      "mapping_score": 0.236,
       "source_section": "launch_setup_shell"
     },
     {
@@ -17626,9 +17628,9 @@
         3273
       ],
       "test_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks",
+      "production_entry_point": "Production entry point exercised by tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup",
       "scenarios": [
         "normal",
         "repeat",
@@ -17642,13 +17644,13 @@
         "linux"
       ],
       "optional_components": [],
-      "timeout_seconds": 120,
+      "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.411,
+      "mapping_status": "direct",
+      "mapping_score": 0.563,
       "source_section": "platform_integration"
     },
     {
@@ -17776,9 +17778,9 @@
         3296
       ],
       "test_node_ids": [
-        "tests/test_file_browser.py::test_reveal_file_uses_native_browser"
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix"
       ],
-      "production_entry_point": "Production entry point exercised by tests/test_file_browser.py::test_reveal_file_uses_native_browser",
+      "production_entry_point": "Section-level production surface represented by tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix",
       "scenarios": [
         "normal",
         "repeat",
@@ -17797,8 +17799,8 @@
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "direct",
-      "mapping_score": 0.527,
+      "mapping_status": "section",
+      "mapping_score": 0.429,
       "source_section": "platform_integration"
     }
   ]

@@ -28,12 +28,12 @@ The workflow manifest must preserve traceability back to the earlier inventory:
 
 Current honest status:
 
-- **72 / 472** functions are accepted through a production entry point with a successful observable result.
-- **2 / 472** are reviewed as component-only: useful lower-level evidence, but not a full user entry chain.
-- **105 / 472** have a name-matched candidate test that still needs code-path audit.
-- **293 / 472** are untested at the real-entry acceptance level.
-- **56 / 472** have completed dependency audits.
-- **25** declared A -> B interaction matrices are accepted, including the complete 4-mode x 5-tool local-file matrix, the 2 x 2 bubble scroll/snap matrix, the 6-language x 8-Settings-page matrix, all eight Reset Page scopes, every optional-installer terminal outcome, and all packaged/repo updater results.
+- **119 / 472** functions are accepted through a production entry point with a successful observable result.
+- **1 / 472** is reviewed as component-only: useful lower-level evidence, but not a full user entry chain.
+- **94 / 472** have a name-matched candidate test that still needs code-path audit.
+- **258 / 472** are untested at the real-entry acceptance level.
+- **103 / 472** have completed dependency audits.
+- **47** declared A -> B interaction matrices are accepted, including both general/rewrite action sets by assigned key and row click, the packaged/source launch-mode matrix, the 4-icon-state x 2-auto-hide matrix, icon-drag/provider-badge anchoring, all three autostart platforms in enabled/disabled states, the complete 4-mode x 5-tool local-file matrix, the 2 x 2 bubble scroll/snap matrix, the 6-language x 8-Settings-page matrix, all eight Reset Page scopes, every optional-installer terminal outcome, all packaged/repo updater results, every native selection/hotkey platform route, the complete 4-paste-method x 2-clipboard-policy matrix, and all nine TTS x STT onboarding choices.
 
 The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
 
@@ -52,6 +52,11 @@ The first foundation slice is merged into the existing workflow system:
 - Optional-installer acceptance now launches real child processes and drives success, resolver-failure, and cancellation outcomes through the visible Cancel, Copy log, Open log folder, Restart, and Close controls while verifying retained artifacts.
 - About/diagnostics acceptance now covers installed-version display, every packaged-update check result, download/apply retry and cancellation, every repo-pull result, actual bounded/redacted crash ZIP contents, and the tray-to-supervisor-to-live-Runtime-Status window.
 - Uninstall acceptance now builds both packaged and source plans with production safety validation, verifies every exact confirmation target, and executes the native self-removing helpers only against isolated temporary Wisp app/data/model trees.
+- Cross-platform desktop acceptance now connects native-worker hotkey start/event/stop across Windows RegisterHotKey, Linux pynput, and the macOS Carbon helper; covers macOS AX, Wayland AT-SPI, X11 PRIMARY, and Windows UIA selection; runs every native paste method under both clipboard policies; drives all snip modes and live monitor/DPI translation; verifies real Qt window geometry/chrome; and clicks the log/report/task/add-on/conversation reveal controls before checking every file/folder x desktop command.
+- First-run acceptance now enters the real wizard from the UI host, drives Back/Continue/Finish and the Settings re-entry button, covers every offered interface/assistant language and theme, every provider/model/endpoint/key route, ChatGPT sign-in precedence, all nine TTS x STT choices, the three-platform guidance x open-chat matrix, persisted runtime apply, local-installer scheduling, and suppression after setup completes.
+- Launcher acceptance now executes the platform source launcher and a freshly rebuilt packaged executable. Both must show the real overlay, start four distinct worker processes, complete ping/flow/hotkey startup, shut down in-band, and leave no managed process; every release build runs the packaged smoke before creating its archive.
+- Floating-shell acceptance now drives every icon state under both auto-hide settings, real Qt drag events, and the real tray visibility toggle. A four-worker UI-host workflow triggers the actual Last chat, Memory, Addon Manager, Settings, Runtime Status, and Quit actions, verifies their real target windows/process exit, and opens both ChatGPT and Claude provider controls. Windows, macOS, and Linux login entries are verified in enabled and disabled states against the proven source/packaged launch commands.
+- Intent-action acceptance now opens both production pickers and executes What is this, Explain simply, How do I fix this, Fix grammar, Simplify, and Improve tone through both their assigned keys and their painted clickable rows, asserting the exact configured prompt in all twelve combinations.
 - `tests/workflows/manifest.json` contains all **472 / 472** machine-readable trace/candidate mappings, validated by `tests/test_workflow_manifest.py` against exact inventory text, all **3,296 / 3,296** failure references, and real pytest node IDs. This is not positive feature acceptance coverage.
 - `scripts/generate_workflow_manifest.py` reproducibly expands the inventory using curated test-family pools while preserving hand-verified records. It labels records as `verified`, `direct`, or broader `section` mappings so mapping completeness is not confused with direct workflow maturity.
 - The master runner loads every manifest-referenced file dynamically, and pytest automatically applies the `workflow` marker and runtime collector to every mapped node.

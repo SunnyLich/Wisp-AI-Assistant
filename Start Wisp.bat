@@ -46,6 +46,22 @@ set "VPY=.venv\Scripts\python.exe"
 set "STAMP_FILE=.venv\.wisp-deps.stamp"
 set "REBUILD_VENV=0"
 
+REM CI/diagnostic callers may supply an already-provisioned compatible Python.
+if defined WISP_LAUNCH_PYTHON (
+  set "VPY=%WISP_LAUNCH_PYTHON%"
+  "%WISP_LAUNCH_PYTHON%" "scripts\check_python_version.py" "!WANT!" >nul 2>nul
+  if errorlevel 1 (
+    echo ERROR: WISP_LAUNCH_PYTHON is not Python !WANT!.
+    exit /b 1
+  )
+  call :runtime_deps_ok
+  if errorlevel 1 (
+    echo ERROR: WISP_LAUNCH_PYTHON is missing required runtime dependencies.
+    exit /b 1
+  )
+  goto run
+)
+
 REM Rebuild stale virtual environments created with a different Python version.
 if exist "%VPY%" (
   "%VPY%" "scripts\check_python_version.py" "!WANT!" >nul 2>nul
@@ -131,7 +147,7 @@ call :runtime_deps_ok
 if errorlevel 1 ( echo Installed dependencies, but runtime imports still failed. & pause & exit /b 1 )
 
 :run
-set "WISP_REPO_ROOT=%CD%"
+if not defined WISP_REPO_ROOT set "WISP_REPO_ROOT=%CD%"
 set "PYTHONUNBUFFERED=1"
 "%VPY%" -m runtime.supervisor.app
 exit /b %ERRORLEVEL%

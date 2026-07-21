@@ -190,7 +190,8 @@ class WorkerClient:
         env = os.environ.copy()
         env.update(self.spec.env)
         env.setdefault("PYTHONUNBUFFERED", "1")
-        env.setdefault("WISP_REPO_ROOT", str(data_root()))
+        if "WISP_DATA_ROOT" not in env and "WISP_REPO_ROOT" not in env:
+            env["WISP_DATA_ROOT"] = str(data_root())
         env.setdefault("WISP_SUPERVISOR_PID", str(os.getpid()))
         self._stderr_log_path = self._worker_log_path(env)
         log.info("starting %s: %s", self.spec.name, self.spec.module)

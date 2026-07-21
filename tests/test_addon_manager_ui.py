@@ -8,7 +8,6 @@ widgets, layouts, and window chrome are real and run offscreen.
 """
 from __future__ import annotations
 
-import os
 import sys
 
 import pytest
@@ -583,18 +582,23 @@ def test_addon_dependency_repair_failure_matrix_is_in_band(qapp, fake_manager, m
 
 
 def test_open_addons_folder_uses_shared_reveal_boundary(qapp, monkeypatch, tmp_path):
-    from core.system import file_browser
     import core.system.paths as core_paths
+    from core.system import file_browser
 
     addons_dir = tmp_path / "addons-home"
     monkeypatch.setattr(core_paths, "ADDONS_DIR", addons_dir)
     revealed = []
     monkeypatch.setattr(file_browser, "reveal_path", revealed.append)
 
-    AddonManagerDialog._open_addons_folder()
+    dialog = AddonManagerDialog()
+    try:
+        _button(dialog, "Open addons folder").click()
+        qapp.processEvents()
 
-    assert addons_dir.is_dir()
-    assert revealed == [addons_dir]
+        assert addons_dir.is_dir()
+        assert revealed == [addons_dir]
+    finally:
+        dialog.close()
 
 
 def test_clear_layout_empties_nested_layouts(qapp):

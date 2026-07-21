@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import runpy
@@ -25,6 +26,40 @@ from runtime.supervisor.runtime_log import RuntimeEventLog, RuntimeLogHandler
 
 RUNTIME_LOG_RETENTION_DAYS = 7
 _RUNTIME_LOG_DIR_PREFIXES = ("wisp_runtime_", "wisp_crash_")
+
+
+def _write_launch_smoke_ready(
+    supervisor: WispSupervisor,
+    startup_results: dict[str, object],
+    hotkey_result: dict[str, object],
+) -> bool:
+    """Publish opt-in process-level startup evidence for launcher smoke tests."""
+    configured = str(os.environ.get("WISP_LAUNCH_SMOKE_READY_FILE") or "").strip()
+    if not configured:
+        return False
+    path = Path(configured).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "ready": True,
+        "frozen": bool(getattr(sys, "frozen", False)),
+        "supervisor_pid": os.getpid(),
+        "ui_overlay_shown": True,
+        "flows_started": True,
+        "hotkeys": hotkey_result,
+        "workers": {
+            name: {
+                "pid": worker.pid,
+                "ping_ok": bool(startup_results.get(name)),
+            }
+            for name, worker in supervisor.workers.items()
+        },
+    }
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    temporary.replace(path)
+    logging.info("Wisp launch smoke reached real UI/worker readiness: %s", path)
+    return True
 
 
 def _dispatch_module_mode() -> None:
@@ -209,7 +244,8 @@ def main() -> int:
         import config
         from core.system.autostart import sync_start_on_login
 
-        sync_start_on_login(bool(getattr(config, "START_ON_LOGIN", False)))
+        if os.environ.get("WISP_LAUNCH_SMOKE_DISABLE_AUTOSTART_SYNC") != "1":
+            sync_start_on_login(bool(getattr(config, "START_ON_LOGIN", False)))
     except Exception:
         logging.warning("Could not sync launch-at-login setting", exc_info=True)
     if not single_instance.acquire():
@@ -277,7 +313,7 @@ def main() -> int:
         audio_worker.on_exit(_restart_audio_on_exit)
 
     try:
-        supervisor.start_all()
+        startup_results = supervisor.start_all()
         flows = FlowController(
             native=supervisor.workers["native"],
             ui=supervisor.workers["ui"],
@@ -286,10 +322,16 @@ def main() -> int:
             runtime_log=runtime_log,
         )
         flows.start()
+        hotkey_result: dict[str, object] = {}
         try:
-            flows.start_hotkeys()
+            hotkey_result = flows.start_hotkeys()
         except Exception:
             logging.exception("native hotkeys did not start")
+        if (
+            _write_launch_smoke_ready(supervisor, startup_results, hotkey_result)
+            and os.environ.get("WISP_LAUNCH_SMOKE_EXIT_AFTER_READY") == "1"
+        ):
+            stop.set()
         stop.wait()
     except BaseException:
         if log_mode != "debug":

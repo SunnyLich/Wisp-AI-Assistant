@@ -62,6 +62,10 @@ jobs:
         shell: pwsh
         run: .\tools\build_exe.ps1 -Clean -Yes
 
+      - name: Smoke-test packaged Windows runtime
+        shell: pwsh
+        run: python scripts/run_launcher_smoke.py --kind packaged --timeout 240
+
       - name: Ensure PowerShell Gallery is available
         shell: pwsh
         run: |
@@ -152,6 +156,9 @@ jobs:
       - name: Build Linux artifact
         run: ./tools/build_exe.sh --clean --yes
 
+      - name: Smoke-test packaged Linux runtime
+        run: python scripts/run_launcher_smoke.py --kind packaged --timeout 240
+
       - name: Package Linux artifact
         run: |
           safe_ref="${GITHUB_REF_NAME//\//-}"
@@ -196,6 +203,9 @@ jobs:
 
       - name: Build macOS artifact
         run: ./tools/build_macos_app.sh --clean --yes
+
+      - name: Smoke-test packaged macOS runtime
+        run: python scripts/run_launcher_smoke.py --kind packaged --timeout 240
 
       - name: Package macOS artifact
         run: |

@@ -2327,6 +2327,44 @@ class QtProtocolHost:
         if method == "ui.debug.memory.delete" and os.environ.get("WISP_UI_DEBUG_METHODS"):
             self._memory_manager().delete_fact(str(params.get("id") or params.get("fact_id") or ""))
             return {"emitted": True}
+        if method == "ui.debug.tray.trigger" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            overlay = self._ensure_overlay()
+            requested = str(params.get("label") or "").strip()
+            action = next(
+                (item for item in overlay._tray_menu.actions() if item.text().casefold() == requested.casefold()),
+                None,
+            )
+            if action is None:
+                return {
+                    "triggered": False,
+                    "available": [item.text() for item in overlay._tray_menu.actions() if item.text()],
+                }
+            action.trigger()
+            return {"triggered": True, "label": action.text()}
+        if method == "ui.debug.provider_badge.click" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            overlay = self._ensure_overlay()
+            overlay._provider_badge.click()
+            return {"clicked": True, "provider": overlay._provider_badge_mode()}
+        if method == "ui.debug.shell.snapshot" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            from PySide6.QtWidgets import QApplication
+
+            overlay = self._ensure_overlay()
+            visible = [widget for widget in QApplication.topLevelWidgets() if widget.isVisible()]
+            return {
+                "overlay_state": str(getattr(overlay, "_current_state", "")),
+                "icon_visible": bool(overlay._icon_label.isVisible()),
+                "chat_visible": self._chat_is_visible(),
+                "memory_visible": bool(self._memory_viewer is not None and self._memory_viewer.isVisible()),
+                "addons_visible": bool(self._addons_dialog is not None and self._addons_dialog.isVisible()),
+                "runtime_status_visible": bool(
+                    self._runtime_status_dialog is not None and self._runtime_status_dialog.isVisible()
+                ),
+                "settings_visible": any(type(widget).__name__ == "SettingsDialog" for widget in visible),
+                "provider_controls_visible": any(
+                    type(widget).__name__ == "HarnessControlsDialog" for widget in visible
+                ),
+                "visible_window_titles": [widget.windowTitle() for widget in visible],
+            }
         if method == "ui.reload_config":
             return self._reload_config()
         if method == "ui.show_overlay":

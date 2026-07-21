@@ -535,8 +535,10 @@ def test_agent_run_folder_actions_use_controlled_reveal_helper(tmp_path, monkeyp
         lambda _parent, _title, path: calls.append(str(path)) or True,
     )
     try:
-        window._open_result_folder()
-        window._open_scope_folder()
+        window.open_result_btn.setEnabled(True)
+        window.open_result_btn.click()
+        window.open_scope_btn.click()
+        app.processEvents()
 
         assert calls == [str(run_dir), spec.scope_folder]
     finally:

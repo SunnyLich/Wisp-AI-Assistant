@@ -925,7 +925,14 @@ def test_chat_browse_conversation_files_persists_then_reveals_record(
         persist_fn=lambda: persisted.append(True),
     )
     try:
-        window._browse_conversation_files(0)
+        window._open_conversation_menu(0)
+        browse_action = next(
+            action
+            for action in window._conversation_menu.actions()
+            if action.text() == chat_window_mod.t("Browse conversation files")
+        )
+        browse_action.trigger()
+        app.processEvents()
 
         assert persisted == [True]
         assert revealed == [record]

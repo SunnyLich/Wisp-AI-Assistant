@@ -2,11 +2,161 @@
   "schema_version": 1,
   "overrides": [
     {
+      "function_id": "F001",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "fresh PyInstaller artifact -> Wisp executable -> frozen supervisor dispatch -> real UI/native/brain/audio workers",
+      "test_node_ids": ["tests/test_launcher_acceptance.py::test_packaged_launcher_starts_real_ui_workers_and_cleans_up"],
+      "success_assertions": ["A freshly built packaged executable shows the real overlay, receives successful pings from four distinct worker processes, starts flows/hotkeys, exits cleanly, and leaves no managed process behind."],
+      "audit_note": "The release build for Windows, Linux, and macOS now runs the same process-level smoke before packaging; the local Windows artifact was rebuilt and executed successfully.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I040"]
+    },
+    {
+      "function_id": "F002",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "platform Start Wisp development launcher -> runtime.supervisor.app -> real UI/native/brain/audio workers",
+      "test_node_ids": ["tests/test_launcher_acceptance.py::test_source_development_launcher_starts_real_ui_workers_and_cleans_up"],
+      "success_assertions": ["The platform source launcher uses a compatible provisioned Python, shows the real overlay, receives successful pings from four distinct worker processes, starts flows/hotkeys, exits cleanly, and leaves no managed process behind."],
+      "audit_note": "Writable data, user state, add-ons, and the single-instance lock are isolated without replacing the production launcher or supervisor path.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I040"]
+    },
+    {
+      "function_id": "F003",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "runtime.supervisor.app.main -> core.system.single_instance.acquire",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"],
+      "success_assertions": ["When the application lock is already held, the second supervisor exits with the duplicate-instance code before constructing or starting any worker."],
+      "audit_note": "The single-instance decision and supervisor entry are production code; the pre-held OS lock result is the deterministic boundary.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F004",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "First overlay frame -> UI-host fresh-install decision -> OnboardingWizard, plus production setup-check probe",
+      "test_node_ids": [
+        "tests/test_onboarding_acceptance.py::test_first_overlay_launch_runs_real_wizard_applies_profile_and_opens_chat",
+        "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_runtime_requirements_accepts_project_requirements_txt"
+      ],
+      "success_assertions": ["A fresh state opens the real wizard after the overlay startup entry, completes setup, does not reopen once marked complete, and the production runtime/dependency checks return structured results for the installed environment."],
+      "audit_note": "The source launcher dependency installer itself remains external to this UI workflow, but both the actual fresh-start gate and reusable dependency/runtime probes execute.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I035"]
+    },
+    {
       "function_id": "F005",
-      "acceptance_status": "component_only",
-      "test_node_ids": ["tests/test_profile_user_workflows.py::test_first_run_wizard_profile_is_active_in_runtime_and_visible_in_settings"],
-      "audit_note": "The wizard itself is exercised, but Settings does not open it through the real Settings action.",
-      "dependency_status": "pending"
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Run profile setup button -> visible OnboardingWizard",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_profile_setup_button_opens_real_wizard_and_dirty_settings_block_it",
+        "tests/test_profile_user_workflows.py::test_first_run_wizard_profile_is_active_in_runtime_and_visible_in_settings"
+      ],
+      "success_assertions": ["A clean Settings dialog opens the real wizard through its visible button, while unsaved settings block the action; a completed wizard profile is persisted and visible after runtime reload."],
+      "audit_note": "The earlier component-only audit was stale: the Settings entry button is now exercised directly.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F006",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding Back and Continue buttons -> simple/advanced page sequence",
+      "test_node_ids": [
+        "tests/test_onboarding_acceptance.py::test_first_overlay_launch_runs_real_wizard_applies_profile_and_opens_chat",
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
+      ],
+      "success_assertions": ["Back returns from the name page to mode selection, Continue resumes it, advanced mode includes the provider page, and simple mode skips it without breaking later pages."],
+      "audit_note": "Navigation is driven through real Qt buttons in both page sequences.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I036"]
+    },
+    {
+      "function_id": "F007",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding Wisp interface language combo -> live preview -> Finish setup persistence",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"],
+      "success_assertions": ["Every interface-language option, including system default, survives Finish; every non-default choice invokes the live language preview route."],
+      "audit_note": "All options exposed by LANGUAGE_OPTIONS are selected through the real combo.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F008",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding Assistant response language combo -> Finish setup -> isolated settings file",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"],
+      "success_assertions": ["System default, match-user, and every named assistant-language option persist exactly."],
+      "audit_note": "All twelve values displayed by the wizard are exercised.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F009",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding Theme combo -> live app-theme preview -> Finish setup persistence",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"],
+      "success_assertions": ["System, Light, and Dark each persist; Light and Dark invoke their normal live-preview path while System remains the already-selected default."],
+      "audit_note": "The palette renderer is the deterministic Qt boundary; selection and persistence are production.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F010",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Advanced setup provider/model/endpoint/key controls -> keychain boundary and named profile persistence",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"],
+      "success_assertions": ["Every provider offered by the wizard accepts an editable model; every key-backed provider routes the exact key name/value to secure storage; custom persists its HTTPS endpoint; Ollama correctly stores no key."],
+      "audit_note": "All current _PROVIDER_DEFAULTS entries run through real controls; only the OS keychain write is captured.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I036", "I037"]
+    },
+    {
+      "function_id": "F011",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding Sign in with ChatGPT button -> browser OAuth callback/token check -> profile route",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"],
+      "success_assertions": ["A successful sign-in changes the visible button to Connected and selects ChatGPT when no explicit provider was chosen; an explicit provider retains precedence; skipping sign-in performs no browser launch."],
+      "audit_note": "The browser/token service is deterministic; button, polling state, and provider precedence are real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I037"]
+    },
+    {
+      "function_id": "F012",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding reply-voice combo -> saved preference and optional staged installer request",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_tts_by_stt_full_choice_matrix"],
+      "success_assertions": ["None, local Kokoro, and cloud TTS each persist correctly across every STT choice; local routes to the correct Kokoro or combined installer plan."],
+      "audit_note": "The complete TTS x STT Cartesian product is exercised through visible controls.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I038"]
+    },
+    {
+      "function_id": "F013",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding speech-input combo -> saved preference and optional staged installer request",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_tts_by_stt_full_choice_matrix"],
+      "success_assertions": ["None, local Whisper, and cloud/live voice each persist correctly across every TTS choice; local routes to the correct STT or combined installer plan."],
+      "audit_note": "The complete TTS x STT Cartesian product is exercised through visible controls.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I038"]
+    },
+    {
+      "function_id": "F014",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Open a new chat after setup checkbox -> UI-host onboarding completion -> _show_chat(force_new=True)",
+      "test_node_ids": [
+        "tests/test_onboarding_acceptance.py::test_first_overlay_launch_runs_real_wizard_applies_profile_and_opens_chat",
+        "tests/test_onboarding_acceptance.py::test_onboarding_trial_guidance_and_open_chat_decision_matrix"
+      ],
+      "success_assertions": ["Checked schedules exactly one forced-new chat after runtime apply; unchecked completes without requesting chat on Windows, macOS, and Linux guidance variants."],
+      "audit_note": "Only the downstream chat window construction is captured in the UI-host chain; checkbox routing and Qt timer are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I035", "I039"]
+    },
+    {
+      "function_id": "F015",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding ready page -> platform-specific trial guidance label",
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_trial_guidance_and_open_chat_decision_matrix"],
+      "success_assertions": ["Windows displays Ctrl+Q; macOS and Linux display Ctrl+Alt+Space; every variant also explains F9 voice and F7 read-aloud, independent of first-chat choice."],
+      "audit_note": "The full 3-platform x 2-open-chat matrix is rendered by the real ready page.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I039"]
     },
     {
       "function_id": "F016",
@@ -16,6 +166,224 @@
       "success_assertions": ["UI, native, brain, and audio workers start, answer ping, and remain isolated."],
       "audit_note": "Uses the real supervisor and four real worker subprocesses.",
       "dependency_status": "pending"
+    },
+    {
+      "function_id": "F018",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "OverlaySignals.set_state -> IconOverlay._on_state_changed -> floating/tray icon sprites",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "success_assertions": ["Idle, listening, thinking, and speaking each update the real floating icon through the production signal under both auto-hide states."],
+      "audit_note": "The complete four-state by two-auto-hide matrix is exercised on real Qt widgets.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I041"]
+    },
+    {
+      "function_id": "F019",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "floating icon Qt mouse press/move/release -> IconOverlay.eventFilter drag path",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "success_assertions": ["A real drag moves the floating icon and repositions its provider badge and context panel by the same delta."],
+      "audit_note": "Synthetic Qt mouse events enter the exact installed event filter; no geometry helper is called directly.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I042"]
+    },
+    {
+      "function_id": "F020",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "OverlaySignals.hide_icon -> icon backstop timer -> guarded auto-hide slot",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "success_assertions": ["Auto-hide keeps idle hidden, reveals every active state, starts the real backstop timer, and hides the icon when it expires."],
+      "audit_note": "Auto-hide and state are tested as a full 2 x 4 behavior matrix.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I041"]
+    },
+    {
+      "function_id": "F021",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "tray Hide/Show icon QAction -> IconOverlay._toggle_icon",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "success_assertions": ["Triggering the real tray QAction hides the icon, changes its label to Show icon, and restores the icon on the next trigger."],
+      "audit_note": "The test triggers QAction.trigger rather than invoking the toggle slot.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F022",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real UI-worker Last chat tray QAction -> show_last_chat signal -> QtProtocolHost._show_chat",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["The real Last chat action makes the production ChatWindow visible in a four-worker runtime."],
+      "audit_note": "Runs for both external-provider modes through real IPC workers.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F023",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real UI-worker Memory tray QAction -> supervisor FlowController.open_memory -> MemoryViewer",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["The Memory QAction crosses UI event IPC and the real brain memory-list call before the MemoryViewer becomes visible."],
+      "audit_note": "Uses real UI and brain workers, not a signal recorder.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F024",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real UI-worker Addon Manager tray QAction -> supervisor FlowController.open_addons -> add-on dialog",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["The Addon Manager QAction crosses UI event IPC and the real brain add-on-list call before the manager becomes visible."],
+      "audit_note": "Uses real UI and brain workers, not the singleton helper alone.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F025",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real UI-worker Settings tray QAction -> supervisor FlowController.open_settings -> SettingsDialog",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["The real Settings QAction crosses UI event IPC and makes the production SettingsDialog visible."],
+      "audit_note": "The menu action itself is triggered inside the real UI worker.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F026",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible provider badge QPushButton -> IconOverlay._open_harness_controls -> HarnessControlsDialog",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["Clicking the real provider badge opens ChatGPT controls in Codex mode and Claude controls in Claude mode."],
+      "audit_note": "Both behaviorally distinct provider badge modes run in separate real four-worker runtimes.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I042"]
+    },
+    {
+      "function_id": "F027",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real UI-worker Runtime Status tray QAction -> supervisor snapshot -> live runtime diagnostics dialog",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["The Runtime Status QAction crosses supervisor IPC and displays the live diagnostics window while all workers are active."],
+      "audit_note": "This is the supported pure-Python UI-host path.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F028",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real UI-worker Quit tray QAction -> QApplication.quit -> UI worker exit",
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "success_assertions": ["Triggering the real Quit QAction exits the actual UI worker, after which supervisor shutdown leaves no remaining worker."],
+      "audit_note": "The test observes the process exit rather than a mocked quit callback.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F029",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "sync_start_on_login -> Windows HKCU Run / macOS LaunchAgent / Linux XDG autostart entry",
+      "test_node_ids": [
+        "tests/test_autostart.py::test_windows_start_on_login_writes_and_removes_run_value",
+        "tests/test_autostart.py::test_linux_start_on_login_writes_xdg_desktop_file",
+        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent",
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
+      ],
+      "success_assertions": ["Every supported OS writes an enabled login entry with the Wisp launch command and removes it when disabled; source and packaged modes select their proven launch entries."],
+      "audit_note": "OS persistence is isolated/faked only at the registry boundary; the command selection is production code and links to F001/F002 launcher acceptance.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I043"]
+    },
+    {
+      "function_id": "F032",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay(caller_idx=0) general picker construction/show",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The production general picker is visible and all of its built-in action rows can be selected by key and click."],
+      "audit_note": "Real Qt widgets and events are used.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I044", "I045"]
+    },
+    {
+      "function_id": "F033",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "general IntentOverlay What is this row",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The real row emits the exact configured What is this prompt by both input methods."],
+      "audit_note": "Exact configured prompt and glyph are asserted.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I044", "I045"]
+    },
+    {
+      "function_id": "F034",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "general IntentOverlay Explain simply row",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The real row emits the exact configured Explain simply prompt by both input methods."],
+      "audit_note": "Exact configured prompt and glyph are asserted.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I044", "I045"]
+    },
+    {
+      "function_id": "F035",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "general IntentOverlay How do I fix this row",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The real row emits the exact configured repair prompt by both input methods."],
+      "audit_note": "Exact configured prompt and glyph are asserted.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I044", "I045"]
+    },
+    {
+      "function_id": "F036",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay(caller_idx=1) rewrite/paste picker construction/show",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The production rewrite picker is visible and all of its built-in action rows can be selected by key and click."],
+      "audit_note": "Real Qt widgets and events are used.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I046", "I047"]
+    },
+    {
+      "function_id": "F037",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "rewrite IntentOverlay Fix grammar row",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The real row emits the exact configured Fix grammar prompt by both input methods."],
+      "audit_note": "Exact configured prompt and glyph are asserted.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I046", "I047"]
+    },
+    {
+      "function_id": "F038",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "rewrite IntentOverlay Simplify row",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The real row emits the exact configured Simplify prompt by both input methods."],
+      "audit_note": "Exact configured prompt and glyph are asserted.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I046", "I047"]
+    },
+    {
+      "function_id": "F039",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "rewrite IntentOverlay Improve tone row",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["The real row emits the exact configured Improve tone prompt by both input methods."],
+      "audit_note": "Exact configured prompt and glyph are asserted.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I046", "I047"]
+    },
+    {
+      "function_id": "F041",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible IntentOverlay.keyPressEvent -> assigned row glyph -> delayed _fire",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["Every general and rewrite built-in runs from its assigned single-key shortcut."],
+      "audit_note": "Twelve total matrix selections cover key and click methods.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I044", "I046"]
+    },
+    {
+      "function_id": "F042",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible IntentOverlay.mousePressEvent -> painted row hit-test -> delayed _fire",
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "success_assertions": ["Every general and rewrite built-in runs by clicking its actual painted row."],
+      "audit_note": "QTest clicks the row rectangle; the selection helper is not invoked directly.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I045", "I047"]
     },
     {
       "function_id": "F030",
@@ -714,6 +1082,137 @@
       "audit_note": "Credential deletion and detached-process creation are deterministic boundaries; rendered helpers execute synchronously for proof and clean up isolated targets.",
       "dependency_status": "audited",
       "interaction_ids": ["I025"]
+    },
+    {
+      "function_id": "F463",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "native.hotkeys.start -> platform backend registration -> native.hotkey worker event -> native.hotkeys.stop",
+      "test_node_ids": [
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_direct_platform_runtime_event_matrix",
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
+      ],
+      "success_assertions": ["Windows RegisterHotKey, Linux pynput, and the macOS Carbon helper routes each start through the production native entry, deliver the registered action as a native.hotkey event, and cleanly release their backend."],
+      "audit_note": "Only the actual OS registration/event source is deterministic; binding construction, backend selection, helper protocol, worker event conversion, and lifetime are real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I026", "I027", "I028"]
+    },
+    {
+      "function_id": "F464",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "native.selected_text -> macOS AX / Linux Wayland AT-SPI / Linux X11 PRIMARY / Windows UIA route",
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix"],
+      "success_assertions": ["The public native selection entry returns the exact focused selection through all four supported accessibility routes without falling into clipboard injection."],
+      "audit_note": "Accessibility frameworks and desktop selection owners are the external boundaries; the production platform decision tree runs unchanged.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I029", "I030", "I031"]
+    },
+    {
+      "function_id": "F465",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "native.paste_text -> platform focus/selection target -> clipboard write -> paste -> optional original-clipboard restore",
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix"],
+      "success_assertions": ["For Linux clipboard injection, Windows anchored UIA, macOS direct AX, and macOS clipboard injection, both restore-disabled and restore-enabled policies preserve the documented clipboard result."],
+      "audit_note": "The 4 x 2 matrix proves the restore policy at every paste branch; direct AX correctly never reads or mutates the clipboard.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I032"]
+    },
+    {
+      "function_id": "F466",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "native.paste_text -> previously captured PID or accessibility focus token -> target input method",
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix"],
+      "success_assertions": ["Generated text is delivered through Linux focus plus paste, Windows cached UIA range, macOS cached AX element, and macOS app activation plus Cmd+V, under both clipboard policies."],
+      "audit_note": "OS focus, clipboard, and synthetic-key calls are captured external boundaries; target selection and paste sequencing are production code.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I032"]
+    },
+    {
+      "function_id": "F467",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Snip overlay area/app/full controls -> emitted capture region with live virtual-desktop origin and monitor DPR",
+      "test_node_ids": [
+        "tests/test_snip_overlay.py::test_drag_selection_emits_scaled_region_and_closes",
+        "tests/test_snip_overlay.py::test_toolbar_app_mode_emits_app_region_copy",
+        "tests/test_snip_overlay.py::test_toolbar_full_screen_mode_captures_virtual_desktop",
+        "tests/test_snip_overlay.py::test_region_for_darwin_uses_logical_points",
+        "tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"
+      ],
+      "success_assertions": ["Area drag, app target, and full virtual desktop produce usable regions; live negative/positive monitor origins and 1x/2x DPR changes are read at selection time, while macOS remains in logical points."],
+      "audit_note": "The real Qt overlay and visible capture-mode controls run offscreen; only the physical monitor topology is modeled.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I033", "I034"]
+    },
+    {
+      "function_id": "F468",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "macOS native worker route -> Carbon helper / AX selection / AX paste or activation-plus-Cmd+V",
+      "test_node_ids": [
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup",
+        "tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix",
+        "tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix",
+        "tests/test_snip_overlay.py::test_region_for_darwin_uses_logical_points"
+      ],
+      "success_assertions": ["The helper process reports ready, forwards an event, and terminates; AX selection and in-place paste work, fallback activation plus Cmd+V works, and capture coordinates stay in macOS logical points."],
+      "audit_note": "Carbon, ApplicationServices, Quartz, and AppKit are external OS boundaries; every Wisp helper/protocol and fallback decision is real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I026", "I029", "I033"]
+    },
+    {
+      "function_id": "F469",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Linux native worker route -> pynput hotkeys / Wayland AT-SPI selection / X11 PRIMARY selection",
+      "test_node_ids": [
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_direct_platform_runtime_event_matrix",
+        "tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix",
+        "tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix"
+      ],
+      "success_assertions": ["Linux selects and starts its pynput backend, emits the registered event, reads focused text through both Wayland AT-SPI and X11 PRIMARY, and pastes to the captured external target."],
+      "audit_note": "The display server and input hook are deterministic boundaries; Linux session routing and Wisp event/paste behavior are real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I027", "I030", "I032"]
+    },
+    {
+      "function_id": "F470",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Windows native worker route -> RegisterHotKey / UIA selected range / clipboard and paste",
+      "test_node_ids": [
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_direct_platform_runtime_event_matrix",
+        "tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix",
+        "tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix",
+        "tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"
+      ],
+      "success_assertions": ["Windows selects its RegisterHotKey backend, emits the registered action, reads UIA selection, reselects the captured UIA range before paste, obeys both clipboard policies, and translates live monitor origin/DPR changes."],
+      "audit_note": "Win32/UIAutomation/clipboard calls are external boundaries; Wisp's anchored-control and multi-monitor logic remains real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I028", "I031", "I032", "I034"]
+    },
+    {
+      "function_id": "F471",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Real top-level Qt surfaces -> shared window chrome and fit_window_to_screen -> title-bar controls",
+      "test_node_ids": [
+        "tests/test_window_chrome.py::test_text_popup_uses_standard_window_controls",
+        "tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"
+      ],
+      "success_assertions": ["An oversized off-screen popup is fitted within the current screen, survives replacement after destruction, contains window-manager refusal, and exposes working minimize, maximize, and close controls."],
+      "audit_note": "Real Qt top-level windows are shown offscreen; native window-manager move/pinning refusal is the captured desktop boundary.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F472",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible log/report/task/add-on controls and conversation menu action -> shared OS reveal boundary",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix",
+        "tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip",
+        "tests/test_agent_task_window_layout.py::test_agent_run_folder_actions_use_controlled_reveal_helper",
+        "tests/test_addon_manager_ui.py::test_open_addons_folder_uses_shared_reveal_boundary",
+        "tests/test_chat_window_render_limits.py::test_chat_browse_conversation_files_persists_then_reveals_record",
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix"
+      ],
+      "success_assertions": ["The actual Open-log, crash-report, task result/scope, Open add-ons, and Browse conversation actions route their exact existing targets; every file/folder x Windows/macOS/Linux case produces the correct native command."],
+      "audit_note": "Qt controls and target selection are real; process creation for Explorer, Finder, or xdg-open is captured to keep CI deterministic.",
+      "dependency_status": "audited"
     }
   ]
 }

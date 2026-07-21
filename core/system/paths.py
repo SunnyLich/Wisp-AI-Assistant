@@ -17,6 +17,11 @@ def _user_data_dir() -> Path:
     Windows: %APPDATA%\\Wisp
     macOS:   ~/Library/Application Support/Wisp
     """
+    override = os.environ.get("WISP_USER_DATA_DIR")
+    if override:
+        path = Path(override).expanduser()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
         return base / _APP_NAME
@@ -60,7 +65,7 @@ def _writable_dir(path: Path) -> bool:
 
 def _repo_root() -> Path:
     """Return the repo root in dev mode; user data dir when frozen."""
-    override = os.environ.get("WISP_REPO_ROOT")
+    override = os.environ.get("WISP_DATA_ROOT") or os.environ.get("WISP_REPO_ROOT")
     if override:
         d = Path(override).expanduser()
         d.mkdir(parents=True, exist_ok=True)

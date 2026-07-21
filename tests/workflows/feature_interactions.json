@@ -444,6 +444,363 @@
       ],
       "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"],
       "status": "accepted"
+    },
+    {
+      "interaction_id": "I026",
+      "source_function_id": "F463",
+      "target_function_id": "F468",
+      "description": "Selecting the macOS hotkey route changes registration ownership to the Carbon helper protocol.",
+      "source_states": ["helper_ready", "registered_event", "shutdown"],
+      "target_states": ["macos_helper_lifecycle"],
+      "cases": [
+        {"source_state": "helper_ready", "target_state": "macos_helper_lifecycle", "expected_result": "The native entry accepts the helper readiness status and retains the live helper."},
+        {"source_state": "registered_event", "target_state": "macos_helper_lifecycle", "expected_result": "The helper JSON event becomes the exact native.hotkey add-on event."},
+        {"source_state": "shutdown", "target_state": "macos_helper_lifecycle", "expected_result": "The native stop entry terminates and forgets the helper."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I027",
+      "source_function_id": "F463",
+      "target_function_id": "F469",
+      "description": "Selecting the Linux desktop route changes hotkey registration to the pynput backend while retaining native-worker event semantics.",
+      "source_states": ["caller_binding", "addon_binding", "shutdown"],
+      "target_states": ["linux_pynput_lifecycle"],
+      "cases": [
+        {"source_state": "caller_binding", "target_state": "linux_pynput_lifecycle", "expected_result": "The configured caller binding emits its caller index."},
+        {"source_state": "addon_binding", "target_state": "linux_pynput_lifecycle", "expected_result": "The registered add-on binding emits its add-on and hotkey IDs."},
+        {"source_state": "shutdown", "target_state": "linux_pynput_lifecycle", "expected_result": "The selected pynput backend stops and is forgotten."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_hotkey_direct_platform_runtime_event_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I028",
+      "source_function_id": "F463",
+      "target_function_id": "F470",
+      "description": "Selecting the Windows desktop route changes hotkey registration to RegisterHotKey while retaining native-worker event semantics.",
+      "source_states": ["caller_binding", "addon_binding", "shutdown"],
+      "target_states": ["windows_register_hotkey_lifecycle"],
+      "cases": [
+        {"source_state": "caller_binding", "target_state": "windows_register_hotkey_lifecycle", "expected_result": "The configured caller binding emits its caller index."},
+        {"source_state": "addon_binding", "target_state": "windows_register_hotkey_lifecycle", "expected_result": "The registered add-on binding emits its add-on and hotkey IDs."},
+        {"source_state": "shutdown", "target_state": "windows_register_hotkey_lifecycle", "expected_result": "The selected RegisterHotKey backend stops and is forgotten."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_hotkey_direct_platform_runtime_event_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I029",
+      "source_function_id": "F464",
+      "target_function_id": "F468",
+      "description": "On macOS, native focused-text capture prefers Accessibility selected text without injecting clipboard shortcuts.",
+      "source_states": ["ax_selection_available"],
+      "target_states": ["macos_accessibility_route"],
+      "cases": [
+        {"source_state": "ax_selection_available", "target_state": "macos_accessibility_route", "expected_result": "native.selected_text returns the AX selection directly."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I030",
+      "source_function_id": "F464",
+      "target_function_id": "F469",
+      "description": "The Linux display session determines whether focused text comes from Wayland AT-SPI or X11 PRIMARY.",
+      "source_states": ["wayland_session", "x11_session"],
+      "target_states": ["linux_accessibility_route"],
+      "cases": [
+        {"source_state": "wayland_session", "target_state": "linux_accessibility_route", "expected_result": "native.selected_text returns the focused AT-SPI selection."},
+        {"source_state": "x11_session", "target_state": "linux_accessibility_route", "expected_result": "native.selected_text returns the active-owner PRIMARY selection."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I031",
+      "source_function_id": "F464",
+      "target_function_id": "F470",
+      "description": "On Windows, native focused-text capture uses UI Automation when clipboard fallback is disabled.",
+      "source_states": ["uia_selection_available"],
+      "target_states": ["windows_focused_control_route"],
+      "cases": [
+        {"source_state": "uia_selection_available", "target_state": "windows_focused_control_route", "expected_result": "native.selected_text returns the UIA selection directly."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I032",
+      "source_function_id": "F465",
+      "target_function_id": "F466",
+      "description": "Clipboard retention policy affects every generated-text paste method.",
+      "source_states": ["leave_generated_text", "restore_original_text"],
+      "target_states": ["linux_clipboard", "windows_uia", "macos_ax", "macos_clipboard"],
+      "cases": [
+        {"source_state": "leave_generated_text", "target_state": "linux_clipboard", "expected_result": "The reply is pasted and remains on the clipboard."},
+        {"source_state": "restore_original_text", "target_state": "linux_clipboard", "expected_result": "The reply is pasted and the original clipboard is restored."},
+        {"source_state": "leave_generated_text", "target_state": "windows_uia", "expected_result": "The cached UIA range is selected and receives the reply without a restore write."},
+        {"source_state": "restore_original_text", "target_state": "windows_uia", "expected_result": "The cached UIA range receives the reply and the original clipboard is restored."},
+        {"source_state": "leave_generated_text", "target_state": "macos_ax", "expected_result": "AX writes in place and never touches the clipboard."},
+        {"source_state": "restore_original_text", "target_state": "macos_ax", "expected_result": "AX still writes in place without an unnecessary clipboard read or write."},
+        {"source_state": "leave_generated_text", "target_state": "macos_clipboard", "expected_result": "The target app activates, receives Cmd+V, and the reply remains on the clipboard."},
+        {"source_state": "restore_original_text", "target_state": "macos_clipboard", "expected_result": "The target app receives Cmd+V and the original clipboard is restored."}
+      ],
+      "test_node_ids": ["tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I033",
+      "source_function_id": "F468",
+      "target_function_id": "F467",
+      "description": "macOS logical-point screen coordinates determine the capture region passed to the native capture backend.",
+      "source_states": ["macos_logical_points"],
+      "target_states": ["selected_capture_region"],
+      "cases": [
+        {"source_state": "macos_logical_points", "target_state": "selected_capture_region", "expected_result": "The selected rectangle includes the virtual origin but is not multiplied by display scale."}
+      ],
+      "test_node_ids": ["tests/test_snip_overlay.py::test_region_for_darwin_uses_logical_points"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I034",
+      "source_function_id": "F470",
+      "target_function_id": "F467",
+      "description": "Windows monitor origin and live DPI determine the physical capture region emitted by the overlay.",
+      "source_states": ["negative_origin_1x", "positive_origin_2x"],
+      "target_states": ["selected_capture_region"],
+      "cases": [
+        {"source_state": "negative_origin_1x", "target_state": "selected_capture_region", "expected_result": "The region uses the negative virtual origin at 1x scale."},
+        {"source_state": "positive_origin_2x", "target_state": "selected_capture_region", "expected_result": "The same logical rectangle is recomputed with the new origin and doubled physical size."}
+      ],
+      "test_node_ids": ["tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I035",
+      "source_function_id": "F004",
+      "target_function_id": "F014",
+      "description": "First-run completion state and the final checkbox determine whether setup appears and whether it opens a new chat.",
+      "source_states": ["fresh_open_chat", "fresh_no_chat", "already_complete"],
+      "target_states": ["first_chat_request"],
+      "cases": [
+        {"source_state": "fresh_open_chat", "target_state": "first_chat_request", "expected_result": "The fresh-install wizard completes, applies settings, and requests one forced-new chat."},
+        {"source_state": "fresh_no_chat", "target_state": "first_chat_request", "expected_result": "The fresh-install wizard completes without requesting a chat."},
+        {"source_state": "already_complete", "target_state": "first_chat_request", "expected_result": "The automatic wizard does not reopen and no first-chat request occurs."}
+      ],
+      "test_node_ids": [
+        "tests/test_onboarding_acceptance.py::test_first_overlay_launch_runs_real_wizard_applies_profile_and_opens_chat",
+        "tests/test_onboarding_acceptance.py::test_onboarding_trial_guidance_and_open_chat_decision_matrix"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I036",
+      "source_function_id": "F006",
+      "target_function_id": "F010",
+      "description": "Simple versus advanced navigation determines whether provider configuration is part of the setup path.",
+      "source_states": ["simple_setup", "advanced_setup"],
+      "target_states": ["provider_page_route"],
+      "cases": [
+        {"source_state": "simple_setup", "target_state": "provider_page_route", "expected_result": "Continue skips the provider page and reaches optional sign-in."},
+        {"source_state": "advanced_setup", "target_state": "provider_page_route", "expected_result": "Continue includes the provider/model/endpoint/key page before optional sign-in."}
+      ],
+      "test_node_ids": [
+        "tests/test_onboarding_acceptance.py::test_first_overlay_launch_runs_real_wizard_applies_profile_and_opens_chat",
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I037",
+      "source_function_id": "F010",
+      "target_function_id": "F011",
+      "description": "An explicit provider choice changes whether a successful ChatGPT sign-in owns the final model route.",
+      "source_states": ["explicit_provider_and_oauth", "oauth_only", "neither"],
+      "target_states": ["persisted_profile_provider"],
+      "cases": [
+        {"source_state": "explicit_provider_and_oauth", "target_state": "persisted_profile_provider", "expected_result": "The explicit provider remains selected despite successful sign-in."},
+        {"source_state": "oauth_only", "target_state": "persisted_profile_provider", "expected_result": "The completed ChatGPT sign-in selects the ChatGPT provider."},
+        {"source_state": "neither", "target_state": "persisted_profile_provider", "expected_result": "No browser opens and the new personal profile retains its normal default provider."}
+      ],
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I038",
+      "source_function_id": "F012",
+      "target_function_id": "F013",
+      "description": "TTS and STT preferences jointly determine whether setup starts no installer, one local installer, or the combined speech installer.",
+      "source_states": ["tts_none", "tts_local", "tts_cloud"],
+      "target_states": ["stt_none", "stt_local", "stt_cloud"],
+      "cases": [
+        {"source_state": "tts_none", "target_state": "stt_none", "expected_result": "Both preferences persist and no installer is scheduled."},
+        {"source_state": "tts_none", "target_state": "stt_local", "expected_result": "The STT preference persists and the Whisper preparation plan is scheduled."},
+        {"source_state": "tts_none", "target_state": "stt_cloud", "expected_result": "Both preferences persist and no local installer is scheduled."},
+        {"source_state": "tts_local", "target_state": "stt_none", "expected_result": "The TTS preference persists and the Kokoro preparation plan is scheduled."},
+        {"source_state": "tts_local", "target_state": "stt_local", "expected_result": "Both local preferences persist and one combined speech preparation plan is scheduled."},
+        {"source_state": "tts_local", "target_state": "stt_cloud", "expected_result": "Both preferences persist and only the Kokoro preparation plan is scheduled."},
+        {"source_state": "tts_cloud", "target_state": "stt_none", "expected_result": "Both preferences persist and no local installer is scheduled."},
+        {"source_state": "tts_cloud", "target_state": "stt_local", "expected_result": "Both preferences persist and only the Whisper preparation plan is scheduled."},
+        {"source_state": "tts_cloud", "target_state": "stt_cloud", "expected_result": "Both cloud preferences persist and no local installer is scheduled."}
+      ],
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_tts_by_stt_full_choice_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I039",
+      "source_function_id": "F015",
+      "target_function_id": "F014",
+      "description": "Platform-specific shortcut guidance must not change the user's independent first-chat choice.",
+      "source_states": ["windows_guidance", "macos_guidance", "linux_guidance"],
+      "target_states": ["leave_chat_closed", "open_new_chat"],
+      "cases": [
+        {"source_state": "windows_guidance", "target_state": "leave_chat_closed", "expected_result": "Ctrl+Q guidance renders and completion reports false."},
+        {"source_state": "windows_guidance", "target_state": "open_new_chat", "expected_result": "Ctrl+Q guidance renders and completion reports true."},
+        {"source_state": "macos_guidance", "target_state": "leave_chat_closed", "expected_result": "Ctrl+Alt+Space guidance renders and completion reports false."},
+        {"source_state": "macos_guidance", "target_state": "open_new_chat", "expected_result": "Ctrl+Alt+Space guidance renders and completion reports true."},
+        {"source_state": "linux_guidance", "target_state": "leave_chat_closed", "expected_result": "Ctrl+Alt+Space guidance renders and completion reports false."},
+        {"source_state": "linux_guidance", "target_state": "open_new_chat", "expected_result": "Ctrl+Alt+Space guidance renders and completion reports true."}
+      ],
+      "test_node_ids": ["tests/test_onboarding_acceptance.py::test_onboarding_trial_guidance_and_open_chat_decision_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I040",
+      "source_function_id": "F001",
+      "target_function_id": "F002",
+      "description": "Packaged versus source launch mode changes executable/module dispatch and code/data roots while preserving the same ready UI and four-worker runtime contract.",
+      "source_states": ["packaged_frozen", "source_checkout"],
+      "target_states": ["ready_runtime", "clean_shutdown"],
+      "cases": [
+        {"source_state": "packaged_frozen", "target_state": "ready_runtime", "expected_result": "The frozen executable dispatches all four bundled worker modules and shows the overlay."},
+        {"source_state": "packaged_frozen", "target_state": "clean_shutdown", "expected_result": "The packaged supervisor stops all bundled workers with no survivor."},
+        {"source_state": "source_checkout", "target_state": "ready_runtime", "expected_result": "The platform development launcher starts all four source workers and shows the overlay with isolated writable data."},
+        {"source_state": "source_checkout", "target_state": "clean_shutdown", "expected_result": "The source supervisor stops all workers with no survivor."}
+      ],
+      "test_node_ids": [
+        "tests/test_launcher_acceptance.py::test_packaged_launcher_starts_real_ui_workers_and_cleans_up",
+        "tests/test_launcher_acceptance.py::test_source_development_launcher_starts_real_ui_workers_and_cleans_up"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I041",
+      "source_function_id": "F018",
+      "target_function_id": "F020",
+      "description": "The current icon state and auto-hide preference jointly determine whether the floating icon is visible.",
+      "source_states": ["idle", "listening", "thinking", "speaking"],
+      "target_states": ["auto_hide_off", "auto_hide_on"],
+      "cases": [
+        {"source_state": "idle", "target_state": "auto_hide_off", "expected_result": "The idle icon remains visible."},
+        {"source_state": "listening", "target_state": "auto_hide_off", "expected_result": "The listening icon remains visible."},
+        {"source_state": "thinking", "target_state": "auto_hide_off", "expected_result": "The thinking icon remains visible."},
+        {"source_state": "speaking", "target_state": "auto_hide_off", "expected_result": "The speaking icon remains visible."},
+        {"source_state": "idle", "target_state": "auto_hide_on", "expected_result": "An inactive idle icon stays hidden."},
+        {"source_state": "listening", "target_state": "auto_hide_on", "expected_result": "Listening reveals the icon."},
+        {"source_state": "thinking", "target_state": "auto_hide_on", "expected_result": "Thinking reveals the icon."},
+        {"source_state": "speaking", "target_state": "auto_hide_on", "expected_result": "Speaking reveals the icon."}
+      ],
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I042",
+      "source_function_id": "F019",
+      "target_function_id": "F026",
+      "description": "Dragging the floating icon must carry the independently positioned provider controls badge with it.",
+      "source_states": ["initial_position", "dragged_position"],
+      "target_states": ["provider_badge_anchor"],
+      "cases": [
+        {"source_state": "initial_position", "target_state": "provider_badge_anchor", "expected_result": "The badge is centered below the initial icon position."},
+        {"source_state": "dragged_position", "target_state": "provider_badge_anchor", "expected_result": "The badge moves to remain centered below the dragged icon."}
+      ],
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I043",
+      "source_function_id": "F029",
+      "target_function_id": "F002",
+      "description": "Platform and enabled state determine which login artifact points at the proven source/packaged launch entry or whether no artifact remains.",
+      "source_states": ["windows", "macos", "linux"],
+      "target_states": ["enabled", "disabled"],
+      "cases": [
+        {"source_state": "windows", "target_state": "enabled", "expected_result": "HKCU Run contains the hidden Wisp launch command."},
+        {"source_state": "windows", "target_state": "disabled", "expected_result": "The Wisp HKCU Run value is absent."},
+        {"source_state": "macos", "target_state": "enabled", "expected_result": "The LaunchAgent has RunAtLoad and the Wisp command."},
+        {"source_state": "macos", "target_state": "disabled", "expected_result": "The Wisp LaunchAgent is absent."},
+        {"source_state": "linux", "target_state": "enabled", "expected_result": "The XDG desktop entry enables the Wisp command."},
+        {"source_state": "linux", "target_state": "disabled", "expected_result": "The Wisp XDG autostart entry is absent."}
+      ],
+      "test_node_ids": [
+        "tests/test_autostart.py::test_windows_start_on_login_writes_and_removes_run_value",
+        "tests/test_autostart.py::test_linux_start_on_login_writes_xdg_desktop_file",
+        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent",
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I044",
+      "source_function_id": "F032",
+      "target_function_id": "F041",
+      "description": "Every general-picker built-in must run from its assigned single-key shortcut.",
+      "source_states": ["what_is_this", "explain_simply", "how_do_i_fix_this"],
+      "target_states": ["assigned_key"],
+      "cases": [
+        {"source_state": "what_is_this", "target_state": "assigned_key", "expected_result": "W emits the exact What is this prompt."},
+        {"source_state": "explain_simply", "target_state": "assigned_key", "expected_result": "A emits the exact Explain simply prompt."},
+        {"source_state": "how_do_i_fix_this", "target_state": "assigned_key", "expected_result": "D emits the exact repair prompt."}
+      ],
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I045",
+      "source_function_id": "F032",
+      "target_function_id": "F042",
+      "description": "Every general-picker built-in must run from its painted clickable row.",
+      "source_states": ["what_is_this", "explain_simply", "how_do_i_fix_this"],
+      "target_states": ["row_click"],
+      "cases": [
+        {"source_state": "what_is_this", "target_state": "row_click", "expected_result": "Click emits the exact What is this prompt."},
+        {"source_state": "explain_simply", "target_state": "row_click", "expected_result": "Click emits the exact Explain simply prompt."},
+        {"source_state": "how_do_i_fix_this", "target_state": "row_click", "expected_result": "Click emits the exact repair prompt."}
+      ],
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I046",
+      "source_function_id": "F036",
+      "target_function_id": "F041",
+      "description": "Every rewrite-picker built-in must run from its assigned single-key shortcut.",
+      "source_states": ["fix_grammar", "simplify", "improve_tone"],
+      "target_states": ["assigned_key"],
+      "cases": [
+        {"source_state": "fix_grammar", "target_state": "assigned_key", "expected_result": "W emits the exact grammar prompt."},
+        {"source_state": "simplify", "target_state": "assigned_key", "expected_result": "A emits the exact simplify prompt."},
+        {"source_state": "improve_tone", "target_state": "assigned_key", "expected_result": "D emits the exact tone prompt."}
+      ],
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I047",
+      "source_function_id": "F036",
+      "target_function_id": "F042",
+      "description": "Every rewrite-picker built-in must run from its painted clickable row.",
+      "source_states": ["fix_grammar", "simplify", "improve_tone"],
+      "target_states": ["row_click"],
+      "cases": [
+        {"source_state": "fix_grammar", "target_state": "row_click", "expected_result": "Click emits the exact grammar prompt."},
+        {"source_state": "simplify", "target_state": "row_click", "expected_result": "Click emits the exact simplify prompt."},
+        {"source_state": "improve_tone", "target_state": "row_click", "expected_result": "Click emits the exact tone prompt."}
+      ],
+      "test_node_ids": ["tests/test_intent_actions_acceptance.py::test_every_general_and_rewrite_action_runs_by_key_and_click"],
+      "status": "accepted"
     }
   ]
 }
