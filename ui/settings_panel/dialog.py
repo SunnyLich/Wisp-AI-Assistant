@@ -5765,7 +5765,11 @@ class SettingsDialog(QDialog):
 
         voice_context_row, voice_controls = self._build_context_controls()
         voice_cv.addWidget(voice_context_row)
-        self._voice_block: dict = {**voice_controls, "tool_overrides": {}}
+        self._voice_block: dict = {
+            **voice_controls,
+            "tool_overrides": {},
+            "detail": voice_detail,
+        }
         voice_tools_btn.clicked.connect(
             lambda: self._open_tool_access_dialog(self._voice_block, "Voice")
         )

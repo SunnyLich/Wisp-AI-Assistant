@@ -2345,6 +2345,45 @@ class QtProtocolHost:
             overlay = self._ensure_overlay()
             overlay._provider_badge.click()
             return {"clicked": True, "provider": overlay._provider_badge_mode()}
+        if method == "ui.debug.bubble.stop.click" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            from PySide6.QtCore import Qt
+            from PySide6.QtTest import QTest
+
+            bubble = self._ensure_bubble()
+            close_cancels = bool(getattr(bubble, "_close_cancels", False))
+            QTest.mouseClick(
+                bubble,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+                bubble._close_rect().center(),
+            )
+            return {
+                "clicked": True,
+                "close_cancels": close_cancels,
+                "visible_after": bool(bubble.isVisible()),
+            }
+        if method == "ui.debug.bubble.snapshot" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            bubble = self._ensure_bubble()
+            return {
+                "visible": bool(bubble.isVisible()),
+                "text": str(getattr(bubble, "_full_text", "") or ""),
+                "close_cancels": bool(getattr(bubble, "_close_cancels", False)),
+            }
+        if method == "ui.debug.intent.submit" and os.environ.get("WISP_UI_DEBUG_METHODS"):
+            from PySide6.QtCore import Qt
+            from PySide6.QtTest import QTest
+
+            overlay = self._intent
+            if overlay is None or not overlay.isVisible():
+                return {"submitted": False, "reason": "no_visible_intent"}
+            text = str(params.get("text") or "").strip()
+            if not text:
+                return {"submitted": False, "reason": "empty_text"}
+            overlay._enter_custom_mode(drop_trigger_key=False)
+            overlay._input_line.setFocus()
+            QTest.keyClicks(overlay._input_line, text)
+            QTest.keyClick(overlay._input_line, Qt.Key.Key_Return)
+            return {"submitted": True, "text": text}
         if method == "ui.debug.shell.snapshot" and os.environ.get("WISP_UI_DEBUG_METHODS"):
             from PySide6.QtWidgets import QApplication
 

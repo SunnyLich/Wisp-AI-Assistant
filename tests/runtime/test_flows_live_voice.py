@@ -62,12 +62,25 @@ def test_start_refused_while_voice_recording():
     assert flow._live_voice_state == "idle"
 
 
+def test_start_refused_while_dictation_recording():
+    flow, native, ui, _brain, audio = make_flow(audio=live_audio_worker())
+
+    flow._dictate_state = "recording"
+    native.emit("native.hotkey", {"kind": "voice_live"})
+
+    assert audio.calls_for("audio.live.start") == []
+    assert any("voice recording" in text for text in notices(ui))
+    assert flow._live_voice_state == "idle"
+
+
 def test_live_voice_blocks_voice_and_dictation_claims():
     flow, *_ = make_flow(audio=live_audio_worker())
 
     flow._live_voice_state = "active"
     assert flow._claim_voice_start() is False
     assert flow._claim_dictate_start() is False
+    assert flow._claim_voice_stop() is False
+    assert flow._claim_dictate_stop() is False
 
     flow._live_voice_state = "idle"
     assert flow._claim_voice_start() is True

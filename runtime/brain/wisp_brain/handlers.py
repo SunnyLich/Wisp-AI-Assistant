@@ -1999,8 +1999,16 @@ def _stream_query_reply(
         ambient = (getattr(built, "ambient_ctx", "") or "").strip()
         combined = (prompt + ("\n" + ambient if ambient else "")).strip()
         reply = f"[fake-llm] {combined}".strip()
+        try:
+            delay = max(0.0, float(os.getenv("WISP_BRAIN_FAKE_LLM_DELAY", "0") or 0))
+        except (TypeError, ValueError):
+            delay = 0.0
         for word in reply.split(" "):
+            if ctx is not None and ctx.cancelled:
+                break
             yield word + " "
+            if delay:
+                time.sleep(delay)
         return
 
     from core.llm_clients import client as llm_client

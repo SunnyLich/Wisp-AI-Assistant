@@ -760,35 +760,56 @@
     {
       "function_id": "F046",
       "function": "Paste a rewrite result back into the application that originally had focus.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real IntentOverlay typing -> ui.intent.chosen -> FlowController.brain.rewrite -> native.paste_text",
+      "test_node_ids": [
+        "tests/runtime/test_supervisor_ipc.py::test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back",
+        "tests/test_native_platform_acceptance.py::test_native_paste_method_by_clipboard_restore_matrix"
+      ],
+      "success_assertions": [
+        "The real picker and real brain worker produce a rewrite that is sent to the captured original target and focus token with clipboard restoration enabled.",
+        "Every production native paste implementation is separately executed across restore/no-restore states."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I048"
+      ],
+      "audit_note": "The external editor boundary is deterministic in the end-to-end picker test; the real OS-specific native paste implementations are accepted in the companion matrix."
     },
     {
       "function_id": "F047",
       "function": "Keep an answer in Wisp without pasting it back.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real IntentOverlay typing -> ui.intent.chosen -> FlowController.brain.query -> real reply bubble",
+      "test_node_ids": [
+        "tests/runtime/test_supervisor_ipc.py::test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back"
+      ],
+      "success_assertions": [
+        "The answer remains visible in Wisp and native.paste_text is never called."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I048"
+      ],
+      "audit_note": "The same real UI/brain setup exercises both paste_back states and asserts their opposite side effects."
     },
     {
       "function_id": "F048",
       "function": "Run localized built-in intent labels and prompts for supported assistant languages.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings language state -> IntentOverlay localized rows -> real row click -> submitted model prompt",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_every_app_and_assistant_language_pair_runs_every_localized_builtin_intent"
+      ],
+      "success_assertions": [
+        "All 432 app-language, assistant-language, and built-in-action combinations display the correct localized row and submit the correct assistant-language prompt."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I049",
+        "I050"
+      ],
+      "audit_note": "Full 6 x 12 x 6 Cartesian coverage; no language or built-in action is sampled away."
     },
     {
       "function_id": "F049",
@@ -796,109 +817,167 @@
       "acceptance_status": "real_entry_accepted",
       "production_entry_point": "native.hotkey event -> ui.intent.chosen event -> FlowController query stream",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_query_flow_streams_reply_and_adds_chat_conversation_with_context"
+        "tests/runtime/test_flows.py::test_query_flow_streams_reply_and_adds_chat_conversation_with_context",
+        "tests/runtime/test_supervisor_ipc.py::test_real_bubble_stop_click_cancels_real_brain_query_over_ipc"
       ],
       "success_assertions": [
-        "Streaming chunks reach the reply UI and the completed answer is added to chat."
+        "Streaming chunks reach the reply UI and the completed answer is added to chat.",
+        "A real UI/brain stream remains cancellable and a later stream remains isolated."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "External provider and workers are deterministic fakes; the production flow controller and event path are real."
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I051",
+        "I052"
+      ],
+      "audit_note": "The main stream path uses the production controller; a companion real-process test covers UI/brain worker correlation and isolation."
     },
     {
       "function_id": "F050",
       "function": "Route a request through the selected primary model and configured fallbacks.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "brain.query -> llm_client.stream_response -> selected primary and parsed fallback routes",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
+      ],
+      "success_assertions": [
+        "Primary success, transient failure, empty output, first/second fallback, and next-request cooldown all use the correct configured route order."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I053"
+      ],
+      "audit_note": "Provider network calls are replaced at the provider-adapter boundary; brain.query, context assembly, route parsing, fallback control, cooldown, and response events are production code."
     },
     {
       "function_id": "F051",
       "function": "Show a useful error/recovery recommendation when a request fails.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real IntentOverlay request -> FlowController query error -> error recommendation -> real reply bubble",
       "test_node_ids": [
-        "tests/test_error_recommendations.py::test_recommendation_for_known_error_classes"
+        "tests/runtime/test_supervisor_ipc.py::test_real_intent_failure_shows_recovery_recommendation_in_reply_bubble"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "A rate-limit failure is visibly rendered with the retry, usage-limit, and billing recommendation."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I053"
+      ],
+      "audit_note": "The deterministic failure is injected at the provider/brain boundary; user entry, controller formatting, UI IPC, and bubble rendering are real."
     },
     {
       "function_id": "F052",
       "function": "Cancel an in-progress request.",
-      "acceptance_status": "component_only",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "SpeechBubble close hit target -> ui.bubble.stop -> FlowController -> brain.cancel -> cooperative stream termination",
       "test_node_ids": [
-        "tests/test_app_user_workflows.py::test_stream_cancel_stops_query_and_returns_partial_result",
-        "tests/runtime/test_supervisor_ipc.py::test_brain_worker_cancel_stops_active_stream_over_ipc"
+        "tests/runtime/test_supervisor_ipc.py::test_real_bubble_stop_click_cancels_real_brain_query_over_ipc",
+        "tests/runtime/test_supervisor_ipc.py::test_immediate_cancel_catches_stream_while_worker_is_still_queueing_it",
+        "tests/runtime/test_flows.py::test_rapid_second_intent_cancels_first_and_never_mixes_late_chunks_or_parsers"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Brain cancellation works, but no user Stop/Cancel control currently drives this full chain in the acceptance test."
+      "success_assertions": [
+        "A real Qt click cancels the real brain request and a follow-up request remains isolated.",
+        "Cancellation cannot miss a request between IPC write and handler dispatch.",
+        "A newer intent suppresses deliberately late chunks and final output from its superseded predecessor."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I051",
+        "I052"
+      ],
+      "audit_note": "Covers queued, active, late-provider-output, replacement-input, and follow-up timing states."
     },
     {
       "function_id": "F053",
       "function": "Use the default general picker shortcut: `Ctrl+Q` on Windows or `Ctrl+Alt+Space` on macOS/Linux.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "platform default config -> HotkeyListener -> native worker callback -> native.hotkey caller 0 -> general intent picker",
+      "test_node_ids": [
+        "tests/test_config_env.py::ConfigEnvTests::test_default_caller_hotkeys_are_platform_specific",
+        "tests/runtime/test_flows.py::test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path"
+      ],
+      "success_assertions": [
+        "The Windows and macOS/Linux default chord is constructed by production config and its production listener callback opens caller 0."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054"
+      ],
+      "audit_note": "The physical OS keystroke source is the deterministic boundary; binding construction, callback, worker event, and picker flow are real."
     },
     {
       "function_id": "F054",
       "function": "Use the default rewrite picker shortcut: `Ctrl+Shift+Q` on Windows or `Ctrl+Alt+Shift+Space` on macOS/Linux.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "platform default config -> HotkeyListener -> native worker callback -> native.hotkey caller 1 -> rewrite intent picker",
+      "test_node_ids": [
+        "tests/test_config_env.py::ConfigEnvTests::test_default_caller_hotkeys_are_platform_specific",
+        "tests/runtime/test_flows.py::test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path",
+        "tests/runtime/test_supervisor_ipc.py::test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back"
+      ],
+      "success_assertions": [
+        "The platform default rewrite chord opens caller 1 and a real picker submission completes through rewrite and native paste-back."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I048",
+        "I054"
+      ],
+      "audit_note": "The physical OS keystroke and external target application are deterministic boundaries."
     },
     {
       "function_id": "F055",
       "function": "Use the default screen snip shortcut: `Ctrl+Alt+Q`.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Ctrl+Alt+Q HotkeyListener callback -> native.hotkey snip -> Snip overlay -> capture region -> intent query",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path",
+        "tests/test_app_user_workflows.py::test_supervisor_rewrite_snip_voice_and_dictation_workflow"
+      ],
+      "success_assertions": [
+        "The default snip callback opens the real snip flow and a selected region reaches the assistant query as image data."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054"
+      ],
+      "audit_note": "Physical global-key input and screen pixels are deterministic boundaries."
     },
     {
       "function_id": "F056",
       "function": "Use the default add-selection-to-context shortcut: `Alt+Q`.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Alt+Q HotkeyListener callback -> native.hotkey add_context -> native selection snapshot -> context badge",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_linux_intent_selection_context_is_off_by_default"
+        "tests/runtime/test_flows.py::test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path",
+        "tests/runtime/test_flows.py::test_add_context_shows_panel_badge_not_bubble"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The default callback captures the current selection and appends exactly one removable Selection context item."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054"
+      ],
+      "audit_note": "The focused external application's selection provider is the deterministic boundary."
     },
     {
       "function_id": "F057",
       "function": "Use the default clear-context shortcut: `Alt+W`.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Alt+W HotkeyListener callback -> native.hotkey clear_context -> local context reset -> context-panel clear",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path",
+        "tests/runtime/test_flows.py::test_clear_context_empties_panel_without_bubble"
+      ],
+      "success_assertions": [
+        "The default callback removes all local context items and clears the visible context panel without creating a reply bubble."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054"
+      ],
+      "audit_note": "No external dependency remains after the hotkey-source boundary."
     },
     {
       "function_id": "F058",
@@ -920,584 +999,836 @@
     {
       "function_id": "F059",
       "function": "Hold the default voice-query shortcut `F9`, speak, and release to ask.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "F9 production press/release listener -> native.hotkey voice_start/voice_stop -> record -> transcribe -> assistant query",
+      "test_node_ids": [
+        "tests/runtime/test_hotkey_tap_matching.py::test_voice_key_parses_and_matches_as_start",
+        "tests/runtime/test_hotkey_tap_swallow.py::test_primary_and_secondary_voice_keyups_emit_stop",
+        "tests/runtime/test_flows.py::test_voice_flow_records_transcribes_and_queries",
+        "tests/runtime/test_flows.py::test_rapid_voice_and_dictation_events_never_mix_recording_owners"
+      ],
+      "success_assertions": [
+        "Holding F9 starts one recording, release transcribes and queries, repeats are contained, and competing dictation input cannot steal or stop it."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054",
+        "I055"
+      ],
+      "audit_note": "Keyboard, microphone, STT, and model providers are deterministic boundaries; press/release state and the complete application workflow are real."
     },
     {
       "function_id": "F060",
       "function": "Toggle live voice with `Shift+F9`.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Shift+F9 HotkeyListener callback -> native.hotkey voice_live -> live voice start/stop state machine",
       "test_node_ids": [
-        "tests/test_hotkeys_win32.py::test_voice_live_toggle_disabled_when_unbound"
+        "tests/runtime/test_flows.py::test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path",
+        "tests/runtime/test_flows_live_voice.py::test_toggle_hotkey_starts_then_stops_session",
+        "tests/runtime/test_flows_live_voice.py::test_live_voice_blocks_voice_and_dictation_claims"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The default modified F9 callback starts and stops one live session and excludes both hold-to-talk recording modes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054",
+        "I055"
+      ],
+      "audit_note": "The global key source, microphone, and Gemini Live transport are deterministic boundaries."
     },
     {
       "function_id": "F061",
       "function": "Hold the default dictation shortcut `F8`, speak, and release to paste.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "F8 production press/release listener -> native.hotkey dictate_start/dictate_stop -> record -> transcribe -> captured-field paste",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_dictation_shows_recording_ui_after_recording_starts",
+        "tests/runtime/test_flows.py::test_rapid_voice_and_dictation_events_never_mix_recording_owners",
+        "tests/test_app_user_workflows.py::test_supervisor_rewrite_snip_voice_and_dictation_workflow"
+      ],
+      "success_assertions": [
+        "Holding F8 records once, release transcribes and pastes into the captured field, and competing F9 input cannot steal or prematurely stop it."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054",
+        "I055"
+      ],
+      "audit_note": "Keyboard, microphone, STT, and external focused-field paste are deterministic boundaries."
     },
     {
       "function_id": "F062",
       "function": "Search the shortcut list by action name or description.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings > Shortcuts search field -> production row title/description filter",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions"
+      ],
+      "success_assertions": [
+        "Typing action-description terms through Qt input shows only the matching shortcut rows and clearing the query restores all rows."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the visible real Settings widgets."
     },
     {
       "function_id": "F063",
       "function": "Enable or disable each shortcut independently.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "each Settings shortcut On checkbox -> its two capture fields -> saved enabled flag -> production registration specs",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions",
+        "tests/test_config_env.py::ConfigEnvTests::test_secondary_shortcuts_and_enabled_flags_load_from_env",
+        "tests/test_config_env.py::ConfigEnvTests::test_every_special_shortcut_enabled_flag_controls_only_its_bindings",
+        "tests/runtime/test_hotkey_tap_matching.py::test_specs_from_config"
+      ],
+      "success_assertions": [
+        "Every row toggles only its own two fields; disabled settings load as empty registrations while enabled primary/secondary bindings remain available."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054"
+      ],
+      "audit_note": "Uses visible Settings controls and production config/spec builders; the OS registration call is the deterministic boundary."
     },
     {
       "function_id": "F064",
       "function": "Click a shortcut field and record a replacement key combination.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real Settings shortcut field click -> HotkeyCaptureEdit key transitions -> normalized replacement chord",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions"
+      ],
+      "success_assertions": [
+        "A real click followed by Ctrl+Alt+K records exactly ctrl+alt+k and exits recording mode."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The Windows low-level capture hook is replaced by the same Qt key-event boundary used on other platforms."
     },
     {
       "function_id": "F065",
       "function": "Clear or cancel a shortcut assignment.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "recording HotkeyCaptureEdit -> Escape clear or focus-loss cancel",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions",
+        "tests/test_hotkey_capture.py::test_hotkey_capture_escape_clears_binding"
+      ],
+      "success_assertions": [
+        "Escape clears the assignment, while leaving the recording field cancels and restores its previous chord."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the real capture widget and Qt input/focus events."
     },
     {
       "function_id": "F066",
       "function": "Assign two alternate shortcuts to the same action.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "one shortcut row -> primary and secondary HotkeyCaptureEdit fields -> save -> reopen",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "One Research action persists distinct ctrl+alt+r and ctrl+shift+alt+r bindings after reopen."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The earlier capture test proves chord recording; this workflow proves both fields belong to and persist for the same action."
     },
     {
       "function_id": "F067",
       "function": "Detect and warn about conflicting shortcuts.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Save validation -> duplicate primary/secondary detection -> visible warning",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/test_settings_dialog_controls.py::test_settings_reports_secondary_shortcut_conflicts_only_when_saving"
+      ],
+      "success_assertions": [
+        "A duplicate across caller primary/secondary fields blocks save with the Duplicate keys warning, then saves after resolution."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the production validator and visible Settings warning path."
     },
     {
       "function_id": "F068",
       "function": "Add a new intent shortcut/caller.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Add intent shortcut button -> new caller editor -> save -> reopen",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "The visible Add button creates one independent caller whose complete state persists after reopening Settings."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses real Qt controls and an isolated real settings file."
     },
     {
       "function_id": "F069",
       "function": "Rename an intent shortcut.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "intent shortcut Name field -> live row title -> save -> reopen",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Typing Research immediately renames the row and the same name reloads from disk."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses real Qt text input."
     },
     {
       "function_id": "F070",
       "function": "Remove an intent shortcut.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "new caller Customize -> Remove intent shortcut button -> caller and search-index removal",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Removing a temporary caller leaves the existing Research caller intact and only three callers are saved."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the visible removal button."
     },
     {
       "function_id": "F071",
       "function": "Customize an intent shortcut's action choices.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "caller Customize button -> inline action-choice editor",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "The real Customize button exposes the caller's choice, custom-prompt, context, and tool controls."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the production inline editor."
     },
     {
       "function_id": "F072",
       "function": "Add an action choice with its own key, label, and model prompt.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Add choice button -> key/label/prompt widgets -> save -> reopen",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "A newly added choice accepts all three fields and persists as the caller's action."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses visible Qt controls."
     },
     {
       "function_id": "F073",
       "function": "Remove an action choice.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "choice-row X button -> remove only selected action choice",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "Removing the temporary second choice preserves the edited first choice."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the actual row X control."
     },
     {
       "function_id": "F074",
       "function": "Change an action choice's key, label, or model prompt.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "existing choice key/label/prompt widgets -> save -> reopen",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "All three edited values reload exactly, including the multiline model prompt."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses real Qt text entry."
     },
     {
       "function_id": "F075",
       "function": "Configure the custom-prompt action and its key.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "caller custom-prompt key and label fields -> save -> reopen",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "The custom prompt action reloads with key c and label Custom research."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The actual freeform prompt text remains supplied at invocation time by design."
     },
     {
       "function_id": "F076",
       "function": "Enable or disable paste-back for an intent shortcut.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "caller Paste final answer checkbox -> persisted paste_back -> query or rewrite/paste runtime branch",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_supervisor_ipc.py::test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back"
+      ],
+      "success_assertions": [
+        "The checkbox persists on; off keeps the answer in Wisp, while on sends the completed rewrite to native paste-back."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I048",
+        "I056"
+      ],
+      "audit_note": "External target focus/paste is the deterministic boundary."
     },
     {
       "function_id": "F077",
       "function": "Configure context sources separately for every intent shortcut.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "per-caller context dropdowns -> caller-specific saved policy -> query context/tool parameters",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_intent_off_context_sources_keep_available_estimates"
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The Research caller independently persists App/docs, Clipboard, Browser, GitHub, Memory, Screenshot, and Files states and runtime maps the selected states to context/tool grants."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I057"
+      ],
+      "audit_note": "External context providers are deterministic boundaries."
     },
     {
       "function_id": "F078",
       "function": "Configure allowed model tools separately for every intent shortcut.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "per-caller Allowed tools modal -> saved tool overrides -> brain.query allowed/pinned tools",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_flows.py::test_caller_tool_overrides_reach_brain_query"
+      ],
+      "success_assertions": [
+        "The real modal persists the caller override and production query routing applies caller-specific allowed/pinned grants."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I057"
+      ],
+      "audit_note": "Tool implementations are outside this settings-to-routing acceptance path."
     },
     {
       "function_id": "F079",
       "function": "Configure context and allowed tools for voice queries.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Voice Customize context controls and Allowed tools modal -> VOICE_* settings -> voice brain.query policy",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_flows.py::test_voice_flow_uses_voice_caller_config"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Voice tool policy persists independently and the transcribed voice query receives its configured context/tool grants."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I058"
+      ],
+      "audit_note": "Microphone/STT/model providers are deterministic boundaries."
     },
     {
       "function_id": "F080",
       "function": "Configure context and allowed tools for screen-snip queries.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Snip Customize context controls and Allowed tools modal -> SNIP_* settings -> region-query policy",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/test_config_env.py::ConfigEnvTests::test_snip_caller_loads_caller_style_context_and_forces_screenshot_off",
+        "tests/runtime/test_flows.py::test_snip_region_uses_snip_context_without_extra_screenshot_tool"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Snip tool policy persists independently and the image query uses snip-specific context without adding a redundant screenshot tool."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I058"
+      ],
+      "audit_note": "Screen pixels and model provider are deterministic boundaries."
     },
     {
       "function_id": "F081",
       "function": "Set dictation to raw transcript or LLM-cleaned transcript.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Dictated text dropdown -> DICTATE_MODE -> raw paste or brain.rewrite cleanup -> same captured target",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target"
+      ],
+      "success_assertions": [
+        "Raw mode pastes the transcript unchanged; LLM mode pastes the cleaned rewrite; both use the identical captured PID/focus token."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I059"
+      ],
+      "audit_note": "STT/model/external paste are deterministic boundaries."
     },
     {
       "function_id": "F082",
       "function": "Add selected text to a persistent context buffer.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Alt+Q/add_context -> native selection snapshot -> persistent drop-context list and visible badge",
       "test_node_ids": [
-        "tests/runtime/test_native_context.py::test_context_snapshot_text_app_selection_uses_text_not_paths"
+        "tests/runtime/test_flows.py::test_add_context_shows_panel_badge_not_bubble"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Selected text becomes one persistent Selection item and one removable context badge without entering the reply bubble."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I060"
+      ],
+      "audit_note": "The external selection provider is the deterministic boundary."
     },
     {
       "function_id": "F083",
       "function": "Clear every item from the context buffer.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "clear_context -> local item list clear -> UI context-panel clear",
       "test_node_ids": [
-        "tests/test_context_fetcher_snapshot.py::test_format_context_includes_every_populated_source"
+        "tests/runtime/test_flows.py::test_clear_context_empties_panel_without_bubble",
+        "tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Every queued item is removed locally and the visible panel is cleared even when its worker call fails."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "No external dependency remains."
     },
     {
       "function_id": "F084",
       "function": "Remove one context item without clearing the rest.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "one context badge/source X -> ui.intent.context.remove -> indexed/source-specific removal",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_pasted_context_appears_in_intent_and_can_be_removed",
+        "tests/runtime/test_flows.py::test_intent_context_source_removal_filters_items_and_disables_empty_group"
+      ],
+      "success_assertions": [
+        "Removing one attachment or one App document preserves unrelated items and only disables a group after its final source is removed."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I061"
+      ],
+      "audit_note": "Uses production context state and UI events."
     },
     {
       "function_id": "F085",
       "function": "Re-enable a context source that was removed or turned off.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "removed/disabled context chip -> context choice On -> restore captured source state",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_intent_app_context_reenable_restores_removed_document_sources",
+        "tests/runtime/test_flows.py::test_intent_stale_selection_attaches_when_chip_toggled_on"
+      ],
+      "success_assertions": [
+        "Re-enabling App restores its removed document sources and enabling Selection attaches the available hotkey-time selection."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I061",
+        "I062"
+      ],
+      "audit_note": "Source capture is deterministic; state restoration and query policy are real."
     },
     {
       "function_id": "F086",
       "function": "Paste clipboard items into the intent overlay as context.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay standard Paste -> clipboard MIME extraction -> ui.context.dropped -> intent attachment chip",
       "test_node_ids": [
-        "tests/test_intent_overlay.py::test_intent_overlay_cycles_context_chip"
+        "tests/test_app_user_workflows.py::test_real_intent_overlay_paste_shortcut_attaches_clipboard_file",
+        "tests/runtime/test_flows.py::test_pasted_context_appears_in_intent_and_can_be_removed",
+        "tests/runtime/test_flows.py::test_pasted_intent_image_reaches_query_as_vision_context"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Pasted text/files appear as removable context and a pasted bitmap is sent as vision context."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I060"
+      ],
+      "audit_note": "The system clipboard source is the deterministic boundary."
     },
     {
       "function_id": "F087",
       "function": "Drop files or images onto Wisp as context.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real Qt drag-enter/drop events on the floating icon -> MIME extraction -> badges and context_items_dropped signal",
+      "test_node_ids": [
+        "tests/test_overlay_shell_acceptance.py::test_real_icon_drop_event_adds_text_and_image_context",
+        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+      ],
+      "success_assertions": [
+        "One actual drop gesture extracts both a text file and image, displays two badges, emits their context, and downstream context assembly preserves dropped-item priority/privacy handling."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I060"
+      ],
+      "audit_note": "Particle/toast cosmetics are suppressed; the actual Qt drop event, extraction, panel, and signal path are real."
     },
     {
       "function_id": "F088",
       "function": "Preview enabled context before sending.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "begin_caller context snapshot -> ui.show_intent context_items -> visible IntentOverlay chips/previews",
       "test_node_ids": [
-        "tests/test_intent_context_preview_text.py::test_context_preview_text_is_redacted_and_trimmed"
+        "tests/test_app_user_workflows.py::test_intent_overlay_project_conversation_and_context_chip_workflow",
+        "tests/runtime/test_flows.py::test_intent_app_preview_lists_multiple_active_document_sources"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Enabled sources and per-document previews are visible before sending, while the overlay preserves state across preview refreshes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I060",
+        "I062"
+      ],
+      "audit_note": "External context content is deterministic; preview generation and real Qt rendering are exercised."
     },
     {
       "function_id": "F089",
       "function": "Show context-source state and token estimates where available.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "context snapshot/screen metadata -> FlowController token estimates -> IntentOverlay context chips",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_context_preview_updates_token_estimates_before_send"
+        "tests/runtime/test_flows.py::test_intent_context_estimates_known_text_and_marks_unknown_deferred_sources",
+        "tests/runtime/test_flows.py::test_intent_screenshot_estimates_from_screen_size_without_capture",
+        "tests/test_app_user_workflows.py::test_intent_overlay_project_conversation_and_context_chip_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Known text and screen size show estimates, deferred provider/model sources show unknown estimates, and the visible chip state remains stable after refresh."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Tokenizer/provider availability is deterministic; estimation and rendering are real."
     },
     {
       "function_id": "F090",
       "function": "Toggle context sources with the numbered overlay keys.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real numbered Qt key event -> IntentOverlay context state cycle -> submitted context choices -> query policy",
       "test_node_ids": [
-        "tests/test_intent_overlay.py::test_intent_overlay_prefilled_custom_prompt_keeps_context_keys"
+        "tests/test_app_user_workflows.py::test_intent_overlay_project_conversation_and_context_chip_workflow",
+        "tests/runtime/test_flows.py::test_intent_stale_selection_attaches_when_chip_toggled_on",
+        "tests/runtime/test_flows.py::test_intent_enabled_clipboard_uses_hotkey_time_clipboard_when_setting_off"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "A real 3 keypress turns Selection off without a refresh undoing it; enabling Selection or Clipboard at submission changes the exact context sent."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I062"
+      ],
+      "audit_note": "Uses real Qt keyboard input plus production submission policy."
     },
     {
       "function_id": "F091",
       "function": "Include nearby application/window/focused-control context.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "caller App context On -> hotkey-time native snapshot -> focused app/window/control context -> query",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_intent_enabled_app_fetches_active_document_when_setting_off"
+      ],
+      "success_assertions": [
+        "Enabling App on the picker retrieves and sends the captured active app/document even when the saved default was off."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "OS accessibility/window APIs are deterministic boundaries."
     },
     {
       "function_id": "F092",
       "function": "Include supported open-document content.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "App On + open docs -> captured document window -> active-document reader -> query and summary",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_active_document_auto_fetches_before_query_and_summary",
+        "tests/runtime/test_flows.py::test_wayland_accessibility_text_supplies_active_document_without_brain_read"
+      ],
+      "success_assertions": [
+        "Supported open-document text is fetched before the query and appears in both model context and the sent-context summary."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Editor/accessibility providers are deterministic boundaries."
     },
     {
       "function_id": "F093",
       "function": "Include current clipboard text.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Clipboard chip On -> hotkey-time clipboard snapshot -> ambient query context",
       "test_node_ids": [
-        "tests/runtime/test_native_context.py::test_paste_text_can_restore_clipboard"
+        "tests/runtime/test_flows.py::test_intent_enabled_clipboard_uses_hotkey_time_clipboard_when_setting_off"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Enabling Clipboard sends the exact hotkey-time clipboard text even when the saved default was off."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The OS clipboard is the deterministic boundary."
     },
     {
       "function_id": "F094",
       "function": "Include current selected text.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "caller hotkey -> native selected-text platform route -> Selection chip -> query",
       "test_node_ids": [
-        "tests/test_mcp_context_server.py::test_selected_text_happy_path"
+        "tests/runtime/test_flows.py::test_caller_hotkey_captures_selection_before_intent_steals_focus",
+        "tests/test_native_platform_acceptance.py::test_native_selected_text_platform_route_matrix"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Selection is captured before the overlay takes focus on Windows, macOS, Wayland, and X11 routes and is available to the query."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Accessibility/selection owners are deterministic boundaries."
     },
     {
       "function_id": "F095",
       "function": "Include the current browser page.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Browser On -> hotkey-time browser handle/URL -> deferred page fetch -> query context",
       "test_node_ids": [
-        "tests/test_mcp_context_server.py::test_read_browser_page_formats_url_header"
+        "tests/runtime/test_flows.py::test_browser_url_captured_at_hotkey_time_fetches_content_by_handle",
+        "tests/runtime/test_flows.py::test_macos_intent_enabled_browser_uses_pre_picker_safari"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "The pre-overlay browser target is retained and its current page text is fetched for the query on native Windows/Linux and macOS paths."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Browser automation/page content is deterministic."
     },
     {
       "function_id": "F096",
       "function": "Search the web when the model needs current information.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "allowed web_search model tool -> local search adapter -> source-bearing result text",
+      "test_node_ids": [
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_search_executes_local_fallback"
+      ],
+      "success_assertions": [
+        "A current-information query reaches the search adapter with its result limit and returns title, URL, and snippet."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The search backend is deterministic; production tool dispatch/formatting are real."
     },
     {
       "function_id": "F097",
       "function": "Retrieve a specific website/page for the model.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "retrieve_website model tool -> browser fetch adapter -> page body",
+      "test_node_ids": [
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_retrieve_website_is_browser_scoped"
+      ],
+      "success_assertions": [
+        "An allowed URL is fetched and returned, while the same call is blocked outside Browser/Web scope."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Network/page retrieval is deterministic."
     },
     {
       "function_id": "F098",
       "function": "Include local Git status and diff.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "git_status/git_diff model tools -> read-only subprocess commands -> bounded output",
+      "test_node_ids": [
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_and_github_tools_return_successful_runtime_results",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_inspection_failure_matrix_is_controlled"
+      ],
+      "success_assertions": [
+        "Both read-only commands return successful status/diff output and contain missing Git, invalid repo, permission, timeout, and oversized-output faults."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The Git executable is deterministic; command construction and output policy are real."
     },
     {
       "function_id": "F099",
       "function": "Fetch GitHub repository metadata.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "github_repo model tool -> OAuth token -> GitHub REST repository endpoint -> JSON result",
+      "test_node_ids": [
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_and_github_tools_return_successful_runtime_results",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+      ],
+      "success_assertions": [
+        "Valid repository metadata returns as JSON and auth/scope/not-found/network/invalid-data failures stay controlled."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "OAuth and GitHub HTTP are deterministic boundaries."
     },
     {
       "function_id": "F100",
       "function": "Fetch a GitHub issue or pull request by number.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "github_issue model tool -> validated owner/repo and number -> GitHub REST issue/PR endpoint -> JSON result",
+      "test_node_ids": [
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_and_github_tools_return_successful_runtime_results",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+      ],
+      "success_assertions": [
+        "A positive issue number returns title/state JSON and invalid identifiers plus API failures are controlled."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "OAuth and GitHub HTTP are deterministic boundaries."
     },
     {
       "function_id": "F101",
       "function": "Retrieve relevant long-term memory.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory On -> frontloaded relevance retrieval, or memory_search tool -> project-aware store",
+      "test_node_ids": [
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_frontloaded_memory_search_uses_query",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_is_opt_in",
+        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+      ],
+      "success_assertions": [
+        "Relevant memory is retrieved for the actual query in both frontloaded and on-demand modes while respecting project scope."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the production memory manager behind a deterministic store boundary."
     },
     {
       "function_id": "F102",
       "function": "Capture a screenshot immediately with the prompt.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Screenshot On -> native.capture.fullscreen before send -> screenshot_b64 model input",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_auto_screenshot_mode_captures_even_with_selected_text"
+      ],
+      "success_assertions": [
+        "Immediate mode captures the screen and sends it alongside selection text in the same query."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Screen capture is deterministic."
     },
     {
       "function_id": "F103",
       "function": "Let the model request a screenshot only when needed.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Screenshot Let model decide -> pre-captured native image -> capture_screen tool grant and screenshot_tool_b64",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_model_screenshot_mode_precaptures_through_native_worker",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_prompt_guidance_builds_query_notes_from_one_place"
+      ],
+      "success_assertions": [
+        "Model-decided mode grants capture_screen and supplies a native-captured image for the tool without attaching it as immediate prompt vision."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Screen pixels and the model's decision are deterministic boundaries."
     },
     {
       "function_id": "F104",
       "function": "Let the model request open documents only when needed.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Open docs Let model decide -> get_context.documents grant -> open-document path reader",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_document_model_mode_preview_does_not_inject_active_document",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_get_context_execution_respects_source_allowlist"
+      ],
+      "success_assertions": [
+        "Document model mode does not frontload text; an allowed get_context call returns open-document content."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Editor/path discovery is deterministic."
     },
     {
       "function_id": "F105",
       "function": "Let the model request browser/web context only when needed.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Browser/Web Let model decide -> web_search/get_context.browser/retrieve_website grants -> requested adapter",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_get_context_execution_respects_source_allowlist",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_pinned_browser_mode_offers_web_and_context_for_anthropic"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Browser model mode offers the three scoped tools and an allowed URL context request returns current page text."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Search/browser backends are deterministic."
     },
     {
       "function_id": "F106",
       "function": "Let the model request Git/GitHub context only when needed.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Git/GitHub Let model decide -> git/GitHub tool grants -> successful read-only adapters",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_and_github_tools_return_successful_runtime_results"
+      ],
+      "success_assertions": [
+        "Model mode grants all Git/GitHub tools and each adapter returns a successful result."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Git and GitHub transports are deterministic."
     },
     {
       "function_id": "F107",
       "function": "Let the model search memory only when needed.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory Let model decide -> memory_search grant -> relevance query at tool-call time",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_caller_memory_modes_map_to_injected_or_model_decided_access",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_is_opt_in"
+      ],
+      "success_assertions": [
+        "Model mode excludes frontloaded memory, grants memory_search, and an allowed tool call returns relevant facts."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Memory storage is deterministic."
     },
     {
       "function_id": "F108",
       "function": "Disable each context source for a particular shortcut or conversation.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "per-caller/conversation context Off states -> normalized policy -> capture and tool suppression",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_context_disabled_sources_preview_and_os_native_contract_workflow",
+        "tests/runtime/test_flows.py::test_context_tool_off_overrides_suppress_context_mode_grants"
+      ],
+      "success_assertions": [
+        "Every source can remain visible for estimated cost while Off prevents capture/injection/tool grants in the actual request."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "External providers are not called for disabled sources."
     },
     {
       "function_id": "F109",
@@ -1572,37 +1903,54 @@
     {
       "function_id": "F113",
       "function": "Limit file access to configured root folders.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "all live file tools -> configured root resolution -> containment/symlink checks -> operation",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations",
+        "tests/test_local_file_security.py::test_all_live_file_tools_reject_symlink_root_escape",
+        "tests/test_local_file_security.py::test_all_live_file_tools_reject_parent_root_escape"
+      ],
+      "success_assertions": [
+        "All five tools work inside a configured root and all reject parent and symlink escapes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I063"
+      ],
+      "audit_note": "Uses real isolated filesystem operations."
     },
     {
       "function_id": "F114",
       "function": "Block private files with configurable glob patterns.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "live file path -> configured blocked-glob matcher -> in-band refusal",
+      "test_node_ids": [
+        "tests/test_local_file_security.py::test_live_file_missing_blocked_locked_and_os_denied_faults_are_in_band",
+        "tests/runtime/test_supervisor_ipc.py::test_real_brain_worker_file_tool_settings_reload"
+      ],
+      "success_assertions": [
+        "Blocked private paths are refused by the live tool and changed blocked-glob settings take effect after real brain-worker reload."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I063"
+      ],
+      "audit_note": "Uses real path policy with filesystem/worker boundaries."
     },
     {
       "function_id": "F115",
       "function": "Limit browser, ambient-document, and tool-document context sizes.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "configured browser/ambient-document/tool-document limits -> each production context reader",
       "test_node_ids": [
-        "tests/runtime/test_native_context.py::test_macos_context_snapshot_separates_document_and_browser"
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_context_size_limits_reach_browser_ambient_and_tool_readers"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "The browser extractor receives the browser limit, the ambient window reader receives the ambient-document limit, and the model document tool receives the tool-document limit."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The test executes all three production dispatch paths; HTTP, accessibility, and file extraction are deterministic boundaries."
     },
     {
       "function_id": "F116",
@@ -1622,46 +1970,74 @@
     {
       "function_id": "F117",
       "function": "Draw a rectangular screen region and attach it.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Snip Area mode -> real mouse drag -> normalized/scaled capture region signal",
+      "test_node_ids": [
+        "tests/test_snip_overlay.py::test_drag_selection_emits_scaled_region_and_closes"
+      ],
+      "success_assertions": [
+        "A rectangular drag emits the scaled usable region and closes the overlay."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I064"
+      ],
+      "audit_note": "Uses the real Qt snip overlay."
     },
     {
       "function_id": "F118",
       "function": "Capture the full screen.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Snip Full toolbar mode -> virtual desktop geometry -> full-region signal",
+      "test_node_ids": [
+        "tests/test_snip_overlay.py::test_toolbar_full_screen_mode_captures_virtual_desktop",
+        "tests/test_snip_overlay.py::test_full_mode_click_outside_toolbar_selects_everything"
+      ],
+      "success_assertions": [
+        "Full mode emits the complete virtual desktop from either toolbar selection or canvas click."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I064"
+      ],
+      "audit_note": "Monitor geometry is deterministic; the Qt controls are real."
     },
     {
       "function_id": "F119",
       "function": "Capture the current application/window bounds.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "valid current-app region -> Snip App toolbar mode -> copied app-region signal",
+      "test_node_ids": [
+        "tests/test_snip_overlay.py::test_toolbar_offers_app_mode_only_with_valid_region",
+        "tests/test_snip_overlay.py::test_toolbar_app_mode_emits_app_region_copy"
+      ],
+      "success_assertions": [
+        "App mode is available only for valid bounds and emits an independent copy of those bounds."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I064"
+      ],
+      "audit_note": "Window bounds are deterministic; toolbar behavior is real."
     },
     {
       "function_id": "F120",
       "function": "Switch between Area, App, and Full capture modes.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible Area/App/Full toolbar buttons -> mode state -> mode-specific capture behavior",
+      "test_node_ids": [
+        "tests/test_snip_overlay.py::test_toolbar_hit_testing",
+        "tests/test_snip_overlay.py::test_toolbar_full_screen_mode_captures_virtual_desktop",
+        "tests/test_snip_overlay.py::test_toolbar_app_mode_emits_app_region_copy"
+      ],
+      "success_assertions": [
+        "Each visible capture-mode control selects only its documented region behavior."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I064"
+      ],
+      "audit_note": "Uses the real Qt overlay and toolbar."
     },
     {
       "function_id": "F121",
@@ -1681,264 +2057,379 @@
     {
       "function_id": "F122",
       "function": "Attach the resulting image to the intent picker.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Intent Screenshot chip -> visible snip overlay result -> native region capture -> restored picker attachment",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_screenshot_chip_snip_attaches_region_to_current_intent"
+      ],
+      "success_assertions": [
+        "The selected region is captured once, the active prompt/chips are restored, and the resulting image is retained for submission."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I065"
+      ],
+      "audit_note": "The monitor pixels are deterministic; intent/snip/native routing is production code."
     },
     {
       "function_id": "F123",
       "function": "Ask a vision-capable model about the captured image.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "picker image or snip capture -> screenshot_b64 -> brain.query -> vision response",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_pasted_intent_image_reaches_query_as_vision_context",
+        "tests/runtime/test_flows.py::test_snip_region_captures_file_and_queries_with_image",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_vision_route_preserves_ambient_and_memory_context"
+      ],
+      "success_assertions": [
+        "Clipboard and snip images both reach the vision request, which preserves the user's prompt plus ambient and memory context and returns an answer."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I065",
+        "I066"
+      ],
+      "audit_note": "Image bytes and provider response are deterministic boundaries."
     },
     {
       "function_id": "F124",
       "function": "Route images through the configured Image model and its fallbacks.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "image-bearing request -> configured Image primary route -> ordered Image fallbacks -> answer",
+      "test_node_ids": [
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_image_input_uses_configured_vision_route_and_all_fallbacks"
+      ],
+      "success_assertions": [
+        "The Image primary, first empty fallback, and second successful fallback are attempted in order with the exact same prompt and image payload."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I066"
+      ],
+      "audit_note": "Provider calls are deterministic; route selection and fallback behavior are production code."
     },
     {
       "function_id": "F125",
       "function": "Show an image returned by a model in the reply bubble or chat.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "model generated-image event -> reply bubble/chat image renderer -> bounded thumbnail",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_generated_image_is_scaled_into_the_speech_bubble"
+        "tests/test_bubble_transcript.py::test_generated_image_is_scaled_into_the_speech_bubble",
+        "tests/test_chat_window_render_limits.py::test_assistant_image_only_bubble_renders_a_thumbnail"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "An assistant image with or without text appears as a valid bounded thumbnail in both reply bubble and chat."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses real Qt image decoding/layout against an isolated PNG."
     },
     {
       "function_id": "F126",
       "function": "Show listening, transcript, progress, answer, warning, and error text beside the icon.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "runtime UI text events -> SpeechBubble listening/transcript/progress/answer/warning/error methods",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"
+      ],
+      "success_assertions": [
+        "Every documented runtime text state becomes visible and later states correctly replace transient content."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the real Qt bubble and the public methods invoked by UI-host dispatch."
     },
     {
       "function_id": "F127",
       "function": "Stream answer text into the bubble.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "brain.query reply.chunk stream -> FlowController -> ui.reply.chunk -> SpeechBubble document",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/runtime/test_flows.py::test_query_flow_streams_reply_and_adds_chat_conversation_with_context",
+        "tests/test_bubble_transcript.py::test_token_deltas_in_the_same_reply_block_still_join_without_forced_newlines"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Incremental model chunks retain their exact joined answer order in the bubble and persist as the same chat answer."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I067",
+        "I068"
+      ],
+      "audit_note": "The provider stream is deterministic; production stream routing/rendering are real."
     },
     {
       "function_id": "F128",
       "function": "Reveal words progressively.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "reply chunks -> SpeechBubble WPM/timestamp reveal units -> timed visible document",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_cjk_timestamp_words_are_split_for_reveal"
+        "tests/test_bubble_transcript.py::test_timed_reveal_invalid_config_and_finish_reset_are_safe",
+        "tests/test_bubble_transcript.py::test_cjk_reply_stream_reveals_character_by_character"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Latin text reveals by timed units, CJK reveals character by character, and completion resets timers without stranding text."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I067"
+      ],
+      "audit_note": "Uses the real Qt reveal timers with deterministic ticks."
     },
     {
       "function_id": "F129",
       "function": "Highlight the currently spoken word when timestamps are available.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "audio word timestamps -> SpeechBubble timestamp scheduler -> active word formatting and viewport follow",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_cjk_timestamp_words_are_split_for_reveal",
+        "tests/test_bubble_transcript.py::test_compact_table_highlight_reaches_final_visible_word",
+        "tests/test_bubble_transcript.py::test_read_highlight_stays_in_middle_of_bubble_while_following"
+      ],
+      "success_assertions": [
+        "Timestamped Latin/CJK units advance the highlighted word through the final visible unit while the viewport follows it."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I067"
+      ],
+      "audit_note": "Audio timestamps are deterministic; scheduler and Qt document formatting are real."
     },
     {
       "function_id": "F130",
       "function": "Use normal timed reveal when the TTS provider has no word timestamps.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "TTS result without word timestamps -> WPM fallback reveal -> drained reply completion",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_no_tts_reply_done_lets_wpm_reveal_drain",
+        "tests/test_bubble_transcript.py::test_timed_reveal_invalid_config_and_finish_reset_are_safe"
+      ],
+      "success_assertions": [
+        "Without timestamps, reply.done does not flush all text at once; the normal reveal drains and completes safely even with invalid WPM configuration."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I067"
+      ],
+      "audit_note": "TTS capability is deterministic; fallback dispatch/reveal are production code."
     },
     {
       "function_id": "F131",
       "function": "Hold the fast-forward control to speed text and speech.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible fast-forward mouse press/release -> ui.bubble.speed -> audio.speed_boost and bubble reveal speed",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_fast_forward_button_controls_speed_boost"
+        "tests/test_bubble_transcript.py::test_fast_forward_button_controls_speed_boost",
+        "tests/runtime/test_flows.py::test_bubble_speed_event_forwards_to_audio_worker"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Holding the visible control enables both bubble/audio speed and releasing it disables both exactly once."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I067"
+      ],
+      "audit_note": "Uses real Qt mouse events plus production flow dispatch; audio output is deterministic."
     },
     {
       "function_id": "F132",
       "function": "Stop/cancel the current reply from the close/stop control.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible reply close/stop click -> ui.bubble.stop -> brain.cancel/audio.stop -> idle",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_reply_close_control_click_emits_stop_and_clears_the_bubble",
+        "tests/runtime/test_flows.py::test_bubble_stop_event_cancels_the_active_model_request_and_prevents_late_output"
+      ],
+      "success_assertions": [
+        "The real stop control clears the bubble, cancels the exact active model request and speech, returns idle, and rejects late output."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I068"
+      ],
+      "audit_note": "Uses a real Qt click and an overlapped live stream/cancel race."
     },
     {
       "function_id": "F133",
       "function": "Dismiss a non-cancellable informational notice.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "informational notice close control -> dismiss-only bubble reset",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"
+      ],
+      "success_assertions": [
+        "Closing a notice hides it without emitting backend stop, while the same control remains cancellable for active reading/replies."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I068"
+      ],
+      "audit_note": "Runs the production close hit path with deterministic pointer events."
     },
     {
       "function_id": "F134",
       "function": "Click the bubble to open the full chat.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real text-area click on completed reply bubble -> click callback -> full chat",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_bubble_text_view_click_opens_chat_without_speed_boost"
+        "tests/test_bubble_transcript.py::test_bubble_text_view_click_opens_chat_without_speed_boost",
+        "tests/test_bubble_transcript.py::test_transient_bubble_clicks_do_not_open_chat"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "A completed reply click opens chat once; listening/thinking clicks do not and the click cannot trigger speed boost."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses real Qt mouse clicks on the visible text and shell surfaces."
     },
     {
       "function_id": "F135",
       "function": "Drag the bubble/icon group.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "bubble shell pointer press/move/release -> top-level move -> companion icon callback",
       "test_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "A pointer drag moves the bubble/icon group and is not misread as a chat-opening click."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses real Qt pointer events; compositor system-move is the platform boundary."
     },
     {
       "function_id": "F136",
       "function": "Pause auto-hide while the user hovers or interacts.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "bubble hover/text interaction -> auto-hide hold/latch -> resumed or cancelled hide timer",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_wheel_interaction_disables_auto_hide_but_hover_does_not",
+        "tests/test_bubble_transcript.py::test_clicking_bubble_permanently_disables_auto_hide_for_current_session"
+      ],
+      "success_assertions": [
+        "Hover pauses then resumes auto-hide, while wheel/click interaction latches the current bubble open."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Runs the real bubble interaction and hide-timer policy."
     },
     {
       "function_id": "F137",
       "function": "Wheel-scroll long bubble text.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "wheel event over bubble document -> SpeechBubble manual viewport -> immediate repaint",
       "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_document_view_wheel_moves_bubble_viewport",
         "tests/test_bubble_transcript.py::test_manual_wheel_scroll_repaints_immediately"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Wheel input moves the visible long-text window immediately without replacing the complete selectable document."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses the production Qt wheel path with deterministic deltas."
     },
     {
       "function_id": "F138",
       "function": "Snap manual scrolling back to the spoken/highlighted line.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "manual bubble scroll + active speech highlight -> snap timer -> highlighted viewport",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_manual_scroll_snaps_back_to_highlight_while_speaking"
+      ],
+      "success_assertions": [
+        "While speech is active, snapping clears manual offset and returns the viewport to the currently highlighted line."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Uses production scroll/highlight state and viewport application."
     },
     {
       "function_id": "F139",
       "function": "Select text inside the bubble.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "real selectable QTextBrowser inside bubble -> text selection -> preserved selection across updates",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_document_view_is_selectable_and_avoids_controls",
+        "tests/test_bubble_transcript.py::test_document_view_keeps_full_text_and_selection_on_update"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The full bubble text is mouse/keyboard selectable, avoids controls, and preserves the selected range while highlighting updates."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I069"
+      ],
+      "audit_note": "Uses the real Qt document and selection cursor."
     },
     {
       "function_id": "F140",
       "function": "Copy selected bubble text.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "selected bubble range -> real context menu Copy selected text -> system clipboard",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Copy selected text writes exactly the selected range and is absent when there is no selection."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I069"
+      ],
+      "audit_note": "Uses the production Qt context menu/actions; clipboard storage is real Qt state."
     },
     {
       "function_id": "F141",
       "function": "Copy the full bubble text.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "bubble context menu Copy full bubble text -> system clipboard",
       "test_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Copy full bubble text writes the complete reply whether or not a smaller range is selected."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I069"
+      ],
+      "audit_note": "Uses the production Qt context menu/actions; clipboard storage is real Qt state."
     },
     {
       "function_id": "F142",
       "function": "Display assistant-created images.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "image-only assistant result -> FlowController persistence -> bubble/chat thumbnail renderer",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_query_flow_persists_image_only_assistant_result",
+        "tests/test_bubble_transcript.py::test_generated_image_is_scaled_into_the_speech_bubble",
+        "tests/test_chat_window_render_limits.py::test_assistant_image_only_bubble_renders_a_thumbnail"
+      ],
+      "success_assertions": [
+        "An assistant-created image is retained as an assistant turn and remains visible in both compact and full-chat surfaces without fallback text."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Generated bytes are deterministic; production persistence and Qt rendering are real."
     },
     {
       "function_id": "F143",
       "function": "Edit or delete UI Lab labels from selected bubble text when that add-on is available.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "selected bubble text -> add-on context actions -> UI Lab edit/delete callbacks",
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions",
+        "tests/test_addon_manager.py::test_ui_lab_addon_exercises_saved_label_surfaces"
+      ],
+      "success_assertions": [
+        "With selected text, UI Lab edit/delete actions appear and receive the exact range; without a selection they are absent, and saved labels render on bubble/chat surfaces."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I069"
+      ],
+      "audit_note": "The menu and add-on manager are production code; modal edit response is outside this surface test."
     },
     {
       "function_id": "F144",

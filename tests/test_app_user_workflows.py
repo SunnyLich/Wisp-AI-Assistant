@@ -279,6 +279,8 @@ def test_stream_cancel_stops_query_and_returns_partial_result(
 def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, monkeypatch: pytest.MonkeyPatch):
     """Intent overlay exposes project/chat choice and stable context chip state."""
     monkeypatch.setattr(sys, "platform", "darwin")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
     import config
     from runtime.supervisor.flows import FlowController
     from ui.intent_overlay import IntentOverlay
@@ -312,13 +314,16 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
     overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
     overlay.cancelled.connect(lambda: cancelled.append(True))
     try:
+        overlay.show()
+        qapp.processEvents()
         assert overlay.project_choice() == {"mode": "existing", "project_id": "p1"}
         assert overlay.conversation_choice() == {"mode": "continue", "index": 0}
         assert {item["id"] for item in overlay.context_choices()} == {
             "ambient", "browser", "selection", "clipboard", "screenshot", "github", "memory", "files"
         }
 
-        assert overlay._cycle_context_key("3") is True
+        QTest.keyClick(overlay, Qt.Key.Key_3)
+        qapp.processEvents()
         selection = next(item for item in overlay.context_choices() if item["id"] == "selection")
         assert selection["state"] == "off"
         assert selection["touched"] is True
@@ -342,6 +347,39 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
         assert chosen and chosen[-1][1] == "Please answer with the selected project context."
         assert cancelled == []
     finally:
+        overlay.close()
+        overlay.deleteLater()
+        qapp.processEvents()
+
+
+def test_real_intent_overlay_paste_shortcut_attaches_clipboard_file(qapp, tmp_path):
+    """Ctrl+V with file MIME emits context instead of typing a filesystem path."""
+
+    from PySide6.QtCore import QMimeData, Qt, QUrl
+    from PySide6.QtTest import QTest
+    from ui.intent_overlay import IntentOverlay
+
+    path = tmp_path / "clipboard-notes.txt"
+    path.write_text("clipboard file context", encoding="utf-8")
+    clipboard = qapp.clipboard()
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    clipboard.setMimeData(mime)
+    pasted: list[list[tuple[str, str, str]]] = []
+    overlay = IntentOverlay(context_items=[])
+    overlay.context_items_pasted.connect(pasted.append)
+    try:
+        overlay.show()
+        overlay.activateWindow()
+        overlay.setFocus()
+        qapp.processEvents()
+        QTest.keyClick(overlay, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+
+        assert pasted == [[("clipboard-notes.txt", "clipboard file context", "text")]]
+        assert str(path) not in overlay.current_custom_text()
+    finally:
+        clipboard.clear()
         overlay.close()
         overlay.deleteLater()
         qapp.processEvents()
@@ -464,6 +502,93 @@ def test_chat_window_context_preview_send_and_history_workflow(qapp, isolated_ap
         assert window._stack.count() == 2
         window._toggle_pin(0)
         assert conversations[0]["pinned"] is True
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_real_new_send_newline_continue_and_history_controls(qapp):
+    """Real chat controls create, switch, and continue conversations without mixing input."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from ui.chat_window import ChatWindow
+
+    conversations = [
+        {
+            "id": "older",
+            "project_id": "p1",
+            "title": "Older project chat",
+            "messages": [{"role": "user", "content": "old question"}],
+            "context_policy": {},
+        },
+        {
+            "id": "newer",
+            "project_id": "general",
+            "title": "Newer general chat",
+            "messages": [{"role": "user", "content": "new question"}],
+            "context_policy": {},
+        },
+    ]
+    calls = []
+    project_changes = []
+
+    def send_fn(messages, *, context_policy):
+        calls.append({"messages": [dict(item) for item in messages], "policy": dict(context_policy)})
+        yield "answer"
+
+    window = ChatWindow(
+        conversations,
+        send_fn,
+        projects=[{"id": "general", "name": "General"}, {"id": "p1", "name": "Project One"}],
+        active_idx=1,
+        on_project_change=project_changes.append,
+    )
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+        assert window.isVisible() and window._active_idx == 1
+        assert any("Project One" in label.text() for label in window.findChildren(type(window._past_notice)))
+
+        older_button = next(button for idx, button in window._sidebar_btns if idx == 0)
+        QTest.mouseClick(older_button, Qt.MouseButton.LeftButton)
+        assert window._active_idx == 0
+
+        window._project_combo.setFocus()
+        QTest.keyClick(window._project_combo, Qt.Key.Key_Down)
+        assert window._project_combo.currentData() == "p1"
+        assert project_changes == ["p1"]
+        QTest.mouseClick(window._new_chat_btn, Qt.MouseButton.LeftButton)
+        assert len(conversations) == 3 and window._active_idx == 2
+        assert conversations[2]["project_id"] == "p1"
+        QTest.keyClick(window, Qt.Key.Key_N, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+        assert len(conversations) == 4 and window._active_idx == 3
+
+        window._input.setFocus()
+        QTest.keyClicks(window._input, "line one")
+        QTest.keyClick(window._input, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+        QTest.keyClicks(window._input, "line two")
+        assert window._input.toPlainText() == "line one\nline two"
+        assert calls == []
+        QTest.keyClick(window._input, Qt.Key.Key_Return)
+        _pump_until(qapp, lambda: not window._streaming and len(conversations[3]["messages"]) == 2)
+        assert conversations[3]["messages"][0]["content"] == "line one\nline two"
+        assert conversations[3]["messages"][1]["content"] == "answer"
+
+        older_button = next(button for idx, button in window._sidebar_btns if idx == 0)
+        QTest.mouseClick(older_button, Qt.MouseButton.LeftButton)
+        window._input.setFocus()
+        QTest.keyClicks(window._input, "follow up")
+        QTest.keyClick(window._input, Qt.Key.Key_Return)
+        _pump_until(qapp, lambda: not window._streaming and len(conversations[0]["messages"]) == 3)
+        assert [item["content"] for item in calls[-1]["messages"] if item["role"] == "user"] == [
+            "old question",
+            "follow up",
+        ]
+        assert window._active_idx == 0
     finally:
         window.close()
         window.deleteLater()
@@ -1109,6 +1234,110 @@ def test_provider_fallback_cooldown_capability_and_auth_redaction_workflow(
     assert "octo-user" in rendered
     assert "secret-chatgpt-token" not in rendered
     assert "secret-github-token" not in rendered
+
+
+def test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Enter at brain.query and exercise success, failure, empty, and cooldown routing."""
+    import config
+
+    from core.llm_clients import client as llm_client
+
+    _ensure_brain_path()
+    from wisp_brain import handlers
+
+    monkeypatch.delenv("WISP_BRAIN_FAKE_LLM", raising=False)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(config, "LLM_MODEL", "primary")
+    monkeypatch.setattr(
+        config,
+        "LLM_FALLBACKS",
+        "openai:fallback-one\nopenai:fallback-two",
+    )
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING", False)
+
+    def run_query(behaviors):
+        calls = []
+        events = []
+
+        def fake_route(provider, model, user_message, *_args, **_kwargs):
+            calls.append((provider, model, user_message))
+            behavior = behaviors[(provider, model)]
+            if isinstance(behavior, Exception):
+                raise behavior
+            yield from behavior
+
+        monkeypatch.setattr(llm_client, "_stream_single_response_route", fake_route)
+        ctx = handlers.StreamContext(
+            lambda event, data, req_id: events.append((event, data, req_id)),
+            71,
+        )
+        result = handlers.brain_query(
+            ctx,
+            intent_prompt="route this request",
+            memory_enabled=False,
+            harness_provider="wisp",
+            conversation_owner="wisp",
+        )
+        return calls, events, result
+
+    scenarios = [
+        (
+            {
+                ("openai", "primary"): ["primary ", "answer"],
+                ("openai", "fallback-one"): ["unused"],
+                ("openai", "fallback-two"): ["unused"],
+            },
+            [("openai", "primary", "route this request")],
+            "primary answer",
+        ),
+        (
+            {
+                ("openai", "primary"): RuntimeError("429 rate limit"),
+                ("openai", "fallback-one"): ["fallback one answer"],
+                ("openai", "fallback-two"): ["unused"],
+            },
+            [
+                ("openai", "primary", "route this request"),
+                ("openai", "fallback-one", "route this request"),
+            ],
+            "fallback one answer",
+        ),
+        (
+            {
+                ("openai", "primary"): [],
+                ("openai", "fallback-one"): [],
+                ("openai", "fallback-two"): ["fallback two answer"],
+            },
+            [
+                ("openai", "primary", "route this request"),
+                ("openai", "fallback-one", "route this request"),
+                ("openai", "fallback-two", "route this request"),
+            ],
+            "fallback two answer",
+        ),
+    ]
+    for behaviors, expected_calls, expected_text in scenarios:
+        llm_client._route_cooldowns.clear()
+        calls, events, result = run_query(behaviors)
+        assert calls == expected_calls
+        assert result["text"] == expected_text
+        assert [data for event, data, _req_id in events if event == "reply.done"] == [result]
+
+    llm_client._route_cooldowns.clear()
+    cooldown_behaviors = {
+        ("openai", "primary"): RuntimeError("429 rate limit"),
+        ("openai", "fallback-one"): ["cooled fallback"],
+        ("openai", "fallback-two"): ["unused"],
+    }
+    first_calls, _events, first = run_query(cooldown_behaviors)
+    second_calls, _events, second = run_query(cooldown_behaviors)
+    assert first["text"] == second["text"] == "cooled fallback"
+    assert [model for _provider, model, _prompt in first_calls] == ["primary", "fallback-one"]
+    assert [model for _provider, model, _prompt in second_calls] == ["fallback-one"]
+    llm_client._route_cooldowns.clear()
 
 
 def test_supervisor_rewrite_snip_voice_and_dictation_workflow(tmp_path: Path):

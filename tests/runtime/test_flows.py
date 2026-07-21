@@ -342,6 +342,115 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert not ui.calls_for("ui.reply.listening")
 
 
+def test_default_discrete_shortcuts_use_production_callbacks_and_runtime_event_path(monkeypatch):
+    """A configured chord's real listener callback must reach its user flow."""
+
+    from core import hotkeys as core_hotkeys
+    from runtime.workers import native_host
+
+    rows = [
+        {
+            "enabled": True,
+            "hotkey": config._caller_default_hotkey(0),
+            "hotkey_2": "",
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        },
+        {
+            "enabled": True,
+            "hotkey": config._caller_default_hotkey(1),
+            "hotkey_2": "",
+            "paste_back": True,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+        },
+    ]
+    monkeypatch.setattr(config, "CALLER_ROWS", rows)
+    for name, value in {
+        "HOTKEY_ADD_CONTEXT": "alt+q",
+        "HOTKEY_ADD_CONTEXT_2": "",
+        "HOTKEY_CLEAR_CONTEXT": "alt+w",
+        "HOTKEY_CLEAR_CONTEXT_2": "",
+        "HOTKEY_SNIP": "ctrl+alt+q",
+        "HOTKEY_SNIP_2": "",
+        "HOTKEY_READ_SELECTION_ALOUD": "f7",
+        "HOTKEY_READ_SELECTION_ALOUD_2": "",
+        "HOTKEY_VOICE_LIVE": "shift+f9",
+        "HOTKEY_VOICE_LIVE_2": "",
+        "HOTKEY_VOICE": "f9",
+        "HOTKEY_VOICE_2": "",
+        "HOTKEY_DICTATE": "f8",
+        "HOTKEY_DICTATE_2": "",
+        "TTS_PROVIDER": "kokoro",
+    }.items():
+        monkeypatch.setattr(config, name, value, raising=False)
+
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="shortcut selection")})
+    audio = FakeWorker(
+        {
+            "audio.tts.synthesize": lambda _params: {"path": "spoken.wav"},
+            "audio.play_file": lambda _params: {"played": True},
+            "audio.live.start": lambda _params: {"started": True, "model": "gemini-test"},
+        }
+    )
+    _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
+    native_host.set_event_sink(lambda name, data, _req_id: native.emit(name, data))
+    monkeypatch.setattr(core_hotkeys.HotkeyListener, "start", lambda _self: True)
+    monkeypatch.setattr(
+        core_hotkeys.HotkeyListener,
+        "status",
+        lambda self: {"started": True, "registered": len(self._hotkey_defs)},
+    )
+    backend = native_host._DirectHotkeys()
+    try:
+        assert backend.start()["started"] is True
+        listener = backend.listener
+        callbacks = {combo: callback for combo, callback in listener._hotkey_defs}
+
+        callbacks[config._caller_default_hotkey(0)]()
+        assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 0
+        ui.emit("ui.intent.cancelled", {})
+
+        callbacks[config._caller_default_hotkey(1)]()
+        assert ui.last_call("ui.show_intent")["params"]["caller_idx"] == 1
+        ui.emit("ui.intent.cancelled", {})
+
+        callbacks["ctrl+alt+q"]()
+        assert ui.calls_for("ui.show_snip")
+        ui.emit("ui.snip.cancelled", {})
+
+        callbacks["alt+q"]()
+        assert ui.last_call("ui.context.add_item")["params"] == {
+            "name": "Selection",
+            "item_type": "text",
+        }
+        callbacks["alt+w"]()
+        assert ui.calls_for("ui.context.clear")
+
+        callbacks["f7"]()
+        assert audio.last_call("audio.tts.synthesize")["params"]["text"] == "shortcut selection"
+
+        callbacks["shift+f9"]()
+        assert audio.calls_for("audio.live.start")
+
+        # Hold-to-talk bindings use the same production listener but are kept
+        # as press/release callbacks rather than discrete hotkey definitions.
+        assert listener._voice_hotkeys == ("f9",)
+        assert listener._dictate_hotkeys == ("f8",)
+    finally:
+        backend.stop()
+        native_host.set_event_sink(lambda _name, _data, _req_id: None)
+
+
 def test_caller_hotkey_is_ignored_while_settings_is_open():
     """Remapping a registered caller hotkey should not summon the intent overlay."""
     rows = [
@@ -1289,6 +1398,127 @@ def test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue():
     assert not audio.calls_for("audio.tts.synthesize")
 
 
+def test_bubble_stop_event_cancels_the_active_model_request_and_prevents_late_output():
+    """The real UI stop event must cancel the request, not merely hide its output."""
+    stream_running = threading.Event()
+    cancel_received = threading.Event()
+    cancel_targets: list[int] = []
+
+    def query_stream(_params, on_event):
+        on_event("reply.chunk", {"text": "partial "}, 1)
+        stream_running.set()
+        assert cancel_received.wait(5), "bubble Stop never reached brain.cancel"
+        on_event("reply.done", {"text": "partial "}, 1)
+        return {"text": "partial "}
+
+    def cancel_stream(params):
+        cancel_targets.append(int(params["target"]))
+        cancel_received.set()
+        return {"cancelled": True}
+
+    brain = FakeWorker(
+        handlers={"brain.cancel": cancel_stream},
+        stream_handlers={"brain.query": query_stream},
+    )
+    flow, _native, ui, brain, audio = make_flow(brain=brain)
+    pending = PendingInvocation(
+        caller_idx=0,
+        caller={"paste_back": False, "context_memory_mode": "off"},
+        context={},
+    )
+    pending.context_ready.set()
+    with flow._lock:
+        flow._pending = pending
+
+    query_thread = threading.Thread(
+        target=lambda: ui.emit("ui.intent.chosen", {"prompt": "answer slowly"}),
+        name="test-reply-query",
+    )
+    query_thread.start()
+    assert stream_running.wait(5), "query stream did not start"
+
+    ui.emit("ui.bubble.stop", {})
+    query_thread.join(timeout=5)
+
+    assert not query_thread.is_alive(), "cancelled query did not return"
+    assert len(cancel_targets) == 1 and cancel_targets[0] > 0
+    assert brain.last_call("brain.cancel")["params"] == {"target": cancel_targets[0]}
+    assert flow._active_reply_stream_id is None
+    assert ui.last_call("ui.reply.reset")
+    assert ui.last_call("ui.overlay.state")["params"] == {"state": "idle"}
+    assert audio.last_call("audio.stop")
+    assert not ui.calls_for("ui.reply.replace"), "cancelled answer resurfaced after Stop"
+
+
+def test_rapid_second_intent_cancels_first_and_never_mixes_late_chunks_or_parsers():
+    """A newer user input owns the UI even when the older stream returns late data."""
+    first_started = threading.Event()
+    release_first = threading.Event()
+    cancel_targets: list[int] = []
+
+    def query_stream(params, on_event):
+        prompt = str(params.get("intent_prompt") or "")
+        if prompt == "first request":
+            on_event("reply.chunk", {"text": "<think>old private thought"}, 1)
+            first_started.set()
+            assert release_first.wait(5), "new input never cancelled the old request"
+            # Deliberately misbehave like a slow provider and send data after cancel.
+            on_event("reply.chunk", {"text": "</think> OLD LATE ANSWER"}, 1)
+            on_event("reply.done", {"text": "OLD FINAL"}, 1)
+            return {"text": "OLD FINAL"}
+        assert prompt == "second request"
+        on_event("reply.chunk", {"text": "NEW ANSWER"}, 2)
+        on_event("reply.done", {"text": "NEW ANSWER"}, 2)
+        return {"text": "NEW ANSWER"}
+
+    def cancel_stream(params):
+        cancel_targets.append(int(params["target"]))
+        release_first.set()
+        return {"cancelled": True}
+
+    brain = FakeWorker(
+        handlers={"brain.cancel": cancel_stream},
+        stream_handlers={"brain.query": query_stream},
+    )
+    flow, _native, ui, brain, _audio = make_flow(brain=brain)
+
+    def choose(prompt: str) -> None:
+        pending = PendingInvocation(
+            caller_idx=0,
+            caller={"paste_back": False, "context_memory_mode": "off"},
+            context={},
+        )
+        pending.context_ready.set()
+        with flow._lock:
+            flow._pending = pending
+        ui.emit("ui.intent.chosen", {"prompt": prompt})
+
+    first_thread = threading.Thread(target=choose, args=("first request",), name="first-intent")
+    first_thread.start()
+    assert first_started.wait(5), "first request did not start"
+    ui_cutoff = len(ui.calls)
+
+    choose("second request")
+    first_thread.join(timeout=5)
+
+    assert not first_thread.is_alive(), "superseded request did not finish"
+    assert len(cancel_targets) == 1
+    late_ui_calls = ui.calls[ui_cutoff:]
+    late_reply_chunks = [
+        call["params"]
+        for call in late_ui_calls
+        if call["method"] == "ui.reply.chunk"
+    ]
+    assert late_reply_chunks == [
+        {"text": "NEW ANSWER", "is_thought": False, "is_progress": False}
+    ]
+    assert all("OLD" not in str(call["params"]) for call in late_ui_calls)
+    conversations = ui.calls_for("ui.chat.add_conversation")
+    assert [call["params"]["assistant"] for call in conversations] == ["NEW ANSWER"]
+    assert flow._last_reply == "NEW ANSWER"
+    assert flow._active_reply_stream_id is None
+
+
 def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     rows = [
         {
@@ -1530,7 +1760,9 @@ def test_read_selection_aloud_single_word_failure_finishes_reading_bubble(monkey
     assert audio.last_call("audio.tts.synthesize")["params"]["text"] == "word"
     assert not audio.calls_for("audio.play_file")
     assert ui.calls_for("ui.reply.done")
-    assert ui.last_call("ui.reply.notice")["params"]["text"] == "Could not read selected text aloud."
+    notice = ui.last_call("ui.reply.notice")["params"]["text"]
+    assert notice.startswith("Could not read selected text aloud.")
+    assert "Runtime Status" in notice
 
 
 def test_closing_read_aloud_bubble_stops_tts_without_failure_notice(monkeypatch):
@@ -4467,6 +4699,64 @@ def test_voice_start_key_repeat_is_ignored_until_release():
     assert len(audio.calls_for("audio.record.stop_transcribe")) == 1
 
 
+def test_rapid_voice_and_dictation_events_never_mix_recording_owners():
+    """Whichever hold-to-talk action starts first exclusively owns the mic."""
+
+    # Voice owns the first recording. Repeated dictation presses and their
+    # release are unrelated input and must not start or stop that recording.
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected="", pid=777, focus_token=9),
+            "native.paste_text": lambda _params: {"ok": True},
+        }
+    )
+    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "voice prompt"}})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("voice reply")})
+    _flow, native, _ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
+
+    native.emit("native.hotkey", {"kind": "voice_start"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_stop"})
+
+    assert len(audio.calls_for("audio.record.start")) == 1
+    assert not audio.calls_for("audio.record.stop_transcribe")
+    native.emit("native.hotkey", {"kind": "voice_stop"})
+    assert len(audio.calls_for("audio.record.stop_transcribe")) == 1
+    assert brain.last_call("brain.query")["params"]["intent_prompt"] == "voice prompt"
+    assert not native.calls_for("native.paste_text")
+
+    # Dictation owns the next recording. Voice repeats and the stray voice
+    # release must not stop it or turn its transcript into an assistant query.
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected="", pid=888, focus_token=10),
+            "native.paste_text": lambda _params: {"ok": True},
+        }
+    )
+    audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": "dictated text"}})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("should not run")})
+    _flow, native, _ui, brain, audio = make_flow(native=native, audio=audio, brain=brain)
+
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "voice_start"})
+    native.emit("native.hotkey", {"kind": "voice_start"})
+    native.emit("native.hotkey", {"kind": "voice_stop"})
+
+    assert len(audio.calls_for("audio.record.start")) == 1
+    assert not audio.calls_for("audio.record.stop_transcribe")
+    native.emit("native.hotkey", {"kind": "dictate_stop"})
+    assert len(audio.calls_for("audio.record.stop_transcribe")) == 1
+    assert native.last_call("native.paste_text")["params"] == {
+        "text": "dictated text",
+        "target_pid": 888,
+        "focus_token": 10,
+    }
+    assert not brain.calls_for("brain.query")
+
+
 def test_voice_start_failure_ignores_key_repeat_until_release():
     """Verify failed voice start does not hammer the microphone on key repeat."""
     native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
@@ -4568,6 +4858,44 @@ def test_dictation_shows_recording_ui_after_recording_starts():
         "listening",
         "idle",
     ]
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_text", "expects_cleanup"),
+    (("raw", "raw spoken words", False), ("llm", "Cleaned spoken words.", True)),
+)
+def test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target(
+    monkeypatch,
+    mode,
+    expected_text,
+    expects_cleanup,
+):
+    """The setting changes transcript cleanup, never the captured paste target."""
+
+    monkeypatch.setattr(config, "DICTATE_MODE", mode, raising=False)
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected="", pid=777, focus_token=9),
+            "native.paste_text": lambda _params: {"ok": True},
+        }
+    )
+    audio = FakeWorker(
+        {"audio.record.stop_transcribe": lambda _params: {"text": "raw spoken words"}}
+    )
+    brain = FakeWorker(
+        stream_handlers={"brain.rewrite": rewrite_stream("Cleaned spoken words.")}
+    )
+    _flow, native, _ui, brain, _audio = make_flow(native=native, audio=audio, brain=brain)
+
+    native.emit("native.hotkey", {"kind": "dictate_start"})
+    native.emit("native.hotkey", {"kind": "dictate_stop"})
+
+    assert bool(brain.calls_for("brain.rewrite")) is expects_cleanup
+    assert native.last_call("native.paste_text")["params"] == {
+        "text": expected_text,
+        "target_pid": 777,
+        "focus_token": 9,
+    }
 
 
 def test_dictation_does_not_show_recording_ui_when_recording_fails():

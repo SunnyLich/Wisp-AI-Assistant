@@ -1,5 +1,6 @@
 """Tests for test builtin model tools."""
 
+import json
 import unittest
 import urllib.error
 from pathlib import Path
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import config
+from core import context_fetcher
 from core.llm_clients import client as llm
 from core.llm_clients import prompt_guidance
 from core.settings_model import ToolTurnBudgets
@@ -15,6 +17,63 @@ from core.settings_model import ToolTurnBudgets
 
 class BuiltinModelToolsTests(unittest.TestCase):
     _GIT_TOOLS = {"git_status", "git_diff", "github_repo", "github_issue"}
+
+    def test_context_size_limits_reach_browser_ambient_and_tool_readers(self):
+        """Each configured limit must reach the production reader it governs."""
+
+        response = SimpleNamespace(text="<html><body>browser text</body></html>")
+        response.raise_for_status = lambda: None
+        with (
+            patch.object(config, "CONTEXT_BROWSER_MAX_CHARS", 111),
+            patch("requests.get", return_value=response),
+            patch.object(
+                context_fetcher,
+                "extract_useful_page_context",
+                return_value="browser text",
+            ) as extract_page,
+        ):
+            self.assertEqual(
+                context_fetcher._fetch_browser_content("https://example.test/page"),
+                "browser text",
+            )
+        self.assertEqual(extract_page.call_args.kwargs["max_chars"], 111)
+
+        active = context_fetcher.WindowInfo(
+            title="note.txt - Notepad",
+            process_name="notepad.exe",
+            pid=7,
+            hwnd=8,
+        )
+        with (
+            patch.object(config, "CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", 222),
+            patch.object(context_fetcher, "_IS_WIN", True),
+            patch.object(context_fetcher, "_extract_doc_name_from_window", return_value="note.txt"),
+            patch.object(context_fetcher, "_enumerate_open_doc_windows", return_value=[]),
+            patch.object(
+                context_fetcher,
+                "_read_window_document_text",
+                return_value=("ambient text", "uia"),
+            ) as read_window,
+        ):
+            documents, _debug = context_fetcher.get_all_open_document_window_texts_with_debug(
+                active_window=active
+            )
+        self.assertEqual(documents, [("note.txt", "ambient text")])
+        self.assertEqual(read_window.call_args.args[1], 222)
+
+        with (
+            patch.object(
+                config,
+                "get_settings",
+                return_value=SimpleNamespace(
+                    context=SimpleNamespace(tool_document_max_chars=333)
+                ),
+            ),
+            patch.object(context_fetcher, "get_all_open_document_paths", return_value=["note.txt"]),
+            patch.object(llm, "_read_document_paths", return_value="tool text") as read_paths,
+        ):
+            self.assertEqual(llm._execute_get_context({}), "tool text")
+        self.assertEqual(read_paths.call_args.kwargs["max_chars_per_doc"], 333)
 
     def test_git_and_github_tools_are_registered(self):
         names = {schema["name"] for schema in llm._TOOL_REGISTRY.schemas()}
@@ -147,6 +206,47 @@ class BuiltinModelToolsTests(unittest.TestCase):
         missing = Path(folder) / "removed-before-inspection"
         self.assertIn("working folder is unavailable", llm._execute_git_status({"cwd": missing}))
 
+    def test_git_and_github_tools_return_successful_runtime_results(self):
+        """Exercise all four production adapters on their successful result path."""
+
+        git_results = iter(
+            (
+                SimpleNamespace(returncode=0, stdout=" M changed.py\n", stderr=""),
+                SimpleNamespace(returncode=0, stdout="+added line\n", stderr=""),
+            )
+        )
+        with TemporaryDirectory() as folder, patch("subprocess.run", side_effect=lambda *_a, **_k: next(git_results)):
+            self.assertIn("changed.py", llm._execute_git_status({"cwd": folder}))
+            self.assertIn("added line", llm._execute_git_diff({"cwd": folder}))
+
+        payloads = iter(
+            (
+                {"full_name": "owner/repo", "private": False, "default_branch": "main"},
+                {"number": 7, "title": "Fix runtime", "state": "open"},
+            )
+        )
+
+        class Response:
+            def __enter__(self):
+                self.payload = next(payloads)
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+        with patch("core.auth.github.get_valid_access_token", return_value="token"), patch(
+            "urllib.request.urlopen", side_effect=lambda *_a, **_k: Response()
+        ) as fetch:
+            repo = llm._execute_github_repo({"repo": "owner/repo"})
+            issue = llm._execute_github_issue({"repo": "owner/repo", "number": 7})
+
+        self.assertIn('"full_name": "owner/repo"', repo)
+        self.assertIn('"title": "Fix runtime"', issue)
+        self.assertEqual(fetch.call_count, 2)
+
     def test_allowed_tool_filter_limits_general_schemas(self):
         prompt = "show me the git status and github issue, then search the web"
 
@@ -249,6 +349,17 @@ class BuiltinModelToolsTests(unittest.TestCase):
 
         self.assertIn("retrieve_website", names)
         self.assertIn("disabled", blocked)
+        with patch(
+            "core.context_fetcher.fetch_browser_content_for_tool",
+            return_value="Retrieved page body",
+        ) as fetch:
+            result = llm._execute_model_tool(
+                "retrieve_website",
+                {"url": "https://example.test/page"},
+                allowed_tools=["retrieve_website"],
+            )
+        fetch.assert_called_once_with("https://example.test/page")
+        self.assertEqual(result, "Retrieved page body")
 
     def test_web_context_failure_matrix_is_controlled(self):
         """Exercise every browser/web inventory cause through shared tool boundaries."""
@@ -317,6 +428,14 @@ class BuiltinModelToolsTests(unittest.TestCase):
 
         self.assertNotIn("memory_search", default_names)
         self.assertIn("memory_search", allowed_names)
+        manager = SimpleNamespace(retrieve_relevant=lambda query, top_k=None: f"memory for {query} ({top_k})")
+        with patch("core.memory_store.store.get_manager", return_value=manager):
+            result = llm._execute_model_tool(
+                "memory_search",
+                {"query": "answer style", "top_k": 2},
+                allowed_tools=["memory_search"],
+            )
+        self.assertEqual(result, "memory for answer style (2)")
 
     def test_memory_search_on_demand_failure_matrix_is_controlled(self):
         """Keep optional memory retrieval safe across policy, store, and budget faults."""
@@ -428,6 +547,25 @@ class BuiltinModelToolsTests(unittest.TestCase):
                 allowed_tools=["get_context.documents"],
             ),
         )
+        with patch("core.context_fetcher.get_all_open_document_paths", return_value=["notes.txt"]), patch.object(
+            llm, "_read_document_paths", return_value="Open document body"
+        ):
+            documents = llm._execute_model_tool(
+                "get_context",
+                {},
+                allowed_tools=["get_context.documents"],
+            )
+        with patch(
+            "core.context_fetcher.fetch_browser_content_for_tool",
+            return_value="Current browser body",
+        ):
+            browser = llm._execute_model_tool(
+                "get_context",
+                {"url": "https://example.test/current"},
+                allowed_tools=["get_context.browser"],
+            )
+        self.assertEqual(documents, "Open document body")
+        self.assertEqual(browser, "Current browser body")
 
     def test_pinned_tools_bypass_keyword_filter(self):
         """Verify allowed tools do not depend on prompt wording."""

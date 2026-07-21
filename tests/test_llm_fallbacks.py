@@ -129,6 +129,40 @@ class LlmFallbackTests(unittest.TestCase):
         self.assertIn("Document text", captured["ambient_context"])
         self.assertIn("Memory text", captured["memory_context"])
 
+    def test_image_input_uses_configured_vision_route_and_all_fallbacks(self):
+        """Image requests must use the Image route and exhaust its ordered fallbacks."""
+        calls = []
+
+        def route(provider, model, user_message, image_base64, *_args, **_kwargs):
+            calls.append((provider, model, user_message, image_base64))
+            if model == "image-primary":
+                raise RuntimeError("primary unavailable")
+            if model == "image-fallback-one":
+                return iter(())
+            return iter(["vision fallback answer"])
+
+        with (
+            patch.object(llm.config, "VISION_LLM_PROVIDER", "openai"),
+            patch.object(llm.config, "VISION_LLM_MODEL", "image-primary"),
+            patch.object(
+                llm.config,
+                "VISION_LLM_FALLBACKS",
+                "anthropic:image-fallback-one\ngoogle:image-fallback-two",
+            ),
+            patch.object(llm, "_stream_single_response_route", side_effect=route),
+        ):
+            chunks = list(llm.stream_response("describe it", image_base64="png-data"))
+
+        self.assertEqual(chunks, ["vision fallback answer"])
+        self.assertEqual(
+            calls,
+            [
+                ("openai", "image-primary", "describe it", "png-data"),
+                ("anthropic", "image-fallback-one", "describe it", "png-data"),
+                ("google", "image-fallback-two", "describe it", "png-data"),
+            ],
+        )
+
     def test_codex_vision_input_text_includes_context(self):
         captured = {}
 

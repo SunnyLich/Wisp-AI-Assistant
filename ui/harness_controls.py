@@ -32,7 +32,27 @@ _CODEX_MODELS = (
     "gpt-5.4-mini",
     "gpt-5.3-codex-spark",
 )
-_CLAUDE_MODELS = ("opus", "sonnet", "haiku")
+_CLAUDE_MODELS = (
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-5",
+    "claude-opus-4-5-20251101",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
+    "best",
+    "opus",
+    "sonnet",
+    "haiku",
+    "opusplan",
+    "opus[1m]",
+    "sonnet[1m]",
+)
 
 
 def _select_data(combo: QComboBox, value: str) -> None:

@@ -450,11 +450,6 @@ class WorkerClient:
             self._pending[rid] = slot
         with self._scoped_event_lock:
             self._scoped_event_handlers[rid] = scoped_event
-        if on_started is not None:
-            try:
-                on_started(rid)
-            except Exception:  # noqa: BLE001
-                log.exception("%s stream start callback failed for %s", self.spec.name, method)
         try:
             try:
                 self._write(req)
@@ -462,6 +457,14 @@ class WorkerClient:
                 with self._pending_lock:
                     self._pending.pop(rid, None)
                 raise
+            if on_started is not None:
+                try:
+                    # Publish the cancellable id only after the request is on the
+                    # wire. The worker reads requests in order, so an immediate
+                    # cancel can now target either its queued or active stream.
+                    on_started(rid)
+                except Exception:  # noqa: BLE001
+                    log.exception("%s stream start callback failed for %s", self.spec.name, method)
 
             timeout_kind = ""
             while not ev.is_set():

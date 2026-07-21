@@ -29,6 +29,7 @@ _READ_ALOUD_MIN_WORDS = 50
 _READ_ALOUD_MAX_WORDS = 110
 _SPEECH_WARMUP_NOTICE_INTERVAL_SECONDS = 5.0
 _READ_ALOUD_PAUSE_RE = re.compile(r"[.!?;:][\"')\]}]*$")
+_USE_SHARED_REPLY_PARSER = object()
 _BROWSER_APP_NAMES = {
     "browser",
     "chrome",
@@ -303,6 +304,8 @@ class FlowController:
         self._last_reply = ""
         self._last_privacy_report: dict[str, Any] = {}
         self._active_agent_stream_id: Any = None
+        self._active_reply_stream_id: Any = None
+        self._active_reply_stream_generation = 0
         self._reply_thought_parser = None
         self._tts_lock = threading.RLock()
         self._tts_generation = 0
@@ -1097,7 +1100,13 @@ class FlowController:
         self._set_idle()
         self._notice(t("Live voice stopped because the audio worker restarted."), severity="warning")
 
-    def _on_reply_chunk(self, data: dict[str, Any], _req_id: Any = None) -> list[tuple[str, bool, bool]]:
+    def _on_reply_chunk(
+        self,
+        data: dict[str, Any],
+        _req_id: Any = None,
+        *,
+        thought_parser: Any = _USE_SHARED_REPLY_PARSER,
+    ) -> list[tuple[str, bool, bool]]:
         """Handle reply chunk events."""
         text = str((data or {}).get("text") or "")
         if not text:
@@ -1117,7 +1126,7 @@ class FlowController:
                 timeout=30.0,
             )
             return [(text, True, is_progress)]
-        parser = self._reply_thought_parser
+        parser = self._reply_thought_parser if thought_parser is _USE_SHARED_REPLY_PARSER else thought_parser
         if parser is None:
             self._safe_call(
                 self.ui,
@@ -1166,9 +1175,16 @@ class FlowController:
                     timeout=30.0,
                 )
 
-    def _on_reply_done(self, data: dict[str, Any], _req_id: Any = None) -> None:
+    def _on_reply_done(
+        self,
+        data: dict[str, Any],
+        _req_id: Any = None,
+        *,
+        thought_parser: Any = _USE_SHARED_REPLY_PARSER,
+    ) -> None:
         """Handle reply done events."""
-        parser = self._reply_thought_parser
+        use_shared_parser = thought_parser is _USE_SHARED_REPLY_PARSER
+        parser = self._reply_thought_parser if use_shared_parser else thought_parser
         if parser is not None:
             for segment, is_thought in parser.finish():
                 if segment:
@@ -1178,7 +1194,8 @@ class FlowController:
                         {"text": segment, "is_thought": bool(is_thought)},
                         timeout=30.0,
                     )
-            self._reply_thought_parser = None
+            if use_shared_parser:
+                self._reply_thought_parser = None
         text = str((data or {}).get("text") or "")
         if text:
             self._last_reply = text
@@ -1296,10 +1313,22 @@ class FlowController:
         self._fire(self.ui, "ui.overlay.state", {"state": "listening"})
 
     def stop_reply_bubble(self) -> None:
-        """Hide the reply bubble and stop TTS for the current answer."""
+        """Cancel the active answer, hide its bubble, and stop its speech."""
         with self._lock:
             generation = self._current_generation
             self._reply_bubble_cancelled_generation = generation
+            target = (
+                self._active_reply_stream_id
+                if self._active_reply_stream_generation == generation
+                else None
+            )
+        if target is not None:
+            self._safe_call(
+                self.brain,
+                "brain.cancel",
+                {"target": target},
+                timeout=5.0,
+            )
         self._cancel_tts_sequence(generation)
         self._safe_call(self.audio, "audio.stop", timeout=5.0)
         self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
@@ -3020,20 +3049,23 @@ class FlowController:
 
         done_seen = False
         first_chunk_seen = False
+        reply_parser_finished = False
         streamed_reply_parts: list[str] = []
         tts_segmenter = _TtsSegmentBuffer() if self._tts_replies_enabled() else None
         early_chat_index: int | None = None
         try:
             from core.assistant_text import ThoughtStreamParser
 
-            self._reply_thought_parser = ThoughtStreamParser()
+            reply_thought_parser = ThoughtStreamParser()
         except Exception:
-            self._reply_thought_parser = None
+            reply_thought_parser = None
 
         def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
             """Handle event events."""
-            nonlocal done_seen, first_chunk_seen
+            nonlocal done_seen, first_chunk_seen, reply_parser_finished
             if event == "reply.chunk":
+                if not self._is_current(gen):
+                    return
                 if not first_chunk_seen:
                     first_chunk_seen = True
                     log.info("query first reply chunk after %.2fs", time.monotonic() - query_started)
@@ -3053,13 +3085,18 @@ class FlowController:
                     )
                 if self._reply_bubble_cancelled(gen):
                     return
-                for segment, is_thought, is_progress in self._on_reply_chunk(payload):
+                for segment, is_thought, is_progress in self._on_reply_chunk(
+                    payload,
+                    thought_parser=reply_thought_parser,
+                ):
                     if tts_segmenter is not None and is_progress and not is_thought:
                         self._queue_tts_segment(gen, segment)
                     elif tts_segmenter is not None and not is_thought:
                         for tts_segment in tts_segmenter.feed(segment):
                             self._queue_tts_segment(gen, tts_segment)
             elif event == "reply.done":
+                if not self._is_current(gen):
+                    return
                 done_seen = True
                 self._emit_file_context_progress(
                     list((payload or {}).get("file_context") or []),
@@ -3077,7 +3114,8 @@ class FlowController:
                 if text_done:
                     self._last_reply = text_done
                 if not (self._tts_replies_enabled() and text_done):
-                    self._on_reply_done(payload)
+                    self._on_reply_done(payload, thought_parser=reply_thought_parser)
+                    reply_parser_finished = True
             elif event == "live_file.approval.request":
                 self._handle_live_file_approval_request(payload)
             elif event == "privacy.review.request":
@@ -3141,15 +3179,24 @@ class FlowController:
             log.exception("failed to begin chat conversation before query")
         try:
             log.info("query brain call started")
-            result = self._brain_call_with_events(
+            result = self._brain_reply_call_with_events(
                 "brain.query",
                 params,
                 timeout=self._interactive_llm_timeout_seconds(params),
                 on_event=on_event,
+                generation=gen,
             )
         except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
             log.exception("brain query failed after %.2fs", time.monotonic() - query_started)
-            self._reply_thought_parser = None
+            if not self._is_current(gen):
+                if early_chat_index is not None:
+                    self._safe_call(
+                        self.ui,
+                        "ui.chat.done",
+                        {"conversation_index": early_chat_index, "text": ""},
+                        timeout=30.0,
+                    )
+                return
             if early_chat_index is not None:
                 self._safe_call(
                     self.ui,
@@ -3162,9 +3209,17 @@ class FlowController:
             self._set_idle()
             return
         log.info("query brain call finished after %.2fs", time.monotonic() - query_started)
-        parser = self._reply_thought_parser
-        if parser is not None:
-            for segment, is_thought in parser.finish():
+        if not self._is_current(gen):
+            if early_chat_index is not None:
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.done",
+                    {"conversation_index": early_chat_index, "text": ""},
+                    timeout=30.0,
+                )
+            return
+        if reply_thought_parser is not None and not reply_parser_finished:
+            for segment, is_thought in reply_thought_parser.finish():
                 if segment:
                     self._safe_call(
                         self.ui,
@@ -3175,7 +3230,6 @@ class FlowController:
                     if tts_segmenter is not None and not is_thought:
                         for tts_segment in tts_segmenter.feed(segment):
                             self._queue_tts_segment(gen, tts_segment)
-            self._reply_thought_parser = None
         text = str((result or {}).get("text") or "")
         file_context = list((result or {}).get("file_context") or [])
         assistant_attachments = list((result or {}).get("attachments") or [])
@@ -3300,7 +3354,8 @@ class FlowController:
         def on_event(event: str, payload: Any, _req_id: Any = None) -> None:
             """Handle event events."""
             if event == "reply.chunk":
-                self._on_reply_chunk(payload)
+                if self._is_current(gen):
+                    self._on_reply_chunk(payload, thought_parser=None)
             elif event == "privacy.review.request":
                 self._handle_privacy_review_request(payload)
 
@@ -3315,7 +3370,7 @@ class FlowController:
                 len(rewrite_context),
                 self._rewrite_source_labels(rewrite_context),
             )
-            result = self._brain_call_with_events(
+            result = self._brain_reply_call_with_events(
                 "brain.rewrite",
                 {
                     "selected_text": selected,
@@ -3324,9 +3379,12 @@ class FlowController:
                 },
                 timeout=_INTERACTIVE_LLM_TIMEOUT_SECONDS,
                 on_event=on_event,
+                generation=gen,
             )
         except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
             log.exception("brain rewrite failed")
+            if not self._is_current(gen):
+                return
             self._notice(f"Rewrite failed: {self._friendly_error(exc)}", severity="error")
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             self._set_idle()
@@ -3349,7 +3407,8 @@ class FlowController:
         if not visible_text and text:
             visible_text = "Replacement pasted."
         log.info("rewrite result: text_chars=%d visible_chars=%d", len(text), len(visible_text))
-        if text and self._is_current(gen):
+        bubble_cancelled = self._reply_bubble_cancelled(gen)
+        if text and self._is_current(gen) and not bubble_cancelled:
             chat_context = "\n\n".join(
                 part
                 for part in (
@@ -3410,7 +3469,7 @@ class FlowController:
                     },
                 timeout=30.0,
             )
-        elif self._is_current(gen):
+        elif self._is_current(gen) and not bubble_cancelled:
             log.warning("rewrite returned empty text; paste-back skipped")
             self._native_notify("Wisp rewrite returned nothing", "The model returned no replacement text.")
         self._set_idle()
@@ -3596,11 +3655,70 @@ class FlowController:
             )
         return self.brain.call(method, params, timeout=timeout)
 
+    def _brain_reply_call_with_events(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout: float,
+        on_event: Callable[[str, Any, Any], None],
+        generation: int,
+    ) -> Any:
+        """Track a user-visible reply stream so the bubble Stop button can cancel it."""
+        stream_id: Any = None
+
+        def on_started(req_id: Any) -> None:
+            nonlocal stream_id
+            stream_id = req_id
+            with self._lock:
+                if generation == self._current_generation:
+                    self._active_reply_stream_id = req_id
+                    self._active_reply_stream_generation = generation
+                    stale = False
+                else:
+                    stale = True
+            if stale:
+                # This request was superseded while its worker was starting.
+                # WorkerClient publishes ids after writing the request, and the
+                # brain host accepts queued cancels, so this cannot miss the race.
+                self._safe_call(
+                    self.brain,
+                    "brain.cancel",
+                    {"target": req_id},
+                    timeout=5.0,
+                )
+
+        try:
+            return self._brain_call_with_events(
+                method,
+                params,
+                timeout=timeout,
+                on_event=on_event,
+                on_started=on_started,
+            )
+        finally:
+            with self._lock:
+                if self._active_reply_stream_id == stream_id:
+                    self._active_reply_stream_id = None
+                    self._active_reply_stream_generation = 0
+
     def _new_generation(self) -> int:
-        """Handle new generation for flow controller."""
+        """Start a user action and cancel any reply that it supersedes."""
         with self._lock:
+            previous_target = self._active_reply_stream_id
+            previous_generation = self._active_reply_stream_generation
             self._current_generation = next(self._generation)
-            return self._current_generation
+            generation = self._current_generation
+            if previous_target is not None:
+                self._reply_bubble_cancelled_generation = previous_generation
+        if previous_target is not None:
+            self._safe_call(
+                self.brain,
+                "brain.cancel",
+                {"target": previous_target},
+                timeout=5.0,
+            )
+        return generation
 
     def _is_current(self, generation: int) -> bool:
         """Return whether current is true."""
@@ -3615,8 +3733,15 @@ class FlowController:
     def _claim_voice_start(self) -> bool:
         """Handle claim voice start for flow controller."""
         with self._lock:
-            # Mutually exclusive with the live voice conversation (one mic).
-            if self._voice_state != "idle" or self._live_voice_state != "idle":
+            # All three speech entry points share one recorder/microphone.  The
+            # inverse guard already exists in _claim_dictate_start; keep this
+            # side symmetrical so a rapid F9 press cannot steal an active F8
+            # dictation recording.
+            if (
+                self._voice_state != "idle"
+                or self._dictate_state != "idle"
+                or self._live_voice_state != "idle"
+            ):
                 return False
             self._voice_state = "starting"
             self._voice_active = True

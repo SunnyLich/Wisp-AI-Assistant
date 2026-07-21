@@ -129,6 +129,40 @@ def test_harness_controls_choose_or_clear_workspace(monkeypatch, tmp_path) -> No
         app.processEvents()
 
 
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_claude_controls_offer_full_model_ids() -> None:
+    """Claude's picker exposes concrete versions instead of only family aliases."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.harness_controls import HarnessControlsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = HarnessControlsDialog("claude")
+
+    try:
+        model_values = {
+            str(dialog.model.itemData(index) or "")
+            for index in range(dialog.model.count())
+        }
+        assert {
+            "claude-fable-5",
+            "claude-sonnet-5",
+            "claude-opus-4-8",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+        } <= model_values
+
+        sonnet_5_index = dialog.model.findData("claude-sonnet-5")
+        assert sonnet_5_index >= 0
+        dialog.model.setCurrentIndex(sonnet_5_index)
+        assert dialog.model.currentText() == "claude-sonnet-5"
+        assert dialog._model_value() == "claude-sonnet-5"
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
 @pytest.mark.parametrize(
     ("language", "labels"),
     [

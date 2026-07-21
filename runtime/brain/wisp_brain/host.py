@@ -106,6 +106,8 @@ def _main() -> int:
     write_lock = threading.Lock()
     # Active streaming contexts, keyed by request id, for cooperative cancel.
     active: dict[Any, StreamContext] = {}
+    queued_streams: set[Any] = set()
+    cancel_before_start: set[Any] = set()
     active_lock = threading.Lock()
 
     def send(obj: dict) -> None:
@@ -137,12 +139,18 @@ def _main() -> int:
             if method in STREAMING:
                 ctx = StreamContext(emit_event, req_id)
                 with active_lock:
+                    queued_streams.discard(req_id)
+                    if req_id in cancel_before_start:
+                        ctx.cancelled = True
+                        cancel_before_start.discard(req_id)
                     active[req_id] = ctx
                 try:
                     result = fn(ctx, **params)
                 finally:
                     with active_lock:
                         active.pop(req_id, None)
+                        queued_streams.discard(req_id)
+                        cancel_before_start.discard(req_id)
             else:
                 result = fn(**params)
             respond(req_id, True, result=result)
@@ -165,13 +173,19 @@ def _main() -> int:
             target = (req.get("params") or {}).get("target")
             with active_lock:
                 ctx = active.get(target)
-            if ctx is not None:
-                ctx.cancelled = True
-            respond(req.get("id"), True, result={"cancelled": ctx is not None})
+                queued = target in queued_streams
+                if ctx is not None:
+                    ctx.cancelled = True
+                elif queued:
+                    cancel_before_start.add(target)
+            respond(req.get("id"), True, result={"cancelled": ctx is not None or queued})
             continue
 
         # Each request runs on its own thread so a long stream doesn't block new
         # requests (or their cancels). Responses are serialized by write_lock.
+        if method in STREAMING:
+            with active_lock:
+                queued_streams.add(req.get("id"))
         threading.Thread(target=dispatch, args=(req,), daemon=True).start()
 
     try:
@@ -184,4 +198,3 @@ def _main() -> int:
 
 if __name__ == "__main__":
     sys.exit(_main())
-

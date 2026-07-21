@@ -990,7 +990,10 @@ class ConfigEnvTests(unittest.TestCase):
         try:
             with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
                 for key in (
+                    "SETTINGS_PROFILE",
+                    "ACTIVE_PROFILE",
                     "CALLER_COUNT",
+                    "CALLER_1_PROFILE",
                     "CALLER_1_CONTEXT_AMBIENT",
                     "CALLER_1_CONTEXT_CLIPBOARD",
                     "CALLER_1_CONTEXT_DOCUMENTS",
@@ -1096,11 +1099,59 @@ class ConfigEnvTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(config, name, value)
 
+    def test_every_special_shortcut_enabled_flag_controls_only_its_bindings(self):
+        """Disabling any one action removes only that action's two bindings."""
+
+        actions = (
+            "HOTKEY_ADD_CONTEXT",
+            "HOTKEY_CLEAR_CONTEXT",
+            "HOTKEY_SNIP",
+            "HOTKEY_READ_SELECTION_ALOUD",
+            "HOTKEY_VOICE",
+            "HOTKEY_DICTATE",
+            "HOTKEY_VOICE_LIVE",
+        )
+        previous_voice = dict(config.VOICE_CALLER)
+        previous_rows = list(config.CALLER_ROWS)
+        previous_snip = dict(config.SNIP_CALLER)
+        previous = {
+            name: getattr(config, name)
+            for action in actions
+            for name in (action, f"{action}_2", f"{action}_ENABLED")
+        }
+        previous["SETTINGS"] = config.SETTINGS
+        try:
+            for disabled_action in actions:
+                env: dict[str, str] = {}
+                for index, action in enumerate(actions, 1):
+                    env[action] = f"ctrl+alt+f{index}"
+                    env[f"{action}_2"] = f"ctrl+shift+alt+f{index}"
+                    env[f"{action}_ENABLED"] = str(action != disabled_action).lower()
+                with patch("config.load_dotenv"), patch.dict(os.environ, env, clear=False):
+                    config.reload()
+
+                for index, action in enumerate(actions, 1):
+                    enabled = action != disabled_action
+                    self.assertEqual(getattr(config, f"{action}_ENABLED"), enabled)
+                    self.assertEqual(getattr(config, action), f"ctrl+alt+f{index}" if enabled else "")
+                    self.assertEqual(
+                        getattr(config, f"{action}_2"),
+                        f"ctrl+shift+alt+f{index}" if enabled else "",
+                    )
+        finally:
+            config.CALLER_ROWS[:] = previous_rows
+            config.VOICE_CALLER.clear()
+            config.VOICE_CALLER.update(previous_voice)
+            config.SNIP_CALLER.clear()
+            config.SNIP_CALLER.update(previous_snip)
+            for name, value in previous.items():
+                setattr(config, name, value)
+
     def test_voice_caller_defaults_mirror_general_caller(self):
         previous = dict(config.VOICE_CALLER)
         try:
             with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
-                for key in self._VOICE_ENV_KEYS:
+                for key in (*self._VOICE_ENV_KEYS, "SETTINGS_PROFILE", "ACTIVE_PROFILE", "VOICE_PROFILE"):
                     os.environ.pop(key, None)
                 config.reload()
 
@@ -1146,6 +1197,9 @@ class ConfigEnvTests(unittest.TestCase):
         try:
             with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
                 for key in (
+                    "SETTINGS_PROFILE",
+                    "ACTIVE_PROFILE",
+                    "SNIP_PROFILE",
                     "SNIP_CONTEXT_AMBIENT",
                     "SNIP_CONTEXT_CLIPBOARD",
                     "SNIP_CONTEXT_DOCUMENTS",

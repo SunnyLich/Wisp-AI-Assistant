@@ -752,6 +752,367 @@ def test_brain_worker_cancel_stops_active_stream_over_ipc():
         thread.join(timeout=2)
 
 
+def test_immediate_cancel_catches_stream_while_worker_is_still_queueing_it():
+    """Cancel from the start callback must not miss the write-to-dispatch race."""
+    worker = _worker("runtime.workers.brain_host", "brain")
+    cancel_results = []
+    events = []
+    text = " ".join(str(index) for index in range(100))
+
+    try:
+        result = worker.call_with_events(
+            "brain.echo",
+            {"text": text, "delay": 0.01},
+            timeout=10,
+            on_started=lambda request_id: cancel_results.append(
+                worker.call("brain.cancel", {"target": request_id}, timeout=5)
+            ),
+            on_event=lambda event, data, req_id: events.append((event, data, req_id)),
+        )
+
+        assert cancel_results == [{"cancelled": True}]
+        assert result["text"] != text
+        assert [data for event, data, _req_id in events if event == "reply.done"] == [result]
+    finally:
+        worker.shutdown()
+
+
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+def test_real_bubble_stop_click_cancels_real_brain_query_over_ipc(tmp_path, monkeypatch):
+    """A real bubble click cancels the live query running in the real brain process."""
+    import config
+
+    from runtime.supervisor.flows import FlowController, PendingInvocation
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp")
+    monkeypatch.setattr(config, "CHAT_CONVERSATION_OWNER", "wisp")
+
+    class BoundaryWorker:
+        def __init__(self):
+            self.events = {}
+
+        def call(self, _method, _params=None, *, timeout=30.0, wait=True):
+            return {}
+
+        def on_event(self, event, handler):
+            self.events.setdefault(event, []).append(handler)
+
+    shared_env = {
+        "WISP_RUN_LOG_DIR": str(tmp_path / "logs"),
+        "WISP_BRAIN_FAKE_LLM_DELAY": "0.02",
+    }
+    ui = _worker(
+        "runtime.workers.ui_host",
+        "ui",
+        env={
+            **shared_env,
+            "QT_QPA_PLATFORM": "offscreen",
+            "WISP_UI_DEBUG_METHODS": "1",
+        },
+    )
+    brain = _worker("runtime.workers.brain_host", "brain", env=shared_env)
+    original_brain_call = brain.call
+    cancel_results = []
+
+    def recording_brain_call(method, params=None, **kwargs):
+        result = original_brain_call(method, params, **kwargs)
+        if method == "brain.cancel":
+            cancel_results.append((dict(params or {}), result))
+        return result
+
+    brain.call = recording_brain_call
+    boundary = BoundaryWorker()
+    flow = FlowController(native=boundary, ui=ui, brain=brain, audio=boundary, run_async=True)
+    flow.start()
+    stop_seen = threading.Event()
+    ui.on_event("ui.bubble.stop", lambda _data, _req_id: stop_seen.set())
+    prompt = " ".join(f"cancel-word-{index}" for index in range(120))
+    pending = PendingInvocation(
+        caller_idx=0,
+        caller={"paste_back": False, "context_memory_mode": "off"},
+        context={},
+    )
+    pending.context_ready.set()
+    query_thread = threading.Thread(
+        target=flow._query,
+        args=(prompt, pending),
+        name="real-bubble-cancel-query",
+    )
+
+    try:
+        query_thread.start()
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            with flow._lock:
+                if flow._active_reply_stream_id is not None:
+                    break
+            time.sleep(0.01)
+        else:
+            pytest.fail("real brain query never became cancellable")
+
+        click = ui.call("ui.debug.bubble.stop.click", timeout=10)
+        assert stop_seen.wait(5), f"real bubble click emitted no stop event; ui stderr={ui.stderr_tail()!r}"
+        deadline = time.time() + 5
+        while time.time() < deadline and not cancel_results:
+            time.sleep(0.01)
+        assert cancel_results, f"stop event never called brain.cancel; brain stderr={brain.stderr_tail()!r}"
+        assert cancel_results[0][1] == {"cancelled": True}
+        query_thread.join(timeout=10)
+
+        assert click == {"clicked": True, "close_cancels": True, "visible_after": False}
+        assert not query_thread.is_alive(), (
+            f"real brain query did not stop; cancel={cancel_results!r}; "
+            f"brain stderr={brain.stderr_tail()!r}"
+        )
+        assert len(flow._last_reply) < len(f"[fake-llm] {prompt}")
+        with flow._lock:
+            assert flow._active_reply_stream_id is None
+
+        follow_up = brain.call_with_events(
+            "brain.query",
+            {"intent_prompt": "follow-up remains isolated", "memory_enabled": False},
+            timeout=10,
+            on_event=lambda _event, _data, _req_id: None,
+        )
+        assert follow_up["text"].strip() == "[fake-llm] follow-up remains isolated"
+    finally:
+        query_thread.join(timeout=1)
+        ui.shutdown()
+        brain.shutdown()
+
+
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+def test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back(tmp_path, monkeypatch):
+    """Typing in the real picker drives both production branches and only rewrite pastes."""
+    import config
+
+    from runtime.supervisor.flows import FlowController
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp")
+    monkeypatch.setattr(config, "CHAT_CONVERSATION_OWNER", "wisp")
+    callers = [
+        {
+            "label": "Keep in Wisp",
+            "paste_back": False,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "context_tools": False,
+            "intents": [],
+        },
+        {
+            "label": "Rewrite in app",
+            "paste_back": True,
+            "context_ambient": False,
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_memory_mode": "off",
+            "context_screenshot": "off",
+            "context_clipboard": False,
+            "context_tools": False,
+            "intents": [],
+        },
+    ]
+    monkeypatch.setattr(config, "CALLER_ROWS", callers)
+
+    class NativeBoundary:
+        def __init__(self):
+            self.events = {}
+            self.calls = []
+
+        def call(self, method, params=None, *, timeout=30.0, wait=True):
+            payload = dict(params or {})
+            self.calls.append((method, payload))
+            if method == "native.context.snapshot":
+                return {
+                    "platform": sys.platform,
+                    "selected_text": "original selected words",
+                    "clipboard_text": "",
+                    "focus_token": 812,
+                    "active_app": {
+                        "pid": 7001,
+                        "window_id": 7001,
+                        "name": "Acceptance Editor",
+                    },
+                }
+            if method == "native.paste_text":
+                return {"ok": True, "clipboard_ok": True, "clipboard_restored": True}
+            return {}
+
+        def on_event(self, event, handler):
+            self.events.setdefault(event, []).append(handler)
+
+        def calls_for(self, method):
+            return [params for called_method, params in self.calls if called_method == method]
+
+    repo = Path(__file__).resolve().parents[2]
+    shared_env = {
+        "WISP_DATA_ROOT": str(tmp_path / "data"),
+        "WISP_RUN_LOG_DIR": str(tmp_path / "logs"),
+        "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "runtime" / "brain")]),
+    }
+    ui = _worker(
+        "runtime.workers.ui_host",
+        "ui",
+        env={
+            **shared_env,
+            "QT_QPA_PLATFORM": "offscreen",
+            "WISP_UI_DEBUG_METHODS": "1",
+        },
+    )
+    brain = _worker("runtime.workers.brain_host", "brain", env=shared_env)
+    native = NativeBoundary()
+    flow = FlowController(native=native, ui=ui, brain=brain, audio=native, run_async=True)
+    flow.start()
+
+    def submit_when_visible(text: str) -> None:
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            result = ui.call("ui.debug.intent.submit", {"text": text}, timeout=10)
+            if result.get("submitted"):
+                assert result == {"submitted": True, "text": text}
+                return
+            time.sleep(0.02)
+        pytest.fail(f"intent picker never accepted {text!r}")
+
+    try:
+        flow.begin_caller(0)
+        submit_when_visible("Keep this answer")
+        deadline = time.time() + 10
+        while time.time() < deadline and "Keep this answer" not in flow._last_reply:
+            time.sleep(0.02)
+        assert "[fake-llm] Keep this answer" in flow._last_reply
+        keep_bubble = ui.call("ui.debug.bubble.snapshot", timeout=10)
+        assert "[fake-llm] Keep this answer" in keep_bubble["text"]
+        assert native.calls_for("native.paste_text") == []
+
+        flow.begin_caller(1)
+        submit_when_visible("Rewrite selected text")
+        deadline = time.time() + 10
+        while time.time() < deadline and not native.calls_for("native.paste_text"):
+            time.sleep(0.02)
+        paste_calls = native.calls_for("native.paste_text")
+        assert len(paste_calls) == 1
+        assert paste_calls[0] == {
+            "text": "[fake-rewrite] Rewrite selected text: original selected words",
+            "target_pid": 7001,
+            "focus_token": 812,
+            "restore_clipboard": True,
+        }
+    finally:
+        ui.shutdown()
+        brain.shutdown()
+
+
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
+def test_real_intent_failure_shows_recovery_recommendation_in_reply_bubble(tmp_path, monkeypatch):
+    """A request failure entered through the picker becomes actionable visible UI."""
+    import config
+
+    from runtime.supervisor.flows import FlowController
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp")
+    monkeypatch.setattr(config, "CHAT_CONVERSATION_OWNER", "wisp")
+    monkeypatch.setattr(
+        config,
+        "CALLER_ROWS",
+        [
+            {
+                "label": "Ask",
+                "paste_back": False,
+                "context_ambient": False,
+                "context_documents_mode": "off",
+                "context_browser_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "context_clipboard": False,
+                "context_tools": False,
+                "intents": [],
+            }
+        ],
+    )
+
+    class BoundaryWorker:
+        def __init__(self, *, fail_query=False):
+            self.events = {}
+            self.fail_query = fail_query
+
+        def call(self, method, _params=None, *, timeout=30.0, wait=True):
+            if method == "native.context.snapshot":
+                return {
+                    "platform": sys.platform,
+                    "selected_text": "",
+                    "active_app": {"pid": 9001, "window_id": 9001, "name": "Editor"},
+                }
+            return {}
+
+        def call_with_events(
+            self,
+            method,
+            _params=None,
+            *,
+            timeout=30.0,
+            on_event,
+            on_started=None,
+        ):
+            assert self.fail_query and method == "brain.query"
+            if on_started is not None:
+                on_started(41)
+            raise RuntimeError("429 rate limit from provider")
+
+        def on_event(self, event, handler):
+            self.events.setdefault(event, []).append(handler)
+
+    repo = Path(__file__).resolve().parents[2]
+    ui = _worker(
+        "runtime.workers.ui_host",
+        "ui",
+        env={
+            "WISP_DATA_ROOT": str(tmp_path / "data"),
+            "WISP_RUN_LOG_DIR": str(tmp_path / "logs"),
+            "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "runtime" / "brain")]),
+            "QT_QPA_PLATFORM": "offscreen",
+            "WISP_UI_DEBUG_METHODS": "1",
+        },
+    )
+    native = BoundaryWorker()
+    brain = BoundaryWorker(fail_query=True)
+    flow = FlowController(native=native, ui=ui, brain=brain, audio=native, run_async=True)
+    flow.start()
+
+    try:
+        flow.begin_caller(0)
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            submitted = ui.call(
+                "ui.debug.intent.submit",
+                {"text": "Trigger route failure"},
+                timeout=10,
+            )
+            if submitted.get("submitted"):
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("intent picker never accepted the failure request")
+
+        deadline = time.time() + 10
+        bubble = {}
+        while time.time() < deadline:
+            bubble = ui.call("ui.debug.bubble.snapshot", timeout=10)
+            if "Recommendation:" in bubble.get("text", ""):
+                break
+            time.sleep(0.02)
+        assert "LLM request failed" in bubble["text"]
+        assert "Recommendation: wait a minute and retry" in bubble["text"]
+        assert "usage limits and billing" in bubble["text"]
+        assert bubble["visible"] is True
+    finally:
+        ui.shutdown()
+
+
 def test_stream_activity_renews_idle_timeout():
     """A healthy stream may run past its idle limit while events keep arriving."""
     worker = _worker("runtime.workers.brain_host", "brain")
@@ -888,6 +1249,48 @@ def test_live_file_edit_crosses_real_brain_approval_boundary(tmp_path):
         accepted = run_edit(approved=True, replacement="gamma")
         assert "Edited note.txt" in accepted
         assert note.read_text(encoding="utf-8") == "alpha gamma"
+    finally:
+        worker.shutdown()
+
+
+def test_real_brain_worker_file_tool_settings_reload(tmp_path):
+    """A running brain worker applies changed blocked-file policy to its next tool call."""
+    repo = Path(__file__).resolve().parents[2]
+    root = tmp_path / "allowed"
+    root.mkdir()
+    note = root / "secret.txt"
+    note.write_text("visible before reload", encoding="utf-8")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"TOOL_FILE_ROOTS={root}\nTOOL_FILE_BLOCKED_GLOBS=.env*,**/.env*\n",
+        encoding="utf-8",
+    )
+    worker = _worker(
+        "runtime.workers.brain_host",
+        "brain",
+        env={
+            "WISP_REPO_ROOT": str(tmp_path),
+            "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "runtime" / "brain")]),
+        },
+    )
+    request = {
+        "name": "read_file",
+        "inputs": {"path": str(note)},
+        "access_mode": "auto",
+    }
+    try:
+        before = worker.call("brain.debug.live_file.execute", request, timeout=20)["result"]
+        assert "visible before reload" in before
+
+        env_file.write_text(
+            f"TOOL_FILE_ROOTS={root}\nTOOL_FILE_BLOCKED_GLOBS=secret*\n",
+            encoding="utf-8",
+        )
+        assert worker.call("brain.config.reload", timeout=20)["ok"] is True
+
+        after = worker.call("brain.debug.live_file.execute", request, timeout=20)["result"]
+        assert "blocked" in after.lower()
+        assert "visible before reload" not in after
     finally:
         worker.shutdown()
 

@@ -48,6 +48,181 @@ def test_generated_image_is_scaled_into_the_speech_bubble(tmp_path):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states():
+    """Every runtime text state must replace or append content on the real bubble."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    try:
+        bubble.show_listening("Listening now")
+        assert "Listening now" in bubble._text_view.toPlainText()
+        bubble.show_transcript("captured words")
+        assert "captured words" in bubble._full_text
+        bubble.show_progress("Checking context")
+        assert bubble._full_text == "Checking context"
+        bubble.append_chunk("Final answer")
+        assert bubble._full_text == "Final answer"
+        bubble.show_notice("Careful", timeout_ms=0, severity="warning")
+        assert bubble._full_text == "Careful"
+        bubble.show_notice("Could not continue", timeout_ms=0, severity="error")
+        assert bubble._full_text == "Could not continue"
+        assert bubble.isVisible()
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_reply_close_control_click_emits_stop_and_clears_the_bubble():
+    """The visible close/stop control must invoke the reply cancellation callback."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    stops = []
+    bubble.set_stop_callback(lambda: stops.append("stop"))
+    try:
+        bubble.append_chunk("Cancel this reply")
+        bubble.show()
+        app.processEvents()
+        QTest.mouseClick(bubble, Qt.MouseButton.LeftButton, pos=bubble._close_rect().center())
+        assert stops == ["stop"]
+        assert bubble.isHidden()
+        assert bubble._full_text == ""
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_drag_moves_group_and_does_not_open_chat():
+    """A real pointer drag moves the bubble and reports the icon companion position."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    moved = []
+    opened = []
+    bubble.set_companion_callback(lambda point: moved.append(point))
+    bubble.set_click_callback(lambda: opened.append(True))
+    try:
+        bubble.append_chunk("Drag this bubble")
+        bubble.move(100, 100)
+        bubble.show()
+        app.processEvents()
+        start = QPointF(20, 20)
+        end = QPointF(55, 45)
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            start,
+            QPointF(120, 120),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        move = QMouseEvent(
+            QEvent.Type.MouseMove,
+            end,
+            QPointF(155, 145),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        release = QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            end,
+            QPointF(155, 145),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(bubble, press)
+        QApplication.sendEvent(bubble, move)
+        QApplication.sendEvent(bubble, release)
+        assert bubble.pos().x() > 100 and bubble.pos().y() > 100
+        assert moved and moved[-1] == bubble.pos()
+        assert opened == []
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions(monkeypatch):
+    """The real bubble context menu exposes copy plus add-on label actions."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QContextMenuEvent, QTextCursor
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+    menus = []
+    edited = []
+    deleted = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _point: menus.append(menu))
+    try:
+        bubble.append_chunk("alpha beta gamma")
+        cursor = QTextCursor(bubble._text_view.document())
+        cursor.setPosition(6)
+        cursor.setPosition(10, QTextCursor.MoveMode.KeepAnchor)
+        bubble._text_view.setTextCursor(cursor)
+        monkeypatch.setattr(
+            bubble,
+            "_text_context_actions",
+            lambda selected, _full: [
+                {"label": "Edit label", "action": "label_editor", "match": selected},
+                {"label": "Delete label", "action": "delete_label", "match": selected},
+            ],
+        )
+        monkeypatch.setattr(bubble, "_edit_ui_lab_label", edited.append)
+        monkeypatch.setattr(bubble, "_delete_ui_lab_label", deleted.append)
+        point = bubble._text_view.rect().center()
+        event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, point, QPoint(200, 200))
+        bubble._text_view.contextMenuEvent(event)
+        assert len(menus) == 1
+        actions = {action.text(): action for action in menus[0].actions() if action.text()}
+        selected_action = next(action for text, action in actions.items() if "selected" in text.lower())
+        full_action = next(action for text, action in actions.items() if "full" in text.lower())
+        selected_action.trigger()
+        assert QApplication.clipboard().text() == "beta"
+        full_action.trigger()
+        assert QApplication.clipboard().text() == "alpha beta gamma"
+        actions["Edit label"].trigger()
+        actions["Delete label"].trigger()
+        assert edited == ["beta"]
+        assert deleted == ["beta"]
+
+        cursor.clearSelection()
+        bubble._text_view.setTextCursor(cursor)
+        bubble._text_view.contextMenuEvent(event)
+        assert len(menus) == 2
+        no_selection_labels = {action.text() for action in menus[1].actions() if action.text()}
+        assert any("full" in text.lower() for text in no_selection_labels)
+        assert "Edit label" not in no_selection_labels
+        assert "Delete label" not in no_selection_labels
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_transcript_preview_is_replaced_by_first_reply_chunk():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
